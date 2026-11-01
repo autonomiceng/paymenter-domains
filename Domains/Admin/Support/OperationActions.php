@@ -9,12 +9,12 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRegistration,ObservationRecords,OperationFailure,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,TransferInputs,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRegistration,ManagementEvidence,ObservationRecords,OperationFailure,OperationTerminalProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,TransferInputs,UnpaidAcquisitionProof};
 final class OperationActions
 {
     /** Toast titles, named for the action. */
-    public const DONE=['recheck'=>'Status checked','resume_reads'=>'Status checked','resume_observation'=>'Sync resumed','hold'=>'Request on hold',
-        'release'=>'Hold released','disposition'=>'Request closed','refund'=>'Cancelled, credit added','credit'=>'Credit retried','replacement'=>'Renewal invoice reissued'];
+    public const DONE=['recheck'=>'Request reviewed','resume_reads'=>'Status checks restarted','resume_observation'=>'Sync resumed','hold'=>'Request on hold',
+        'release'=>'Hold released','disposition'=>'Request closed','refund'=>'Request cancelled','credit'=>'Refund checked','replacement'=>'Renewal invoice reissued'];
     /** Money actions ask for a reason. Check status, Resume sync, Put on hold and Release hold run on click with the action name as the
      * recorded reason; every action still uses a one-use ticket bound to the page's review stamp, so a stale second click is refused.
      * Release hold asks first when it sends a purchase right away. */
@@ -48,8 +48,11 @@ final class OperationActions
                 try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
                     $reason=in_array($name,self::REASON,true)?trim((string)($data['reason']??'')):$label;
                     app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??$ticket()),$reason);
-                    Notification::make()->success()->title($contactRecovery?'Contact details updated':self::DONE[$name])
-                        ->body($sends===null?null:"The {$sends} goes to Enom within a few minutes.")->send();
+                    $check=$name==='recheck'&&in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):null;
+                    $notification=Notification::make();
+                    $check&&$check['title']!=='Registrar checked'?$notification->warning():$notification->success();
+                    $notification->title($check['title']??($contactRecovery?'Contact details updated':self::DONE[$name]))
+                        ->body($check['body']??($name==='resume_reads'?'The system will check again on its next turn.':($name==='recheck'?'Open this request for its current result and next step.':($sends===null?null:"The {$sends} goes to Enom within a few minutes."))))->send();
                 }catch(StaffReviewRefused $error){
                     ($error->getMessage()===StaffOperationReview::CHANGED?self::stale($name,$op->fresh()):Notification::make()->danger()->title(self::FAILED)->body($error->getMessage()))->send();
                 }catch(\Throwable $error){
@@ -100,10 +103,19 @@ final class OperationActions
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
             'credit'=>$op->state==='rejected'&&$op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE,
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
-            'disposition'=>$op->state==='rejected',
+            'disposition'=>self::closable($op),
             'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true)&&self::readLimit($op),
             'recheck'=>in_array($op->state,['running','pending','uncertain','held'],true)&&!(in_array($op->action,['register','transfer','renew'],true)&&self::readLimit($op)),
             default=>false};
+    }
+    /** A failed request with proof it ended, no end date and no earlier close. Closing records the review and changes nothing else. */
+    private static function closable(Operation $op): bool
+    {
+        if($op->state!=='rejected'||$op->completed_at!==null||\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::closed($op->state,$op->safe_code)||!($d=$op->domain)){return false;}
+        try {
+            return (OperationTerminalProof::safe($op,$d)||ManagementEvidence::resolved($op,$d))
+                &&!collect($op->policy['staff_actions']??[])->contains(fn($row)=>($row['action']??null)==='disposition'&&($row['phase']??null)==='completed');
+        } catch (\Throwable) { return false; }
     }
     public static function transferCutoff(Operation $op): bool
     {
@@ -115,14 +127,16 @@ final class OperationActions
     public static function readLimit(Operation $op): bool
     {
         try { $p=$op->policy??[]; } catch (\Throwable) { return false; }
+        if(($p['reconciliation']['reason']??null)==='transfer_deadline_passed'||($p['reconciliation']['final_check']??null)==='done'){return true;}
+        if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){return false;}
         return ($p['renewal_polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT||($p['reconciliation']['polls']??0)>=\Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation::POLL_LIMIT;
     }
     public static function description(string $action): ?string
     {
         return match($action){
             'disposition'=>'Records the final result. Nothing is sent or credited.',
-            'refund'=>"Cancels this unsent request and credits the customer's account.",
-            'credit'=>'Tries the account credit again.',
+            'refund'=>"Cancels this unsent request and returns the payment. Account credit is used only when the original payment cannot be refunded.",
+            'credit'=>'Checks the payment return again using the same refund request.',
             'replacement'=>'Creates a new renewal invoice for this cycle.',
             default=>null,
         };

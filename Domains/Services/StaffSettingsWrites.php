@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,SalesPolicy,Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,SalesPolicy,SellRow,Tld};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueAcceptance,Environment,RequestBudget,RequestContext,RequestOrigin,SystemClock};
 /** Local reviews and deliberately composed account reads; connection access defaults off. */
 final class StaffSettingsWrites
@@ -26,10 +26,14 @@ final class StaffSettingsWrites
             };
         }
         $now??=$clock->now();$r->input($data);
-        if($r->action==='lifecycle'){LifecyclePolicies::save($r,$data,$now);return null;}
+        if($r->action==='enom_answer'){EnomAnswers::record($r,$data,$now);return null;}
+        if($r->action==='late_renewal'){EnomLateRenewal::review($r,$data);return null;}
+        if($r->action==='activate'){EnomLiveActivation::review($r,$data);return null;}
         if(in_array($r->action,['test_management','live_management'],true)){EnomTestManagement::review($r,$data);return null;}
         if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return null;}
+        if(in_array($r->action,['test_transfer','live_transfer'],true)){EnomTestTransfer::review($r,$data);return null;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return null;}
+        if($r->action==='unpaid_hold'){UnpaidHoldSetting::save($r,$data);return null;}
         if($r->action==='enroll_sandbox'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Sandbox contract confirmation required.');}
             if(!is_string($data['label']??null)||array_diff(array_keys($data),['environment','label','api_key','confirmed','reason','review_key'])){throw new \DomainException('Invalid sandbox enrollment input.');}
@@ -57,6 +61,9 @@ final class StaffSettingsWrites
                     throw new \DomainException('Current notification claim required.');
                 }
                 \Illuminate\Support\Facades\DB::table('domains_reminder_deliveries')->where('id',$delivery->id)->update(['state'=>'reviewed']);
+                if(!\Illuminate\Support\Facades\DB::table('domains_reminder_deliveries')->where('domain_id',$delivery->domain_id)->whereIn('state',['handoff','uncertain'])->exists()){
+                    \Illuminate\Support\Facades\DB::table('domains_obligation_alerts')->where('domain_id',$delivery->domain_id)->where('code','delivery_uncertain')->whereNull('resolved_at')->update(['resolved_at'=>time()]);
+                }
             });return null;
         }
         if($r->action==='processing'){
@@ -64,6 +71,12 @@ final class StaffSettingsWrites
             $enabled=($data['enabled']??false)===true;
             if($enabled){app(Installation::class)->verify();} // Schema verification creates reference tables; keep DDL outside financial locks.
             $r->local(function()use($r,$enabled):void {
+                $live=Account::where('server_id',$r->serverId)->sole();
+                if($enabled&&$live->environment==='live'){
+                    $b=CatalogueAcceptances::binding($live);
+                    if(!EnomLiveActivation::current($b)){throw new \DomainException('Activate live sales first. Open the registrar account to see what is missing.');}
+                    EnomLiveActivation::requireReady($live,['registration'=>EnomLiveActivation::registrationAccepted($b),'renewal'=>EnomTestRenewal::accepted($b),'management'=>EnomTestManagement::accepted($b),'transfer'=>EnomTestTransfer::accepted($b)]);
+                }
                 if((bool)Account::where('server_id',$r->serverId)->lockForUpdate()->firstOrFail()->processing_enabled===$enabled){throw new \DomainException('Processing state unchanged.');}
                 $this->bindings->setProcessing($r->serverId,$enabled,function($server,$account):void {
                     Installation::legacy();
@@ -152,6 +165,8 @@ final class StaffSettingsWrites
                 }
                 $renew=(bool)($data['renew']??false);
                 if(!$renew&&Domain::where(['server_id'=>$s->id,'tld'=>$t->tld,'account_fingerprint'=>$a->account_fingerprint])->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Retained holders require annual renewal support.');}
+                $sellRule=SellRule::saved(CatalogueAcceptances::binding($a));
+                $selling=$sellRule===null?null:SellRow::firstOrNew(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'tld'=>$t->tld]);
                 $t->fill(['min_years'=>$min,'max_years'=>$max,'enabled'=>(bool)($data['enabled']??false),'renew_enabled'=>$renew]);
                 foreach(['register','transfer'] as $action){
                     $enable=(bool)($data[$action]??false);
@@ -159,63 +174,45 @@ final class StaffSettingsWrites
                         // Restoring withdrawn sales requires explicit confirmation and current imported acceptance proof.
                         if(($data['verified']??false)!==true){throw new \DomainException('Explicit restoration required.');}
                         $prices=new PriceCatalogue(new PricingRules);
-                        $prices->current((int)$t->server_id,$t->account_fingerprint,$t->tld,'renew',1,'USD',$now,true,$t);
-                        PublicationEligibility::firstEligibleTerm($t,$action,static function(int $term)use($t,$action,$prices,$now):void{
-                            PublicationEligibility::require($t,$action,$term,true);
-                            $prices->current((int)$t->server_id,$t->account_fingerprint,$t->tld,$action,$term,'USD',$now,true,$t);
-                        });
+                        // Clearing a row stop requests automation again; its next read must restore acceptance before any sale.
+                        if($action!=='register'||$selling?->choice!=='skip'){
+                            $prices->current((int)$t->server_id,$t->account_fingerprint,$t->tld,'renew',1,'USD',$now,true,$t);
+                            PublicationEligibility::firstEligibleTerm($t,$action,static function(int $term)use($t,$action,$prices,$now):void{
+                                PublicationEligibility::require($t,$action,$term,true);
+                                $prices->current((int)$t->server_id,$t->account_fingerprint,$t->tld,$action,$term,'USD',$now,true,$t);
+                            });
+                        }
                     }
                     $t->{$action.'_enabled'}=$enable;
+                }
+                if($selling!==null){
+                    // Preserve the old All behavior for other rows when this staff save records a new exception.
+                    if($sellRule['mode']==='all'&&!$t->register_enabled){
+                        SellRule::rows(CatalogueAcceptances::binding($a))->where('choice','skip')->update(['choice'=>null]);
+                        $sellRule['mode']='except';$s->settings()->where('key',SellRule::KEY)->firstOrFail()->update(['value'=>$sellRule]);
+                    }
+                    $selling->transfer=$t->transfer_enabled===$sellRule['transfers']?null:$t->transfer_enabled;
+                    $selling->choice=$t->register_enabled?($selling->choice==='skip'?($sellRule['mode']==='only'?'sell':null):$selling->choice):'skip';
+                    $selling->save();$r->input(['selling_choice'=>$selling->choice]);
                 }
                 $t->save();TestCatalogue::withdrawCarts(CatalogueAcceptances::binding($a),$t->tld,true);return;
             }
             if($r->action!=='acceptance'){throw new \DomainException('Unsupported settings action.');}
             $binding=CatalogueAcceptances::binding($a);
             try{$old=CatalogueAcceptances::load($binding,true);}catch(\DomainException){$old=null;}
-            $changes=$data['changes']??null;if(!is_array($changes)||$changes===[]){throw new \DomainException('Nothing to save.');}
-            $endings=$old?->endings??[];
-            $registrationRoute=$old?->registrationRoute;$registrationInterval=$old?->registrationIntervalSeconds??0;
-            if(!$old&&Domain::where('server_id',$s->id)->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Repair must preserve all holder renewal acceptance.');}
-            foreach($changes as $ending=>$change){
-                $ending=(string)$ending;\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse('example.'.$ending,[$ending]);
-                if($change!==null){
-                    if(EndingChoices::hidden($ending)){throw new \DomainException('This TLD is hidden.');}
-                    $terms=array_map(static fn($v)=>is_string($v)&&preg_match('/^(?:[1-9]|10)$/D',$v)?(int)$v:$v,$change['terms']??[]);
-                    if($terms===[]){throw new \DomainException('Choose at least one year.');}
-                    // Annual NameSilo prices prove no multiyear terms; CatalogueAcceptance refuses them.
-                    sort($terms);$endings[$ending]=['register'=>array_values(array_unique($terms)),'renew'=>[1],'transfer'=>($change['transfer']??false)?[1]:[],'registry'=>true,'renewal_safe'=>true];
-                    continue;
-                }
-                $holders=Domain::where(['server_id'=>$s->id,'tld'=>$ending,'account_fingerprint'=>$a->account_fingerprint])->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty();
-                if($holders){
-                    if(!$old||!($endings[$ending]['renewal_safe']??false)||!in_array(1,$endings[$ending]['renew']??[],true)){throw new \DomainException('Holder renewal acceptance cannot be inferred.');}
-                    $endings[$ending]['register']=[];$endings[$ending]['transfer']=[];$endings[$ending]['registry']=false;
-                }else{unset($endings[$ending]);}
+            $changes=$data['changes']??null;
+            if(is_array($data['sell']??null)){
+                [$changes,$audit]=SellRule::applyLocked($a,$binding,$old,$data['sell']);$r->input($audit);
+                if($changes===[]){return;}
             }
-            // Selling needs a batch route and our request spacing. Both are fixed by the deployment, so record them rather than ask staff.
-            $testRegistration=$binding->registrarKey==='enom'&&$binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test
-                &&(EnomTestRegistration::deploymentEnabled()||EnomTestTransfer::deploymentEnabled());
-            if(array_filter($changes)!==[]&&(EnomLive::enabled($binding,'registration')||$testRegistration)){
-                $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding);
-                if(!$protocol['batch_route']||$protocol['interval_seconds']<25){throw new \DomainException(match(true){!$testRegistration=>'Live Enom Purchase route acceptance is unavailable.',EnomTestTransfer::deploymentEnabled()=>'Enom TEST acquisition route acceptance is unavailable.',default=>'Enom TEST Purchase route acceptance is unavailable.'});}
-                $registrationRoute=$protocol['route'];$registrationInterval=$protocol['interval_seconds'];
-            }
-            $revision=$old?->revision??0;$prices=\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$s->id)->orderBy('id')->lockForUpdate()->get();
-            foreach($prices as $price){$revision=max($revision,(int)($price->eligibility['catalogue_revision']??0));}
-            $next=new CatalogueAcceptance($binding,$revision+1,$endings,$registrationRoute,$registrationInterval);
-            CatalogueAcceptances::saveLocked($next);
-            // A saved list only moves the revision. Terms kept in both lists keep their price evidence, so one change never holds other endings.
-            foreach($prices as $price){$proof=$price->eligibility;
-                if($old===null||($proof['catalogue_revision']??null)!==$old->revision||!in_array($price->term,$old->endings[$price->tld][$price->action]??[],true)||!in_array($price->term,$next->endings[$price->tld][$price->action]??[],true)){continue;}
-                $price->fill(['eligibility'=>[...$proof,'catalogue_revision'=>$next->revision],'revision'=>$price->revision+1])->save();}
-            // Narrow immediately; widening never imports prices, enables a TLD, or restores withdrawn actions.
-            foreach(Tld::where('server_id',$s->id)->orderBy('id')->lockForUpdate()->get() as $row){$accepted=$next->endings[$row->tld]??null;
-                $row->register_enabled=$row->register_enabled&&($accepted['registry']??false)&&!empty($accepted['register']);
-                $row->transfer_enabled=$row->transfer_enabled&&($accepted['registry']??false)&&!empty($accepted['transfer']);
-                if(array_key_exists($row->tld,$changes)&&!empty($accepted['register'])){$row->min_years=min($accepted['register']);$row->max_years=max($accepted['register']);}
-                $row->save();}
-            foreach(array_keys($changes) as $ending){TestCatalogue::withdrawCarts($binding,(string)$ending,true);}
+            if(!is_array($changes)||$changes===[]){throw new \DomainException('Nothing to save.');}
+            CatalogueAcceptances::changeLocked($a,$old,$changes);
         });
+        if($r->action==='acceptance'){
+            // The staff save has committed; acceptance audits need their own outer transaction.
+            SellAutomation::refresh($r->serverId,$now);
+            return null;
+        }
         if(!in_array($r->action,['default_rule','card_fee'],true)){return null;}
         // Publish affected TLDs independently; one failure does not stop the rest.
         // A TLD that switched to its own prices meanwhile is left alone.

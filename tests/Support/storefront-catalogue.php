@@ -46,13 +46,17 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
     }
     // Withdraw the other action so each corrupt registration must remove its ending entirely.
     $native->product($catalogueTlds['org'], 'transfer')->update(['stock' => 0]);
-    foreach (['price', 'setup_fee', 'marker', 'duplicate_product'] as $corruption) {
+    foreach (['price', 'setup_fee', 'marker', 'duplicate_product', 'wrong_type_marker'] as $corruption) {
         if ($corruption === 'price') { DB::table('prices')->whereIn('id', $brokenPrices)->update(['price' => 'malformed']); }
         if ($corruption === 'setup_fee') { DB::table('prices')->whereIn('id', $brokenPrices)->update(['setup_fee' => null]); }
         if ($corruption === 'marker') { $marker->update(['value' => 'invalid']); }
         if ($corruption === 'duplicate_product') {
             $duplicateProduct = $broken->replicate(); $duplicateProduct->save();
             foreach ($broken->settings()->get() as $setting) { $duplicateProduct->settings()->create($setting->only(['key', 'value', 'type', 'encrypted'])); }
+        }
+        if ($corruption === 'wrong_type_marker') {
+            $duplicateProduct = $broken->replicate(); $duplicateProduct->slug = 'stray-domain-product'; $duplicateProduct->save();
+            $duplicateProduct->settings()->create(['key' => 'domains_tld_id', 'value' => (string) $catalogueTlds['org']->id, 'type' => 'integer', 'encrypted' => false]);
         }
         Cache::flush(); $before = $reads->calls; $public = array_column($store->endings(), null, 'tld');
         same(['com', 'net', 'old', 'test'], array_keys($public), 'Corrupt '.$corruption.' isolates broken, below-cost and unknown offers while keeping saved costs');
@@ -75,7 +79,7 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
         same($before, $reads->calls, 'Unorderable endings stop before availability');
         DB::table('prices')->whereIn('id', $brokenPrices)->update(['price' => DB::raw('20 * (select billing_period from plans where plans.id = prices.plan_id)'), 'setup_fee' => '0.00']);
         $marker->update(['value' => 'register']);
-        if ($corruption === 'duplicate_product') { $duplicateProduct->settings()->delete(); $duplicateProduct->delete(); }
+        if (in_array($corruption, ['duplicate_product', 'wrong_type_marker'], true)) { $duplicateProduct->settings()->delete(); $duplicateProduct->delete(); }
         Cache::flush(); $repaired = array_column($store->endings(), null, 'tld');
         same([1, 3], $repaired['org']['terms'], 'Repaired '.$corruption.' is visible in a fresh projection');
         same('available', $store->check('example.org')['status'], 'Repaired '.$corruption.' checks normally');

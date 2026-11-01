@@ -145,19 +145,24 @@ is still required before installed processing. Enom acceptance without an ID nee
 
 The built-in live path reuses the TEST catalogue, admission, account locks, verified native funding,
 one-attempt writes and captured-order reconciliation. The endpoint is
-`https://reseller.enom.com/interface.asp`. Transfer remains unavailable. Independent deployment
-booleans under `domains.enom_live` enable catalogue, registration, ordinary annual renewal and
+`https://reseller.enom.com/interface.asp`. Independent deployment
+booleans under `domains.enom_live` enable catalogue, registration, inbound transfer, ordinary annual renewal and
 the same supported management actions as TEST. All default off. TEST opt-ins never enable live.
 
 Each live account requires a deployment entry keyed by its lowercase UID, the exact account
 fingerprint, a canonical HTTPS site equal to the running app URL and the retained account site.
-An identity retained as TEST cannot supply live authority. Staff live catalogue, renewal and
+An identity retained as TEST cannot supply live authority. Staff live catalogue, transfer, renewal and
 management acceptance remain separate from TEST, including their route and account fingerprint.
 Credential verification and acceptance do not enable processing or renewal billing.
+Live transfer requires strict boolean `domains.enom_live.transfer=true` and encrypted
+`domains_enom_live_transfer` acceptance for TP_CreateOrder, the live route and 25-second interval.
+The ordinary settings writer refuses live acceptance until Activate exists. The account page shows
+Transfers Off with the activation helper. No saved transfer-ending list uses What you sell only
+after that exact Live acceptance; a saved list still narrows the accepted endings.
 
 The retained `domains_enom_live_calls` table records daily UTC calls and reserved USD cost in
 integer millionths. A single conditional update checks both account limits before incrementing
-them. Registration and renewal reserve their admitted cost before the durable seal. The physical
+them. Registration, transfer and renewal reserve their admitted cost before the durable seal. The physical
 wire consumes that same request reservation once. Free management reserves a call with zero cost;
 paid privacy remains unavailable, as in TEST. Read calls use the same daily account counter.
 Failed, timed-out, uncertain and reserved-but-unsent requests retain usage. UTC rollover refuses
@@ -169,6 +174,10 @@ opt-in or processing authority. Installed synthetic tests exercise funded live r
 renewal through the actual ZIP with fake cURL, original charge/full-term expiry completion,
 duplicate workers, separate acceptance and binding/call/spend refusals. They establish no provider
 or production acceptance. See the release settings table for deployment keys and defaults.
+The native Live transfer fixture also checks one TP_CreateOrder on the live route, unknown-status
+alerts, original charge/full-year expiry completion and recovery after transfer opt-out. Transfer
+reply fields and status vocabulary remain synthetic; unknown replies retain visible uncertainty
+without a second purchase or automatic credit.
 
 Live renewal reserves its admitted cost before the final cost-cap and funding checks. A later
 refusal retains that reservation, even though no mutation was sent, matching the conservative

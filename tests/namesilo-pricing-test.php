@@ -78,5 +78,20 @@ same(false, $advisory->persistable, 'Short-lived advisory mapping fenced from pe
 $beforeFence = DB::table('domains_prices')->get()->toJson();
 same(0, $catalogue->sync(1, static fn () => [$advisory])['synced'], 'Advisory rates cannot persist');
 same($beforeFence, DB::table('domains_prices')->get()->toJson(), 'Fence retains all persisted price bytes');
+// Saving a rule must retain NameSilo's scheduled getPrices fill; Enom's day allowance does not apply.
+Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install();
+Server::findOrFail(1)->settings()->create(['key'=>Paymenter\Extensions\Servers\Domains\Services\SellRule::KEY,'type'=>'array','encrypted'=>false,
+    'value'=>['mode'=>'except','max_cost'=>null,'years'=>1,'transfers'=>false]]);
+(new Paymenter\Extensions\Servers\Domains\Services\PriceFill($bindings,$clock))->daily($account);
+same(1,Paymenter\Extensions\Servers\Domains\Models\SellRow::where('server_id',1)->count(),'A saved NameSilo rule still fills prices on schedule');
+// A broken NameSilo connection records a daily attempt even though the page gets no reader.
+$fill=new Paymenter\Extensions\Servers\Domains\Services\PriceFill($bindings,$clock);
+Server::findOrFail(1)->settings()->where('key','domains_credentials')->delete();
+DB::table('domains_sell_fills')->where('server_id',1)->delete();
+same(null,$fill->reader($binding),'A broken NameSilo reader stays absent from the page');
+$fill->daily($account);
+$failed=Paymenter\Extensions\Servers\Domains\Services\PriceFill::last($binding);
+same([$clock->now()->getTimestamp(),$clock->now()->getTimestamp()],[$failed->tried_at,$failed->failed_at],'A broken NameSilo connection ages into the stale alert');
+expect($failed->failure!==null,'The safe failure code is saved');
 $nativeSuccessful = true;
 echo "NameSilo pricing: accepted binding, stable key rotation, quote-to-rate-to-snapshot and failed-refresh retention passed.\n";

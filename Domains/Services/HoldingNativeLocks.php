@@ -11,9 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 final class HoldingNativeLocks
 {
     public static function take(int $ownerId, int $serviceId, ?int $staffId = null, bool $advisory = false,
-        ?Domain $seed = null, ?int $expectedOrderId = null, bool $adoption = false, array $additionalServices = [], bool $completeInvoices = false): array
+        ?Domain $seed = null, ?int $expectedOrderId = null, bool $adoption = false, array $additionalServices = [], bool $completeInvoices = false, bool $nativeReceipt = false): array
     {
-        if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
+        if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
         $users = User::whereKey(array_filter([$ownerId, $staffId]))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         if (!$advisory) { NativeUserDeletion::requireOwner($ownerId); }
         $user = $users->firstWhere('id', $ownerId) ?? throw new \DomainException('Missing owner.');
@@ -37,7 +37,7 @@ final class HoldingNativeLocks
         $transactions = InvoiceTransaction::whereIn('invoice_id', $ids)->when($advisory,fn($q)=>$q->limit(101))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         if($advisory&&$transactions->count()>100){throw new \DomainException('Advisory payment history requires staff review.');}
         $serviceIds = $items->where('reference_type', (new Service)->getMorphClass())->pluck('reference_id')->push($serviceId)->merge($additionalServices)->unique();
-        [$orders, $services] = self::lockServices($serviceIds->all(), $advisory, $expectedOrderId === null ? [] : [$expectedOrderId]);
+        [$orders, $services] = self::lockServices($serviceIds->all(), $advisory, $expectedOrderId === null ? [] : [$expectedOrderId], $nativeReceipt);
         $products = Product::whereKey($services->pluck('product_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $plans = Plan::whereKey($services->pluck('plan_id'))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $service = $services->firstWhere('id', $serviceId) ?? throw new \DomainException('Missing holding service.');
@@ -59,9 +59,9 @@ final class HoldingNativeLocks
     }
 
     /** Shared current-read prefix for mixed invoices. Never acquire an order after a service. */
-    public static function lockServices(array $serviceIds, bool $advisory = false, array $expectedOrderIds = []): array
+    public static function lockServices(array $serviceIds, bool $advisory = false, array $expectedOrderIds = [], bool $nativeReceipt = false): array
     {
-        if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Identity locks join the outer transaction.'); }
+        if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Identity locks join the outer transaction.'); }
         $orderIds = Service::whereKey($serviceIds)->pluck('order_id')->merge($expectedOrderIds)->filter()->unique();
         $orders = Order::whereKey($orderIds)->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();
         $services = Service::whereKey($serviceIds)->orderBy('id')->when(!$advisory, fn ($q) => $q->lockForUpdate())->get();

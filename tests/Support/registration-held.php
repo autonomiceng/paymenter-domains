@@ -38,11 +38,12 @@ $user=commerceUser();$cart=commerceCart($user);$cartName=reservedFixtureName('de
 commerceReject(fn()=>commerceAdd($cart,$product,$cartName));
 App\Models\CartItem::withoutEvents(fn()=>commerceAdd($cart,$product,$cartName));
 same(1,$cart->items()->count(),'Adversarial cart contains a real native line');
-// Native checkout saves forged finite stock before Order Creating; its generic error still rolls back.
-commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]['message']==='An error occurred while processing your order. Please try again later.');
+// Pre-checkout refresh refuses corrupt stock or an unaccepted offer before native ordering.
+$checkoutUnavailable='We couldn’t check this domain. Try checkout again, or edit or remove it from your cart.';
+commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>$checkoutUnavailable,'type'=>'error']);
 same(0,App\Models\Order::count(),'Finite corruption cannot create an order');same(10,$product->fresh()->stock,'Native finite save rolled back');
 DB::table('products')->where('id',$product->id)->update(['stock'=>null]);
-commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Your domain offer changed or expired. Remove this line from your cart and search again for a current offer.','type'=>'error']);
+commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>$checkoutUnavailable,'type'=>'error']);
 same(0,App\Models\Order::count(),'Held checkout rolls back the native order');same(0,DB::transactionLevel(),'Held checkout closes its transaction');
 same(0,Operation::count(),'Held checkout creates no registration');
 same(0,App\Models\Service::count(),'Held checkout creates no service');same(0,App\Models\Invoice::count(),'Held checkout creates no debt');

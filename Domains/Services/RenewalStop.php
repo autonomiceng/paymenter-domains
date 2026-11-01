@@ -9,7 +9,12 @@ final class RenewalStop
 {
     /** Read-only presentation state; writers use the locked cancellation set. */
     public static function read(Domain $d): array
-    {return ['domain'=>$d,'adoption'=>$d->adoption_id === null ? null : Adoption::find($d->adoption_id),'cancel'=>NativeCancellation::withIntents(ServiceCancellation::where('service_id',$d->service_id)->get(),[(int)$d->service_id],true)];}
+    {return ['domain'=>$d,'policy'=>self::policy($d),'adoption'=>$d->adoption_id === null ? null : Adoption::find($d->adoption_id),'cancel'=>NativeCancellation::withIntents(ServiceCancellation::where('service_id',$d->service_id)->get(),[(int)$d->service_id],true)];}
+    /** Advisory reads retain unknown settings. Locked writers still use the strict encrypted cast. */
+    public static function policy(Domain $d): ?array
+    {try{return $d->renewal_policy??[];}catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}}
+    private static function settings(array $l): ?array
+    {return array_key_exists('policy',$l)?$l['policy']:($l['domain']->renewal_policy??[]);}
     /** Original adoption intent remains a stop even if a native cancellation is later removed. */
     public static function adopted(array $l): bool
     {
@@ -24,12 +29,13 @@ final class RenewalStop
     public static function blocked(array $l): bool
     {return self::offReason($l)!==null && self::offReason($l)!=='owner';}
     public static function ownerOff(array $l): bool
-    {return ($l['domain']->renewal_policy['owner_auto_renew']??true)===false;}
+    {return self::settings($l)===null||(self::settings($l)['owner_auto_renew']??true)===false;}
     /** Cancellation, staff and adoption intent take precedence over the owner preference. */
     public static function offReason(array $l): ?string
     {return match(true){
+        self::settings($l)===null=>'unreadable',
         $l['cancel']->contains('service_id',$l['domain']->service_id)=>'cancellation',
-        (bool)($l['domain']->renewal_policy['renewals_stopped']??false)=>'staff',
+        (bool)(self::settings($l)['renewals_stopped']??false)=>'staff',
         self::adopted($l)=>'adopted',self::ownerOff($l)=>'owner',default=>null};}
     /** Issued obligations survive future-only stops; adopted intent and immediate cancellation still block execution. */
     public static function blocksRenewal(array $l): bool

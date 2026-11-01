@@ -29,10 +29,11 @@ $transport = new class($state) implements Transport {
             ReadCommand::Renewal => '<RenewName>'.$s->auto.'</RenewName>',
             ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy => '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
+            ReadCommand::TldInfo => '<TLDs><TLD><TLD>'.($s->lateTld??'com').'</TLD><Renewal><Reactivate>'.($s->reactivate??'True').'</Reactivate><AutoRenewOnly>False</AutoRenewOnly><RenewBeforeExpMonths>0</RenewBeforeExpMonths><DeleteType>0</DeleteType><GracePeriod>'.($s->graceDays??'30').'</GracePeriod><DeleteDay>'.($s->deleteDay??'25').'</DeleteDay></Renewal></TLD></TLDs>',
             ReadCommand::Balance => '<AvailableBalance>'.$s->balance.'</AvailableBalance>',
             ReadCommand::Expired => '<DomainCount>1</DomainCount><DomainDetail><DomainName>'.$s->name.'</DomainName><DomainNameID>'.$s->id.'</DomainNameID><Status>'.$s->expired.'</Status><Expiration-Date>'.$s->day.'</Expiration-Date></DomainDetail>',
             ReadCommand::Expiry => '<ExpirationDate>'.$s->after.'</ExpirationDate>',
-            ReadCommand::Order => '<Order><OrderID>'.$s->order.'</OrderID><Result>true</Result><OrderBillAmount>$'.$s->charge.'</OrderBillAmount><BillDate>10/18/'.$s->orderYear.' '.$s->billTime.'</BillDate><OrderDetail><Description>'.$s->name.'</Description><ProductType>Renew</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>'.$s->charge.'</AmountPaid><ExpiryDateTime>'.($s->orderExpiry ?? $s->after).'</ExpiryDateTime></OrderDetail></Order>',
+            ReadCommand::Order => '<Order><OrderID>'.$s->order.'</OrderID><Result>true</Result><OrderBillAmount>$'.$s->charge.'</OrderBillAmount><BillDate>'.($s->billDate??('10/18/'.$s->orderYear.' '.$s->billTime)).'</BillDate><OrderDetail><Description>'.$s->name.'</Description><ProductType>Renew</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>'.$s->charge.'</AmountPaid><ExpiryDateTime>'.($s->orderExpiry ?? $s->after).'</ExpiryDateTime></OrderDetail></Order>',
             default => throw new LogicException('No spending or unbounded command permitted'),
         };
         return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$data.'</interface-response>';
@@ -46,7 +47,7 @@ $billing = new DomainBilling($bindings, $guard, $clock); $cycles = new RenewalCy
 $makeRenewal = static function (string $name, bool $paid = true, int $years = 1, bool $credit = false, ?Closure $beforeBill = null) use ($prepare, $reconcile, $clock, $billing, $state, $product, $user) {
     [$original, $binding] = $prepare($name); same('succeeded', $reconcile->run($original->id)->state, 'Real original charge and expiry anchor');
     $d = $original->domain()->firstOrFail(); $state->name = $name; $state->expiry = '10/18/2027 5:00:00 AM'; $state->day = '10/18/2027';
-    $state->years = $years; $state->after = (2027 + $years).'-10-18'; $state->orderYear = '2027'; $state->billTime = '5:00:01 AM'; $state->charge = '8.95'; $state->price = '8.00'; $state->auto = '0';
+    $state->years = $years; $state->after = (2027 + $years).'-10-18'; $state->orderYear = '2027'; $state->billTime = '5:00:01 AM'; $state->billDate = null; $state->charge = '8.95'; $state->price = '8.00'; $state->auto = '0';
     $state->owner = 'account-enom'; $state->id = '456'; $state->during = null; $state->calls = []; $state->lost = false; $state->afterWrite = null;
     $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
     $product->server->settings()->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => true, 'type' => 'boolean']);

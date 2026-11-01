@@ -14,32 +14,48 @@ final class EnomTestRenewal
         if(config('domains.enom_writes.renewal')!==true){return 'TEST renewal is off in deployment configuration.';}
         if(config('domains.enom_identity.environment')!=='test'){return 'TEST renewal refused: the deployment identity environment is not test. Live and unset environments cannot use TEST renewal.';}
         if(config('domains.enom_catalogue.enabled')!==true){return 'TEST renewal refused: the deployment TEST catalogue is off.';}
-        return 'Deployment allows TEST renewal. Review TEST renewal acceptance below, keep annual renewal accepted for each TLD, and enable processing separately. Renewal billing and owner renewal requests are separate server settings set by the deployment. Grace and redemption renewals remain unavailable.';
+        return 'Deployment allows TEST renewal. Review TEST renewal acceptance below, keep annual renewal accepted for each TLD, and enable processing separately. Renewal billing and owner renewal requests are separate server settings set by the deployment. Late renewal has a separate account switch. Redemption needs support.';
     }
     public static function protocol(?AccountBinding $b=null): array
     { return ['route'=>$b?->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?EnomLive::route():'https://resellertest.enom.com/interface.asp','command'=>\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\RegistrationCommand::Renew->value,'interval'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS]; }
     public static function accepted(AccountBinding $b): bool
     {
-        if(!self::enabled($b)){return false;}
+        return self::enabled($b)&&($b->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Live||EnomLiveActivation::current($b))&&self::stored($b);
+    }
+    /** Retained switch state, so Off stays available when deployment or provider evidence is removed. */
+    public static function stored(AccountBinding $b): bool
+    {
         try {
             $s=\App\Models\Server::findOrFail($b->serverId)->settings()->where('key',EnomLive::key($b,self::KEY))->first();
             return $s?->encrypted===true && json_decode($s->value,true,8,JSON_THROW_ON_ERROR)===['fingerprint'=>$b->fingerprint,...self::protocol($b)];
         }catch(\Throwable){return false;}
     }
+    /** One switch over the send permission and billing flags. Any half left on shows On, so the first click clears them all. */
+    public static function on(AccountBinding $b): bool
+    {
+        return self::stored($b)||RenewalBillingSettings::anyOn($b->serverId);
+    }
+    /** Once the site has an Enom identity, an account that can't send gets no new invoice: a paid one would sit with no renewal behind it. That includes an account from the other environment, which never sends. NameSilo has its own send rule. */
+    public static function holdsInvoices(AccountBinding $b): bool
+    {
+        return $b->registrarKey==='enom'&&\Paymenter\Extensions\Servers\Domains\Data\Environment::tryFrom((string)config('domains.enom_identity.environment'))!==null&&!self::accepted($b);
+    }
     public static function review(StaffSettingsReview $r,array $data): void
     {
         $r->local(function()use($r,$data):void {
             $a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole();$b=CatalogueAcceptances::binding($a);$label=$b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live':'TEST';
-            if(str_starts_with($r->action,'live_')!==($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live)||!self::enabled($b)){throw new \DomainException($label.' renewal deployment is unavailable.');}
+            if((str_starts_with($r->action,'live_')||$r->action==='activate')!==($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live)||(($data['accept']??false)===true&&!self::enabled($b))){throw new \DomainException($label.' renewal deployment is unavailable.');}
             $s=\App\Models\Server::findOrFail($b->serverId)->settings()->firstOrNew(['key'=>EnomLive::key($b,self::KEY)]);
             if(($data['accept']??false)===true){
-                if(($data['verified']??false)!==true){throw new \DomainException('Independent '.$label.' renewal review required.');}
+                EnomLiveActivation::requireFeature($r,$b,'renewal');
+                if($b->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Live&&($data['verified']??false)!==true){throw new \DomainException('Independent '.$label.' renewal review required.');}
                 $protocol=self::protocol($b);if($protocol['command']!=='Extend'||$protocol['interval']<25){throw new \DomainException($label.' renewal deployment is unavailable.');}
                 $value=['fingerprint'=>$b->fingerprint,...$protocol];
             }else{$value=null;}
             $s->encrypted=true;$s->type='string';$s->value=json_encode($value,JSON_THROW_ON_ERROR);$s->save();
+            RenewalBillingSettings::setSwitch($b->serverId,$value!==null);
         });
     }
     public static function acceptance(AccountBinding $b): RenewalAcceptance
-    { return new RenewalAcceptance($b,true,true,self::protocol($b)['interval'],false,static fn(AccountBinding $current):bool=>$b->matches($current)&&self::accepted($current)); }
+    { return new RenewalAcceptance($b,true,true,self::protocol($b)['interval'],EnomLateRenewal::accepted($b),static fn(AccountBinding $current):bool=>$b->matches($current)&&self::accepted($current)); }
 }

@@ -34,7 +34,7 @@ class DomainRenewalGateway
 class_alias(DomainRenewalGateway::class, 'Paymenter\\Extensions\\Gateways\\RenewalDouble\\RenewalDouble');
 Queue::fake(); Mail::fake();
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
-$billing = new DomainBilling($bindings, $guard, $clock);
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);$billing = new DomainBilling($bindings, $guard, $clock);
 $gateway = Gateway::create(['name'=>'Synthetic saved method', 'extension'=>'RenewalDouble', 'type'=>'gateway', 'enabled'=>true]);
 $agreement = BillingAgreement::create(['user_id'=>$user->id, 'gateway_id'=>$gateway->id, 'name'=>'Synthetic card', 'external_reference'=>'synthetic-only']);
 $server = $product->server;
@@ -132,6 +132,40 @@ same('unknown', $failOp->fresh()->funding['auto_pay_result']['status'], 'Late se
 commerceReject(fn () => $cycles->retireUnpaid($failOp->id));
 $billing->invoice($failed->id); same($count+1, count(DomainRenewalGateway::$calls), 'Failed charge never automatically retries');
 expect(!str_contains(serialize($failOp->funding), 'private gateway'), 'No exception text retained');
+
+// Gateway retries get current Domains authority, never an inferred native service reference.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);
+$ctxDomain=$holder('retry-context');DomainRenewalGateway::$mode='false';$ctxInvoice=$billing->invoice($ctxDomain->id);$ctxOp=$operation($ctxInvoice);
+$autopay=new RenewalAutoPay($clock);$context=$autopay->renewalAutoPayContext($ctxInvoice->id);
+same(['service_id'=>(int)$ctxDomain->service_id,'agreement_id'=>(int)$agreement->id,'operation_id'=>(int)$ctxOp->id,'operation_key'=>$ctxOp->operation_key,
+    'generation'=>$ctxDomain->authority_generation,'cutoff'=>(new DateTimeImmutable($ctxOp->policy['calendar']['due'].'T00:00:00Z'))->getTimestamp()],$context,'Minimal current retained authority and strict cutoff');
+// The existing native fixture exercises the real owner write and SQL lock modes, which model fakes cannot prove.
+// A gateway freezes context before its payment transaction; owner revocation must block its retry.
+\Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
+$ownerAutoRenew=new \Paymenter\Extensions\Servers\Domains\Services\OwnerAutoRenew($clock);
+$queries=[];$capture=true;DB::listen(static function($query)use(&$queries,&$capture):void{if($capture){$queries[]=$query->sql;}});
+same(true,DB::transaction(fn()=>$autopay->renewalAutoPayStillAllowed($ctxInvoice->id,$context)),'Frozen renewal context permits the payment-time read');
+$capture=false;$ownerAutoRenew->set($user,$ctxDomain->id,false);$capture=true;
+same(false,DB::transaction(fn()=>$autopay->renewalAutoPayStillAllowed($ctxInvoice->id,$context)),'Owner Auto-renew Off after frozen context refuses another debit');
+$capture=false;
+expect($queries!==[] && count(array_filter($queries,static fn($sql)=>!str_starts_with(strtolower($sql),'select ')||str_contains(strtolower($sql),'for update')))===0,'Payment-time authority adds only plain reads, with no locks or writes');
+$ownerAutoRenew->set($user,$ctxDomain->id,true);
+$outcomeContexts=[];
+foreach(['unknown','submitted'] as $status){
+    DB::table('domains_operations')->where('id',$ctxOp->id)->update(['funding'=>encrypt(json_encode([...$ctxOp->funding,'auto_pay_result'=>['status'=>$status]]),false)]);
+    $outcomeContexts[$status]=$autopay->renewalAutoPayContext($ctxInvoice->id);
+}
+same(['unknown'=>null,'submitted'=>null],$outcomeContexts,'Unresolved or submitted collection withdraws automatic collection authority');
+$inFlightFunding=$ctxOp->funding;unset($inFlightFunding['auto_pay_result']);
+DB::table('domains_operations')->where('id',$ctxOp->id)->update(['funding'=>encrypt(json_encode($inFlightFunding),false)]);
+same($context,$autopay->renewalAutoPayContext($ctxInvoice->id),'First confirmation without a result retains context; gateway owns attempt proof');
+DB::table('domains_operations')->where('id',$ctxOp->id)->update(['funding'=>encrypt(json_encode($ctxOp->funding),false)]);
+$server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>false,'type'=>'boolean']);
+same(null,$autopay->renewalAutoPayContext($ctxInvoice->id),'Turning off scheduled renewals withdraws retry authority');
+$server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['value'=>true,'type'=>'boolean']);
+$ctxDomain->service->update(['billing_agreement_id'=>null]);same(null,$autopay->renewalAutoPayContext($ctxInvoice->id),'Changed selected method cannot reuse authority');$ctxDomain->service->update(['billing_agreement_id'=>$agreement->id]);
+$contextTime=$clock->instant;$clock->instant=(new DateTimeImmutable('@'.$context['cutoff']));same(null,$autopay->renewalAutoPayContext($ctxInvoice->id),'Cutoff equality refuses collection');$clock->instant=$contextTime;
+ExtensionHelper::addPayment($ctxInvoice,null,$ctxOp->amount);same(null,$autopay->renewalAutoPayContext($ctxInvoice->id),'Settled invoice withdraws collection authority');
 
 // Crash after accepted charge but before result persistence leaves uncertainty, never a retry.
 $uncertain = $holder('uncertain'); DomainRenewalGateway::$mode = 'pending'; $rejectResult = true;

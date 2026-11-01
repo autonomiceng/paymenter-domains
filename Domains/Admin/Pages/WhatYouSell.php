@@ -2,28 +2,30 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
-use Filament\Actions\Action;
+use Filament\Actions\{Action,BulkAction};
+use Filament\Forms\Components\{Radio,Select,TextInput,Toggle};
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\{Schema,Components\Callout,Components\EmbeddedTable};
-use Filament\Tables\Columns\{TextColumn,ViewColumn};
+use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\{Auth,Blade,Log};
-use Illuminate\Support\HtmlString;
+use Illuminate\Support\{HtmlString,Str};
 use Livewire\Attributes\{Locked,Url};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,Tld};
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EndingChoices,EnomTestCallLimit,ReadDeferred,StaffSettingsReview as Review,StaffSettingsWrites};
-/** What you sell: tick the TLDs and years an account sells. Nothing reads terms or prices until staff turn a TLD on. */
+use Paymenter\Extensions\Servers\Domains\Models\{Account,SellRow,Tld};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EndingChoices,PriceFill,PriceList,PricingRule,PricingRules,SellRule,StaffSettingsReview as Review,StaffSettingsWrites};
+/** What you sell: the rule and the TLD table. Reads only our own table. Only the fill reads from a registrar. */
 class WhatYouSell extends Page implements HasTable
 {
     use InteractsWithTable;
+    private const KEEP='keep';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-check-circle';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?int $navigationSort=4;
@@ -31,29 +33,26 @@ class WhatYouSell extends Page implements HasTable
     protected static ?string $slug='what-you-sell';
     protected string $view='domains::admin.what-you-sell';
     #[Url] public ?int $account=null;
+    #[Url] public ?string $tld=null;
     public string $newEnding='';
-    /** ending => {terms, transfer}: the ticks on screen, and what is saved now. */
-    #[Locked] public array $chosen=[];
-    #[Locked] public array $saved=[];
-    /** Endings kept only so customers can renew. */
-    #[Locked] public array $renewalsOnly=[];
-    /** ending => years Enom offers, as read so far. */
-    #[Locked] public array $years=[];
-    /** Endings whose years could not be read. */
-    #[Locked] public array $unknownYears=[];
-    /** Fixed when the page loads, so ticking a row does not move it. */
-    #[Locked] public array $endings=[];
-    #[Locked] public ?string $listFailure=null;
-    /** A save from before this screen left out how orders are sent. One save catches up. */
-    #[Locked] public bool $ordersNeedSave=false;
     #[Locked] public string $reviewStamp='';
-    /** Sale status per ending for one render. */
-    private array $status=[];
+    /** One request only, so a long list stays out of the page state. */
+    private ?array $acceptedRows=null;
+    private ?array $savedRule=null;
+    private ?array $saleFacts=null;
+    private ?bool $hasReader=null;
+    /** One request's fee and default rule, and each row's numbers: a page reads them once, not per cell. */
+    private ?array $fee=null;
+    private ?array $defaultRule=null;
+    private array $rowNumbers=[];
+    private array $rowTlds=[];
+    private array $rights=[];
     public static function canAccess(): bool {return Staff::can();}
     public static function getNavigationLabel(): string {return 'What you sell';}
     public function mount(): void
     {
         Staff::requireView();$ids=$this->accounts();
+        $this->tableSearch=$this->tld??'';
         if(!in_array($this->account,array_keys($ids),true)){$this->account=array_key_first($ids);}
         $this->reload();
     }
@@ -63,85 +62,46 @@ class WhatYouSell extends Page implements HasTable
         $names=\App\Models\Server::where('extension','Domains')->pluck('name','id');
         return Account::orderBy('server_id')->pluck('server_id')->mapWithKeys(fn($id)=>[(int)$id=>(string)($names[$id]??'Registrar account #'.$id)])->all();
     }
-    public function canEdit(): bool {return Staff::can(Staff::POLICY)&&Staff::can(Review::permission('acceptance'));}
-    private function canSync(): bool {return Staff::can(Staff::POLICY)&&Staff::can(Review::permission('import'));}
+    /** Each row asks, so a request checks a right once. The next request checks again, and a save rechecks under its locks. */
+    private function may(string $permission): bool {return $this->rights[$permission]??=Staff::can($permission);}
+    public function canEdit(): bool {return $this->may(Staff::POLICY)&&$this->may(Review::permission('acceptance'));}
+    private function canSync(): bool {return $this->may(Staff::POLICY)&&$this->may(Review::permission('import'));}
     private function binding(): ?AccountBinding
     {
         try{return $this->account?CatalogueAcceptances::binding(Account::where('server_id',$this->account)->sole()):null;}catch(\Throwable){return null;}
     }
-    public function readable(): bool {return ($binding=$this->binding())!==null&&EndingChoices::readable($binding);}
-    public function isHidden(string $ending): bool {return EndingChoices::hidden($ending);}
-    /** The first visit reads the list after the page shows, so a slow answer never holds the page. */
-    public function shouldLoadList(): bool {return $this->canEdit()&&$this->readable()&&$this->listFailure===null&&app(EndingChoices::class)->saved($this->binding())===null;}
-    public function loadList(): void
+    /** Accounts with a price reader get their list from it; the rest type each TLD. */
+    public function readable(): bool
     {
-        if($this->canEdit()&&$this->readable()&&app(EndingChoices::class)->saved($this->binding())===null){$this->readList();}
+        if($this->hasReader!==null){return $this->hasReader;}
+        try{return $this->hasReader=($binding=$this->binding())!==null&&app(PriceFill::class)->reader($binding)!==null;}catch(\Throwable){return $this->hasReader=false;}
     }
-    public function refreshList(): void {if($this->canEdit()&&$this->readable()){$this->readList();}}
-    private function readList(): void
+    private function readerNeedsAttention(): bool
     {
-        try{app(EndingChoices::class)->refresh($this->binding());$this->listFailure=null;}
-        catch(\Throwable $error){
-            if(!$error instanceof \DomainException&&!$error instanceof EnomTestCallLimit&&!$error instanceof ReadDeferred){Log::warning('Domains ending list read failed.',['exception_class'=>$error::class]);}
-            $this->listFailure=$error instanceof EnomTestCallLimit?SettingsActions::refusal($error,'what_you_sell',[],(int)$this->account):'The registrar did not answer. Your saved TLDs are still here. Try Refresh list in a minute.';
-        }
-        $this->arrange();
+        $binding=$this->binding();
+        return $binding!==null&&($binding->registrarKey!=='enom'||config($binding->environment->value==='live'?'domains.enom_live.catalogue':'domains.enom_catalogue.enabled')===true)&&!$this->readable();
     }
-    /** Load saved state; ticks not yet saved survive a reload after someone else saved. */
-    private function reload(bool $keepTicks=false): void
+    private function reload(): void
     {
-        $binding=$this->binding();$this->reviewStamp=$this->account?Review::stamp($this->account,null):'';$saved=[];
-        $this->ordersNeedSave=false;
-        if($binding!==null){try{$accepted=CatalogueAcceptances::load($binding);$saved=$accepted->endings;$this->ordersNeedSave=$saved!==[]&&TldFacts::ordersNeedSave(Account::where('server_id',$this->account)->sole(),$accepted);}catch(\DomainException){}}
-        $sold=array_filter($saved,static fn(array $row)=>$row['register']!==[]);
-        $this->saved=array_map(static fn(array $row)=>['terms'=>$row['register'],'transfer'=>$row['transfer']!==[]],$sold);
-        $this->renewalsOnly=array_keys(array_diff_key($saved,$sold));
-        if(!$keepTicks){$this->chosen=$this->saved;}
-        $this->arrange();
+        $this->acceptedRows=$this->savedRule=$this->saleFacts=$this->fee=$this->defaultRule=null;$this->rowNumbers=$this->rowTlds=[];
+        if(($binding=$this->binding())!==null){try{SellRule::ensure($binding,CatalogueAcceptances::load($binding));}catch(\DomainException){}}
+        $this->reviewStamp=$this->account?SellRule::stamp($this->account):'';
+        $this->flushCachedTableRecords();
     }
-    private function arrange(): void
+    /** @return array<string,array> what the account sells now */
+    private function accepted(): array
     {
-        $binding=$this->binding();$first=[...array_keys($this->saved),...$this->renewalsOnly];sort($first);
-        $listed=array_filter($binding?(app(EndingChoices::class)->saved($binding)??[]):[],static fn(string $ending)=>!EndingChoices::hidden($ending));
-        $rest=array_values(array_diff(array_unique([...$listed,...array_keys($this->chosen)]),$first));sort($rest);
-        $this->endings=[...$first,...$rest];$this->status=[];$this->flushCachedTableRecords();
+        if($this->acceptedRows!==null){return $this->acceptedRows;}
+        try{return $this->acceptedRows=($binding=$this->binding())?CatalogueAcceptances::load($binding)->endings:[];}catch(\DomainException){return $this->acceptedRows=[];}
     }
-    /** @return list<int> */
-    public function yearsFor(string $ending): array
+    private function rule(): array
     {
-        if(isset($this->years[$ending])){return $this->years[$ending];}
-        if(($this->binding()?->registrarKey)==='namesilo'){return [1];}
-        return $this->readable()?($this->saved[$ending]['terms']??[1]):range(1,10);
+        if($this->savedRule!==null){return $this->savedRule;}
+        $binding=$this->binding();
+        try{$accepted=CatalogueAcceptances::load($binding);}catch(\DomainException){$accepted=null;}
+        return $this->savedRule=SellRule::read($binding,$accepted);
     }
-    private function readYears(string $ending): void
-    {
-        if(isset($this->years[$ending])||!$this->readable()){return;}
-        $years=app(EndingChoices::class)->years($this->binding(),$ending);
-        if($years===null){$this->unknownYears[$ending]=true;return;}
-        $this->years[$ending]=$years;unset($this->unknownYears[$ending]);
-    }
-    /** Saved endings show their ticked years without a read; this asks once for the rest. */
-    public function moreYears(string $ending): void {if($this->canEdit()&&in_array($ending,$this->endings,true)){$this->readYears($ending);}}
-    public function toggleEnding(string $ending): void
-    {
-        if(!$this->canEdit()||!in_array($ending,$this->endings,true)||EndingChoices::hidden($ending)){return;}
-        if(isset($this->chosen[$ending])){unset($this->chosen[$ending]);return;}
-        if(isset($this->saved[$ending])){$this->chosen[$ending]=$this->saved[$ending];return;}
-        $this->readYears($ending);$this->chosen[$ending]=['terms'=>[$this->yearsFor($ending)[0]],'transfer'=>false];
-    }
-    public function toggleYear(string $ending,int $year): void
-    {
-        if(!$this->canEdit()||!isset($this->chosen[$ending])||!in_array($year,$this->yearsFor($ending),true)){return;}
-        $terms=$this->chosen[$ending]['terms'];
-        $terms=in_array($year,$terms,true)?array_values(array_diff($terms,[$year])):[...$terms,$year];sort($terms);
-        if($terms===[]){unset($this->chosen[$ending]);return;}
-        $this->chosen[$ending]['terms']=$terms;
-    }
-    public function toggleTransfer(string $ending): void
-    {
-        if($this->canEdit()&&isset($this->chosen[$ending])){$this->chosen[$ending]['transfer']=!$this->chosen[$ending]['transfer'];}
-    }
-    /** Accounts with nothing to list still need a way to name an ending. */
+    /** Accounts with nothing to list still need a way to name a TLD. */
     public function addEnding(): void
     {
         if(!$this->canEdit()){return;}
@@ -149,96 +109,192 @@ class WhatYouSell extends Page implements HasTable
         try{CanonicalName::parse('example.'.$ending,[$ending]);}
         catch(\Throwable){Notification::make()->danger()->title("That isn't a TLD")->body('Type it like .com or com.')->send();return;}
         if(EndingChoices::hidden($ending)){Notification::make()->danger()->title("Couldn't add it")->body(SettingsActions::refusal(new \DomainException('This TLD is hidden.'),'acceptance'))->send();return;}
-        $this->newEnding='';
-        if(!isset($this->chosen[$ending])){$this->chosen[$ending]=$this->saved[$ending]??['terms'=>[$this->yearsFor($ending)[0]],'transfer'=>false];}
-        if(!in_array($ending,$this->endings,true)){$this->endings[]=$ending;$this->flushCachedTableRecords();}
+        $this->newEnding='';$this->write(['choices'=>[$ending=>'sell']]);
     }
-    /** @return array<string,?array> what a save would write; null turns an ending off */
-    public function changes(): array
+    /** One save for the selection. Fields left as they are stay out of it, so each row keeps what it had. */
+    private function bulkEdit(array $data,array $tlds): void
     {
-        $changes=[];
-        foreach($this->chosen as $ending=>$row){if(($this->saved[$ending]??null)!==$row){$changes[$ending]=$row;}}
-        foreach($this->saved as $ending=>$row){if(!isset($this->chosen[$ending])){$changes[$ending]=null;}}
-        ksort($changes);return $changes===[]&&$this->ordersNeedSave?$this->saved:$changes;
+        $terms=[...(($data['longest']??self::KEEP)===self::KEEP?[]:['longest'=>(int)$data['longest']]),...($data['transfer']===self::KEEP?[]:['transfer'=>$data['transfer']==='on'])];
+        $sell=[...($data['choice']===self::KEEP?[]:['choices'=>array_fill_keys($tlds,$data['choice']==='rule'?null:$data['choice'])]),...($terms===[]?[]:['terms'=>array_fill_keys($tlds,$terms)])];
+        if($sell===[]){Notification::make()->title('No changes')->send();return;}
+        $this->write($sell);
     }
-    public function save(): void
+    /** Every save goes through the guarded acceptance write. It never spends and never turns sales on. */
+    private function write(array $sell): void
     {
         if(!$this->canEdit()){return;}
-        $changes=$this->changes();$server=(int)$this->account;$actor=(int)Auth::id();
-        try{app(StaffSettingsWrites::class)->run(new Review($actor,$server,null,'acceptance',Review::ticket($actor,$server,null,'acceptance',$this->reviewStamp),''),['changes'=>$changes]);}
+        $server=(int)$this->account;$actor=(int)Auth::id();
+        try{app(StaffSettingsWrites::class)->run(new Review($actor,$server,null,'acceptance',Review::ticket($actor,$server,null,'acceptance',$this->reviewStamp),''),['sell'=>$sell]);}
         catch(\Throwable $error){
             if(!$error instanceof \DomainException&&!$error instanceof \InvalidArgumentException){Log::warning('Domains what you sell save failed.',['exception_class'=>$error::class]);}
             $stale=$error instanceof \DomainException&&$error->getMessage()==='Settings changed. Reload this page.';
-            if($stale){$this->reload(true);}
-            Notification::make()->danger()->title("Couldn't save")->body($stale?'Someone else changed this account. Your ticks are still here. Check them and save again.':SettingsActions::refusal($error,'acceptance',[],$server))->send();
+            if($stale){$this->reload();}
+            Notification::make()->danger()->title("Couldn't save")->body($stale?'Someone else changed this account. Check the list and try again.':SettingsActions::refusal($error,'acceptance',[],$server))->send();
             return;
         }
-        $added=array_keys(array_filter($changes,fn(?array $row,string $ending)=>$row!==null&&($this->saved[$ending]??null)!==$row,ARRAY_FILTER_USE_BOTH));$summary='';$failed=null;
-        if($added!==[]&&$this->canSync()&&$this->readable()){
-            try{$summary=SettingsActions::syncSummary(app(StaffSettingsWrites::class)->run(new Review($actor,$server,null,'import',Review::ticket($actor,$server,null,'import',Review::stamp($server,null)),''),['only'=>$added]));}
-            catch(\Throwable $error){$failed=SettingsActions::refusal($error,'import',[],$server);}
-        }
         $this->reload();
-        $notification=Notification::make()->title('Saved')->actions([Action::make('open_tlds')->label('Open TLDs & pricing')->link()->url(TldResource::getUrl('index'))]);
-        if($failed!==null){$notification->warning()->body("Couldn't get prices yet. ".$failed);}
-        else{$notification->success()->body(trim($summary.' '.($added===[]?'':($summary===''?'Next, sync prices. ':'').'To start selling, turn on sales in TLDs & pricing.'))?:null);}
-        $notification->send();
+        Notification::make()->success()->title('Saved')->body('Sales start as prices arrive, once orders are on.')
+            ->actions([Action::make('open_account')->label('Open registrar account')->link()->url(RegistrarAccount::getUrl(['account'=>$server]))])->send();
     }
-    /** @return array{label:string,tone:string} */
-    public function status(string $ending): array
+    /** The same fill the schedule runs. Sends reads only, keeps the last good rows if one fails. */
+    public function syncNow(): void
     {
-        if(isset($this->status[$ending])){return $this->status[$ending];}
-        $status=match(true){
-            in_array($ending,$this->renewalsOnly,true)&&!isset($this->chosen[$ending])=>['label'=>'Renewals only','tone'=>'gray'],
-            !isset($this->saved[$ending])=>isset($this->chosen[$ending])?['label'=>'New','tone'=>'info']:['label'=>'','tone'=>'gray'],
-            default=>$this->savedStatus($ending)};
-        return $this->status[$ending]=$status;
+        if(!$this->canSync()||!$this->readable()){return;}
+        try{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),(int)$this->account);}
+        catch(\Throwable $error){
+            Notification::make()->danger()->title("Couldn't start sync")->body(\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::isQueueRefusal($error)?$error->getMessage():'Check the registrar account under Registrars, then try again.')->send();return;
+        }
+        Notification::make()->success()->title('Price sync queued')->body('You can keep working. The result will appear in your notifications.')->send();
     }
-    private function savedStatus(string $ending): array
+    /** @return array{label:string,tone:string,next?:string,open?:bool} */
+    private function status(SellRow $row): array
     {
-        $tld=Tld::where(['server_id'=>$this->account,'tld'=>$ending])->first();
-        if($tld===null||!Price::where(['server_id'=>$this->account,'tld'=>$ending])->exists()){return ['label'=>Missing::LABEL,'tone'=>Missing::COLOR,'next'=>TldFacts::NEEDS_SYNC];}
-        return TldFacts::salesState($tld)['label']==='For sale'?['label'=>'For sale','tone'=>'success']:['label'=>'Not for sale','tone'=>'gray'];
+        $sold=$this->accepted()[$row->tld]??null;
+        if($sold!==null&&$sold['register']===[]){return ['label'=>'Renewals only','tone'=>'gray'];}
+        if($sold!==null&&SellRule::decide($row,$this->rule())==='limit'){
+            $sales=$this->sales($row->tld);
+            return ['label'=>$sales['label']??'Waiting for prices','tone'=>$sales['tone']??'warning',
+                'next'=>$this->may(Staff::COSTS)?'Over the cost limit. The next sync stops new sales.':'The next sync updates sales.'];
+        }
+        $waiting=['label'=>'Waiting for prices','tone'=>'warning'];
+        return match(SellRule::decide($row,$this->rule())){
+            'skipped'=>['label'=>'Not for sale','tone'=>'gray'],
+            'limit'=>['label'=>$this->may(Staff::COSTS)?'Over the cost limit':'Not for sale','tone'=>'gray'],
+            'waiting'=>$waiting,
+            default=>$sold===null?($row->high_cost===null?$waiting:['label'=>'Waiting for prices','tone'=>'warning','next'=>'The next price sync adds it. Check orders under Registrars'])
+                :(($sales=$this->sales($row->tld))===null?$waiting:['label'=>$sales['label'],'tone'=>$sales['tone']??'gray',...(($sales['reason']??null)===null?[]:['next'=>$sales['reason'].'. Open TLDs & pricing','open'=>true])]),
+        };
+    }
+    /** Sale state per TLD for the rows on screen, read once. Null when no prices are saved for it yet. */
+    private function sales(string $tld): ?array
+    {
+        $facts=$this->facts()[$tld]??null;
+        return $facts===null||$facts['prices']===[]?null:$facts['sales'];
+    }
+    private function facts(): array
+    {
+        if($this->saleFacts!==null){return $this->saleFacts;}
+        $binding=$this->binding();$names=collect($this->getTableRecords()->items())->pluck('tld')->all();
+        $tlds=Tld::where(['server_id'=>$this->account,'account_fingerprint'=>$binding?->fingerprint])->whereIn('tld',$names)->get();$this->rowTlds=$tlds->keyBy('tld')->all();$page=TldFacts::page($tlds);
+        return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->tld=>$page[$t->id]])->all();
+    }
+    /** @return array{0:?string,1:?string,2?:bool} price, profit and whether they are estimates from the saved rule. */
+    private function numbers(SellRow $row): array
+    {
+        if($row->register_cost===null){return [null,null];}
+        if(isset($this->rowNumbers[$row->tld])){return $this->rowNumbers[$row->tld];}
+        try{
+            $fee=$this->fee??=CardFee::read((int)$this->account);$cost=(string)$row->register_cost;
+            $saved=collect($this->facts()[$row->tld]['prices']??[])->first(fn(array $p)=>$p['action']==='register'&&$p['term']===1&&$p['retail']!==null&&!in_array('unpublished',$p['flags'],true));
+            $tld=$this->rowTlds[$row->tld]??null;
+            $rule=$tld&&!$tld->use_default_rule?(new PricingRules)->rule($tld,false,$fee):($this->defaultRule??=(new PricingRules)->defaultRule((int)$this->account,false,$fee));
+            $retail=$saved?Str::after($saved['retail'],'USD '):PricingRule::price($cost,$rule,'register');
+            return $this->rowNumbers[$row->tld]=['USD '.$retail,'USD '.PriceList::profit(CardFee::profit($retail,$cost,$fee)),$saved===null];
+        }catch(\Throwable){return [null,null];}
     }
     protected function getHeaderActions(): array
     {
+        if($this->binding()===null){return [];}
         return [
-            Action::make('refresh_list')->label('Refresh list')->color('gray')->visible(fn()=>$this->canEdit()&&$this->readable())->action(fn()=>$this->refreshList()),
-            Action::make('save')->label(fn()=>($count=count($this->changes()))===0?'Save':'Save '.$count.' '.($count===1?'change':'changes'))
-                ->visible(fn()=>$this->canEdit()&&$this->binding()!==null)->disabled(fn()=>$this->changes()===[])->action(fn()=>$this->save()),
+            Action::make('sync_now')->label('Sync now')->color('gray')->visible(fn()=>$this->canSync()&&$this->readable())->action(fn()=>$this->syncNow()),
+            Action::make('rule')->label('Default for new TLDs')->visible(fn()=>$this->canEdit())->modalSubmitActionLabel('Save')
+                ->fillForm(fn()=>[...$this->rule(),'sell_new'=>$this->rule()['mode']==='only'?'no':'yes'])->schema(fn()=>[
+                    Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
+                        ->hintAction(HelpHint::make("For every TLD you have not set yourself, including ones the registrar adds later. Yes: they sell, unless the row is set to Don't sell. No: only rows set to Sell are sold. To change rows, tick them and use Edit selected.")),
+                    TextInput::make('max_cost')->label('Cost limit')->numeric()->minValue(0)->prefix('USD')
+                        ->hintAction(HelpHint::make('Skips a TLD when its register or renew cost, whichever is higher, is above this. Premium is per name, not per TLD: those names are checked at checkout.')),
+                    TextInput::make('years')->label('Longest term')->integer()->required()->minValue(1)->maxValue(10)->suffix('years')->visible($this->binding()->registrarKey!=='namesilo'),
+                    Toggle::make('transfers')->label('Transfers'),
+                ])->action(function(array $data):void {
+                    $this->write(['rule'=>['mode'=>$data['sell_new']==='yes'?'except':'only','max_cost'=>$data['max_cost']??null,'years'=>(int)($data['years']??1),'transfers'=>(bool)$data['transfers']]]);
+                }),
         ];
     }
+    public function getSubheading(): ?string
+    {
+        $filled=($binding=$this->binding())?PriceFill::last($binding)?->filled_at:null;
+        return $filled===null?null:'Prices from '.self::time((int)$filled);
+    }
+    private static function time(int $at): string {return gmdate('M j, Y H:i',$at).' UTC';}
     public function content(Schema $schema): Schema
     {
         Staff::requireView();
-        if($this->binding()===null){
+        if(($binding=$this->binding())===null){
             return $schema->components([Callout::make('Connect a registrar account first')->warning()->columnSpanFull()
                 ->footer(new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open Registrars</x-filament::button>',['url'=>RegistrarSetup::getUrl()])))]);
         }
-        $components=[];
-        if($this->listFailure!==null){$components[]=Callout::make("Couldn't read the list")->description($this->listFailure)->warning()->columnSpanFull();}
+        $components=[];$state=PriceFill::last($binding);
+        $readerFailed=$this->readerNeedsAttention();
+        if($readerFailed){
+            $components[]=Callout::make('Check the registrar account to sync prices')->warning()->columnSpanFull()
+                ->footer(new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open registrar account</x-filament::button>',['url'=>RegistrarAccount::getUrl(['account'=>$this->account])])));
+        }
+        if(PriceFill::stale($state,app(Clock::class)->now()->getTimestamp())){
+            $components[]=Callout::make('Prices are out of date')->warning()->columnSpanFull()
+                ->description(($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.self::time((int)$state->filled_at).'. Those prices are still shown.').' We try again once a day. '.($readerFailed?'Check the registrar account.':'Use Sync now to see what stopped the read.'));
+        }
+        $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow $row)=>SellRule::decide($row,$this->rule())==='sell');
+        $summary=$wanted->count().' TLDs selected';
+        if($this->may(Staff::COSTS)&&($highest=$wanted->max('high_cost'))!==null){$summary.=' · Highest cost USD '.number_format((float)$highest,2).' a year';}
+        $components[]=\Filament\Schemas\Components\Html::make(HelpHint::beside(e($summary),
+            'Prices are checked before a TLD goes on sale. Orders must be on under Registrars. On Live, use Activate after reviewing setup and spending. Missing prices, unsupported registry details and prices below cost keep a TLD off.'));
         return $schema->components([...$components,EmbeddedTable::make()]);
     }
     public function table(Table $table): Table
     {
-        $cell=static fn(string $name)=>ViewColumn::make($name)->view('domains::admin.sell-cell');
-        return $table->searchable()->searchPlaceholder('Search TLDs')->paginated([50,100,'all'])->defaultPaginationPageOption(50)
-            ->records(function(?string $search,int $page,int|string $recordsPerPage):LengthAwarePaginator{
-                $needle=strtolower(ltrim(trim((string)$search),'.'));
-                $rows=collect($this->endings)->filter(fn(string $ending)=>$needle===''||str_contains($ending,$needle))->mapWithKeys(fn(string $ending)=>[$ending=>['ending'=>$ending]]);
-                $size=$recordsPerPage==='all'?max(1,$rows->count()):(int)$recordsPerPage;
-                return new LengthAwarePaginator($rows->forPage($page,$size),$rows->count(),$size,$page);
+        $costs=fn()=>$this->may(Staff::COSTS);
+        return $table->query(function(){
+                $binding=$this->binding();
+                if($binding===null){return SellRow::query()->whereRaw('1=0');}
+                // Hidden TLDs show only when already saved, for renewals.
+                return SellRule::rows($binding)->where(fn($q)=>$q->whereNotIn('tld',EndingChoices::hiddenList())->orWhereIn('tld',array_keys($this->accepted())))
+                    ->when($this->tld!==null&&$this->getTableSearch()===$this->tld,fn($q)=>$q->where('tld',$this->tld));
             })
-            ->emptyStateHeading(fn()=>$this->getTableSearch()?'No TLDs match':'No TLDs to show')->emptyStateDescription(null)
+            ->defaultSort('tld')->paginated([50,100])->defaultPaginationPageOption(50)->searchPlaceholder('Search TLDs')
+            ->emptyStateHeading(fn()=>$this->getTableSearch()?'No TLDs match':'No prices yet')
+            ->emptyStateDescription(fn()=>$this->tld!==null&&$this->getTableSearch()===$this->tld
+                ?'This TLD has no prices here yet. To load them, use Sync now.'
+                :($this->getTableSearch()?null:($this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync now.')))
+            ->filters([
+                Filter::make('country')->label('Country TLDs')->query(fn($query)=>$query->where(fn($q)=>$q->where('tld','like','__')->orWhere('tld','like','%.__'))),
+                Filter::make('no_cost')->label('No cost yet')->query(fn($query)=>$query->whereNull('register_cost')),
+            ])
             ->columns([
-                $cell('sell')->label('Sell'),
-                TextColumn::make('ending')->label('TLD')->weight('medium')->fontFamily('mono')->formatStateUsing(fn(string $state)=>'.'.$state),
-                $cell('years')->label('Years'),
-                $cell('transfers')->label('Transfers'),
-                TextColumn::make('status')->label('Status')->badge()->state(fn(array $record)=>$this->status($record['ending'])['label'])
-                    ->color(fn(array $record)=>$this->status($record['ending'])['tone'])->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                    ->description(fn(array $record)=>$this->status($record['ending'])['next']??null)
-                    ->url(fn(array $record)=>isset($this->status($record['ending'])['next'])?TldResource::getUrl('index'):null),
+                TextColumn::make('tld')->label('TLD')->weight('medium')->fontFamily('mono')->sortable()->formatStateUsing(fn(string $state)=>'.'.$state)
+                    ->searchable(query:fn($query,string $search)=>$query->where('tld','like','%'.strtolower(ltrim(trim($search),'.')).'%'))
+                    ->description(fn(SellRow $record)=>'Up to '.($record->longest??$this->rule()['years']).' '.(($record->longest??$this->rule()['years'])===1?'year':'years').($record->longest===null?' · default':'')),
+                TextColumn::make('register_cost')->label('1-year cost')->sortable()->visible($costs)->placeholder('No cost yet')->formatStateUsing(fn($state)=>TldFacts::money((string)$state,4))
+                    ->tooltip(fn(SellRow $record)=>$record->read_at===null?null:'Prices from '.self::time((int)$record->read_at)),
+                TextColumn::make('price')->label('Price')->visible($costs)->state(fn(SellRow $record)=>$this->numbers($record)[0])
+                    ->tooltip(fn(SellRow $record)=>($this->numbers($record)[2]??false)?'Estimate from the saved cost and pricing rule.':null),
+                TextColumn::make('profit')->label('Profit')->visible($costs)->state(fn(SellRow $record)=>$this->numbers($record)[1])
+                    ->color(fn(?string $state)=>str_contains((string)$state,'-')?'danger':null)
+                    ->tooltip(fn(SellRow $record)=>($this->numbers($record)[2]??false)?'Estimate from the saved cost and pricing rule.':null),
+                TextColumn::make('status')->label('Status')->badge()->state(fn(SellRow $record)=>$this->status($record)['label'])
+                    ->color(fn(SellRow $record)=>$this->status($record)['tone'])
+                    ->description(fn(SellRow $record)=>$this->status($record)['next']??null)
+                    ->url(fn(SellRow $record)=>isset($this->status($record)['open'])?TldResource::getUrl('index'):null),
+            ])
+            ->recordActions([
+                Action::make('edit_terms')->label('Edit terms')->link()->visible(fn()=>$this->canEdit())
+                    ->fillForm(fn(SellRow $record)=>['longest'=>$record->longest??$this->rule()['years'],'transfer'=>$record->transfer??$this->rule()['transfers']])
+                    ->schema(fn()=>[
+                        TextInput::make('longest')->label('Longest term')->integer()->required()->minValue(1)->maxValue(10)->suffix('years')->visible($this->binding()?->registrarKey!=='namesilo'),
+                        Toggle::make('transfer')->label('Transfers'),
+                    ])->action(function(array $data,SellRow $record):void {
+                        $this->write(['terms'=>[$record->tld=>['longest'=>(int)($data['longest']??1),'transfer'=>(bool)$data['transfer']]]]);
+                    }),
+            ])
+            ->toolbarActions([
+                // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
+                BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
+                    ->modalHeading(fn($records)=>'Edit '.$records->count().' '.($records->count()===1?'TLD':'TLDs'))->modalSubmitActionLabel('Save')->modalWidth('md')
+                    ->schema(fn()=>[
+                        Select::make('choice')->label('Sell')->required()->selectablePlaceholder(false)->default(self::KEEP)->options([self::KEEP=>'Leave as is','rule'=>'Use the default rule','sell'=>'Sell','skip'=>"Don't sell"])->hintAction(HelpHint::make('Use the default rule clears Sell or Don’t sell for these TLDs. Cost limits and each row’s terms still apply.')),
+                        Select::make('longest')->label('Longest term')->required()->selectablePlaceholder(false)->default(self::KEEP)->visible($this->binding()?->registrarKey!=='namesilo')
+                            ->options([self::KEEP=>'Leave as is']+array_combine(range(1,10),array_map(fn(int $y)=>$y.' '.($y===1?'year':'years'),range(1,10)))),
+                        Select::make('transfer')->label('Transfers')->required()->selectablePlaceholder(false)->default(self::KEEP)->options([self::KEEP=>'Leave as is','on'=>'On','off'=>'Off']),
+                    ])->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->pluck('tld')->all())),
             ]);
     }
 }

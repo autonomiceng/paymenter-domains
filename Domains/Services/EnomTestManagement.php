@@ -20,7 +20,11 @@ final class EnomTestManagement
     { return ['route'=>$b?->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?EnomLive::route():'https://resellertest.enom.com/interface.asp','commands'=>array_map(static fn($c)=>$c->value,[\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Nameservers,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Lock,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Contacts,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Dns,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::Srv,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::DsAdd,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::DsDelete]),'interval'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS]; }
     public static function accepted(AccountBinding $b): bool
     {
-        if(!self::enabled($b)){return false;}
+        return self::enabled($b)&&($b->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Live||EnomLiveActivation::current($b))&&self::stored($b);
+    }
+    /** Retained switch state, so Off stays available when deployment or provider evidence is removed. */
+    public static function stored(AccountBinding $b): bool
+    {
         try {
             $s=\App\Models\Server::findOrFail($b->serverId)->settings()->where('key',EnomLive::key($b,self::KEY))->first();
             return $s?->encrypted===true && json_decode($s->value,true,8,JSON_THROW_ON_ERROR)===['fingerprint'=>$b->fingerprint,...self::protocol($b)];
@@ -30,10 +34,11 @@ final class EnomTestManagement
     {
         $r->local(function()use($r,$data):void {
             $a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole();$b=CatalogueAcceptances::binding($a);$label=$b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live':'TEST';
-            if(str_starts_with($r->action,'live_')!==($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live)||!self::enabled($b)){throw new \DomainException($label.' management deployment is unavailable.');}
+            if((str_starts_with($r->action,'live_')||$r->action==='activate')!==($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live)||(($data['accept']??false)===true&&!self::enabled($b))){throw new \DomainException($label.' management deployment is unavailable.');}
             $s=\App\Models\Server::findOrFail($b->serverId)->settings()->firstOrNew(['key'=>EnomLive::key($b,self::KEY)]);
             if(($data['accept']??false)===true){
-                if(($data['verified']??false)!==true){throw new \DomainException('Independent '.$label.' management review required.');}
+                EnomLiveActivation::requireFeature($r,$b,'management');
+                if($b->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Live&&($data['verified']??false)!==true){throw new \DomainException('Independent '.$label.' management review required.');}
                 $protocol=self::protocol($b);if($protocol['interval']<25){throw new \DomainException($label.' management deployment is unavailable.');}
                 $value=['fingerprint'=>$b->fingerprint,...$protocol];
             }else{$value=null;}

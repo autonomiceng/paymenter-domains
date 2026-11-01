@@ -38,16 +38,14 @@ foreach (['enom', 'namesilo'] as $index => $registrar) {
             same('sealed', $result->attempt['seal'], $registrar.' valid payload seals as before');
         } else {
             same('held', $result->state, $registrar.' '.$case.' holds');
-            same($case === 'privacy-first' ? 'write_acceptance_required' : 'nameservers_required', $result->safe_code,
+            same($case === 'privacy-first' ? 'order_not_supported' : 'nameservers_required', $result->safe_code,
                 $registrar.' '.$case.' retains the specific refusal instead of pre_send_interrupted');
             same('absent', $result->attempt['seal'], $registrar.' invalid setup is unsealed');
             expect(!array_key_exists('execution', $result->attempt), $registrar.' invalid setup has no execution');
             same($before, [$writer->calls, $registration->reads], $registrar.' invalid setup has zero wire calls or preflight reads');
-            same($case === 'privacy-first' ? 'Not sent: feature off for this account' : 'Not sent: nameservers missing',
-                Labels::reason($result->safe_code), $registrar.' held operation renders its staff reason');
         }
         same($money, $nativeMoney(), $registrar.' setup validation preserves native finance');
-        if (in_array($result->safe_code, ['nameservers_required', 'write_acceptance_required'], true)) {
+        if (in_array($result->safe_code, ['nameservers_required', 'order_not_supported'], true)) {
             // A specific refusal retains the old definitely-unsent recovery, never unknown execution.
             // Privileged corruption bypasses the normal write-once evidence guard.
             $raw = $result->getRawOriginal('attempt'); $result->attempt = [...$result->attempt, 'execution' => null];

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Mail\WatchNotice as NoticeMail;
 $prior=null;$failApp=true;$planner=new WatchNotices(true);$delivery=new WatchNoticeDelivery(true);
 $f=managedFixture(skipA3:true,beforeConfirm:function(array $f)use(&$prior,&$failApp,$planner,$delivery):void {
     extract($f);global $fixture;require __DIR__.'/Support/reminder-mail.php';app('view')->prependNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
-    \Paymenter\Extensions\Servers\Domains\Services\WatchScheduleSchema::install();WatchNoticeSchema::install();WatchNoticeTemplates::ensure();$uid=(int)$owner->id;$old=$clock->now()->getTimestamp()-7200;$checks=new WatchDnsChecks(true);
+    \Paymenter\Extensions\Servers\Domains\Services\WatchScheduleSchema::install();WatchNoticeSchema::install();WatchNoticeTemplates::ensure();$uid=(int)$owner->id;DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::save($uid,'example.com',1,1,true,true));$old=$clock->now()->getTimestamp()-7200;$checks=new WatchDnsChecks(true);
     DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','delegation')->update(['due_at'=>$old+900]);
     $t=$checks->begin($watch->id,$uid,'delegation',$old+900);expect($t!==null,'Second watch evidence');expect($checks->finish($t,new DnsReading('delegation','external'),$old+901),'Confirm prior watch drift');
     $ids=$planner->plan('watch',$watch->id,$uid,$old+902);same(1,count($ids),'Prior watch episode');

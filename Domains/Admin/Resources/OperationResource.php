@@ -5,11 +5,11 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Filament\Tables\{Columns\TextColumn, Filters\SelectFilter, Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,OperationQueries,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,OperationQueries,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Missing,RequestStatus};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
-use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 class OperationResource extends Resource
 {
     protected static ?string $model=Operation::class;
@@ -35,6 +35,7 @@ class OperationResource extends Resource
     {
         Staff::requireView();
         $statuses=array_map(fn($status)=>$status[0],RequestStatus::SET); $servers=\App\Models\Server::pluck('name','id')->all();
+        $off=Account::where('processing_enabled',false)->pluck('server_id')->all();
         EmptyTable::apply($table,'No registrar requests','Requests show here when a customer orders a domain.','No requests match');
         return $table->columns([
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
@@ -45,7 +46,7 @@ class OperationResource extends Resource
             TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>Labels::requestStatus($record)['tone'])
                 ->formatStateUsing(fn($record)=>Labels::requestStatus($record)['label'])->wrap()
-                ->description(fn($record)=>Labels::requestStatus($record)['reason']),
+                ->description(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off))),
             TextColumn::make('created_at')->label('Created')->dateTime('M j, Y H:i \\U\\T\\C','UTC')->sortable()->visibleFrom('lg'),
             TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
                 ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.'),

@@ -25,7 +25,8 @@ $cases = [
     'transfer' => storefrontData(),
     'pricing' => ['rows' => storefrontData()['endings'], 'guest' => true, 'testEnvironment' => false],
     'watch-notices' => ['summary' => $summary, 'name' => 'example.com', 'kind' => 'watch', 'id' => 1,
-        'editable' => false, 'notices' => [], 'portal' => []],
+        'editable' => false, 'notices' => [], 'portal' => [],
+        'preferences' => ['account' => ['enabled' => true, 'revision' => 1], 'target' => ['enabled' => true, 'revision' => 1]]],
 ];
 $recordManagement=[];
 foreach (['dns'=>[

@@ -213,9 +213,9 @@ same('below_cost', $holder->renewal($domain, 'USD', $now)->staffAlert, 'Renewal 
 $publish([new CatalogueRate('register', 3, '4.00', 'synthetic', $now, $now->modify('+3 days'))]);
 $eligible = $sellers->selection('com', 'register', 3, $now);
 $future = $now->modify('+2 days');
-$prices->current(1, $accounts[1]['account_fingerprint'], 'com', 'register', 3, 'USD', $future);
-$later = DB::transaction(static fn () => $sellers->admit([$eligible], $future))[0];
-same([$eligible->priceId, $eligible->priceRevision, '21.00'], [$later->id, $later->revision, $later->retail], 'Older saved renewal cost keeps the same eligible term and retail');
+$reject(static fn () => $prices->current(1, $accounts[1]['account_fingerprint'], 'com', 'register', 3, 'USD', $future));
+$reject(static fn () => DB::transaction(static fn () => $sellers->admit([$eligible], $future)));
+same($eligible->priceRevision, Price::findOrFail($eligible->priceId)->revision, 'Expired cost refuses admission without changing the saved revision');
 $reject(static fn () => $p->update(['revision' => 6]));
 $reject(static fn () => $p->delete());
 // Saved costs remain usable; missing required costs still leave the seller and revision untouched.

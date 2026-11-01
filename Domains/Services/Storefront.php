@@ -30,8 +30,9 @@ final class Storefront
             foreach ($rows as $row) { if ($row['transfer'] !== null) { return true; } }
             return false;
         }
-        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
-        foreach (SalesPolicy::where('transfer_enabled', true)->orderBy('tld')->pluck('tld') as $ending) {
+        $endings = SalesPolicy::where('transfer_enabled', true)->orderBy('tld')->pluck('tld')->all();
+        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings);
+        foreach ($endings as $ending) {
             try { $read->offer($ending, 'transfer', 1); return true; }
             catch (\Throwable) { /* A held ending does not rule out a later transfer offer. */ }
         }
@@ -41,8 +42,9 @@ final class Storefront
     /** Current public transfer offers, bounded to the candidate suffixes of these names. */
     public function offeredTransferEndings(array $names): array
     {
-        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock); $offered = [];
-        foreach (PolicyEndings::transferEnabled($names) as $ending) {
+        $endings = PolicyEndings::transferEnabled($names);
+        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings); $offered = [];
+        foreach ($endings as $ending) {
             try { $read->offer($ending, 'transfer', 1); $offered[] = $ending; }
             catch (\Throwable) { /* An unavailable public offer has no entry link. */ }
         }
@@ -51,9 +53,9 @@ final class Storefront
 
     private function catalogueRows(): array
     {
-        $rows = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
-        foreach (SalesPolicy::orderBy('tld')->get(['tld', 'server_id', 'transfer_enabled']) as $policy) {
-            $ending = $policy->tld;
+        $endings = SalesPolicy::orderBy('tld')->pluck('tld')->all();
+        $rows = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings);
+        foreach ($endings as $ending) {
             $register = $transfer = $chosen = null; $terms = [];
             foreach (range(1, 10) as $term) {
                 try { $offer = $read->offer($ending, 'register', $term); $chosen ??= $offer; $terms[] = $term; if ($term === 1) { $register = $offer['price']; } }
@@ -62,7 +64,8 @@ final class Storefront
             try { $offer = $read->offer($ending, 'transfer', 1); $chosen ??= $offer; $transfer = $offer['price']; } catch (\Throwable) {}
             if (!$terms && !$transfer) { continue; }
             $renew = $chosen['renew'];
-            $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer, 'transfersOn' => $transfer !== null || ($policy->transfer_enabled && Tld::where('server_id', $policy->server_id)->where('tld', $ending)->where('transfer_enabled', true)->exists()),
+            try { $transfersOn = $read->transfersOn($ending); } catch (\Throwable) { $transfersOn = false; }
+            $rows[] = ['tld' => $ending, 'price' => $register, 'register' => $register, 'transfer' => $transfer, 'transfersOn' => $transfersOn,
                 'renew' => $renew, 'terms' => $terms];
         }
         return $rows;

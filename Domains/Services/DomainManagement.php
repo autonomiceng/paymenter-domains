@@ -121,6 +121,17 @@ final class DomainManagement
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $op = Operation::findOrFail($id);
+        if(ManagementEvidence::recoverable($op)){
+            $op=DB::transaction(function()use($seed,$id){
+                $l=HoldingLocks::take($seed);$op=$l['operations']->firstWhere('id',$id);
+                $history=$op->attempt['management_deferrals']??[];
+                $last=$history?new \DateTimeImmutable(end($history)):$op->started_at;
+                if(ManagementEvidence::recoverable($op)&&$last&&$last<=$this->clock->now()->modify('-15 minutes')){
+                    $op->update(['state'=>'queued','safe_code'=>'management_deferred','attempt'=>[...$op->attempt,
+                        'management_deferrals'=>[...$history,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]]);
+                }return $op;
+            });
+        }
         if(!isset($op->policy['management'])){throw new \DomainException('Not a management operation.');}
         if ($op->state === 'running' && (!$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now())) {
             return DB::transaction(function () use ($seed,$id) { $l=HoldingLocks::take($seed); $op=$l['operations']->firstWhere('id',$id); if($op->state==='running'&&(!$op->lease_expires_at||$op->lease_expires_at<=$this->clock->now())){$op->update(['state'=>($op->attempt['seal']??null)==='sealed'?'uncertain':'held','safe_code'=>'management_unconfirmed','lease_expires_at'=>null]);} return $op; });
@@ -187,7 +198,7 @@ final class DomainManagement
             $this->noInflight($op); $funding=$op->funding_basis==='paid_invoice'?RefundPayment::requireCurrent($op,$l):[];
             if(!Cache::add('domains-write-slot:'.$op->account_fingerprint,true,$this->intervalSeconds)){throw new WriteHeld('write_rate_limited');}
             if (array_key_exists('management_observation_attempts', $op->attempt)) { throw new \DomainException('Management observation budget already started.'); }
-            $op->update(['attempt'=>[...$op->attempt,'management_observation_attempts'=>1,'seal'=>'sealed','send_state'=>'possibly_sent','dispatch_attempted_at'=>$this->clock->now()->format(DATE_ATOM)],
+            $op->update(['attempt'=>[...$op->attempt,'management_observation_attempts'=>1,'management_read_at'=>$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM),'seal'=>'sealed','send_state'=>'possibly_sent','dispatch_attempted_at'=>$this->clock->now()->format(DATE_ATOM)],
                 'funding'=>[...($op->funding??[]),...($funding?['seal'=>$funding]:[])]]);
         });
         $this->receiptGrant=[$r,$ctx,$driver,$g[4],$g[5]];
@@ -218,19 +229,28 @@ final class DomainManagement
             throw new \DomainException('Management review does not match.');
         }
         return EntryDeadline::run($this->clock, fn($deadline)=>$review->read(
-            fn()=>$this->reconcileEntered($id,$driver instanceof \Closure ? $driver() : $driver,$deadline,true)),EntryDeadline::INTERACTIVE_SECONDS);
+            function()use($id,$driver,$deadline){
+                try{return $this->reconcileEntered($id,$driver instanceof \Closure ? $driver() : $driver,$deadline,true);}
+                catch(StaffReviewRefused $error){throw $error;}
+                catch(ReadDeferred $error){throw new StaffReviewRefused('Status checks for this account are busy. Try Check status again in 15 minutes. Automatic checks continue.');}
+                catch(\Throwable $error){throw new StaffReviewRefused('The registrar did not return a usable status. Try Check status again in 15 minutes. Automatic checks continue.');}
+            }),EntryDeadline::INTERACTIVE_SECONDS);
     }
     private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline, bool $reviewed=false): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$reviewed): ?array {
-            if(count($op->attempt['management_reads']??[])>=20){return null;}
             if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { return null; }
             if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { return null; }
             $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
-            $this->bindings->requireReadableLocked($l['server'],$l['account']);
+            try{$this->bindings->requireReadableLocked($l['server'],$l['account']);}
+            catch(\Throwable $error){if($reviewed){throw new StaffReviewRefused('The registrar account cannot be read. Check its connection settings and try Check status again.');}throw $error;}
             // Reserve before I/O, including reads that throw or lose their result.
             // Legacy recovery counts only new reviewed reads, never unknown earlier usage.
+            if(ManagementReadRecovery::exhausted($op->attempt)){
+                if(!ManagementReadRecovery::reserve($op,$this->clock->now(),$reviewed)){return null;}
+                return [$this->descriptor($op,$l),HoldingLocks::take($l['domain'],(int)$op->authorized_by)['stamp']];
+            }
             $field='management_observation_attempts';
             if(!array_key_exists($field,$op->attempt)){
                 if(!$reviewed){return null;}
@@ -241,10 +261,10 @@ final class DomainManagement
                 $count=$op->attempt[$field];
                 if(!is_int($count) || $count<1 || $count>=20){return null;}
             }
-            $op->update(['attempt' => [...$op->attempt, $field => $count + 1]]);
+            $op->update(['attempt' => [...$op->attempt, $field => $count + 1, 'management_read_at'=>$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)]]);
             return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int) $op->authorized_by)['stamp']];
         }, false, false);
-        if ($read === null) { return Operation::findOrFail($id); }
+        if ($read === null) { if($reviewed){throw new StaffReviewRefused('A status read cannot run for this request now. Reload the page and try again.');} return Operation::findOrFail($id); }
         [$r, $stamp] = $read;
         $ctx = new RequestContext($r->binding, RequestOrigin::Background, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
         try { $result = $driver->observe($r, $ctx); return $this->finish($seed, $id, $driver, $result, $stamp); }
@@ -263,9 +283,11 @@ final class DomainManagement
                 'at' => $this->clock->now()->format(DATE_ATOM), 'correction_link' => $op->policy['management']['correction_link'] ?? null, 'confirmed' => $confirmed, 'email_accepted' => $email, 'facts' => $result->facts()];
             $refused=$result->refused&&!$confirmed&&!$email;$terminal=$refused&&$op->funding_basis==='non_billable_management';
             $history = $op->attempt['management_reads'] ?? [];
-            if (count($history) >= 20) { throw new \DomainException('Management read budget exhausted.'); }
+            $recovery=$op->attempt['management_recovery']??null;
+            if(!$recovery&&count($history)>=20){throw new \DomainException('Management read budget exhausted.');}
+            $evidence=$recovery?['management_recovery_read'=>[...$entry,'recovery_number'=>$recovery['number']]]:['management_reads'=>[...$history,$entry]];
             $op->update(['state' => $ok ? 'succeeded' : ($terminal?'rejected':'uncertain'), 'safe_code' => $email ? 'auth_email_accepted' : ($ok ? 'readback_confirmed' : ($refused?'management_provider_refused':'management_unconfirmed')),
-                'attempt' => [...$op->attempt, 'management_reads' => [...$history, $entry], ...($ack ? ['management_ack'=>$ack] : []),...($refused?['management_refusal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'action'=>$op->action]]:[])], 'completed_at' => ($ok||$terminal) ? $this->clock->now() : null, 'lease_expires_at' => null]);
+                'attempt' => [...$op->attempt, ...$evidence, ...($ack ? ['management_ack'=>$ack] : []),...($refused?['management_refusal'=>['operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'action'=>$op->action]]:[])], 'completed_at' => ($ok||$terminal) ? $this->clock->now() : null, 'lease_expires_at' => null]);
             if ($ok && $confirmed && ManagementEvidence::resolved($op,$l['domain'])) {
                 $section=match($op->action) {
                     'nameservers','lock'=>$op->action,

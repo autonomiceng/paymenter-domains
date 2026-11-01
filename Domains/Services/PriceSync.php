@@ -77,6 +77,18 @@ final class PriceSync
     public static function callsLeft(AccountBinding $binding): ?int
     { $today = self::callsToday($binding); return $today === null ? null : max(0, $today['limit'] - $today['used']); }
 
+    /** A batch only needs room for itself, never the entire list. Leave 70% of our shared day for other work. */
+    public static function backgroundLeft(AccountBinding $binding, Clock $clock): int
+    {
+        $today = self::callsToday($binding);
+        if ($today === null) { return 0; }
+        $day = max(0, intdiv($today['limit'] * 3, 10) - $today['used']);
+        $minute = DB::table('domains_read_budgets')->where('server_id', $binding->serverId)->first();
+        $used = $minute && (int) $minute->window_at > (int) $clock->now()->format('Uu') - 60000000 ? (int) $minute->used : 0;
+        // One maximum-term TLD needs 14 reads. Twenty-five lets that TLD finish inside one minute.
+        return min($day, max(0, 25 - $used));
+    }
+
     /** One sync run: every accepted TLD, the one ending given, or the listed endings. Staff runs carry their review;
      * the daily run has none. One run reads at most one batch, oldest-synced TLDs first, so it stays under our
      * per-minute read limit and its request budget; the TLDs past the batch are returned as deferred for the next run.
@@ -85,25 +97,33 @@ final class PriceSync
     {
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
+        if ($review === null) { SellAutomation::refresh($account, $clock->now()); }
         $accepted = CatalogueAcceptances::load($binding);
+        if ($review === null) { $accepted = SellAutomation::priceReads($account, $accepted, $clock->now()); }
         if ($ending !== null && !isset($accepted->endings[$ending])) { throw new \DomainException('Catalogue ending is not accepted.'); }
         $endings = $ending !== null ? [$ending] : ($only === null ? array_keys($accepted->endings) : array_values(array_intersect(array_keys($accepted->endings), $only)));
         if ($endings === []) { throw new \DomainException('Catalogue ending is not accepted.'); }
         $last = Price::where('server_id', $binding->serverId)->whereIn('tld', $endings)->groupBy('tld')->selectRaw('tld, max(observed_at) as at')->pluck('at', 'tld');
         usort($endings, fn (string $a, string $b) => strcmp((string) ($last[$a] ?? ''), (string) ($last[$b] ?? '')));
+        $automatic = $review === null && SellRule::saved($binding) !== null;
         $reader = $this->bindings->reader($binding->serverId);
         $context = fn (int $calls) => new RequestContext($binding, $review ? RequestOrigin::Interactive : RequestOrigin::Background,
-            $clock->now()->modify('+'.(20 + 5 * $calls).' seconds'), new RequestBudget($calls + 10), $clock, Runtime::limiter(), stopOnReadFailure: true);
-        $listed = [];
-        if ($reader instanceof CataloguePreview || $reader instanceof EnomTestReconciliationReader) {
+            $clock->now()->modify('+'.(20 + 5 * $calls).' seconds'), new RequestBudget($calls + 10), $clock, $automatic ? new PriceReadBudget($clock) : Runtime::limiter(), stopOnReadFailure: true);
+        $fill = PriceFill::last($binding);
+        $listed = $automatic && $fill?->filled_at !== null && (int) $fill->filled_at > $clock->now()->getTimestamp() - PriceCatalogue::MAX_COST_AGE_SECONDS
+            ? SellRule::rows($binding)->pluck('tld')->all() : null;
+        if ($listed === null && ($reader instanceof CataloguePreview || $reader instanceof EnomTestReconciliationReader)) {
             try { $listed = $reader->catalogue($context(1))->facts()['tlds'] ?? []; }
             catch (ReadDeferred|EnomTestCallLimit $error) { throw $error; }
             catch (\Throwable $error) { throw new CatalogueImportFailure(ReadFailure::code($error)); }
         }
+        $listed ??= [];
         $failed = [];
         foreach ($endings as $e) { if (!in_array($e, $listed, true)) { $failed[$e] = 'catalogue_evidence_missing'; } }
         $read = array_values(array_diff($endings, array_keys($failed)));
-        [$batch, $deferred] = self::batch($accepted, $read, $this->batchCalls);
+        $capacity = $automatic ? min($this->batchCalls, self::backgroundLeft($binding, $clock)) : $this->batchCalls;
+        if ($read !== [] && self::endingCalls($accepted->endings[$read[0]]) > $capacity) { throw new ReadDeferred('Our price read allowance is unavailable.'); }
+        [$batch, $deferred] = self::batch($accepted, $read, max(1, $capacity));
         $synced = [];
         if ($batch !== []) {
             $calls = self::calls(new CatalogueAcceptance($accepted->binding, $accepted->revision, array_intersect_key($accepted->endings, array_flip($batch)))) - 1;
@@ -119,21 +139,39 @@ final class PriceSync
             // Checkout takes the new cost; only lines that can no longer sell (no cost, below cost) are removed.
             TestCatalogue::withdrawCarts($binding, $e, true);
         }
-        // Staff see failures in the result; the daily run keeps them where the TLD list shows the last sync failure.
-        if ($review === null) { foreach ($failed as $e => $code) { $this->failure($account, $e, $code, $clock); } }
+        // Manual batches resolve a retained failure once every accepted term has current cost evidence.
+        if ($review !== null && $ending === null && $only === null && $failed === [] && ($deferred === [] || $this->currentCosts($accepted, $clock))) { $this->outcome($account, null); }
         $review?->input([...($ending === null ? [] : ['ending' => $ending]), 'endings' => $synced]);
         if ($synced === []) { throw new CatalogueImportFailure(reset($failed) ?: 'catalogue_import_failed'); }
         if ($ending !== null && $failed !== []) { throw new CatalogueImportFailure($failed[$ending]); }
         return ['synced' => $synced, 'failed' => $failed, 'deferred' => $deferred];
     }
 
-    /** Once a day per account, inside our daily call cap for it. A day the cap can't cover is skipped and logged, not retried. */
+    /** Read existing evidence across manual batches; no cursor or provider read is needed. */
+    private function currentCosts(CatalogueAcceptance $accepted, Clock $clock): bool
+    {
+        try {
+            $prices = app(PriceCatalogue::class); $binding = $accepted->binding;
+            foreach ($accepted->endings as $ending => $row) {
+                foreach (['register', 'renew', 'transfer'] as $action) {
+                    foreach ($row[$action] ?? [] as $term) {
+                        $prices->current($binding->serverId, $binding->fingerprint, $ending, $action, $term, 'USD', $clock->now());
+                    }
+                }
+            }
+            return true;
+        } catch (\DomainException|\InvalidArgumentException|\Illuminate\Database\Eloquent\ModelNotFoundException) { return false; }
+    }
+
+    /** Once a day per account, inside our daily call cap. The next scheduled run retries failures before staff are asked. */
     public function daily(Account $account): void
     {
         OperationClaims::outside();
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }
+        SellAutomation::refresh($account, $this->clock->now());
         $accepted = CatalogueAcceptances::load($binding);
+        $accepted = SellAutomation::priceReads($account, $accepted, $this->clock->now());
         if ($accepted->endings === [] || ($claim = $this->claim($account)) === null) { return; }
         [$since, $resume] = $claim;
         $endings = array_keys($accepted->endings);
@@ -144,20 +182,35 @@ final class PriceSync
             if ($endings === []) { return; }
         }
         $context = ['server_id' => (int) $account->server_id];
-        $needed = self::batchedCalls($accepted, $endings, $this->batchCalls);
-        $left = self::callsLeft($binding);
-        if ($left === null || $left < $needed) {
-            Log::info('Domains daily price sync skipped.', [...$context, 'reason' => 'call_cap', 'needed' => $needed, 'left' => $left]);
-            return;
+        $skipped = [];
+        if (SellRule::saved($binding) === null) {
+            $needed = self::batchedCalls($accepted, $endings, $this->batchCalls);
+            $left = self::callsLeft($binding);
+            if ($left !== null && $left < $needed) {
+                // A long list must not stop the TLDs already on sale from staying fresh; new ones wait for a day the cap covers.
+                $priced = Price::where('server_id', $account->server_id)->whereIn('tld', $endings)->distinct()->pluck('tld')->all();
+                $kept = array_values(array_intersect($endings, $priced));
+                if ($kept !== [] && ($fits = self::batchedCalls($accepted, $kept, $this->batchCalls)) <= $left) { $skipped = array_values(array_diff($endings, $kept)); $endings = $kept; $needed = $fits; }
+            }
+            if ($left === null || $left < $needed) {
+                $this->outcome($account, 'catalogue_call_capacity');
+                Log::info('Domains daily price sync skipped.', [...$context, 'reason' => 'call_cap', 'needed' => $needed, 'left' => $left]);
+                return;
+            }
         }
         try {
             $result = $this->run($account, $this->clock, null, null, $endings);
+            if ($result['failed'] !== [] || $skipped !== []) {
+                $this->outcome($account, $skipped !== [] ? 'catalogue_call_capacity' : reset($result['failed']));
+            } elseif ($result['deferred'] === []) { $this->outcome($account, null); }
             if ($result['deferred'] !== []) { $this->resumeSoon($account); }
             Log::info('Domains daily price sync finished.', [...$context, 'synced' => count($result['synced']), 'failed' => array_keys($result['failed']), 'deferred' => $result['deferred']]);
         } catch (ReadDeferred $error) {
+            $this->outcome($account, 'catalogue_call_capacity');
             $this->resumeSoon($account);
             Log::info('Domains daily price sync deferred.', [...$context, 'code' => ReadFailure::code($error)]);
         } catch (\Throwable $error) {
+            $this->outcome($account, $error instanceof EnomTestCallLimit ? 'catalogue_call_capacity' : ReadFailure::code($error));
             Log::warning('Domains daily price sync failed.', [...$context, 'code' => ReadFailure::code($error)]);
         }
     }
@@ -184,17 +237,37 @@ final class PriceSync
             ->update(['catalogue_due' => $this->clock->now()->getTimestamp() + self::RESUME_SECONDS]);
     }
 
-    private function failure(Account $account, string $ending, string $code, Clock $clock): void
+    /** Retain one account episode, including failures before a TLD can be read. No new hold stops automatic recovery. */
+    private function outcome(Account $account, ?string $code): void
     {
         try {
-            DB::transaction(function () use ($account, $ending, $code, $clock): void {
+            $event = DB::transaction(function () use ($account, $code): ?array {
                 $q = DB::table('domains_observation_queues')->where('server_id', $account->server_id)->where('account_fingerprint', $account->account_fingerprint);
-                $row = (clone $q)->lockForUpdate()->first(); if (!$row) { return; }
-                $audit = json_decode($row->catalogue_audit ?? '[]', true, 8, JSON_THROW_ON_ERROR); if (!is_array($audit)) { $audit = []; }
-                $audit[] = ['code' => ReadFailure::safe($code), 'server_id' => (int) $account->server_id, 'account_fingerprint' => $account->account_fingerprint,
-                    'tld' => $ending, 'at' => $clock->now()->format(DATE_ATOM)];
+                $row = (clone $q)->lockForUpdate()->first(); if (!$row) { return null; }
+                try { $audit = json_decode($row->catalogue_audit ?? '[]', true, 8, JSON_THROW_ON_ERROR); }
+                catch (\JsonException) { $audit = []; }
+                if (!is_array($audit)) { $audit = []; }
+                $prior = null;
+                foreach (array_reverse($audit) as $entry) { if (($entry['kind'] ?? null) === 'price_sync') { $prior = $entry; break; } }
+                if ($code === null && (!$prior || $prior['state'] === 'recovered')) { return null; }
+                $active = $prior && $prior['state'] !== 'recovered';
+                $at = $this->clock->now()->format(DATE_ATOM);
+                // A batch continuation is not another scheduled recovery attempt.
+                $retried = $active && $this->clock->now()->getTimestamp() >= strtotime($prior['first_at']) + 86400 - 3600;
+                $entry = ['kind' => 'price_sync', 'state' => $code === null ? 'recovered' : ($retried ? 'failed' : 'retrying'),
+                    'code' => $code === null ? $prior['code'] : ReadFailure::safe($code), 'server_id' => (int) $account->server_id,
+                    'account_fingerprint' => $account->account_fingerprint, 'at' => $at, 'first_at' => $active ? $prior['first_at'] : $at];
+                $audit[] = $entry;
                 $q->update(['catalogue_audit' => json_encode(array_slice($audit, -50), JSON_THROW_ON_ERROR)]);
+                return $entry['state'] === 'failed' ? $entry : null;
             });
-        } catch (\Throwable) { /* The sync result does not depend on saving the diagnostic. */ }
+            if ($event) {
+                // The scheduler already retried; only a person can fix credentials or change our call cap.
+                $cause = \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncCause($event['code']);
+                \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Price sync keeps failing',
+                    $cause.'. Automatic retry failed for registrar account #'.$account->server_id.'. Open Registrars, fix the connection or our call limit, then use Sync prices. New sales stop when costs reach 48 hours old. Daily retries continue.',
+                    'filament.admin.resources.domain-tlds.index', deliveryKey: 'price-sync:'.$account->account_fingerprint.':'.$event['first_at']);
+            }
+        } catch (\Throwable) { Log::warning('Domains price sync diagnostic could not be saved.', ['server_id' => (int) $account->server_id]); }
     }
 }

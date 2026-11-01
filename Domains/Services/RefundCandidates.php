@@ -10,15 +10,17 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class RefundCandidates
 {
     private const ACTIONS = ['register','renew','transfer','privacy_purchase','privacy_renew'];
+    /** Closed unpaid orders have freed their name, so only Refunds::creditRetired can credit them. */
+    private const SKIPPED = ['transfer_provider_rejected',UnpaidAcquisitionProof::CODE];
     public static function query(Builder|Query $q, string $prefix = ''): Builder|Query
     {
         return $q->where($prefix.'state','rejected')->where($prefix.'funding_basis','paid_invoice')
             ->whereIn($prefix.'action',self::ACTIONS)->where(fn($q)=>$q->whereNull($prefix.'safe_code')
-                ->orWhere($prefix.'safe_code','!=','transfer_provider_rejected'));
+                ->orWhereNotIn($prefix.'safe_code',self::SKIPPED));
     }
     public static function matches(Operation $op, array $funding): bool
     {
         return $op->state==='rejected' && $op->funding_basis==='paid_invoice' && in_array($op->action,self::ACTIONS,true)
-            && $op->safe_code!=='transfer_provider_rejected' && !array_key_exists('refund',$funding);
+            && !in_array($op->safe_code,self::SKIPPED,true) && !array_key_exists('refund',$funding);
     }
 }

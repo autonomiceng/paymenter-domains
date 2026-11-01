@@ -15,7 +15,7 @@ final class PaidUncertainty
             && !in_array($op->safe_code,['transfer_provider_rejected','transfer_needs_action','management_provider_refused'],true))) { return null; }
         return self::title($op);
     }
-    /** The notice line while this request pauses new orders on its registrar account. */
+    /** The notice line for the existing management spending hold. */
     public static function holdSummary(Operation $op, ?StaffGrants $grants = null): ?string
     {
         $grants ??= Staff::requireView();
@@ -23,12 +23,12 @@ final class PaidUncertainty
         $at=$op->started_at??$op->created_at;
         $hours=$at ? max(0,(int)floor((time()-$at->getTimestamp())/3600)) : null;
         $age=match($hours){null=>'',0=>' (under 1 hour so far)',1=>' (1 hour so far)',default=>' ('.$hours.' hours so far)'};
-        return 'New orders on this '.self::registrar($op).' account are paused until the result is known'.$age.'.';
+        return 'Paid domain changes on this '.self::registrar($op).' account wait until the result is known'.$age.'. Registrations and renewals still check the balance before sending.';
     }
     public static function title(Operation $op): string
     { return self::registrar($op).' has not confirmed this '.(['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]??'change').'.'; }
     public static function registrar(Operation $op): string { return ['enom'=>'Enom','namesilo'=>'NameSilo'][$op->registrar_key]??'Registrar'; }
-    /** Requests pausing new orders on this domain's registrar account. */
+    /** Requests holding paid management changes on this domain's registrar account. */
     public static function for(Domain $d): array
     {
         $grants=Staff::requireView();

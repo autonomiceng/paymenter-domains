@@ -80,6 +80,7 @@ final class TldFacts
             if(($p->hold_reason??($p->eligibility['staff_alert']??null))==='below_cost'){$flags[]='below_cost';}
             if($p->wholesale===null||($p->hold_reason??($p->eligibility['staff_alert']??null))==='unknown_price'){$flags[]='cost_missing';}
             if($p->wholesale===null&&$p->observed_at<=now()&&$p->fresh_until!==null){$flags[]='not_offered';}
+            if($p->wholesale!==null&&$p->observed_at->getTimestamp()<=now()->getTimestamp()-PriceCatalogue::MAX_COST_AGE_SECONDS){$flags[]='cost_old';}
             if($unavailable){$flags[]='price_missing';}
             if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted->revision)){$flags[]='needs_sync';}
             if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$flags[]='unpublished';}
@@ -130,21 +131,22 @@ final class TldFacts
         $head=['Account','Pricing','Registration','Renewal','Transfer',...($grants->costs?['Cost']:[]),'Domains'];
         $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
         foreach($head as $label){
-            $help=$label==='Cost'?' <span title="Registrations and transfers below cost are held. Renewals are billed." style="cursor:help;opacity:.6">?</span>':'';
-            $html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.e($label).$help.'</th>';
+            $cell=$label==='Cost'?HelpHint::beside(e($label),'Registrations and transfers below cost are held. Renewals are billed.','About cost')->toHtml():e($label);
+            $html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.$cell.'</th>';
         }
         $html.='</tr></thead><tbody>';
         foreach($rows as $row){
             $fact=$facts[$row->id];$prices=$fact['prices'];
             $first=static fn(string $action)=>collect($prices)->where('action',$action)->sortBy('term')->first();
             $price=static fn(?array $p)=>match(true){
+                ($p['retail']??null)===null&&in_array('price_missing',$p['flags']??[],true)=>self::missing('Check the registrar account and read prices again.'),
                 $p===null||($p['retail']===null&&!$p['synced'])=>self::missing('Use Sync prices on the TLD list.'),
                 $p['retail']!==null=>e($p['retail']),
                 in_array('not_offered',$p['flags'],true)=>self::notOffered(),
                 default=>self::missing('Use Edit prices.'),
             };
             // Sync never fills a price for sales that are off.
-            $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Transfers off':$price($transfer);
+            $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Off':$price($transfer);
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
@@ -168,7 +170,7 @@ final class TldFacts
         foreach(['Time','Change','By'] as $label){$html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.e($label).'</th>';}
         $html.='</tr></thead><tbody>';
         foreach($rows as $r){
-            $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell(e($r['time'])).self::cell(e($r['change']).($r['reason']!==''?'<div style="font-size:.75rem;opacity:.75;overflow-wrap:anywhere">'.e($r['reason']).'</div>':''),false).self::cell(e($r['by'])).'</tr>';
+            $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell(view('domains::partials.moment',['at'=>$r['time'],'fallback'=>$r['time']])->render()).self::cell(e($r['change']).($r['reason']!==''?'<div style="font-size:.75rem;opacity:.75;overflow-wrap:anywhere">'.e($r['reason']).'</div>':''),false).self::cell(e($r['by'])).'</tr>';
         }
         return new HtmlString($html.'</tbody></table></div>');
     }
@@ -185,6 +187,8 @@ final class TldFacts
         $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($accepted->binding);
         return $accepted->registrationRoute!==$protocol['route']||$accepted->registrationIntervalSeconds!==$protocol['interval_seconds'];
     }
+    /** The one fix for each reason a TLD with a saved price is not for sale. */
+    public const FIXES=['Cost out of date'=>'Use Sync prices.','Cost missing'=>'Use Sync prices.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and read prices again.'];
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}
@@ -192,7 +196,7 @@ final class TldFacts
     {
         $off=static fn(string $reason):array=>['label'=>'Not for sale','tone'=>'gray','reason'=>$reason];
         $flagged=static fn(string $flag):bool=>collect($rows)->contains(fn($r)=>in_array($flag,$r['flags'],true));
-        if($flagged('price_missing')){return $off('Price missing');}
+        if($flagged('price_missing')){return $off('Prices need checking');}
         if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return $off('Stopped by staff');}
         if($seller()===null){return $off('No registrar selected');}
         if(!$t->renew_enabled){return $off('Renewals off for this registrar');}
@@ -210,9 +214,10 @@ final class TldFacts
             return ['label'=>'For sale','tone'=>'success','reason'=>null];
         }catch(\Throwable){
             if(!$published){return $off(self::NEEDS_SYNC);}
-            // Saving prices publishes them; a TLD still on an older rule missed a default change because its costs were missing.
-            if($flagged('unpublished')){return $off('Prices not published');}
             if($flagged('cost_missing')||collect($rows)->contains(fn($r)=>!$r['synced'])){return $off('Cost missing');}
+            if($flagged('cost_old')){return $off('Cost out of date');}
+            // Runtime republishes an older rule once costs are in, so this shows only until its next turn.
+            if($flagged('unpublished')){return $off('Prices not published');}
             return $off($flagged('below_cost')?'Below cost':'Price missing');
         }
     }
@@ -220,27 +225,50 @@ final class TldFacts
     private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
         'Select seller'=>'Registrar for new orders changed','Change registrar for new orders'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
         'Review lifecycle facts'=>'Grace and redemption changed','Sync TLD prices'=>'Prices synced'];
+    /** Large edits omit detail maps; older entries also omit whether the default changed. Neither proves a TLD was unaffected. */
+    private static function unknownSalesScope(array $input): bool
+    {return !isset($input['rows'],$input['changes'])||!array_key_exists('rule_changed',$input);}
     /** Newest first: time, change, reason and who made it. Null when the saved history can't be read. */
     public static function history(int $serverId,?int $tldId=null): ?array
     {
         try{
+            $ending=null;
             $rows=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows(\App\Models\Server::findOrFail($serverId));
             if($tldId){
                 // A price sync is saved for the account; show it only on the TLDs it synced.
                 $ending=Tld::whereKey($tldId)->value('tld');
-                $rows=array_filter($rows,fn($r)=>$r['tld_id']===$tldId||(!$r['tld_id']&&($r['action']!=='Sync TLD prices'
-                    ||(is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true))))));
+                $rows=array_filter($rows,static function($r)use($tldId,$ending):bool {
+                    if($r['tld_id']){return $r['tld_id']===$tldId;}
+                    if($r['action']==='Sync TLD prices'){return is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true));}
+                    if($r['action']==='Edit what you sell'){return is_string($ending)&&(self::unknownSalesScope($r['input'])||isset($r['input']['rows'][$ending])||array_key_exists($ending,(array)($r['input']['changes']??[]))||($r['input']['rule_changed']??false));}
+                    return in_array($r['action'],['Edit card fee','Edit default rule','Publish prices'],true);
+                });
             }
             // One row per sync, not one per TLD it wrote.
             $rows=array_filter($rows,fn($r)=>$r['phase']!=='catalogue_imported');
             $names=Staff::can('admin.users.view')?\App\Models\User::whereIn('id',array_column($rows,'actor_id'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
-            return array_map(static function($r)use($names){
+            return array_map(static function($r)use($names,$tldId,$ending){
                 $change=self::CHANGES[$r['action']]??$r['action'];
                 if($r['action']==='Sync TLD prices'&&is_string($r['input']['ending']??null)){$change.=' for .'.$r['input']['ending'];}
+                $detail=[];
+                if($r['action']==='Edit what you sell'){
+                    $change='Sales settings changed';$input=$r['input'];
+                    $edited=$tldId?array_intersect_key((array)($input['rows']??[]),[$ending=>true]):(array)($input['rows']??[]);
+                    foreach(array_slice($edited,0,5,true) as $name=>$row){
+                        $new=$row['new'];$detail[]='.'. $name.': '.match($new['choice']){'sell'=>'Sell','skip'=>"Don't sell",default=>'Use default rule'}.'; '.($new['longest']===null?'default term':'up to '.$new['longest'].' years').'; transfers '.($new['transfer']===null?'follow default':($new['transfer']?'on':'off'));
+                    }
+                    if(($input['rule_changed']??false)&&isset($input['rule'])){$rule=$input['rule'];$detail[]='Default: '.($rule['mode']==='only'?"don't sell new TLDs":'sell new TLDs').'; '.($rule['max_cost']===null?'no cost limit':'cost limit USD '.$rule['max_cost']).'; up to '.$rule['years'].' years; transfers '.($rule['transfers']?'on':'off');}
+                    if($detail===[]&&is_string($ending)&&array_key_exists($ending,(array)($input['changes']??[]))){$detail[]='.'. $ending.': '.($input['changes'][$ending]===null?'New sales stopped':'Sales terms updated');}
+                    if(self::unknownSalesScope($input)&&$edited===[]&&(!is_string($ending)||!array_key_exists($ending,(array)($input['changes']??[])))){
+                        $counts=$input['counts']??[];$count=max((int)($counts['rows']??0),(int)($counts['added']??0)+(int)($counts['removed']??0),(int)($counts['cleared']??0));
+                        if($count>0){$change='Sales changed for '.$count.' TLDs';}
+                        $detail[]='For this account; affected TLDs were not recorded.';
+                    }
+                }
                 $phase=(string)$r['phase'];
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
-                try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->format('M j, Y H:i').' UTC';}catch(\Throwable){$at=(string)$r['at'];}
-                return ['time'=>$at,'change'=>$change,'reason'=>(string)$r['reason'],'by'=>$names[$r['actor_id']]??'Staff #'.$r['actor_id']];
+                try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->toIso8601String();}catch(\Throwable){$at=(string)$r['at'];}
+                return ['time'=>$at,'change'=>$change,'reason'=>implode(' · ',[...$detail,...($r['reason']===''?[]:[(string)$r['reason']])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
             },array_reverse(array_values($rows)));
         }catch(\Throwable){return null;}
     }
@@ -255,6 +283,7 @@ final class TldFacts
         'catalogue_acceptance_unavailable'=>'What you sell not saved for this account','catalogue_acceptance_changed'=>'What you sell changed during the sync',
         'catalogue_evidence_missing'=>'Registrar returned no prices for this TLD',
         'catalogue_evidence_invalid'=>'Registrar returned prices for terms this account does not support',
+        'catalogue_call_capacity'=>"Our call limit cannot cover the price sync",
         'catalogue_import_failed'=>"Couldn't save the new prices",'catalogue_interrupted'=>'Sync stopped before it finished'];
     public static function syncCause(?string $code): string { return self::CAUSES[$code]??self::CAUSES['read_exception']; }
     public static function refreshState(int $serverId): string
@@ -262,8 +291,8 @@ final class TldFacts
         $failure=self::syncFailure($serverId);
         return $failure?'Sync failed: '.$failure['cause']:'Synced';
     }
-    /** Synced prices older than this get a quiet warning; they still sell. */
-    public const SYNC_WARN_DAYS=7;
+    /** Sales stop at this saved-cost age; a sync restores eligible prices. */
+    public const SYNC_WARN_DAYS=PriceCatalogue::MAX_COST_AGE_SECONDS/86400;
     /** When this TLD's costs were last read, from its saved price rows. Null when none were. */
     public static function lastSynced(array $prices): ?\Carbon\CarbonImmutable
     {
@@ -283,7 +312,7 @@ final class TldFacts
         $row=self::queue($serverId);$facts=self::refreshFacts($serverId,$row);
         if($facts===null){return null;}
         try{$at=isset($facts['at'])&&is_string($facts['at'])?\Carbon\CarbonImmutable::parse($facts['at'])->utc():null;}catch(\Throwable){$at=null;}
-        if($row->catalogue_hold===null){
+        if($row->catalogue_hold===null&&($facts['kind']??null)!=='price_sync'){
             $last=$lastPrices??self::lastPrices($serverId);
             if($at===null||($last!==null&&$last>=$at)){return null;}
         }
@@ -305,6 +334,10 @@ final class TldFacts
         catch(\JsonException){$audit=[];}
         if(!is_array($audit)){$audit=[];}
         foreach(array_reverse($audit) as $failure){
+            if(($failure['kind']??null)==='price_sync'&&$row->catalogue_hold===null){
+                // Automatic retry and recovery are quiet. A partial price update cannot clear an account failure.
+                return ($failure['state']??null)==='failed'?array_intersect_key($failure,array_flip(['kind','code','server_id','account_fingerprint','at'])):null;
+            }
             if(in_array($failure['code']??null,\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::CODES,true)
                 &&($row->catalogue_hold===null||$failure['code']===$row->catalogue_hold)){
                 return array_intersect_key($failure,array_flip(['code','server_id','account_fingerprint','at']));

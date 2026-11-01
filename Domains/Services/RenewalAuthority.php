@@ -36,7 +36,7 @@ final readonly class RenewalAuthority
                 // A named issued obligation keeps its original authority through a future-only stop.
                 $issued=$l['operations']->contains(fn($op)=>self::expected($op,$request));
                 if (!in_array($domain->status, ['active', 'expired', 'grace'], true) || $l['service']->status !== 'active'
-                    || ($issued?RenewalStop::blocksRenewal($l):RenewalStop::stopped($l))) { throw new RenewalRefused(RenewalCode::Authority); }
+                    || ($issued?RenewalStop::blocksRenewal($l):($request->manual?RenewalStop::blocked($l):RenewalStop::stopped($l)))) { throw new RenewalRefused(RenewalCode::Authority); }
                 $all = $l['operations']; $prices = $l['prices'];
                 if ($domain->authority_generation !== $request->generation || $domain->confirmed_revision !== $request->revision
                     || $domain->provider_expires_at?->format('Y-m-d') !== $request->expiry || $domain->provider_domain_id !== $request->providerId
@@ -91,7 +91,7 @@ final readonly class RenewalAuthority
     }
     public static function resolved(Operation $op, Domain $domain, \Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): bool
     {
-        if (RenewalReplacements::reviewed($op,$domain) || ManagementEvidence::resolved($op, $domain) || OperationTerminalProof::safe($op, $domain)) { return true; }
+        if (RenewalRetries::resolved($op,$domain) || RenewalReplacements::reviewed($op,$domain) || ManagementEvidence::resolved($op, $domain) || OperationTerminalProof::safe($op, $domain)) { return true; }
         if (!$op->confirmed_expires_at || $op->confirmed_expires_at > $domain->provider_expires_at) { return false; }
         $historical = clone $domain; $historical->provider_expires_at = $op->confirmed_expires_at;
         return self::completed($op, $historical, $binding);
@@ -114,7 +114,7 @@ final readonly class RenewalAuthority
             || ($p['generation'] ?? null) !== $domain->authority_generation || ($p['operation_key'] ?? null) !== $op->operation_key
             || ($p['charge'] ?? null) !== ($op->cost['actual'] ?? null) || ($p['charge']['currency'] ?? null) !== 'USD'
             || ($p['query'] ?? null) !== ['name' => $domain->domain, 'action' => $op->action, 'years' => (int) $op->term]
-            || !in_array($p['source'] ?? null, ['captured_order', 'accepted_history'], true)) { return false; }
+            || !in_array($p['source'] ?? null, ['captured_order', 'accepted_history', 'staff_answer'], true)) { return false; }
         // Reuse the original sealed-attempt/PersistedExecution reconstruction, never a state-label shortcut.
         try {
             // A history-discovered ID is completion proof, not a retroactive original response ID.
@@ -123,13 +123,14 @@ final readonly class RenewalAuthority
             if ($p['source'] === 'accepted_history' && $reference === null) { $original->provider_order_id = null; }
             $attempt = ReconciliationEvidence::attempt($original, $domain, $binding);
             $precision = ExpiryPrecision::from($p['processed_precision'] ?? 'instant');
-            if ($precision === ExpiryPrecision::Local && $p['source'] !== 'captured_order') { return false; }
+            if ($precision === ExpiryPrecision::Local && !in_array($p['source'],['captured_order','staff_answer'],true)) { return false; }
             $processed = new DateEvidence($p['processed_at'] ?? '', $precision, $p['processed_source'] ?? 'retained_order',
                 $p['processed_timezone'] ?? ($precision === ExpiryPrecision::Instant ? (new \DateTimeImmutable($p['processed_at']))->getTimezone()->getName() : null));
             if (($p['window_start'] ?? null) !== $attempt->windowStart->format(DATE_ATOM)
                 || ($p['window_end'] ?? null) !== $attempt->windowEnd->format(DATE_ATOM)
                 || !ReconciliationEvidence::processedWithin($attempt, $processed, $p['order_reference'] ?? null)) { return false; }
-            if ($p['source'] === 'captured_order') {
+            if (in_array($p['source'],['captured_order','staff_answer'],true)) {
+                if(($p['source']==='staff_answer')!==($attempt->execution===\Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord::StaffAnswer)){return false;}
                 if (!$attempt->executionFacts) { return false; }
                 $attempt->executionFacts->requireAttempt($attempt);
             }

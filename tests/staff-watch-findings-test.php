@@ -43,7 +43,21 @@ $status=['healthy'=>['Monitoring','success',null],'ns-changed'=>['Problem found'
 foreach($expected as $name=>$keys){$record=$records[$w[$name]];same($keys,$list->watchRow($record)['keys'],'Staff findings for '.$name);[$label,$tone,$reason]=$status[$name];same($label,$column->record($record)->getState(),'Status for '.$name);same($tone,$column->record($record)->getColor($label),'Tone for '.$name);same($reason,$column->record($record)->getDescriptionBelow(),'Reason for '.$name);
     if($name!=='paused'){same(array_values(array_filter($keys,fn($k)=>!str_starts_with($k,'staff.'))),array_values(array_intersect(WatchFindings::KEYS,$reader->one($owner,'watch',$w[$name])->stateKeys)),'Customer summary agrees for '.$name);}}
 $page->assertSee('Problem found')->assertSee('Nameservers changed')->assertSee('Expired')->assertSee('Monitoring')->assertSee('Paused')->assertSee('Fills in by itself after the next check')->assertDontSee('No findings')->assertDontSee('Pointer check');
-same('danger',WatchFacts::lastCheck($records[$w['stale']],$list->watchRow($records[$w['stale']])['summary'])['tone'],'Out-of-date last check is red');same('Missing',$list->getTable()->getColumn('last_check')->record($records[$w['not-checked']])->getState(),'Never checked reads Missing');
+same(null,WatchFacts::lastCheck($records[$w['stale']],$list->watchRow($records[$w['stale']])['summary'])['tone'],'Old evidence waits for its next check without implying a failure');same('Missing',$list->getTable()->getColumn('last_check')->record($records[$w['not-checked']])->getState(),'Never checked reads Missing');
+// Preserved failed results promise retries only while this name is monitored.
+$watch=clone $records[$w['healthy']];$watch->setRelation('work',$watch->work->map(fn($job)=>clone $job));
+$summary=$list->watchRow($records[$w['healthy']])['summary'];
+foreach(['active'=>' Checks retry automatically.','paused'=>' Resume monitoring to check again.','retired'=>''] as $state=>$retry){
+    $watch->state=$state;$watch->work->firstWhere('kind','expiry')->safe_code='read_unavailable';
+    same('Registry lookup failed.'.$retry,WatchFacts::lastCheck($watch,$summary)['sub'],'Registry failure guidance for '.$state);
+    $watch->work->firstWhere('kind','expiry')->safe_code=null;
+    $partial=new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($summary),
+        'freshness'=>array_map(fn($f)=>[...$f,'partial'=>true,'stale'=>$state!=='active'],$summary->freshness)]);
+    same('Some checks failed.'.$retry,WatchFacts::lastCheck($watch,$partial)['sub'],'Partial check guidance for '.$state);
+    $complete=new \Paymenter\Extensions\Servers\Domains\Presentation\DomainSummary(...[...get_object_vars($summary),
+        'freshness'=>array_map(fn($f)=>[...$f,'partial'=>false,'stale'=>true],$summary->freshness)]);
+    same($state==='active'?'Some results are waiting for the next check.':null,WatchFacts::lastCheck($watch,$complete)['sub'],'Old complete results for '.$state);
+}
 // The Status filter selects exactly the rows with each status.
 $problem=array_map(fn($n)=>WatchName::find($w[$n]),['ns-changed','expired','expiring']);$monitoring=array_map(fn($n)=>WatchName::find($w[$n]),['healthy','ns-pending','stale','not-checked']);
 Livewire::actingAs($viewer)->test(ListWatches::class)->filterTable('status','problem')->assertCanSeeTableRecords($problem)->assertCanNotSeeTableRecords([...$monitoring,WatchName::find($w['paused'])])->assertCountTableRecords(count($problem));

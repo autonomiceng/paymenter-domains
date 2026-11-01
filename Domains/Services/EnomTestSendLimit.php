@@ -12,6 +12,13 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
  */
 final class EnomTestSendLimit
 {
+    private static array $checkoutHeadroom=[];
+    /** A synchronous read scope narrows only this login's atomic allowance; checkout keeps the original guard. */
+    public static function withCheckoutHeadroom(string $uid,\Closure $read): mixed
+    {
+        $account=self::account($uid);$nested=isset(self::$checkoutHeadroom[$account]);self::$checkoutHeadroom[$account]=true;
+        try{return $read();}finally{if(!$nested){unset(self::$checkoutHeadroom[$account]);}}
+    }
     public const PER_DAY='domains.enom_test_sends_per_day';
     public const PER_MINUTE='domains.enom_test_sends_per_minute';
     /** @return array{day:?int,minute:?int} null when the setting is invalid */
@@ -31,8 +38,10 @@ final class EnomTestSendLimit
             // Inside an outer transaction a rollback could refund the attempt.
             OperationClaims::outside();
             ['day'=>$perDay,'minute'=>$perMinute]=self::limits();
-            if(!$perDay||!$perMinute||$uid===''||!preg_match('/^[A-Za-z_]{1,32}$/D',$command)){throw new \DomainException;}
+            if($perDay===null||$perMinute===null){throw new EnomTestCallLimit('bad_setting');}
+            if(!$perDay||!$perMinute||$uid===''||!preg_match('/^[A-Za-z_]{1,32}$/D',$command)){throw new EnomTestCallLimit;}
             $account=self::account($uid);
+            if(isset(self::$checkoutHeadroom[$account])){$perDay=intdiv($perDay,2);}
             // A deadlock rolls back with nothing written, so the whole check is retried.
             DB::transaction(static function()use($account,$command,$perDay,$perMinute):void {
                 $row=DB::table(EnomTestSendLimitSchema::ACCOUNTS)->where('account',$account);
@@ -43,10 +52,11 @@ final class EnomTestSendLimit
                 }
                 (clone $row)->lockForUpdate()->sole();
                 $now=self::now();$sends=fn(int $seconds)=>DB::table(EnomTestSendLimitSchema::SENDS)->where('account',$account)->where('sent_at','>',$now-$seconds)->count();
-                if($sends(86400)>=$perDay||$sends(60)>=$perMinute){throw new \DomainException;}
+                if($sends(86400)>=$perDay||$sends(60)>=$perMinute){throw new EnomTestCallLimit('over_limit');}
                 DB::table(EnomTestSendLimitSchema::SENDS)->insert(['account'=>$account,'command'=>$command,'sent_at'=>$now]);
             },3);
-        } catch(\Throwable) { EnomTestCalls::refuse(); }
+        } catch(EnomTestCallLimit $error) { EnomTestCalls::refuse($error->reason); }
+        catch(\Throwable) { EnomTestCalls::refuse('unreadable'); }
     }
     private static function now(): int { return app(Clock::class)->now()->getTimestamp(); }
     /** @return array{day:?int,day_limit:?int,minute:?int,minute_limit:?int} counts are null when unreadable */

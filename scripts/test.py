@@ -26,7 +26,7 @@ CATEGORIES = ['lint', 'provider', 'contracts', 'native', 'ui', 'runner', 'packag
 ORDER = ['lint', 'provider', 'contracts', 'runner', 'package', 'ui', 'native', 'mariadb']
 WORKER_MEMORY_MIB = 1024
 # About 85 s alone; parallel load pushed it past the 120 s native limit.
-SLOW_NATIVE = {'management-privacy-retirement-test.php'}
+SLOW_NATIVE = {'management-privacy-retirement-test.php', 'native-paid-baseline-test.php', 'transfer-completion-test.php'}
 
 
 def kill_tree(pid):

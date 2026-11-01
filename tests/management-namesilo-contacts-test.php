@@ -44,6 +44,16 @@ same('queued',$management->run($op->id,$driver)->state,'Creation write slot defe
 $clock->instant=$clock->now()->modify('+181 seconds'); Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
 same('succeeded',$management->run($op->id,$driver)->state,'Delayed association uses fresh named profile proof after slot expires');
 same(['getDomainInfo','contactList','contactDomainAssociate','getDomainInfo','contactList'],array_column($ms->calls,0),'Fresh exact profile read precedes delayed association');
+// Frozen transfer details drive both durable profile staging and association without staff input.
+[$d,$driver,$original]=$holding('frozen-correction');
+$original->update(['policy'=>[...$original->policy,'reconciliation'=>[...($original->policy['reconciliation']??[]),'observed_corrections'=>['contacts']]]]);
+for($round=0;$round<10;$round++){
+    Cache::flush();$correction=\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$management,$driver);
+    if($correction){($correction->attempt['seal']??null)==='sealed'?$management->reconcile($correction->id,$driver):$management->run($correction->id,$driver);}
+}
+same(4,count(array_filter($writes(),fn($v)=>$v[0]==='contactAdd')),'Exactly one isolated profile per frozen role');
+same(4,count(array_filter($writes(),fn($v)=>$v[0]==='contactDomainAssociate')),'Every frozen role associated once');
+same(null,\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$management,$driver),'Completed corrections converge without another write');
 [$d,$driver,$original]=$holding('registry-revoked'); $input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];
 $op=$submit($d,$driver,'contact_profile',$input); $tlds[1]->fresh()->update(['registry_fields'=>[['name'=>'unaccepted']]]);
 same('held',$management->run($op->id,$driver)->state,'Unaccepted registry schema refuses profile creation'); same([],$writes(),'Registry gate emits no write');

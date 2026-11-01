@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus};
 /** The staff view of a domain's status: the customer's status words, with the one staff step under them.
  * Status words come from DomainStatus, so customers and staff read the same thing. Only the step is staff-only.
  * Request history and every open alert stay on the domain and request pages.
@@ -16,6 +16,8 @@ final class StaffDomainStatus
     public const MOVING = ['queued', 'running', 'pending'];
     /** Same words as the request page (RequestStatus). */
     private const UNPAID = 'Customer has not paid the invoice. Not sent yet.';
+    /** Customers read DomainStatus::LATE, which sends them to support. Staff are support, so they get this step instead. */
+    private const LATE = 'Check renewal options and status at the registrar.';
     /** $shared is the status the customer sees and $state the state it came from (DomainFacts::status). $alerts and $renewal come from StaffDomainInputs.
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
@@ -29,16 +31,19 @@ final class StaffDomainStatus
             if ($alerts) { [$step, $request] = self::alert(self::topAlert($alerts)); }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request] = self::renewal($renewal); }
         }
-        return [...$shared, 'step' => $step, 'request' => $request];
+        return [...self::forStaff($shared), 'step' => $step, 'request' => $request];
     }
     /** Late money is checked first by the caller, so it takes the step. */
     public static function late(array $shared): array
-    { return [...$shared, 'step' => DomainFacts::alertCause('acquisition_late_money'), 'request' => null]; }
+    { return [...self::forStaff($shared), 'step' => DomainFacts::alertCause('acquisition_late_money'), 'request' => null]; }
+    private static function forStaff(array $shared): array
+    { return $shared['reason'] === DomainStatus::LATE ? [...$shared, 'reason' => null] : $shared; }
     /** @return array{0:?string,1:bool,2:?int} step, whether the step is already specific, and the request it names */
     private static function resolve(string $state, Domain $d, ?Operation $op): array
     {
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
+            if (($ready=RequestFacts::readyMessage($op))!==null) { return [$ready.self::open($op->id),true,$op->id]; }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op), true, $op->id]; }
             if ($state === 'awaiting_payment') { return [self::UNPAID, false, null]; }
             if ($state === 'awaiting_code') { return ['Customer has not added the auth code. Not sent yet.', false, null]; }
@@ -56,7 +61,8 @@ final class StaffDomainStatus
             'transfer_pending' => ['Transfer in progress. Nothing to do yet.', false],
             'active', 'renewal_off_expiring' => [null, false],
             'needs_review' => ['Check the domain and its requests.', false],
-            'expired', 'grace', 'redemption', 'registration_rejected', 'transfer_rejected', 'cancelled' => [null, true],
+            'expired', 'grace', 'redemption' => [self::LATE, true],
+            'registration_rejected', 'transfer_rejected', 'cancelled' => [null, true],
             default => ['Check the domain.', false],
         }, null];
     }
@@ -74,13 +80,14 @@ final class StaffDomainStatus
     {
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op), $op->id],
-            $op->state === 'awaiting_payment' => [self::UNPAID, null],
+            $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null],
+            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.self::open($op->id), $op->id],
             default => ['Renewal in progress. Nothing to do yet.', null],
         };
     }
     private static function stopped(Operation $op): string
     {
-        $cause = $op->safe_code !== null ? Labels::reason($op->safe_code) : null;
+        $cause = RequestFacts::reason($op);
         return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : 'Registrar has not confirmed the result')).self::open($op->id);
     }
     private static function open(int $id): string { return ' Open request #'.$id.'.'; }

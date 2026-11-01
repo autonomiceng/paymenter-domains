@@ -2,14 +2,18 @@
 // Enom d1392a8 DomainBilling::complimentary/retireUnpaidRenewals; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\User;
+use App\Enums\InvoiceTransactionStatus;
+use App\Models\{Invoice, User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 /** Explicit internal financial transitions. Native UI/scheduling are separate consumers. */
 final readonly class RenewalCycles
 {
+    private const EARLY_DAYS = 7;
+    private const EARLY_REASON = 'Early renewal not paid';
     public function __construct(private AccountBindings $bindings, private Clock $clock) {}
     public static function key(Domain $d): string { return 'renew:'.$d->id.':g'.$d->authority_generation.':'.$d->provider_expires_at->format('Y-m-d'); }
     /** Current-cycle presentation evidence, oldest first. Does not grant renewal authority. */
@@ -24,15 +28,46 @@ final readonly class RenewalCycles
         $key = self::key($l['domain']); $cycle = $l['operations']->filter(fn ($op) => $op->action === 'renew'
             && $op->authority_generation === $l['domain']->authority_generation && $op->base_expires_at == $l['domain']->provider_expires_at);
         foreach ($cycle as $op) {
+            if(RenewalRetries::resolved($op,$l['domain'])){FinancialAdjustments::requireHistory($op,$l);continue;}
             if (RenewalReplacements::reviewed($op,$l['domain'])) { RenewalReplacements::requireSettled($op,$l); continue; }
             if ((!RenewalAutoPay::unattempted($op) && !RefundPayment::retiredSettled($op, $l))
                 || !OperationTerminalProof::safe($op, $l['domain']) || $op->safe_code !== 'renewal_cancelled_unpaid'
                 || (($l['invoices']->firstWhere('id', $op->invoice_id)?->status !== 'cancelled'
-                    || $l['transactions']->contains('invoice_id', $op->invoice_id)) && !RefundPayment::retiredSettled($op, $l))) {
+                    || self::moneyMoved($l, $op->invoice_id)) && !RefundPayment::retiredSettled($op, $l))) {
                 throw new \DomainException('A renewal obligation already owns this cycle.');
             }
         }
         return $cycle->isEmpty() ? $key : $key.':replacement:'.$cycle->count();
+    }
+    /** A declined card leaves a failed row and no money. */
+    public static function moneyMoved(array $l, ?int $invoice): bool
+    {
+        return $l['transactions']->contains(fn ($row) => (int) $row->invoice_id === $invoice && $row->status !== InvoiceTransactionStatus::Failed);
+    }
+    /** Native receipts may make Cancelled invoices Paid. Close their unpaid authority before INSERT, not at Paid or a later sweep. */
+    public static function beforePayment(int $invoiceId, Clock $clock, ?int $receiptId = null): void
+    {
+        $open = ['awaiting_payment', 'queued', 'held'];
+        $seed = Operation::where('invoice_id', $invoiceId)->where('action', 'renew')->first()?->domain;
+        if (!$seed) { return; }
+        // Retained membership survives an older snapshot; only the ordered, current locked scan decides state.
+        $write = static function () use ($seed, $invoiceId, $clock, $open, $receiptId): void {
+            // Native updateOrCreate uses a savepoint; all locks still belong to the outer payment transaction.
+            if (Invoice::whereKey($invoiceId)->lockForUpdate()->value('status') !== 'cancelled') { return; }
+            $l = HoldingLocks::take($seed, nativeReceipt: true);
+            foreach ($l['operations']->where('invoice_id', $invoiceId)->where('action', 'renew')->whereIn('state', $open) as $op) {
+                if (!self::canRetireUnpaid($op, $l)) {
+                    $receipt=$l['transactions']->firstWhere('id',$receiptId);
+                    if(!$receipt||(int)$receipt->invoice_id!==$invoiceId||$receipt->status!==InvoiceTransactionStatus::Processing){throw new \DomainException('Cancelled renewal needs payment review before another receipt.');}
+                    try{FundsWaits::closeRenewal($op,$l,$clock->now(),$l['transactions']->where('invoice_id',$invoiceId)->pluck('id')->all());}
+                    catch(\DomainException){$op->update(['state'=>'held','safe_code'=>'renewal_funding_or_authority']);}
+                    // Accounting evidence must settle even when authority or an attempted send still needs review.
+                    continue;
+                }
+                self::retireLocked($op, $l, self::early($op, $clock->now()) !== null ? self::EARLY_REASON : 'Unpaid renewal cancelled', $clock);
+            }
+        };
+        if (DB::transactionLevel() === 0) { DB::transaction($write); } else { $write(); }
     }
     public function retireUnpaid(int $id): Operation
     {
@@ -40,7 +75,7 @@ final readonly class RenewalCycles
         return DB::transaction(function () use ($seed, $id): Operation {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             if (!self::canRetireUnpaid($op, $l)) { throw new \DomainException('Unpaid terminal proof unavailable.'); }
-            return $this->retireLocked($op, $l, 'Unpaid renewal cancelled');
+            return self::retireLocked($op, $l, 'Unpaid renewal cancelled', $this->clock);
         });
     }
     /** Local expiry cleanup, independent of renewal preferences and billing switches. */
@@ -54,9 +89,50 @@ final readonly class RenewalCycles
             $l = HoldingLocks::take($seed);
             if (!DomainBilling::expired($l['domain'], $this->clock->now())) { return; }
             foreach ($l['operations'] as $op) {
-                if (self::canRetireUnpaid($op, $l)) { $this->retireLocked($op, $l, 'Domain expired'); }
+                if (self::expiredInvoice($op, $this->clock->now()) && self::canRetireUnpaid($op, $l)) { self::retireLocked($op, $l, 'Domain expired', $this->clock); }
             }
         });
+    }
+    /** Late invoices keep their own precise deadline, rather than immediately closing at the old expiry. */
+    public static function expiredInvoice(Operation $op, \DateTimeImmutable $now): bool
+    {
+        return ($until=LateRenewalQuote::deadline($op))!==null ? $now >= $until : $op->base_expires_at?->format('Y-m-d') <= $now->format('Y-m-d');
+    }
+    /** An early renewal nobody paid closes after a week, or at once when staff cancel its invoice: nothing is owed yet and the scheduled invoice still comes on its date. */
+    public function closeEarlyUnpaid(int $domainId): void
+    {
+        OperationClaims::outside(); $seed = Domain::findOrFail($domainId); $now = $this->clock->now(); $cutoff = $now->modify('-'.self::EARLY_DAYS.' days');
+        // Every domain passes here each sweep; take row locks only when an old unpaid renewal exists.
+        $closable = fn ($q) => $q->where('created_at', '<=', $cutoff)->orWhereIn('invoice_id', Invoice::where('status', 'cancelled')->select('id'));
+        if (!$seed->operations()->where('action', 'renew')->where('state', 'awaiting_payment')->where($closable)->exists()) { return; }
+        DB::transaction(function () use ($seed, $now, $cutoff): void {
+            $l = HoldingLocks::take($seed);
+            foreach ($l['operations'] as $op) {
+                $cancelled = $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'cancelled';
+                if (($op->created_at <= $cutoff || $cancelled) && self::early($op, $now) !== null && self::canRetireUnpaid($op, $l)) { self::retireLocked($op, $l, self::EARLY_REASON, $this->clock); }
+            }
+        });
+    }
+    /** Due date of a renewal invoice nobody has paid while its issue date is still ahead. */
+    public static function early(Operation $op, ?\DateTimeImmutable $now = null): ?string
+    {
+        if ($op->action !== 'renew' || $op->state !== 'awaiting_payment') { return null; }
+        try { $calendar = $op->policy['calendar'] ?? null; } catch (\Throwable) { return null; }
+        $issue = $calendar['issue'] ?? null; $due = $calendar['due'] ?? null;
+        return is_string($issue) && is_string($due) && ($now ?? app(Clock::class)->now())->format('Y-m-d') < $issue ? $due : null;
+    }
+    public static function closedEarly(Operation $op): bool
+    {
+        if ($op->safe_code !== 'renewal_cancelled_unpaid') { return false; }
+        try { return ($op->policy['unpaid_retirement']['reason'] ?? null) === self::EARLY_REASON; } catch (\Throwable) { return false; }
+    }
+    /** Where money that reached a closed early renewal went, once it is credited. */
+    public static function lateNote(Operation $op): ?string
+    {
+        if($op->action!=='renew'){return null;}
+        if($return=ReceiptReturns::summary($op)){return $return[1];}
+        $minor = self::closedEarly($op) ? array_sum(RefundPayment::lateCredited($op)) : 0;
+        return $minor > 0 ? RequestStatus::lateCredit(RenewalReminders::money(PricingRule::decimal($minor))) : null;
     }
     /** Read-only eligibility proof, independent of expiry. Writes require the current locked ledger. */
     public static function canRetireUnpaid(?Operation $op, array $l): bool
@@ -66,21 +142,21 @@ final readonly class RenewalCycles
                 || $op->service_id !== $l['domain']->service_id || $op->authority_generation !== $l['domain']->authority_generation
                 || (int) $invoice->user_id !== (int) $l['domain']->user_id || $invoice->currency_code !== 'USD'
                 || (int) $item->invoice_id !== (int) $invoice->id
-                || !in_array($invoice->status, ['pending', 'cancelled'], true) || $l['transactions']->contains('invoice_id', $invoice->id)
+                || !in_array($invoice->status, ['pending', 'cancelled'], true) || self::moneyMoved($l, (int) $invoice->id)
                 || $l['items']->where('invoice_id', $invoice->id)->count() !== 1 || $item->reference_type !== null || $item->reference_id !== null
                 || PricingRule::minor($item->price) !== PricingRule::minor($op->amount) || (string) $item->quantity !== '1'
                 || !in_array($op->state, ['awaiting_payment', 'queued', 'held'], true) || !self::virgin($op));
     }
-    private function retireLocked(Operation $op, array $l, string $reason): Operation
+    private static function retireLocked(Operation $op, array $l, string $reason, Clock $clock): Operation
     {
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id);
         // Retain the same local financial audit shape as unpaid acquisition retirement.
-        $audit = ['actor_id' => null, 'reason' => $reason, 'at' => $this->clock->now()->format(DATE_ATOM),
+        $audit = ['actor_id' => null, 'reason' => $reason, 'at' => $clock->now()->format(DATE_ATOM),
             'operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id,
             'before' => ['invoice' => $invoice->status, 'operation' => $op->state],
             'after' => ['invoice' => 'cancelled', 'operation' => 'rejected']];
         $invoice->update(['status' => 'cancelled']);
-        $op->update(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $this->clock->now(),
+        $op->update(['state' => 'rejected', 'safe_code' => 'renewal_cancelled_unpaid', 'completed_at' => $clock->now(),
             'policy' => [...($op->policy ?? []), 'unpaid_retirement' => $audit],
             'attempt' => ['seal' => 'absent', 'send_state' => 'definitely_unsent', 'disposition' => 'rejected', 'rejection_basis' => 'definitely_unsent',
                 'terminal' => ['operation_key' => $op->operation_key, 'generation' => $op->authority_generation, 'invoice_id' => $invoice->id, 'transactions' => []]]]);

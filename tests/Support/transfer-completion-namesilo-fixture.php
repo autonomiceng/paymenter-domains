@@ -38,6 +38,7 @@ $wire=new class($observe) implements DeadlineTransport {
 $registry=new RegistrarRegistry; $registry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock));
 $readBindings=new AccountBindings($registry); $reconcile=new OperationReconciliation($claims,$readBindings,$clock);
 $prepare=static function($label)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
+    DB::table('domains_read_budgets')->delete(); // Each synthetic transfer starts an independent account-minute scenario.
     $clock->instant=$now; $state->rdapUnknown=false; $state->mode=''; $op=$newTransfer(placeholderComFixtureName('ns-transfer-'.$label.'-placeholder.com'),1);
     $payload=$op->payload; unset($payload['privacy']); $op->update(['payload'=>$payload]); // Actual checkout defaults privacy off at dispatch.
     $makeTransfer(1); $op=$engine->execute($op->id); same(false,$op->attempt['transfer_admission']['privacy'],'Dispatch default frozen at seal');
@@ -65,7 +66,7 @@ $unresolved=static function(array $faults)use($prepare,$observe,$clock,$now,$rec
         $r=$reconcile->run($op->id); same('uncertain',$r->state,'Missing or contradictory proof stays unresolved'); same(null,$r->cost['actual']??null,'No inferred charge');
         same(null,$r->domain->fresh()->observation['nameservers']??null,'Unproven NameSilo transfers do not save nameserver facts');
         same(null,$r->domain->provider_expires_at,'No inferred expiry'); same(null,$r->domain->renewal_policy['billing_anchor']??null,'No premature anchor');
-        expect($r->policy['reconciliation']['staff_alert'],'Unresolved staff alert retained'); same(null,$r->attempt['transfer_terminal']??null,'No terminal proof');
+        same($fault!=='pending',$r->policy['reconciliation']['staff_alert'],'Only expected pending avoids a staff alert'); same(null,$r->attempt['transfer_terminal']??null,'No terminal proof');
         if (str_starts_with($fault,'reject')) { same('transfer_rejection_contradiction',$r->policy['reconciliation']['reason'],'Owned/charged rejection contradiction'); }
         if (str_starts_with($fault,'needs')) { same('transfer_status_contradiction',$r->policy['reconciliation']['reason'],'Owned/charged needs-action contradiction'); }
     }

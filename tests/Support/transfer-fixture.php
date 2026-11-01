@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
 if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['app.url'=>'https://domains-tests.invalid']); }
 extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test)); $clock = new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
-Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install();
+Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install(); Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'readers'=>[],'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
 foreach ($tlds as $tld) { App\Models\Server::find($tld->server_id)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']); }
 $rdap = new Rdap(static function ($url) use ($state): array {
@@ -27,15 +27,46 @@ $rdap = new Rdap(static function ($url) use ($state): array {
             ['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-01-01T00:00:00Z']]])];
 });
 $admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,new TransferPrecheck(new Rdap(fn()=>throw new RuntimeException('Synthetic checkout lookup')))),$clock);
-$admission->boot(); (new InvoiceBinding($admission,$native,$prices,$clock))->boot();
+$invoiceBinding = new InvoiceBinding($admission,$native,$prices,$clock);
+app()->instance(CartAdmission::class,$admission); app()->instance(InvoiceBinding::class,$invoiceBinding);
+$admission->boot(); $invoiceBinding->boot();
 $user = commerceUser(); $user->update(['email'=>'transfer-owner@example.com']);
 foreach (['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value) { $user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]); }
 $refunds = new Refunds($clock); $inputs = new TransferInputs($clock,$refunds);
-$newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state): Operation {
+// Recovery tests start from historical Live debt, not a new sale without Activate. TEST still exercises checkout.
+$historicalTransfer = static function(string $name,int $i)use($user,$native,$prices,$tlds,$clock):Operation {
+    return DB::transaction(static function()use($name,$i,$user,$native,$prices,$tlds,$clock):Operation {
+        $t=$tlds[$i];$product=$native->product($t,'transfer');$plan=$native->annualPlan($product);
+        $price=$prices->current($t->server_id,$t->account_fingerprint,$t->tld,'transfer',1,'USD',$clock->now());
+        $renew=$prices->current($t->server_id,$t->account_fingerprint,$t->tld,'renew',1,'USD',$clock->now());
+        $snapshot=static fn($p)=>[...get_object_vars($p),'observedAt'=>$p->observedAt->format(DATE_ATOM),'freshUntil'=>$p->freshUntil->format(DATE_ATOM)];
+        $decimal=static fn($v)=>Paymenter\Extensions\Servers\Domains\Services\RetailLine::decimal($v);
+        $order=App\Models\Order::withoutEvents(fn()=>App\Models\Order::create(['user_id'=>$user->id,'currency_code'=>'USD']));
+        $service=App\Models\Service::withoutEvents(fn()=>App\Models\Service::create(['order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,
+            'user_id'=>$user->id,'currency_code'=>'USD','quantity'=>1,'price'=>$decimal($renew->retail),'status'=>'pending','label'=>$name,'expires_at'=>null]));
+        App\Models\Property::withoutEvents(fn()=>$service->properties()->create(['key'=>'domain','value'=>$name]));
+        $invoice=App\Models\Invoice::withoutEvents(fn()=>App\Models\Invoice::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'pending','due_at'=>$clock->now()]));
+        $item=App\Models\InvoiceItem::withoutEvents(fn()=>$invoice->items()->create(['description'=>'Historical synthetic transfer','price'=>$decimal($price->retail),'quantity'=>1,'reference_type'=>$service->getMorphClass(),'reference_id'=>$service->id]));
+        $checkout=['total'=>$decimal($price->retail),'tax'=>'0.00','discount'=>'0.00','net'=>$decimal($price->retail),'name'=>$name,
+            'user_id'=>(int)$user->id,'order_id'=>(int)$order->id,'service_id'=>(int)$service->id,'product_id'=>(int)$product->id,'plan_id'=>(int)$plan->id,
+            'annual_plan_id'=>(int)$plan->id,'annual_price'=>$decimal($renew->retail),'invoice_id'=>(int)$invoice->id,'invoice_item_id'=>(int)$item->id,'term'=>1,'action'=>'transfer','currency'=>'USD'];
+        $domain=Paymenter\Extensions\Servers\Domains\Services\DomainReservations::reserve(['service_id'=>$service->id,'user_id'=>$user->id,'domain'=>$name,
+            'server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'authority_generation'=>1,
+            'status'=>'transfer_pending','snapshot'=>['checkout'=>$checkout],'renewal_policy'=>$snapshot($renew)],[$t->tld]);
+        $op=Operation::create(['domain_id'=>$domain->id,'service_id'=>$service->id,'server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,
+            'account_fingerprint'=>$t->account_fingerprint,'authority_generation'=>1,'invoice_id'=>$invoice->id,'invoice_item_id'=>$item->id,'operation_key'=>'invoice-item:'.$item->id,
+            'action'=>'transfer','term'=>1,'funding_basis'=>'paid_invoice','state'=>'awaiting_payment','amount'=>$decimal($price->retail),'currency'=>'USD',
+            'policy'=>['checkout'=>$checkout,'price'=>$snapshot($price),'seller_revision'=>1],'cost'=>['estimated'=>$price->wholesale,'currency'=>'USD','unit'=>'term_total'],
+            'payload'=>Paymenter\Extensions\Servers\Domains\Services\ContactSetup::capture($user,$t)]);
+        InvoiceBinding::requireIdentity($op,$domain,$service,$invoice,$item);return $op;
+    });
+};
+$newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state,$historicalTransfer): Operation {
     $policy = DB::table('domains_sales_policies')->where('tld','com')->first();
     if ((int) $policy->server_id !== $tlds[$i]->server_id) { $sellers->change('com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
-    $cart = commerceCart($user); commerceAdd($cart,$native->product($tlds[$i],'transfer'),$name); commerceCheckout($user,$cart);
-    $op = Domain::where('domain',$name)->sole()->operations()->sole();
+    if(Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}
+    else{$cart = commerceCart($user); commerceAdd($cart,$native->product($tlds[$i],'transfer'),$name); commerceCheckout($user,$cart);
+        $op = Domain::where('domain',$name)->sole()->operations()->sole();}
     if ($paid) { App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount); $inputs->paymentAccepted($op->id); }
     if ($code) { $r = Illuminate\Http\Request::create('/internal-transfer-input','POST',['transfer_code'=>'SyntheticOnly']); $r->setUserResolver(fn()=>$user); $inputs->submitCode($r,$op->id); }
     if ($i === 1) { $op->refresh()->update(['payload'=>[...$op->payload,'nameservers'=>['ns1.provider.example','ns2.provider.example'],'privacy'=>false]]); }
@@ -47,7 +78,7 @@ foreach (['enom','namesilo'] as $key) {
     $registry->register($key,['token'],$verifier,static function ($b,$c) use ($state,$clock) {
         same(0,DB::transactionLevel(),'Fresh reads outside locks'); $state->reads++;
         if ($state->during) { ($state->during)($state->reads); }
-        $q = new QuoteEvidence($state->query,new Money('99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
+        $q = new QuoteEvidence($state->query,new Money($state->quote??'99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
         $reader = new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
             new Evidence(quote:$q,balance:new Money($state->funds,'USD'),available:$state->available,premium:$state->premium)));
         $state->readers[]=$reader;return $reader;

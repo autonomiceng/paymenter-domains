@@ -55,7 +55,7 @@ same([$op->id,$op->domain_id,$op->service_id,$op->operation_key],
 same(['register','held','enom_test_call_cap'],[$historyOperation->action,$historyOperation->state,$historyOperation->safe_code],'Staff History retains the not-sent refusal');
 same(1,count($historyOperation->attempt['test_call_refusals']),'Persisted refusal evidence is nonempty and singular');
 $refusal=$historyOperation->attempt['test_call_refusals'][0];
-same(['purchase',$clock->now()->format(DATE_ATOM),['amount'=>'99.00','currency'=>'USD']],
+same(['purchase',$clock->now()->format(DATE_ATOM),['amount'=>'6.00','currency'=>'USD']],
     [$refusal['phase'],$refusal['refused_at'],$refusal['authorized_cost']],'Persisted refusal retains the purchase time and authorized USD cost');
 expect(is_string($refusal['dispatch_attempted_at'])&&$refusal['dispatch_attempted_at']!=='','Persisted refusal retains the prior seal time');
 expect(is_array($historyOperation->policy['checkout'])&&$historyOperation->policy['checkout']!==[],'Persisted hidden policy retains checkout evidence');

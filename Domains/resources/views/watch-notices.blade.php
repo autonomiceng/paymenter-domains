@@ -8,6 +8,7 @@
     $nameservers = $page::nameservers($summary);
     $history = $page::history($notices);
     $monitored = $editable && !array_intersect(['watch.paused', 'watch.retired'], $summary->stateKeys);
+    $alertsOn = $preferences['account']['enabled'] && $preferences['target']['enabled'];
     $settings = \Illuminate\Support\Facades\Route::has('account.notifications') ? route('account.notifications') : null;
 @endphp
 <nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $name }}</nav>
@@ -25,11 +26,11 @@
 @if ($monitored)
 <section class="domains-panel" aria-labelledby="heading-alerts"><div class="domains-panel__h"><h2 id="heading-alerts" class="domains-h2">Alerts</h2></div>
 <ul class="domains-rows"><li class="domains-row" id="alerts"><span class="domains-row__l">Monitoring alerts</span>
-@if (!$preferences['account']['enabled'])
+@if (!$preferences['account']['enabled'] && $preferences['account']['revision'] > 1)
 <span class="domains-row__v">Off for all domains</span>@if ($settings)<span class="domains-row__a"><a class="domains-a" href="{{ $settings }}">Notification settings</a></span>@endif
 @else
-<span class="domains-row__v">{{ $preferences['target']['enabled'] ? 'On' : 'Off' }}</span><span class="domains-row__a"><button type="submit" form="form-alerts" class="domains-a domains-linkbtn">{{ $preferences['target']['enabled'] ? 'Turn off' : 'Turn on' }}</button></span>
-<form id="form-alerts" method="POST" action="{{ url('/domains/checks/'.$kind.'/'.$id) }}" hidden>@csrf<input type="hidden" name="_request_key" value="{{ $key }}"><input type="hidden" name="account_revision" value="{{ $preferences['account']['revision'] }}"><input type="hidden" name="target_revision" value="{{ $preferences['target']['revision'] }}"><input type="hidden" name="email" value="1"><input type="hidden" name="notices" value="{{ $preferences['target']['enabled'] ? 0 : 1 }}"></form>
+<span class="domains-row__v">{{ $alertsOn ? 'On' : 'Off' }}</span><span class="domains-row__a"><button type="submit" form="form-alerts" class="domains-a domains-linkbtn">{{ $alertsOn ? 'Turn off' : 'Turn on' }}</button></span>
+<form id="form-alerts" method="POST" action="{{ url('/domains/checks/'.$kind.'/'.$id) }}" hidden>@csrf<input type="hidden" name="_request_key" value="{{ $key }}"><input type="hidden" name="account_revision" value="{{ $preferences['account']['revision'] }}"><input type="hidden" name="target_revision" value="{{ $preferences['target']['revision'] }}"><input type="hidden" name="email" value="1"><input type="hidden" name="notices" value="{{ $alertsOn ? 0 : 1 }}"></form>
 @endif
 </li></ul></section>
 @endif

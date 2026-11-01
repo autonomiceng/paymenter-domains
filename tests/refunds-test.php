@@ -5,7 +5,8 @@ require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Credit, InvoiceTransaction, Role, Service};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, FinancialAdjustments, PricingRule, Refunds};
+use Paymenter\Extensions\Servers\Domains\Presentation\DomainPage;
+use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, FinancialAdjustments, NativeIntentSchema, ObservationSchema, OwnedDomains, OwnerPorts, PricingRule, Refunds};
 $refunds = new Refunds($clock); $adjustments = new FinancialAdjustments($clock);
 $role = Role::create(['name'=>'Refund staff','permissions'=>['admin.domains.manage','admin.invoices.update']]);
 $staff = commerceUser(); $staff->update(['role_id'=>$role->id]);
@@ -39,8 +40,13 @@ catch (Illuminate\Database\QueryException) {}
 DB::unprepared('DROP TRIGGER refuse_credit');
 same('rejected',$retry->fresh()->state,'Authorized disposition survives credit failure'); same($before,$credit(),'Failed credit rolls back');
 same(false,array_key_exists('refund',$retry->fresh()->funding),'No marker on failed credit');
+require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();NativeIntentSchema::install();ObservationSchema::install();$owner=new OwnedDomains($clock,new OwnerPorts());
+$sees=static function(Operation $op)use($owner):array{$d=$owner->present($op->fresh()->domain()->firstOrFail());$notice=DomainPage::notice($d,'https://support.example.com');$expires=DomainPage::expires($d,null,'https://support.example.com');
+    return [$d->status,$notice['text'],$notice['action']['label']??null,$expires['missing'],$expires['cause']??null,$expires['fix']['label']??null];};
+same(['Under review','This order was cancelled. Ask us to start it again.','Contact support',true,'Order cancelled','Contact support'],$sees($retry),'No credit yet: the customer is not told it was added and can reach us');
 same(1,$refunds->retryPending(),'Retry completes exactly one'); same(0,$refunds->retryPending(),'Retry idempotent');
 same($before+PricingRule::minor($retry->amount),$credit(),'Retry exact credit');
+same(['Cancelled','This order was cancelled. We added what you paid to account credit. You can apply it on an invoice.',null,false,null,null],$sees($retry),'Credit landed: one clear state');
 // Failure writing the refund marker rolls the credit back in the same transaction.
 $marker=$held('refund-marker-failure-placeholder.com'); $before=$credit(); $failMarker=true;
 Operation::updating(static function($row)use($marker,&$failMarker){
@@ -124,4 +130,71 @@ $contact=$new(placeholderComFixtureName('refund-contact-placeholder.com'),true,f
 same('contact_details_required',$contact->fresh()->safe_code,'Real paid contact hold');
 $refunds->refundHeld($staff,$contact->id,'customer_cancelled'); same('rejected',$contact->fresh()->state,'Contact recovery composes refund disposition');
 commerceReject(fn () => ContactRecovery::replace($user,$contact->id,'Customer corrected contacts'));
+// Native gateway dispatch uses an optional receipt port; the fake persists acceptance before losing its reply.
+require __DIR__.'/Support/money-receipt.php';
+$gateway=\App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Money receipt fixture','type'=>'gateway','enabled'=>true]);
+$original=$held('original-payment-refund-placeholder.com');
+DB::table('invoice_transactions')->where('invoice_id',$original->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'receipt_synthetic_original']);
+$before=$credit();try{$refunds->refundHeld($staff,$original->id,'customer_cancelled');expect(false,'Lost refund reply must surface');}catch(RuntimeException){}
+same('original_payment',$original->fresh()->funding['refund']['to'],'Original method plan survives reply loss');
+same($before,$credit(),'Unknown gateway result cannot also issue account credit');
+$refunds->creditRejected($original->id);$refunds->creditRejected($original->id);
+same(1,MoneyReceiptGateway::$sends,'Restart and repeated ticks reuse the one allocation');
+same($before,$credit(),'Confirmed gateway refund leaves account credit alone');
+// A bank can fail a previously succeeded refund. The gateway reclassifies that same return as credit.
+$key=array_key_last(MoneyReceiptGateway::$returns);$sends=MoneyReceiptGateway::$sends;
+MoneyReceiptGateway::$returns[$key]['state']='review';
+$refunds->creditRejected($original->id);same('review',array_values($original->fresh()->funding['receipt_return_results'])[0]['state'],'Disputed late failure remains visible without another payment');
+$negative=InvoiceTransaction::where('transaction_id',MoneyReceiptGateway::$returns[$key]['key'])->sole();$nativeReturn=$negative->getAttributes();
+commerceReject(fn()=>$negative->update(['is_credit_transaction'=>true]));
+MoneyReceiptGateway::credit(App\Models\Invoice::findOrFail($original->invoice_id),$key);
+$afterReturn=$negative->fresh()->getAttributes();same($nativeReturn,array_replace($afterReturn,['is_credit_transaction'=>$nativeReturn['is_credit_transaction']]),'Owned event-free reclassification changes only its flag while the general financial guard remains active');
+same(['amount'=>$original->amount,'currency'=>'USD'],$refunds->creditRejected($original->id),'Resolved gateway review is observed without a new payment');
+same('credited',array_values($original->fresh()->funding['receipt_return_results'])[0]['state'],'Gateway credit replaces the historical refunded outcome');
+same($sends,MoneyReceiptGateway::$sends,'Late refund failure never allocates another return');
+$before+=PricingRule::minor($original->amount);$refunds->creditRejected($original->id);same($before,$credit(),'Gateway fallback is retained once, without a Domains credit');
+// A second worker may observe the plan before the first worker records its gateway result.
+$interleaved=$held('interleaved-refund-placeholder.com');
+DB::table('invoice_transactions')->where('invoice_id',$interleaved->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'receipt_synthetic_interleaved']);
+MoneyReceiptGateway::$onAllocated=static fn()=>$refunds->creditRejected($interleaved->id);
+$refunds->refundHeld($staff,$interleaved->id,'customer_cancelled');$refunds->creditRejected($interleaved->id);
+same(2,MoneyReceiptGateway::$sends,'Overlapping workers share the exact gateway allocation');same($before,$credit(),'Interleaved refund cannot fall back to credit');
+// Multiple failed lines share a receipt: earlier exact return reversals preserve coverage for the remaining line.
+$cart=commerceCart($user);
+foreach(['shared-return-one-placeholder.com','shared-return-two-placeholder.com'] as $name){commerceAdd($cart,$product,$name);}
+commerceCheckout($user,$cart);
+$shared=Operation::whereHas('domain',fn($q)=>$q->whereIn('domain',['shared-return-one-placeholder.com','shared-return-two-placeholder.com']))->orderBy('id')->get();
+same(2,$shared->count(),'Native checkout issued both failed lines');same($shared[0]->invoice_id,$shared[1]->invoice_id,'Lines share native invoice');
+DB::table('invoices')->where('id',$shared[0]->invoice_id)->update(['status'=>'paid']);
+InvoiceTransaction::create(['invoice_id'=>$shared[0]->invoice_id,'amount'=>PricingRule::decimal($shared->sum(fn($op)=>PricingRule::minor($op->amount))),'fee'=>'0.00','status'=>'succeeded','gateway_id'=>$gateway->id,'transaction_id'=>'receipt_synthetic_shared']);
+foreach($shared as $line){$line->update(['state'=>'held','safe_code'=>'staff_review']);$refunds->refundHeld($staff,$line->id,'customer_cancelled');$refunds->creditRejected($line->id);}
+same(4,MoneyReceiptGateway::$sends,'Both failed lines return once on distinct allocations');same($before,$credit(),'Shared original refund never adds bridge credit');
+foreach(['reserved','pending','review'] as $outcome){
+    MoneyReceiptGateway::$outcome=$outcome;$waiting=$held($outcome.'-return-placeholder.com');$sends=MoneyReceiptGateway::$sends;
+    DB::table('invoice_transactions')->where('invoice_id',$waiting->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'receipt_synthetic_'.$outcome]);
+    same(null,$refunds->refundHeld($staff,$waiting->id,'customer_cancelled'),'Unfinished gateway allocation returns no completion');
+    $key=array_key_last(MoneyReceiptGateway::$returns);
+    $refunds->creditRejected($waiting->id);same($sends+1,MoneyReceiptGateway::$sends,'Unfinished retries preserve one gateway allocation');same($before,$credit(),'Unfinished allocation cannot create bridge credit');
+    if($outcome==='pending'){
+        MoneyReceiptGateway::$onStatus=function()use($waiting,$key,$refunds):void {
+            MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($waiting->invoice_id),$key);$refunds->creditRejected($waiting->id);
+        };
+        $refunds->creditRejected($waiting->id);
+        same('refunded',array_values($waiting->fresh()->funding['receipt_return_results'])[0]['state'],'Stale concurrent pending reply cannot overwrite completed return');
+    }else{
+        MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($waiting->invoice_id),$key);
+        same(['amount'=>$waiting->amount,'currency'=>'USD'],$refunds->creditRejected($waiting->id),'Completed original allocation is recovered');
+    }
+    same(null,$refunds->creditRejected($waiting->id),'Recovered completion returns once');
+}
+// A completed status without its exact native reversal cannot clear the obligation or authorize another credit.
+MoneyReceiptGateway::$outcome='pending';$broken=$held('missing-reversal-placeholder.com');
+DB::table('invoice_transactions')->where('invoice_id',$broken->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'receipt_missing_reversal']);
+$refunds->refundHeld($staff,$broken->id,'customer_cancelled');$key=array_key_last(MoneyReceiptGateway::$returns);
+MoneyReceiptGateway::$returns[$key]['state']='refunded';
+commerceReject(fn()=>$refunds->creditRejected($broken->id));
+MoneyReceiptGateway::complete(App\Models\Invoice::findOrFail($broken->invoice_id),$key);
+same(['amount'=>$broken->amount,'currency'=>'USD'],$refunds->creditRejected($broken->id),'Restored native reversal repairs the same allocation');
+same(null,$refunds->creditRejected($broken->id),'Native reversal repair never duplicates money');
+MoneyReceiptGateway::$outcome='refunded';
 echo "Account credit, retry, staff rights, mixed funding and contact disposition passed\n"; $nativeSuccessful=true;

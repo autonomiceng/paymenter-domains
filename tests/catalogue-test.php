@@ -56,6 +56,11 @@ $p = $withRuleReads(static fn () => $catalogue->current(1, $a['account_fingerpri
     1, 'Current hashes its own single rule resolution');
 same('24.0000', $p->wholesale, 'Selected-term wholesale total'); same('31.20', $p->retail, 'Selected-term annual retail rounded then totalled');
 same('term_total', Price::findOrFail($p->id)->unit, 'Explicit normalized total unit');
+$catalogue->current(1, $a['account_fingerprint'], 'com', 'register', 3, 'USD', $now->modify('+172799 seconds'));
+$beforeAge = Price::findOrFail($p->id)->toJson();
+$reject(static fn () => $catalogue->current(1, $a['account_fingerprint'], 'com', 'register', 3, 'USD', $now->modify('+172800 seconds')));
+same($beforeAge, Price::findOrFail($p->id)->toJson(), 'Cost expiry stops sales without mutating retained prices');
+
 same('exact_term_annual_rate', Price::findOrFail($p->id)->eligibility['source_unit'], 'Source units retained');
 expect(!str_contains(json_encode($p, JSON_THROW_ON_ERROR), $a['account_fingerprint']), 'Price JSON hides binding');
 expect(!str_contains(print_r($p, true), 'wholesale'), 'Price debug hides cost');
@@ -82,7 +87,7 @@ $rules->saveDefaultRule(1, $fixed, $catalogue->republish(...));
 same('1.00', $holder->renewal($domain, 'USD', $now)->retail, 'Below-cost holder renewals still priced');
 same('below_cost', $holder->renewal($domain, 'USD', $now)->staffAlert, 'Below-cost renewal staff alert');
 $reject(static fn () => $catalogue->current(1, $a['account_fingerprint'], 'com', 'register', 1, 'USD', $now));
-same(false, $holder->renewal($domain, 'USD', $now->modify('+2 days'))->retained, 'A saved cost stays current until the next sync');
+same(true, $holder->renewal($domain, 'USD', $now->modify('+2 days'))->retained, 'Expired cost retains holder retail without current cost authority');
 same('1.00', $holder->renewal($domain, 'USD', $now->modify('+2 days'))->retail, 'Outage never stops existing retail billing');
 $reject(static fn () => $holder->renewal($domain, 'EUR', $now));
 $reject(static fn () => $rate('transfer', 2, '1.0000'));

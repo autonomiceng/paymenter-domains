@@ -10,6 +10,9 @@ key in a separate operation. Unsupported/unknown capabilities refuse. Holder pro
 native service/annual route/reservation/cancellation checks do not depend on today's seller.
 DNS/SRV/DS require `domains_dns_tools` (default false); management writes require the independent
 `WriteFeatures.management` and account acceptance (both default false).
+The staff domain page edits nameservers, lock, contacts and DNS/SRV through `ManagementForms`, the
+owner forms' path, so staff hit the same checks and `authorized_by` credits them: History names
+them and the customer sees Staff.
 
 One bounded preparation window runs outside locks. Current owner, staff permission, native
 funding, lifecycle, configuration and all original desired inputs are checked again before a
@@ -24,8 +27,12 @@ cooldown covers owner and staff requests. Successful normalized facts are retain
 append-only `attempt.management_reads`, with action/key/generation/time; original acquisition
 `attempt.corrections` remains unchanged. Completion does not advance domain expiry, native
 service expiry or the renewal billing anchor. Unknown after sealing never re-enters dispatch.
-Explicit `reconcile` performs bounded reads only, records at most 20 observations, and cannot
-replay a write/email. Expired sealed workers become uncertain; expired unsealed workers become held and definitely unsent, even with writes disabled.
+Explicit `reconcile` performs reads only and cannot replay a write/email. After twenty fast
+observations, sealed uncertain attempts reserve at most one recovery read per six hours;
+reviewed Check status uses a fifteen-minute interval. Reservations commit before I/O and
+use the normal account read allowance. The first twenty completed reads stay append-only;
+a monotonic recovery number and latest result retain bounded recovery evidence. Crashes
+and failed reads spend the interval without reopening dispatch. Expired sealed workers become uncertain; expired unsealed workers become held and definitely unsent, even with writes disabled.
 
 Paid privacy creates one positive USD native null-reference invoice line using locked
 `domains_privacy_price` and native exclusive tax once. It is independent of domain renewal

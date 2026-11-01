@@ -13,6 +13,6 @@ foreach (DomainStatus::STATES as $state=>[$key,$reason]) {
     $status=DomainStatus::for($state);
     same(['label'=>$status['label'],'tone'=>StatusPill::TONES[$status['tone']],'reason'=>$status['reason']],StatusPill::of($state),'Client pill keeps label and reason: '.$state);
 }
-same(['label'=>'Action required','tone'=>'warn','reason'=>'Invoice not paid'],StatusPill::of('awaiting_payment'),'Unpaid order');
+same(['label'=>'Awaiting payment','tone'=>'info','reason'=>'Invoice not paid'],StatusPill::of('awaiting_payment'),'Unpaid order');
 same(['label'=>'Under review','tone'=>'warn','reason'=>'Transfer on hold'],StatusPill::of('held','Transfer on hold'),'A caller reason replaces the default');
 same(['label'=>'Under review','tone'=>'warn','reason'=>'Status missing'],StatusPill::of('future_state'),'Unknown states say the status is missing');

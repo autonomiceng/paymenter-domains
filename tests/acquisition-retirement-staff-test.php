@@ -73,9 +73,7 @@ same($beforeInvalidReason,$modalOp->fresh()->getRawOriginal(),'Closure reason fi
 $page->setActionData(['reason'=>'Retire from real staff modal'])->callMountedAction()->assertNotified('Order cancelled')->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::getUrl('view',['record'=>$modalOp->domain_id]));
 Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$modalOp->domain_id])->assertActionDoesNotExist('retire_unpaid');same(null,$modalOp->domain->fresh()->reservation_name,'Real modal invokes retirement');
 $paid=$new(placeholderComFixtureName('unpaid-refusal-placeholder.com'));Auth::login($staff);
-$refusal=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$paid->domain_id])->mountAction('retire_unpaid');
-$refusal->setActionData(['reason'=>'Paid modal must refuse'])->callMountedAction()->assertNotified("Couldn't cancel order");
-same($paid->domain->domain,$paid->domain->fresh()->reservation_name,'Paid modal retains name');
+Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$paid->domain_id])->assertActionDoesNotExist('retire_unpaid');
 // Both unpaid acquisition actions explain registrar evidence and other requests without blaming one cause.
 foreach(['register','transfer'] as $action){foreach(['provider','sibling'] as $cause){
     $op=$new(placeholderComFixtureName('unpaid-modal-'.$action.'-'.$cause.'-placeholder.com'),paid:false,action:$action);

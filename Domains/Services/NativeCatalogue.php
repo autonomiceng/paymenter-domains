@@ -48,20 +48,21 @@ final class NativeCatalogue
         return $this->mappingSettings($product, $settings, $plan);
     }
 
-    private function mappingSettings(Product $product, \Illuminate\Support\Collection $settings, ?Plan $plan = null): ?array
+    private function mappingSettings(Product $product, \Illuminate\Support\Collection $settings, ?Plan $plan = null, ?array $display = null): ?array
     {
-        $server = $product->server()->first();
+        $server = $display === null ? $product->server()->first() : $display['servers']->get($product->server_id);
         if ($settings->isEmpty() && $server?->extension !== 'Domains') { return null; }
         $value = static fn (string $key) => $settings->where('key', $key)->count() === 1 ? $settings->firstWhere('key', $key)->value : null;
         $id = $value('domains_tld_id'); $action = $value('domains_action');
-        $tld = is_string($id) && preg_match('/^[1-9][0-9]*$/D', $id) ? Tld::find((int) $id) : null;
-        $account = $tld ? Account::where('server_id', $tld->server_id)->first() : null;
+        $tld = is_string($id) && preg_match('/^[1-9][0-9]*$/D', $id) ? ($display === null ? Tld::find((int) $id) : $display['tlds']->get((int) $id)) : null;
+        $account = $tld ? ($display === null ? Account::where('server_id', $tld->server_id)->first() : $display['accounts']->get($tld->server_id)) : null;
         if ($settings->count() !== 4 || $settings->contains(static fn ($s): bool => $s->type !== 'string' || $s->encrypted)
             || $value('domains_catalogue') !== '1' || !$tld || !$account || $server?->extension !== 'Domains'
             || (int) $product->server_id !== (int) $tld->server_id || $account->account_fingerprint !== $tld->account_fingerprint
             || $account->registrar_key !== $tld->registrar_key || $value('domains_registrar') !== $tld->registrar_key
             || !in_array($action, ['register', 'transfer'], true) || $product->slug !== self::slug($tld, $action)
-            || !$product->hidden || $product->allow_quantity !== 'separated' || $this->unsafeLinks($product)) { throw new \DomainException('Invalid domain product mapping.'); }
+            || !$product->hidden || $product->allow_quantity !== 'separated'
+            || ($display === null ? $this->unsafeLinks($product) : isset($display['unsafe'][$product->id]))) { throw new \DomainException('Invalid domain product mapping.'); }
         if ($plan) { $this->requirePlan($product, $plan, $action); }
         return ['tld' => $tld, 'action' => $action, 'term' => $plan?->billing_period];
     }
@@ -76,26 +77,64 @@ final class NativeCatalogue
     /** Display snapshot only: strict mapping() above never trusts preloaded model relations. */
     public function display(Tld $tld): array
     {
-        $products = [];
-        foreach ($this->products($tld)->with(['settings' => static fn ($q) => $q->whereIn('key', self::KEYS),
-            'plans.prices' => static fn ($q) => $q->where('currency_code', 'USD')])->get() as $product) {
-            $mapping = $this->mappingSettings($product, $product->settings) ?? throw new \DomainException('Reserved domain slug collision.');
-            if ($mapping['tld']->id !== $tld->id) { throw new \DomainException('Domain product identity changed.'); }
-            $products[$mapping['action']][] = $product;
+        return $this->displayBatch([$tld])[$tld->id] ?? throw new \DomainException('Invalid domain product mapping.');
+    }
+
+    /** Batch only the selected public catalogue, including collisions by slug OR marker. Null isolates a corrupt ending. */
+    public function displayBatch(array $tlds): array
+    {
+        if (!$tlds) { return []; }
+        $tlds = collect($tlds)->keyBy('id'); $slugs = [];
+        foreach ($tlds as $tld) {
+            foreach (['register', 'transfer'] as $action) { $slugs[self::slug($tld, $action)] = $tld->id; }
         }
-        $read = [];
-        foreach ($products as $action => $matches) {
-            if (count($matches) !== 1) { continue; }
-            $product = $matches[0]; $plans = [];
-            foreach ($product->plans->groupBy('billing_period') as $term => $matches) {
-                if ($matches->count() !== 1) { continue; }
-                $plan = $matches->first();
-                try { $this->requirePlan($product, $plan, $action); $plans[$term] = $plan; }
-                catch (\DomainException) { /* One invalid term does not remove healthy plans. */ }
+        $products = Product::where(static function ($q) use ($slugs, $tlds): void {
+            $q->whereIn('slug', array_keys($slugs))->orWhereHas('settings', static fn ($s) => $s->where('key', 'domains_tld_id')->whereIn('value', $tlds->keys()->map(strval(...))));
+        })->with(['settings' => static fn ($q) => $q->whereIn('key', self::KEYS),
+            'plans.prices' => static fn ($q) => $q->where('currency_code', 'USD')])->get();
+        $ids = $products->modelKeys(); $unsafe = [];
+        foreach (DB::table('product_upgrades')->whereIn('product_id', $ids)->orWhereIn('upgrade_id', $ids)->get() as $link) {
+            $unsafe[$link->product_id] = $unsafe[$link->upgrade_id] = true;
+        }
+        foreach (DB::table('config_option_products')->whereIn('product_id', $ids)->pluck('product_id') as $id) { $unsafe[$id] = true; }
+        $display = ['tlds' => $tlds, 'servers' => Server::whereIn('id', $tlds->pluck('server_id')->unique())->get()->keyBy('id'),
+            'accounts' => Account::whereIn('server_id', $tlds->pluck('server_id')->unique())->get()->keyBy('server_id'), 'unsafe' => $unsafe];
+        $groups = [];
+        foreach ($products as $product) {
+            // A wrong/duplicate marker must poison its reserved slug as well as any marked ending.
+            $targets = isset($slugs[$product->slug]) ? [$slugs[$product->slug]] : [];
+            foreach ($product->settings->where('key', 'domains_tld_id') as $setting) {
+                // Paymenter's retrieved event casts value by type; grouping must retain the database marker match.
+                $rawId = $setting->getRawOriginal('value');
+                if (is_string($rawId) && preg_match('/^[1-9][0-9]*$/D', $rawId) && $tlds->has((int) $rawId)) { $targets[] = (int) $rawId; }
             }
-            $read[$action] = compact('product', 'plans');
+            foreach (array_unique($targets) as $id) { $groups[$id][] = $product; }
         }
-        return $read;
+        $rows = [];
+        foreach ($tlds as $tld) {
+            try {
+                $actions = [];
+                foreach ($groups[$tld->id] ?? [] as $product) {
+                    $mapping = $this->mappingSettings($product, $product->settings, display: $display) ?? throw new \DomainException('Reserved domain slug collision.');
+                    if ($mapping['tld']->id !== $tld->id) { throw new \DomainException('Domain product identity changed.'); }
+                    $actions[$mapping['action']][] = $product;
+                }
+                $read = [];
+                foreach ($actions as $action => $matches) {
+                    if (count($matches) !== 1) { continue; }
+                    $product = $matches[0]; $plans = [];
+                    foreach ($product->plans->groupBy('billing_period') as $term => $matches) {
+                        if ($matches->count() !== 1) { continue; }
+                        $plan = $matches->first();
+                        try { $this->requirePlan($product, $plan, $action); $plans[$term] = $plan; }
+                        catch (\DomainException) { /* One invalid term does not remove healthy plans. */ }
+                    }
+                    $read[$action] = compact('product', 'plans');
+                }
+                $rows[$tld->id] = $read;
+            } catch (\Throwable) { $rows[$tld->id] = null; }
+        }
+        return $rows;
     }
 
     private function unsafeLinks(Product $product): bool
@@ -119,6 +158,25 @@ final class NativeCatalogue
         $this->publication(Tld::findOrFail($tldId), $now, $review, $change);
     }
 
+    /** The sweep's publication. A rule change that missed this TLD goes on sale by itself once its costs are in, and the audit log says so.
+     * A saved selling rule also prepares new products; older curated catalogues keep their staff publication. */
+    public function keepCurrent(Tld $tld, \DateTimeImmutable $now, bool $catalogue): void
+    {
+        $account = Account::where('server_id', $tld->server_id)->sole();
+        if (SellAutomation::enabled($account) && SellAutomation::row(CatalogueAcceptances::binding($account), $tld->tld, $now) !== null) {
+            app(SellerPolicies::class)->initialize($tld->tld);
+            $this->publication($tld, $now, null, null, null, true);
+            return;
+        }
+        if ($catalogue && !$this->products($tld)->exists()) { return; }
+        $behind = $this->prices->behindRule($tld, $now);
+        if (!$behind && $catalogue) { return; }
+        $this->publish((int) $tld->id, $now, null, $behind ? static function (Tld $locked) use ($now): void {
+            StaffSettingsReview::append(Server::findOrFail($locked->server_id), ['key' => bin2hex(random_bytes(16)), 'actor_id' => null, 'at' => $now->format(DATE_ATOM),
+                'action' => StaffSettingsReview::ACTIONS['publish'], 'reason' => 'Saved prices brought up to date.', 'phase' => 'completed', 'input' => [], 'tld_id' => (int) $locked->id, 'before' => [], 'after' => []]);
+        } : null);
+    }
+
     /** Import saved costs and refresh existing publication in the same native-first transaction.
      * An ending without native products remains unpublished. All provider reads have already finished. */
     public function refresh(Tld $seed, \DateTimeImmutable $now, \Closure $import, ?StaffSettingsReview $review = null): void
@@ -132,9 +190,9 @@ final class NativeCatalogue
     }
 
     private function publication(Tld $seed, \DateTimeImmutable $now, ?StaffSettingsReview $review,
-        ?\Closure $change, ?\Closure $import = null): void
+        ?\Closure $change, ?\Closure $import = null, bool $automatic = false): void
     {
-        DB::transaction(function () use ($seed, $now, $review, $change, $import): void {
+        DB::transaction(function () use ($seed, $now, $review, $change, $import, $automatic): void {
             $review?->lockActor();
             // Native category mutex serializes first publication: native slugs have no unique index.
             $category = Category::where('slug', 'domains')->lockForUpdate()->first();
@@ -151,6 +209,7 @@ final class NativeCatalogue
             $server = Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $seed->server_id)->lockForUpdate()->firstOrFail();
             $review?->check($import !== null);
+            $policy = $automatic ? \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld', $seed->tld)->lockForUpdate()->sole() : null;
             $tld = ($seed->exists ? Tld::whereKey($seed->id) : Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld]))->lockForUpdate()->first();
             if (!$tld && $import && !$seed->exists) { $tld = $seed; $tld->save(); $tld->refresh(); }
             if (!$tld) { throw new \DomainException('Catalogue ending disappeared.'); }
@@ -163,6 +222,13 @@ final class NativeCatalogue
                 throw new \DomainException('Publication review mismatch.');
             }
             if ($import) { $import($tld, $server, $account); }
+            if ($automatic) {
+                if (!SellAutomation::enabled($account) || SellAutomation::row(CatalogueAcceptances::binding($account), $tld->tld, $now) === null) { return; }
+                $behind = $this->prices->behindRule($tld, $now);
+                if ($behind) { $this->prices->republishLocked($tld); }
+                $changed = SellAutomation::publishLocked($server, $account, $tld, $policy, $this->prices, $now, $products->isNotEmpty(), $behind);
+                if (!$changed) { return; }
+            }
             if ($change && $change($tld) === false) { return; }
             if (!$import && ($review || $change)) { $this->prices->republishLocked($tld); }
             foreach ($products as $product) {

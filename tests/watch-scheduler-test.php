@@ -17,6 +17,26 @@ $j=new RunPublicCheck(['watch_id'=>$watch->id,'user_id'=>$owner->id,'kind'=>'exp
 DB::transaction(function()use($work){same(0,$work->tick(),'No dispatcher in native transaction');});
 $now+=300;$bad=new WatchWork($fake,new WatchDiscoveryWork(static fn()=>throw new RuntimeException('Synthetic producer')),true,function()use(&$now){return $now;},function($hint)use(&$sent){$sent[]=$hint;});
 DB::table('domains_watch_discovery')->update(['cursor'=>0,'due_at'=>$now,'hint'=>true]);$before=count($sent);$bad->tick();expect(count($sent)>$before,'Discovery exception does not prevent public dispatch');same($now,(int)DB::table('domains_watch_schedule')->where('scope','dispatch')->value('progress_at'),'Progress recorded after dispatch');same('current',$bad->status()['reason'],'Recovery tick does not alert for old missed turn');$failure=json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['discovery'];DB::table('domains_watch_discovery')->update(['due_at'=>$now+86400,'hint'=>false]);$now+=300;$bad->tick();same($failure,json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['discovery'],'Idle discovery turn retains unresolved producer failure');$now+=600;same('dispatch_overdue',$bad->status()['reason'],'Read-only staff status sees dead worker without a tick');
+// Product discovery is its own health family; dispatch can keep working while it fails.
+DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['data'=>json_encode(['started_at'=>$now])]);
+$productFailure=true;
+DB::listen(static function($q)use(&$productFailure):void {if($productFailure&&str_contains($q->sql,'from "products"')&&str_contains($q->sql,'domains_watch_product_maps')){throw new RuntimeException('Synthetic product scan failure');}});
+$now+=300;$work->tick();expect(isset(json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['products']),'Product failure is retained even while dispatch succeeds');$now+=86400;$work->tick();$health=$work->status();
+same('checks_unsuccessful',$health['reason'],'Persistent product failure reaches scheduler health');
+expect(str_contains(\Paymenter\Extensions\Servers\Domains\Services\WatchMaintenance::notice($health)['text'],'products'),'Product health names the failing stage');
+$productFailure=false;$now+=300;$work->tick();
+expect(!isset(json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['products']),'Successful product scan clears its failure');
+// Real mapping transactions are needed: an individual adoption can fail while the scan and later products succeed.
+$adoptProducts=[];
+foreach(['fails','continues'] as $case){$p=$product->replicate();$p->slug='adopt-'.$case;$p->name='Adoption '.$case;$p->save();$s=$service->replicate();$s->product_id=$p->id;$s->save();$s->properties()->create(['key'=>'domain','name'=>'Domain','value'=>'www.example.com']);$adoptProducts[]=$p;}
+[$failedProduct,$nextProduct]=$adoptProducts;$adoptFailure=true;$adoptAttempts=0;
+DB::listen(static function($q)use(&$adoptFailure,&$adoptAttempts,$failedProduct):void{if($adoptFailure&&str_starts_with($q->sql,'select * from "products" where "products"."id" = ?')&&(int)($q->bindings[0]??0)===$failedProduct->id){$adoptAttempts++;throw new RuntimeException('Synthetic individual product adoption failure');}});
+$now+=300;$work->tick();expect($adoptAttempts>0,'Individual adoption failure was exercised');
+same(0,DB::table('domains_watch_product_maps')->where('product_id',$failedProduct->id)->count(),'Failed product remains unmapped');
+same(1,DB::table('domains_watch_product_maps')->where('product_id',$nextProduct->id)->count(),'A failed adoption does not stop the next product');
+expect(isset(json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['products']),'Individual adoption failure reaches product health');
+$adoptFailure=false;$now+=300;$work->tick();same(1,DB::table('domains_watch_product_maps')->where('product_id',$failedProduct->id)->count(),'A later turn retries the failed product');
+expect(!isset(json_decode(DB::table('domains_watch_schedule')->where('scope','dispatch')->value('data'),true)['local_failures']['products']),'Recovered adoption clears product health');
 // Seven owners, both target families, one shared persistent turn cursor.
 DB::table('domains_watch_work')->delete();$owners=[];
 for($i=0;$i<7;$i++){$u=staffUser([]);$owners[]=(int)$u->id;DB::table('domains_watch_names')->insert(['id'=>100+$i,'user_id'=>$u->id,'canonical_name'=>placeholderComFixtureName('fair'.$i.'-placeholder.com'),'psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);foreach(['expiry','delegation','points']as$kind){DB::table('domains_watch_work')->insert(['watch_id'=>100+$i,'kind'=>$kind,'watch_revision'=>1,'due_at'=>$now]);}}

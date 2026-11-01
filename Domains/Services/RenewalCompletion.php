@@ -12,9 +12,12 @@ final readonly class RenewalCompletion
     public function __construct(private AccountBindings $bindings, private Clock $clock) {}
     public function run(int $id): Operation
     {
-        return EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline), RenewalAdmission::READ_SECONDS);
+        OperationClaims::outside(); $op = Operation::findOrFail($id);
+        if (!$this->eligible($op)) { return $op; }
+        $check = new RegistrarCheck($this->clock);
+        return $check->finish(EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $deadline, $check), RenewalAdmission::READ_SECONDS));
     }
-    private function runEntered(int $id, \DateTimeImmutable $deadline): Operation
+    private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $capture = DB::transaction(function () use ($seed, $id) {
@@ -25,7 +28,7 @@ final readonly class RenewalCompletion
             try {
                 $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true);
                 $attempt = ReconciliationEvidence::attempt($op, $l['domain'], CatalogueAcceptances::binding($l['account']));
-                if ((!$attempt->executionFacts || $attempt->providerReference === null) && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
+                if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp']];
             } catch (\Throwable) { return null; }
@@ -33,7 +36,7 @@ final readonly class RenewalCompletion
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp] = $capture; $proof = null; $covered = false; $autoRenewConfirmed = false; $autoRenewUnconfirmed = $attempt->binding->registrarKey === 'namesilo';
         try {
-            $ctx = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
+            $ctx = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $deadline, new RequestBudget(25), $this->clock, Runtime::limiter());
             $result = $this->bindings->reader($attempt->binding->serverId)->reconcile($attempt, $ctx); $result->requireAttempt($attempt);
             if ($this->clock->now() < $ctx->deadline) {
                 $facts = $result->result()->evidence();
@@ -46,6 +49,8 @@ final readonly class RenewalCompletion
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
             }
+        } catch (ReadDeferred) { $check->deferred = 'read_limit';
+        } catch (EnomTestCallLimit $error) { $check->deferred = $error->reason === 'send_guard' ? 'send_guard' : 'send_limit';
         } catch (\Throwable) {}
         if (!$covered && !$autoRenewUnconfirmed && !$autoRenewConfirmed) { return Operation::findOrFail($id); }
         return DB::transaction(function () use ($seed, $id, $stamp, $proof, $attempt, $covered, $autoRenewUnconfirmed, $autoRenewConfirmed) {
@@ -90,7 +95,7 @@ final readonly class RenewalCompletion
             if(!is_array($history)||!array_is_list($history)||count($history)>=20){throw new \DomainException('Renewal read resume limit reached.');}
             $policy['renewal_resumptions']=[...$history,['prior_polls'=>$policy['renewal_polls']??0,'at'=>$this->clock->now()->format(DATE_ATOM)]];
             $policy['renewal_polls']=0;$policy['renewal_execution']=['staff_alert'=>true,'reason'=>'resumed','refundable_later'=>false];
-            $op->update(['policy'=>$policy]);$review->record($l);return $op;
+            $op->update(['policy'=>$policy]);RegistrarCheck::resumed($op,$this->clock->now()->getTimestamp());$review->record($l);return $op;
         });
     }
     private function eligible(Operation $op): bool

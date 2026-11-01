@@ -7,14 +7,33 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 /** Explicit replacement authority for an exactly refunded unsent renewal. No new invoice or send here. */
 final class RenewalReplacements
 {
-    public static function authorize(Operation $op,array $l,StaffOperationReview $review,Clock $clock): void
+    /** Settle replacement authority even when new scheduled invoices are disabled. */
+    public static function recoverDomain(Domain $seed,Clock $clock): void
+    {
+        OperationClaims::outside();
+        if(!$seed->operations()->where('action','renew')->where('state','rejected')->where('safe_code','refund_approved')->exists()){return;}
+        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$clock):void{
+            $l=HoldingLocks::take($seed);
+            foreach($l['operations'] as $op){self::recover($op,$l,$clock);}
+        });
+    }
+    public static function authorize(Operation $op,array $l,?StaffOperationReview $review,Clock $clock): void
     {
         if($op->action!=='renew'||$op->state!=='rejected'||$op->safe_code!=='refund_approved'
+            ||($review===null&&$op->base_expires_at<=$clock->now())
             ||$op->base_expires_at?->format('Y-m-d')!==$l['domain']->provider_expires_at?->format('Y-m-d')
             ||array_key_exists('renewal_replacement',$op->policy??[])||!self::settled($op,$l)) { throw new \DomainException('Exact unsent refund for the current cycle required.'); }
-        $op->update(['policy'=>[...($op->policy??[]),'renewal_replacement'=>['actor_id'=>$review->actorId,'operation_key'=>$op->operation_key,
+        $op->update(['policy'=>[...($op->policy??[]),'renewal_replacement'=>['actor_id'=>$review?->actorId,'operation_key'=>$op->operation_key,
             'generation'=>$op->authority_generation,'expiry'=>$op->base_expires_at->format('Y-m-d'),
             'refund_hash'=>hash('sha256',json_encode($op->funding['refund'],JSON_THROW_ON_ERROR)),'at'=>$clock->now()->format(DATE_ATOM)]]]);
+    }
+    public static function recover(Operation $op,array $l,Clock $clock): void
+    {
+        if($op->action==='renew'&&$op->state==='rejected'&&$op->safe_code==='refund_approved'
+            &&!array_key_exists('renewal_replacement',$op->policy??[])&&$op->base_expires_at>$clock->now()
+            &&$op->base_expires_at?->format('Y-m-d')===$l['domain']->provider_expires_at?->format('Y-m-d')&&self::settled($op,$l)){
+            self::authorize($op,$l,null,$clock);
+        }
     }
     public static function reviewed(Operation $op,Domain $d): bool
     {
@@ -22,7 +41,7 @@ final class RenewalReplacements
         try { RefundProof::requireUnsent($op,$d); }
         catch(\Throwable){return false;}
         return $op->action==='renew'&&$op->state==='rejected'&&$op->safe_code==='refund_approved'&&is_array($p)
-            &&array_keys($p)===['actor_id','operation_key','generation','expiry','refund_hash','at']&&is_int($p['actor_id'])&&$p['actor_id']>0
+            &&array_keys($p)===['actor_id','operation_key','generation','expiry','refund_hash','at']&&($p['actor_id']===null||is_int($p['actor_id'])&&$p['actor_id']>0)
             &&$p['operation_key']===$op->operation_key&&$p['generation']===$d->authority_generation
             &&$p['expiry']===$op->base_expires_at?->format('Y-m-d')&&($op->funding['refund']['to']??null)==='account_credit'
             &&$p['refund_hash']===hash('sha256',json_encode($op->funding['refund'],JSON_THROW_ON_ERROR));

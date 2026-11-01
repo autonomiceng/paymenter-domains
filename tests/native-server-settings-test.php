@@ -60,7 +60,6 @@ app('router')->getRoutes()->refreshNameLookups();
 $writer=new StaffSettingsWrites(app(NativeCatalogue::class),app(SellerPolicies::class),$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
 $processingAction=static fn(Server $s)=>setupAction('processing',$s->id);
 $unconfigured=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$first->id])->assertActionDoesNotExist($processingAction($first))->assertDontSee('Resume orders');
-$unconfigured->mountAction($processingAction($first))->assertActionNotMounted($processingAction($first));
 $configure=static function(Server $s,string $registrar,string $secret)use($staff):void {
     $name=setupAction('configure',$s->id);
     $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($name)->assertActionMounted($name);
@@ -108,7 +107,7 @@ foreach([$first,$second] as $server){
     same('42.17',DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->value('amount'),'Held display retains original balance history');
     $pause=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
-    $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionHidden($processingAction($server));
+    $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionDoesNotExist($processingAction($server))->assertSee('Fix the API connection first.');
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
     same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Could not load account settings'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Hold covers credential and digest settings');
     // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.

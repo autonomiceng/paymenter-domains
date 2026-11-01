@@ -88,7 +88,8 @@ same($search, $controller->order($handoff)->getTargetUrl(), 'A rate-limited orde
 RateLimiter::clear('domains.search.ip:'.hash('sha256', '192.0.2.33'));
 same([$line->id, $first, 3], [$cart->items()->sole()->id, $cart->items()->sole()->checkout_config['domain'], (int) $cart->items()->sole()->plan->billing_period], 'Refusals leave the line as it was');
 
-// Picking it swaps the line in place: same line, new name, same term. The old name leaves the cart.
+// Picking it swaps the line in place after the failed-check backoff.
+Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSeconds(11));
 same(route('cart'), $order($second, '3', ['replace' => (string) $line->id])->getTargetUrl(), 'Use this name returns to the cart');
 $swapped = $cart->items()->sole();
 same([$line->id, $second, 3], [$swapped->id, $swapped->checkout_config['domain'], (int) $swapped->plan->billing_period], 'The line was replaced in place');
@@ -104,4 +105,5 @@ foreach (['999999', (string) $other->id, 'x'] as $bogus) {
     same([$second], $cart->items()->get()->pluck('checkout_config.domain')->filter()->values()->all(), 'Unknown line wrote nothing: '.$bogus);
 }
 echo "Storefront in-cart and replace checks passed.\n";
+Illuminate\Support\Carbon::setTestNow();
 $nativeSuccessful = true;

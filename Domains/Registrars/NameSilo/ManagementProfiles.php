@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, ManagementRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactProfiles, ManagementEvidence};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactProfiles, ManagementEvidence, ManagementReadRecovery};
 /** Durable creation and association are separate management operations, each with one grant. */
 final class ManagementProfiles
 {
@@ -37,7 +37,7 @@ final class ManagementProfiles
         if (!is_string($key)) { throw new \DomainException('Profile staging proof required.'); }
         $op = Operation::where('operation_key', $key)->sole(); $d = $op->domain;
         $input = $p; unset($input['profile_operation']);
-        $reads = $op->attempt['management_reads'] ?? []; $read = $reads ? end($reads) : [];
+        $read = ManagementReadRecovery::latest($op);
         $at = $read['at'] ?? null;
         if ($op->action !== 'contact_profile' || $op->state !== 'succeeded' || !ManagementEvidence::resolved($op, $d)
             || $d->id !== $r->domainId || $d->domain !== $r->name || $op->account_fingerprint !== $r->binding->fingerprint

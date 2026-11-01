@@ -11,15 +11,16 @@ final class StaffSettingsReview
     public const KEY='domains_staff_settings_audit';
     public const KEYS='domains_staff_review_keys';
     public const HISTORY_LIMIT=50;
-    public const ACTIONS=['lifecycle'=>'Review lifecycle facts','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','renewal_billing'=>'Edit renewal invoices','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
-        'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Set up transaction history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
+    public const ACTIONS=['late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Record what Enom said','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+        'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
+    private bool $activating=false;
     private array $before=[];
     private array $input=[];
     /** Snapshot after this review's last synced TLD; null until one is written. */
     private ?string $synced=null;
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['ending','endings','changes','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days',...LifecycleFacts::FIELDS])); }
+    { $this->input=array_intersect_key($data,array_flip(['registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
     /** Syncing prices and saving what you sell ask no reason; the audit still records who, when and what. */
@@ -38,17 +39,19 @@ final class StaffSettingsReview
         $prices=$read(Price::where('server_id',$serverId)->when($tldId,fn($q)=>$q->whereIn('tld',$tlds->pluck('tld')))->orderBy('id'));
         $settings=$read(DB::table('settings')->where('settingable_type',$s->getMorphClass())->where('settingable_id',$serverId)
             ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id'))->map(fn($v)=>(array)$v)->all();
+        // What staff set on What you sell rows. Prices a fill writes there do not make a save stale.
+        $sell=$tldId?[]:$read(DB::table(SellTableSchema::ROWS)->where('server_id',$serverId)->where(fn($q)=>$q->whereNotNull('choice')->orWhereNotNull('longest')->orWhereNotNull('transfer'))->orderBy('id')->select(['tld','choice','longest','transfer']))->map(fn($v)=>(array)$v)->all();
         $raw=static fn($rows)=>$rows->map(fn($v)=>$v->getRawOriginal())->all();
-        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId],JSON_THROW_ON_ERROR));
+        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId,$sell,$a?->environment==='live'?EnomLiveActivation::stamp($a):null],JSON_THROW_ON_ERROR));
     }
 
     public static function ticket(int $actor,int $server,?int $tld,string $action,string $stamp): string
-    {return Crypt::encryptString(json_encode(['actor'=>$actor,'server'=>$server,'tld'=>$tld,'action'=>$action,'stamp'=>$stamp,'key'=>bin2hex(random_bytes(16)),'until'=>time()+900],JSON_THROW_ON_ERROR));}
+    {return Crypt::encryptString(json_encode(['actor'=>$actor,'server'=>$server,'tld'=>$tld,'action'=>$action,'stamp'=>$stamp,'ready'=>$action==='activate'?EnomLiveActivation::stamp(Account::where('server_id',$server)->sole(),true):null,'key'=>bin2hex(random_bytes(16)),'until'=>time()+900],JSON_THROW_ON_ERROR));}
     public function lockActor(): void
     {
         $u=User::whereKey($this->actorId)->lockForUpdate()->firstOrFail();
         $role=$u->role_id?Role::whereKey($u->role_id)->lockForUpdate()->first():null;$u->setRelation('role',$role);
-        foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...($this->action==='lifecycle'?['admin.domains.costs']:[]),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
+        foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...($this->action==='activate'?['admin.domains.costs']:[]),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
             if(!$u->hasPermission($p)){throw new \DomainException('Current staff permissions required.');}}
         if(!in_array($this->action,self::NO_REASON,true)){StaffReason::require($this->reason);}
     }
@@ -73,7 +76,8 @@ final class StaffSettingsReview
         try{$t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key.');}
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
             ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
-            ||!hash_equals($this->synced??$t['stamp'],self::stamp($this->serverId,$this->tldId,true))){throw new \DomainException('Settings changed. Reload this page.');}
+            ||($this->action==='activate'&&EnomLiveActivation::enabling(Account::where('server_id',$this->serverId)->sole(),$this->input)&&($t['ready']??null)!==EnomLiveActivation::stamp(Account::where('server_id',$this->serverId)->sole(),true))
+            ||!hash_equals($this->synced??$t['stamp'],($this->action==='acceptance'&&str_starts_with($t['stamp'],'sell:')?SellRule::stamp($this->serverId):self::stamp($this->serverId,$this->tldId,true)))){throw new \DomainException('Settings changed. Reload this page.');}
         // The account mutex serializes checks; the primary key also prevents duplicate claims.
         $keys=DB::table(self::KEYS)->where('server_id',$this->serverId)->where('review_key',$t['key']);
         $used=(clone $keys)->lockForUpdate()->exists();
@@ -134,13 +138,20 @@ final class StaffSettingsReview
         try{$rule=$this->action==='default_rule'||!$t?$rules->defaultRule($server,true):$rules->rule($t,true);}catch(\Throwable){$rule='unavailable';}
         try{$fee=$this->action==='card_fee'?CardFee::read($server,true):null;}catch(\Throwable){$fee='unavailable';}
         try{$acceptance=$a?CatalogueAcceptances::load(CatalogueAcceptances::binding($a),true):null;$accepted=$acceptance?->endings;}catch(\Throwable){$acceptance=null;$accepted='unavailable';}
+        $live=null;
+        if($a?->environment==='live'){
+            try{$b=CatalogueAcceptances::binding($a);$live=['current'=>EnomLiveActivation::current($b),'registration'=>EnomLiveActivation::registrationAccepted($b),'renewal'=>EnomTestRenewal::accepted($b),'management'=>EnomTestManagement::accepted($b),'transfer'=>EnomTestTransfer::accepted($b)];}
+            catch(\Throwable){$live='unavailable';}
+        }
         return ['server_id'=>$server,'binding'=>$a?->account_fingerprint,'processing'=>$a?->processing_enabled,'tld_id'=>$tld,
             ...($this->action==='card_fee'?['card_fee'=>$fee]:[]),'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'acceptance_revision'=>$acceptance?->revision,'acceptance'=>is_array($accepted)?['count'=>count($accepted),'changes'=>$this->input['changes']??null,'terms'=>array_intersect_key($accepted,$this->input['changes']??[])]:$accepted,
             'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(CatalogueAcceptances::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),
-            ...($this->action==='lifecycle'&&$t?['lifecycle'=>LifecyclePolicies::read(CatalogueAcceptances::binding($a),$t->tld)]:[]),
-            ...($this->action==='renewal_billing'?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
+            ...(in_array($this->action,['activate','renewal_billing','test_renewal','live_renewal'],true)?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
+            ...($this->action==='unpaid_hold'?['unpaid_hold'=>UnpaidHoldSetting::minutes($server)]:[]),
+            'live_activation'=>$live,
+            ...($this->action==='late_renewal'?['late_renewal'=>$a?EnomLateRenewal::stored(CatalogueAcceptances::binding($a)):false]:[]),
             'snapshot'=>self::stamp($server,$tld,true)];
     }
     /** Outcome audit grants no authority; retain it even if permissions or the saved state changed during I/O. */
@@ -148,7 +159,12 @@ final class StaffSettingsReview
     {DB::transaction(function()use($phase,$outcome){$this->lockAccounts();$this->record($phase,$outcome);});}
     public function local(\Closure $write,string $phase='completed'): mixed
     {
+        // Activate composes the existing feature writers in this same reviewed transaction and audit.
+        if($this->activating&&DB::transactionLevel()===1){return $write();}
         if(DB::transactionLevel()!==0){throw new \LogicException('Staff review owns its transaction.');}
-        return DB::transaction(function()use($write,$phase){$this->lockActor();$this->lockAccounts();$this->check();$v=$write();$this->record($phase);return $v;});
+        return DB::transaction(function()use($write,$phase){$this->lockActor();$this->lockAccounts();$this->check();
+            $this->activating=$this->action==='activate';
+            try{$v=$write();$this->record($phase);return $v;}finally{$this->activating=false;}
+        });
     }
 }

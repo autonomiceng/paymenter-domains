@@ -1,57 +1,11 @@
 <?php
-// Enom 444f31c/f7175ff transfer reconciliation, stricter unique charge; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Enom 444f31c/f7175ff transfer reconciliation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require_once __DIR__.'/Support/reserved-fixtures.php';
-require_once __DIR__.'/bootstrap.php';
-$transferEnvironment=Paymenter\Extensions\Servers\Domains\Data\Environment::Live; // All transports remain synthetic.
-require __DIR__.'/Support/transfer-fixture.php';
+require __DIR__.'/Support/transfer-completion-enom-fixture.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{Environment, HistoryAcceptance};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RegistrarRegistry, HistoryAcceptances, OperationReconciliation, RenewalAuthority};
-$observe=(object)['name'=>'','fault'=>'','calls'=>[],'during'=>null];
-$wire=new class($observe) implements Transport {
-    public function __construct(private $s){}
-    public function send(Environment $e, ReadCommand $command, array $p, string $uid, string $token, int $timeoutMs): string {
-        same(0,DB::transactionLevel(),'Observation outside locks'); expect($timeoutMs>0 && $timeoutMs<=25000,'Bounded observation'); $s=$this->s; $s->calls[]=$command->value;
-        if ($s->during) { $hook=$s->during; $s->during=null; $hook(); }
-        if ($command === ReadCommand::Nameservers && $s->fault === 'dns-cap') { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit; }
-        if ($command === ReadCommand::Nameservers && $s->fault === 'dns-transport') { throw new RuntimeException('Synthetic transport failure'); }
-        if ($command === ReadCommand::Nameservers && in_array($s->fault, ['dns-refused', 'dns-refused-strict'], true)) {
-            return '<interface-response><Command>GetDNS</Command><ErrCount>1</ErrCount><Done>true</Done><errors><Err1>DNS read refused</Err1></errors></interface-response>';
-        }
-        $expiry=$s->fault==='short'?'2027-01-01':'2028-01-01'; $owner=in_array($s->fault,['owner','reject','reject_charge'],true)?'other-account':'account-enom';
-        $item='<Description>'.$s->name.'</Description><ProductType>Transfer</ProductType><Quantity>1</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
-        [$label,$tld]=explode('.',$s->name,2); $header=str_starts_with($s->fault,'reject')?'2':($s->fault==='pending'?'5':'3'); $detail=str_starts_with($s->fault,'reject')?'32':($s->fault==='pending'?'100':'5');
-        $data=match($command){
-            ReadCommand::Info=>'<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>'.$owner.'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
-            ReadCommand::Nameservers=>match ($s->fault) {
-                'dns-malformed' => '<dns>invalid hostname</dns>',
-                'dns-duplicate' => '<dns>ns1.provider.example</dns><dns>ns1.provider.example</dns>',
-                'dns-shape' => '<dns><host>ns1.provider.example</host></dns>',
-                default => '<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
-            },
-            ReadCommand::Expiry=>$s->fault==='expiry'?'':'<ExpirationDate>'.$expiry.'</ExpirationDate>',
-            ReadCommand::Renewal=>'<RenewName>0</RenewName>', ReadCommand::Lock=>'<Reg-Lock>1</Reg-Lock>',
-            ReadCommand::Privacy=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',
-            ReadCommand::Transfer=>$s->fault==='status'?'':'<TransferOrder><TransferOrderID>7001</TransferOrderID><StatusID>'.$header.'</StatusID><TransferOrderDetail><SLD>'.$label.'</SLD><TLD>'.$tld.'</TLD><StatusID>'.$detail.'</StatusID></TransferOrderDetail></TransferOrder>',
-            ReadCommand::Orders=>'<OrderCount>1</OrderCount><OrderList><Order><OrderID>9001</OrderID></Order></OrderList>',
-            // A clean rejection has complete history whose only order is for another domain.
-            ReadCommand::Order=>$s->fault==='reject'?'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 5:00:01 AM</BillDate><OrderDetail>'.str_replace($s->name,'unrelated-'.$s->name,$item).'</OrderDetail></Order>'
-                :(in_array($s->fault,['charge','reject_owned'],true)?'':'<Order><OrderID>9001</OrderID><Result>true</Result><OrderBillAmount>$8.95</OrderBillAmount><BillDate>10/18/2026 '.($s->fault==='late'?'5:10:00':'5:00:01').' AM</BillDate><OrderDetail>'.$item.'</OrderDetail>'.($s->fault==='duplicate'?'<OrderDetail>'.$item.'</OrderDetail>':'').'</Order>'),
-            default=>throw new LogicException('Unexpected observation command'),
-        };
-        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$data.'</interface-response>';
-    }
-};
-$registry=new RegistrarRegistry; $registry->register('enom',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Client($b,'account-enom',$c['token'],$wire),['com']));
-$readBindings=new AccountBindings($registry); $reconcile=new OperationReconciliation($claims,$readBindings,$clock);
-$prepare=static function($name)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
-    $clock->instant=$now; $state->rdapUnknown=false; $state->mode=''; $op=$newTransfer($name); $makeTransfer(); $r=$engine->execute($op->id);
-    same('7001',$r->attempt['evidence']['transferReference'],'Transfer ID retained separately'); same(null,$r->provider_order_id,'Transfer ID never billing OrderID');
-    HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_transfer_v1'));
-    $observe->name=$name; $observe->fault=''; $observe->calls=[]; $clock->instant=$now->modify('+6 minutes'); return $r;
-};
+use Paymenter\Extensions\Servers\Domains\Data\{Environment,HistoryAcceptance};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client,ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,RegistrarRegistry,HistoryAcceptances,OperationReconciliation,RenewalAuthority};
 require_once __DIR__.'/Support/WireLimit.php';
 $nativeMoney = static function (): array {
     $rows = [];
@@ -152,10 +106,11 @@ foreach (['cap', 'deferred', 'observed'] as $fault) {
         same('7001', $result->attempt['evidence']['transferReference'], 'Persisted transfer reference survives optional read failure');
         same($fault === 'observed' ? 'observed' : null, $result->domain->fresh()->observation['nameservers']['state'] ?? null, 'No invented observed DNS: '.$fault);
         same([$money, $writes], [$nativeMoney(), $state->calls], 'Transfer preserves native money and never purchases again: '.$fault);
-        same([$expectedCommands, 10], [$observe->calls, $limiter->calls], 'Persistence uses exact proof reads: '.$fault);
+        $pollCommands = ['TP_GetOrder', ...array_values(array_filter($expectedCommands, fn($command) => $command !== 'TP_GetOrder'))];
+        same([$pollCommands, 10], [$observe->calls, $limiter->calls], 'Terminal polling reuses status before the same exact proof reads: '.$fault);
         $retained = [$result->fresh()->getRawOriginal(), $result->domain->fresh()->getRawOriginal()];
         $reconcile->run($op->id); $engine->execute($op->id);
-        same([$expectedCommands, 10, $money, $writes, $retained], [$observe->calls, $limiter->calls, $nativeMoney(), $state->calls,
+        same([$pollCommands, 10, $money, $writes, $retained], [$observe->calls, $limiter->calls, $nativeMoney(), $state->calls,
             [$result->fresh()->getRawOriginal(), $result->domain->fresh()->getRawOriginal()]], 'Completed transfer repeat adds no I/O or writes: '.$fault);
     } finally {
         foreach ([$runtimeClass, $limiterClass] as $class) {
@@ -201,12 +156,79 @@ foreach (['pending','status','charge','duplicate','short','owner','expiry','late
     same(null,$r->domain->fresh()->observation['nameservers']??null,'Unproven Enom transfers do not save nameserver facts');
     if (in_array($fault,['pending','status','owner','reject','reject_charge','reject_owned'],true)) { expect(!in_array('GetDNS',$observe->calls,true),'Nameservers are read only after completed transfer ownership'); }
     same(null,$r->attempt['transfer_terminal']??null,'Contradictory facts never become terminal');
-    if (str_starts_with($fault,'reject')) { same('transfer_rejection_contradiction',$r->policy['reconciliation']['reason'],'Rejection contradiction retained'); }
+    if (str_starts_with($fault,'reject')) {
+        same($fault==='reject_owned'?'transfer_rejection_contradiction':'transfer_rejection_unreconciled',$r->policy['reconciliation']['reason'],'A charge alone needs finality and fee evidence; ownership still conflicts');
+        same(null,$refunds->creditRejected($r->id),'A rejection and charge read alone never returns money');
+    }
 }
 $op=$prepare(placeholderComFixtureName('sent-rejected-transfer-placeholder.com')); $observe->fault='reject'; $r=$reconcile->run($op->id);
-same('rejected',$r->state,'Bound terminal refusal retained'); same('transfer_rejected',$r->domain->status,'Terminal transfer observation');
-commerceReject(fn()=>$refunds->creditRejected($r->id)); commerceReject(fn()=>Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($r->domain->domain));
+same('uncertain',$r->state,'Rejected status and empty history cannot prove finality or the failed fee'); same('transfer_pending',$r->domain->status,'No invented terminal transfer observation');
+same(null,$refunds->creditRejected($r->id),'Unproved finality cannot return money'); commerceReject(fn()=>Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($r->domain->domain));
 same(null,$r->fresh()->funding['refund']??null,'Sent rejection never credited'); same($r->domain->domain,$r->domain->fresh()->reservation_name,'Sent rejection retains reservation');
+// Existing native fixture is needed for audited account/attempt locks and the real payment-return lifecycle.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+app()->instance(AccountBindings::class,$readBindings);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class,$refunds);
+$staff=commerceUser();$permissions=['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update'];
+$role=\App\Models\Role::create(['name'=>'Transfer answers','permissions'=>$permissions]);$staff->update(['role_id'=>$role->id]);
+$settings=new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites($native,$sellers,$readBindings);
+$review=static fn($row)=>new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($staff->id,$row->server_id,null,'enom_answer',
+    \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($staff->id,$row->server_id,null,'enom_answer',\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp($row->server_id,null)),'Record final synthetic transfer answer');
+$answer=static fn($row)=>['operation_id'=>$row->id,'attempt_hash'=>\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::identity($row),
+    'outcome'=>'transfer_rejected','order_reference'=>'7001','case_reference'=>'synthetic-transfer-case','evidence'=>'Enom checked this account and transfer attempt: finally rejected; no later completion; USD charge and settled refund as recorded.',
+    'confirmed'=>true,'final_confirmed'=>true,'charge'=>'8.95','registrar_refund'=>'3.00'];
+$answerChecks=[];$observe->fault='down';
+foreach(['+1 day','+8 days'] as $delay){
+    $clock->instant=$now->modify($delay);$r=$reconcile->run($r->id);$poll=$r->policy['reconciliation'];
+    $answerChecks[]=[$poll['transfer_status'],$poll['reason'],$poll['final_check']??null,\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::eligible($r,$clock->now())];
+}
+$changed=clone $r;$changed->policy=[...$changed->policy,'reconciliation'=>[...$changed->policy['reconciliation'],'reason'=>'transfer_authority_changed']];
+same([['rejected','transfer_status_unavailable',null,true],['rejected','transfer_deadline_passed','done',true],false],
+    [...$answerChecks,\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::eligible($changed,$clock->now())],'A failed read, including the final check, keeps the rejected-transfer answer available; changed authority does not');
+$observe->fault='reject';
+$writes=$state->calls;$attempt=$r->attempt;$beforeCredit=\App\Models\Credit::where('user_id',$user->id)->sum('amount');
+$clock->instant=$now->modify('+8 days');same(null,$refunds->creditRejected($r->id),'Elapsed time never settles a sent rejection');
+$input=$answer($r);$input['charge']='8.951';
+try{$settings->run($review($r),$input,$clock->now());expect(false,'Unsettled fee precision must stay with staff');}
+catch(\DomainException $e){expect(str_contains($e->getMessage(),'leave this request open'),'Unproved money gives staff a plain next step');}
+foreach(['finality','fee','refund','reference','stale','permission','not_processed'] as $fault){
+    $input=$answer($r);
+    if($fault==='finality'){$input['final_confirmed']=false;}
+    if($fault==='fee'){unset($input['charge']);}
+    if($fault==='refund'){$input['registrar_refund']='9.00';}
+    if($fault==='reference'){$input['order_reference']='9001';}
+    if($fault==='stale'){$input['attempt_hash']=str_repeat('0',64);}
+    if($fault==='permission'){$role->update(['permissions'=>array_diff($permissions,['admin.invoices.update'])]);}
+    if($fault==='not_processed'){$input['outcome']='not_processed';$input['order_reference']='';}
+    commerceReject(fn()=>$settings->run($review($r),$input,$clock->now()));$role->update(['permissions'=>$permissions]);
+    same(null,$r->fresh()->funding['refund']??null,'Incomplete or conflicting support evidence never pays');
+}
+$settings->run($review($r),$answer($r),$clock->now());$r->refresh();
+same(['rejected','transfer_rejected','cancelled'],[$r->state,$r->domain->status,$r->domain->service->status],'Final rejected transfer closes the native service');
+same($attempt,$r->attempt,'Sent attempt is preserved, never rewritten as unsent');
+same(['amount'=>'5.95','currency'=>'USD'],$r->cost['actual'],'One net failed fee is absorbed and retained');
+same($staff->id,$r->policy['enom_answer']['actor_id'],'Finality and fee evidence retain staff attribution');
+same($r->amount,$r->funding['refund']['amount'],'Full customer payment returned without deducting the registrar fee');
+same(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$beforeCredit)+\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($r->amount),
+    \Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)\App\Models\Credit::where('user_id',$user->id)->sum('amount')),'Credit bridge returns exact retail once');
+commerceReject(fn()=>$settings->run($review($r),$answer($r),$clock->now()));
+same(null,$refunds->creditRejected($r->id),'Repeated recovery never funds a second return');
+commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireUnsent($r,$r->domain));
+commerceReject(fn()=>$inputs->submitCode(tap(\Illuminate\Http\Request::create('/transfer','POST',['transfer_code'=>'Changed']),fn($q)=>$q->setUserResolver(fn()=>$user)),$r->id));
+$engine->execute($r->id);same($writes,$state->calls,'Settlement never replays awaiting_code or another purchase');
+commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($r->domain->domain));
+commerceReject(fn()=>$r->update(['policy'=>array_diff_key($r->policy,['enom_answer'=>true])]));
+// The same finality proof uses the existing original-receipt port, including recovery after a lost refund reply.
+require __DIR__.'/Support/money-receipt.php';
+$gateway=\App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Transfer receipt fixture','type'=>'gateway','enabled'=>true]);
+$original=$prepare(placeholderComFixtureName('rejected-original-refund-placeholder.com'));$observe->fault='reject_charge';$original=$reconcile->run($original->id);
+\App\Models\InvoiceTransaction::where('invoice_id',$original->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'synthetic-transfer-receipt']);
+$lost=false;try{$settings->run($review($original),$answer($original),$clock->now());}
+catch(RuntimeException $e){same('Synthetic reply lost after acceptance',$e->getMessage(),'The lost gateway reply is exercised');$lost=true;}
+expect($lost,'Lost refund reply must surface');
+$refunds->retryPending();$original->refresh();
+same('original_payment',$original->funding['refund']['to'],'Capable gateway returns the original receipt');
+same(0,\Paymenter\Extensions\Servers\Domains\Services\ReceiptReturns::outstanding($original),'Lost refund reply recovers to a settled return');
+same(1,MoneyReceiptGateway::$sends,'Recovery returns one customer payment for one finally failed transfer');
 // A rejection without complete charge history stays open: no candidates were looked for, so none were ruled out.
 $op=$prepare(placeholderComFixtureName('unreconciled-rejected-transfer-placeholder.com')); $observe->fault='reject';
 App\Models\Server::find($op->server_id)->settings()->where('key',HistoryAcceptances::KEY.'_transfer')->delete(); $r=$reconcile->run($op->id);
@@ -228,4 +250,38 @@ same('2029-01-01',$renew->expected_expires_at->format('Y-m-d'),'One complete ren
 same($invoice->id,$billing->invoice($completed->domain_id,$user)->id,'Transfer renewal billing is idempotent');
 same(null,$invoice->items->sole()->reference_id,'Renewal debt has no native service dispatch');
 assertTransferWatch($predecessor,$completed,$clock->now()->getTimestamp());
+// A pending wait stays quiet only while its reads work and will continue.
+Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
+$raised=static function($op)use($clock):bool {
+    $d=$op->domain->fresh();$now=$clock->now()->getTimestamp();
+    return Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::retained(['domain'=>$d,'operations'=>$d->operations()->get()],$now)!==[];
+};
+// A pending recovery must not manufacture the separate changed-charge anomaly.
+$op=$prepare(placeholderComFixtureName('quiet-wait-placeholder.com'));$observe->charge=$op->attempt['authorized_cost']['amount'];$observe->fault='pending';$reconcile->run($op->id);
+expect(!$raised($op),'A healthy pending read stays quiet');
+$clock->instant=new DateTimeImmutable('@'.$op->fresh()->policy['reconciliation']['next_at']);
+$observe->fault='down';$r=$reconcile->run($op->id);same('pending',$r->policy['reconciliation']['transfer_status'],'A failed read keeps the older status');
+expect($raised($op),'A failed read alerts even with an older pending status');
+$clock->instant=new DateTimeImmutable('@'.$r->policy['reconciliation']['next_at']);
+$observe->fault='pending';$reconcile->run($op->id);expect(!$raised($op),'A read that works ends the failure');
+$clock->instant=$clock->now()->modify('+25 hours');expect($raised($op),'A day with no read alerts');
+$reconcile->run($op->id);expect(!$raised($op),'A fresh read clears the stale wait');
+for($i=0;$i<2;$i++){$clock->instant=new DateTimeImmutable('@'.$op->fresh()->policy['reconciliation']['next_at']);$reconcile->run($op->id);}
+same('transfer_pending',$op->fresh()->policy['reconciliation']['reason'],'Healthy pending reads continue past the old limit');
+expect(!$raised($op),'Continuing healthy polling stays quiet');
+$clock->instant=new DateTimeImmutable('@'.$op->fresh()->policy['reconciliation']['next_at']);$observe->fault='status';$reconcile->run($op->id);
+$calls=$observe->calls;$clock->instant=new DateTimeImmutable('@'.$op->fresh()->policy['reconciliation']['next_at']);$reconcile->run($op->id);
+same($calls,$observe->calls,'Unexpected results stop after the poll limit');expect($raised($op),'Stopped anomalous polling alerts');
+$first=$prepare(placeholderComFixtureName('first-read-down-placeholder.com'));$observe->fault='down';$reconcile->run($first->id);expect($raised($first),'An accepted transfer whose first read fails alerts');
+// Our transfer polling allowance yields before exhausting the live account's shared daily guard.
+\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCallSchema::install();
+$liveAccount=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$binding->serverId)->sole();$uid=$liveAccount->stable_identity;
+config(['domains.enom_identity.environment'=>'live','domains.enom_live.catalogue'=>true,'domains.enom_live.site'=>config('app.url'),
+    'domains.enom_live.accounts'=>[$uid=>['fingerprint'=>$binding->fingerprint,'daily_call_cap'=>100,'daily_spend_limit_usd'=>'1000.00']]]);
+$day=\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::day();
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCallSchema::TABLE)->insert(['account'=>hash('sha256',$uid),'day'=>$day,'used'=>50,'spend_micros'=>0]);
+$pollBudget=new \Paymenter\Extensions\Servers\Domains\Services\TransferReadBudget($clock);
+try{$pollBudget->acquire($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);expect(false,'Transfer must leave daily headroom');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}
+same($day,\Paymenter\Extensions\Servers\Domains\Services\EnomLiveCalls::reserve($binding),'Other paid/read work retains the shared daily allowance');
 echo "Transfer unique-charge completion, native funding races, terminal refusal and renewal anchors passed.\n"; $nativeSuccessful=true;

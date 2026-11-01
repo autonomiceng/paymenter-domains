@@ -20,7 +20,7 @@ $beforeInvalidReason=$op->fresh()->getRawOriginal();
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>"Reviewed\u{2028}refund"])->assertHasActionErrors(['reason'=>'regex']);
 same($beforeInvalidReason,$op->fresh()->getRawOriginal(),'Refund reason field error changes no operation');
 $reason=str_repeat('🦦',500);
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Cancelled, credit added');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('refund',['reason'=>$reason])->assertHasNoActionErrors()->assertNotified('Request cancelled');
 same($reason,$op->fresh()->policy['staff_actions'][0]['reason'],'500 Unicode characters retained');
 // Release hold has no reason field and records its own name.
 $op=$held('staff-release-name-placeholder.com');
@@ -48,7 +48,7 @@ $evidence=$held('staff-provider-evidence-placeholder.com');$evidence->domain->up
 $refuse($evidence,'refund','acquisition_provider_evidence',"The registrar may have received this request.");
 $line=$held('staff-no-paid-line-placeholder.com');DB::table('domains_operations')->where('id',$line->id)->update(['funding_basis'=>'offline_demo']);$line->refresh();
 $refuse($line,'release','no_eligible_paid_line',"This request has no paid invoice.");
-$missing=$held('staff-missing-invoice-placeholder.com');DB::table('domains_operations')->where('id',$missing->id)->update(['invoice_id'=>999999]);$missing->refresh();
+$missing=$held('staff-missing-invoice-placeholder.com');DB::table('domains_operations')->where('id',$missing->id)->update(['invoice_id'=>999999,'state'=>'uncertain']);$missing->refresh();
 $before=[$missing->attempt,$missing->funding,$missing->domain->fresh()->getRawOriginal(),$credit(),count($observation->calls),$state->writes];
 $key=$refuse($missing,'recheck','original_invoice_missing',"Invoice not found.");
 $history=$missing->fresh()->policy['staff_actions'];

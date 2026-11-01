@@ -7,12 +7,13 @@ declare(strict_types=1);
     $quiet = new \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock, new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts);
     // Persist only synthetic operation inputs. Domain variants stay in memory so no lifecycle runs.
     \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->update(['state' => 'succeeded']);
+    $late = \Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE;
     $cases = [
         'active' => ['Active', 'ok', null], 'adoption_pending' => ['Under review', 'warn', 'Import not confirmed'],
         'registration_pending' => ['Pending registration', 'info', null], 'transfer_pending' => ['Pending transfer', 'info', null],
         'registration_rejected' => ['Failed', 'bad', 'Registration did not finish'], 'transfer_rejected' => ['Failed', 'bad', 'Transfer did not finish'],
-        'needs_review' => ['Under review', 'warn', null], 'expired' => ['Expired', 'bad', null], 'grace' => ['Expired', 'bad', 'In grace period'],
-        'redemption' => ['Redemption', 'bad', null], 'cancelled' => ['Cancelled', 'muted', null],
+        'needs_review' => ['Under review', 'warn', null], 'expired' => ['Expired', 'bad', $late], 'grace' => ['Expired', 'bad', $late],
+        'redemption' => ['Redemption', 'bad', $late], 'cancelled' => ['Cancelled', 'muted', null],
         'unknown_status' => ['Under review', 'warn', 'Status missing'],
     ];
     foreach ($cases as $state => $expected) {
@@ -28,7 +29,7 @@ declare(strict_types=1);
         foreach (['held', 'uncertain', 'awaiting_payment'] as $state) {
             \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->update(['action' => $action, 'state' => $state]);
             $d = $base->fresh(); $d->status = 'needs_review';
-            $expected = $state === 'awaiting_payment' ? ['Action required', 'warn', 'Invoice not paid']
+            $expected = $state === 'awaiting_payment' ? ['Awaiting payment', 'info', 'Invoice not paid']
                 : ($action === 'register' ? ['Pending registration', 'info', null]
                 : ['Under review', 'warn', $state === 'held' ? 'Transfer on hold' : 'Transfer not confirmed']);
             $dto = $quiet->present($d, false);

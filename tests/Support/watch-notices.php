@@ -5,12 +5,13 @@ require __DIR__.'/watch-dns.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{WatchNoticeTemplates,WatchRegistryChecks,WatchDnsChecks,WatchNotices,WatchNoticeDelivery};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsReading;
-function noticeFixture(): array
+function noticeFixture(bool $optIn=true): array
 {
     $f=dnsFixture();extract($f,EXTR_SKIP);global $fixture;require __DIR__.'/reminder-mail.php';
     app('view')->prependNamespace('domains',dirname(__DIR__,2).'/Domains/resources/views');\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::install();WatchNoticeTemplates::ensure();
     DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>true]);
     $now=1800000000;$id=(int)$watch->id;$uid=(int)$owner->id;
+    if ($optIn) { DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::save($uid,'example.com',1,1,true,true)); }
     $registry=new WatchRegistryChecks(true);$dns=new WatchDnsChecks(true);$planner=new WatchNotices(true);$delivery=new WatchNoticeDelivery(true);
     $registry->enroll($id,$uid,$now);$dns->enroll($id,$uid,$now);
     return [...$f,...compact('now','id','uid','registry','dns','planner','delivery')];

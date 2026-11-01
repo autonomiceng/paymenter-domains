@@ -16,7 +16,7 @@ foreach ([0,1] as $i) {
     $dto=$owners->present($d);$snapshots[]=$dto;
     $unavailable=(new Paymenter\Extensions\Servers\Domains\Services\OwnedDomains($clock,new Paymenter\Extensions\Servers\Domains\Services\OwnerPorts))->present($d);
     same([],$unavailable->management,'Unavailable capability port grants no management form');expect(!isset($unavailable->actions['setup']),'Unavailable capability port offers no setup form');
-    same(['Action required','warn','Invoice not paid'],[$dto->status,$dto->tone,$dto->statusReason],'Native unpaid transfer is explicit');
+    same(['Awaiting payment','info','Invoice not paid'],[$dto->status,$dto->tone,$dto->statusReason],'Native unpaid transfer is explicit');
     same(null,$dto->transfer['deadline'],'Unpaid order has no invented UTC cutoff');
     expect($dto->transfer['open'],'Unsent unpaid transfer accepts code');
     same([],$dto->management,'Pending transfers have focused setup, without management forms');
@@ -33,7 +33,7 @@ foreach ([0,1] as $i) {
     $d->update(['status'=>'transfer_pending']);
     $d->update(['observation'=>['corrections'=>[['section'=>'contacts','state'=>'readback_confirmed_awaiting_review','profile_id'=>'PRIVATE','operation_key'=>$op->operation_key],['section'=>'nameservers','state'=>'closed']]]]);
     $html=$controller->show($request($user),$d->id)->render();
-    same([['label'=>'Contacts','state'=>'Under review','date'=>$op->fresh()->updated_at->format('Y-m-d')],['label'=>'Nameservers','state'=>'Under review','date'=>null]],$owners->present($d->fresh())->progress,'Correction readback never closes original');expect(str_contains($html,'Under review')&&!str_contains($html,'Completed'),'Correction rows render open');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
+    same([['label'=>'Contacts','state'=>'Under review','date'=>$op->fresh()->updated_at->toIso8601String()],['label'=>'Nameservers','state'=>'Under review','date'=>null]],$owners->present($d->fresh())->progress,'Correction readback never closes original');expect(str_contains($html,'Under review')&&!str_contains($html,'Completed'),'Correction rows render open');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
     $op->update(['state'=>'held','safe_code'=>'contact_details_required']);
     expect(str_contains($controller->setup($request($user),$d->id)->render(),'Use updated account details'),'Held contact recovery affordance');
     expect(str_contains($controller->setup($request($user),$d->id)->render(),'Edit account details</a>'),'Account edit link differs from the recovery heading');

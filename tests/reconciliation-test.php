@@ -66,4 +66,20 @@ foreach (['late', 'absent', 'null'] as $mode) {
             'M10 reconcile retains the recovered key, charge, expiry, anchor and native finance');
     }
 }
+// Unknown/sent with a retained order is distinct from a lost reply. Exercise every full-proof refusal.
+$preflight->cost = '8.95';
+foreach (['', 'open', 'failed', 'wrong-id', 'wrong-name', 'wrong-action', 'wrong-years', 'wrong-charge', 'wrong-currency', 'wrong-expiry', 'term', 'owner', 'window', 'account', 'authority', 'multiple'] as $fault) {
+    [$op, $binding] = $prepare(reservedFixtureName('captured-'.($fault ?: 'complete').'.example.com'), 'captured');
+    $original = $op->attempt; $before = $writer->calls;
+    $observation->fault = $fault;
+    if ($fault === 'window') { $observation->billDate = '10/16/2026 5:00:01 AM'; }
+    if ($fault === 'account') { Illuminate\Support\Facades\DB::table('domains_domains')->where('id', $op->domain_id)->update(['account_fingerprint' => str_repeat('a', 64)]); }
+    if ($fault === 'authority') { Illuminate\Support\Facades\DB::table('domains_domains')->where('id', $op->domain_id)->update(['authority_generation' => 2]); }
+    $result = $reconcile->run($op->id);
+    same($fault === '' ? 'succeeded' : 'uncertain', $result->state, 'Captured order requires every original proof: '.$fault);
+    same($original, array_diff_key($result->attempt, ['reconciliation' => true]), 'Never rewrite the unknown reply or seal');
+    $engine->execute($op->id);
+    same($before, $writer->calls, 'Captured order never replays a write: '.$fault);
+    if ($fault !== '') { same(null, $result->confirmed_expires_at, 'Mismatch cannot anchor paid term'); }
+}
 echo "Unique completion and original-attempt crash recovery passed\n"; $nativeSuccessful = true;

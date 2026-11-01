@@ -95,7 +95,7 @@ final class ObservationProjection
         }
         foreach ($ops as $op) {
             if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
-            foreach ($op->attempt['management_reads']??[] as $read) {
+            foreach (ManagementReadRecovery::reads($op) as $read) {
                 if (($read['confirmed']??false)!==true || ($inventory && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($read['sequence']??0)<=$inventory['sequence'])) { continue; }
                 $reads[]=['op'=>$op,'read'=>$read];
             }

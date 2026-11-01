@@ -12,25 +12,34 @@ final class ReconciliationEvidence
         $a = $op->attempt ?? []; $query = OperationClaims::query($op, $domain);
         if (!$op->started_at || !$op->request_fingerprint || !isset($a['claim_key'], $a['dispatch_attempted_at'])
             || ($a['seal'] ?? null) !== 'sealed') { throw new \DomainException('No sealed original attempt.'); }
-        $end = $op->started_at->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
+        $start = ExecutionWindow::start($op)??throw new \DomainException('Missing execution window.');
+        $end = $start->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::EXECUTION_SECONDS.' seconds');
         $dispatch = new \DateTimeImmutable($a['dispatch_attempted_at']);
-        if ($dispatch < $op->started_at || $dispatch > $end) { throw new \DomainException('Invalid original window.'); }
+        if ($dispatch < $start || $dispatch > $end) { throw new \DomainException('Invalid original window.'); }
         $record = !array_key_exists('execution', $a) ? ExecutionRecord::Absent : ($a['execution'] === null ? ExecutionRecord::RecordedNull : ExecutionRecord::Recorded);
         $registration = $op->action === 'renew' ? ($a['renewal'] ?? null) : ($a['registration'] ?? null);
         $raw = $op->action === 'renew' ? $registration : ($a['evidence']['registration'] ?? null);
         $ref = $registration['order_reference'] ?? $raw['orderReference'] ?? null;
         foreach ([$registration, $raw] as $facts) {
             if ($facts !== null && (($facts['query']['name'] ?? null) !== $query->name || ($facts['query']['years'] ?? null) !== $query->years
+                || (isset($facts['query']['action']) && $facts['query']['action'] !== $query->action->value)
                 || ($facts['order_reference'] ?? $facts['orderReference'] ?? null) !== $ref)) { throw new \DomainException('Contradictory retained acceptance.'); }
         }
         if ($op->action === 'transfer') { $registration = $raw = null; $ref = null; }
-        if ($op->action !== 'transfer' && $op->provider_order_id !== null && $op->provider_order_id !== $ref) { throw new \DomainException('Order reference changed.'); }
+        if ($op->action !== 'transfer' && $op->provider_order_id !== null && $op->provider_order_id !== $ref && $op->provider_order_id !== (EnomAnswers::answer($op,$domain)['order_reference']??null)) { throw new \DomainException('Order reference changed.'); }
         $execution = null;
         if ($record === ExecutionRecord::Recorded && $raw !== null) {
             $disposition = Disposition::from($a['execution']['disposition']); $send = SendState::from($a['execution']['send_state']);
-            if (in_array($disposition, [Disposition::Accepted, Disposition::AcceptedWithDiscrepancy], true) && $send === SendState::Sent) {
+            if ($send === SendState::Sent && (in_array($disposition, [Disposition::Accepted, Disposition::AcceptedWithDiscrepancy], true)
+                || ($disposition === Disposition::Unknown && $binding->registrarKey === 'enom' && $op->action === 'register' && $ref !== null && ($raw['query']['action'] ?? null) === 'register'))) {
                 $execution = new PersistedExecution($binding, $query, $op->operation_key, $disposition, $send, $ref, $op->action === 'renew' ? ($a['renewal_mode'] ?? null) : null);
             }
+        }
+        $answer=EnomAnswers::answer($op,$domain);
+        if(($answer['outcome']??null)==='accepted'&&$op->action!=='transfer'&&!$execution?->capturedUnknown()){
+            if($ref!==null&&$ref!==$answer['order_reference']){throw new \DomainException('Support answer conflicts with original order.');}
+            $ref=$answer['order_reference'];$record=ExecutionRecord::StaffAnswer;
+            $execution=new PersistedExecution($binding,$query,$op->operation_key,Disposition::Accepted,SendState::Sent,$ref,$op->action==='renew'?($a['renewal_mode']??null):null);
         }
         $cost = $a['authorized_cost'] ?? null;
         return new AttemptEvidence($binding, $query, $op->operation_key, $op->authority_generation, $record, $execution ? SendState::Sent : SendState::PossiblySent,
@@ -59,6 +68,9 @@ final class ReconciliationEvidence
             || (!$attempt->executionFacts && !$history)
             || ($attempt->providerReference === null && !$history)
             || !$domain || $domain->owned !== true || !$domain->expiry) { return null; }
+        // A captured unknown reply has no accepted charge: only the original authorized USD amount can settle it.
+        if ($attempt->executionFacts?->capturedUnknown() && (!$attempt->expectedCharge || $attempt->expectedCharge->currency !== 'USD'
+            || WriteMoney::compare($order->charge->amount, $attempt->expectedCharge->amount) !== 0)) { return null; }
         $expiry = substr($domain->expiry->value, 0, 10);
         $base = $attempt->beforeExpiry ? new \DateTimeImmutable($attempt->beforeExpiry->value) : $attempt->windowStart;
         $earliest = $base->modify('+'.$attempt->query->years.' years')->modify('-2 days')->format('Y-m-d');
@@ -79,7 +91,7 @@ final class ReconciliationEvidence
             'processed_source' => $date->source, 'processed_timezone' => $date->timezone, 'expiry' => $expiry, 'provider_domain_id' => $domain->providerReference,
             'operation_key' => $attempt->operationKey, 'generation' => $attempt->authorityGeneration,
             'fingerprint' => $attempt->binding->fingerprint, 'query' => ['name' => $attempt->query->name, 'action' => $attempt->query->action->value, 'years' => $attempt->query->years],
-            'source' => $attempt->executionFacts && $attempt->providerReference !== null ? 'captured_order' : 'accepted_history',
+            'source' => $attempt->execution===ExecutionRecord::StaffAnswer?'staff_answer':($attempt->executionFacts && $attempt->providerReference !== null ? 'captured_order' : 'accepted_history'),
             'expiry_precision' => $domain->expiry->precision->value, 'observed_corrections' => $domain->providerAutoRenew === false ? [] : ['auto_renew'], 'window_start' => $attempt->windowStart->format(DATE_ATOM),
             'window_end' => $attempt->windowEnd->format(DATE_ATOM)];
     }

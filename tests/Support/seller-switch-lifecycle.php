@@ -13,10 +13,11 @@ $sellerLifecycle = static function (int $i, string $action) use ($sellers, $cloc
     $scenarioNew, $scenarioCompose, $state, $scenarioSends, $inputs, &$engine): void {
     scenarioSwitch($sellers, $clock, $tlds[$i]->server_id);
     $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[$i], $action), placeholderComFixtureName('stale-'.$i.'-'.$action.'-placeholder.com'));
+    $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
     $money = scenarioMoney(); $orders = Order::count(); $services = Service::count();
     foreach ([1 - $i, $i] as $seller) {
         scenarioSwitch($sellers, $clock, $tlds[$seller]->server_id);
-        commerceCheckout($user, $cart);
+        $checkout->instance()->checkout();
         same($money, scenarioMoney(), 'Old receipt stays stale even after switching back');
         same($orders, Order::count(), 'Stale checkout creates no order'); same($services, Service::count(), 'Stale checkout creates no service');
     }

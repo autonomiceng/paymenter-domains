@@ -20,7 +20,7 @@ function dnsFixture(): array
     $property = $service->properties()->create(['key'=>'domain','name'=>'Domain','value'=>'www.example.com']);
     $profile = DB::transaction(fn()=>WatchProfile::create(['name'=>'Synthetic defaults','nameservers'=>['NS2.platform.test.','ns1.platform.test'],
         'website_endpoints'=>['ips'=>['192.0.2.1']], 'email_endpoints'=>['exact'=>['mx.platform.test']], 'edited_by'=>$owner->id,'reason'=>'Synthetic composition']));
-    $map = DB::transaction(fn()=>WatchProductMap::create(['product_id'=>$product->id,'property_key'=>'domain','expected_ns_profile_id'=>$profile->id,'edited_by'=>$owner->id,'reason'=>'Synthetic map']));
+    $map = DB::transaction(fn()=>WatchProductMap::create(['product_id'=>$product->id,'property_key'=>'domain','edited_by'=>$owner->id,'reason'=>'Synthetic map']));
     // W1 activation action is deliberately absent. Privileged fixtures compose future discovery only.
     DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['enabled'=>true]);
     $watch = DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'example.com','psl_revision'=>str_repeat('a',64),

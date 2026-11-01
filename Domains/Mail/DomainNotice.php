@@ -7,6 +7,7 @@ use Illuminate\View\Compilers\BladeCompiler;
 /** Native Paymenter mail with a text alternative derived from the same customized template. */
 final class DomainNotice extends \App\Mail\Mail
 {
+    use ClosesEmailLog;
     public function content():Content
     {
         $html=(string)\Illuminate\Support\Str::markdown(BladeCompiler::render($this->data['body'],$this->data));

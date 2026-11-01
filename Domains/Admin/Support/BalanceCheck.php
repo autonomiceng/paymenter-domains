@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Notifications\Notification;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestSendLimit,RegistrarBalances};
-/** The Check balance button, on the account page and on a request waiting for a fresh balance. */
+/** The Check balance button, on the registrar account page. */
 final class BalanceCheck
 {
     public static function run(int $server): void

@@ -115,9 +115,8 @@ foreach(['renewal','management'] as $action){
     $server->settings()->create(['key'=>$class::KEY,'encrypted'=>true,'type'=>'string','value'=>json_encode(['fingerprint'=>$binding->fingerprint,...$class::protocol($binding)])]);
     expect(!$class::accepted($binding),'A TEST acceptance row with even the live fingerprint and route grants no live authority');
     $deny(fn()=>$write('test_'.$action,['accept'=>true,'verified'=>true]));
-    $write('live_'.$action,['accept'=>true,'verified'=>true]);expect($class::accepted($binding),'Independent live acceptance');
-    $write('live_'.$action,['accept'=>false]);expect(!$class::accepted($binding),'Live revocation');
-    $write('live_'.$action,['accept'=>true,'verified'=>true]);
+    $deny(fn()=>$write('live_'.$action,['accept'=>true,'verified'=>true]));expect(!$class::accepted($binding),'The shared writer refuses Live turn-on, whatever the caller supplies');
+
 }
 $write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 config(['domains.enom_live.catalogue'=>false]);$before=count($GLOBALS['enomWire']['forms']);$deny(fn()=>$write('import',['ending'=>'com']));same($before,count($GLOBALS['enomWire']['forms']),'Catalogue off refuses import before send');config(['domains.enom_live.catalogue'=>true]);
@@ -127,11 +126,15 @@ $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'re
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void {$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});
 Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void {$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
 config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();
-$write('processing',['enabled'=>true,'confirmed'=>true]);
+$front=app(Storefront::class);$offerCalls=count($GLOBALS['enomWire']['forms']);
+same([],$front->endings(),'Before Activate there are no Live registration offers');
+same('held',$front->check(placeholderComFixtureName('before-activate-search-placeholder.com'))['status'],'Before Activate search has no buy action');
+same($offerCalls,count($GLOBALS['enomWire']['forms']),'Unactivated public search makes no provider request');
+require __DIR__.'/enom-live-activation.php';
 $observations=app(ObservationWork::class);$observations->enroll($server->id);$before=count($GLOBALS['enomWire']['forms']);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Live catalogue keeps the TEST staff-only refresh policy');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'No spurious automatic catalogue failure');
 config(['domains.enom_live.catalogue'=>false]);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Catalogue opt-out sends no scheduled refresh');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'Catalogue opt-out creates no false failure');config(['domains.enom_live.catalogue'=>true]);
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-    ->assertSeeInOrder(['Setup checklist','Renewals','On','DNS, nameservers and contacts','On','Renewal invoices'])->assertSee(['Live account ID',$binding->fingerprint])->assertDontSee('LIVE-SECRET-TOKEN');
+    ->assertSeeInOrder(['Setup checklist','Renewals','On','DNS, nameservers and contacts','On'])->assertSee(['Live account ID',$binding->fingerprint])->assertDontSee('LIVE-SECRET-TOKEN');
 $user=commerceUser();$user->update(['email'=>'live-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 $product=app(NativeCatalogue::class)->product($tld,'register');$worker=app(RuntimeWork::class);
@@ -141,9 +144,51 @@ $new=static function(string $name,bool $pay=true)use($user,$product):Operation {
     if($pay){App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);}
     return $op->fresh();
 };
+// A retained cart must not create payable debt when staff clears Registrations.
+$front=app(Storefront::class);expect($front->endings()!==[],'Activated registration appears in public offers');
+$activeSelection=$front->offer('com','register',1)['selection'];
+$notSelling=commerceCart($user);commerceAdd($notSelling,$product,placeholderComFixtureName('live-unselected-placeholder.com'));
+$write('activate',['registration'=>false,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true]);
+same([],$front->endings(),'Registrations unchecked removes even warm public offers');
+try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked registration admission must refuse');}
+catch(App\Exceptions\DisplayException $e){same('Domains can’t be ordered right now. Remove them to check out.',$e->getMessage(),'Locked admission uses the existing customer message');}
+$debtBefore=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
+$refusedCheckout=commerceCheckout($user,$notSelling);
+same($debtBefore,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],'Registrations unchecked creates no order, invoice or bound operation');
+$refusedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+$write('activate',['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true]);
+foreach(['before_activate','evidence_removed'] as $missing){
+    $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('live-'.str_replace('_','-',$missing).'-placeholder.com'));
+    $receiptRow=$server->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::KEY)->sole();
+    if($missing==='before_activate'){$receiptRow->delete();}else{config(['domains.enom_live.accounts.live-uid.evidence'=>null]);}
+    $debtBefore=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
+    $blockedCheckout=commerceCheckout($user,$cart);
+    same($debtBefore,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],$missing.' creates no invoice or bound operation');
+    $blockedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+    try{$front->offer('com','register',1);throw new LogicException('Direct offer must refuse');}catch(App\Exceptions\DisplayException){}
+    same('held',$front->check(placeholderComFixtureName('search-'.str_replace('_','-',$missing).'-placeholder.com'))['status'],$missing.' search has no buy action');
+    try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked admission must refuse');}catch(App\Exceptions\DisplayException){}
+    if($missing==='before_activate'){$receiptRow->exists=false;$receiptRow->save();}else{config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);}
+}
 $preview=commerceCart($user);commerceAdd($preview,$product,placeholderComFixtureName('live-preview-placeholder.com'));$orders=App\Models\Order::count();$invoices=App\Models\Invoice::count();config(['domains.enom_live.registration'=>false]);
 commerceCheckout($user,$preview)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
 same([$orders,$invoices],[App\Models\Order::count(),App\Models\Invoice::count()],'Live preview-only checkout creates no native debt');config(['domains.enom_live.registration'=>true]);
+$pendingSale=$new(placeholderComFixtureName('live-pay-gate-placeholder.com'),false);
+App\Models\Credit::updateOrCreate(['user_id'=>$user->id,'currency_code'=>'USD'],['amount'=>'500.00']);
+// A cached successful name check cannot authorize payment after the Live receipt stops applying.
+app(Paymenter\Extensions\Servers\Domains\Services\PayCheck::class)->stop(App\Models\Invoice::findOrFail($pendingSale->invoice_id));
+$paymentBefore=[(string)App\Models\Credit::where('user_id',$user->id)->value('amount'),App\Models\InvoiceTransaction::where('invoice_id',$pendingSale->invoice_id)->count(),App\Models\Invoice::findOrFail($pendingSale->invoice_id)->status];
+config(['domains.enom_live.accounts.live-uid.evidence'=>null]);
+$paymentNotice=app(Paymenter\Extensions\Servers\Domains\Services\PayCheck::class)->stop(App\Models\Invoice::findOrFail($pendingSale->invoice_id));
+expect($paymentNotice!==null,'Removed evidence must stop payment on an already issued registration invoice');
+$pendingSale->update(['state'=>'held']);expect(app(Paymenter\Extensions\Servers\Domains\Services\PayCheck::class)->stop(App\Models\Invoice::findOrFail($pendingSale->invoice_id))!==null,'An unsent held invoice also refuses payment');
+$payCalls=count($GLOBALS['enomWire']['forms']);
+Livewire::actingAs($user)->test(App\Livewire\Invoices\Show::class,['invoice'=>App\Models\Invoice::findOrFail($pendingSale->invoice_id)])->set('selectedMethod','credit')->call('processPayment')
+    ->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Please try again later.','type'=>'error']);
+same($paymentBefore,[(string)App\Models\Credit::where('user_id',$user->id)->value('amount'),App\Models\InvoiceTransaction::where('invoice_id',$pendingSale->invoice_id)->count(),App\Models\Invoice::findOrFail($pendingSale->invoice_id)->status],'Refused payment keeps credit and invoice unchanged');
+same($payCalls,count($GLOBALS['enomWire']['forms']),'Local payment refusal makes no provider request');
+config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);
+$pendingSale->update(['state'=>'awaiting_payment']);same(null,app(Paymenter\Extensions\Servers\Domains\Services\PayCheck::class)->stop(App\Models\Invoice::findOrFail($pendingSale->invoice_id)),'Restored acceptance lets the unchanged unpaid invoice proceed');
 $unpaid=$new(placeholderComFixtureName('live-unpaid-placeholder.com'),false);$before=count($GLOBALS['enomWire']['forms']);$worker->operation($unpaid->id);
 same($before,count($GLOBALS['enomWire']['forms']),'Live unpaid invoice refuses before send');
 $unpaidState=$unpaid->fresh()->state;$unpaid->update(['state'=>'running']);config(['domains.enom_live.registration'=>false,'domains.enom_live.renewal'=>false,'domains.enom_live.management'=>false]);
@@ -198,6 +243,17 @@ $before=count($GLOBALS['enomWire']['forms']);$worker->operation($change->id);sam
 $clock->at=new DateTimeImmutable('2027-09-30T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
 $billing=new Paymenter\Extensions\Servers\Domains\Services\DomainBilling($bindings,app(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class),$clock);
+config(['domains.enom_live.renewal'=>false]);try{$billing->invoice($op->domain_id,$user);throw new LogicException('Site off refuses a new Live invoice');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff,$e->reason,'Live with the site flag off gets no new invoice');}config(['domains.enom_live.renewal'=>true]);
+// A Live holding on a TEST site never sends either.
+config(['domains.enom_identity.environment'=>'test']);try{$billing->invoice($op->domain_id,$user);throw new LogicException('Other environment refuses a new Live invoice');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff,$e->reason,'Live holding on a TEST site gets no new invoice');}config(['domains.enom_identity.environment'=>'live']);
+$renewalSwitch=$server->settings()->where('key','domains_enom_live_renewal')->sole();$renewalValue=$renewalSwitch->value;
+foreach(['feature_off','evidence_removed'] as $missing){
+    if($missing==='feature_off'){$renewalSwitch->value='null';$renewalSwitch->save();}else{config(['domains.enom_live.accounts.live-uid.evidence'=>null]);}
+    $debts=App\Models\Invoice::count();
+    try{$billing->invoice($op->domain_id,$user);throw new LogicException('Inactive renewal must not create debt');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff,$e->reason,'Renewal acceptance guards invoicing despite retained billing flags');}
+    same($debts,App\Models\Invoice::count(),$missing.' creates no renewal invoice');
+    $renewalSwitch->value=$renewalValue;$renewalSwitch->save();config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);
+}
 $invoice=$billing->invoice($op->domain_id,$user);same($invoice->id,$billing->invoice($op->domain_id,$user)->id,'Duplicate renewal reuses native invoice');
 $renew=Operation::where('invoice_id',$invoice->id)->sole();App\Helpers\ExtensionHelper::addPayment($invoice->id,null,$renew->amount);
 $state=(object)['name'=>$op->domain->domain,'after'=>false,'bill'=>''];
@@ -235,5 +291,6 @@ Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::run($bin
     $clock->at=$clock->at->modify('+1 day');$deny(fn()=>Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::prepare($binding,'renewal'));
 });
 $clock->at=$at;same(10000001,(int)DB::table($liveTable)->where('day',$day)->value('spend_micros'),'Unsent reservation retains one exact USD millionth');
+require __DIR__.'/enom-live-balances.php';
 file_put_contents($receipt,json_encode(retained(),JSON_THROW_ON_ERROR));
 echo "Installed live registration, renewal, separate acceptance and pre-send limits passed without sockets.\n";

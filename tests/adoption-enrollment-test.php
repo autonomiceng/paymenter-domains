@@ -17,7 +17,7 @@ $hosting = Service::create(['user_id'=>$owner->id,'order_id'=>$hostingOrder->id,
 $hosting->properties()->create(['key'=>'domain','value'=>'www.example.com']);
 $profile = DB::transaction(fn()=>WatchProfile::create(['name'=>'Synthetic defaults','nameservers'=>['ns1.platform.test','ns2.platform.test'], 'website_endpoints'=>['ips'=>['192.0.2.1']], 'email_endpoints'=>['exact'=>['mx.platform.test']], 'edited_by'=>$staff->id,'reason'=>'Synthetic composition']));
 DB::transaction(fn()=>$profile->fill(['enabled'=>true,'revision'=>2,'reason'=>'Synthetic enabled composition'])->save());
-$map = DB::transaction(fn()=>WatchProductMap::create(['product_id'=>$hostingProduct->id,'property_key'=>'domain','expected_ns_profile_id'=>$profile->id,'edited_by'=>$staff->id,'reason'=>'Synthetic map']));
+$map = DB::transaction(fn()=>WatchProductMap::create(['product_id'=>$hostingProduct->id,'property_key'=>'domain','edited_by'=>$staff->id,'reason'=>'Synthetic map']));
 DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['enabled'=>true]);
 $watch = DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'example.com','psl_revision'=>str_repeat('a',64),'state'=>'active','expected_dns'=>'platform','ns_profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'notice_preferences'=>['expiry'=>true,'dns'=>true]]));
 $source = DB::transaction(fn()=>WatchSource::create(['user_id'=>$owner->id,'service_id'=>$hosting->id,'map_id'=>$map->id,'map_revision'=>1,'hostname'=>'www.example.com','registrable_name'=>'example.com','watch_id'=>$watch->id,'state'=>'watch','source_digest'=>str_repeat('b',64),'last_seen_at'=>$clock->now()->getTimestamp()]));

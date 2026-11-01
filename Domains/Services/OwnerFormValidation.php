@@ -5,6 +5,9 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 final class OwnerFormValidation extends \DomainException
 {
     public function __construct(public readonly array $fields, private readonly array $nameservers=[]) { parent::__construct('Invalid domain form.'); }
+    /** The owner form's field names for a contact refusal. */
+    public static function contact(ContactValidation $error): self
+    { return new self(array_values(array_unique(array_map(static fn($field)=>preg_replace('/^contacts\\.[^.]+\\./','contact.',$field),$error->fields)))); }
     public function messages(string $domain, #[\SensitiveParameter] array $input=[], string $registrar='enom'): array
     {
         $out=[];
