@@ -37,6 +37,7 @@ foreach (OwnerHelp::anchors() as $id => $title) {
 same(0,$dom->query('//article//h1')->length,'The page has one title');
 same(0,$dom->query('//h2[@id="privacy"] | //a[@href="#privacy"]')->length,'Privacy is hidden from help and its contents');
 expect(!str_contains($dom->document->textContent,'WHOIS privacy'),'Help does not advertise privacy');
+foreach(['Turning renewal invoices off stops new invoices.','An invoice already issued stays payable.','Paying it can still renew your domain.'] as $line){expect(str_contains($dom->document->textContent,$line),'Help explains the effect on existing invoices');}
 
 // Markdown HTML is escaped and unsafe links are dropped.
 $html=OwnerHelp::html("## Nameservers\n\n<script>alert(1)</script>\n\nText <b>bold</b> [x](javascript:alert(1))\n");

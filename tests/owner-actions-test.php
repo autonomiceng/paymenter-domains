@@ -43,6 +43,7 @@ foreach([0,1]as$i){
     expect(!$r->request->has('transfer_code'),'Foreign secret scrubbed before ownership refusal');
     $before=$op->fresh();$r=$req($d,'setup',['nameservers'=>$i?"ns1.example.com\nns2.example.com":'','privacy'=>$i?'1':'0','confirmed'=>'1']);
     $action->setup($r,$d->id);$after=$op->fresh();expect(isset($after->policy['owner_setup']),'Explicit setup captured');
+    same(false,$after->payload['privacy'],'Hidden setup ignores a newly submitted privacy choice for either registrar');
     same($exact,$after->payload['epp'],'Setup preserves code');same($before->policy['paid_at'],$after->policy['paid_at'],'Setup preserves paid clock');
     same($before->payload['contacts'],$after->payload['contacts'],'Setup preserves contacts');same($before->funding,$after->funding,'Setup grants no funding');
     commerceReject(fn()=>$after->update(['payload'=>[...$after->payload,'privacy'=>!$after->payload['privacy']]]));
@@ -83,9 +84,13 @@ foreach([0,1]as$i){
     }
     $setup->save($user,$registration->domain_id,['nameservers'=>$i?['ns1.example.com','ns2.example.com']:[],'privacy'=>$i===1]);
     expect(isset($registration->fresh()->policy['owner_setup']),'Registration desired settings captured before dispatch');
-    same($i===1,$registration->fresh()->payload['privacy'],'Only declared free privacy captured without a purchase');
+    same(false,$registration->fresh()->payload['privacy'],'Hidden setup ignores new privacy even at the local writer');
     same('awaiting_payment',$registration->fresh()->state,'Setup creates no financial or processing authority');
 }
+$legacy=$newTransfer('owner-legacy-privacy-placeholder.com',1,true,true);
+$legacy->update(['payload'=>[...$legacy->payload,'privacy'=>true]]);
+$setup->save($user,$legacy->domain_id,['nameservers'=>['ns1.example.com','ns2.example.com'],'privacy'=>false]);
+same(true,$legacy->fresh()->payload['privacy'],'Hidden setup preserves a previously stored privacy choice');
 $incomplete=$newTransfer(placeholderComFixtureName('owner-before-setup-placeholder.com'),1,true,true);$incomplete->update(['payload'=>[...$incomplete->payload,'nameservers'=>[]]]);$makeTransfer(1);
 $priorCalls=count($state->calls);$engine->execute($incomplete->id);same([],$incomplete->fresh()->attempt??[],'Incomplete setup consumes no acquisition attempt');same($priorCalls,count($state->calls),'Incomplete setup performs no transport');
 $setup->save($user,$incomplete->domain_id,['nameservers'=>['ns1.example.com','ns2.example.com'],'privacy'=>false]);

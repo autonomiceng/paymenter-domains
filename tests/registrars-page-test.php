@@ -95,7 +95,7 @@ $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom
 foreach(['Enom test account','Active','Check balance','Account','Registrar','Enom','Mode','Test','Balance','USD 7.99','Low balance','Add funds','Due in 30 days','USD 8.00',
     'Domains','API calls, last 24 hours','0 of 1000','Last sync',$sync] as $needle){$page->assertSee($needle);}
 $page->assertSee('WHOIS privacy')->assertSee("Not offered. Enom charges for it and Example Hosting doesn't sell it yet.");
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('WHOIS privacy')->assertSee("Not offered. Enom charges for it and Example Hosting doesn't sell it yet.");
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('WHOIS privacy')->assertSee('Not offered here yet. NameSilo includes it free where eligible.')->assertDontSee('Enom charges for it');
 $html=$page->html();
 foreach(['https://cp.enom.com/','Registrars'] as $needle){expect(str_contains($html,$needle),'Account page: '.$needle);}
 foreach(['Server #','Unknown','Enom TEST daily calls','Verified user ID','Retained domains','Environment',"\u{2014}"] as $needle){expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
@@ -278,7 +278,7 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->serv
     ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls, last 24 hours');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$off->id])->assertSee('Not connected')->assertSee('Off in Paymenter')->assertDontSee('Add funds');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$empty->id])->assertSee('Not connected')->assertDontSee('Check balance')
-    ->assertSee('WHOIS privacy')->assertSee("Not offered. Enom charges for it and Example Hosting doesn't sell it yet.");
+    ->assertSee('WHOIS privacy')->assertSee('Not offered yet.')->assertDontSee('Enom charges for it');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$demo->server_id])->assertSee('Demo NameSilo')->assertSee('Demo');
 // Orders paused: by staff, and by an unconfirmed paid request.
 DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['processing_enabled'=>false]);

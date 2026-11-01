@@ -168,7 +168,7 @@ expect(str_starts_with($card($dom,'Renewal invoices'),'On Turn off'),'Auto-renew
 same(['On',['Turn off']],$split($dom,'Renewal invoices'),'Auto-renew action sits on its own line');
 same('$14.99/yr',$card($dom,'Renewal price'),'Renewal price');
 same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->length,'Renew now button');
-foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off renewal invoices?',$name.' expires on Mar 1, 2027 unless you renew it.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
+foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off renewal invoices?','This stops new renewal invoices. An invoice already issued stays payable. Paying it can still renew '.$name.'.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'An active domain has no notice');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'Empty history');
 
@@ -255,9 +255,9 @@ $expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Serve
 same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');
 
 // History: changes with dates and renewal invoices.
-$d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));
+$d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20'],['label'=>'WHOIS privacy','state'=>'Done','date'=>'2026-10-21','by'=>'Ada']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));
 same(['Change','Status','Date'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//th'))),'History columns');
-same(['Nameservers Done Oct 20, 2026, 12:00 AM UTC','Renewal invoice INV-7 Paid Sep 30, 2026'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//tbody/tr'))),'History rows');
+same(['Nameservers Done Oct 20, 2026, 12:00 AM UTC','Domain changeBy Ada Done Oct 21, 2026, 12:00 AM UTC','Renewal invoice INV-7 Paid Sep 30, 2026'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//tbody/tr'))),'History retains privacy status, actor and date with a neutral label');
 same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Renewal invoice INV-7"]')->length,'Invoice row links');
 
 // Every help popover the page uses has an anchor.
