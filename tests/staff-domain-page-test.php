@@ -113,7 +113,7 @@ $storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
 same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
 same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');
 same($before,$queries($active->fresh()),'Nameservers add no queries');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock']);
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Transfer lock','Nameservers','ns1.example.net','ns2.example.net','ns3.example.net']);
 foreach([[],['ns1.example.net',7],['a'=>'ns1.example.net'],'ns1.example.net'] as $bad){$storeNs($active,$bad);same(null,$value($active,'Nameservers'),'Unusable stored nameservers are Missing');}
 $storeNs($active,['ns1.example.net','ns2.example.net']);
 // Every Missing carries its cause.

@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueri
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ObligationAlerts};
+Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 staffPanel(); [, $seed]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 
