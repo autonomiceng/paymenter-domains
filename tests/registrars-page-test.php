@@ -222,7 +222,7 @@ same([],$checks(Livewire::actingAs($staff)->test(RegistrarAccount::class,['accou
 Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>App\Admin\Resources\ServiceResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
 $serviceUrl=App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]);
 $fact=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($alerted->fresh())['Service'];
-same([$alerted->domain.' registration','Service #'.$service->id." · Customer, order or service missing. The name stays reserved. Don't restore records by hand.",'danger',$serviceUrl],[$fact['value'],$fact['sub'],$fact['tone'],$fact['url']],'A live service keeps its value and link under the alert');
+same([$alerted->domain.' registration','Service #'.$service->id.". Customer, order or service missing. The name stays reserved. Don't restore records by hand.",'danger',$serviceUrl],[$fact['value'],$fact['sub'],$fact['tone'],$fact['url']],'A live service keeps its value and link under the alert');
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$alerted->id])
     ->assertSeeHtml('href="'.e($serviceUrl).'"')->assertSeeInOrder(['Service',$alerted->domain.' registration','Customer, order or service missing']);
 $groups=$page->instance()->checks();

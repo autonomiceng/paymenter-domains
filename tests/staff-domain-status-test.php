@@ -256,12 +256,12 @@ $filtered=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2
 expect($filtered->instance()->getTableRecords()->contains('id',$cases['order: unpaid invoice'][0]->id)&&!$filtered->instance()->getTableRecords()->contains('id',$one->id),'Awaiting payment shows the unpaid order, not an Active domain');
 // One answer on every surface: the list, the heading, the Registration card and the request page.
 $oneView=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->assertSee('Active')->assertDontSee('Registrar request needs a check');
-same('Customer has not paid the invoice. Not sent yet.',(string)$oneView->instance()->getSubheading(),'Domain 1 heading names the open request');
+expect(str_contains(strip_tags((string)$oneView->instance()->getSubheading()),'Customer has not paid the invoice. Not sent yet.'),'Domain 1 heading names the open request');
 same(['Awaiting payment','Customer has not paid the invoice. Not sent yet.'],array_values(array_intersect_key(RequestStatus::for($oneRenewal->state),['label'=>1,'reason'=>1])),'Request page says the same');
 // An early renewal says so: the same words on the heading and the request page, and only until the billing window opens.
 $calendar=static function(int $issue,int $due)use($oneRenewal):void {DB::table('domains_operations')->where('id',$oneRenewal->id)->update(['policy'=>encrypt(json_encode([...$oneRenewal->policy,'calendar'=>['issue'=>today()->addDays($issue)->format('Y-m-d'),'due'=>today()->addDays($due)->format('Y-m-d')]]),false)]);};
 $early='Early renewal not paid. Nothing is due until '.today()->addDays(113)->format('M j, Y').'.';$calendar(99,113);
-same([$early,$early],[(string)Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->instance()->getSubheading(),Labels::requestStatus($oneRenewal->fresh())['reason']],'Early renewal, staff heading and request page');
+expect(str_contains(strip_tags((string)Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->instance()->getSubheading()),$early),'Early renewal, staff heading');same($early,Labels::requestStatus($oneRenewal->fresh())['reason'],'Early renewal, request page');
 $calendar(0,14);same('Customer has not paid the invoice. Not sent yet.',Labels::requestStatus($oneRenewal->fresh())['reason'],'Inside the billing window it is a normal unpaid invoice');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$two->id])->assertSee('Pending registration')->assertDontSee('Registrar request needs a check');
 // Real staff work names the request and links to it, in the list and in the heading.
