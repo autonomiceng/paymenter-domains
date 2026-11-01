@@ -400,14 +400,14 @@ final class SettingsActions
         return $text===null?null:$text.' Nothing was saved.';
     }
     /** Says what stopped the send. Only over_limit, or no finer reason, is about the count. */
-    private static function testRefusal(EnomTestCallLimit $error,string $name,int $server): string
+    private static function testRefusal(EnomTestCallLimit $error,string $name,int $server,array $data): string
     {
         $earlier=$name==='import'?'Earlier reads in this sync may have been sent and counted. ':'';
         return match($error->reason){
             'send_guard'=>'This site does not allow that Enom request, so it was not sent. '.$earlier.'Add it to the send guard list to allow it.',
             'bad_setting'=>'Our test send limit setting is missing or not valid, so this Enom request was not sent. '.$earlier,
             'unreadable'=>'We could not read our test send count, so this Enom request was not sent. '.$earlier.'Try again in a minute.',
-            default=>'Our test send check stopped this Enom request before sending. '.$earlier.EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):null)};
+            default=>'Our test send check stopped this Enom request before sending. '.$earlier.EnomTestSendLimit::facts(($account=Account::where('server_id',$server)->first())?EnomTestSendLimit::login($account):($data['uid']??null))};
     }
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
@@ -418,7 +418,7 @@ final class SettingsActions
             return 'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.';
         }
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
-        return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server)
+        return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server,$data)
                 :match($error->getMessage()){'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
                 'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",'Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',

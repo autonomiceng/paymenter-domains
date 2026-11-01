@@ -13,7 +13,7 @@ final class CatalogueSync
     public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null, bool $scheduled = false): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue reads must finish outside locks.'); }
-        // Staff review, or the daily price sync, which checks the account's daily call cap first.
+        // Staff review, or the daily price sync, which checks our daily call cap for the account first.
         if (TestCatalogue::enabled($context->binding) && $review === null && !$scheduled) { throw new \DomainException('TEST catalogue import requires staff review.'); }
         $reader = $this->bindings->reader($serverId); // enabled, identity, credentials, site BEFORE any provider read
         if (!$reader instanceof CatalogueReader) { throw new \DomainException('Catalogue reader unavailable.'); }
