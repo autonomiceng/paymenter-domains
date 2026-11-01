@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,StaffOperationReview,TransferInputs};
 
-same('Missing: phone, city, contact details. Update the customer account details.',
+same('Missing: phone, city, contact details. The customer can finish setup on the order page.',
     (new \Paymenter\Extensions\Servers\Domains\Services\ContactValidation(['phone','contacts.registrant.phone','city','unrecognized']))->missingMessage(),'Undotted and dotted contact fields keep their complete leaf and deduplicate');
 
 // Decode failures inside contact eligibility retain the saved-data repair notice.
@@ -34,12 +34,12 @@ foreach(['register','transfer'] as $kind){
     same('contact_details_required',$op->safe_code,'Real contact hold: '.$kind);
     $before=$op->getRawOriginal();$deadline=TransferInputs::deadline($op,$clock->now())?->format(DATE_ATOM);$money=nativeFinancialSnapshot($op);$key=$ticket($op,'release');
     try{$run($op,'release');throw new RuntimeException('Expected incomplete contact refusal.');}
-    catch(DomainException $error){same('Missing: phone. Update the customer account details.',$error->getMessage(),'Incomplete contact refusal names fields');}
-    Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertSee('Missing: phone. Update the customer account details.');
+    catch(DomainException $error){same('Missing: phone. The customer can finish setup on the order page.',$error->getMessage(),'Incomplete contact refusal names fields');}
+    Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertActionHidden('release')->assertSee('Missing: phone. The customer can finish setup on the order page.');
     same($before,$op->fresh()->getRawOriginal(),'Incomplete contact refusal leaves no audit or snapshot change');
     $user->properties()->where('key','city')->update(['value'=>'']);
     try{$run($op,'release');throw new RuntimeException('Expected multiple missing fields.');}
-    catch(DomainException $error){same('Missing: city, phone. Update the customer account details.',$error->getMessage(),'One line lists distinct fields, never contact values');}
+    catch(DomainException $error){same('Missing: city, phone. The customer can finish setup on the order page.',$error->getMessage(),'One line lists distinct fields, never contact values');}
     $user->properties()->where('key','city')->update(['value'=>'Seattle']);
     $user->properties()->where('key','phone')->update(['value'=>'+1.2025550100']);
     same('',$op->fresh()->payload['contacts']['registrant']['phone'],'Profile edit alone never changes checkout contacts');
