@@ -30,7 +30,7 @@ declare(strict_types=1);
             \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->update(['action' => $action, 'state' => $state]);
             $d = $base->fresh(); $d->status = 'needs_review';
             $expected = $state === 'awaiting_payment' ? ['Awaiting payment', 'info', 'Invoice not paid']
-                : ($action === 'register' ? ['Pending registration', 'info', null]
+                : ($action === 'register' ? ['Pending registration', 'info', \Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::ON_IT]
                 : ['Under review', 'info', $state === 'held' ? 'Transfer on hold' : 'Transfer not confirmed']);
             $dto = $quiet->present($d, false);
             same($expected, [$dto->status, $dto->tone, $dto->statusReason], 'D3 operation label/tone: '.$action.' '.$state);
