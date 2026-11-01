@@ -9,7 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementForms,ManagementProgress,OwnedDomains,OwnerPorts};
-[$d,$driver]=$holding(placeholderComFixtureName('pending-control-placeholder.com'));
+[$d,$driver]=$holding(placeholderComFixtureName('pending-control-placeholder.com'),
+    \Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed(['ns1.example.net','ns2.example.net'],'enom_getdns',$clock->now()));
 $op=$submit($d,$driver,'lock',['locked'=>false]);
 same($op->id,$submit($d,$driver,'lock',['locked'=>false])->id,'A new nonce merges the same unfinished desired state');
 $latest=$submit($d,$driver,'lock',['locked'=>true]);
@@ -74,4 +75,40 @@ Cache::flush();$forms=new ManagementForms($management,$ports);$before=count($sta
 $forms->submit($user,$d->fresh(),'lock',['locked'=>'1'],$key());
 same($before,count($state->calls),'Saving performs no provider I/O');
 app()->terminate();same('succeeded',$d->operations()->where('action','lock')->orderByDesc('id')->first()->state,'After-response callback starts the saved operation');
+// A damaged encrypted row must stay visible without hiding another setting or reviving an older result.
+$damaged=$d->operations()->where('action','lock')->orderByDesc('id')->first();
+Cache::flush();$nameservers=$submit($d,$driver,'nameservers',['nameservers'=>['ns3.example.net','ns4.example.net']]);
+foreach (['attempt','policy'] as $field) {
+    $raw=$damaged->getRawOriginal($field);$before=$state->calls;
+    DB::table('domains_operations')->where('id',$damaged->id)->update([$field=>'unreadable synthetic ciphertext']);
+    try {
+        $rows=$controller->status($request,$d->id)->getData(true);
+        same($damaged->id,$rows['lock']['id'],'Unreadable newest change never falls back to an older result');
+        expect($rows['lock']['unreadable']??false,'Unreadable change has its own status');
+        expect(!$rows['lock']['pending'],'Unreadable change does not poll forever');
+        same($nameservers->id,$rows['nameservers']['id'],'Other settings remain available');
+        expect($rows['nameservers']['pending'],'Other settings retain their pending state');
+        expect(str_contains($controller->show($request,$d->id)->render(),$rows['lock']['text']),'Owner page shows the unreadable change');
+        $page=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
+        expect(str_contains($page->html(),$rows['lock']['text']),'Staff page shows the unreadable change');
+        same($before,$state->calls,'Unreadable status and pages perform no registrar calls');
+    } finally { DB::table('domains_operations')->where('id',$damaged->id)->update([$field=>$raw]); }
+}
+$doc=new DOMDocument();@$doc->loadHTML($controller->show($request,$d->id)->render());$xpath=new DOMXPath($doc);
+$value=$xpath->query('//*[@id="nameservers"]/*[contains(@class,"domains-row__v")]')->item(0);
+expect($value!==null && str_contains($value->textContent,'ns1.example.net') && str_contains($value->textContent,'ns2.example.net'),'Pending row keeps both confirmed nameservers visible');
+$status=$xpath->query('.//*[@data-management-pending="nameservers"]',$value)->item(0);
+expect($status!==null && !str_contains($status->textContent,'ns1.example.net'),'Polling updates only the status, preserving the confirmed nameservers');
+// Exhausted, definitely-unsent holds are resolved debt, so later requests can accumulate behind a stalled queued setting.
+Cache::flush();$queuedLock=$submit($d,$driver,'lock',['locked'=>false]);
+for($i=0;$i<100;$i++) {
+    $held=$nameservers->replicate();$held->fill(['operation_key'=>'manage:'.$d->id.':'.$key(),'state'=>'held','safe_code'=>'management_unconfirmed',
+        'started_at'=>$clock->now(),'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32),
+            'management_deferrals'=>array_fill(0,5,$clock->now()->format(DATE_ATOM))]]);$held->save();
+}
+same([],$management->available($user,$d->fresh(),$driver,['lock']),'Overflow hides advisory controls');
+same($queuedLock->id,$submit($d,$driver,'lock',['locked'=>false])->id,'Advisory overflow does not bound the request path');
+$rows=$controller->status($request,$d->id)->getData(true);
+same($queuedLock->id,$rows['lock']['id']??null,'Older pending lock survives more than 100 newer matching holds');
+expect($rows['lock']['pending'],'History overflow preserves the pending lock status');
 echo "Management pending controls, duplicate requests, local status and immediate start passed.\n";$nativeSuccessful=true;

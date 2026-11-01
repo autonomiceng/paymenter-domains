@@ -24,7 +24,12 @@
 <span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif
 @if (($section['progress'] ?? null) && !$section['progress']['pending'])<span class="domains-sub" role="status">{{ $section['progress']['text'] }}</span>@endif</span>
 @if ($section['progress']['pending'] ?? false)
-<span class="domains-row__v" role="status" data-management-pending="{{ $cap }}" data-operation="{{ $section['progress']['id'] }}">{{ $section['progress']['text'] }}</span>
+<span class="domains-row__v">
+@if ($cap === 'nameservers' && ($section['current'] ?? []))
+<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach
+@endif
+<span @class(['domains-sub' => $cap === 'nameservers' && ($section['current'] ?? [])]) role="status" data-management-pending="{{ $cap }}" data-operation="{{ $section['progress']['id'] }}">{{ $section['progress']['text'] }}</span>
+</span>
 @else
 @if ($paused)
 <span class="domains-row__v">@include('domains::partials.missing', ['cause' => $fills('when sync resumes'), 'fix' => null, 'stack' => true])</span>

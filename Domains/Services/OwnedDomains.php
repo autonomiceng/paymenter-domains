@@ -136,19 +136,23 @@ final readonly class OwnedDomains
         $progress=$d->provenance === 'adopted' ? [['label' => 'Imported', 'state' => 'Completed']] : [];
         $entries=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('updated_at')->orderByDesc('id')->limit(100)->get();
         foreach ($entries as $entry) {
-            if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
-            if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
-            $label=self::CHANGES[$entry->action]??null;
-            if (!$label) { continue; }
-            // Request status labels; a result counts only once the registrar's readback confirms it.
-            $resolved=ManagementEvidence::resolved($entry,$d);
-            $state=match (true) {
-                in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
-                $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
-                default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
-            };
-            $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
-                'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
+            try {
+                if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
+                if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
+                $label=self::CHANGES[$entry->action]??null;
+                if (!$label) { continue; }
+                // Request status labels; a result counts only once the registrar's readback confirms it.
+                $resolved=ManagementEvidence::resolved($entry,$d);
+                $state=match (true) {
+                    in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
+                    $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
+                    default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
+                };
+                $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
+                    'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
+            } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+                $progress[]=['label'=>self::CHANGES[$entry->action]??'Change','state'=>'Unreadable','date'=>$entry->updated_at?->toIso8601String(),'note'=>ManagementProgress::UNREADABLE];
+            }
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {
             $label=['contacts'=>'Contacts','nameservers'=>'Nameservers','privacy'=>'WHOIS privacy','auto_renew'=>'Auto-renew'][$row['section']??'']??null;
@@ -175,7 +179,8 @@ final readonly class OwnedDomains
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
-            $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
+            try { $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[]; }
+            catch (\Illuminate\Contracts\Encryption\DecryptException) { $records=[]; }
             $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d);
             foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
