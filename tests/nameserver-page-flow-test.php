@@ -16,8 +16,8 @@ $pages=static function($d, ?array $expected, string $why, bool $formsExpected=tr
     expect($summary!==null,$why.' customer summary exists');
     same($expected,($summary->nameservers['state']??null)==='observed'?$summary->nameservers['nameservers']:null,$why.' customer summary');
     $forms=$owners->present($d->fresh())->management;
-    same($formsExpected,isset($forms['nameservers']),$why.' customer form availability');
-    if ($formsExpected) { same($expected,$forms['nameservers']['current'],$why.' customer form'); }
+    same($formsExpected,isset($forms['nameservers']['actions']['nameservers']),$why.' customer form availability');
+    if (isset($forms['nameservers'])) { same($expected,$forms['nameservers']['current'],$why.' customer control'); }
     same($expected,DomainFacts::for($d->fresh())['Nameservers']['value'],$why.' staff');
 };
 $pages($d,['ns1.example.net','ns2.example.net'],'Registration readback before any observation');
