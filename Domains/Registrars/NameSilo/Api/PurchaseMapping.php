@@ -46,20 +46,30 @@ final class PurchaseMapping implements \JsonSerializable
         if (($parts['tld'] === 'us' && ($nexus === null || $privacy)) || ($parts['tld'] !== 'us' && $nexus !== null)) {
             throw new \InvalidArgumentException('Explicit .us eligibility and no privacy are required only for .us.');
         }
+        $servers = self::nameservers($nameservers);
+        foreach ($servers as $host) {
+            if ($host === $parts['domain'] || str_ends_with($host, '.'.$parts['domain'])) {
+                throw new \InvalidArgumentException('Purchase nameservers must be outside the purchased domain.');
+            }
+        }
+        $parameters = ['domain' => $parts['domain'], 'contact_id' => $contactId, 'auto_renew' => 0, 'private' => (int) $privacy] + $servers;
+        if ($nexus !== null) { $parameters += ['usnc' => $nexus->category, 'usap' => $nexus->purpose]; }
+        return $parameters;
+    }
+
+    /** Shared registration-template validation; domain-specific glue checks remain in purchase(). */
+    public static function nameservers(array $nameservers): array
+    {
         if (!array_is_list($nameservers) || count($nameservers) < 2 || count($nameservers) > 13) {
             throw new \InvalidArgumentException('Supply between 2 and 13 nameservers.');
         }
-        $parameters = ['domain' => $parts['domain'], 'contact_id' => $contactId, 'auto_renew' => 0, 'private' => (int) $privacy];
-        $seen = [];
+        $parameters = []; $seen = [];
         foreach ($nameservers as $index => $host) {
             if (!is_string($host) || strlen($host) > 253 || !str_contains($host, '.') || filter_var($host, FILTER_VALIDATE_IP) !== false
                 || preg_match('/\.[0-9]+$/D', $host)) {
                 throw new \InvalidArgumentException('Invalid nameserver.');
             }
             $host = strtolower($host);
-            if ($host === $parts['domain'] || str_ends_with($host, '.'.$parts['domain'])) {
-                throw new \InvalidArgumentException('Purchase nameservers must be outside the purchased domain.');
-            }
             foreach (explode('.', $host) as $label) {
                 if (!preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D', $label) || str_starts_with($label, 'xn--')) {
                     throw new \InvalidArgumentException('Invalid nameserver.');
@@ -69,7 +79,6 @@ final class PurchaseMapping implements \JsonSerializable
             $seen[$host] = true;
             $parameters['ns'.($index + 1)] = $host;
         }
-        if ($nexus !== null) { $parameters += ['usnc' => $nexus->category, 'usap' => $nexus->purpose]; }
         return $parameters;
     }
 

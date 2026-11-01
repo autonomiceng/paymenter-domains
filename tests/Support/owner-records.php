@@ -2,6 +2,13 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic native composition; no network.
 declare(strict_types=1);
 require __DIR__.'/management.php';
+// Registrar record editors require observed registrar delegation; DNS inventory can still be unknown.
+$recordHolding=$holding;
+$holding=static function(string $name,?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers=null)use($recordHolding,$state,$clock){
+    $nameservers??=\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed(['dns1.name-services.com','dns2.name-services.com'],'enom_getdns',$clock->now());
+    $state->ns=$nameservers->nameservers;
+    return $recordHolding($name,$nameservers);
+};
 require __DIR__.'/owner-pages.php';
 require_once __DIR__.'/raw-input.php';
 use Illuminate\Http\Request;
