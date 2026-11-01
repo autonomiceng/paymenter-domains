@@ -90,5 +90,7 @@ same(302,$controller->manage($r,$d->id,'srv')->getStatusCode(),'Pure-add stale p
 $op=$d->operations()->orderByDesc('id')->firstOrFail();expect(!isset($op->payload['records'][0]['host_id']),'Pure add acquires no provider identity');
 $io=count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts'));same('held',$management->run($op->id,$driver)->state,'Existing dispatch preflight holds a stale pure add');
 same($io,count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts')),'Stale pure add never writes');
-$server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());foreach(['dns','srv','ds']as$kind){expect(!isset($dto->management[$kind]),'Tools off removes each action');}expect(isset($dto->management['glue']),'Glue follows its own engine authority');
+$server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());
+foreach(['dns','srv','ds']as$kind){same([],$dto->management[$kind]['actions']??[],'Tools off removes each action');}
+expect(!isset($dto->management['ds']),'Disabled DNSSEC has no progress row');expect(isset($dto->management['glue']),'Glue follows its own engine authority');
 $nativeSuccessful=true;echo "Native owner DNS/SRV/DS/glue grants, replay, exact TXT, current preimage, safe real Blade and maximum records passed.\n";
