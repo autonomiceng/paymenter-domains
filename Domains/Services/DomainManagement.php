@@ -76,18 +76,22 @@ final class DomainManagement
                 if (($old->policy['management']['correction'] ?? null) !== $correction || $old->action !== $action || (int)$old->authorized_by !== (int) $actor->id || ($terms===null && ($old->policy['management']['input'] ?? null) !== $clean)) { throw new \DomainException('Management key reused.'); }
                 return $old;
             }
-            // The domain lock serializes new nonces and both actors for the same setting.
-            foreach ($l['operations']->sortByDesc('id') as $peer) {
-                if (!in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true) || $peer->operation_key===$key || !isset($peer->policy['management']) || ManagementProgress::setting($peer->action)!==ManagementProgress::setting($action)
-                    || $peer->authority_generation!==$d->authority_generation || $peer->account_fingerprint!==$d->account_fingerprint
-                    || !ManagementProgress::pending($peer,$d)) { continue; }
-                if ($peer->action===$action && ($peer->policy['management']['input']??null)===$clean) { return $peer; }
-                // A claimed or sealed write must finish/read back before another choice can send.
-                if (!ManagementEvidence::idle($peer) || $peer->invoice_id || ($peer->attempt['seal']??'absent')!=='absent') { return $peer; }
+            // The domain lock serializes both actors and also cleans up legacy duplicate queued choices.
+            $pending=$l['operations']->sortByDesc('id')->filter(fn($peer)=>in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)
+                && isset($peer->policy['management']) && ManagementProgress::setting($peer->action)===ManagementProgress::setting($action)
+                && $peer->authority_generation===$d->authority_generation && $peer->account_fingerprint===$d->account_fingerprint
+                && ManagementProgress::pending($peer,$d));
+            // A claimed/sealed write owns the setting, even if an older release queued a newer unsent choice.
+            $unsent=fn($peer)=>ManagementEvidence::idle($peer) && !$peer->invoice_id && ($peer->attempt['seal']??'absent')==='absent';
+            $keep=$pending->first(fn($peer)=>!$unsent($peer))
+                ?? $pending->first(fn($peer)=>$peer->action===$action && ($peer->policy['management']['input']??null)===$clean);
+            foreach ($pending as $peer) {
+                if ($peer->id===$keep?->id || !$unsent($peer)) { continue; }
                 $peer->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$this->clock->now(),
                     'attempt'=>[...($peer->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent',
                         'management_terminal'=>['actor_id'=>(int)$actor->id,'at'=>$this->clock->now()->format(DATE_ATOM)]]]);
             }
+            if ($keep) { return $keep; }
 
             if($terms!==null&&($pending=ManagementPrivacy::pending($l,$action))){return $pending;}
             if ($initial !== null && $l['stamp'] !== $initial) { throw new \DomainException('Privacy authority changed.'); }

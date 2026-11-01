@@ -16,6 +16,15 @@ $latest=$submit($d,$driver,'lock',['locked'=>true]);
 same('management_retired',$op->fresh()->safe_code,'A different unsent choice retires the older request');
 same('rejected',$management->run($op->id,$driver)->state,'Retired delivery never sends');same([],$state->calls,'No old send');
 same('succeeded',$management->run($latest->id,$driver)->state,'The last unsent choice wins');
+// Existing deployments can already contain two unsent choices from before per-setting merging.
+Cache::flush();$older=$submit($d,$driver,'lock',['locked'=>false]);$legacy=$older->replicate();
+$legacy->fill(['operation_key'=>'manage:'.$d->id.':'.$key(),'payload'=>['locked'=>true],
+    'policy'=>['management'=>[...$older->policy['management'],'input'=>['locked'=>true]]]]);$legacy->save();
+same($legacy->id,$submit($d,$driver,'lock',['locked'=>true])->id,'A fresh nonce merges the latest legacy choice');
+same('management_retired',$older->fresh()->safe_code,'Merging also retires older unsent legacy choices');
+$before=count($state->calls);same('rejected',$management->run($older->id,$driver)->state,'Legacy delivery cannot reverse the newer choice');
+same($before,count($state->calls),'Retired legacy delivery makes no calls');
+same('succeeded',$management->run($legacy->id,$driver)->state,'The retained choice confirms');
 Cache::flush();$op=$submit($d,$driver,'lock',['locked'=>false]);$state->fault='SetRegLock';
 same('uncertain',$management->run($op->id,$driver)->state,'Sealed unclear reply remains uncertain');
 same($op->id,$submit($d,$driver,'lock',['locked'=>true])->id,'A different desired state returns the unfinished sealed request');

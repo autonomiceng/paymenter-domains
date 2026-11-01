@@ -32,11 +32,11 @@ final class DomainEditActions
         catch (\Throwable $error) { Log::warning('Domains staff edit forms failed.',['domain_id'=>$d->id,'exception_class'=>$error::class]);
             return ['rows'=>[],'held'=>"Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page."]; }
         $m=$page->management; $rows=[];
-        if (isset($m['contacts'])) { $rows['Contacts']=self::contacts($d,$m['contacts']); }
-        if (isset($m['nameservers'])) { $rows['Nameservers']=[self::nameservers($d,$m['nameservers'])]; }
-        if (isset($m['lock'])) { $rows['Transfer lock']=[self::lock($d,$m['lock']['state'])]; }
+        if (!empty($m['contacts']['actions'])) { $rows['Contacts']=self::contacts($d,$m['contacts']); }
+        if (isset($m['nameservers']['actions']['nameservers'])) { $rows['Nameservers']=[self::nameservers($d,$m['nameservers'])]; }
+        if (isset($m['lock']['actions']['lock'])) { $rows['Transfer lock']=[self::lock($d,$m['lock']['state'])]; }
         foreach (['dns'=>'Edit','srv'=>'Edit SRV'] as $kind=>$label) {
-            if (isset($m[$kind]['records'])) { $rows['DNS records'][]=self::records($d,$kind,$label,$m[$kind]); }
+            if (isset($m[$kind]['records'],$m[$kind]['actions'][$kind])) { $rows['DNS records'][]=self::records($d,$kind,$label,$m[$kind]); }
         }
         if (isset($m['auth_code_email']) && $m['auth_code_email']['actions']) { $rows['Auth code']=[self::edit($d,'auth_code_email','Email auth code','Email the auth code?',[],fn(array $data)=>[],"We'll email it to the ".$m['auth_code_email']['recipient'].'.',submit:'Email auth code')]; }
         $progress=ManagementProgress::for($d);
@@ -74,8 +74,9 @@ final class DomainEditActions
     {
         $form=array_map(fn(string $field)=>TextInput::make($field)->label(self::CONTACT[$field])->maxLength($m['limits'][$field]),array_keys($m['limits']));
         $staged=$m['staged']; $approved=$staged?$m['approved']:null; $keep=[];
-        if ($approved) { $keep[]=self::edit($d,'contacts','Use the approved details','Use the approved details?',[Hidden::make('approved')],fn(array $data)=>(array)json_decode((string)($data['approved']??''),true),
+        if ($approved && isset($m['actions']['contacts'])) { $keep[]=self::edit($d,'contacts','Use the approved details','Use the approved details?',[Hidden::make('approved')],fn(array $data)=>(array)json_decode((string)($data['approved']??''),true),
             'Step 2 of 2: apply the approved details for '.trim(($approved['contact']['first_name']??'').' '.($approved['contact']['last_name']??'')).'.',bound:['approved'=>json_encode($approved)]); }
+        if (!isset($m['actions'][$staged?'contact_profile':'contacts'])) { return $keep; }
         return [...$keep,self::edit($d,$staged?'contact_profile':'contacts','Edit','Edit contacts',[...$form,Hidden::make('opened_contacts_digest')],
             fn(array $data)=>['role'=>'all','contact'=>array_map(fn($value)=>(string)($value??''),array_intersect_key($data,$m['limits']))],
             ($staged?'Step 1 of 2: we send the new details for approval. ':'').'We use these details for every contact on this domain. '.ManagementForms::CONTACTS_RISK,

@@ -198,7 +198,7 @@ final readonly class OwnedDomains
             $all=array_merge(...array_values(array_map(fn($section)=>array_keys($section['actions']),$management)));
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all)??[]; } catch (\Throwable) { $allowed=[]; }
             foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
-            $unavailable=$management===[];
+            $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
         foreach ($management as $key=>&$section) { $section['progress']=$progressBySetting[ManagementProgress::setting($key)]??null; } unset($section);
         // Only the exact retained issued renewal invoice supplies a due date.
