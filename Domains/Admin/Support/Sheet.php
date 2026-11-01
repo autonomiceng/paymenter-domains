@@ -30,10 +30,10 @@ final class Sheet
         return $after?$section->afterHeader($after):$section;
     }
     /** A value row. $side is its action column: actions, or one component that shows the state. */
-    public static function row(TextEntry $entry,array|Component $side=[],bool $pending=false): Flex
+    public static function row(TextEntry $entry,array|Component $side=[],bool $pending=false,?string $key=null): Flex
     {
         $side=is_array($side)?array_values(array_filter($side)):$side;
-        return Flex::make($side===[]?[$entry->inlineLabel()]:[$entry->inlineLabel(),$side instanceof Component?$side->grow(false):Actions::make($side)->grow(false)])
+        return Flex::make($side===[]?[$entry->inlineLabel()]:[$entry->inlineLabel(),$side instanceof Component?$side->grow(false):Actions::make($side)->key($key)->grow(false)])
             ->from('md')->extraAttributes(['class'=>'domains-row'.($pending?' domains-row-pending':'')]);
     }
     /** A state word with its mark. Plain Filament shows the same word as a badge. */
@@ -45,16 +45,19 @@ final class Sheet
     /** Every row says Edit and screen readers hear which row. The dialog keeps its own title. */
     public static function edit(Action $action,string $row): Action
     { return self::button($action->modalHeading($action->getModalHeading())->label('Edit'))->extraAttributes(['aria-label'=>'Edit '.$row]); }
+    /** Finished buttons drawn beside a row or under a notice. */
+    public static function buttons(array $html): HtmlString
+    { return new HtmlString('<div class="fi-ac domains-actions">'.implode('',$html).'</div>'); }
     public static function link(string $name,string $label,?string $url,bool $external=false): Action
     {
         $link=Action::make($name)->label($label)->link()->size('sm')->url($url)->visible($url!==null);
         return $external?$link->openUrlInNewTab()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition('after'):$link;
     }
     /** "Synced Nov 1, 2026, 2:13 AM PST": the viewer's time zone, with UTC as the fallback and on hover. */
-    public static function moment(int|string $at,string $before): HtmlString
+    public static function moment(int|string $at,string $before=''): HtmlString
     {
         $iso=is_int($at)?gmdate('c',$at):$at;$fallback=is_int($at)?gmdate('M j, Y H:i \\U\\T\\C',$at):$at;
-        return new HtmlString(e($before).' '.view('domains::partials.moment',['at'=>$iso,'fallback'=>$fallback])->render());
+        return new HtmlString(($before===''?'':e($before).' ').view('domains::partials.moment',['at'=>$iso,'fallback'=>$fallback])->render());
     }
     /** Steps on a line, each with its mark: a list to screen readers, plain lines without a skin.
      * A step is {label, value, tone, detail, help, buttons}. Unknown tones draw as OK.

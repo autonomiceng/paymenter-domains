@@ -33,21 +33,22 @@ final class StaffDomainStatus
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
      * @param list<array{code:string,request:?int}> $alerts
-     * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool} $request is set when the step names one, $act when staff have a job here */
+     * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
     public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null): array
     {
         [$step, $specific, $request] = self::resolve($state, $d, $op);
         $act = $step !== null && !in_array($step, self::WAITING, true);
+        $named = null;
         if (!$specific) {
-            if ($alerts) { [$step, $request] = self::alert(self::topAlert($alerts)); $act = true; }
+            if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top); $act = true; $named = $top['code']; }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal); }
         }
         if ($shared['reason'] === DomainStatus::MISSING && $step === self::CHECK) { [$shared['reason'], $step] = [null, 'Missing. Sync this domain.']; }
-        return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act];
+        return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
     }
     /** Late money is checked first by the caller, so it takes the step. */
     public static function late(array $shared): array
-    { return [...self::forStaff($shared), 'step' => DomainFacts::alertCause('acquisition_late_money'), 'request' => null, 'act' => true]; }
+    { return [...self::forStaff($shared), 'step' => DomainFacts::alertCause('acquisition_late_money'), 'request' => null, 'act' => true, 'alert' => 'acquisition_late_money']; }
     private static function forStaff(array $shared): array
     { return in_array($shared['reason'], self::CUSTOMER_ONLY, true) ? [...$shared, 'reason' => null] : $shared; }
     /** @return array{0:?string,1:bool,2:?int} step, whether the step is already specific, and the request it names */

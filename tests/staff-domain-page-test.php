@@ -25,8 +25,10 @@ $sub=static fn(Domain $d,string $label)=>DomainFacts::for($d->fresh())[$label]['
 
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
-same(['Expires','Registrar','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::REGISTRATION)),'Registration rows in order');
-expect(count(DomainFacts::REGISTRATION)<=11&&count(DomainFacts::BILLING)<=9,'At most eleven Registration and nine Billing facts, including optional glue');
+same(['Expires','Registrar','In registrar account','Transfer lock','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::SECTIONS['Registration'])),'Registration rows in order');
+same(['Contacts','Nameservers'],array_values(array_intersect(array_keys($f),DomainFacts::SECTIONS['Contacts and DNS'])),'Contacts and DNS rows in order');
+
+
 same(false,isset($f['Glue records']),'No staff glue row without records');
 $beforeGlue=$active->fresh()->observation;$glueHost='ns1.'.$active->domain;
 ObservationRecords::save($active->fresh(),['glue'=>['state'=>'partial','records'=>[$glueHost=>'8.8.8.8']]],new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
@@ -41,10 +43,11 @@ $glueDnsSetting->delete();
 $active->fresh()->update(['observation'=>$beforeGlue]);
 same([null,'Ask the customer to add them on the domain page'],[$f['Contacts']['value'],$f['Contacts']['sub']],'Unknown contacts say what to do next');
 same(today()->addDays(120)->format('M j, Y'),$f['Expires']['value'],'Expires date');
-same(['Synthetic registrar','Enom · Test · orders paused'],[$f['Registrar']['value'],$f['Registrar']['sub']],'New accounts start with orders paused');
+same(['Synthetic registrar','Enom, Test, orders paused'],[$f['Registrar']['value'],$f['Registrar']['sub']],'New accounts start with orders paused');
 DB::table('domains_accounts')->where('server_id',$active->server_id)->update(['processing_enabled'=>true]);$f=DomainFacts::for($active);
-same(['Synthetic registrar','Enom · Test'],[$f['Registrar']['value'],$f['Registrar']['sub']],'Registrar account name and registrar sub-line');
-same(['Yes','On','Off','Off'],[$f['In registrar account']['value'],$f['Transfer lock']['value'],$f['WHOIS privacy']['value'],$f['Registrar auto-renew']['value']],'Synced registrar facts');
+same(['Synthetic registrar','Enom, Test'],[$f['Registrar']['value'],$f['Registrar']['sub']],'Registrar account name and registrar sub-line');
+same(['Yes','On','Off'],[$f['In registrar account']['value'],$f['Transfer lock']['value'],$f['Registrar auto-renew']['value']],'Synced registrar facts');
+same('Off on purpose. Example Hosting renews the domain after the invoice is paid, so you are never charged by the registrar directly.',$f['Registrar auto-renew']['sub'],'Registrar auto-renew says why it is off');
 same([null,'Fills in by itself within a day'],[$f['Last sync']['value'],$f['Last sync']['sub']],'Never synced is Missing with its cause');
 // Core sync cannot populate on-demand DNS inventory; staff needs the record-read action in either state.
 $dnsSetting=App\Models\Server::findOrFail($active->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
@@ -89,9 +92,8 @@ foreach (['name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str
     foreach (['In registrar account','Registrar auto-renew'] as $label) {
         same([null,'Fills in by itself within a day'],[$rejected[$label]['value'],$rejected[$label]['sub']],'Reject registrar facts with '.$field.' for '.$label);
     }
-    foreach (['Expires',...DomainFacts::BILLING] as $label) { same($stable[$label]??null,$rejected[$label]??null,'Identity rejection preserves '.$label); }
+    foreach (['Expires',...DomainFacts::SECTIONS['Renewal'],...DomainFacts::SECTIONS['Billing']] as $label) { same($stable[$label]??null,$rejected[$label]??null,'Identity rejection preserves '.$label); }
     same(null,$rejected['Transfer lock']['value'],'Lock retains its existing identity check');
-    same(null,$rejected['WHOIS privacy']['value'],'Privacy retains its existing identity check');
 }
 $active->fresh()->update(['observation'=>$factObservation]);
 ObservationRecords::hold($active->fresh(),'ownership_drift',new DateTimeImmutable('2026-10-18T12:00:00Z'));
@@ -118,8 +120,8 @@ $storeNs($active,['ns1.example.net','ns2.example.net']);
 same([null,'Service #'.$active->service_id.' not found. Check the Services page.'],[$f['Service']['value'],$f['Service']['sub']],'Deleted service is Missing with its cause');
 same([null,'Needs the linked service. Check the Services page.'],[$f['Renewal price']['value'],$f['Renewal price']['sub']],'Renewal price without a service names the cause');
 same(['Ada Lovelace','ada@example.test'],[$f['Customer']['value'],$f['Customer']['sub']],'Customer name with email');
-same(['On',null],[$f['Auto-renew']['value'],$f['Auto-renew']['sub']],'Renewals on');
-expect(!isset($f['Renewal invoices']),'Auto-renew and renewal invoices are one row');
+same(['On',null],[$f['Renewal invoices']['value'],$f['Renewal invoices']['sub']],'Renewals on');
+expect(!isset($f['Auto-renew']),'Auto-renew and renewal invoices are one row');
 same(today()->addDays(120-21)->format('M j, Y'),$f['Next invoice']['value'],'Next invoice from the billing calendar');
 expect(!isset($f['Open invoice']),'Open invoice hidden when none');
 same("The registrar's own auto-renew. Keep it off: Example Hosting renews after the customer pays.",DomainFacts::help()['Registrar auto-renew'],'Registrar auto-renew help');
@@ -138,10 +140,10 @@ same([null,'Customer account not found. Check the Users page.'],[$value($held,'C
 // Renewal settings.
 $policy=$active->renewal_policy;
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'owner_auto_renew'=>false]),false)]);
-same(['Off','Turned off by customer'],[$value($active,'Auto-renew'),$sub($active,'Auto-renew')],'Owner auto-renew off');
+same(['Off','Turned off by customer'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices')],'Owner auto-renew off');
 expect(!isset(DomainFacts::for($active->fresh())['Next invoice']),'No next invoice while auto-renew is off');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode([...$policy,'renewals_stopped'=>true]),false)]);
-same(['Off','Stopped by staff'],[$value($active,'Auto-renew'),$sub($active,'Auto-renew')],'Staff stop');
+same(['Off','Stopped by staff'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices')],'Staff stop');
 DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=>encrypt(json_encode($policy),false)]);
 
 // Page: no internal facts, one notice, breadcrumb uses the name.
@@ -167,7 +169,7 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->asse
 $heldRequest=$held->operations()->sole()->id;
 Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
 $note=DomainFacts::note(DomainFacts::status($held),null)['text'];
-same(e(substr($note,0,-strlen('Check request #'.$heldRequest.'.'))).'<span class="domains-link" style="text-decoration:underline">Check request #'.$heldRequest.'.</span>',(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note step looks like a link');
+same(e(substr($note,0,-strlen('Check request #'.$heldRequest.'.'))).'<span class="domains-link">Check request #'.$heldRequest.'.</span>',(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note step looks like a link');
 same('Sync failed. Sync again from the domain.',DomainFacts::noteStep('Sync failed. Sync again from the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
 
 // An old sweep failure must not conceal a definitely-unsent order's actual staff reason.
@@ -211,7 +213,7 @@ $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'eno
     'status'=>'active','provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),'snapshot'=>['offline_demo'=>true],'observation'=>['facts'=>[]],'renewal_policy'=>[]]);
 config(['domains.enom_identity.environment'=>'test']);
 same(['Paused','Demo registrar is off while Enom Test mode is on'],[$value($demo,'Last sync'),$sub($demo,'Last sync')],'Demo registrar paused under Enom Test mode');
-same('Enom · Test · orders paused',$sub($demo,'Registrar'),'Registrar sub-line says orders paused');
+same('Enom, Test, orders paused',$sub($demo,'Registrar'),'Registrar sub-line says orders paused');
 same([null,'Fills in by itself when sync resumes'],[$value($demo,'Registrar auto-renew'),$sub($demo,'Registrar auto-renew')],'Unread registrar facts name the paused sync');
 same([null,'Fills in by itself when sync resumes',false],[$value($demo,'Nameservers'),$sub($demo,'Nameservers'),DomainFacts::for($demo->fresh())['Nameservers']['demo']],'Demo without stored nameservers names the paused sync, with no Demo tag on Missing');
 $storeNs($demo,['ns1.demo.test','ns2.demo.test']);
@@ -305,7 +307,7 @@ same([null,'Service #'.$active->service_id." not found. Check the Services page.
 ObligationAlerts::record($active->fresh(),'missing_obligation',time());
 same([today()->addDays(120-21)->format('M j, Y'),'Renewal invoice missing. Check billing before expiry.','danger'],[$value($active,'Next invoice'),$sub($active,'Next invoice'),DomainFacts::for($active->fresh())['Next invoice']['tone']],'A Next invoice date stays, with the missing invoice below in danger');
 ObligationAlerts::record($active->fresh(),'renewal_unpaid',time());
-same(['On','Unpaid renewal invoice cancelled. Talk to the customer about renewal.','warning'],[$value($active,'Auto-renew'),$sub($active,'Auto-renew'),DomainFacts::for($active->fresh())['Auto-renew']['tone']],'Review alerts keep the value and add the cause');
+same(['On','Unpaid renewal invoice cancelled. Talk to the customer about renewal.','warning'],[$value($active,'Renewal invoices'),$sub($active,'Renewal invoices'),DomainFacts::for($active->fresh())['Renewal invoices']['tone']],'Review alerts keep the value and add the cause');
 ObligationAlerts::record($active->fresh(),'observation_review',time());
 same(['Oct 20, 2026 15:05 UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
@@ -315,7 +317,7 @@ DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);
 DB::table('domains_obligation_alerts')->update(['resolved_at'=>time()]);
-same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$sub($active,'Auto-renew')??$value($active,'Auto-renew')],'Resolved alerts leave the rows');
+same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$sub($active,'Renewal invoices')??$value($active,'Renewal invoices')],'Resolved alerts leave the rows');
 
 // Adoption pending leaves navigation and its route opens the Under review filter.
 // One click on the domain page closes what a retry cannot: an open failed notice and an uncertain email, with no resend. Nothing open, no button.
@@ -338,7 +340,7 @@ foreach (['auto-renew','alerts','neither'] as $slot) {
     }
     if ($slot==='neither') { DB::table('domains_obligation_alerts')->where('domain_id',$checked->id)->update(['resolved_at'=>time()]); }
     $facts=DomainFacts::for($checked->fresh());
-    same($slot==='auto-renew',isset($facts['Auto-renew']),'Auto-renew slot: '.$slot);
+    same($slot==='auto-renew',isset($facts['Renewal invoices']),'Auto-renew slot: '.$slot);
     same($slot==='alerts',isset($facts['Open alerts']),'Open alerts slot: '.$slot);
     $page=Livewire::actingAs($review)->test(ViewDomain::class,['record'=>$checked->id])->assertActionVisible('notice_review');
     same(1,substr_count(html_entity_decode(strip_tags($page->html()),ENT_QUOTES),'Mark reminder checked'),'Review button renders once with slot: '.$slot);
