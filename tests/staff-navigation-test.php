@@ -104,8 +104,8 @@ DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progres
 DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'health_watch_dns'],['cursor'=>$since-86400]);
 DB::table('domains_watch_work')->where('kind','delegation')->update(['attempts'=>1,'due_at'=>$since-86400]);
 Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertSee('Resolver settings');
-Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertSee('Resolver settings')->assertSee('Affected checks');
-putenv('SSLKEYLOGFILE=/synthetic-disabled');Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Resolver settings')->assertSee('Affected checks');putenv('SSLKEYLOGFILE');
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertSee('Resolver settings')->assertDontSee('Affected checks');
+putenv('SSLKEYLOGFILE=/synthetic-disabled');Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Resolver settings')->assertDontSee('Affected checks');putenv('SSLKEYLOGFILE');
 DB::rollBack();
 config(['queue.connections.database.retry_after'=>60]);Livewire::actingAs($manager)->test(ListWatches::class)->assertDontSee('Queue timeout too short')->assertDontSee('retry_after');config(['queue.connections.database.retry_after'=>180]);
 // Disabled monitoring explains deployment setup without a Settings action, with or without rows.

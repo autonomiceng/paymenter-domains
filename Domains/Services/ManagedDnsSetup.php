@@ -21,17 +21,20 @@ final class ManagedDnsSetup
             ->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_accounts as a')->whereColumn('a.server_id','domains_domains.server_id')
                 ->whereColumn('a.account_fingerprint','domains_domains.account_fingerprint')->whereColumn('a.registrar_key','domains_domains.registrar_key'));
     }
+    /** Decode retained enabled templates once per query, not once per managed domain. */
+    private static function unreadableProfileIds(): array
+    { return WatchProfile::where('enabled',true)->get()->filter(fn($p)=>!self::usable($p))->modelKeys(); }
     public static function configured($q,string $domainColumn,string $ownerColumn): mixed
     {
         return $q->whereExists(fn($c)=>$c->selectRaw('1')->from('domains_managed_public_config as c')
-            ->join('domains_watch_profiles as p','p.id','=','c.profile_id')->where('p.enabled',true)
+            ->join('domains_watch_profiles as p','p.id','=','c.profile_id')->where('p.enabled',true)->whereNotIn('p.id',self::unreadableProfileIds())
             ->whereColumn('c.domain_id',$domainColumn)->whereColumn('c.user_id',$ownerColumn));
     }
     public static function affected(int $now): Builder
     {
         if(!Schema::hasTable('domains_managed_public_config') || !Schema::hasTable('domains_watch_profiles')){return self::eligible($now)->whereRaw('1=0');}
         return self::eligible($now)->whereNotExists(fn($c)=>$c->selectRaw('1')->from('domains_managed_public_config as c')
-            ->join('domains_watch_profiles as p','p.id','=','c.profile_id')->where('p.enabled',true)
+            ->join('domains_watch_profiles as p','p.id','=','c.profile_id')->where('p.enabled',true)->whereNotIn('p.id',self::unreadableProfileIds())
             ->whereColumn('c.domain_id','domains_domains.id')->whereColumn('c.user_id','domains_domains.user_id'));
     }
     public static function usable(?WatchProfile $profile): bool

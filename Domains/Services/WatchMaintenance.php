@@ -74,9 +74,9 @@ final class WatchMaintenance
         $since=self::date($health['since']??null);
         if ($health['reason']==='checks_unsuccessful') {
             $families=$health['families']??[$health['family']??'local'];
-            if(in_array($health['resolver_error']??null,['resolver_failed','deadline'],true)){
+            if(!array_diff($families,['watch_dns','managed_dns']) && in_array($health['resolver_error']??null,['resolver_failed','deadline'],true)){
                 $cause=$health['resolver_error']==='deadline'?'The resolver did not reply in time.':'The resolver request failed.';
-                return ['text'=>"DNS checks can't reach the resolver. Last error: ".$cause.' Retrying automatically.','tone'=>'danger','action'=>'settings'];
+                return ['text'=>"DNS checks can't reach the resolver. Recent error: ".$cause.' Retrying automatically.','tone'=>'danger','action'=>'settings'];
             }
             $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks','products'=>'Domain products'][$f]??'Domain discovery',$families)));
             $products=in_array('products',$families,true);$local=in_array('local',$families,true);

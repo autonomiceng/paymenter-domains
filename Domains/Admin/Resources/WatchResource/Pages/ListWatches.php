@@ -29,17 +29,21 @@ class ListWatches extends ListRecords
     public function getSubNavigation(): array{return WatchResource::tabs('index');}
     /** Request-scoped maintenance notice; false until read. */
     protected array|false|null $notice=false;
-    private function notice(): ?array{if($this->notice===false){$this->notice=WatchMaintenance::notice(app(WatchWork::class)->status());}return $this->notice;}
+    protected array $failedFamilies=[];
+    private function notice(): ?array{if($this->notice===false){$health=app(WatchWork::class)->status();$this->failedFamilies=$health['families']??[];$this->notice=WatchMaintenance::notice($health);}return $this->notice;}
     public function content(Schema $schema): Schema
     {
         $notice=$this->notice();
         $dnsFailure=($notice['action']??null)==='settings';
         $url=$dnsFailure&&MonitoringSettings::canAccess()?WatchResource::getUrl('settings'):null;
         $count=ManagedDnsSetup::affected(time())->count();
-        $setup=$count?Callout::make('DNS monitoring is not set up for '.$count.' '.($count===1?'domain. Choose its':'domains. Choose their').' DNS template.')->status('info')
-            ->footer(new HtmlString(view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-setup'),'color'=>'gray','size'=>'sm','slot'=>'Choose DNS template'])->render()))->columnSpanFull():null;
+        $canAssign=Staff::can(StaffWatchWrites::MANAGE);
+        $setupText='DNS monitoring is not set up for '.$count.' '.($count===1?'domain.':'domains.');
+        if($canAssign){$setupText.=' Choose '.($count===1?'its':'their').' DNS template.';}
+        $setup=$count?Callout::make($setupText)->status('info')
+            ->footer($canAssign?new HtmlString(view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-setup'),'color'=>'gray','size'=>'sm','slot'=>'Choose DNS template'])->render()):null)->columnSpanFull():null;
         $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>'Resolver settings'])->render():null;
-        if($dnsFailure){$button.=view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-failures'),'color'=>'gray','size'=>'sm','slot'=>'Affected checks'])->render();}
+        if($dnsFailure && in_array('managed_dns',$this->failedFamilies,true)){$button.=view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-failures'),'color'=>'gray','size'=>'sm','slot'=>'Affected checks'])->render();}
         return $schema->components([...($setup?[$setup]:[]),...($notice?[Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull()]:[]),
             ...(($notice['action']??null)==='setup'&&Staff::can(StaffWatchWrites::MANAGE)?[View::make('domains::admin.watch-setup')]:[]),
             ...(app(WatchWork::class)->active()?[View::make('domains::admin.watch-products')]:[]),
