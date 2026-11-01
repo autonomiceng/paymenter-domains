@@ -85,14 +85,15 @@ final class DomainFacts
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
+            $sections=ObservationProjection::sections($d); $records=OwnerRecords::forDomain($d,$sections);
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
-                $records=OwnerRecords::forDomain($d); $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?'Use Sync now to read DNS records.':implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.(ObservationProjection::sections($d)['dns']['at']??''):null])));
+                $count=isset($records['dns'])?count($records['dns']):null;
+                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?'Use Sync now to read DNS records.':implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
             }
-            $glue=OwnerRecords::forDomain($d)['glue']??[];
+            $glue=$records['glue']??[];
             if ($glue) {
-                $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d);
-                $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d);
+                $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
+                $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
                 $f['Glue records']=self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',array_filter([$at?'As of '.$at:null,...$warnings])),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.');
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');

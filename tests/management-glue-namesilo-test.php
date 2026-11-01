@@ -19,19 +19,23 @@ same($list['glue']['records'],$glueClass::records(json_decode($glueClass::preser
 ObservationRecords::save($d,$list,$clock->now());
 same('1.1.1.1, 8.8.8.8',OwnerRecords::forDomain($d->fresh())['glue'][0]['ip'],'Customer receives complete address set');
 foreach ([['glue_update','9.9.9.9, 1.1.1.1','modifyRegisteredNameServer'],['glue_delete',null,'deleteRegisteredNameServer'],['glue_add','8.8.8.8, 1.1.1.1','addRegisteredNameServer']] as [$action,$ip,$command]) {
-    Cache::flush();$ms->calls=[];$payload=['host'=>$host]+($ip===null?[]:['ip'=>$ip]);
+    $clock->instant=$clock->now()->modify('+1 second');Cache::flush();$ms->calls=[];$payload=['host'=>$host]+($ip===null?[]:['ip'=>$ip]);
     $input=OwnerRecordInput::payload($action,$payload,$d->domain,'namesilo');$op=$submit($d,$driver,$action,$input);
     same('succeeded',$management->run($op->id,$driver)->state,'Readback confirms '.$action);
     same([$command],array_column($writes(),0),'One registered nameserver mutation');
-    $commands=array_column($ms->calls,0);expect(array_search('listRegisteredNameServers',$commands,true)<array_search($command,$commands,true),'Read before mutation');
-    expect(isset($d->fresh()->observation['record_reads'][$host]['at']),'Pre-change read stored with timestamp');
+    $commands=array_column($ms->calls,0);$readIndex=array_search('listRegisteredNameServers',$commands,true);$writeIndex=array_search($command,$commands,true);
+    expect(is_int($readIndex)&&is_int($writeIndex)&&$readIndex<$writeIndex,'Each mutation has a preceding list read');
+    same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['record_reads'][$host]['at']??null,'Each mutation stores its own pre-change timestamp');
     $rows=OwnerRecords::forDomain($d->fresh())['glue'];
     same($ip===null?[]:[$driver->validate($action,$payload,$d->domain)],$rows,'Confirmed glue projects to owner');
 }
 $calls=$ms->calls;
-try { $submit($d,$driver,'glue_update',['host'=>$host,'ip'=>'2606:4700:4700::1111']);expect(false,'IPv6 must refuse'); }
+try { $submit($d,$driver,'glue_update',['host'=>$host,'ip'=>'2001:db8::1']);expect(false,'IPv6 must refuse'); }
 catch (DomainException $error) { expect(str_contains($error->getMessage(),'IPv4'),'IPv6 refusal explains IPv4'); }
 same($calls,$ms->calls,'IPv6 refused before transport');
 $ms->fault='listRegisteredNameServers';Cache::flush();$op=$submit($d,$driver,'glue_update',['host'=>$host,'ip'=>'9.9.9.9']);$ms->calls=[];
 same('held',$management->run($op->id,$driver)->state,'Unreadable glue refuses change');same([],$writes(),'Failed preread sends no mutation');
+// Each holding starts from its own registrar fixture, including registered child hosts.
+[$cleanDomain,$cleanDriver]=$holding('clean_glue');
+same([],$ms->glue,'A new holding cannot inherit the previous glue inventory');
 $nativeSuccessful=true;echo "NameSilo glue list, IPv4 sets, add/change/delete and preflight passed.\n";

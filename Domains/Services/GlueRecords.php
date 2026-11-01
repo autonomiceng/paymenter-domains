@@ -31,17 +31,17 @@ final class GlueRecords
     public static function prepared(Domain $d, array $records, \DateTimeImmutable $now): void
     {
         if (!$records) { return; }
-        $p=$d->observation??[];
+        $p=$d->observation??[]; $sequence=($p['management_sequence']??0)+1; $p['management_sequence']=$sequence;
         foreach ($records as $kind=>$facts) {
             $key=$kind==='glue'?$facts['host']:$kind;
             $p['record_reads'][$key]=['identity'=>ObservationRecords::identity($d),'action'=>$kind==='glue'?'glue_update':$kind,
-                'operation_key'=>'preflight','confirmed'=>true,'at'=>$now->format(DATE_ATOM),'sequence'=>$p['management_sequence']??0,'facts'=>$facts];
+                'operation_key'=>'preflight','confirmed'=>true,'at'=>$now->format(DATE_ATOM),'sequence'=>$sequence,'facts'=>$facts];
         }
         $d->update(['observation'=>$p]);
     }
-    public static function asOf(Domain $d): ?string
+    public static function asOf(Domain $d, ?array $section=null): ?string
     {
-        $section=ObservationProjection::sections($d);
+        $section??=ObservationProjection::sections($d);
         return $section['glue_at']??ObservationRecords::current($d)['at']??null;
     }
 }

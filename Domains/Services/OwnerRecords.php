@@ -39,9 +39,9 @@ final class OwnerRecords
             return strnatcmp($left[$field],$right[$field]) ?: strcmp(json_encode($left),json_encode($right));
         });return $rows;
     }
-    public static function forDomain(Domain $d): array
+    public static function forDomain(Domain $d, ?array $sections=null): array
     {
-        $facts=ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
+        $facts=$sections??ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
         // Retained complete lists are historical after a wholly failed primary observation.
         $primaryFailed=($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
         foreach (['dns','srv','ds'] as $kind) {

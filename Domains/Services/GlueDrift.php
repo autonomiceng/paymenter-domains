@@ -37,10 +37,10 @@ final class GlueDrift
         $check['hosts']=array_filter($check['hosts']??[],static fn($row,$host)=>($row['saved']??null)===($known[$host]??null),ARRAY_FILTER_USE_BOTH);
         return $check;
     }
-    public static function warnings(Domain $d, ?int $now=null): array
+    public static function warnings(Domain $d, ?int $now=null, ?array $known=null): array
     {
         $now??=time();
-        $known=ObservationProjection::sections($d)['known_glue']??[];
+        $known??=ObservationProjection::sections($d)['known_glue']??[];
         if (!$known||!Schema::hasTable('domains_managed_public_observations')) { return []; }
         $seen=[]; $warnings=[];
         $observations=ManagedPublicObservation::where('domain_id',$d->id)->where('user_id',$d->user_id)
@@ -50,8 +50,8 @@ final class GlueDrift
             try { $check=self::current($d,$observation->facts['glue']??[],$known); }
             catch (\Throwable) { return []; }
             foreach ($check['hosts']??[] as $host=>$row) {
-                if (isset($seen[$host])) { continue; } $seen[$host]=true;
-                if (($row['drift']??null)!==true||$row['at']>$now||$row['until']<=$now) { continue; }
+                if (isset($seen[$host])||!is_bool($row['drift']??null)||$row['at']>$now||$row['until']<=$now) { continue; }
+                $seen[$host]=true; if (!$row['drift']) { continue; }
                 $warnings[]=$host.': registrar has '.$row['saved'].'. Public DNS has '.(implode(', ',$row['addresses'])?:'no address').'. If public DNS is right, edit the glue record.';
             }
         }

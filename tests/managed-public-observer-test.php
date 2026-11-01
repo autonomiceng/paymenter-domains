@@ -43,6 +43,10 @@ $glueAuthority=$d->fresh()->getRawOriginal();$q=new DnsQuery('ns1.example.com','
 $fake->answers[$q->key()]=DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'1.1.1.1']]);
 managedDue($id,$time->now);expect($signals->observe($id,$uid,'delegation'),'Scheduled public check includes saved glue');
 expect(count(\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d->fresh(),$time->now))===1,'Scheduled mismatch produces an advisory');
+$fake->answers[$q->key()]=DnsAnswer::unknown($q);
+managedDue($id,$time->now);expect($signals->observe($id,$uid,'delegation'),'A later failed DNS read is retained as unknown');
+expect(count(\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d->fresh(),$time->now))===1,'Unknown DNS retains the unexpired drift advisory');
+same([],\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d->fresh(),$time->now+43201),'An old drift advisory still expires');
 $fake->answers[$q->key()]=DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'8.8.8.8']]);
 managedDue($id,$time->now);expect($signals->observe($id,$uid,'delegation'),'Scheduled public check samples matching glue');
 same([],\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d->fresh(),$time->now),'Later matching public DNS clears the advisory');

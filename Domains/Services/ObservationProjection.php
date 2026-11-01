@@ -69,12 +69,15 @@ final class ObservationProjection
         $p['transfer_status']=$transfer->value;
         $p['corrections']=self::corrections($d);
         $p['sections']=self::sections($d);
-        if ($facts?->nameservers) { $p['sections']['nameservers']=self::section($d,['operation_key'=>'observation','at'=>$now->format(DATE_ATOM),'facts'=>['nameservers'=>$facts->nameservers->nameservers]]); }
+        if ($facts?->nameservers) { $p['sections']['nameservers']=self::section($d,['operation_key'=>'observation','at'=>$now->format(DATE_ATOM),'facts'=>['nameservers'=>$facts->nameservers->nameservers]])+['sequence'=>$p['management_sequence']??0]; }
         $d->update(['observation'=>$p,'last_synced_at'=>$now]);
     }
     public static function sections(Domain $d): array
     {
         $sections=[]; $glue=[]; $reads=[]; $inventory=ObservationRecords::current($d);
+        $snapshot=$d->observation['sections']['nameservers']??null;
+        $snapshot=is_array($snapshot)&&self::matches($d,$snapshot)&&($snapshot['operation_key']??null)==='observation'?$snapshot:null;
+        if ($snapshot) { $sections['nameservers']=$snapshot; }
         if ($inventory) {
             foreach (['dns','srv','ds'] as $kind) {
                 $f=$inventory['families'][$kind]??[];
@@ -84,7 +87,8 @@ final class ObservationProjection
         }
         $ops=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(101)->get();
         // Never treat a truncated history as a complete inventory. A fresh observation stands alone.
-        if ($ops->count()>100) {
+        $overflow=$ops->count()>100;
+        if ($overflow) {
             $sections=[];
             foreach (['nameservers','lock','privacy'] as $kind) {
                 $saved=$d->observation['sections'][$kind]??null;
@@ -92,9 +96,8 @@ final class ObservationProjection
             }
             // Incomplete history cannot prove that acquisition nameservers are still current.
             $sections['nameservers']??=[];
-            return [...$sections,'known_glue'=>$glue];
         }
-        foreach ($ops as $op) {
+        foreach ($overflow?[]:$ops as $op) {
             if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
             foreach (ManagementReadRecovery::reads($op) as $read) {
                 if (($read['confirmed']??false)!==true || ($inventory && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($read['sequence']??0)<=$inventory['sequence'])) { continue; }
@@ -102,7 +105,7 @@ final class ObservationProjection
             }
         }
         foreach ($d->observation['record_reads']??[] as $read) {
-            if (($read['identity']??null)===ObservationRecords::identity($d) && is_string($read['at']??null) && (!$inventory || $read['at']>=$inventory['at'])) { $reads[]=['op'=>(object)['action'=>$read['action'],'id'=>PHP_INT_MAX],'read'=>$read]; }
+            if (($read['identity']??null)===ObservationRecords::identity($d) && is_string($read['at']??null) && (!$inventory || ($read['at']>=$inventory['at'] && ($read['sequence']??0)>$inventory['sequence']))) { $reads[]=['op'=>(object)['action'=>$read['action'],'id'=>PHP_INT_MAX],'read'=>$read]; }
         }
         $reads=array_values(array_filter($reads,static fn($item)=>is_string($item['read']['at']??null)&&is_array($item['read']['facts']??null)&&is_string($item['read']['operation_key']??null)));
         usort($reads,static fn($a,$b)=>[($a['read']['sequence']??0),$a['read']['at'],$a['op']->id]<=>[($b['read']['sequence']??0),$b['read']['at'],$b['op']->id]);
@@ -110,13 +113,14 @@ final class ObservationProjection
                 $op=$item['op']; $read=$item['read'];
                 $kind=match($op->action) {'privacy_purchase','privacy_renew','privacy_enable','privacy_disable'=>'privacy',
                     'ds_add','ds_delete'=>'ds','glue_add','glue_update','glue_delete'=>'glue',default=>$op->action};
+                if ($kind==='nameservers' && $snapshot && ($read['sequence']??0)<=($snapshot['sequence']??$d->observation['management_sequence']??0)) { continue; }
                 if ($kind==='glue') {
                     $sections['glue_at']=$read['at'];
                     $host=$read['facts']['host']??null; if (!$host) { continue; }
                     if (($read['facts']['ip']??null)===null) { unset($glue[$host]); } else { $glue[$host]=$read['facts']['ip']; }
                 } else { $sections[$kind]=self::section($d, $read); }
         }
-        if (count($glue)>50) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
+        if ($overflow || count($glue)>50) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
         $sections['known_glue']=$glue; return $sections;
     }
     private static function corrections(Domain $d): array

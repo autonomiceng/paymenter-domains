@@ -48,7 +48,7 @@ $holding = static function ($label, bool $complete=true) use ($prepare,$reconcil
     $original=$prepare('management-'.strtolower(str_replace('_','-',$label)));
     if ($complete) { same('succeeded',$reconcile->run($original->id)->state,'Native transfer completion establishes holding'); }
     Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
-    $ms->calls=[]; $ms->fault=''; $ms->apply=true; $ms->during=null; $ms->route='api';
+    $ms->calls=[]; $ms->glue=[]; $ms->fault=''; $ms->apply=true; $ms->during=null; $ms->route='api';
     $ms->ns=['ns1.provider.example.net','ns2.provider.example.net']; $ms->locked=true; $ms->privacy=false; $ms->renew=false; $ms->ids=[];
     Cache::flush(); return [$original->domain()->firstOrFail(), new Management($binding,$managementExchange), $original->fresh()];
 };

@@ -42,11 +42,10 @@ class ViewDomain extends ViewRecord
             ->action(function():void {
                 if (!Staff::can('admin.domains.manage')) { abort(403); }
                 try {
-                    $result=app(\Paymenter\Extensions\Servers\Domains\Services\DomainObservation::class)->run((int)$this->getRecord()->id,readRecords:true);
-                    $d=$this->getRecord()->refresh();
-                    $failed=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d)||in_array($result,\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::CODES,true)||$result==='read_deferred';
-                    \Filament\Notifications\Notification::make()->title($failed?"Couldn't read all records. Check the registrar account, then try Sync now again.":'Synced')->status($failed?'warning':'success')->send();
-                } catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't sync. Check the registrar account, then try again.")->send(); }
+                    \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)\Illuminate\Support\Facades\Auth::id(),$this->getRecord()->refresh());
+                    \Filament\Notifications\Notification::make()->success()->title('Sync queued')->body('You will get a notification when it finishes. Refresh this page to see the records.')->send();
+                } catch (\DomainException $error) { \Filament\Notifications\Notification::make()->warning()->title($error->getMessage())->send(); }
+                catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't queue sync. Ask your site admin to check the queue worker, then try again.")->send(); }
             });
     }
     /** Resume sync sits in the page notice and is mounted as a page action. */

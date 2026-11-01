@@ -31,6 +31,39 @@ $staleIdentity=ObservationRecords::identity($d);$staleIdentity['generation']=2;$
 try{$management->request($user,$d->id,'dns',[],hash('sha256','stale-owner-records'),$driver,recordIdentity:$staleIdentity);expect(false,'Locked owner record identity rejects stale admission');}catch(DomainException){}
 same($count,Operation::count(),'No owner operation created with stale inventory identity');
 require __DIR__.'/Support/observation-failed-primary.php';
+// Run the queued worker through the real observer and fake wire, then revoke its staff permission.
+require_once __DIR__.'/Support/staff-panel.php';
+$syncActor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,'admin.domains.manage']);
+$syncJob=new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($syncActor->id,$d->id,$d->authority_generation,$d->account_fingerprint);
+$clock->instant=$clock->now()->modify('+61 seconds');$syncJob->handle($observer);
+same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['records']['at'],'Queued worker saves record inventory through the observer');
+same('Domain synced',App\Models\Notification::where('user_id',$syncActor->id)->latest('id')->value('title'),'Queued worker reports completion in the staff inbox');
+$syncActor->update(['role_id'=>null]);$syncIo=[count($state->calls),count($observation->calls)];$syncJob->handle($observer);
+same($syncIo,[count($state->calls),count($observation->calls)],'Revoked staff job sends no registrar reads');
+// An empty or wholly unknown refresh cannot release a primary-failure hold.
+$beforeEmpty=$d->fresh()->observation;ObservationRecords::failPrimary($d->fresh(),$clock->now());
+$failedEmpty=$d->fresh()->observation;
+foreach ([[],['glue'=>['state'=>'partial','records'=>[]]]] as $unread) {
+ ObservationRecords::save($d->fresh(),$unread,$clock->now());
+ same($failedEmpty['record_hold'],$d->fresh()->observation['record_hold']??null,'Unread save retains the record hold');
+ same($failedEmpty['record_failure'],$d->fresh()->observation['record_failure']??null,'Unread save retains primary-failure evidence');
+}
+$d->fresh()->update(['observation'=>$beforeEmpty]);
+// Invalid child hosts cannot turn a filtered subset into a complete inventory.
+try { ObservationRecords::save($d->fresh(),['glue'=>['state'=>'complete','records'=>['ns1.'.$d->domain=>'8.8.8.8','bad.'.$d->domain=>'10.0.0.1']]],$clock->now());expect(false,'Invalid glue must reject the snapshot'); }
+catch (DomainException $error) { same('Invalid child-host read.',$error->getMessage(),'Discarded glue is not complete evidence'); }
+same($beforeEmpty,$d->fresh()->observation,'Rejected child-host snapshot keeps previous evidence');
+// A same-second inventory supersedes old preflight evidence, while a later preflight still wins.
+$beforeSequence=$d->fresh()->observation;
+$oldRows=[['name'=>'@','type'=>'TXT','address'=>'old preflight','mx_pref'=>10]];
+\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::prepared($d->fresh(),['dns'=>['records'=>$oldRows]],$clock->now());
+$families=$beforeSequence['records']['families'];$families['dns']['records']=[['name'=>'@','type'=>'TXT','address'=>'new inventory','mx_pref'=>10]];$families['glue']['read_failed']=true;
+ObservationRecords::save($d->fresh(),$families,$clock->now());
+same('new inventory',OwnerRecords::forDomain($d->fresh())['dns'][0]['address'],'Same-second inventory supersedes old preflight');
+$oldRows[0]['address']='new preflight';
+\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::prepared($d->fresh(),['dns'=>['records'=>$oldRows]],$clock->now());
+same('new preflight',OwnerRecords::forDomain($d->fresh())['dns'][0]['address'],'Same-second later preflight remains current');
+$d->fresh()->update(['observation'=>$beforeSequence]);
 // Refresh replaces stale records, preserves complete empty vs unknown, stops at first failed wire.
 $state->dns=[];$state->srv=[];$state->ds=[];$clock->instant=$clock->now()->modify('+61 seconds');
 same('refreshed',$observer->run($d->id,readRecords:true),'Positive empty record containers are complete');
@@ -120,11 +153,11 @@ $state->calls=[];$ctx=new RequestContext($b,RequestOrigin::Background,$clock->no
 expect(in_array(['CheckNSStatus',['CheckNSName'=>'ns14.discovery-placeholder.com']],$state->calls,true),'Next turn rotates to previously unchecked child host');
 // Scheduled core reads never discover records, including after a record hold or resume.
 $work=new ObservationWork($observer,$clock,$budget);$work->enroll($d->server_id);
-$before=$d->fresh()->observation['records'];$io=count($state->calls);
+$before=$d->fresh()->observation['records'];$io=count($state->calls);$domainIo=count($observation->calls);
 $clock->instant=$clock->now()->modify('+1 day');$work->tick(1);
 same($io,count($state->calls),'Daily work makes no glue, DNS, SRV or DS registrar reads');
 same($before,$d->fresh()->observation['records'],'Daily work preserves record timestamp and inventory');
-expect(in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Nameservers,$observation->calls,true),'Daily primary read still checks nameservers');
+expect(in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Nameservers,array_slice($observation->calls,$domainIo),true),'Daily primary read still checks nameservers');
 $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();
 // An explicit sync can retry a failed record read, without a new staff recovery step.
 $state->fault='GetHosts';$observer->run($d->id,readRecords:true);expect(ObservationRecords::held($d->fresh()),'Failed explicit record read is visible');
@@ -237,5 +270,11 @@ foreach ([1,2] as $cycle) {
 }
 same($recordIo,count($state->calls),'History overflow skips record discovery');
 expect(count($observation->calls)>$domainIo,'Daily domain reads continue across overflow cycles');
+
+// Truncation blocks whole-list reconstruction, but must retain a fresh saved child-host read.
+\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::prepared($d->fresh(),['glue'=>['host'=>'ns-new.'.$d->domain,'ip'=>'1.1.1.1']],$clock->now());
+$truncated=ObservationProjection::sections($d->fresh());
+same('1.1.1.1',$truncated['known_glue']['ns-new.'.$d->domain]??null,'Fresh persisted glue survives truncated history');
+foreach (['dns','srv','ds'] as $kind) { expect(!isset($truncated[$kind]),'Fresh glue does not unlock truncated '.$kind.' list'); }
 
 $nativeSuccessful=true;echo "Initial managed records: complete/unknown, identity, encryption, sequence, owner gates, glue and fair held work passed.\n";
