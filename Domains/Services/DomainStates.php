@@ -22,8 +22,8 @@ final class DomainStates
             $state = match (true) {
                 in_array($op->state, ['awaiting_payment', 'awaiting_code'], true) => [$op->state, null],
                 $op->state === 'held' && in_array($op->safe_code, self::SETUP, true) => ['setup_required', null],
-                $op->state === 'held' => $register ? ['registration_pending', null] : ['held', 'Transfer on hold'],
-                $op->state === 'uncertain' => $register ? ['registration_pending', null] : ['uncertain', 'Transfer not confirmed'],
+                $op->state === 'held' => $register ? ['registration_held', null] : ['held', 'Transfer on hold'],
+                $op->state === 'uncertain' => $register ? ['registration_unconfirmed', null] : ['uncertain', 'Transfer not confirmed'],
                 default => null,
             };
             if ($state) { return $state; }

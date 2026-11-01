@@ -26,6 +26,8 @@ final class StaffDomainStatus
     private const CHECK = 'Check the domain.';
     /** Customers read DomainStatus::LATE, which sends them to support. Staff are support, so they get this step instead. */
     private const LATE = 'Check renewal options and status at the registrar.';
+    /** Reasons written for the customer. Staff read their step. */
+    private const CUSTOMER_ONLY = [DomainStatus::LATE, DomainStatus::ON_IT];
     /** $shared is the status the customer sees and $state the state it came from (DomainFacts::status). $alerts and $renewal come from StaffDomainInputs.
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
@@ -41,19 +43,13 @@ final class StaffDomainStatus
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal); }
         }
         if ($shared['reason'] === DomainStatus::MISSING && $step === self::CHECK) { [$shared['reason'], $step] = [null, 'Missing. Sync this domain.']; }
-        return [...self::forStaff($shared), ...self::stoppedRegistration($state, $op), 'step' => $step, 'request' => $request, 'act' => $act];
+        return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act];
     }
     /** Late money is checked first by the caller, so it takes the step. */
     public static function late(array $shared): array
     { return [...self::forStaff($shared), 'step' => DomainFacts::alertCause('acquisition_late_money'), 'request' => null, 'act' => true]; }
     private static function forStaff(array $shared): array
-    { return $shared['reason'] === DomainStatus::LATE ? [...$shared, 'reason' => null] : $shared; }
-    /** Customers keep reading Pending registration while a registration is stopped. Nobody is working on it, so staff get the request's words in amber. The key stays, so the status filter agrees. */
-    private static function stoppedRegistration(string $state, ?Operation $op): array
-    {
-        if ($state !== 'registration_pending' || !in_array($op?->state, ['held', 'uncertain'], true)) { return []; }
-        return array_combine(['label', 'tone'], RequestStatus::SET[$op->state === 'held' ? 'on_hold' : 'under_review']);
-    }
+    { return in_array($shared['reason'], self::CUSTOMER_ONLY, true) ? [...$shared, 'reason' => null] : $shared; }
     /** @return array{0:?string,1:bool,2:?int} step, whether the step is already specific, and the request it names */
     private static function resolve(string $state, Domain $d, ?Operation $op): array
     {

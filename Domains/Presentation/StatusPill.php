@@ -9,13 +9,13 @@ final class StatusPill
 {
     /** DomainStatus colours => client tones. The one place the two vocabularies meet. */
     public const TONES = ['success' => 'ok', 'info' => 'info', 'warning' => 'warn', 'danger' => 'bad', 'gray' => 'muted'];
-    /** The tone rule goes by reader: amber means you must act. Under review is ours to clear, so customers read it as blue. Staff keep the colour in DomainStatus. */
-    private const CUSTOMER = ['under_review' => 'info'];
+    /** The tone rule goes by reader: amber means you must act. Under review and a stopped registration are ours to clear, so customers read them as blue. Staff keep the colour in DomainStatus. */
+    private const CUSTOMER = ['under_review' => 'info', 'registration_held' => 'info', 'registration_unconfirmed' => 'info'];
     /** @return array{label:string,tone:string,reason:?string} */
     public static function of(?string $state, ?string $reason = null): array
     {
         $status = DomainStatus::for($state, $reason);
-        return [...$status, 'tone' => self::CUSTOMER[DomainStatus::key($state)] ?? self::TONES[$status['tone']]];
+        return [...$status, 'tone' => self::CUSTOMER[(string) $state] ?? self::CUSTOMER[DomainStatus::key($state)] ?? self::TONES[$status['tone']]];
     }
     /** @return array{label:string,tone:string,reason:?string}|null */
     public static function summary(DomainSummary $s): ?array

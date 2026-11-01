@@ -12,7 +12,7 @@ foreach (DomainStatus::SET as $key=>[$label,$tone]) {
 }
 foreach (DomainStatus::STATES as $state=>[$key,$reason]) {
     $status=DomainStatus::for($state);
-    $tone=$key==='under_review'?'info':StatusPill::TONES[$status['tone']];
+    $tone=$key==='under_review'||isset(DomainStatus::STOPPED[$state])?'info':StatusPill::TONES[$status['tone']];
     same(['label'=>$status['label'],'tone'=>$tone,'reason'=>$status['reason']],StatusPill::of($state),'Client pill keeps label and reason: '.$state);
 }
 same(['label'=>'Awaiting payment','tone'=>'info','reason'=>'Invoice not paid'],StatusPill::of('awaiting_payment'),'Unpaid order');
@@ -20,5 +20,10 @@ same(['label'=>'Under review','tone'=>'info','reason'=>'Transfer on hold'],Statu
 same(['label'=>'Under review','tone'=>'info','reason'=>'Status missing'],StatusPill::of('future_state'),'Unknown states say the status is missing');
 same(['label'=>'Action required','tone'=>'warn','reason'=>'Auth code needed'],StatusPill::of('awaiting_code'),'Amber stays on what a customer must do');
 same(['Under review','warning'],DomainStatus::SET['under_review'],'Staff keep the same words in amber');
+foreach (['registration_held'=>'On hold','registration_unconfirmed'=>'Under review'] as $state=>$label) {
+    same(['label'=>$label,'tone'=>'info','reason'=>DomainStatus::ON_IT],StatusPill::of($state),'A customer reads a stopped registration in blue, with no step of their own');
+    same([$label,'warning'],[DomainStatus::for($state)['label'],DomainStatus::for($state)['tone']],'Staff read the same words in amber');
+    same('pending_registration',DomainStatus::key($state),'A stopped registration stays in the Pending registration filter');
+}
 same(['success'=>'ok','gray'=>'off','info'=>'prog','warning'=>'warn','danger'=>'err'],StatusMark::TONES,'One mapping from status colours to staff marks');
 same(['data-beco-tone'=>null,'data-beco-record'=>'domain-1'],StatusMark::attributes('pink','domain-1'),'An unknown colour gets no mark, so it keeps stock styling');

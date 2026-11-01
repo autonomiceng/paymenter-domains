@@ -11,8 +11,8 @@ final class StatusMark
     /** Status colours => data-beco-tone. Unknown colours get no mark and keep stock styling. */
     public const TONES=['success'=>'ok','gray'=>'off','info'=>'prog','warning'=>'warn','danger'=>'err'];
     public static function tone(?string $color): ?string { return self::TONES[$color]??null; }
-    /** Attributes for a cell or entry that holds a status badge. */
-    public static function attributes(?string $color,?string $record=null): array
+    /** Attributes for a cell or entry that holds a status badge. Every caller names the record, or passes null for a row that never changes. */
+    public static function attributes(?string $color,?string $record): array
     { return ['data-beco-tone'=>self::tone($color),'data-beco-record'=>$record]; }
     /** Attributes for words that say what staff must do. They get the amber mark and keep their own colour. */
     public static function note(bool $act): array

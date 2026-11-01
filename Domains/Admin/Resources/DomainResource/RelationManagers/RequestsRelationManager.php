@@ -33,7 +33,7 @@ class RequestsRelationManager extends RelationManager
             TextColumn::make('event')->label('Event')->state(fn($record)=>$row($record)['event'])->description(fn($record)=>$row($record)['sub'])->wrap()
                 ->extraAttributes(['style'=>'min-width:14rem;max-width:32rem;overflow-wrap:anywhere']),
             TextColumn::make('status')->label('Status')->badge()->state(fn($record)=>$row($record)['status']['label']??null)->color(fn($record)=>$row($record)['status']['tone']??'gray')
-                ->extraAttributes(fn($record)=>StatusMark::attributes($row($record)['status']['tone']??'gray')),
+                ->extraAttributes(fn($record)=>StatusMark::attributes($row($record)['status']['tone']??'gray',$record instanceof Operation?'request-'.$record->id:null)),
             TextColumn::make('by')->label('By')->state(fn($record)=>$row($record)['by'])->color('gray'),
         ])->recordAction(null)->recordUrl(fn($record)=>$record instanceof Operation?OperationResource::getUrl('view',['record'=>$record]):null)
             ->emptyStateHeading('No history yet')->emptyStateDescription(null)->paginated([10,25,50])->defaultPaginationPageOption(10);

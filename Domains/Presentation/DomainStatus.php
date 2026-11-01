@@ -17,11 +17,16 @@ final class DomainStatus
     ];
     /** Shared support fallback for a managed domain past expiry. */
     public const LATE = 'Contact support to check whether it can still be renewed';
+    /** A stopped registration needs nothing from the customer. Staff get their step instead. */
+    public const ON_IT = 'We are on it, nothing for you to do';
+    /** A stopped registration reads like its request for everyone, and stays under Pending registration in filters. state => [label, tone] */
+    public const STOPPED = ['registration_held' => RequestStatus::SET['on_hold'], 'registration_unconfirmed' => RequestStatus::SET['under_review']];
     /** Internal state => [status key, default reason line]. Domain status column values, request states seen on a domain,
      * watch findings, and derived states: renewal_off_expiring (auto-renew off, expiry within 30 days),
      * active_no_expiry (active without a confirmed expiry) and setup_required (held until the customer finishes setup). */
     public const STATES = [
         'active' => ['active', null], 'registration_pending' => ['pending_registration', null], 'transfer_pending' => ['pending_transfer', null],
+        'registration_held' => ['pending_registration', self::ON_IT], 'registration_unconfirmed' => ['pending_registration', self::ON_IT],
         'awaiting_payment' => ['awaiting_payment', 'Invoice not paid'], 'awaiting_code' => ['action_required', 'Auth code needed'],
         'renewal_off_expiring' => ['action_required', 'Auto-renew off'], 'watch.ns_changed' => ['action_required', 'Nameservers changed'],
         'setup_required' => ['action_required', 'Finish setup'], 'watch.not_registered' => ['action_required', 'Not registered'],
@@ -35,7 +40,7 @@ final class DomainStatus
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $reason = null): array
     {
-        [$label, $tone] = self::SET[self::key($state)];
+        [$label, $tone] = self::STOPPED[$state] ?? self::SET[self::key($state)];
         return ['label' => $label, 'tone' => $tone, 'reason' => $reason ?? (self::STATES[$state] ?? [null, self::MISSING])[1]];
     }
     /** The SET key a state belongs to; unknown states count as under_review. */

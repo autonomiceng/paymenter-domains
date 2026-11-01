@@ -113,7 +113,7 @@ expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->html()
 // An unpublished TLD uses its saved custom rule for both retail and profit estimates.
 $custom=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'org',
     'use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>'99.00','fixed_renew'=>'99.00','fixed_transfer'=>'99.00']);
-Livewire::actingAs($staff)->test(WhatYouSell::class)->assertTableColumnStateSet('register_price','99.00',$row('org'))->assertTableColumnStateSet('register_profit','85.82',$row('org'));
+Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSeeHtml('data-beco-record="sell-'.$server->id.'-org"')->assertTableColumnStateSet('register_price','99.00',$row('org'))->assertTableColumnStateSet('register_profit','85.82',$row('org'));
 $custom->delete();
 // No row vanishes: a saved TLD shows here though the registrar no longer lists it, or it is hidden, and saves stay off those rows.
 $gone=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'gone']);
