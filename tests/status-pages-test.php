@@ -22,7 +22,8 @@ $cases=[
     'transfer'=>[[],['state'=>'queued'],'Pending transfer',null],
     'transfer-held'=>[[],['state'=>'held','safe_code'=>'transfer_setup_review_required'],'Under review','Transfer on hold'],
     'transfer-uncertain'=>[[],['state'=>'uncertain'],'Under review','Transfer not confirmed'],
-    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Pending registration',null],
+    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'On hold','We are on it, nothing for you to do'],
+    'register-uncertain'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'uncertain'],'Under review','We are on it, nothing for you to do'],
     'setup'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>'contact_details_required'],'Action required','Finish setup'],
     'active'=>[['status'=>'active','provider_expires_at'=>$day(200)],['state'=>'succeeded'],'Active',null],
     'auto-renew-on-soon'=>[['status'=>'active','provider_expires_at'=>$day(10)],['state'=>'succeeded'],'Active',null],
@@ -57,13 +58,15 @@ foreach ($cases as $case=>[$domain,$acquisition,$label,$reason]) {
     $reasons=['list'=>$text($list,'domains-pill-reason',$row),'detail'=>$text($show,'domains-pill-reason',$header),'service card'=>$text($card,'domains-pill-reason')];
     foreach ($reasons as $page=>$lines) { same($reason===null?[]:[$reason],$lines,'Same reason line on the '.$page.': '.$case); }
     // Chips name the statuses present; the chip for this status keeps the row, any other chip drops it.
-    same(['All '.($hidden?0:1),$label.' 1'],array_map(fn($chip)=>preg_replace('/\s+/',' ',$chip),$text($list,'domains-chip')),'Chips are the statuses present with counts: '.$case);
+    // A stopped registration reads On hold or Under review but stays under the Pending registration chip.
+    $chip=str_starts_with($case,'register-')?'Pending registration':$label;
+    same(['All '.($hidden?0:1),$chip.' 1'],array_map(fn($chip)=>preg_replace('/\s+/',' ',$chip),$text($list,'domains-chip')),'Chips are the statuses present with counts: '.$case);
     parse_str((string)parse_url($list->query('//a[contains(@class,"domains-chip")]/@href')->item(1)?->value??'',PHP_URL_QUERY),$query);
-    $key=(string)($query['status']??''); $keys[$label]=$key;
+    $key=(string)($query['status']??''); $keys[$chip]=$key;
     same(1,$controller->index($request(['status'=>$key]))->getData()['domains']->total(),'Status chip keeps the row: '.$case);
     same(0,$controller->index($request(['status'=>$label==='Active'?'expired':'active']))->getData()['domains']->total(),'Other chips drop the row: '.$case);
 }
-same(count($keys),count(array_unique($keys)),'Each status label has its own filter key');
+same(count($keys),count(array_unique($keys)),'Each chip has its own filter key');
 // A real expired domain gets its next step, and never a link to the ticket page that answers 404 when tickets are off.
 DB::table('domains_domains')->where('id',$d->id)->update([...$base,'status'=>'expired','provider_expires_at'=>$day(-5)]);
 DB::table('domains_operations')->where('id',$op->id)->update(['action'=>'transfer','safe_code'=>null,'state'=>'succeeded']);
