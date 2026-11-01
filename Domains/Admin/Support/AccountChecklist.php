@@ -176,7 +176,7 @@ final class AccountChecklist
             $paid['Paymenter payment events']!=='Available'=>self::row('Payment events',null,'danger','Service listeners are missing. Restart the queue worker.',null,self::PAYMENTS),
             $paid['Start after payment']!=='Available'=>self::row('Payment events','Delayed','warning',null,null,'Paid orders start on the next scheduled run. Restart the queue worker to fix it.'),
             default=>self::row('Payment events','Working',null,null,null,self::PAYMENTS)}];
-        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Disabled','warning','Refunded domain payments stay on the customer’s credit balance, but the Credits page is hidden. Turn on Credits in Settings → Credits.',null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
+        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Disabled','warning','Refunded domain payments stay on the customer’s credit balance, but the Credits page is hidden. Turn on Credits in Settings.',null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
         $editor=NativeEditorNotice::missing();
         $checks[]=$editor===null?self::row('Domain editor','Working',null,null,null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
         if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Update Paymenter or Domains. Until then, check each TLD is still for sale after a price change.',null,'Paymenter is missing '.$missing.'.'); }

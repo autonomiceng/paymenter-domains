@@ -55,7 +55,7 @@ same($sync,Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::la
 Illuminate\Support\Facades\Schema::drop('domains_runtime_turns');
 config(['settings.credits_enabled'=>false]);
 $credits=collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits');
-expect($credits!==null&&str_contains($credits['cause'],'Settings → Credits'),'Hidden Credits page warns with the setting to change');
+expect($credits!==null&&str_contains($credits['cause'],'Turn on Credits in Settings.'),'Hidden Credits page warns with the setting to change');
 config(['settings.credits_enabled'=>true]);
 same(null,collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits'),'Warning clears when customers can use Credits');
 
@@ -195,6 +195,7 @@ foreach(['saving','updating','updated'] as $event){Illuminate\Support\Facades\Ev
 Illuminate\Support\Facades\Event::forget(App\Events\Invoice\Paid::class);
 $flat=$page->instance()->content(\Filament\Schemas\Schema::make($page->instance()))->getFlatComponents();
 $check=static fn(string $label)=>array_values(array_filter($flat,fn($e)=>$e instanceof \Filament\Infolists\Components\TextEntry&&$e->getLabel()===$label))[0];
+$page->assertSeeHtml('class="domains-trace"')->assertSeeHtml('role="listitem"');
 same('Delayed',$check('Payment events')->getState(),'Missing paid listener delays paid orders');
 same('warning',$check('Payment events')->getColor('Delayed'),'Delayed payment events warn');
 same('Not running',$check('Background worker')->getState(),'No worker run recorded');

@@ -127,12 +127,12 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 same([null,'Fills in by itself within a day',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes');
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Fills in by itself within a day');
 same('Under review',DomainFacts::status($active->fresh())['label'],'Active without expiry is under review');
-same('Expiry missing · Check the domain.',DomainFacts::statusLine(DomainFacts::status($active->fresh())),'Expiry missing step');
+same('Expiry missing. Check the domain.',DomainFacts::statusLine(DomainFacts::status($active->fresh())),'Expiry missing step');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
 // An inactive domain's renewal timing is not Missing: the rows do not apply.
 $pending=DomainFacts::for($held);
 expect(!isset($pending['Next invoice'])&&!isset($pending['Expires']),'Pending transfer hides expiry and next invoice');
-same(['Under review','Transfer on hold · Old registrar needs approval. Open request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
+same(['Under review','Transfer on hold. Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
 same([null,'Customer account not found. Check the Users page.'],[$value($held,'Customer'),$sub($held,'Customer')],'Deleted customer is Missing with its cause');
 
 // Renewal settings.
@@ -151,7 +151,7 @@ foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 same(null,DomainFacts::notice($active->fresh()),'A healthy domain has no notice');
 $notice=DomainFacts::notice($held);
-same(['Transfer not sent: old registrar needs approval.','Open request #'.$held->operations()->sole()->id],[$notice['title'],$notice['action']['label']],'Held request notice');
+same(['Transfer not sent: old registrar needs approval.','Check request #'.$held->operations()->sole()->id],[$notice['title'],$notice['action']['label']],'Held request notice');
 $heldOperation=$held->operations()->sole();$noticeOriginal=$heldOperation->getRawOriginal();
 foreach(['register'=>'Registration','transfer'=>'Transfer'] as $action=>$label){
     foreach(['enom_test_call_cap'=>'stopped by our test send check','transfer_needs_action'=>'old registrar needs approval'] as $code=>$cause){
@@ -162,7 +162,7 @@ foreach(['register'=>'Registration','transfer'=>'Transfer'] as $action=>$label){
 }
 DB::table('domains_operations')->where('id',$heldOperation->id)->update(['action'=>$noticeOriginal['action'],'safe_code'=>$noticeOriginal['safe_code']]);
 
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Open request #');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Check request #');
 
 // An old sweep failure must not conceal a definitely-unsent order's actual staff reason.
 $unsent=Domain::create(['server_id'=>$held->server_id,'registrar_key'=>$held->registrar_key,'account_fingerprint'=>$held->account_fingerprint,

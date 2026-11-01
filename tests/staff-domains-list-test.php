@@ -23,11 +23,11 @@ App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update([
 $accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);
 $options=$accountsPage->instance()->getTable()->getFilter('server_id')->getOptions();
 foreach([$held,$active] as $domain){
-    same('Shared account · #'.$domain->server_id,$options[$domain->server_id],'Filter keeps account ID');
+    same('Shared account #'.$domain->server_id,$options[$domain->server_id],'Filter keeps account ID');
     $accountsPage->filterTable('server_id',$domain->server_id)->assertCanSeeTableRecords([$domain]);
     $other=$domain->id===$held->id?$active:$held;$accountsPage->assertCanNotSeeTableRecords([$other]);
     $record=$accountsPage->instance()->getTableRecords()->firstWhere('id',$domain->id);
-    same('Shared account · #'.$domain->server_id,$accountsPage->instance()->getTable()->getColumn('server_id')->record($record)->getState(),'Registrar row keeps account ID');
+    same('Shared account #'.$domain->server_id,$accountsPage->instance()->getTable()->getColumn('server_id')->record($record)->getState(),'Registrar row keeps account ID');
 }
 unset($accountsPage);
 
@@ -54,7 +54,7 @@ $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'eno
 foreach (['test'=>true,'live'=>false] as $environment=>$paused) {
     config(['domains.enom_identity.environment'=>$environment,'domains.enom_writes.registration'=>false,'domains.enom_writes.renewal'=>false]);
     [$columns,$records]=$list();
-    same($paused?'Sync paused':null,$columns['status']->record($records[$demo->id])->getDescriptionBelow(),'Demo list row says sync is paused: '.$environment);
+    same($paused?'Sync paused.':null,$columns['note']->record($records[$demo->id])->getState(),'Demo list row says sync is paused: '.$environment);
     same($paused?'Paused':null,DomainFacts::for($demo->fresh())['Last sync']['value']??null,'Staff page agrees: '.$environment);
     same($paused,DemoData::syncPaused($demo->fresh()),'Customer view agrees: '.$environment);
     same($paused?'paused':null,DomainFacts::sync($demo->fresh()),'Standalone sync lazily loads the valid demo account: '.$environment);
@@ -88,6 +88,6 @@ foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
 same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
 foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
-    same($i%3===0?'Sync failed':null,$columns['status']->record($row)->getDescriptionBelow(),'Missing accounts never falsely pause demo sync');
+    same($i%3===0?'Sync failed. Sync again from the domain.':null,$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

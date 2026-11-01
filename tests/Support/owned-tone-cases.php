@@ -9,12 +9,12 @@ declare(strict_types=1);
     \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->update(['state' => 'succeeded']);
     $late = \Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE;
     $cases = [
-        'active' => ['Active', 'ok', null], 'adoption_pending' => ['Under review', 'warn', 'Import not confirmed'],
+        'active' => ['Active', 'ok', null], 'adoption_pending' => ['Under review', 'info', 'Import not confirmed'],
         'registration_pending' => ['Pending registration', 'info', null], 'transfer_pending' => ['Pending transfer', 'info', null],
         'registration_rejected' => ['Failed', 'bad', 'Registration did not finish'], 'transfer_rejected' => ['Failed', 'bad', 'Transfer did not finish'],
-        'needs_review' => ['Under review', 'warn', null], 'expired' => ['Expired', 'bad', $late], 'grace' => ['Expired', 'bad', $late],
+        'needs_review' => ['Under review', 'info', null], 'expired' => ['Expired', 'bad', $late], 'grace' => ['Expired', 'bad', $late],
         'redemption' => ['Redemption', 'bad', $late], 'cancelled' => ['Cancelled', 'muted', null],
-        'unknown_status' => ['Under review', 'warn', 'Status missing'],
+        'unknown_status' => ['Under review', 'info', 'Status missing'],
     ];
     foreach ($cases as $state => $expected) {
         $d = $base->fresh(); $d->status = $state; $d->provider_expires_at = $clock->now()->modify('+200 days');
@@ -24,14 +24,14 @@ declare(strict_types=1);
     }
     $d = $base->fresh(); $d->provenance = 'adoption_pending'; $d->status = 'active';
     $dto = $quiet->present($d, false);
-    same(['Under review', 'warn', 'Import not confirmed'], [$dto->status, $dto->tone, $dto->statusReason], 'D3 adoptionPending provenance takes precedence');
+    same(['Under review', 'info', 'Import not confirmed'], [$dto->status, $dto->tone, $dto->statusReason], 'D3 adoptionPending provenance takes precedence');
     foreach (['register', 'transfer'] as $action) {
         foreach (['held', 'uncertain', 'awaiting_payment'] as $state) {
             \Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $op->id)->update(['action' => $action, 'state' => $state]);
             $d = $base->fresh(); $d->status = 'needs_review';
             $expected = $state === 'awaiting_payment' ? ['Awaiting payment', 'info', 'Invoice not paid']
                 : ($action === 'register' ? ['Pending registration', 'info', null]
-                : ['Under review', 'warn', $state === 'held' ? 'Transfer on hold' : 'Transfer not confirmed']);
+                : ['Under review', 'info', $state === 'held' ? 'Transfer on hold' : 'Transfer not confirmed']);
             $dto = $quiet->present($d, false);
             same($expected, [$dto->status, $dto->tone, $dto->statusReason], 'D3 operation label/tone: '.$action.' '.$state);
         }

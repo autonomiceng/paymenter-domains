@@ -30,7 +30,7 @@ final class ObligationAlerts
         'invalid_invoice'=>'Renewal invoice needs a check: owner, line and due date.',
         'below_cost'=>'Below cost. Billing continues. Check the margin.',
         'observation_review'=>'Sync stopped. Use Resume sync.',
-        'operation_review'=>'Registrar request needs a check. Open the request.',
+        'operation_review'=>'Registrar request needs a check. Check the request.',
         'unknown_payment_time'=>'Transfer payment time missing. Check the payment before you send a deadline.',
         'delivery_uncertain'=>'Reminder not confirmed. Check its delivery before you resend.',
         'template_failed'=>'Reminder failed. Check its template and channels.',
