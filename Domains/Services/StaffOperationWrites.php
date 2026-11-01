@@ -13,6 +13,13 @@ final class StaffOperationWrites
         return in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)
             &&in_array($op->action,['register','transfer','renew','privacy_purchase','privacy_renew'],true);
     }
+    /** Read-only offer; the writer repeats the same attempt proof under its locks. */
+    public static function canHold(Operation $op): bool
+    {
+        if(!self::holdable($op)){return false;}
+        try { self::virgin($op,['domain'=>$op->domain]);return true; }
+        catch(\Throwable){return false;}
+    }
     public static function hold(Operation $op,array $l): void
     {
         if(!self::holdable($op)) {

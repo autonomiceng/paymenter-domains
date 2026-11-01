@@ -97,7 +97,7 @@ final class OperationActions
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             // Release needs what the customer still owes, so a hold here would have no way back.
-            'hold'=>StaffOperationWrites::holdable($op)&&self::customerOwes($op)===null,
+            'hold'=>StaffOperationWrites::canHold($op)&&self::customerOwes($op)===null,
             'release'=>StaffOperationWrites::canRelease($op,app(Clock::class)->now()),
             'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice',
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
