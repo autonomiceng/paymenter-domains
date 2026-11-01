@@ -59,6 +59,7 @@ class DomainResource extends Resource
                 ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone']),
             // The next step, never cut short. Every open alert is listed on the domain page. A step that names a request opens it.
             TextColumn::make('note')->label('Note')->state(fn(Domain $record,$livewire)=>self::note($record,$livewire)['text'])->wrap()->color('gray')
+                ->formatStateUsing(fn(string $state,Domain $record,$livewire)=>DomainFacts::noteStep($state,self::status($record,$livewire)))
                 ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
                 ->extraAttributes(fn(Domain $record,$livewire)=>['style'=>'min-width:14rem;max-width:24rem;overflow-wrap:anywhere',...StatusMark::note(self::note($record,$livewire)['act'])]),
             TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')

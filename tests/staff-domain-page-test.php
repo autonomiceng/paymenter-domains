@@ -163,6 +163,12 @@ foreach(['register'=>'Registration','transfer'=>'Transfer'] as $action=>$label){
 DB::table('domains_operations')->where('id',$heldOperation->id)->update(['action'=>$noticeOriginal['action'],'safe_code'=>$noticeOriginal['safe_code']]);
 
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Check request #');
+// The request page head sweeps like the domain head, so it needs the same mark. A Note's step looks like the link its cell is.
+$heldRequest=$held->operations()->sole()->id;
+Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
+$note=DomainFacts::note(DomainFacts::status($held),null)['text'];
+same(e(substr($note,0,-strlen('Check request #'.$heldRequest.'.'))).'<span class="domains-link" style="text-decoration:underline">Check request #'.$heldRequest.'.</span>',(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note step looks like a link');
+same('Sync failed. Sync again from the domain.',DomainFacts::noteStep('Sync failed. Sync again from the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
 
 // An old sweep failure must not conceal a definitely-unsent order's actual staff reason.
 $unsent=Domain::create(['server_id'=>$held->server_id,'registrar_key'=>$held->registrar_key,'account_fingerprint'=>$held->account_fingerprint,
