@@ -15,7 +15,8 @@ $dueRecords();$runtimePorts->initialManagedRecordObservations();same([],$state->
 $bindings->setProcessing($d->server_id,true,static fn()=>null);$compositionReady=false;$dueRecords();$runtimePorts->initialManagedRecordObservations();
 same([],$state->calls,'Enabled account without accepted composition makes no record reads');expect(!ObservationRecords::held($d->fresh()),'Missing acceptance creates no fabricated record hold');
 $compositionReady=true;$dueRecords();$clock->instant=$clock->now()->modify('+1 hour');app(RuntimeWork::class)->tick();
-expect(count($state->calls)>0,'Installed scheduler reaches registered producer');same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Native producer publishes complete records');
+same([],$state->calls,'Installed daily scheduler makes no record reads');same(null,ObservationRecords::current($d->fresh()),'Daily read does not invent inventory');
+app(DomainObservation::class)->run($d->id,readRecords:true);same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Native producer publishes complete records');
 $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();same(0,$job->tries,'Successful native refresh resets tries');same($clock->now()->getTimestamp()+86400,$job->due_at,'Ordinary refresh cadence is daily');
 $io=count($state->calls);$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'No duplicate early refresh');
 DB::enableQueryLog();DB::flushQueryLog();
@@ -36,11 +37,11 @@ foreach($rows as$i=>$row){$p=OwnerRecords::restoreSrv($d->fresh(),['records'=>[[
 expect(!str_contains($page(),'host_id')&&!str_contains($page(),'HostID'),'Source identity remains server-side');
 same(ManagementPayload::digest($f['srv']['records'],'srv'),ManagementPayload::digest($rows,'srv'),'Presentation order preserves canonical digest');
 // Current holds suppress automatic retries, and the note states the manual-resume prerequisite.
-$state->fault='GetHosts';$dueRecords();$runtimePorts->initialManagedRecordObservations();expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
+$state->fault='GetHosts';app(DomainObservation::class)->run($d->id,readRecords:true);expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
 $html=$page();expect(str_contains($html,'<span class="domains-sub">Our team needs to check this domain. No action needed.</span>'),'Held copy describes actual manual recovery');expect(!str_contains($html,'Fills in by itself within a day'),'Held records never promise an automatic record retry');
 $io=count($state->calls);$clock->instant=$clock->now()->modify('+1 day');$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'Held producer never automatically retries');
-$state->fault='';app(ObservationWork::class)->resume($job->id,'staff_record_resume');$runtimePorts->initialManagedRecordObservations();expect(!ObservationRecords::held($d->fresh()),'Explicit resume recovers native producer');
-$p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);$html=$page();expect(str_contains($html,'<span class="domains-sub">Fills in by itself within a day</span>'),'Unheld unknown copy states the sync prerequisite');expect(!str_contains($html,'our team resumes'),'Unheld note has no false manual hold');
+$state->fault='';app(DomainObservation::class)->run($d->id,readRecords:true);expect(!ObservationRecords::held($d->fresh()),'Explicit resume recovers native producer');
+$p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);$html=$page();expect(str_contains($html,'<span class="domains-sub">Contact support to sync these records.</span>'),'Unheld unknown copy states the sync prerequisite');expect(!str_contains($html,'our team resumes'),'Unheld note has no false manual hold');
 $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html));
 foreach(['enom','namesilo']as$name){expect(!str_contains(strtolower($visible),$name),'Customer copy stays registrar-neutral');}
 // A failed ordinary read while processing is off stops scheduled work without a record hold.

@@ -37,6 +37,17 @@ $time->now+=43201;managedDue($id,$time->now);
 expect($signals->observe($id,$uid,'delegation'),'Fresh read after prior evidence expired');
 same(false,ManagedPublicObservation::orderByDesc('id')->first()->ns_confirmed,'Expired confirmation requires a new second sample');
 same($authority,$d->fresh()->getRawOriginal(),'Public DNS does not change holding authority, expiry, permissions or observation');same($money,scenarioMoney(),'No financial mutation');same($calls,count($wire->calls),'No registrar reads');
+// Glue drift shares this public schedule and resolver; it never contacts the registrar.
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),['glue'=>['records'=>['ns1.example.com'=>'8.8.8.8']]],new DateTimeImmutable('@'.$time->now));
+$glueAuthority=$d->fresh()->getRawOriginal();$q=new DnsQuery('ns1.example.com','A');
+$fake->answers[$q->key()]=DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'1.1.1.1']]);
+managedDue($id,$time->now);expect($signals->observe($id,$uid,'delegation'),'Scheduled public check includes saved glue');
+expect(count(\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d->fresh(),$time->now))===1,'Scheduled mismatch produces an advisory');
+$fake->answers[$q->key()]=DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'8.8.8.8']]);
+managedDue($id,$time->now);expect($signals->observe($id,$uid,'delegation'),'Scheduled public check samples matching glue');
+same([],\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d->fresh(),$time->now),'Later matching public DNS clears the advisory');
+same($glueAuthority,$d->fresh()->getRawOriginal(),'Glue diagnostics leave the holding and its in-flight authority stamp unchanged');
+same($calls,count($wire->calls),'Glue diagnostics never contact the registrar');same($money,scenarioMoney(),'Glue diagnostics never change financial state');
 DB::table('domains_domains')->where('id',$id)->update(['status'=>'expired']);expect(!$signals->enqueue($id,$uid,$time->now),'Expired work retires');
 expect(DB::table(ManagedPublicWorkSchema::TABLE)->whereNull('retired_at')->doesntExist(),'All expired work retired');
 expect((new PublicSignalsProjection())->read($target,$time->now)['dns']['stale'],'Retained facts visibly stale after retirement');

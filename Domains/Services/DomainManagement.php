@@ -154,13 +154,16 @@ final class DomainManagement
             });
             $claimed=true;
             $ctx = new RequestContext($r->binding, $origin, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
+            $driver->preparedRecords();
             $prepared = $driver->prepare($r, $ctx);
-            [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp): array {
+            $records = $driver->preparedRecords();
+            [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp, $records): array {
                 if ($l['stamp'] !== $stamp) { throw new \DomainException('Management authority changed during preparation.'); }
                 if ($op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management claim changed.'); }
                 $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action); $this->features->requireManagement();
                 $this->noInflight($op);
                 ManagementPreparation::requireFrozen($op, $prepared);
+                GlueRecords::prepared($l['domain'],$records,$this->clock->now());
                 $op->update(['payload' => $prepared]);
                 return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp']];
             });

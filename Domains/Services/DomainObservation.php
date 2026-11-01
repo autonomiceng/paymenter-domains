@@ -10,13 +10,13 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class DomainObservation
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock, private readonly ReadLimiter $budget, private readonly ?OwnerPorts $records=null, private readonly ?\Closure $recordGate=null) {}
-    public function run(int $id, ?int $generation=null, ?string $fingerprint=null): string
+    public function run(int $id, ?int $generation=null, ?string $fingerprint=null, bool $readRecords=true): string
     {
         OperationClaims::outside(); $seed=Domain::findOrFail($id);
         if (($generation!==null&&$seed->authority_generation!==$generation)||($fingerprint!==null&&$seed->account_fingerprint!==$fingerprint)) { throw new ReadDeferred('Stale observation work.'); }
         $recordOverflow=$this->records && $seed->operations()->where('authority_generation',$seed->authority_generation)
             ->where('account_fingerprint',$seed->account_fingerprint)->limit(101)->pluck('id')->count()>100;
-        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled]=DB::transaction(function () use ($seed,$recordOverflow): array {
+        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$recordOverflow,$readRecords): array {
             $l=HoldingLocks::take($seed); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             if (ObservationRecords::identity($seed)!==ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
             $binding=CatalogueAcceptances::binding($l['account']); $attempt=null;
@@ -24,15 +24,16 @@ final class DomainObservation
                 $op=$l['operations']->first(fn($o)=>$o->action==='transfer'&&$o->authority_generation===$l['domain']->authority_generation&&in_array($o->state,['pending','uncertain','held'],true)&&($o->attempt['seal']??null)==='sealed');
                 if ($op) { $attempt=ReconciliationEvidence::attempt($op,$l['domain'],$binding); }
             }
-            $recordEnabled=$this->records!==null && (!$this->recordGate || ($this->recordGate)($l));
+            $recordProtected=$this->records!==null && (!$this->recordGate || ($this->recordGate)($l));
+            $recordEnabled=$readRecords && $recordProtected;
             $recordOverflow=$recordEnabled && ($recordOverflow || $l['operations']->where('authority_generation',$seed->authority_generation)->count()>100);
             $knownGlue=$recordEnabled && !$recordOverflow ? (ObservationProjection::sections($l['domain'])['known_glue']??[]) : [];
             $recordOverflow=$recordOverflow || count($knownGlue)>50;
-            return [$binding,$l['stamp'],$attempt,$l['domain'],$knownGlue,$recordOverflow,$recordEnabled];
+            return [$binding,$l['stamp'],$attempt,$l['domain'],$knownGlue,$recordOverflow,$recordEnabled,$recordProtected];
         });
-        $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true);
+        $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true);
         $snapshot=null; $transfer=TransferStatus::Unknown; $records=null; $failed=false; $recordFailed=false; $deferred=false; $failureCode=null;
-        $recordHeld=ObservationRecords::held($seed);
+        $recordHeld=ObservationRecords::held($seed) && !$readRecords;
         try {
             $reader=$this->bindings->reader($binding->serverId);
             if ($attempt) {
@@ -44,7 +45,7 @@ final class DomainObservation
             if (!$snapshot&&$transfer===TransferStatus::Unknown) { throw new \DomainException('Observation unavailable.'); }
         } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
         catch (\Throwable $e) {
-            if (!$recordEnabled || $seed->status!=='active') { throw $e; }
+            if (!$recordProtected || $seed->status!=='active') { throw $e; }
             $snapshot=null; $transfer=TransferStatus::Unknown; $failed=true; $failureCode=ReadFailure::code($e);
         }
         // A failed primary read retains inventory; record failures retain successful domain facts.
@@ -53,7 +54,8 @@ final class DomainObservation
             if ($snapshot?->owned===true) {
                 try {
                     $port=$this->records->forDomain($seed);
-                    $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id);
+                    if ($binding->registrarKey==='enom') { $knownGlue=GlueRecords::known($seed,$knownGlue,$snapshot?->nameservers?->nameservers??[]); }
+                    $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id,domainId:(int)$seed->id);
                     $records=$port->discover($r,$ctx,$knownGlue);
                     if (isset($records['failure_code'])) { $failureCode=ReadFailure::safe($records['failure_code']); }
                     if ($this->clock->now()>=$ctx->deadline) { throw new \DomainException('Observation deadline reached.'); }

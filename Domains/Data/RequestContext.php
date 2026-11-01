@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 final class RequestContext
 {
     public function __construct(public readonly AccountBinding $binding, public readonly RequestOrigin $origin,
-        public readonly \DateTimeImmutable $deadline, public readonly RequestBudget $budget, private readonly Clock $clock = new SystemClock, private readonly ?\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter $limiter = null, private readonly bool $stopOnReadFailure = false) {}
+        public readonly \DateTimeImmutable $deadline, public readonly RequestBudget $budget, private readonly Clock $clock = new SystemClock, private readonly ?\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter $limiter = null, private readonly bool $stopOnReadFailure = false, public readonly bool $readNameservers = false) {}
 
     /** Drivers must call before each wire request, not just once per logical operation. */
     public function claimRead(#[\SensitiveParameter] AccountBinding $driver): int

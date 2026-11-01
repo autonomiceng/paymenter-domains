@@ -18,7 +18,7 @@ final class OwnerFormValidation extends \DomainException
                 'ds.algorithm','ds.digest_type'=>'Choose an option from the list.',
                 'ds.digest'=>'Enter the digest your DNS provider gives you: 64 characters for SHA-256 or 40 for SHA-1.',
                 'glue.host'=>'Enter a hostname under '.$domain.', such as ns1.'.$domain.'.',
-                'glue.ip'=>'Enter a public IPv4 or IPv6 address.',
+                'glue.ip'=>$registrar==='namesilo'?'Enter public IPv4 addresses, separated by commas. NameSilo does not support IPv6 glue.':'Enter a public IPv4 or IPv6 address.',
                 default=>self::recordAddressMessage($field,$input)??self::fieldMessage($field,$registrar)??(preg_match('/^(dns|srv)\.records\.count$/D',$field)?'Keep between 1 and 50 records.':
                     (preg_match('/^(dns|srv)\.records(?:\.preimage)?$/D',$field)?'We couldn’t save this change. Reload the page and try again.':
                     (preg_match('/^(dns|srv)\.records\.(\d+)$/D',$field,$m)?'Check record '.((int)$m[2]+1).'. These values don’t work together.':'Check this field.'))),

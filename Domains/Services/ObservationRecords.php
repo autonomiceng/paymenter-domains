@@ -13,7 +13,7 @@ final class ObservationRecords
     }
     public static function save(Domain $d, array $families, \DateTimeImmutable $now): void
     {
-        $p=$d->observation??[]; unset($p['record_failure']); $clean=[];
+        $p=$d->observation??[]; unset($p['record_failure'],$p['record_hold'],$p['record_reads']); $clean=[];
         foreach (['dns','srv','ds'] as $kind) {
             $f=$families[$kind]??[]; $rows=$f['records']??null; $clean[$kind]=['state'=>'unknown'];
             if (($f['state']??null)!=='complete'||!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }
@@ -28,7 +28,8 @@ final class ObservationRecords
             try { $v=ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$d->domain,$d->registrar_key); $glue[$v['host']]=$v['ip']; }
             catch (\Throwable) {}
         }
-        $clean['glue']=['state'=>'partial','records'=>$glue];
+        $clean['glue']=['state'=>($families['glue']['state']??null)==='complete'?'complete':'partial','records'=>$glue];
+        $clean['glue']['candidates']=array_keys(GlueRecords::hosts($d->domain,[],$families['glue']['candidates']??[]));
         $p['records']=['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'sequence'=>$p['management_sequence']??0,'families'=>$clean];
         $d->update(['observation'=>$p]);
     }

@@ -191,7 +191,8 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $allowed = self::flag($privacy->value('getwppsinfo.wppsallowed')); $exists = self::flag($privacy->value('getwppsinfo.wppsexists'));
         if ($allowed === null || $exists === null || ($privacyFlag === true && (!$allowed || !$exists))) { $privacyFlag = null; }
         $snapshot = new DomainSnapshot($this->binding(), $name, true, $domain->expiry, $auto,
-            $privacyFlag, self::flag($lock->value('reg-lock')), $domain->providerReference);
+            $privacyFlag, self::flag($lock->value('reg-lock')), $domain->providerReference,
+            nameservers: $context->readNameservers ? self::readNameservers($this->read(ReadCommand::Nameservers, $parts, $context), $context->now()) : null);
         return $this->neutral($reply, new Evidence(domain: $snapshot));
     }
     public function readRenewalDomain(string $name, #[\SensitiveParameter] RequestContext $context): DriverResult

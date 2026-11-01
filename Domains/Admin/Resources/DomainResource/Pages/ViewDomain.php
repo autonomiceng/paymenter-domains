@@ -33,7 +33,21 @@ class ViewDomain extends ViewRecord
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...HoldingActions::make($d)];
+        return [$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...HoldingActions::make($d)];
+    }
+    private function syncNow(): Action
+    {
+        // Record reads use registrar calls; Sync now lets staff request them only when needed.
+        return Action::make('sync_now')->label('Sync now')->color('gray')->visible(fn()=>Staff::can('admin.domains.manage')&&$this->getRecord()->status==='active')
+            ->action(function():void {
+                if (!Staff::can('admin.domains.manage')) { abort(403); }
+                try {
+                    $result=app(\Paymenter\Extensions\Servers\Domains\Services\DomainObservation::class)->run((int)$this->getRecord()->id,readRecords:true);
+                    $d=$this->getRecord()->refresh();
+                    $failed=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::held($d)||in_array($result,\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::CODES,true)||$result==='read_deferred';
+                    \Filament\Notifications\Notification::make()->title($failed?"Couldn't read all records. Check the registrar account, then try Sync now again.":'Synced')->status($failed?'warning':'success')->send();
+                } catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't sync. Check the registrar account, then try again.")->send(); }
+            });
     }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action

@@ -25,7 +25,13 @@ $sub=static fn(Domain $d,string $label)=>DomainFacts::for($d->fresh())[$label]['
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
 same(['Expires','Registrar','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::REGISTRATION)),'Registration rows in order');
-expect(count(DomainFacts::REGISTRATION)<=10&&count(DomainFacts::BILLING)<=9,'At most ten Registration and nine Billing facts');
+expect(count(DomainFacts::REGISTRATION)<=11&&count(DomainFacts::BILLING)<=9,'At most eleven Registration and nine Billing facts, including optional glue');
+same(false,isset($f['Glue records']),'No staff glue row without records');
+$beforeGlue=$active->fresh()->observation;$glueHost='ns1.'.$active->domain;
+ObservationRecords::save($active->fresh(),['glue'=>['state'=>'partial','records'=>[$glueHost=>'8.8.8.8']]],new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+same([[$glueHost.' 8.8.8.8'],'As of 2026-10-20T15:05:00+00:00'],[$value($active,'Glue records'),$sub($active,'Glue records')],'Staff glue includes host, address and read time');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Glue records')->assertSee($glueHost)->assertSee('8.8.8.8')->assertSee('As of 2026-10-20T15:05:00+00:00');
+$active->fresh()->update(['observation'=>$beforeGlue]);
 same([null,'Ask the customer to add them on the domain page'],[$f['Contacts']['value'],$f['Contacts']['sub']],'Unknown contacts say what to do next');
 same(today()->addDays(120)->format('M j, Y'),$f['Expires']['value'],'Expires date');
 same(['Synthetic registrar','Enom · Test · orders paused'],[$f['Registrar']['value'],$f['Registrar']['sub']],'New accounts start with orders paused');

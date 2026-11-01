@@ -54,7 +54,7 @@ final class OwnerRecords
         }
         $out['glue']=[];
         foreach (array_slice($facts['known_glue']??[],0,50,true) as $host=>$ip) {
-            try { $out['glue'][]=ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$d->domain,'enom'); }
+            try { $out['glue'][]=ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$d->domain,$d->registrar_key); }
             catch (\Throwable) {}
         }
         return $out;

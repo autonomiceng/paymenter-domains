@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
  * A null value is Missing; a row that does not apply is absent. */
 final class DomainFacts
 {
-    public const REGISTRATION=['Expires','Registrar','In registrar account','Contacts','Nameservers','DNS records','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
+    public const REGISTRATION=['Expires','Registrar','In registrar account','Contacts','Nameservers','Glue records','DNS records','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
     public const BILLING=['Customer','Service','Auto-renew','Renewal price','Next invoice','Open invoice'];
     public static function help(): array
     {
@@ -87,7 +87,13 @@ final class DomainFacts
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $records=OwnerRecords::forDomain($d); $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?$unread:(isset($records['srv'])?count($records['srv']).' SRV':null));
+                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?$unread:implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.(ObservationProjection::sections($d)['dns']['at']??''):null])));
+            }
+            $glue=OwnerRecords::forDomain($d)['glue']??[];
+            if ($glue) {
+                $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d);
+                $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d);
+                $f['Glue records']=self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',array_filter([$at?'As of '.$at:null,...$warnings])),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.');
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);

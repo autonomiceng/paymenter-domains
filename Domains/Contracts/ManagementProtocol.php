@@ -12,6 +12,8 @@ abstract class ManagementProtocol
     private ?RequestContext $context = null;
     private ?DomainManagement $engine = null;
     private bool $sent = false;
+    protected array $preparedRecords = [];
+    final public function preparedRecords(): array { $facts=$this->preparedRecords; $this->preparedRecords=[]; return $facts; }
     public function __construct(protected readonly AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange)
     { $this->exchange = new \SensitiveParameterValue($exchange); }
     final public function bindsTo(AccountBinding $binding): bool { return $this->binding->matches($binding); }

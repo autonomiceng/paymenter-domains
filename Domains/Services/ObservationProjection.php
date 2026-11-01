@@ -69,6 +69,7 @@ final class ObservationProjection
         $p['transfer_status']=$transfer->value;
         $p['corrections']=self::corrections($d);
         $p['sections']=self::sections($d);
+        if ($facts?->nameservers) { $p['sections']['nameservers']=self::section($d,['operation_key'=>'observation','at'=>$now->format(DATE_ATOM),'facts'=>['nameservers'=>$facts->nameservers->nameservers]]); }
         $d->update(['observation'=>$p,'last_synced_at'=>$now]);
     }
     public static function sections(Domain $d): array
@@ -100,12 +101,17 @@ final class ObservationProjection
                 $reads[]=['op'=>$op,'read'=>$read];
             }
         }
+        foreach ($d->observation['record_reads']??[] as $read) {
+            if (($read['identity']??null)===ObservationRecords::identity($d) && is_string($read['at']??null) && (!$inventory || $read['at']>=$inventory['at'])) { $reads[]=['op'=>(object)['action'=>$read['action'],'id'=>PHP_INT_MAX],'read'=>$read]; }
+        }
+        $reads=array_values(array_filter($reads,static fn($item)=>is_string($item['read']['at']??null)&&is_array($item['read']['facts']??null)&&is_string($item['read']['operation_key']??null)));
         usort($reads,static fn($a,$b)=>[($a['read']['sequence']??0),$a['read']['at'],$a['op']->id]<=>[($b['read']['sequence']??0),$b['read']['at'],$b['op']->id]);
         foreach ($reads as $item) {
                 $op=$item['op']; $read=$item['read'];
                 $kind=match($op->action) {'privacy_purchase','privacy_renew','privacy_enable','privacy_disable'=>'privacy',
                     'ds_add','ds_delete'=>'ds','glue_add','glue_update','glue_delete'=>'glue',default=>$op->action};
                 if ($kind==='glue') {
+                    $sections['glue_at']=$read['at'];
                     $host=$read['facts']['host']??null; if (!$host) { continue; }
                     if (($read['facts']['ip']??null)===null) { unset($glue[$host]); } else { $glue[$host]=$read['facts']['ip']; }
                 } else { $sections[$kind]=self::section($d, $read); }
