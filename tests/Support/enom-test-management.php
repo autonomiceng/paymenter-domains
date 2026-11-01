@@ -35,7 +35,7 @@ foreach(['domains.enom_writes.management'=>false,'domains.enom_catalogue.enabled
 $write('test_management',['accept'=>false]);$write('test_management',['accept'=>true,'verified'=>true]);try{$ask('auto_renew_off',[]);throw new LogicException('Uncomposed action remains closed');}catch(DomainException){}$write('test_management',['accept'=>true,'verified'=>true]);
 $reset();Auth::setUser($user);$owners=app(OwnedDomains::class);
 $dto=$owners->present($d->fresh());expect(isset($dto->management['nameservers'],$dto->management['lock'],$dto->management['contacts']),'Supported owner forms offered');expect(!isset($dto->management['dns'],$dto->management['srv'],$dto->management['ds'],$dto->management['privacy_purchase']),'DNS default off and uncomposed actions absent');
-Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSeeInOrder(['Setup checklist','DNS, nameservers and contacts','On','Renewal invoices'])->assertDontSee('TEST-SECRET-TOKEN');
+Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSeeInOrder(['Renewals','Domain settings','DNS, nameservers and contacts','On'])->assertDontSee('TEST-SECRET-TOKEN');
 same([],$GLOBALS['enomWire']['forms'],'Owner and staff page views make zero calls');
 $op=$ask('nameservers',['nameservers'=>['ns3.example.com','ns4.example.com']]);$nonce=substr($op->operation_key,strrpos($op->operation_key,':')+1);
 same($op->id,$engine->request($user,$d->id,'nameservers',['nameservers'=>['ns3.example.com','ns4.example.com']],$nonce,$driver)->id,'Duplicate owner intent returns same operation');

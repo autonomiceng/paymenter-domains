@@ -13,7 +13,7 @@ final class ReminderFacts
     {
         $r=self::saved($server);
         $binding=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->value('account_fingerprint');
-        if(self::days($r)===null){return ['label'=>'Reminder emails','value'=>Missing::LABEL,'tone'=>null,'cause'=>"Saved reminder days can't be read. Restore them from a backup.",'action'=>null,'help'=>self::HELP];}
+        if(self::days($r)===null){return ['label'=>'Reminder emails','value'=>Missing::LABEL,'tone'=>null,'cause'=>"Saved reminder days can't be read. Restore them from a backup.",'action'=>null,'help'=>self::HELP,'edit'=>true,'buttons'=>[ReminderAction::make($server)]];}
         $changed=$r&&$r->account_fingerprint!==$binding;
         $on=$r&&$r->enabled&&!$changed;
         $mailOff=config('settings.mail_disable')||trim((string)config('mail.from.address'))==='';

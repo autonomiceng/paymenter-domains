@@ -96,7 +96,7 @@ foreach(['Enom test account','Active','Check balance','Account','Registrar','Eno
 $html=$page->html();
 foreach(['https://cp.enom.com/','Registrars'] as $needle){expect(str_contains($html,$needle),'Account page: '.$needle);}
 foreach(['Server #','Unknown','Enom TEST daily calls','Verified user ID','Retained domains','Environment',"\u{2014}"] as $needle){expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
-// Setup checklist, renewal section and header actions for staff who can change settings.
+// System checks, renewal section and header actions for staff who can change settings.
 ReminderSchema::install();ReminderSchedules::enroll((int)$enom->server_id);
 $admin=staffUser([Staff::VIEW,Staff::POLICY,...array_map([StaffSettingsReview::class,'permission'],array_keys(StaffSettingsReview::ACTIONS))]);
 // Setup buttons show only when they can run: bind a writer that can reach the registrar.
@@ -134,7 +134,7 @@ foreach(['Account','API connection','OK','Test connection','Balance and usage','
     'Orders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails','Reminder schedule',
     '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','More','Edit API credentials','History',
     'System checks','Background worker','Not running','Payment events'] as $needle){$page->assertSee($needle);}
-foreach(['Setup checklist','Connected','Working','View price history'] as $needle){$page->assertDontSee($needle);}
+foreach(['Connected','Working','View price history'] as $needle){$page->assertDontSee($needle);}
 $html=$page->html();
 foreach(['Catalogue acceptance','Account binding','Worker cadence','Native server settings','Registrar setup','(defaults)','Read capacity','Runtime account','Notification safety',
     'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Transfer watch relinks','Start after payment','Change recorded','Confirm'] as $needle){
