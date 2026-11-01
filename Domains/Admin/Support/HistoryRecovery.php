@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,ReconciliationEvidence,StaffSettingsReview as Review,StaffSettingsWrites};
 /** One click on a TEST Enom renewal held by a lost reply: the system can't prove from a lost reply whether Enom finished, so a person
  * lets it read Enom's order history. The saved values then cover this account's later renewals too. Enom registrations can't use it:
- * their read needs a captured order ID (EnomTestReconciliationReader). */
+ * registration history needs its own accepted contract. */
 final class HistoryRecovery
 {
     public const NAME='history_recovery';

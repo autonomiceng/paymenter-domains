@@ -5,8 +5,16 @@ $fixtureEnding = 'example.com';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, Disposition, DriverResult, Evidence, ExpiryPrecision, HistoryAcceptance, RegistrationEvidence, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
-use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances, ReconciliationEvidence, RenewalAuthority};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview, Driver, EnomTestReconciliationReader};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationReconciliation, ReconciliationEvidence, RegistrarRegistry, RenewalAuthority};
+// Exercise the installed reader's gate as well as the underlying history proof.
+$registry = new RegistrarRegistry;
+$registry->register('enom', ['token'], $verify, static function ($binding, $credentials) use ($wire) {
+    $driver = new Driver(new Client($binding, 'account-enom', $credentials['token'], $wire), ['example.com']);
+    return new EnomTestReconciliationReader(new CataloguePreview($driver), $driver);
+});
+$readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
 // Captured acceptance can retain execution facts without an order reference; history must still run.
 [$op, $binding] = $prepare(reservedFixtureName('history.example.com'), 'absent');
 $op = $claims->finish($op, new DriverResult($binding, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged,
