@@ -5,15 +5,18 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use App\Models\Server;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Infolists\Components\TextEntry;
+use Filament\Navigation\NavigationItem;
+use Filament\Pages\Enums\SubNavigationPosition;
 use Filament\Pages\Page;
 use Filament\Panel;
-use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Grid,Components\Group,Components\Html,Components\Section};
-use Filament\Support\Enums\FontFamily;
+use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Html,Components\Text};
+use Filament\Support\Enums\{FontFamily,FontWeight,Width};
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts,StatusMark};
-use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -22,6 +25,8 @@ class RegistrarAccount extends Page
 {
     protected static ?string $slug='registrar-account';
     protected static bool $shouldRegisterNavigation=false;
+    protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
+    protected Width|string|null $maxContentWidth=Sheet::WIDTH;
     #[Locked] public int $account=0;
     public string $reviewStamp='';
     private ?array $status=null;
@@ -33,19 +38,27 @@ class RegistrarAccount extends Page
         abort_unless(Server::where('extension','Domains')->whereKey($account)->exists(),404);
         $this->account=$account;$this->reviewStamp=StaffSettingsReview::stamp($account,null);
     }
-    private function server(): Server { return Server::where('extension','Domains')->findOrFail($this->account); }
+    protected function server(): Server { return Server::where('extension','Domains')->findOrFail($this->account); }
     private function record(): ?Account { return Account::where('server_id',$this->account)->first(); }
     /** @return array{label:string,tone:string,reason:?string} */
     private function status(): array { return $this->status??=RegistrarFacts::status($this->server(),$this->record()); }
     public function getTitle(): string { Staff::requireView(); return (string)$this->server()->name; }
     public function getHeading(): HtmlString
     {
-        $a=$this->record();$status=$this->status();
-        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span>'.e($this->getTitle()).'</span>'
-            .($a&&DemoData::is($a)?DemoData::tag(inline:true)->toHtml():'')
-            .StatusMark::head($status['tone'],$status['label'],'registrar-'.$this->account)->toHtml().'</span>'.RegistrarFacts::STYLE);
+        $a=$this->record();
+        $test=$a&&RegistrarFacts::mode($a)==='Test';
+        return new HtmlString(e($this->getTitle()).($test||($a&&DemoData::is($a))?DemoData::tag(inline:true,test:$test)->toHtml():''));
     }
-    public function getSubheading(): string|Htmlable|null { return RegistrarFacts::reason($this->status()); }
+    public function getSubheading(): string|Htmlable|null
+    { $status=$this->status();return StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$status['reason']); }
+    /** @return list<NavigationItem> */
+    public function getSubNavigation(): array
+    {
+        $id=['account'=>$this->account];$history=$this instanceof RegistrarHistory;
+        try { $url=RegistrarHistory::getUrl($id); } catch (\Throwable) { return []; }
+        return [NavigationItem::make('Overview')->url(RegistrarAccount::getUrl($id))->isActiveWhen(fn()=>!$history),
+            NavigationItem::make('History')->url($url)->isActiveWhen(fn()=>$history)->visible(RegistrarHistory::canAccess())];
+    }
     public function getBreadcrumbs(): array { return [RegistrarSetup::getUrl()=>'Registrars',$this->getTitle()]; }
     protected function afterActionCalled(Action $action): void
     {
@@ -58,126 +71,138 @@ class RegistrarAccount extends Page
     protected function getHeaderActions(): array
     {
         $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
-        $actions=[Action::make('check_balance')->label('Check balance')->visible(RegistrarFacts::connected($this->record(),$this->status()))->action(fn()=>$this->checkBalance())];
-        if (!$this->record()) { return [...$actions,$setup('configure'),$setup('enroll_sandbox')]; }
-        return [...$actions,ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id),\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($id,$this->reviewStamp),
-            Action::make('price_history')->label('View price history')->color('gray')->visible(fn()=>Staff::can(Staff::POLICY))->modalHeading('Price history')
-                ->modalSubmitAction(false)->modalCancelActionLabel('Close')->schema(fn()=>[Html::make(fn()=>TldFacts::historyTable(TldFacts::history($id)))])])
-            ->label('More')->button()->color('gray')->icon('heroicon-m-chevron-down')->iconPosition('after')];
+        if (!$this->record()) { return [$setup('configure'),$setup('enroll_sandbox')]; }
+        return [ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id),\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($id,$this->reviewStamp)])
+            ->label('More')->button()->outlined()->color('gray')->size('sm')->icon('heroicon-m-chevron-down')->iconPosition('after')];
     }
     /** Rebuild the page after a System checks action changed what it shows. */
     private function resetContent(): void { unset($this->cachedSchemas['content']); }
     public function checkBalance(): void { BalanceCheck::run($this->account); }
+    public function checkBalanceAction(): Action
+    { return Sheet::button(Action::make('checkBalance')->label('Check balance')->visible(fn()=>RegistrarFacts::connected($this->record(),$this->status()))->action(fn()=>$this->checkBalance())); }
     public function content(Schema $schema): Schema
     {
         Staff::requireView();$s=$this->server();$a=$this->record();
-        $sections=[Section::make('Account')->schema($this->accountEntries($s,$a))->extraAttributes(['class'=>'domains-facts domains-account'])->columnSpanFull()];
-        $system=AccountChecklist::system();
-        if (Staff::can(PslActions::VIEW)) { $psl=PslActions::row(fn()=>$this->resetContent());if(in_array($psl['tone'],['danger','warning'],true)){$system['failing'][]=$psl;} }
+        $sections=[];$checks=$this->checks();
         if ($a) {
-            $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
-            $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
             $id=(int)$s->id;
+            $rows=array_column([...AccountChecklist::setup($a,$this->status()),...AccountChecklist::renewals($id),...$this->pricing($id),AccountChecklist::whois($a)??[]],null,'label');
+            $pick=fn(string ...$labels)=>array_values(array_filter(array_map(fn(string $label)=>$rows[$label]??null,$labels)));
+            $sections=[Sheet::section('Account',$this->rows('account',[...$this->accountRows($a),...$pick('API connection')]))];
+            if(LiveActivationAction::offered($a)){
+                $sections[]=Sheet::section('Live sales',[Html::make(fn()=>LiveActivationAction::summary($a)),Actions::make([LiveActivationAction::make($a,$this->reviewStamp)])],key:'live_sales');
+            }
+            $funds=RegistrarFacts::connected($a,$this->status())?RegistrarFacts::balance($a)['funds']:null;
+            $sections[]=Sheet::section('Balance and usage',$this->rows('usage',$this->usageRows($s,$a)),after:$funds?[Sheet::link('add_funds','Add funds',$funds,external:true)]:[]);
+            $sections[]=Sheet::section('Sales',$this->rows('sales',$pick('Orders','Registrations','Transfers','Transfers (experimental)','What you sell','TLD prices','Customer pays','Card fee')));
+            $sections[]=Sheet::section('Renewals',$this->rows('renewal',$pick('Renewals','Late renewal','Customer can renew early','Invoice issued','Invoice due','Unpaid hold','Reminder emails','Reminder schedule')));
             $selection=\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::selection($id);$template=$selection['profile'];
             $value=$template?->name??($selection['chosen']?($a->registrar_key==='enom'?'Registrar defaults':'Customer nameservers'):null);
             $entry=MissingEntry::apply(TextEntry::make('new_domain_dns')->label('New domains use')->state($value)->inlineLabel(),cause:$value!==null?null:'Choose an enabled DNS template with Change. Create one under DNS templates first.');
             if($template){$entry->belowContent(implode(', ',$template->nameservers));}
             $entry->hintAction(HelpHint::make(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::HELP));
-            $sections[]=Section::make('Domain settings')->key('domain_settings_'.$id)->schema([Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'new_domain_dns')])->grow(false)])->extraAttributes(['id'=>'switch-template'])->from('md'),
-                TextEntry::make('whois_privacy')->label('WHOIS privacy')->state($a->registrar_key==='enom'?'Not offered. Enom charges for it and '.(\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()?:'this site').' does not sell it yet.':'Free when supported by the TLD.')->inlineLabel()])->columnSpanFull();
-            if(LiveActivationAction::offered($a)){
-                $sections[]=Section::make('Live sales')->key('live_sales')->schema([Html::make(fn()=>LiveActivationAction::summary($a)),Actions::make([LiveActivationAction::make($a,$this->reviewStamp)])])->columnSpanFull();
-            }
-            $renewals=$this->rows('renewal',AccountChecklist::renewals($id),false);
-            $renewals[]=Actions::make([SettingsActions::setup($id,$this->reviewStamp,'renewal_billing'),SettingsActions::setup($id,$this->reviewStamp,'unpaid_hold'),ReminderAction::make($id)]);
-            $sections[]=Group::make([
-                Section::make('Setup checklist')->schema($this->rows('setup',AccountChecklist::setup($a,$this->status())))->columnSpanFull(),
-                Section::make('Renewal invoices and reminders')->schema($renewals)->columnSpanFull(),
-                Section::make('Default pricing')->schema($this->defaultPricing($id))->visible(fn()=>Staff::can(Staff::POLICY))->columnSpanFull(),
-            ])->key('account_'.$id)->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
+            $dnsRow=Sheet::row($entry,[Sheet::button(SettingsActions::setup($id,$this->reviewStamp,'new_domain_dns'))])->extraAttributes(['id'=>'switch-template']);
+            $sections[]=Sheet::section('Domain settings',[$dnsRow,...$this->rows('settings',$pick('DNS, nameservers and contacts','WHOIS privacy'))],key:'domain_settings_'.$id);
+        } else {
+            $sections[]=Sheet::section('Account',$this->rows('account',[self::fact('Registrar',null,'Account not set up yet. Use Connect account.'),self::fact('Domains',(string)Domain::where('server_id',$s->id)->count())]));
         }
-        $checks=$system['failing']?[$this->trace('check',$system['failing'])]:[TextEntry::make('all_good')->hiddenLabel()->state('All good')->icon('heroicon-m-check-circle')->iconColor('success')];
-        if ($system['passing']) { $checks[]=Section::make('Details')->schema([$this->trace('pass',$system['passing'])])->collapsible()->collapsed()->compact(); }
-        $rail=Section::make('System checks')->description(count($system['passing']).' of '.(count($system['passing'])+count($system['failing'])).' OK')->schema($checks)->key('system_checks');
-        // The rail drops under the sheet on narrow screens.
-        return $schema->components([Grid::make(['default'=>1,'xl'=>3])->columnSpanFull()->schema([Group::make($sections)->columnSpan(['default'=>1,'xl'=>2]),$rail->columnSpan(1)])]);
+        $steps=array_map(fn(array $r)=>['label'=>$r['label'],'value'=>$r['value']??Missing::LABEL,'tone'=>$r['tone'],'detail'=>$r['cause'],'help'=>$r['help'],'buttons'=>$r['buttons']??[]],[...$checks['failing'],...$checks['passing']]);
+        $ok=count($checks['passing']).' of '.count($steps).' OK';
+        return $schema->components([Sheet::split($sections,[Sheet::section('System checks',[Sheet::trace($steps)],key:'system_checks',after:[Text::make($ok)])],'account_'.$this->account)]);
     }
-    /** The account's default pricing and the TLDs that use it. Saving publishes those TLDs. */
-    private function defaultPricing(int $id): array
+    /** System checks for this account, failing first. @return array{failing:list<array>,passing:list<array>} */
+    public function checks(): array
     {
+        $system=AccountChecklist::system();$a=$this->record();
+        if (Staff::can(PslActions::VIEW)) { $psl=PslActions::row(fn()=>$this->resetContent());if(in_array($psl['tone'],['danger','warning'],true)){$system['failing'][]=$psl;} }
+        if ($a) {
+            $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
+            $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
+        }
+        return $system;
+    }
+    /** A value with no fix of its own. */
+    private static function fact(string $label,?string $value,string|Htmlable|null $cause=null,?string $help=null): array
+    { return ['label'=>$label,'value'=>$value,'tone'=>null,'cause'=>$cause,'action'=>null,'help'=>$help]; }
+    /** The account's default pricing, and how many TLDs use it. Saving publishes those TLDs. */
+    private function pricing(int $id): array
+    {
+        if(!Staff::can(Staff::POLICY)){return [];}
         try { $rule=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::describe((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule($id)); }
         catch (\Throwable) { $rule=null; }
-        $tlds=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::bound(\Paymenter\Extensions\Servers\Domains\Models\Tld::query())->where('server_id',$id)->where('use_default_rule',true)->orderBy('tld')->pluck('tld');
-        $used=$tlds->isEmpty()?'No TLDs use it yet.':'Used by '.$tlds->count().' '.($tlds->count()===1?'TLD':'TLDs').($tlds->count()<=3?': '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($tlds->all()):'').'.';
-        $entry=MissingEntry::apply(TextEntry::make('default_pricing')->label('Customer pays')->state($rule)->inlineLabel(),cause:$rule===null?"Saved default pricing can't be read. Use Edit default pricing.":null);
-        if ($rule!==null) { $entry->belowContent(new HtmlString(e($used).SettingsActions::tldListLink($id))); }
-        try { $feeText=CardFee::describe(CardFee::read($id)).' per payment'; }
-        catch (\Throwable) { $feeText=null; }
-        $feeEntry=MissingEntry::apply(TextEntry::make('card_fee')->label('Card fee')->state($feeText)->inlineLabel(),cause:$feeText===null?"Saved card fee can't be read. Use Edit card fee.":null);
-        if ($feeText!==null) { $feeEntry->hintAction(HelpHint::make('Used for estimated profit on What you sell, and by pricing that adds a percentage to cost and card fee.')); }
-        return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md'),
-            Flex::make([$feeEntry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'card_fee')])->grow(false)])->from('md')];
+        $used=TldFacts::bound(Tld::query())->where('server_id',$id)->where('use_default_rule',true)->count();
+        try { $fee=CardFee::describe(CardFee::read($id)).' per payment'; }
+        catch (\Throwable) { $fee=null; }
+        return [[...self::fact('Customer pays',$rule===null?null:ucfirst($rule),$rule===null?"Saved default pricing can't be read. Use Edit.":($used===0?'No TLDs use it yet.':'Used by '.$used.' '.($used===1?'TLD':'TLDs'))),'action'=>'default_rule'],
+            [...self::fact('Card fee',$fee,$fee===null?"Saved card fee can't be read. Use Edit.":null,'Used for estimated profit on the Price list, and by pricing that adds a percentage to cost and card fee.'),'action'=>'card_fee']];
     }
-    /** Rows on one line, each with its tone: a list to screen readers, plain rows without a skin. */
-    private function trace(string $prefix,array $rows): Group
-    {
-        return Group::make(array_map(fn(array $row,mixed $component)=>Group::make([$component])
-            ->extraAttributes(['class'=>'domains-trace-item','role'=>'listitem','data-beco-tone'=>StatusMark::tone($row['tone'])??'ok']),$rows,$this->rows($prefix,$rows,false,false)))
-            ->extraAttributes(['class'=>'domains-trace','role'=>'list']);
-    }
-    /** Fact rows with an optional button each: Missing shows in danger with its cause. */
-    private function rows(string $prefix,array $rows,bool $buttons=true,bool $inline=true): array
+    /** Rows with a value and their action column. A value of On or Off gets a switch. Missing shows in danger with its cause. */
+    private function rows(string $prefix,array $rows): array
     {
         $out=[];
         foreach ($rows as $i=>$r) {
-            $entry=MissingEntry::apply(TextEntry::make($prefix.'_'.$i)->label($r['label'])->state($r['value'])->inlineLabel($inline),cause:$r['value']===null?$r['cause']:null,color:$r['tone']==='success'?null:$r['tone']);
-            if ($r['value']!==null&&$r['cause']!==null) { $entry->belowContent($r['tone']==='danger'||$r['tone']==='warning'?RegistrarFacts::tone($r['cause'],$r['tone']):$r['cause']); }
-            if ($r['tone']==='success') { $entry->icon('heroicon-m-check-circle')->iconColor('success'); }
-            if ($r['help']) { $entry->hintAction(HelpHint::make($r['help'])); }
-            if (in_array($r['value'],['On','Off'],true)) { $out[]=$this->switchRow($prefix.'_'.$i,$r); }
-            elseif (!empty($r['buttons'])) { $out[]=Flex::make([$entry,Actions::make($r['buttons'])->grow(false)])->from('md'); }
-            elseif ($buttons&&$r['action']) { $out[]=Flex::make([$entry,Actions::make([SettingsActions::setup($this->account,$this->reviewStamp,$r['action'])])->grow(false)])->from('md'); }
-            else { $out[]=$entry; }
+            $key=$prefix.'_'.$i;$entry=$this->entry($key,$r);
+            $switch=in_array($r['value'],['On','Off'],true)&&(!empty($r['buttons'])||$r['action']||$r['cause']);
+            if ($switch) { $out[]=$this->switchRow($entry,$r);continue; }
+            $out[]=Sheet::row($entry,$this->side($r));
         }
         return $out;
     }
-    /** The switch comes first, so a section's switches line up. One that can't be used here shows its state only, and says why. */
-    private function switchRow(string $key,array $r): Flex
+    /** A row's action column. Rows that change a saved value say Edit. */
+    private function side(array $r): array
     {
-        $on=$r['value']==='On';$action=$r['buttons'][0]??($r['action']?SettingsActions::setup($this->account,$this->reviewStamp,$r['action']):null);
-        $live=(bool)$action?->isVisible();$help=trim(($r['help']??'').($live?'':' '.$r['cause']));
-        $entry=TextEntry::make($key)->label($r['label'])->state($r['cause'])->color('gray');
-        if ($help!=='') { $entry->hintAction(HelpHint::make($help)); }
-        return Flex::make([$live?Actions::make([OnOffSwitch::apply($action,$on,$r['label'])])->grow(false):Html::make(OnOffSwitch::html($on,$r['label']))->grow(false),$entry]);
+        $edit=$r['edit']??false;
+        if (!empty($r['buttons'])) { return $edit?[Sheet::edit($r['buttons'][0],$r['label'])]:$r['buttons']; }
+        if (!$r['action']) { return []; }
+        return [$edit||!in_array($r['action'],['probe','configure'],true)?Sheet::edit($this->setup($r['action']),$r['label']):Sheet::button($this->setup($r['action']))];
     }
-    private function accountEntries(Server $s, ?Account $a): array
+    private function setup(string $name): Action { return SettingsActions::setup($this->account,$this->reviewStamp,$name); }
+    private function entry(string $key,array $r): TextEntry
     {
-        $fact=static fn(string $key,string $label,?string $value,?string $cause=null)=>MissingEntry::apply(TextEntry::make($key)->label($label)->state($value)->inlineLabel(),cause:$cause);
-        if (!$a) { return [$fact('registrar','Registrar',null,'Account not set up yet. Use Connect account.'),TextEntry::make('domains')->label('Domains')->state((string)\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count())->inlineLabel()]; }
-        $entries=[$fact('registrar','Registrar',TldFacts::registrar($a->registrar_key)),$fact('mode','Mode',RegistrarFacts::mode($a))];
-        if ($a->registrar_key==='enom') { $entries[]=$fact('api_user','API user',RegistrarFacts::apiUser($a),'Identity not verified yet. Use Edit API credentials.')->fontFamily(FontFamily::Mono); }
+        $word=in_array($r['value'],['On','Off'],true);
+        $entry=MissingEntry::apply(TextEntry::make($key)->label($r['label'])->state($r['value']),cause:$r['value']===null?$r['cause']:null);
+        if ($r['value']!==null&&$r['tone']!==null&&!$word) { Sheet::state($entry,$r['tone'],'registrar-'.$this->account.'-'.$key); }
+        if ($r['value']!==null&&$r['cause']!==null) { $entry->belowContent(is_string($r['cause'])&&in_array($r['tone'],['danger','warning'],true)?RegistrarFacts::tone($r['cause'],$r['tone']):$r['cause']); }
+        if ($r['help']) { $entry->hintAction(HelpHint::make($r['help'])); }
+        if ($r['mono']??false) { $entry->fontFamily(FontFamily::Mono); }
+        if ($r['copy']??false) { $entry->copyable(); }
+        if ($r['money']??false) { $entry->weight(FontWeight::SemiBold)->extraAttributes(['class'=>'domains-money']); }
+        return $entry;
+    }
+    /** One that can't be used here shows its state only, and says why under the value. */
+    private function switchRow(TextEntry $entry,array $r): Flex
+    {
+        $on=$r['value']==='On';$action=$r['buttons'][0]??($r['action']?$this->setup($r['action']):null);
+        return Sheet::row($entry,$action?->isVisible()?[OnOffSwitch::apply($action,$on,$r['label'],false)]:Html::make(OnOffSwitch::html($on,$r['label'],false)));
+    }
+    private function accountRows(Account $a): array
+    {
+        $rows=[self::fact('Registrar',TldFacts::registrar($a->registrar_key)),self::fact('Mode',RegistrarFacts::mode($a),null,RegistrarFacts::MODE_HELP)];
+        if ($a->registrar_key==='enom') { $rows[]=[...self::fact('API user',$user=RegistrarFacts::apiUser($a),$user===null?'Identity not verified yet. Use Edit.':null),'action'=>'configure','edit'=>true,'mono'=>true]; }
         if ($a->registrar_key==='enom'&&$a->environment==='live') {
             try { $fingerprint=CatalogueAcceptances::binding($a)->fingerprint; } catch (\Throwable) { $fingerprint=null; }
             // Operators copy it into domains.enom_live.accounts (release-runbook.md).
-            $entries[]=$fact('fingerprint','Live account ID',$fingerprint,"Saved credentials can't be read. Use Edit API credentials.")->fontFamily(FontFamily::Mono)->copyable();
+            $rows[]=[...self::fact('Live account ID',$fingerprint,$fingerprint===null?"Saved credentials can't be read. Use More, then Edit API credentials.":null),'mono'=>true,'copy'=>true];
         }
+        return $rows;
+    }
+    private function usageRows(Server $s,Account $a): array
+    {
+        $rows=[];
         if (RegistrarFacts::connected($a,$this->status())) {
             $b=RegistrarFacts::balance($a);
-            $below=$b['value']===null?[e($b['cause'])]:array_filter([e('Checked '.$b['checked']),$b['low']?RegistrarFacts::warn('Low balance'):null]);
-            $below[]=RegistrarFacts::fundsLink($b['funds']);
-            // The fix for a Missing balance is the Check balance header action.
-            $entries[]=MissingEntry::apply(TextEntry::make('balance')->label('Balance')->state($b['value'])->inlineLabel(),cause:$b['value']===null?$b['cause']:null)->belowContent(new HtmlString(implode(' · ',$below)));
-            $entries[]=TextEntry::make('due')->label('Due in 30 days')->state($b['due'])->inlineLabel()->hintAction(HelpHint::make(RegistrarFacts::DUE_HELP))
-                ->belowContent($b['unreadable']>0?RegistrarFacts::warn(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE_RENEWAL):($b['without_cost']>0?RegistrarFacts::warn($b['without_cost'].' without a cost'):null));
+            // The fix for a Missing balance is the Check balance button on this row.
+            $checked=$b['value']===null?$b['cause']:new HtmlString(implode('. ',array_filter([Sheet::moment((string)$b['checked'],'Checked')->toHtml(),$b['low']?RegistrarFacts::warn('Low balance')->toHtml():null])));
+            $rows[]=[...self::fact('Balance',$b['value'],$checked),'money'=>true,'buttons'=>[$this->checkBalanceAction()]];
+            $rows[]=self::fact('Due in 30 days',$b['due'],$b['unreadable']>0?RegistrarFacts::warn(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE_RENEWAL):($b['without_cost']>0?RegistrarFacts::warn($b['without_cost'].' without a cost'):null),RegistrarFacts::DUE_HELP);
         }
-        $entries[]=TextEntry::make('domains')->label('Domains')->state((string)\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count())->inlineLabel();
-        if ($calls=RegistrarFacts::calls($a)) {
-            $entry=MissingEntry::apply(TextEntry::make('calls')->label('API calls, last 24 hours')->state($calls['value'])->inlineLabel(),cause:$calls['value']===null?$calls['sub']:null,color:$calls['tone']);
-            if ($calls['value']!==null&&$calls['sub']) { $entry->belowContent($calls['sub']); }
-            if ($calls['help']) { $entry->hintAction(HelpHint::make($calls['help'])); }
-            $entries[]=\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::row($entry,$a,$this->reviewStamp);
-        }
-        $entries[]=$fact('last_sync','Last sync',RegistrarFacts::lastSync($s),Missing::fills('within a day'))->hintAction(HelpHint::make('Last successfully saved price read for this account. Use Sync prices in What you sell to get current costs.'));
-        return $entries;
+        $filter=['filters'=>['server_id'=>['value'=>(string)$s->id]]];
+        try { $domains=DomainResource::getUrl('index',$filter); } catch (\Throwable) { $domains=null; }
+        $rows[]=[...self::fact('Domains',(string)Domain::where('server_id',$s->id)->count()),'buttons'=>[Sheet::link('view_domains','View domains',$domains)]];
+        $requests=RegistrarFacts::requests((int)$s->id);
+        try { $url=OperationResource::getUrl('index',['filters'=>['server_id'=>['values'=>[(string)$s->id]]]]); } catch (\Throwable) { $url=null; }
+        $rows[]=[...self::fact('Registrar requests',(string)$requests['total'],$requests['review']>0?$requests['review'].' '.($requests['review']===1?'needs':'need').' review':null),'buttons'=>[Sheet::link('view_requests','View requests',$url)]];
+        if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact('API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
+        return $rows;
     }
 }
