@@ -10,7 +10,7 @@ final class ManagedPublicEnrollment
     public function reconcile(int $id,int $owner,int $now,?int $defaultProfile=null,bool $transferOnly=false): ?bool
     {
         $seed=Domain::whereKey($id)->where('user_id',$owner)->first();if (!$seed) { return null; }
-        $peek=WatchSource::where('user_id',$owner)->where('registrable_name',$seed->domain)->where('state','watch')->orderBy('id')->limit(100)->get();
+        $peek=WatchSource::where('user_id',$owner)->where('registrable_name',$seed->domain)->whereIn('state',['watch','managed_link'])->orderBy('id')->limit(100)->get();
         if ($transferOnly && $peek->isEmpty() && !WatchName::where('user_id',$owner)->where('canonical_name',$seed->domain)->whereIn('state',['active','paused'])->exists()) { return false; }
         return DB::transaction(function()use($seed,$peek,$id,$owner,$now,$defaultProfile,$transferOnly):?bool {
             $changed=false;
@@ -23,12 +23,14 @@ final class ManagedPublicEnrollment
             $candidate=WatchName::where('user_id',$owner)->where('canonical_name',$d->domain)->first();
             $config=ManagedPublicConfig::whereKey($id)->lockForUpdate()->first();
             if ($config && (int)$config->user_id!==$owner) { return null; }
-            $profileId=$config?$config->profile_id:($candidate?->ns_profile_id??$defaultProfile);
-            $profile=$profileId?WatchProfile::whereKey($profileId)->lockForUpdate()->first():null;
             $watch=$candidate?WatchName::whereKey($candidate->id)->lockForUpdate()->firstOrFail():null;
             if ($watch && $watch->ns_profile_id!==$candidate->ns_profile_id) { throw new \DomainException('Managed predecessor changed.'); }
             $sources=WatchSource::where('user_id',$owner)->where('registrable_name',$d->domain)->where('state','watch')->orderBy('id')->limit(100)->lockForUpdate()->get();
-            if ($sources->pluck('id')->all()!==$peek->pluck('id')->all()) { throw new \DomainException('Managed sources changed.'); }
+            if ($sources->pluck('id')->all()!==$peek->where('state','watch')->pluck('id')->values()->all()) { throw new \DomainException('Managed sources changed.'); }
+            $allSources=WatchSource::whereKey($peek->pluck('id'))->orderBy('id')->lockForUpdate()->get();
+            [$proven,$expected,$proof]=ManagedDnsSetup::proven($l,$watch,$config,$allSources,$maps);
+            $profile=$config?->profile_id?WatchProfile::whereKey($config->profile_id)->lockForUpdate()->first():$proven;
+            if(!ManagedDnsSetup::usable($profile)){$profile=null;}
             foreach($sources as $source) {
                 $s=$l['services']->firstWhere('id',$source->service_id);$map=$maps[$source->map_id]??null;$o=$l['orders']->firstWhere('id',$s?->order_id);
                 $props=$l['relatedProperties']->where('model_id',$s?->id)->where('key',$map?->property_key);
@@ -45,11 +47,12 @@ final class ManagedPublicEnrollment
             }
             if (!$config) {
                 $changed=true;
-                $config=ManagedPublicConfig::create(['domain_id'=>$id,'user_id'=>$owner,'profile_id'=>$profile?->id,'expected_dns'=>$watch?->expected_dns,
+                $config=ManagedPublicConfig::create(['domain_id'=>$id,'user_id'=>$owner,'profile_id'=>null,'expected_dns'=>$watch?->expected_dns,
                     'notice_preferences'=>array_diff_key($watch?->notice_preferences??[],['expiry'=>true]),'origin_watch_id'=>$watch?->id,
                     'dns_episode'=>$watch?['predecessor_watch_id'=>$watch->id,'predecessor_observation_id'=>$watch->last_observation_id]:null,
                     'reason'=>'managed_enrollment']);
             }
+            if($config->profile_id===null && $proven){ManagedDnsSetup::assign($config,$proven,$expected,null,$proof,$now);$changed=true;}
             $watchChanged=$watch && in_array($watch->state,['active','paused'],true);
             if ($watchChanged) {
                 $changed=true;$before=$watch->revision;
@@ -69,6 +72,11 @@ final class ManagedPublicEnrollment
             $retired=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation','<>',$d->authority_generation)->whereNull('retired_at')->update(['retired_at'=>$now,'claim'=>null,'lease_until'=>null,'safe_code'=>'target_changed']);
             $changed=$changed || $retired>0;
             if ($transferOnly) { return $changed; } // Relink does not activate public observation.
+            if(!$profile){
+                DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)
+                    ->update(['claim'=>null,'lease_until'=>null,'safe_code'=>'dns_not_configured','attempts'=>0,'backoff_until'=>null]);
+                return $changed;
+            }
             foreach(['delegation','points']as$kind) {
                 $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->where('kind',$kind);
                 $inserted=$q->insertOrIgnore(['domain_id'=>$id,'user_id'=>$owner,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'kind'=>$kind,
@@ -76,7 +84,7 @@ final class ManagedPublicEnrollment
                 $changed=$changed || $inserted>0;
                 $w=$q->lockForUpdate()->first();
                 if ((int)$w->user_id!==$owner || $w->account_fingerprint!==$d->account_fingerprint) { throw new ManagedPublicIdentityChanged(); }
-                if ($w->safe_code==='awaiting_acceptance' || $w->retired_at!==null) {
+                if (in_array($w->safe_code,['awaiting_acceptance','dns_not_configured','profile_unavailable'],true) || $w->retired_at!==null) {
                     $changed=true;$q->update(['safe_code'=>'ready','retired_at'=>null,'due_at'=>$now,'domain_revision'=>$d->confirmed_revision,'config_revision'=>$config->revision,
                         'profile_id'=>$profile?->id,'profile_revision'=>$profile?->revision,'claim'=>null,'lease_until'=>null]);
                 }

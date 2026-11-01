@@ -53,8 +53,18 @@ final class WatchMaintenance
         }
         $local=json_decode($dispatch->data??'{}',true)['local_failures']??[];
         foreach($local as $stage=>$since){if($now>=$since+86400){$family=$stage==='products'?'products':'local';$failed[$family]=min($failed[$family]??$since,$since);}}
-        if ($failed) { return ['outage'=>true,'reason'=>'checks_unsuccessful','family'=>array_key_first($failed),'families'=>array_keys($failed),'since'=>min($failed)]; }
+        if ($failed) { return ['outage'=>true,'reason'=>'checks_unsuccessful','family'=>array_key_first($failed),'families'=>array_keys($failed),'since'=>min($failed),'resolver_error'=>$this->resolverError(array_keys($failed))]; }
         return ['outage'=>false,'reason'=>'current','since'=>$progress?:null];
+    }
+    /** Only normalized codes are displayed, never exception messages or resolver URLs. */
+    private function resolverError(array $families): ?string
+    {
+        foreach(['resolver_failed','deadline']as$code){
+            if(in_array('managed_dns',$families,true) && ManagedPublicReconciliation::eligible()->where('attempts','>',0)->where('safe_code',$code)->exists()){return $code;}
+            if(in_array('watch_dns',$families,true) && DB::table('domains_watch_work as w')->join('domains_watch_names as n','n.id','=','w.watch_id')
+                ->where('n.state','active')->whereNull('n.managed_domain_id')->whereIn('w.kind',['delegation','points'])->where('w.attempts','>',0)->where('w.safe_code',$code)->exists()){return $code;}
+        }
+        return null;
     }
     private static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':'the first run';}
     /** The Domain monitoring notice: one line, its tone and its resolver settings action, when it can help. Normal states have none;
@@ -64,6 +74,10 @@ final class WatchMaintenance
         $since=self::date($health['since']??null);
         if ($health['reason']==='checks_unsuccessful') {
             $families=$health['families']??[$health['family']??'local'];
+            if(!array_diff($families,['watch_dns','managed_dns']) && in_array($health['resolver_error']??null,['resolver_failed','deadline'],true)){
+                $cause=$health['resolver_error']==='deadline'?'The resolver did not reply in time.':'The resolver request failed.';
+                return ['text'=>"DNS checks can't reach the resolver. Recent error: ".$cause.' Retrying automatically.','tone'=>'danger','action'=>'settings'];
+            }
             $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks','products'=>'Domain products'][$f]??'Domain discovery',$families)));
             $products=in_array('products',$families,true);$local=in_array('local',$families,true);
             $action=!$local&&!$products&&array_intersect(['watch_dns','managed_dns'],$families)?'settings':null;

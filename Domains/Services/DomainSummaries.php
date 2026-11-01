@@ -64,6 +64,7 @@ final class DomainSummaries
         if ($c->staff && $c->domains) { throw new \LogicException('Staff watch context cannot include managed domains.'); }
         $uid=$c->owner;
         $dids=array_keys($c->domains);$wids=array_keys($c->watches);
+        $setupIds=$dids?ManagedDnsSetup::eligible($now)->whereIn('domains_domains.id',$dids)->pluck('domains_domains.id')->all():[];
         $dns=['watch'=>$this->latest(WatchDnsObservation::class,'watch_id',$wids,$c->staff?null:$uid),'managed'=>$this->latest(ManagedPublicObservation::class,'domain_id',$dids,$uid)];
         $registry=$this->latest(WatchRegistryObservation::class,'watch_id',$wids,$c->staff?null:$uid);
         $work=['watch'=>DB::table('domains_watch_work')->whereIn('watch_id',$wids)->get()->groupBy('watch_id')->all(),
@@ -107,7 +108,8 @@ final class DomainSummaries
                     $fresh[$family]=['checkedAt'=>$attempt?->started_at,'stale'=>!$familyCurrent,'partial'=>$attempt?->partial??true,'nextCheck'=>$job?->due_at];
                 }
                 $signals['partial']=$signals['dns']['stale']||$signals['website']['stale']||$signals['email']['stale'];
-                $keys=DnsSignalLabels::projection($signals);$states=[];$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$issue=null;$waits=null;
+                $keys=DnsSignalLabels::projection($signals);$states=[];
+                if($kind==='managed' && in_array($id,$setupIds,true) && !ManagedDnsSetup::usable($c->profiles[$c->configs[$id]->profile_id??0]??null)){$states[]='domain.dns.not_configured';}$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$issue=null;$waits=null;
                 if ($kind==='watch') {
                     $registryRows=$registry[$id]??collect();$r=$registryRows->first();$good=$registryRows->firstWhere('result','facts');$j=$jobs->firstWhere('kind','expiry');$match=$r && ($registryStamp=$c->stamp($kind,$id,'registry')) && hash_equals($registryStamp,$r->facts['presentation_stamp']??'');
                     $until=$r?->valid_until;if ($r && WatchRegistryChecks::urgent($r->facts['expiry']??null,$now)) { $until=min((int)$until,$r->started_at+43200); }
