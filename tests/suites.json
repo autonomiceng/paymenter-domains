@@ -37,6 +37,7 @@
     "tests/conversion-app-policy-test.php",
     "tests/watch-notice-plan-test.php",
     "tests/status-sets-test.php",
+    "tests/owned-style-test.php",
     "tests/status-tones-test.php",
     "tests/settings-refusal-test.php",
     "tests/render-artifacts-test.php",
