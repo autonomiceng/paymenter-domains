@@ -13,6 +13,7 @@ final class EnomLiveActivation
 {
     public const KEY='domains_live_activation';
     public const FEATURES=['registration','renewal','management','transfer'];
+    private const PRICE_MISSING='Costs and prices Missing. Choose what you sell, Sync prices, then check the enabled TLDs and registrar on the TLD list.';
     public static function defaults(Account $a): array
     {
         $b=CatalogueAcceptances::binding($a);$out=[];
@@ -143,8 +144,16 @@ final class EnomLiveActivation
         elseif($projection['missing']!==null){$missing[]=$projection['missing'];}
         return array_values(array_unique($missing));
     }
-    /** Validate each curated, enabled action/term through the existing publication and exact-price checks. No price writes. */
-    private static function prices(Account $a,AccountBinding $b,array $features,\DateTimeImmutable $now): array
+    /** Display only: retain readable rows beside named failures. Never used by Activate's strict check. */
+    private static function priceReview(Account $a,AccountBinding $b,array $features,\DateTimeImmutable $now): array
+    {
+        $costs=[];$failures=[];$missing=null;
+        try{$costs=self::prices($a,$b,$features,$now,$failures);}catch(\DomainException $e){$missing=$e->getMessage();}
+        if($failures!==[]){$missing=self::PRICE_MISSING;}
+        return compact('costs','failures','missing');
+    }
+    /** Strict by default. Only the display supplies a failure list to continue after a bad action/term. No price writes. */
+    private static function prices(Account $a,AccountBinding $b,array $features,\DateTimeImmutable $now,?array &$failures=null): array
     {
         try{
             $lock=DB::transactionLevel()>0;$accepted=CatalogueAcceptances::load($b,$lock);$rows=[];$counts=['registration'=>0,'transfer'=>0];$rules=new PricingRules;$prices=new PriceCatalogue($rules);
@@ -161,12 +170,23 @@ final class EnomLiveActivation
                 $needed=($features['renewal']??false)&&$t->renew_enabled;
                 foreach(['registration'=>'register','transfer'=>'transfer'] as $feature=>$action){$needed=$needed||(($features[$feature]??false)&&$policy?->{$action.'_enabled'}&&$t->{$action.'_enabled'});}
                 if(!$needed){continue;}
+                $ruleError=null;
                 if(!$lock){
-                    $rule=$t->use_default_rule?($default??=$rules->defaultRule((int)$a->server_id))
-                        :$rules->rule($t,fee:$t->pricing_mode==='markup_fee_percent'?($fee??=CardFee::read((int)$a->server_id)):null);
-                    $hash=hash('sha256',json_encode($rule,JSON_THROW_ON_ERROR));
+                    try{
+                        $rule=$t->use_default_rule?($default??=$rules->defaultRule((int)$a->server_id))
+                            :$rules->rule($t,fee:$t->pricing_mode==='markup_fee_percent'?($fee??=CardFee::read((int)$a->server_id)):null);
+                        $hash=hash('sha256',json_encode($rule,JSON_THROW_ON_ERROR));
+                    }catch(\Throwable $e){if($failures===null){throw $e;}$ruleError=$e;}
                     $evidence=($saved->get($t->tld)??collect())->keyBy(static fn(Price $p)=>$p->action.':'.$p->term);
                 }
+                $attempt=static function(string $action,int $term,\Closure $validate)use(&$failures,$t,$ruleError):void {
+                    try{if($ruleError!==null){throw $ruleError;}$validate();}
+                    catch(\Throwable $e){
+                        if($failures===null){throw $e;}
+                        $failures[]=['tld'=>$t->tld,'action'=>$action,'term'=>$term,
+                            'note'=>'Costs or prices Missing. Check the TLD price list and pricing rule; Sync prices if costs are missing.'];
+                    }
+                };
                 $read=static fn(string $action,int $term)=>$lock
                     ?$prices->current((int)$a->server_id,$b->fingerprint,$t->tld,$action,$term,'USD',$now,true,$t)
                     :PriceCatalogue::currentEvidence($evidence->get($action.':'.$term),$hash,$now);
@@ -174,22 +194,26 @@ final class EnomLiveActivation
                     if(!($features[$feature]??false)||!$policy?->{$action.'_enabled'}||!$t->{$action.'_enabled'}){continue;}
                     $terms=$action==='register'?range($t->min_years,$t->max_years):[1];
                     foreach($terms as $term){
-                        if($lock){PublicationEligibility::require($t,$action,$term,true);}
-                        else{PublicationEligibility::requireEvidence($t,$action,$term,$accepted,$evidence->get('renew:1'),$evidence->get($action.':'.$term));}
-                        $p=$read($action,$term);
-                        $renew=$read('renew',1);
-                        $rows[]=self::costRow($t->tld,$action,$term,$p,$renew);$counts[$feature]++;
+                        $attempt($action,$term,static function()use($lock,$t,$action,$term,$accepted,$evidence,$read,&$rows,&$counts,$feature):void {
+                            if($lock){PublicationEligibility::require($t,$action,$term,true);}
+                            else{PublicationEligibility::requireEvidence($t,$action,$term,$accepted,$evidence->get('renew:1'),$evidence->get($action.':'.$term));}
+                            $p=$read($action,$term);
+                            $renew=$read('renew',1);
+                            $rows[]=self::costRow($t->tld,$action,$term,$p,$renew);$counts[$feature]++;
+                        });
                     }
                 }
                 if(($features['renewal']??false)&&$t->renew_enabled){
-                    if(!($accepted->endings[$t->tld]['renewal_safe']??false)||!in_array(1,$accepted->endings[$t->tld]['renew']??[],true)){throw new \DomainException;}
-                    $p=$read('renew',1);
-                    $rows[]=self::costRow($t->tld,'renew',1,$p);
+                    $attempt('renew',1,static function()use($accepted,$t,$read,&$rows):void {
+                        if(!($accepted->endings[$t->tld]['renewal_safe']??false)||!in_array(1,$accepted->endings[$t->tld]['renew']??[],true)){throw new \DomainException;}
+                        $p=$read('renew',1);
+                        $rows[]=self::costRow($t->tld,'renew',1,$p);
+                    });
                 }
             }
-            foreach($counts as $feature=>$count){if(($features[$feature]??false)&&!$count){throw new \DomainException;}}
+            foreach($counts as $feature=>$count){if($failures===null&&($features[$feature]??false)&&!$count){throw new \DomainException;}}
             return $rows;
-        }catch(\Throwable){throw new \DomainException('Costs and prices Missing. Choose what you sell, Sync prices, then check the enabled TLDs and registrar on the TLD list.');}
+        }catch(\Throwable){throw new \DomainException(self::PRICE_MISSING);}
     }
     private static function costRow(string $tld,string $action,int $term,PriceSnapshot $price,?PriceSnapshot $renew=null): array
     {
@@ -242,8 +266,7 @@ final class EnomLiveActivation
         $details[]='Balance '.($balance?->amount??'Missing: use Check balance').' '.($balance?->currency??'USD').'. '.EnomLiveCalls::facts($b);
         $billing=RenewalBillingSettings::read((int)$a->server_id);
         $details[]='Renewal invoices '.$billing['issue_days'].' days before expiry, due '.$billing['due_days'].' days before. Renewals also enable scheduled invoices and customer early renewals. Late renewal has a separate account switch.';
-        $costs=[];$missing=null;
-        try{$costs=self::prices($a,$b,$features,app(Clock::class)->now());}catch(\DomainException $e){$missing=$e->getMessage();}
+        $review=self::priceReview($a,$b,$features,app(Clock::class)->now());$costs=$review['costs'];$missing=$review['missing'];
         $counts=['register'=>0,'transfer'=>0,'renew'=>0];$min=$max=null;$exceptions=[];
         foreach($costs as $row){
             $counts[$row['action']]++;
@@ -252,9 +275,10 @@ final class EnomLiveActivation
             }
             if($row['note']!==null){$exceptions[$row['tld']]=['tld'=>$row['tld'],'note'=>$row['note']];}
         }
+        foreach(['registration'=>'register','transfer'=>'transfer'] as $feature=>$action){if(($features[$feature]??false)&&!$counts[$action]){$missing=self::PRICE_MISSING;}}
         return ['text'=>'Activate the selected Live features. Enom takes domain costs from this account’s balance.',
             'help'=>implode("\n",$details),'costs'=>$costs,'counts'=>$counts,'tlds'=>count(array_unique(array_column($costs,'tld'))),
-            'range'=>$min===null?null:[PricingRule::decimal($min,4),PricingRule::decimal($max,4)],'exceptions'=>array_values($exceptions),
+            'range'=>$min===null?null:[PricingRule::decimal($min,4),PricingRule::decimal($max,4)],'exceptions'=>array_values($exceptions),'failures'=>$review['failures'],
             'missing'=>self::readiness($a,$features,['missing'=>$missing])];
     }
 }

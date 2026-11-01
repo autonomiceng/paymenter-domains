@@ -306,7 +306,25 @@ $changed->update(['hold_reason'=>null,'retail'=>'1.00','eligibility'=>[...$chang
 $warning=$activationClass::summary($la->fresh(),['registration'=>true,'renewal'=>false,'management'=>false,'transfer'=>false]);
 same('xyz',$warning['exceptions'][0]['tld'],'A below-cost renewal is a visible named exception');
 expect(!$priceMissing($warning['missing'])&&$warning['exceptions'][0]['note']!=='','Below-cost renewal stays billable with an exception note');
-
+// Mixed review: readable costs and a below-cost warning survive another TLD's missing renewal.
+$bad=Price::where('server_id',$live->id)->where('tld','scaleab')->where('action','renew')->sole();
+$bad->update(['hold_reason'=>'unknown_price','revision'=>$bad->revision+1]);
+$mixedFeatures=['registration'=>true,'renewal'=>true,'management'=>false,'transfer'=>false];
+$mixed=$activationClass::summary($la->fresh(),$mixedFeatures);
+same(1196,count($mixed['costs']),'Only the two unreadable action rows are omitted from the mixed review');
+same(['register'=>598,'transfer'=>0,'renew'=>598],$mixed['counts'],'Readable action counts remain available');
+same(['10.0000','10.0000'],$mixed['range'],'Readable costs still have a range');
+expect(in_array('scaleaa',array_column($mixed['costs'],'tld'),true),'An ordinary valid TLD remains in the review');
+same('xyz',$mixed['exceptions'][0]['tld'],'The below-cost TLD remains a visible exception beside missing prices');
+same(['scaleab','scaleab'],array_column($mixed['failures'],'tld'),'Every failed action names its TLD');
+same(['register','renew'],array_column($mixed['failures'],'action'),'Registration and renewal failures are distinguished');
+same([1,1],array_column($mixed['failures'],'term'),'Failed action terms are retained');
+expect($priceMissing($mixed['missing']),'A partial display does not report price readiness');
+$mixedHtml=view('domains::admin.live-activation',['summary'=>$mixed])->render();
+foreach(['.scaleaa','.xyz: Below cost','.scaleab register (1 year)','.scaleab renew (1 year)','Sync prices if costs are missing.'] as $text){
+    expect(str_contains($mixedHtml,$text),'Mixed cost review renders '.$text);
+}
+expect($priceMissing(DB::transaction(fn()=>$activationClass::problems($la->fresh(),$mixedFeatures))),'Activate independently refuses the missing cost after a partial display');
 
 config(['app.url'=>'http://domains-tests.invalid','domains.enom_identity.environment'=>'test']);
 if($failures!==[]){throw new \RuntimeException(implode("; ",$failures));}

@@ -15,6 +15,6 @@ writeRenderArtifact($argv[1].'/pricing-599.html',str_replace('</head>','<style>'
 $summary=['text'=>'Activate the selected Live features.','help'=>'OFFLINE synthetic cost review.','missing'=>[],
     'costs'=>array_map(static fn($row)=>['tld'=>$row['tld'],'action'=>'register','term'=>1,'cost'=>'10.0000','price'=>'13.99',
         'renewCost'=>'10.0000','renewPrice'=>'13.99','note'=>null],$rows),
-    'tlds'=>599,'counts'=>['register'=>599,'transfer'=>0,'renew'=>0],'range'=>['10.0000','10.0000'],'exceptions'=>[]];
+    'tlds'=>599,'counts'=>['register'=>599,'transfer'=>0,'renew'=>0],'range'=>['10.0000','10.0000'],'exceptions'=>[],'failures'=>[]];
 writeRenderArtifact($argv[1].'/activation-599.html','<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>'.$base.'</style></head><body>'.view('domains::admin.live-activation',compact('summary'))->render().'</body></html>');
 $nativeSuccessful=true;

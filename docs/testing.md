@@ -5,6 +5,7 @@
 Using the pinned native environment and existing Playwright setup below, render real Blade and run Chromium:
 
 ```sh
+PRICING_RENDER_DIR=$(mktemp -d "${TMPDIR:?Set TMPDIR}/pricing-render.XXXXXX")
 suite-slot --quick python3 scripts/render-reminders.py "$PRICING_RENDER_DIR" tests/Support/pricing-scale-render.php
 suite-slot --quick node scripts/check-pricing-filter.cjs "$PRICING_RENDER_DIR"
 ```

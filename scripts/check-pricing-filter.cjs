@@ -35,7 +35,9 @@ async function main() {
                 await input.fill(query); await waitCount(expected);
                 assert.equal(await visible.count(), expected);
                 assert.equal(await page.locator('#domains-price-empty').isVisible(), expected === 0);
-                cases.push({ width, query, visible: expected, count: await count.textContent() });
+                const displayedCount = await count.textContent();
+                assert.equal(displayedCount, `${expected} of 599 TLDs${query ? ` (${expected} matching)` : ''}`);
+                cases.push({ width, query, visible: expected, count: displayedCount });
             }
             await page.getByRole('button', { name: 'Show all', exact: true }).click(); await waitCount(599);
             assert.equal(await count.textContent(), '599 of 599 TLDs');
