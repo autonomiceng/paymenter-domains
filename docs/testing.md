@@ -1,61 +1,66 @@
 # Verification
 
+## Explicit offline pricing filter check
+
+Using the pinned native environment and existing Playwright setup below, render real Blade and run Chromium:
+
+```sh
+PRICING_RENDER_DIR=$(mktemp -d "${TMPDIR:?Set TMPDIR}/pricing-render.XXXXXX")
+suite-slot --quick python3 scripts/render-reminders.py "$PRICING_RENDER_DIR" tests/Support/pricing-scale-render.php
+suite-slot --quick node scripts/check-pricing-filter.cjs "$PRICING_RENDER_DIR"
+```
+
+This checks 599 source rows, popular order, filtering, counts, empty results, Show all and no-script fallback
+at desktop and phone widths, plus the scrollable activation cost table. It blocks network requests and saves
+screenshots and a receipt. It does not establish installed-theme or live activation acceptance.
+
 ## Explicit offline button layout check
 
-This optional browser check is separate from the native runner: ordinary CI tests do not require a browser.
-It requires an already installed Node.js, Playwright package (tested with 1.60.0), and Chromium/Chrome.
-No dependency or browser is downloaded. Set `NODE_PATH` to an external installed `node_modules` directory
-when Playwright is not on Node's module path, and `CHROME_BIN` to an existing browser executable.
-With the same pinned native/PHP environment as below, choose a fresh output directory under `TMPDIR`:
+Optional browser checks are separate from the native runner; ordinary CI needs no browser. They use existing
+Node.js, Playwright (tested with 1.60.0) and Chromium/Chrome, downloading nothing. Set `NODE_PATH` to external
+installed `node_modules` if needed, and `CHROME_BIN` to an existing browser executable. Use the pinned
+native/PHP environment below and a fresh output directory under `TMPDIR`:
 
 ```sh
 suite-slot --quick python3 scripts/render-reminders.py "$BUTTON_RENDER_DIR" tests/Support/button-layout-render.php tests/domain-page-render.php
 suite-slot --quick node scripts/check-button-layout.cjs "$BUTTON_RENDER_DIR"
 ```
 
-The first command verifies the pinned read-only native dependency and renders real Blade with synthetic DTOs.
-The second blocks network requests and application scripts, measuring text ranges on both axes: Transfer at
-320px with 14px/32px text, wrapped height/padding, and the real Renewal card's Pay invoice link on one line
-at default size in both modes at 320/360/768/1280px. It compares ordinary Register/Transfer/Retry geometry against
-the previous inline-flex/normal-wrap/1.25rem rules. Artifacts and `button-layout-receipt.json` remain in the output directory, including
-failed measurements. This minimal shell check does not establish installed-theme or browser-zoom acceptance.
+The renderer verifies the pinned read-only native dependency and renders real Blade with synthetic DTOs.
+The browser blocks network/application scripts and measures both text axes: Transfer at 320px with 14px/32px text,
+wrapped height/padding, and the real Renewal card's Pay invoice link on one line at default size in both modes at 320/360/768/1280px.
+It compares Register/Transfer/Retry geometry with prior inline-flex/normal-wrap/1.25rem rules. Output artifacts and `button-layout-receipt.json` include failures; this minimal shell proves neither installed-theme nor browser-zoom acceptance.
 
 Run `python3 scripts/bootstrap.py --download` once, then `scripts/test.py` fully offline.
-PHP **8.4.27**, Debian `8.4.27-1~deb13u1`, Linux x86_64 is pinned by archive SHA-256.
-PHP archive SHA-256 hashes were computed from Debian security downloads on 2026-10-22.
-Native runs also load gd and bcmath. ICU remains pinned at `76.1-4` with its existing hash;
-its archive was downloaded again and verified without changing the pin.
-Native GD requires the host `libgd3` package (`libgd.so.3`) and its dependencies; these are
-not bundled in the pinned PHP archives. Native bootstrap verifies GD loads and retains the
-loader error on failure. Provider-only bootstrap does not load or require GD.
-Every run verifies and re-extracts archives; missing/corrupt cache fails without downloading.
-`PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives from another cache without changing it.
-Python 3, dpkg-deb and compatible system libraries are required; no system PHP or Composer runs.
+PHP **8.4.27** (Debian `8.4.27-1~deb13u1`, Linux x86_64) is pinned by archive SHA-256;
+hashes came from Debian security downloads on 2026-10-22. ICU `76.1-4` was re-downloaded
+and verified against its unchanged pin/hash. Native runs load gd and bcmath; GD needs host
+`libgd3` (`libgd.so.3`) and dependencies, which are not bundled. Native bootstrap verifies
+GD loads and retains loader errors; provider-only bootstrap neither loads nor requires GD.
+Every run verifies/re-extracts archives; missing/corrupt caches fail without downloading.
+`PHP_RUNTIME_ARCHIVE_CACHE` copies verified archives without changing the source cache.
+Python 3, dpkg-deb and compatible system libraries are required; system PHP/Composer never run.
 
 ## Suites and receipts
 
-See [scheduling and fail-fast receipts](test-scheduling.md) for concurrency, memory
-reservations, ordering and per-command measurements.
+See [scheduling and fail-fast receipts](test-scheduling.md) for concurrency, memory reservations, ordering and measurements.
 
 `tests/suites.json` registers provider, contracts, native, UI, runner and package categories.
-All `*-test.php` and `test_*.py` paths must be registered exactly once and exist.
-Detected `*-test.cjs` files are refused until a JavaScript runner is implemented.
-Lint includes every runtime/test PHP file. Unknown, missing or explicit unimplemented suites fail.
-Default runs execute all implemented categories except native when no dependency is supplied;
-empty categories are reported as unimplemented. `--suite` selects categories; receipts disclose
-omissions. No UI suite exists yet. Synthetic provider tests do not establish provider acceptance.
-Native `test_client_scripts.py` requires Node.js on PATH. It renders the shared client script
-and every including view with real Blade, then syntax-checks each inline script with `node --check`.
+All `*-test.php` and `test_*.py` paths must exist and be registered exactly once; `*-test.cjs`
+files are refused until a JavaScript runner exists. Lint covers every runtime/test PHP file.
+Unknown, missing or explicitly unimplemented suites fail. Default runs execute all implemented
+categories, omitting native without a dependency. Empty categories are unimplemented; no UI suite exists.
+`--suite` selects categories and receipts disclose omissions. Synthetic tests do not prove provider acceptance.
+Native `test_client_scripts.py` needs Node.js on PATH, renders the shared client script and every
+including view with real Blade, then checks each inline script with `node --check`.
 
-Clean environment and PHP settings disable URL streams, cURL execution, sockets, process launch
-and mail. Exception arguments are hidden by default; redaction cases explicitly enable them.
-Synthetic namespaced cURL functions inspect configuration without sockets. These are runtime
-guards, not an OS sandbox. SQLite is the only loaded PDO driver in native runs; no database sockets.
-Failure, timeout (60 seconds), or changed runtime bytes stops the run. Timeout termination
-kills the command process group, including nested children, before cleaning up the fixture. Private
-`/tmp/domains-tests-*/receipt.json` records command exits, partial outputs, hashes, omitted and
-unimplemented categories. Setup failures also leave a receipt; final dependency guard failures preserve command results. Laravel suites must explicitly
-mark completion because framework exception rendering can otherwise return status zero.
+Clean environment/PHP settings disable URL streams, cURL execution, sockets, process launch and mail.
+Exception arguments are hidden except in explicit redaction cases; synthetic namespaced cURL inspects
+configuration without sockets. These are runtime guards, not an OS sandbox. Native PDO loads only SQLite.
+Failure, timeout (60 seconds), or changed runtime bytes stops the run; timeout kills the command process
+group and nested children before fixture cleanup. Private `/tmp/domains-tests-*/receipt.json` records
+exits, partial outputs, hashes and omitted/unimplemented categories, including setup failures. Final dependency
+guard failures preserve results. Laravel suites must mark completion: framework error rendering can return zero.
 
 ## Offline native fixture
 
@@ -66,43 +71,34 @@ PHP_RUNTIME_ARCHIVE_CACHE=/path/to/verified/php-archives \
 PAYMENTER_TEST_APP=/canonical/path/to/paymenter-1.5.9 scripts/test.py
 ```
 
-Native archives may be seeded with `python3 scripts/bootstrap.py --native`; downloads still
-require the separate `--download` flag. The dependency guard pins Paymenter v1.5.9 commit
-`ee729f7d99ac18942625b79f3f93d8d8b21255e8` and lock SHA-256
+Seed native archives with `python3 scripts/bootstrap.py --native`; downloading requires the separate `--download` flag.
+The dependency guard pins Paymenter v1.5.9 commit `ee729f7d99ac18942625b79f3f93d8d8b21255e8` and lock SHA-256
 `fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be`.
-It checks every upstream tracked byte against that commit, rejects .env/cached config/symlinks,
-and checks installed package names/versions/dist references against the lock. The sole permitted
-source edit is the exact app.version development→1.5.9 substitution; the disposable export uses
-original upstream bytes. Vendor byte fingerprints prove source immutability during the run,
-not independent archive authentication of every dependency. No source dependency is written.
+It verifies every upstream tracked byte and installed package name/version/dist reference, rejecting .env/cached config/symlinks.
+The sole permitted source edit is exact app.version development→1.5.9 substitution; disposable exports use original upstream bytes.
+Vendor fingerprints prove runtime source immutability, not independent archive authentication of every dependency. Source dependencies are never written.
 
-The runner copies source and vendor to a private disposable fixture, uses synthetic environment
-values, migrates an in-memory database, blocks stray HTTP, and removes the copy afterward.
-Native coverage includes upstream schema/model/transaction/HTTP guards, manually invoked Domains
-foundation migrations and standalone retained-schema verification, global reservation/rollback,
-and synthetic account/site/credential binding guards. There is no Domains entry point, billing,
-production registrar identity verifier or installed extension. These are fixture-only checks.
-SQLite alone cannot establish MariaDB locking, concurrent checkout or financial correctness.
-CI uses cached pinned PHP and runs standalone categories; native checks need an explicitly supplied
-local dependency and are not claimed by CI. No dependency checkout/download/bootstrap is automatic.
+The runner copies source/vendor to a private disposable fixture, uses synthetic environment values,
+migrates an in-memory database, blocks stray HTTP and removes the copy afterward. Coverage includes upstream
+schema/model/transaction/HTTP guards, manually invoked Domains foundation migrations, standalone retained-schema
+verification, global reservation/rollback and synthetic account/site/credential binding guards. These fixture-only
+checks have no Domains entry point, billing, production registrar identity verifier or installed extension; SQLite cannot prove MariaDB locking, concurrent checkout or financial correctness.
+CI runs standalone categories with cached pinned PHP, not native checks: supply their local dependency explicitly. No dependency checkout/download/bootstrap is automatic.
 
 ## Packaging and limits
 
-Package support is adapted from Enom `d2c55e2` scripts/build.py and synthetic package tests.
-Synthetic entry points exercise deterministic ZIP/member SHA manifests, license equality,
-canonical output, no overwrite, private-file/path and symlink refusal. The actual foundation
-**cannot build a release ZIP**; final native upload/install/reinstall evidence is deferred.
-Runner/native fixtures adapt that revision's scripts/test.py, tests/test_runner.py,
-tests/paymenter-test-app.php and tests/enom-native-app.php, preserving MIT notices.
+Package support adapts Enom `d2c55e2` scripts/build.py and synthetic package tests: deterministic ZIP/member SHA
+manifests, license equality, canonical output, no overwrite, private-file/path and symlink refusal. The foundation
+**cannot build a release ZIP**; native upload/install/reinstall evidence is deferred. Runner/native fixtures adapt that
+revision's scripts/test.py, tests/test_runner.py, tests/paymenter-test-app.php and tests/enom-native-app.php with MIT notices preserved.
 
 Passing offline tests never establish real writes, sandbox acceptance, transfer completion,
 SMTP delivery, browser accessibility, installed ZIP compatibility or production pricing.
 See [API gates](design/parity.md). Provider/environment acceptance requires separate authority.
 
-Enom protocol tests (slice 10) require DOM in standalone/provider runs as well as native runs.
-The already pinned XML archive is now part of the base offline runtime; `php-test` loads DOM
-without loading the other native fixture extensions. Missing archives still fail without download.
-Its archive hash was computed from the Debian security download described above.
+Enom protocol tests (slice 10) require DOM in standalone/provider and native runs. The pinned XML archive belongs
+to the base offline runtime; `php-test` loads DOM without other native extensions. Missing archives fail without
+download; the archive hash came from the Debian security download described above.
 
 Enom named read normalization is exercised by `tests/enom-read-test.php` with synthetic XML and
 a synthetic accepted-binding factory. Price absence differs from failed reads; ownership, expiry
@@ -732,39 +728,32 @@ bounded batches; the cap bounds local decryption and response work, with no prov
 
 ### Focused iteration and timing evidence
 
-Select focused tests from changed source dependencies as well as changed test files.
-Follow direct assertions, imports/requires, shared fixtures and their transitive
-consumers, then include source-wide scanners of the changed bytes. An unchanged test
-can still be the regression check for a runtime change. `--only` does not expand
-dependencies. For adoption and registrar seams, use the [source triggers and complete
-focused command](testing-coverage/adoption-focused.md), including the unchanged
-`tests/adoption-preview-test.php` mid-read change matrix.
-For native marker identity and public enrollment, use the [native identity focused
-command](testing-coverage/native-identity-focused.md), including shared transfer and
-conversion consumers and separately recorded MariaDB scenarios.
+Select focused tests from changed files and source dependencies: direct assertions, imports/requires,
+shared fixtures/transitive consumers and source-wide scanners of changed bytes. Unchanged tests can catch
+runtime regressions; `--only` does not expand dependencies. For adoption/registrar seams, use the
+[source triggers and complete focused command](testing-coverage/adoption-focused.md), including the unchanged
+`tests/adoption-preview-test.php` mid-read matrix. For native marker identity/public enrollment, use the
+[native identity focused command](testing-coverage/native-identity-focused.md), including shared transfer/conversion
+consumers and separately recorded MariaDB scenarios.
 
-The PR boundary still runs `python3 scripts/test.py` with the pristine native dependency
-and pinned runtime cache configured. Use `--only` for exact registered test paths during
-focused iteration, for example:
+The PR boundary runs `python3 scripts/test.py` with the pristine native dependency and pinned runtime cache.
+For focused iteration, `--only` selects exact registered test paths:
 
 ```sh
 python3 scripts/test.py --only tests/test_runner.py tests/test_native.py
 python3 scripts/test.py --only tests/test_installed_package_previous.py
 ```
 
-The second command requires `PAYMENTER_TEST_APP`, just like the native suite. Selection
-uses scheduled plan order, deduplicates paths and never adds implicit lint. Unknown paths,
-invalid manifests and mixing `--only` with `--suite` fail. Category selection remains
-available through `--suite`. A focused pass is not full boundary acceptance: receipts
-record `only_tests`, `omitted_tests` and selected/omitted categories. `complete` describes
-the selected plan, including its dependency and runtime guards.
+The second command requires `PAYMENTER_TEST_APP`, like the native suite. Selection follows scheduled plan
+order, deduplicates paths and adds no implicit lint. Unknown paths, invalid manifests or mixing `--only`
+with `--suite` fail; `--suite` still selects categories. Focused passes are not full boundary acceptance:
+receipts record `only_tests`, `omitted_tests` and selected/omitted categories. `complete` covers the selected
+plan and its dependency/runtime guards.
 
-Every command, including lint, prints a JSON timing row with its command index,
-execution `seconds` and integrity `guard_seconds`; indexed stdout/stderr files remain
-unchanged. Receipts also record setup, command scheduling and final-guard stage durations
-in `timings`. Its `run` value includes command execution and guards, excluding setup,
-receipt writing and cleanup. Parallel command/guard totals are summed worker time,
-not elapsed wall time. Measure full wall time around the runner separately.
+Every command, including lint, prints a JSON timing row with command index, execution `seconds` and integrity
+`guard_seconds`; indexed stdout/stderr files are unchanged. Receipt `timings` records setup, command scheduling
+and final guards; `run` includes execution/guards but excludes setup, receipt writing and cleanup. Parallel
+command/guard totals sum worker time, not elapsed wall time; measure full wall time around the runner separately.
 
 `native-paid-baseline-test.php` is the single entrypoint for the shared paid-processing matrix.
 

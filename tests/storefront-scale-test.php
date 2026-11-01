@@ -91,6 +91,7 @@ foreach (['/domains', '/domains/register', '/domains/pricing'] as $url) {
     } finally { $measuring = false; }
     echo $url.' scale queries: '.$count."\n";
     if ($count > 64) { $failures[] = $url.': '.$count; }
+    if ($url === '/domains/pricing') { same(599, storefrontDom($html)->query('//tbody[@id="domains-price-rows"]/tr')->length, 'All prices stay in server HTML without script'); }
     if ($url === '/domains') { same(false, $view->getData()['transfersOffered'], 'No transfer link after all TLD transfers are turned off'); }
     else {
         same(599, count($view->getData()[$url === '/domains/register' ? 'endings' : 'rows']), 'Every offered registration remains visible');

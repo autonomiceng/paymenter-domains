@@ -28,7 +28,9 @@ $seed=static function(string $ending,?callable $change=null)use($t,$base):Tld{
 };
 $seed('fresh');
 $seed('stale',static function(Price $p)use($now):bool{$p->fresh_until=$now;return true;});
+expect(str_contains($preview(),': .com, .fresh, .stale.'),'Three TLD names remain visible');
 $seed('missing',static fn(Price $p):bool=>false);
+expect(str_contains($preview(),': .com, .fresh, .missing and 1 more.'),'Four TLDs use a bounded name sample');
 $seed('norenew',static fn(Price $p):bool=>$p->action!=='renew');
 $seed('future',static function(Price $p)use($now):bool{$p->observed_at=$now->modify('+1 second');return true;});
 $seed('nocost',static function(Price $p):bool{if($p->action==='renew'){$p->wholesale=null;}return true;});
@@ -43,14 +45,14 @@ $seed('foreign');DB::table('domains_prices')->where('server_id',$t->server_id)->
 $eur=$base->first()->replicate();$eur->currency='EUR';$eur->fresh_until=$now;$eur->save();
 DB::table('domains_prices')->where('server_id',$tlds[1]->server_id)->update(['fresh_until'=>$now]);
 $outside=$tlds[1]->replicate();$outside->tld='outside';$outside->use_default_rule=true;$outside->save();
-$expected='9 TLDs use the account default: .com, .excluded, .foreign, .fresh, .future, .missing, .nocost, .norenew, .stale. Saving publishes their new prices. Costs are missing for .foreign, .future, .missing, .nocost, .norenew. Their prices stay the same until you sync prices.';
+$expected='9 TLDs use the account default: .com, .excluded, .foreign and 6 more. Saving publishes their new prices. Costs are missing for .foreign, .future, .missing and 2 more. Their prices stay the same until you sync prices.';
 $actual=$preview();echo 'Follower Price SELECTs (nine followers): '.count($selects)."\n";
 same(1,count($selects),'Nine followers still use one Price SELECT');
 same($expected,$actual,'Batched preview retains ordering, exclusions, renewal requirements and saved costs');
 foreach(['growing','more','largest'] as $ending){$seed($ending);}
 $text=$preview();same(1,count($selects),'Twelve followers still use one Price SELECT');
 expect(str_starts_with($text,'12 TLDs use the account default:'),'Follower count grows');
-expect(str_ends_with($text,' Costs are missing for .foreign, .future, .missing, .nocost, .norenew. Their prices stay the same until you sync prices.'),'Growing the preview preserves the waiting list');
+expect(str_ends_with($text,' Costs are missing for .foreign, .future, .missing and 2 more. Their prices stay the same until you sync prices.'),'Growing the preview preserves the waiting list');
 // Null means query normally; an explicitly empty preload must stay empty and never fall back to SQL.
 $selects=[];$evaluating=true;
 try{tldRefusal(fn()=>PriceCatalogue::requireCosts($t,$now,collect()),'Costs required before publication.');}
