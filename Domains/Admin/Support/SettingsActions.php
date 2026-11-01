@@ -104,7 +104,7 @@ final class SettingsActions
                 };
                 $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))===null?'Enter prices to see what customers pay.':'Customer pays: '.PricingRule::describe($r))->key('formula');
                 if($name==='override'){$fields[]=\Filament\Schemas\Components\Html::make(fn($get)=>self::preview($tld,$entered($get)))->key('preview');}
-                else{$fields[]=\Filament\Schemas\Components\Text::make(fn()=>self::followers($server))->key('followers');}
+                else{$fields[]=\Filament\Schemas\Components\Html::make(fn()=>new \Illuminate\Support\HtmlString(e(self::followers($server)).self::tldListLink($server)))->key('followers');}
             }
             if($name==='card_fee'){
                 $fee=self::cached(static function()use($server):array{try{return CardFee::read($server);}catch(\Throwable){return CardFee::DEFAULT;}});
@@ -284,6 +284,13 @@ final class SettingsActions
         if($missing){$html.='<p style="margin-top:.5rem;color:rgb(220 38 38)">Some costs are missing. Use Sync prices on the TLD list first. Saving now changes nothing.</p>';}
         return new \Illuminate\Support\HtmlString($html);
     }
+    /** Link only when the current panel registers the TLD list. */
+    public static function tldListLink(int $server): string
+    {
+        try{$url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server]]]);}
+        catch(\Symfony\Component\Routing\Exception\RouteNotFoundException){return '';}
+        return ' <a class="fi-link" href="'.e($url).'">View TLDs</a>';
+    }
     /** Which TLDs a default pricing change publishes to, and which of them will wait for a price sync. */
     private static function followers(int $server): string
     {
@@ -295,8 +302,8 @@ final class SettingsActions
             ->whereIn('tld',$tlds->pluck('tld'))->where('currency','USD')->orderBy('id')->get()->groupBy('tld');
         $now=now()->toDateTimeImmutable();
         $waiting=$tlds->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireCosts($t,$now,$prices->get($t->tld,collect()));return false;}catch(\Throwable){return true;}});
-        $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.$tlds->map(fn($t)=>'.'.$t->tld)->implode(', ').'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
-        return $text.($waiting->isEmpty()?'':' Costs are missing for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices.');
+        $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($tlds->pluck('tld')->all()).'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
+        return $text.($waiting->isEmpty()?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting->pluck('tld')->all()).'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices.');
     }
     /** Notification text after a pricing or card fee change. */
     private static function published(array $summary,string $name): string

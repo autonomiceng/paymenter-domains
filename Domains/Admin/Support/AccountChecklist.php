@@ -112,7 +112,7 @@ final class AccountChecklist
         try { $endings=array_keys(CatalogueAcceptances::load($binding)->endings); } catch (\Throwable) { $endings=[]; }
         sort($endings);
         try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
-        return [...self::row('What you sell',$endings?implode(', ',array_map(fn($e)=>'.'.$e,$endings)):null,null,$endings?null:'Choose the TLDs you sell.',null,'The TLDs customers can buy from this account.'),
+        return [...self::row('What you sell',$endings?\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($endings):null,null,$endings?null:'Choose the TLDs you sell.',null,'The TLDs customers can buy from this account.'),
             'buttons'=>[Action::make('what_you_sell_'.$a->server_id)->label($endings?'Change':'Choose what you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
     }
     private static function prices(Account $a): array

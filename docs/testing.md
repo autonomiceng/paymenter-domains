@@ -1,5 +1,18 @@
 # Verification
 
+## Explicit offline pricing filter check
+
+Using the pinned native environment and existing Playwright setup below, render real Blade and run Chromium:
+
+```sh
+suite-slot --quick python3 scripts/render-reminders.py "$PRICING_RENDER_DIR" tests/Support/pricing-scale-render.php
+suite-slot --quick node scripts/check-pricing-filter.cjs "$PRICING_RENDER_DIR"
+```
+
+This checks 599 source rows, popular order, filtering, counts, empty results, Show all and no-script fallback
+at desktop and phone widths, plus the scrollable activation cost table. It blocks network requests and saves
+screenshots and a receipt. It does not establish installed-theme or live activation acceptance.
+
 ## Explicit offline button layout check
 
 This optional browser check is separate from the native runner: ordinary CI tests do not require a browser.

@@ -99,9 +99,9 @@ class RegistrarAccount extends Page
         try { $rule=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::describe((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule($id)); }
         catch (\Throwable) { $rule=null; }
         $tlds=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::bound(\Paymenter\Extensions\Servers\Domains\Models\Tld::query())->where('server_id',$id)->where('use_default_rule',true)->orderBy('tld')->pluck('tld');
-        $used=$tlds->isEmpty()?'No TLDs use it yet.':'Used by '.$tlds->count().' '.($tlds->count()===1?'TLD':'TLDs').': '.$tlds->map(fn($t)=>'.'.$t)->implode(', ').'.';
+        $used=$tlds->isEmpty()?'No TLDs use it yet.':'Used by '.$tlds->count().' '.($tlds->count()===1?'TLD':'TLDs').($tlds->count()<=3?': '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($tlds->all()):'').'.';
         $entry=MissingEntry::apply(TextEntry::make('default_pricing')->label('Customer pays')->state($rule)->inlineLabel(),cause:$rule===null?"Saved default pricing can't be read. Use Edit default pricing.":null);
-        if ($rule!==null) { $entry->belowContent($used); }
+        if ($rule!==null) { $entry->belowContent(new HtmlString(e($used).SettingsActions::tldListLink($id))); }
         try { $feeText=CardFee::describe(CardFee::read($id)).' per payment'; }
         catch (\Throwable) { $feeText=null; }
         $feeEntry=MissingEntry::apply(TextEntry::make('card_fee')->label('Card fee')->state($feeText)->inlineLabel(),cause:$feeText===null?"Saved card fee can't be read. Use Edit card fee.":null);

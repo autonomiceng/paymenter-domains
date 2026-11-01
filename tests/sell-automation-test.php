@@ -263,6 +263,51 @@ expect(!in_array('xyz',array_column(app(Storefront::class)->endings(),'tld'),tru
 $ready=Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::summary($la->fresh(),['registration'=>true,'renewal'=>false,'management'=>false,'transfer'=>false]);
 expect(!str_contains(implode(' ',$ready['missing']),'Costs and prices Missing'),'Activate can recognize system-prepared prices and seller');
 same(false,$la->fresh()->processing_enabled,'Preparation never turns orders on');
+// Native model/settings reads are the regression; a pure validator cannot detect catalogue N+1 queries.
+$activationClass=Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::class;
+$scaleNames=['xyz'];
+foreach(range('a','z') as $left){foreach(range('a','z') as $right){$scaleNames[]='scale'.$left.$right;if(count($scaleNames)===599){break 2;}}}
+$accepted=CatalogueAcceptances::load($lb);$scaleEndings=[];
+foreach($scaleNames as $ending){$scaleEndings[$ending]=$accepted->endings['xyz'];}
+$accepted=CatalogueAcceptances::save($lb,$accepted->revision,$scaleEndings);
+$templates=Price::where('server_id',$live->id)->get();
+foreach($templates as $price){$price->eligibility=[...$price->eligibility,'catalogue_revision'=>$accepted->revision];$price->revision++;$price->save();}
+$activationQueries=0;$activationMeasuring=false;$priceReads=0;
+DB::listen(static function($query)use(&$activationQueries,&$activationMeasuring,&$priceReads):void{
+    if($activationMeasuring){$activationQueries++;if(str_contains($query->sql,'"domains_prices"')){$priceReads++;}}
+});
+$measureActivation=static function(int $size)use($activationClass,$la,&$activationQueries,&$activationMeasuring,&$priceReads):int{
+    $activationQueries=$priceReads=0;$activationMeasuring=true;
+    try{$summary=$activationClass::summary($la->fresh(),['registration'=>true,'renewal'=>false,'management'=>false,'transfer'=>false]);}
+    finally{$activationMeasuring=false;}
+    same($size,$summary['tlds'],'Every enabled TLD appears in the cost review');
+    same($size,$summary['counts']['register'],'Registration term count follows the catalogue');
+    same(1,$priceReads,'Summary and readiness share one batched price read');
+    expect(!str_contains(implode(' ',$summary['missing']),'Costs and prices Missing'),'Batched evidence still validates');
+    echo 'Activation '.$size.' TLDs: '.$activationQueries.' queries'."\n";
+    return $activationQueries;
+};
+$smallQueries=$measureActivation(1);
+foreach(array_slice($scaleNames,1) as $offset=>$ending){
+    $copy=$lt->replicate();$copy->tld=$ending;$copy->save();
+    foreach($templates as $price){$copyPrice=$price->replicate();$copyPrice->tld=$ending;$copyPrice->save();}
+    SalesPolicy::withPolicyWrite(fn()=>SalesPolicy::create(['tld'=>$ending,'server_id'=>$live->id,'registrar_key'=>'enom',
+        'account_fingerprint'=>$lb->fingerprint,'revision'=>1,'register_enabled'=>true,'transfer_enabled'=>false]));
+    if($offset===1){same($smallQueries,$measureActivation(3),'Three-TLD query count stays flat');}
+}
+same($smallQueries,$measureActivation(599),'599-TLD query count stays flat');
+// A display snapshot never survives a later readiness check, including the locked Activate path.
+$changed=Price::where('server_id',$live->id)->where('tld','xyz')->where('action','renew')->sole();
+$changed->update(['hold_reason'=>'unknown_price','revision'=>$changed->revision+1]);
+$priceMissing=static fn(array $problems):bool=>str_contains(implode(' ',$problems),'Costs and prices Missing');
+expect($priceMissing($activationClass::summary($la->fresh(),['registration'=>true,'renewal'=>false,'management'=>false,'transfer'=>false])['missing']),'A new render detects changed renewal cost');
+expect($priceMissing(DB::transaction(fn()=>$activationClass::problems($la->fresh(),['registration'=>true]))),'Locked readiness independently detects a cost changed after display');
+$changed->update(['hold_reason'=>null,'retail'=>'1.00','eligibility'=>[...$changed->eligibility,'staff_alert'=>'below_cost'],'revision'=>$changed->revision+1]);
+$warning=$activationClass::summary($la->fresh(),['registration'=>true,'renewal'=>false,'management'=>false,'transfer'=>false]);
+same('xyz',$warning['exceptions'][0]['tld'],'A below-cost renewal is a visible named exception');
+expect(!$priceMissing($warning['missing'])&&$warning['exceptions'][0]['note']!=='','Below-cost renewal stays billable with an exception note');
+
+
 config(['app.url'=>'http://domains-tests.invalid','domains.enom_identity.environment'=>'test']);
 if($failures!==[]){throw new \RuntimeException(implode("; ",$failures));}
 echo "Automatic sales passed.\n";$nativeSuccessful=true;

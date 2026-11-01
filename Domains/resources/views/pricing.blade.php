@@ -7,6 +7,8 @@
         $last = array_pop($terms);
         return implode(', ', $terms).' or '.$last.' years';
     };
+    $popular = ['com' => 0, 'net' => 1, 'org' => 2];
+    usort($rows, static fn($a, $b) => ($popular[$a['tld']] ?? 3) <=> ($popular[$b['tld']] ?? 3) ?: strcmp($a['tld'], $b['tld']));
     $showTerms = collect($rows)->contains(fn($row) => $termRange($row['terms']) !== '1 year');
     $longerTerms = collect($rows)->contains(fn($row) => collect($row['terms'])->contains(fn($term) => $term > 1));
 @endphp
@@ -38,6 +40,12 @@
 
         <section class="domains-panel" aria-labelledby="domains-prices-heading">
             <h2 id="domains-prices-heading" class="domains-sr">Prices by TLD</h2>
+            <div id="domains-price-tools" hidden style="padding:1rem">
+                <label for="domains-price-filter" class="domains-label">Filter by TLD</label>
+                <input id="domains-price-filter" class="domains-input" type="search" placeholder="e.g. .com" autocomplete="off" spellcheck="false" aria-controls="domains-price-rows" style="max-width:100%">
+                <p id="domains-price-count" role="status" aria-live="polite"></p>
+                <button id="domains-price-all" class="domains-btn" type="button" hidden>Show all</button>
+            </div>
             <div class="domains-tablewrap">
                 <table class="domains-tbl domains-stackable domains-pricelist">
                     <thead>
@@ -49,9 +57,9 @@
                             @if ($showTerms)<th scope="col" class="domains-end">Register for</th>@endif
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="domains-price-rows">
                         @foreach ($rows as $row)
-                            <tr>
+                            <tr data-tld="{{ $row['tld'] }}">
                                 <th scope="row" class="domains-domain domains-cell-wide">.{{ $row['tld'] }}@if ($row['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</th>
                                 <td class="domains-end domains-num" data-label="Register">{{ $row['register'] ?? 'Not offered' }}</td>
                                 <td class="domains-end domains-num" data-label="Renew">@if ($row['renew']){{ $row['renew'] }}@else @include('domains::partials.missing', ['cause' => \Paymenter\Extensions\Servers\Domains\Presentation\Missing::ASK_FIRST, 'stack' => true])@endif</td>
@@ -62,7 +70,9 @@
                     </tbody>
                 </table>
             </div>
+            <p id="domains-price-empty" role="status" style="padding:1rem" hidden>No TLDs match your filter.</p>
         </section>
+        @include('domains::partials.price-filter')
         <p class="domains-small domains-muted">Prices plus tax where applicable.@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
     @endif
 </div>
