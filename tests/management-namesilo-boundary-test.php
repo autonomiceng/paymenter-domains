@@ -44,6 +44,9 @@ foreach ([null,'different-acquisition-key'] as $link) {
     if ($link!==null) { $policy['management']['correction']=$link; } $peer->policy=$policy;
     same(false,ManagementCorrections::resolvedFor($peer,$original,$d),'Unlinked or differently linked correction cannot release acquisition peer gate');
 }
+// The first unconfirmed read retained a two-hour follow-up; do not bypass its pacing.
+$clock->instant=new DateTimeImmutable('@'.$original->fresh()->policy['reconciliation']['next_at']);
+Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $observe->fault=''; same('succeeded',$reconcile->run($original->id)->state,'Original acquisition reconciles after bound corrections');
 expect(isset($d->fresh()->renewal_policy['billing_anchor']),'Independent financial reconciliation establishes anchor');
 same($originalWire,$state->calls,'Correction and completion never replay original transfer');

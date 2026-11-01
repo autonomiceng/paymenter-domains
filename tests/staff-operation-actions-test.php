@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
+$all[]=Staff::COSTS;$staff->role->update(['permissions'=>$all]);
 $op=$held('staff-actions-placeholder.com'); $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 // Every action has an independent default-deny permission; a general manager has none of them.
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){
@@ -37,9 +38,9 @@ echo "Release guard passed.\n";
 $actions=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold')->assertNotified('Request on hold')
     ->assertSee('On hold')->assertSee('Put on hold by staff.')->assertActionHidden('hold')->assertActionVisible('release');
 echo "Native hold passed.\n"; same('held',$op->fresh()->state,'Native hold action'); $before=$credit();
-$actions->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Cancelled, credit added')
+$actions->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Request cancelled')
     ->assertSee('Cancelled')->assertSee('Credit added')->assertDontSee('On hold')->assertDontSee('Put on hold by staff.')
-    ->assertActionHidden('release')->assertActionHidden('refund')->assertActionVisible('disposition');
+    ->assertActionHidden('release')->assertActionHidden('refund')->assertActionHidden('disposition');
 echo "Native refund passed.\n";
 same('rejected',$op->fresh()->state,'Native refund uses engine disposition');expect($credit()>$before,'Exact engine account credit applied');
 same('account_credit',$op->fresh()->funding['refund']['to'],'Engine once marker');
@@ -53,11 +54,19 @@ $retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$ret
     ->assertActionHidden('refund')->assertActionHidden('release')->assertActionVisible('credit');
 echo "Failed credit retained.\n";
 DB::unprepared('DROP TRIGGER staff_credit_fail'); same('rejected',$retry->fresh()->state,'Decision survives failed credit');same($before,$credit(),'Failed credit atomic');
-$retryPage->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Credit retried')
-    ->assertSee('Credit added')->assertSee('Credit retried')->assertDontSee('No credit added');
+$retryPage->assertActionVisible('credit')->callAction('credit',['reason'=>'Retry verified retained credit'])->assertHasNoActionErrors()->assertNotified('Refund checked')
+    ->assertSee('Credit added')->assertSee('Refund checked')->assertDontSee('No credit added');
 echo "Native credit passed.\n";
 $after=$credit();commerceReject(fn()=>$run($retry->fresh(),'credit'));same($after,$credit(),'Repeat credit never duplicates');
-$retryPage->callAction('disposition')->assertNotified('Request closed')->assertSee('Request closed');
+// Close request is only for a failed request nobody has closed yet.
+$failed=$new(placeholderComFixtureName('staff-close-placeholder.com'));[$claimed]=$claims->claim($failed->id);$claims->finish($claimed);
+$failed=Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::encode($claims,$failed->id);
+// The rehearsal's registration retry 99 bypassed events; the real creation boundary refuses that shape.
+$copy=$failed->replicate();$copy->operation_key='synthetic-invalid-close-copy';$copy->retry_number=99;
+commerceReject(fn()=>$copy->save());
+$unchanged=[$nativeMoney(),$failed->attempt,$failed->domain->reservation_name];
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$failed->id])->callAction('disposition')->assertNotified('Request closed')->assertSee('Request closed')->assertActionHidden('disposition');
+same($unchanged,[$nativeMoney(),$failed->fresh()->attempt,$failed->domain->fresh()->reservation_name],'Closing real unsent proof changes no money, send evidence or reservation');
 echo "Native disposition passed.\n";
 // Open page and old tickets cannot act after state changes, expiration, domain spoofing or role revocation.
 $stale=$held('staff-stale-placeholder.com');$open=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$stale->id]);$key=$ticket($stale,'release');
@@ -79,5 +88,17 @@ foreach(['uncertain','pending','held','rejected'] as $stateName){
 // Read actions leave ten audit entries available for financial/disposition recovery.
 $headroom=$held('staff-audit-headroom-placeholder.com');$history=array_fill(0,90,['key'=>'synthetic-prior']);$headroom->update(['policy'=>[...$headroom->policy,'staff_actions'=>$history]]);
 commerceReject(fn()=>$run($headroom->fresh(),'recheck'));$run($headroom->fresh(),'release');same(91,count($headroom->fresh()->policy['staff_actions']),'Read cap preserves local recovery headroom');
+// A saved gateway return still consumes current staff permission and a one-use review ticket before polling.
+require __DIR__.'/Support/money-receipt.php';MoneyReceiptGateway::$lost=false;MoneyReceiptGateway::$outcome='pending';
+$gateway=App\Models\Gateway::create(['extension'=>'MoneyReceipt','name'=>'Synthetic receipt','type'=>'gateway','enabled'=>true]);
+$returning=$held('staff-gateway-return-placeholder.com');
+DB::table('invoice_transactions')->where('invoice_id',$returning->invoice_id)->update(['gateway_id'=>$gateway->id,'transaction_id'=>'receipt_staff_synthetic']);
+$run($returning,'refund');$key=$ticket($returning->fresh(),'credit');
+$staff->role->update(['permissions'=>array_values(array_diff($all,[StaffOperationReview::permission('credit')]))]);
+commerceReject(fn()=>$run($returning->fresh(),'credit',$key));
+$staff->role->update(['permissions'=>$all]);$run($returning->fresh(),'credit',$key);
+commerceReject(fn()=>$run($returning->fresh(),'credit',$key));
+same(1,MoneyReceiptGateway::$sends,'Reviewed recovery does not reserve a second return');
+same(2,count($returning->fresh()->policy['staff_actions']),'Refund and authorized poll each retain one audit entry');
 echo "Native financial review and refusal boundaries passed.\n";
 $nativeSuccessful=true;

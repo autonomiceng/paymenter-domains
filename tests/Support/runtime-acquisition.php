@@ -39,7 +39,7 @@ $registry=new RegistrarRegistry;
 $verifier=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};
 $registry->register('enom',['token'],$verifier,static function($b)use($clock,$state){
     same(0,DB::transactionLevel(),'Composition reader runs outside financial locks');$state->reads++;
-    $quote=new QuoteEvidence($state->query,new Money('99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
+    $quote=new QuoteEvidence($state->query,new Money($state->query->action===Action::Transfer?'7.00':'6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
     return new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
         new Evidence(quote:$quote,balance:new Money('100.00','USD'),available:true,premium:$state->premium)));
 });
@@ -110,7 +110,7 @@ same(['register'=>null,'transfer'=>null],$wrong->acquisitionGates($account),'Wro
 $old=new RuntimePorts;$legacy=$composition;$legacy['acquisition']=(new ReflectionProperty($registrationPort,'engine'))->getValue($registrationPort);
 $old->register($binding->fingerprint,fn()=>$legacy);expect(!$old->accepted($account),'Legacy single-engine acquisition is refused');
 app()->instance(RuntimePorts::class,$closed);$rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account,['label'=>'Active','reason'=>null]),null,'label');
-same(['Off',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::SERVER_CONFIG],[$rows['Registrations']['value'],$rows['Registrations']['cause']],'Setup checklist names a feature that is off in server config');
+same(['Not available yet',null,'This site does not offer this yet. Your site admin can turn it on.'],[$rows['Registrations']['value'],$rows['Registrations']['cause'],$rows['Registrations']['help']],'Setup checklist names a feature that is off in server config');
 same('On',$rows['Transfers']['value'],'Setup checklist describes the exact per-action gates');
 app()->instance(RuntimePorts::class,$ports);
 $inputs=new TransferInputs($clock,new Refunds($clock));

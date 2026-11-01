@@ -17,7 +17,7 @@ final class RenewalReminders
         $days=(int)$day->diffInDays($expiry,false);$expired=$days<0;
         $cycle=RenewalCycles::current($d,$l['operations']);
         $ops=$cycle->filter(fn($op)=>$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d));
-        $retired=$cycle->last()?->safe_code==='renewal_cancelled_unpaid';
+        $retired=$cycle->last()?->safe_code==='renewal_cancelled_unpaid'&&!RenewalCycles::closedEarly($cycle->last());
         if($retired){$alert('renewal_unpaid');}
         $op=$ops->last();$renewOn=!RenewalStop::stopped($l);
         $rate=$l['prices']->where('term',1)->where('currency','USD')->where('account_fingerprint',$d->account_fingerprint)->first();

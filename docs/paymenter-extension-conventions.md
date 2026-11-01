@@ -14,6 +14,12 @@ Paymenter must take new upstream releases without an extension release. Ship an 
 
 - **Public surfaces only.** Use the extension base classes and their hooks, service providers, our own routes and tables, Eloquent model events and observers, Filament registration, Paymenter events, jobs, config, and the documented theme mechanism.
 - **Never intercept Paymenter globally.** Do not rebind or subclass Paymenter services in the container, remap native routes, add global Livewire, middleware or request hooks (including `TrimStrings::skipWhen` or `TrimStrings::except`), replace database resolvers or query builders, monkeypatch, or edit core or vendor files.
+- **Cart refresh is narrowly scoped.** `CartCheckoutRefresh` listens only to the exact native Cart component's
+  mount, hydrate, checkout call and dehydrate lifecycle. Registration checks finish before the native transaction;
+  the signed page memo binds acceptance to the displayed lines and retail. No other component, native class,
+  route, request or database resolver is changed. Native Cart and Livewire lifecycle dependencies are pinned in
+  the checkout upgrade tripwire. A changed total requires another checkout click because only the customer
+  can accept a changed price.
 - **Never gate on the Paymenter version.** No supported-version list at runtime, and no refusal, pause or banner just because the version changed. Disable behavior only on evidence that it is broken.
 - **Guard invariants at the write.** A scoped observer refuses only the specific invalid change, logs it, and tells staff. Native renewals and saves continue for everything else.
 - **Check required hooks, not versions.** If a feature depends on a Paymenter class, event or listener, verify it at boot. If one is missing, pause only that feature and show staff exactly what is missing.

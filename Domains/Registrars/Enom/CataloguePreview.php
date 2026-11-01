@@ -13,6 +13,7 @@ final readonly class CataloguePreview implements CatalogueReader
     public function binding(): AccountBinding { return $this->driver->binding(); }
     public function accountCapabilities(RequestContext $context): Capabilities { return $this->driver->accountCapabilities($context); }
     public function catalogue(RequestContext $context): ReadResult { return $this->driver->catalogue($context); }
+    public function bulkPricing(bool $domainPricing, int $years, RequestContext $context): ReadResult { return $this->driver->bulkPricing($domainPricing, $years, $context); }
     public function catalogueBatch(CatalogueAcceptance $accepted, CatalogueFreshness $freshness, RequestContext $context): array
     { return $this->driver->catalogueBatch($accepted, $freshness, $context); }
     public function availability(Query $query, RequestContext $context): DriverResult { return $this->driver->availability($query, $context); }

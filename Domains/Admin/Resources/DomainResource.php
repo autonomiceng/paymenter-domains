@@ -43,12 +43,13 @@ class DomainResource extends Resource
     {
         EmptyTable::apply($table,'No domains yet','They show here after a customer orders one.','No domains match');
         return $table->modifyQueryUsing(fn (Builder $query) => $query
-            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.invoice_id,domains_operations.payload,domains_operations.policy,domains_operations.attempt,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
+            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.invoice_id,domains_operations.payload,domains_operations.policy,domains_operations.attempt,domains_operations.funding,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
             DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->description(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->extraAttributes(['style'=>DomainName::CELL])),
             // One status and its next step. Every open alert is listed on the domain page. A step that names a request opens it.
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
+                ->wrap()->extraAttributes(['style'=>'max-width:20rem;overflow-wrap:anywhere'])
                 ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
                 ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>DomainFacts::statusLine(self::status($record,$livewire))
                     ??match(self::row($record,$livewire)['sync']){'failed'=>'Sync failed','paused'=>'Sync paused',default=>null}),
@@ -57,12 +58,13 @@ class DomainResource extends Resource
                 ->icon(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::icon(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
-            // Auto-renew applies in every state, so pending and under-review rows show it too.
-            TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>match(self::row($record,$livewire)['off']) {
+            // Auto-renew applies until the domain has ended, so pending and under-review rows show it too.
+            TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(self::row($record,$livewire)['off']) {
                 null=>Missing::LABEL,true=>'Off',false=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
             TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' · #'.$record->server_id:Missing::LABEL)
+                ->wrap()->extraAttributes(['style'=>'max-width:12rem;overflow-wrap:anywhere'])
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found. Check Registrars.':(self::REGISTRARS[$record->registrar_key]??null)),
         ])->filters([
@@ -95,7 +97,7 @@ class DomainResource extends Resource
         return DomainFacts::status($record,self::row($record,$livewire)['inputs']);
     }
     private static function registered(Domain $record): bool
-    { return $record->adoptionPending()||in_array($record->status,['active','expired','grace','redemption'],true); }
+    { return DomainFacts::registered($record); }
     /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'sync': DomainFacts::sync(). */
     private static function row(Domain $record, mixed $livewire): array
     {

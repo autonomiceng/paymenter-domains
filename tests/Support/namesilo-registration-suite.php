@@ -49,7 +49,7 @@ foreach ($nameSiloModes as $mode) {
         }
         same(null, $result->attempt['registration']['order_reference'], 'No fabricated NameSilo order ID');
         same($mode === 'amount' ? null : '99.00', $result->attempt['charge']['amount'] ?? null, 'Charge observation retained without accepting actual cost');
-        same('99.00', $result->attempt['authorized_cost']['amount'], 'No retail cost floor at dispatch');
+        same('6.00', $result->attempt['authorized_cost']['amount'], 'No retail cost floor at dispatch');
     }
     if (in_array($mode, ['remove', 'stillon'], true)) {
         same(['contactAdd', 'contactList', 'registerDomain', 'getDomainInfo', 'removeAutoRenewal', 'getDomainInfo'], $registration->calls, 'Removal followed by fresh readback');

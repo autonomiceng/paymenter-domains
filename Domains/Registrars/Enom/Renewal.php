@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ProtocolResult;
 final class Renewal
 {
     public static function assess(Query $query, DomainSnapshot $domain, ProtocolResult $authenticatedInfo, ProtocolResult $extend, ProtocolResult $check,
-        ?ProtocolResult $expired, \DateTimeImmutable $now, \DateTimeImmutable $freshUntil): Evidence
+        ?ProtocolResult $expired, \DateTimeImmutable $now, \DateTimeImmutable $freshUntil, ?ProtocolResult $lifecycle = null, ?string $tld = null): Evidence
     {
         $unknown = new Evidence(domain: $domain);
         $row = $check->value('domains.domain');
@@ -40,7 +40,22 @@ final class Renewal
             $quote = new QuoteEvidence($query, Pricing::total($price, $query->years), CostUnit::TermTotal,
                 $past ? 'enom_check_extend_expired' : 'enom_check_extend', $now, $freshUntil);
         }
-        return new Evidence(domain: $domain, quote: $quote, premium: false, renewal: $status);
+        return new Evidence(domain: $domain, quote: $quote, premium: false, renewal: $status,
+            renewalUntil: $status === RenewalStatus::Ordinary ? new \DateTimeImmutable($expiry->value) : self::deadline($lifecycle, $tld, $expiry, $now));
+    }
+    /** TEST-observed fields only; Live use additionally requires account-specific confirmation of this contract. */
+    private static function deadline(?ProtocolResult $reply, ?string $tld, DateEvidence $expiry, \DateTimeImmutable $now): ?\DateTimeImmutable
+    {
+        if($reply?->status!=='success'){return null;}
+        $row=$reply->value('tlds.tld');
+        if(!is_array($row)||array_is_list($row)||!is_string($row['tld']??null)||$row['tld']!==$tld){return null;}
+        $r=$row['renewal']??null;
+        if(!is_array($r)||Driver::flag($r['reactivate']??null)!==true||Driver::flag($r['autorenewonly']??null)!==false
+            ||($r['renewbeforeexpmonths']??null)!=='0'||($r['deletetype']??null)!=='0'){return null;}
+        // Cancellation/refund GracePeriod is not a post-expiry renewal window.
+        if(!is_string($r['deleteday']??null)||!preg_match('/^[1-9][0-9]{0,2}$/D',$r['deleteday'])){return null;}
+        $until=(new \DateTimeImmutable($expiry->value))->modify('+'.$r['deleteday'].' days');
+        return $until>$now?$until:null;
     }
     public static function limits(ProtocolResult $extend): ?array
     {

@@ -108,6 +108,24 @@ $batch->value=json_encode($rows('current ',10));$batch->save();$window=Review::h
 same(50,count($window),'History caps the combined batches');same('latest archive 20',$window[0]['reason'],'History uses the newest inserted archive');same('current 9',$window[49]['reason'],'Current batch follows the archive');
 $batch->value=json_encode($rows('current ',60));$batch->save();$window=Review::historyRows($server);
 same(50,count($window),'Current batch alone is capped');same('current 10',$window[0]['reason'],'Oldest current entries omitted');
+// A TLD history shows its own row changes, with the actual choice and terms, and ignores unrelated account edits.
+$base=end($window);
+foreach(['org','com'] as $name){
+    DB::transaction(fn()=>Review::append($server,[...$base,'key'=>'display-'.$name,'action'=>'Edit what you sell','tld_id'=>null,'reason'=>'','at'=>'2026-10-31T02:00:00+00:00',
+        'input'=>['rule_changed'=>false,'changes'=>[],'rows'=>[$name=>['old'=>['choice'=>'sell','longest'=>1,'transfer'=>true],'new'=>['choice'=>null,'longest'=>3,'transfer'=>false]]]] ]));
+}
+$visible=Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($server->id,$t->id);
+expect($visible!==null&&str_contains($visible[0]['reason'],'.com: Use default rule; up to 3 years; transfers off'),'TLD history names the effective edit');
+expect(!str_contains(json_encode($visible),'.org:'),'Other TLD edits stay out of this history');
+same('2026-10-31T02:00:00+00:00',$visible[0]['time'],'History retains the full instant for browser time zones');
+// Count-only bulk edits and older records cannot prove that this TLD was unaffected.
+foreach([['rule_changed'=>false],[],['rule_changed'=>true,'rule'=>['mode'=>'only','max_cost'=>null,'years'=>1,'transfers'=>false]]] as $i=>$fields){
+    DB::transaction(fn()=>Review::append($server,[...$base,'key'=>'bulk-display-'.$i,'action'=>'Edit what you sell','tld_id'=>null,'reason'=>'',
+        'input'=>$fields+['counts'=>['rows'=>60,'added'=>0,'removed'=>60,'cleared'=>0]]]));
+}
+$visible=TldFacts::history($server->id,$t->id);
+same(array_fill(0,3,'Sales changed for 60 TLDs'),array_column(array_slice($visible,0,3),'change'),'Current and legacy bulk sales edits remain visible');
+foreach(array_slice($visible,0,3) as $row){expect(str_contains($row['reason'],'For this account; affected TLDs were not recorded.'),'Count-only history states its unknown TLD scope');}
 echo 'History 10/500 archives write '.json_encode([$writeTen,$writeMany]).' / display '.json_encode([$readTen,$readMany])." queries/decrypts\n";
 echo 'Native full-settings 10/500 archives '.json_encode([$nativeTen,$nativeMany])." queries/decrypts\n";
 echo "Indexed replay, retained unique keys, rollback and bounded recent history passed.\n";$nativeSuccessful=true;

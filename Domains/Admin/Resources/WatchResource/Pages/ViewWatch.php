@@ -44,7 +44,7 @@ class ViewWatch extends ViewRecord
         if(!$this->pendingCheck){return;}
         $this->refreshFacts();[$until,$before]=$this->pendingCheck;
         if($this->checkTime()>$before){Notification::make()->success()->title('Check finished')->send();}
-        elseif(now()->timestamp>=$until){Notification::make()->warning()->title('Check is taking longer')->body('Last check has not changed. Ask your site admin.')->persistent()->send();}
+        elseif(now()->timestamp>=$until){Notification::make()->warning()->title('Check is taking longer')->body('Last check has not changed. Checks keep retrying. Open Registrars and check the background worker.')->persistent()->send();}
         else{return;}
         $this->pendingCheck=[];
     }

@@ -15,6 +15,9 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new 
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 // Exercise the actual rendered page for every known state, including derived and unfamiliar states.
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
+// A sync alert only counts while the sync is stopped, because Resume sync is its way out.
+DB::table('domains_observation_work')->insert(['server_id'=>$domain->server_id,'account_fingerprint'=>$domain->account_fingerprint,
+    'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
 $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);

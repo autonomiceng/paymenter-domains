@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, CanonicalName, Disposition, Query, RequestContext, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, CanonicalName, Query, RequestContext, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver;
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 /** External one-year code transfers only. No dispatch or new registry-schema acceptance. */
@@ -16,8 +16,10 @@ final readonly class TransferPrecheck
         $settings = Server::findOrFail($s->serverId)->settings()->whereIn('key',
             ['domains_transfer_endings', 'domains_transfer_creation_lock_days', 'domains_transfer_previous_lock_days'])->when($locked, static fn ($q) => $q->lockForUpdate())->get()->keyBy('key');
         $endings = $settings->get('domains_transfer_endings')?->value;
-        if (!in_array($s->registrar, ['enom', 'namesilo'], true) || $s->action !== 'transfer' || $s->term !== 1 || !is_string($endings)
-            || !in_array($s->tld, array_map('trim', explode(',', $endings)), true)
+        // A saved list narrows transfers. Without one, What you sell decides.
+        $open = is_string($endings) ? array_map('trim', explode(',', $endings)) : EnomTestTransfer::endings($s->serverId);
+        if (!in_array($s->registrar, ['enom', 'namesilo'], true) || $s->action !== 'transfer' || $s->term !== 1
+            || !in_array($s->tld, $open, true)
             || in_array(substr($s->tld, (int) strrpos('.'.$s->tld, '.')), ['uk', 'ca', 'eu', 'ai', 'de'], true)
             || !RegistryInputs::supported($s->registrar, $s->tld, $tld->registry_fields)) { throw new \DomainException('Transfer ending is not accepted.'); }
         $days = [];
@@ -32,10 +34,7 @@ final readonly class TransferPrecheck
     {
         CanonicalName::parse($name, [$s->tld]); $days = self::rules($s);
         $r = $driver->availability(new Query($name, Action::Transfer, 1), $context);
-        $driver->binding()->requireMatch($r->binding);
-        if ($r->disposition !== Disposition::Accepted || $r->evidence()->available !== true || $r->evidence()->premium !== false) {
-            throw new \DomainException('Transferability could not be confirmed.');
-        }
+        WriteMoney::requireRead($driver->binding(), $r); WriteMoney::requireAvailable($r->evidence());
         $rdap = $this->rdap->precheck($name, $days[0], $days[1], $context->now(), $context);
         if (!$rdap['allowed'] && $rdap['code'] === 'transfer_not_registered') { throw new WriteHeld('transfer_not_registered'); }
         if (!$rdap['allowed'] || $context->now() >= $context->deadline) { throw new \DomainException($rdap['code'] ?? 'Transfer check expired.'); }

@@ -91,7 +91,7 @@ function assertInstalledUpgradePages(): void
         $actor=App\Models\User::findOrFail($history[1]['actor_id']);
         $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($server->id);
         expect($rows!==null,'Retained audit normalizes for staff history');
-        same(['time'=>'Oct 22, 2026 12:00 UTC','change'=>'Default pricing changed','reason'=>'Synthetic retained archive review','by'=>'Staff #'.$actor->id],
+        same(['time'=>'2026-10-22T12:00:00+00:00','change'=>'Default pricing changed','reason'=>'Synthetic retained archive review','by'=>'Staff #'.$actor->id],
             $rows[1],'Retained archive normalizes time, action and actor');
         Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
             ->assertSuccessful()->mountAction('price_history')->assertActionMounted('price_history')

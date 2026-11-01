@@ -170,8 +170,8 @@ intent must match encrypted evidence, and a false intent must have no cancellati
 ID. Qualification of a committed do-not-renew holding and later resumption remain
 with the confirmation and cancellation workflow.
 
-Before activation, that workflow must also integrate `StaffHoldingReview` resume
-and reprice actions and `NativeCancellation` guards with adoption authority. They
+Before activation, that workflow must also integrate the `StaffHoldingReview` resume
+action and `NativeCancellation` guards with adoption authority. They
 still use completed/acquisition operation checks and refuse an initial adopted
 holding. This change does not enable a confirmation action. Native cancellation
 creation must occur in the ordered native prefix, before locking domain/adoption;
@@ -199,7 +199,7 @@ cost/premium source before activation.
 Shared holding identity requires live-environment evidence and accepts the exact original
 renewal-off cancellation. Renewal-only eligibility separately blocks original do-not-renew
 intent, including issued obligations. Structural acceptance alone does not qualify
-management, refunds, unpaid retirement or staff resume/reprice; each consumer retains
+management, refunds, unpaid retirement or staff resume; each consumer retains
 its own policy and acceptance requirements before activation.
 
 ## Fresh-preview confirmation
@@ -269,7 +269,7 @@ Read-only owner projection shows registry expiry reached after confirmed expiry;
 never terminates the service or releases the reservation. Non-renewal consumers still
 need separate acceptance. Existing management/privacy policy for an ordinary
 end-of-period stop is unchanged; this slice does not qualify adopted management,
-privacy purchases, staff resume/reprice or refunds. Raw SQL repair is privileged.
+privacy purchases, staff resume or refunds. Raw SQL repair is privileged.
 Activation remains OFF pending site qualification of simultaneous native edits, provider
 acceptance and non-renewal consumers. The User deletion/checkout gap is closed.
 

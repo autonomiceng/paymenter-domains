@@ -9,7 +9,7 @@ use Filament\Schemas\Components\{Callout, Section};
 use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{BalanceCheck, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Staff, StaffReviewHistory};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HistoryRecovery, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Staff, StaffReviewHistory};
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewOperation extends ViewRecord
@@ -72,13 +72,7 @@ class ViewOperation extends ViewRecord
     public function recheckAction(): Action { return $this->pageAction('recheck'); }
     public function resume_readsAction(): Action { return $this->pageAction('resume_reads'); }
     public function releaseAction(): Action { return $this->pageAction('release'); }
-    public function check_balanceAction(): Action
-    {
-        $op=$this->getRecord(); $account=RequestFacts::account($op)['account'];
-        return Action::make('check_balance')->label('Check balance')->color('gray')
-            ->visible(fn()=>(RequestFacts::notice($op)['link_label']??null)==='Check balance'&&RegistrarFacts::connected($account,RegistrarFacts::status(\App\Models\Server::findOrFail($op->server_id),$account)))
-            ->action(fn()=>BalanceCheck::run((int)$op->server_id));
-    }
+    public function history_recoveryAction(): Action { return HistoryRecovery::action($this->getRecord()); }
     private function pageAction(string $name): Action
     { return array_values(array_filter($this->actions(),fn(Action $a)=>$a->getName()===$name))[0]; }
     private function actions(): array { return OperationActions::make($this->getRecord(),$this->reviewStamp); }
@@ -95,15 +89,15 @@ class ViewOperation extends ViewRecord
             self::entry('Created',self::time($op->created_at),cause:RequestFacts::NO_TIME),
         ];
         // Sent to registrar is hidden while the request has not been sent.
-        if ($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) { $rows[]=self::entry('Sent to registrar',self::time($op->started_at),cause:RequestFacts::NO_TIME); }
+        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && ($sent=StaffReviewHistory::sendEvent($op))) { $rows[]=self::entry($sent,self::time($op->started_at),cause:RequestFacts::NO_TIME); }
         if (!($facts['unreadable']??false)) {
-            $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null);
+            if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null); }
             if (array_key_exists('cost',$facts)) { $rows[]=self::entry('Cost',$facts['cost'],sub:$facts['cost_sub']); }
             if (array_key_exists('auth_code',$facts)) {
                 $email=$op->domain?->service?->user?->email;
                 $rows[]=self::entry('Auth code',$facts['auth_code'],sub:$facts['auth_code_sub'],fix:$email?Action::make('ask_customer')->label('Ask customer')->url('mailto:'.$email):null);
             }
-            if (array_key_exists('refund',$facts)) {
+            if ($grants->costs && array_key_exists('refund',$facts)) {
                 $fix=isset($facts['refund_fix'])?$this->getAction($facts['refund_fix'],false):null;
                 $rows[]=self::entry('Credit',$facts['refund'],sub:$facts['refund_sub']??null);
                 if ($fix?->isVisible()) { $rows[]=TextEntry::make('refund_fix')->hiddenLabel()->state(new HtmlString($fix->size('sm')->toHtml())); }
@@ -111,30 +105,26 @@ class ViewOperation extends ViewRecord
         }
         $components[]=Section::make('Details')->schema($rows)->columnSpanFull()->extraAttributes(['class'=>'domains-facts']);
         $history=StaffReviewHistory::rows($op,$grants);
-        $created=['time'=>self::time($op->created_at),'event'=>'Request created','sub'=>null,'by'=>'System'];
         // The reason shows as a muted line under its event.
         $event=fn(array $row)=>[...$row,'event'=>new HtmlString(e($row['event']).($row['sub']===null?'':'<div style="font-size:.8125rem;opacity:.7">'.e($row['sub']).'</div>'))];
         $components[]=Section::make('History')->columnSpanFull()->schema([$history===null
             ? TextEntry::make('history_unreadable')->hiddenLabel()->state(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE)->color('danger')
-            : RepeatableEntry::make('history')->hiddenLabel()->state(array_map($event,[$created,...$history]))->table([TableColumn::make('Time'),TableColumn::make('Event'),TableColumn::make('By')])
+            : RepeatableEntry::make('history')->hiddenLabel()->state(array_map($event,StaffReviewHistory::timeline($op,$history)))->table([TableColumn::make('Time'),TableColumn::make('Event'),TableColumn::make('By')])
                 ->schema([MissingEntry::apply(TextEntry::make('time'),cause:RequestFacts::NO_TIME),TextEntry::make('event'),TextEntry::make('by')])]);
         return $schema->components($components);
     }
     private function notice(array $notice): Callout
     {
-        // The cause's link comes first, then the action that retries: "Resume orders", then "Release hold".
+        // The cause's link comes first, then the action that retries: "Go to Orders switch", then "Release hold".
         $buttons=[];
         $action=isset($notice['action'])?$this->getAction($notice['action'],false):null;
         $op=$this->getRecord();
-        // Check balance is a button when the account can take it, else the way to the account.
-        $balance=($notice['link_label']??null)==='Check balance' ? $this->getAction('check_balance',false) : null;
         $link=match($notice['link']??null) {
-            'registrars'=>['Open account',self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id))],
+            'registrars'=>[$notice['link_label']??'Open account',self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id))],
             'invoice'=>['Open invoice',$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null],
             'domain'=>['Open domain',$op->domain?self::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null],
             default=>null};
         $acts=(bool)$action?->isVisible();
-        if ($balance?->isVisible()) { $link=null; $buttons[]=$balance->color($acts?'gray':'primary')->size('sm')->toHtml(); }
         if ($link&&$link[1]) { $buttons[]=view('filament::components.button.index',['tag'=>'a','href'=>$link[1],'color'=>$acts?'gray':'primary','size'=>'sm','slot'=>new HtmlString(e($link[0]))])->render(); }
         if ($acts) { $buttons[]=$action->color('primary')->size('sm')->toHtml(); }
         return Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()
@@ -149,7 +139,7 @@ class ViewOperation extends ViewRecord
         return MissingEntry::apply($entry,fix:$fix,cause:$value===null?($cause??$sub):null);
     }
     private static function time(?\DateTimeInterface $at): ?string
-    { return $at ? \DateTimeImmutable::createFromInterface($at)->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i').' UTC' : null; }
+    { return StaffReviewHistory::time($at); }
     private static function invoiceUrl(int $id): ?string
     {
         $invoice=\App\Models\Invoice::find($id);

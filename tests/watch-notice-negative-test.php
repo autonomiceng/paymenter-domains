@@ -94,6 +94,13 @@ noticeDns($f,$at+900);noticeDns($f,$at+1800);$planner->plan('watch',$id,$uid,$at
 $claim=$delivery->reserve($drift->id,'app',$at+1803);expect($claim!==null,'Current profile claim reserved');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->increment('revision');
 expect(!$delivery->handoff($claim,$at+1804),'Changed profile refuses prior confirmation at handoff');
+same(null,$delivery->reserve($drift->id,'app',$at+1805),'Changed target cannot rearm on old confirmation');
+noticeDns($f,$at+2700);$planner->plan('watch',$id,$uid,$at+2702);
+same(null,$delivery->reserve($drift->id,'app',$at+2703),'One new sample cannot rearm suppressed drift');
+noticeDns($f,$at+3600);$planner->plan('watch',$id,$uid,$at+3602);
+same($claim,$delivery->reserve($drift->id,'app',$at+3603),'Reconfirmed same episode reuses never-handed key');
+expect($delivery->handoff($claim,$at+3603),'Reconfirmed drift reaches the customer once');
+same(null,$delivery->reserve($drift->id,'app',$at+3604),'Accepted rearmed key never replays');
 // Retiring a watch or changing native ownership suppresses already reserved work.
 [$n,$at]=$new();$claim=$delivery->reserve($n->id,'mail',$at);DB::table('domains_watch_names')->where('id',$id)->update(['state'=>'retired']);
 expect(!$delivery->handoff($claim,$at),'Retired target suppresses handoff');

@@ -3,8 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{CartItem,Invoice,Service,User};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,NativeIntent,Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\{InvoiceOutcome,OwnedDomain,StatusPill};
 /** Read-only ownership-scoped adapter for themes. No provider I/O, locks or cached actor state. */
 final readonly class NativePresenter
 {
@@ -22,6 +22,14 @@ final readonly class NativePresenter
     /** Neutral watch/managed summaries for hosting rows; preserve the original domain-only adapter. */
     public function domainSummaries(User $owner,array $serviceIds): array
     { return (new DomainSummaries())->services($owner,$serviceIds); }
+    /** The owner's working domains, soonest expiry first, with the links a dashboard panel needs. */
+    public function activeDomains(User $owner,int $limit=5): array
+    {
+        $active=array_filter((new DomainSummaries())->listed($owner,now('UTC')->getTimestamp()),fn($row)=>in_array($row->statusState,['active','renewal_off_expiring'],true));
+        usort($active,fn($a,$b)=>[$a->expiry===null,$a->expiry,$a->name]<=>[$b->expiry===null,$b->expiry,$b->name]);
+        $rows=array_map(function($row){$status=StatusPill::summary($row);return ['name'=>$row->name,'url'=>$row->urls['detail'],'expiry'=>$row->expiry,'status'=>$status['label'],'tone'=>$status['tone']];},array_slice($active,0,$limit));
+        return ['rows'=>$rows,'total'=>count($active),'list'=>route('domains.domains.index'),'register'=>route('domains.domains.search')];
+    }
     /** Exact invoice-item binding; a current service alone cannot impersonate an issued domain line. */
     public function invoice(User $owner,int $invoiceId): array
     {
@@ -37,6 +45,76 @@ final readonly class NativePresenter
                 $result[(int)$op->invoice_item_id]=$dto;
             }}
         return $result;
+    }
+    /** Closed line facts are available at Paid/afterCommit, before any money-return sweep. */
+    public function invoiceOutcome(User $owner,int $invoiceId): ?InvoiceOutcome
+    {
+        $invoice=Invoice::whereKey($invoiceId)->where('user_id',$owner->id)->first();if(!$invoice){return null;}
+        $items=$invoice->items()->get()->keyBy('id');$closed=[];$lines=[];$pending=false;
+        $ops=Operation::where('invoice_id',$invoiceId)->where('currency',$invoice->currency_code)->where(fn($q)=>$q->whereIn('safe_code',
+            ['renewal_cancelled_unpaid',FundsWaits::RENEWAL_CLOSED,UnpaidAcquisitionProof::CODE])->orWhereIn('action',['register','transfer']))->with(['domain.service.order','domain.service.cancellation'])->orderBy('id')->limit(251)->get();
+        if($ops->count()>250){throw new \DomainException('Invoice domain history needs review.');}
+        foreach($ops as $op){
+            $d=$op->domain;$item=$items[$op->invoice_item_id]??null;
+            if(!$d||(int)$d->user_id!==(int)$owner->id||(int)$d->service?->user_id!==(int)$owner->id
+                ||(int)$d->service?->order?->user_id!==(int)$owner->id||!$item||!$this->line($item,$op)){continue;}
+            $terminal=$this->closedLine($op,$d);$native=!$terminal&&$this->nativeAcquisitionClosed($op,$d);
+            if(!$terminal&&!$native){continue;}
+            $pending=$pending||$native;$closed[]=$op;$lines[]=['kind'=>$native?UnpaidAcquisitionProof::CODE:$op->safe_code,'domain'=>$d->domain];
+        }
+        if(!$closed){return null;}
+        [$money,$amount]=$pending?['pending',null]:$this->outcomeMoney($closed,$invoice);
+        $kinds=array_unique(array_column($lines,'kind'));
+        return new InvoiceOutcome(count($kinds)===1?reset($kinds):'mixed',$money,$amount,array_values(array_unique(array_column($lines,'domain'))),$lines);
+    }
+    /** An unfinished native cancellation counts only while a retained lifecycle fence prevents the unsent purchase. */
+    private function nativeAcquisitionClosed(Operation $op,Domain $d): bool
+    {
+        if(!in_array($op->action,['register','transfer'],true)||!in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true)
+            ||$op->funding_basis!=='paid_invoice'||$op->domain_id!==$d->id||$op->service_id!==$d->service_id
+            ||$op->authority_generation!==$d->authority_generation||$op->account_fingerprint!==$d->account_fingerprint
+            ||!in_array($d->status,['registration_pending','transfer_pending','cancelled'],true)
+            ||$d->provider_domain_id!==null||$d->provider_order_id!==null||$d->provider_expires_at!==null
+            ||($op->attempt??[])!==[]||$op->started_at!==null||$op->completed_at!==null||$op->request_fingerprint!==null
+            ||$op->lease_expires_at!==null||$op->provider_order_id!==null||$op->confirmed_expires_at!==null
+            ||array_intersect(['claim','seal','refund','refund_authorization'],array_keys($op->funding??[]))){return false;}
+        if($d->service->status==='cancelled'||$d->service->cancellation){return true;}
+        $intent=NativeIntent::where('service_id',$op->service_id)->value('kind');
+        return $intent==='cancellation'||($intent!==null&&isset($op->policy['native_acquisition_closure']));
+    }
+    /** Historical display follows the issued operation, even after the domain moves to another authority. No refund authority is granted. */
+    private function closedLine(Operation $op,Domain $d): bool
+    {
+        $a=$op->attempt??[];$t=$a['terminal']??[];
+        if($op->state!=='rejected'||!$op->completed_at||$op->funding_basis!=='paid_invoice'||$op->domain_id!==$d->id||$op->service_id!==$d->service_id
+            ||$op->authority_generation<1||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->lease_expires_at!==null
+            ||($a['seal']??null)!=='absent'||($a['send_state']??null)!=='definitely_unsent'||($a['disposition']??null)!=='rejected'
+            ||($a['rejection_basis']??null)!=='definitely_unsent'||($t['operation_key']??null)!==$op->operation_key
+            ||($t['generation']??null)!==$op->authority_generation||($t['invoice_id']??null)!==$op->invoice_id
+            ||array_intersect(array_keys($a),['execution','dispatch_attempted_at'])||array_intersect(array_keys($op->cost??[]),['actual','execution'])
+            ||array_key_exists('dispatch_attempted_at',$op->policy??[])){return false;}
+        return ($op->action==='renew'&&in_array($op->safe_code,['renewal_cancelled_unpaid',FundsWaits::RENEWAL_CLOSED],true))
+            ||(in_array($op->action,['register','transfer'],true)&&$op->safe_code===UnpaidAcquisitionProof::CODE&&$a===UnpaidAcquisitionProof::attempt($op));
+    }
+    /** Read only retained local results. A capable gateway's unobserved return stays pending, never assumed credit. */
+    private function outcomeMoney(array $ops,Invoice $invoice): array
+    {
+        $minor=0;$states=[];$covered=[];
+        foreach($ops as $op){
+            foreach([...(isset($op->funding['refund'])?[$op->funding['refund']]:[]),...($op->funding['late_credits']??[])] as $p){
+                $minor+=PricingRule::minor($p['amount']);
+                foreach($p['payments']??[] as $payment){$covered[$payment['id']]=($covered[$payment['id']]??0)+max(0,$payment['amount_minor']);}
+                if(($p['to']??null)==='account_credit'){$states[]='credit';continue;}
+                if(($p['bridge_minor']??0)>0){$states[]='credit';}
+                foreach($p['allocations']??[] as $a){$states[]=match($op->funding['receipt_return_results'][$a['key']]['state']??null){'refunded'=>'returned','credited'=>'credit',default=>'pending'};}
+            }
+        }
+        foreach($invoice->transactions()->where('status',\App\Enums\InvoiceTransactionStatus::Succeeded)->get() as $row){
+            if(PricingRule::minor($row->amount)>($covered[$row->id]??0)){$states[]='pending';}
+        }
+        $states=array_unique($states);
+        $money=!$states||in_array('pending',$states,true)?'pending':(count($states)===1?reset($states):'mixed');
+        return [$money,$minor>0?Storefront::money(PricingRule::decimal($minor)):null];
     }
     private function line(\App\Models\InvoiceItem $item,Operation $op): bool
     {

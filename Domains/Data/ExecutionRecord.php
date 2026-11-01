@@ -8,4 +8,5 @@ enum ExecutionRecord: string
     case Absent = 'absent';
     case RecordedNull = 'recorded_null';
     case Recorded = 'recorded';
+    case StaffAnswer = 'staff_answer';
 }

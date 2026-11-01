@@ -34,10 +34,10 @@ $costs=staffUser([Staff::VIEW,Staff::COSTS]);
 Livewire::actingAs($costs)->test(ViewOperation::class,['record'=>$ops[2]->id])->assertSee('Ask NameSilo support for a refund');
 // The orders-paused line sits in the request notice, not the domain page.
 Livewire::actingAs($viewer)->test(ViewOperation::class,['record'=>$ops[0]->id])->assertSee('NameSilo has not confirmed this transfer.')
-    ->assertSee('New orders on this NameSilo account are paused until the result is known');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('New orders on this NameSilo account are paused');
+    ->assertSee('Paid domain changes on this NameSilo account wait until the result is known');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSuccessful()->assertDontSee('Paid domain changes on this NameSilo account wait');
 same(['Request #'.$ops[0]->id.' unconfirmed'],PaidUncertainty::for($held),'Account-wide hold names the request');
-expect(preg_match('/ \((under 1 hour|1 hour|\d+ hours) so far\)\.$/',PaidUncertainty::holdSummary($ops[0]))===1,'Account-wide hold includes age');
+expect(preg_match('/ \((under 1 hour|1 hour|\d+ hours) so far\)\. Registrations/',PaidUncertainty::holdSummary($ops[0]))===1,'Account-wide hold includes age');
 same(null,RequestFacts::for($ops[1])['reason'],'Absent reason remains absent');
 $completed=clone $ops[0];$completed->state='succeeded';$completed->attempt=['execution'=>null];same([null,null],[RequestFacts::for($completed)['outcome'],RequestFacts::notice($completed)],'Completed readback has no unconfirmed notice');
 $completed->attempt=['seal'=>'sealed','execution'=>['provider_reference'=>'SYNTHETIC-ORDER']];

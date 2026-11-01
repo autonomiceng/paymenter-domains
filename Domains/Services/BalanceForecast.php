@@ -8,21 +8,22 @@ final class BalanceForecast
 {
     public static function for(Account $account, \DateTimeImmutable $now): array
     {
-        $total='0.000000';$unknown=0;$count=0;
+        $total='0.000000';$unknown=0;$count=0;$unreadable=0;
         $settings=Server::find($account->server_id)?->settings()->whereIn('key',['domains_issue_days','domains_due_days'])->get();
         try{$timing=$settings?BillingCalendar::timing($settings):null;}catch(\Throwable){$timing=null;}
         $rates=Price::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
             ->where('action','renew')->where('currency','USD')->get();
         Domain::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
-            ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->chunkById(100,function($domains)use($rates,$now,$timing,&$total,&$unknown,&$count):void {
+            ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->chunkById(100,function($domains)use($rates,$now,$timing,&$total,&$unknown,&$count,&$unreadable):void {
             $serviceIds=$domains->pluck('service_id')->all();
             $cancel=NativeCancellation::withIntents(ServiceCancellation::whereIn('service_id',$serviceIds)->get(),$serviceIds,true)->groupBy('service_id');
             $adoptionIds=$domains->pluck('adoption_id')->filter();
             $adoptions=$adoptionIds->isEmpty()?collect():Adoption::whereKey($adoptionIds)->get()->keyBy('id');
             $invoices=Invoice::whereKey($domains->flatMap(fn($d)=>$d->operations->pluck('invoice_id'))->filter()->unique())->get()->keyBy('id');
             foreach($domains as $d){
-                if(!$d->billing_managed||!$d->service||$d->service->status!=='active'
-                    ||($d->renewal_policy['automatic_spend_paused']??false)){continue;}
+                if(!$d->billing_managed||!$d->service||$d->service->status!=='active'){continue;}
+                $policy=RenewalStop::policy($d);if($policy===null){$unknown++;$count++;$unreadable++;continue;}
+                if($policy['automatic_spend_paused']??false){continue;}
                 $stop=['domain'=>$d,'adoption'=>$adoptions->get($d->adoption_id),'cancel'=>$cancel->get($d->service_id,collect())];if(RenewalStop::blocksRenewal($stop)){continue;}
                 $ops=$d->operations->filter(fn($o)=>$o->action==='renew'&&$o->account_fingerprint===$d->account_fingerprint
                     &&$o->registrar_key===$d->registrar_key&&(int)$o->server_id===(int)$d->server_id&&$o->authority_generation===$d->authority_generation);
@@ -56,7 +57,7 @@ final class BalanceForecast
                 if($cost===null){$unknown++;}else{$total=self::add($total,$cost);}
             }
         });
-        return ['total'=>$total,'currency'=>'USD','unknown'=>$unknown,'count'=>$count];
+        return ['total'=>$total,'currency'=>'USD','unknown'=>$unknown,'count'=>$count,'unreadable'=>$unreadable];
     }
     /** Earlier of the Paymenter renewal due date and confirmed expiry; a missing pair stays unknown. */
     public static function withinWindow(?string $due,?string $expiry,\DateTimeImmutable $now): ?bool

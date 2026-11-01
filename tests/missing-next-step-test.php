@@ -2,8 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Missing is one word for customers and staff, and every Missing says what to do next.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/storefront.php';
-use Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts;
-use Illuminate\Support\Facades\Blade;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist, TldFacts};
+use Illuminate\Support\Facades\{Blade, Route};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainListRow, DomainPage, DomainSummary, Missing, OwnedDomain};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaryStrings, OwnerFormValidation, ReminderTemplates};
 
@@ -43,6 +43,31 @@ same(Missing::FILLS.' within a day',Missing::fills('within a day'),'Fill-in line
 same('Missing Contact support',$norm((string)Missing::html(null,Missing::support(null))),'Next step without a link');
 same(['label'=>'Contact support','url'=>'/tickets/create'],Missing::support('/tickets/create'),'Next step with a link');
 same('<a',substr(ltrim(strstr((string)Missing::html(null,Missing::support('/tickets/create')),'<a')),0,2),'Link when one exists');
+// Tickets off must not link the dead ticket page: the host's contact, else staff get the next step.
+$contact=static fn()=>trim(view('domains::partials.contact-support')->render());
+config(['settings.tickets_disabled'=>true,'domains.support_url'=>'mailto:help@example.test']);
+same('<a class="domains-a" href="mailto:help@example.test">Contact support</a>',$contact(),'Tickets off, contact set');
+same('mailto:help@example.test',Missing::supportUrl(),'Same link for Missing and the sentence');
+$staffCheck=static fn()=>collect(AccountChecklist::system()['failing'])->firstWhere('label','Support contact');
+same(null,$staffCheck(),'Staff are not asked to fix a working contact');
+foreach([null,'javascript:alert(1)','mailto:','tel:','https:','https://',' https:// ','https://?x'] as $unusable){
+    config(['domains.support_url'=>$unusable]);
+    same('',$contact(),'No promise and no dead link without a contact');
+    expect(str_contains($staffCheck()['cause']??'','Turn tickets on, or ask your site admin to set a support link'),'Staff must get the next step');
+}
+config(['domains.support_url'=>' https://help.example.test ']);
+same('https://help.example.test',Missing::supportUrl(),'Outer spaces do not break a real link');
+config(['domains.support_url'=>'http://help.example.test/contact']);
+same('http://help.example.test/contact',Missing::supportUrl(),'A plain http link with a host works');
+config(['domains.support_url'=>null,'settings.tickets_disabled'=>false]);
+$routes=Route::getRoutes();Route::setRoutes(new \Illuminate\Routing\RouteCollection());
+$cause=$staffCheck()['cause']??'';
+Route::setRoutes($routes);
+expect(str_contains($cause,'support link')&&!str_contains($cause,'Turn tickets on'),'Tickets on with no ticket page: the fallback step, not "turn tickets on"');
+config(['settings.tickets_disabled'=>false,'domains.support_url'=>'mailto:help@example.test']);
+same(route('tickets.create'),Missing::supportUrl(),'Tickets on: the ticket form');
+same(null,$staffCheck(),'Tickets on: nothing for staff to fix');
+config(['domains.support_url'=>null]);
 
 // Checkout's line stays byte for byte as it was: the cart lane owns its words.
 same('<span class="domains-missing"><svg class="domains-i" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Missing</span> <span class="domains-missing__cause">Not set for this TLD yet</span>',str_replace("\n",'',view('domains::partials.missing',['cause'=>'Not set for this TLD yet'])->render()),'Checkout Missing line is unchanged');

@@ -8,16 +8,17 @@ use Illuminate\Support\Facades\{Auth, DB, Schema};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Staff};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, RequestFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ObligationAlerts};
 staffPanel(); [, $seed]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 
 Schema::disableForeignKeyConstraints();
+Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>true]);
 $n=0;
-$row=static function(string $status, ?string $action, ?string $state, ?string $code=null, int $days=120, array $alerts=[]) use ($seed, &$n): Domain {
+$row=static function(string $status, ?string $action, ?string $state, ?string $code=null, int $days=120, array $alerts=[], array $funding=[]) use ($seed, &$n): Domain {
     $n++; $label='w2-case-'.$n;
     $d=$seed->replicate()->fill(['domain'=>$label.'.example.com','sld'=>$label,'service_id'=>2000+$n,'status'=>$status,
         'provider_expires_at'=>today()->addDays($days)->format('Y-m-d')]);
@@ -25,7 +26,7 @@ $row=static function(string $status, ?string $action, ?string $state, ?string $c
     DB::table('services')->insert(['id'=>$d->service_id,'user_id'=>$d->user_id,'order_id'=>1,'product_id'=>1,'plan_id'=>1,'status'=>'pending','quantity'=>1,'price'=>'5.00','currency_code'=>'USD']);
     if ($action) {
         $seed->operations()->sole()->replicate()->fill(['domain_id'=>$d->id,'service_id'=>$d->service_id,'authority_generation'=>$d->authority_generation,
-            'operation_key'=>$label,'action'=>$action,'state'=>$state,'safe_code'=>$code,'attempt'=>[],'policy'=>[],'payload'=>[],'cost'=>[],'funding'=>[]])->save();
+            'operation_key'=>$label,'action'=>$action,'state'=>$state,'safe_code'=>$code,'attempt'=>[],'policy'=>[],'payload'=>[],'cost'=>[],'funding'=>$funding])->save();
     }
     foreach ($alerts as $alert) { ObligationAlerts::record($d,$alert,time()); }
     return $d->fresh();
@@ -44,7 +45,7 @@ $cases['walk: old cancelled request on a pending domain']=[$d,'pending_registrat
 $d=$row('registration_pending','register','held','contact_details_required',120,['operation_review']);
 $cases['walk: contact details hold']=[$d,'action_required','Action required','Finish setup · Contact details needed. '.$req($d)];
 // Every other case the list can show.
-$cases['unpaid invoice']=[$row('registration_pending','register','awaiting_payment'),'action_required','Action required','Invoice not paid · Customer has not paid the invoice. Not sent yet.'];
+$cases['unpaid invoice']=[$row('registration_pending','register','awaiting_payment'),'awaiting_payment','Awaiting payment','Invoice not paid · Customer has not paid the invoice. Not sent yet.'];
 $cases['auth code']=[$row('transfer_pending','transfer','awaiting_code'),'action_required','Action required','Auth code needed · Customer has not added the auth code. Not sent yet.'];
 $d=$row('registration_pending','register','held','nameservers_required');
 $cases['nameservers hold']=[$d,'action_required','Action required','Finish setup · Not sent: nameservers missing. '.$req($d)];
@@ -59,11 +60,11 @@ $cases['stored review']=[$row('needs_review','transfer','succeeded'),'under_revi
 $cases['no expiry']=[$row('active','transfer','succeeded',null,120),'under_review','Under review','Expiry missing · Check the domain.'];
 DB::table('domains_domains')->where('id',$cases['no expiry'][0]->id)->update(['provider_expires_at'=>null]);
 $cases['active']=[$row('active','transfer','succeeded'),'active','Active',null];
-$cases['past expiry']=[$row('active','transfer','succeeded',null,-1),'expired','Expired',null];
-$cases['grace']=[$row('grace','transfer','succeeded',null,-5),'expired','Expired','In grace period'];
-$cases['redemption']=[$row('redemption','transfer','succeeded',null,-40),'redemption','Redemption',null];
+$cases['past expiry']=[$row('active','transfer','succeeded',null,-1),'expired','Expired','Check renewal options and status at the registrar.'];
+$cases['grace']=[$row('grace','transfer','succeeded',null,-5),'expired','Expired','Check renewal options and status at the registrar.'];
+$cases['redemption']=[$row('redemption','transfer','succeeded',null,-40),'redemption','Redemption','Check renewal options and status at the registrar.'];
 $cases['rejected']=[$row('registration_rejected','register','rejected','preflight_failed'),'failed','Failed','Registration did not finish'];
-$cases['credited order']=[$row('registration_rejected','register','rejected','refund_approved'),'cancelled','Cancelled','Order cancelled'];
+$cases['credited order']=[$row('registration_rejected','register','rejected','refund_approved',funding:['refund'=>['to'=>'account_credit']]),'cancelled','Cancelled','Order cancelled'];
 $cases['cancelled order']=[$row('cancelled','register','disposed','acquisition_cancelled_unpaid'),'cancelled','Cancelled',null];
 $cases['unknown status']=[$row('something_new','transfer','succeeded'),'under_review','Under review','Status missing · Check the domain.'];
 // An order reads as it does for the customer once its invoice is known. Paid orders keep only what the customer still owes.
@@ -72,8 +73,8 @@ $invoiced=static function(Domain $d, string $status, ?int $owner=null): Domain {
     $d->latestAcquisition->forceFill(['invoice_id'=>$invoice->id])->saveQuietly(); return $d->fresh();
 };
 $unpaid='Invoice not paid · Customer has not paid the invoice. Not sent yet.';
-$cases['order: unpaid invoice']=[$invoiced($row('registration_pending','register','awaiting_payment'),'pending'),'action_required','Action required',$unpaid];
-$cases['order: paid invoice of another customer']=[$invoiced($row('registration_pending','register','awaiting_payment'),'paid',999),'action_required','Action required',$unpaid];
+$cases['order: unpaid invoice']=[$invoiced($row('registration_pending','register','awaiting_payment'),'pending'),'awaiting_payment','Awaiting payment',$unpaid];
+$cases['order: paid invoice of another customer']=[$invoiced($row('registration_pending','register','awaiting_payment'),'paid',999),'awaiting_payment','Awaiting payment',$unpaid];
 $cases['order: paid, nothing left for the customer']=[$invoiced($row('registration_pending','register','awaiting_payment'),'paid'),'pending_registration','Pending registration','Registration in progress. Nothing to do yet.'];
 $cases['order: paid, auth code missing']=[$invoiced($row('transfer_pending','transfer','awaiting_payment'),'paid'),'action_required','Action required','Auth code needed · Customer has not added the auth code. Not sent yet.'];
 $d=$invoiced($row('registration_pending','register','awaiting_payment'),'paid');
@@ -136,6 +137,10 @@ $d=$row('active',null,null,null,730); $request($d,'renew','queued',$sent($d));
 $cases['renewal on its way']=[$d->fresh(),'active','Active','Renewal in progress. Nothing to do yet.'];
 $d=$row('active',null,null,null,730); $held=$request($d,'renew','held',$sent($d));
 $cases['renewal on hold']=[$d->fresh(),'active','Active','Not sent. Open request #'.$held->id.'.'];
+// Request #42: held, released, finished while sync was paused. The hold's alert is over, whatever the Sync says.
+$d=$row('active','register','succeeded',null,730);
+ObligationAlerts::record($d,'operation_review',time()-60,(int)$d->latestAcquisition->id);
+$cases['finished request with an alert from its hold']=[$d,'active','Active',null];
 
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100)->assertSuccessful();
 $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()->getTableRecords()->keyBy('id');
@@ -149,6 +154,14 @@ foreach ($cases as $name=>[$d,$key,$label,$step]) {
     if ([$status['label'],$line]!==[$label,$step]) { $wrong[]=$name.': domain page shows "'.implode(' / ',array_filter([$status['label'],$line])).'", want the same as the list'; }
     $members[$key][]=$d->id;
 }
+same(false,isset(DomainFacts::for($cases['past expiry'][0]->fresh())['Next invoice']),'An expired domain has no next invoice to chase');
+// A paid renewal stays unsent while Orders are off, so staff must read that, not Nothing to do yet.
+$d=$row('active',null,null,null,730); $paid=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));
+$stopped=$request($d,'renew','queued',[...$sent($d),'invoice_id'=>$paid->id]); $members['active'][]=$d->id;
+Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>false]);
+same('Not sent. Orders are off for this account. Open request #'.$stopped->id.'.',DomainFacts::status($d->fresh())['step'],'Queued renewal says Orders are off on the domain');
+same('Not sent. Orders are off for this account.',RequestFacts::reason($stopped->fresh()),'Queued renewal says Orders are off on the request');
+Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>true]);
 // An inspection closes only what is proven cleared, and the alert never flips while a fix moves along.
 $apart=static fn(Domain $d)=>DB::table('domains_domains')->where('id',$d->id)->update(['domain'=>'w2-inspect-'.$d->id.'.example.com']);
 $inspect=static function(Domain $d,array $raised=[]): void {
@@ -178,26 +191,75 @@ $check('Released hold closes',false,$open($gone,'operation_review',$goneRequest-
 $stuck=$row('registration_pending',null,null,null,120); $apart($stuck); $stuckRequest=$request($stuck,'register','held');
 ObligationAlerts::record($stuck,'operation_review',time()-60,(int)$stuckRequest->id); $inspect($stuck);
 $check('Request still on hold stays open',true,$open($stuck,'operation_review',$stuckRequest->id));
+// Success closes the alert at once, so the Open alerts filter agrees, and a saved money difference keeps it.
+$settle=static function(array $policy) use ($row, $apart, $request, $open): bool {
+    $d=$row('registration_pending',null,null); $apart($d); $op=$request($d,'register','running',['policy'=>$policy]);
+    ObligationAlerts::record($d,'operation_review',time()-60,(int)$op->id); $op->update(['state'=>'succeeded']);
+    return $open($d,'operation_review',$op->id);
+};
+$check('Success closes the alert with no inspection',false,$settle([]));
+$check('Success with a difference keeps the alert',true,$settle(['reconciliation'=>['staff_alert'=>true,'reason'=>'charge_changed']]));
+$named=$row('registration_pending','register','held','staff_review_required'); ObligationAlerts::record($named,'operation_review',time(),(int)$named->latestAcquisition->id);
+$check('Held request is named once, not again on the Registrar row',false,str_contains((string)DomainFacts::for($named)['Registrar']['sub'],'needs a check'));
+$apart($named);
 $planned=$row('active',null,null,null,730); $apart($planned); $plannedRequest=$request($planned,'renew','awaiting_payment',$sent($planned));
 $plannedKey=ObligationAlerts::record($planned,'held_obligation',time(),(int)$plannedRequest->id); $inspect($planned,[$plannedKey]);
 $check('Alert raised by this inspection stays open',true,$open($planned,'held_obligation',$plannedRequest->id));
+// Waits the system retries on its own raise nothing. Anything abnormal alerts at once.
+$read=static fn(?string $status,string $reason='original_attempt_unresolved')=>['reconciliation'=>['staff_alert'=>true,'reason'=>$reason,...($status?['transfer_status'=>$status,'read_at'=>time()]:[])]];
+$sentOk=['seal'=>'sealed','execution'=>['disposition'=>'pending']]; $retry=['renewal_execution'=>['staff_alert'=>true,'reason'=>'retry','refundable_later'=>false]];
+foreach ([
+    'pending transfer'=>[false,'transfer','uncertain','reconciliation_required',$read('pending'),120,1,$sentOk],
+    'pending transfer keeps polling past the old limit'=>[false,'transfer','uncertain','reconciliation_required',$read('pending','poll_limit_reached'),120,1,$sentOk],
+    'accepted transfer not read yet'=>[false,'transfer','uncertain','reconciliation_required',$read(null),120,0,$sentOk],
+    'transfer past its seven days'=>[true,'transfer','uncertain','reconciliation_required',$read('pending'),120,8,$sentOk],
+    'transfer send not confirmed'=>[true,'transfer','uncertain','reconciliation_required',$read(null),120,0,[]],
+    'transfer read conflicts'=>[true,'transfer','uncertain','reconciliation_required',$read('rejected'),120,1,$sentOk],
+    'transfer lost its worker'=>[true,'transfer','uncertain','stale_claim',$read('pending'),120,1,$sentOk],
+    'transfer needs old registrar'=>[true,'transfer','held','transfer_needs_action',$read('needs_action'),120,1,$sentOk],
+    'renewal rate limit retry'=>[false,'renew','queued','renewal_rate_limited',$retry,120,0,[]],
+    'renewal read retry'=>[false,'renew','queued','renewal_reads_unavailable',$retry,120,0,[]],
+    'urgent paid renewal retry'=>[true,'renew','queued','renewal_reads_unavailable',$retry,5,0,[]],
+    'renewal needs funds'=>[true,'renew','queued','registrar_balance_insufficient_or_unknown',$retry,120,0,[]],
+    'renewal needs setup'=>[true,'renew','queued','renewal_acceptance_required',$retry,120,0,[]],
+    'renewal fraud hold'=>[true,'renew','held','staff_review_required',$retry,120,0,[]],
+    'renewal charge overrun'=>[true,'renew','succeeded','actual_charge_changed',$retry,120,0,[]],
+] as $name=>[$want,$action,$state,$code,$policy,$days,$age,$attempt]) {
+    $d=$row('active',null,null,null,$days); $apart($d);
+    $op=$request($d,$action,$state,['safe_code'=>$code,'policy'=>$policy,'attempt'=>$attempt,'started_at'=>now()->subDays($age)]);
+    $inspect($d);
+    $check('Alert: '.$name,$want,$open($d,$action==='renew'&&$state==='held'?'held_obligation':'operation_review',$op->id));
+}
+// A dropped alert keeps its row, and the same alert comes back when the wait runs out.
+$quiet=$row('transfer_pending',null,null); $apart($quiet);
+$quietRequest=$request($quiet,'transfer','uncertain',['safe_code'=>'reconciliation_required','policy'=>$read('pending'),'attempt'=>$sentOk,'started_at'=>now()->subDay()]);
+$quietKey=ObligationAlerts::record($quiet,'operation_review',time()-60,(int)$quietRequest->id); $inspect($quiet);
+$check('Wait closes an older alert',false,$open($quiet,'operation_review',$quietRequest->id));
+$check('Closed alert keeps its record',1,DB::table('domains_obligation_alerts')->where('alert_key',$quietKey)->count());
+$quietRequest->forceFill(['started_at'=>now()->subDays(8)])->saveQuietly(); $inspect($quiet);
+$check('Same alert returns when the wait runs out',[true,1],[$open($quiet,'operation_review',$quietRequest->id),DB::table('domains_obligation_alerts')->where('alert_key',$quietKey)->count()]);
 if ($wrong) { fwrite(STDERR,implode("\n",$wrong)."\n"); }
 same([],$wrong,'Every row has one status and one next step');
 expect(!isset($columns['alert']),'No separate alert column: the next step is under the status');
 // The filter offers the customer's words.
-same(['active'=>'Active','pending_registration'=>'Pending registration','pending_transfer'=>'Pending transfer','action_required'=>'Action required','under_review'=>'Under review',
+same(['active'=>'Active','pending_registration'=>'Pending registration','pending_transfer'=>'Pending transfer','awaiting_payment'=>'Awaiting payment','action_required'=>'Action required','under_review'=>'Under review',
     'expired'=>'Expired','redemption'=>'Redemption','failed'=>'Failed','cancelled'=>'Cancelled'],DomainResource::statusOptions(),'Status filter set');
 foreach (array_keys(DomainResource::statusOptions()) as $key) {
     $expected=$members[$key]??[]; sort($expected);
     same($expected,$ids($key),'Status filter matches the rows: '.$key);
 }
 // The filter on the real list page, with its search and page size, picks the same rows.
-$filtered=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100)->filterTable('status',['action_required']);
-expect($filtered->instance()->getTableRecords()->contains('id',$cases['order: unpaid invoice'][0]->id)&&!$filtered->instance()->getTableRecords()->contains('id',$one->id),'Action required shows the unpaid order, not an Active domain');
+$filtered=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100)->filterTable('status',['awaiting_payment']);
+expect($filtered->instance()->getTableRecords()->contains('id',$cases['order: unpaid invoice'][0]->id)&&!$filtered->instance()->getTableRecords()->contains('id',$one->id),'Awaiting payment shows the unpaid order, not an Active domain');
 // One answer on every surface: the list, the heading, the Registration card and the request page.
 $oneView=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->assertSee('Active')->assertDontSee('Registrar request needs a check');
 same('Customer has not paid the invoice. Not sent yet.',(string)$oneView->instance()->getSubheading(),'Domain 1 heading names the open request');
 same(['Awaiting payment','Customer has not paid the invoice. Not sent yet.'],array_values(array_intersect_key(RequestStatus::for($oneRenewal->state),['label'=>1,'reason'=>1])),'Request page says the same');
+// An early renewal says so: the same words on the heading and the request page, and only until the billing window opens.
+$calendar=static function(int $issue,int $due)use($oneRenewal):void {DB::table('domains_operations')->where('id',$oneRenewal->id)->update(['policy'=>encrypt(json_encode([...$oneRenewal->policy,'calendar'=>['issue'=>today()->addDays($issue)->format('Y-m-d'),'due'=>today()->addDays($due)->format('Y-m-d')]]),false)]);};
+$early='Early renewal not paid. Nothing is due until '.today()->addDays(113)->format('M j, Y').'.';$calendar(99,113);
+same([$early,$early],[(string)Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->instance()->getSubheading(),Labels::requestStatus($oneRenewal->fresh())['reason']],'Early renewal, staff heading and request page');
+$calendar(0,14);same('Customer has not paid the invoice. Not sent yet.',Labels::requestStatus($oneRenewal->fresh())['reason'],'Inside the billing window it is a normal unpaid invoice');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$two->id])->assertSee('Pending registration')->assertDontSee('Registrar request needs a check');
 // Real staff work names the request and links to it, in the list and in the heading.
 $link=OperationResource::getUrl('view',['record'=>$unfixedOriginal->id]);

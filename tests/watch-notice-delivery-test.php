@@ -7,11 +7,37 @@ use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Services\{WatchNoticePreferences as Pref,WatchNoticeDelivery,WatchNotices,WatchNoticeReview};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchNotice,WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Mail\WatchNotice as NoticeMail;
-$f=noticeFixture();extract($f);noticeRegistry($f,$now);$at=$now+2;
+$f=noticeFixture(false);extract($f);
+// Native schema and holding locks are required to prove missing consent cannot start either channel.
+same(false,Pref::enabled($uid,'example.com'),'Missing preferences require opt-in');
+same(0,DB::table('domains_watch_preferences')->count(),'Reading missing preferences writes nothing');
+DB::transaction(fn()=>same(false,Pref::enabled($uid,'example.com',true),'Locked insert must not opt in'));
+same(0,DB::table('domains_watch_preferences')->where('enabled',true)->count(),'Locked defaults remain off');
+DB::beginTransaction();try {
+    DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('a',64),'user_id'=>$uid]);
+    same(false,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('a',64))->value('enabled'),'Schema default requires opt-in');
+}finally{DB::rollBack();}
+// Upgrade the old default without inventing consent or changing saved choices.
+DB::beginTransaction();try {
+    DB::table('migrations')->where('migration',\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::OPT_IN_MIGRATION)->delete();
+    DB::table('domains_watch_preferences')->where('scope',Pref::account($uid))->update(['enabled'=>true]);
+    DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('b',64),'user_id'=>$uid,'enabled'=>true,'revision'=>2]);
+    DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('c',64),'user_id'=>$uid,'enabled'=>false,'revision'=>2]);
+    \Illuminate\Support\Facades\Schema::table('domains_watch_preferences',static fn($t)=>$t->boolean('enabled')->default(true)->change());
+    \Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::requireOptIn();
+    same(false,Pref::enabled($uid,'example.com'),'Legacy inserted defaults are not consent');
+    same(true,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('b',64))->value('enabled'),'Saved opt-in survives upgrade');
+    same(false,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('c',64))->value('enabled'),'Saved opt-out survives upgrade');
+    DB::table('domains_watch_preferences')->insert(['scope'=>str_repeat('d',64),'user_id'=>$uid]);
+    same(false,(bool)DB::table('domains_watch_preferences')->where('scope',str_repeat('d',64))->value('enabled'),'Upgraded default stays off');
+}finally{DB::rollBack();}
+noticeRegistry($f,$now);$at=$now+2;
 same([], (new WatchNotices())->plan('watch',$id,$uid,$at),'Default planning dormant');
 $ids=$planner->plan('watch',$id,$uid,$at);same(1,count($ids),'One nearest expiry notice');$n=WatchNotice::findOrFail($ids[0]);
 same('registry',$n->family,'Evidence in registry table');expect(DB::table('domains_public_evidence_refs')->where('family','registry')->where('observation_id',$n->observation_id)->exists(),'Notice pins evidence');
 same([],array_diff(array_keys(WatchNoticeDelivery::data($n)),['domain','date','company','nameservers','domain_url']),'Template data whitelist');
+same(['mail'=>false,'app'=>false],$delivery->deliver($n->id,$at),'Missing consent sends neither channel');
+DB::transaction(fn()=>Pref::save($uid,'example.com',1,1,true,true));
 config(['settings.company_name'=>'<script>company</script>']);$nativeBefore=Notification::where('user_id',$uid)->count();
 $app=$delivery->reserve($n->id,'app',$at);$mail=$delivery->reserve($n->id,'mail',$at);expect($app!==null && $mail!==null && $app!==$mail,'Independent committed channel claims');
 $fail=true;Notification::creating(static function($r)use(&$fail,$uid){if($fail && (int)$r->user_id===$uid){throw new RuntimeException('Synthetic app failure');}});
@@ -34,7 +60,7 @@ $pausedMailId=$delivery->reserve($drift->id,'mail',$now+903);expect($pausedMailI
 $pausedMail=DB::table('domains_watch_deliveries')->where('notice_id',$drift->id)->where('channel','mail')->sole();
 same('preference_off',$pausedMail->safe_code,'Paused mail is preference-suppressed');same('suppressed',$pausedMail->state,'Paused mail stays unhanded');
 $p=Pref::read($uid,'example.com');DB::transaction(fn()=>Pref::save($uid,'example.com',$p['account']['revision'],$p['target']['revision'],true,true));
-foreach(['target_or_preference_changed','registration_managed','daily_mail_limit']as$code){
+foreach(['registration_managed','daily_mail_limit']as$code){
     DB::table('domains_watch_deliveries')->where('id',$pending)->update(['safe_code'=>$code]);
     same(null,$delivery->reserve($drift->id,'app',$now+904),'Re-enable preserves other suppression reasons: '.$code);
 }

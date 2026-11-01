@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Dns\DnsReading;
 $prior=null;$app=null;$mail=null;$planner=new WatchNotices(true);$delivery=new WatchNoticeDelivery(true);
 $f=managedFixture(skipA3:true,beforeConfirm:function(array $f)use(&$prior,&$app,&$mail,$planner,$delivery):void {
     extract($f);global $fixture;require __DIR__.'/Support/reminder-mail.php';app('view')->prependNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
-    \Paymenter\Extensions\Servers\Domains\Services\WatchScheduleSchema::install();WatchNoticeSchema::install();WatchNoticeTemplates::ensure();$uid=(int)$owner->id;$old=$clock->now()->getTimestamp()-7200;$checks=new WatchDnsChecks(true);
+    \Paymenter\Extensions\Servers\Domains\Services\WatchScheduleSchema::install();WatchNoticeSchema::install();WatchNoticeTemplates::ensure();$uid=(int)$owner->id;DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::save($uid,'example.com',1,1,true,true));$old=$clock->now()->getTimestamp()-7200;$checks=new WatchDnsChecks(true);
     DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','delegation')->update(['due_at'=>$old+900]);
     $t=$checks->begin($watch->id,$uid,'delegation',$old+900);expect($t!==null,'Second predecessor sample');$checks->finish($t,new DnsReading('delegation','external'),$old+901);
     $ids=$planner->plan('watch',$watch->id,$uid,$old+902);$prior=WatchNotice::findOrFail($ids[0]);

@@ -69,11 +69,11 @@ InvoiceTransaction::create(['invoice_id'=>$failed->invoice_id,'amount'=>'1.00','
 same('active',$failed->domain->service->fresh()->status,'Native unconditional reactivation is tolerated');
 // A proven unpaid retirement releases its name; late money and native Active never reclaim it.
 $retired=$new(placeholderComFixtureName('paid-retired-placeholder.com'),paid:false);DB::table('invoices')->where('id',$retired->invoice_id)->update(['status'=>'cancelled']);DB::table('services')->where('id',$retired->service_id)->update(['status'=>'cancelled']);$retirement->inspect($retired->domain_id);
-same(UnpaidAcquisitionProof::CODE,$retired->fresh()->safe_code,'Use existing unpaid proof');$cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('paid-retired-placeholder.com'));commerceCheckout($user,$cart)->assertHasNoErrors();$replacement=Domain::where('reservation_name','paid-retired-placeholder.com')->sole()->operations()->sole();$paid($retired);$manual($retired);
-same(null,$retired->domain->fresh()->reservation_name,'Released name stays released');same('paid-retired-placeholder.com',$replacement->domain->fresh()->reservation_name,'New owner reservation retained');expect($alerts($retired)->count()>=1,'Retired late payment is durable review');
+same(UnpaidAcquisitionProof::CODE,$retired->fresh()->safe_code,'Use existing unpaid proof');$cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('paid-retired-placeholder.com'));commerceCheckout($user,$cart)->assertHasNoErrors();$replacement=Domain::where('reservation_name','paid-retired-placeholder.com')->sole()->operations()->sole();$paid($retired);$manual($retired);$refunds->creditRetired(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$retired->server_id)->sole());
+same(null,$retired->domain->fresh()->reservation_name,'Released name stays released');same('paid-retired-placeholder.com',$replacement->domain->fresh()->reservation_name,'New owner reservation retained');expect(count($retired->fresh()->funding['late_credits']??[])===1&&$alerts($retired)->count()===0,'Retired late payment is durable review');
 // Cancelled partial-money acquisition cannot retire; retained cancellation intent survives Active.
-$cancelled=$new(placeholderComFixtureName('paid-cancelled-partial-placeholder.com'),paid:false);InvoiceTransaction::create(['invoice_id'=>$cancelled->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'failed']);
-$cancelled->domain->service->update(['status'=>'cancelled']);DB::table('invoices')->where('id',$cancelled->invoice_id)->update(['status'=>'cancelled']);$retirement->inspect($cancelled->domain_id);$before=$writer->calls;$paid($cancelled);$manual($cancelled);$work->operation($cancelled->id);
+$cancelled=$new(placeholderComFixtureName('paid-cancelled-partial-placeholder.com'),paid:false);
+$cancelled->domain->service->update(['status'=>'cancelled']);InvoiceTransaction::create(['invoice_id'=>$cancelled->invoice_id,'amount'=>'1.00','fee'=>'0.00','status'=>'processing']);DB::table('invoices')->where('id',$cancelled->invoice_id)->update(['status'=>'cancelled']);$retirement->inspect($cancelled->domain_id);$before=$writer->calls;$paid($cancelled);$manual($cancelled);$work->operation($cancelled->id);
 same($before,$writer->calls,'Cancelled acquisition re-payment cannot spend');
 expect($alerts($cancelled)->count()>=1,'Cancelled acquisition money remains visible after native reactivation');same('paid-cancelled-partial-placeholder.com',$cancelled->domain->fresh()->reservation_name,'Uncertain cancellation keeps reservation');
 // Service reactivation alone is a discrepancy even with the original refund payment set.
@@ -127,6 +127,10 @@ $clock->instant=$now->modify('+4 days');$work->operation($transfer->id);$manual(
 same('Available',NativePaidHooks::notices()['Start after payment'],'Paid listener restored before direct dispatch');
 $queue=Queue::getFacadeRoot();Queue::fake();
 try{
+    // A replayed Paid event respects transfer pacing, and the wake lands once the next read is due.
+    event(new App\Events\Invoice\Paid(Invoice::find($transfer->invoice_id)));
+    Queue::assertNotPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class);
+    $clock->instant=(new DateTimeImmutable('@'.$transfer->fresh()->policy['reconciliation']['next_at']))->setTimezone($clock->now()->getTimezone());
     event(new App\Events\Invoice\Paid(Invoice::find($transfer->invoice_id)));
     Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,static fn($job)=>$job->operationId===(int)$transfer->id);
 }finally{Queue::swap($queue);}
@@ -147,7 +151,7 @@ $notice='Required Service listeners are missing in this process: Service saving 
 same($notice,NativePaidHooks::notices()['Paymenter payment events'],'Payment events notice describes current process');
 Illuminate\Support\Facades\Auth::login($staff);
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($missing->domain)['Paymenter payment events']),'Process notice lives with registrar setup, not on each domain');
-$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Ask your site admin to restart the queue worker.']);
+$setup=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$missing->server_id])->assertSeeInOrder(['System checks','Payment events','Missing',$check='Service listeners are missing. Restart the queue worker.']);
 same(1,substr_count(html_entity_decode($setup->html(),ENT_QUOTES),$check),'Registrar account System checks show the fact once');
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$missing->domain_id])->assertDontSee($notice);
 foreach($saving as$listener){Event::listen($savingEvent,$listener);}

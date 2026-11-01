@@ -181,7 +181,7 @@ $on=$domain(['renewal'=>'On','actions'=>['show'=>'/domains/1','autoPay'=>'/servi
 expect(str_contains($card(storefrontDom($render($on,$summary($on))),'Auto-renew'),'Auto Pay is off: we send you an invoice and you pay it to renew. Manage Auto Pay'),'Auto Pay off explains the invoice');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
 expect(str_contains($card(storefrontDom($render($on,$summary($on))),'Auto-renew'),'Auto Pay is on: we charge your saved payment method for each renewal invoice.'),'Auto Pay on says the card is charged');
-$d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice date');
+$d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice shows the issue date, as staff see it');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
 same(['Due Feb 1, 2027',['Pay invoice']],$split($dom,'Next invoice'),'Pay invoice sits on its own line');
@@ -204,6 +204,13 @@ same(['Off',['Contact support']],$split($dom,'Auto-renew'),'Contact support sits
 $d=$domain(['expiry'=>null]);$dom=storefrontDom($render($d,$summary($d)));
 same('Missing Fills in by itself after the next sync',$card($dom,'Expires'),'Missing expiry: one fix, then its cause');
 same('Missing Fills in by itself after the next sync',$card($dom,'Next invoice'),'Missing next invoice: one fix, then its cause');
+// Credited: one state, nothing to fix. No Missing and no Contact support, here or in the notice.
+$d=$domain(['status'=>'Cancelled','expiry'=>null,'renewal'=>'','renewNow'=>[],'autoRenew'=>[],'order'=>['state'=>'cancelled','kind'=>'registration','credit'=>true]]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
+same('None',$card($dom,'Expires'),'Credited order: Expires None');expect(str_contains($html,'We added what you paid to account credit'),'Credited order: the notice stays');
+same('Renewal ExpiresNone',$norm($dom->query('//section[@id="renewal"]')->item(0)),'Credited order: the Renewal card holds only Expires None');
+same(0,$dom->query('//div[contains(@class,"domains-notice")]//a')->length,'Credited order: the notice asks for nothing');
+$d=$domain(['status'=>'Cancelled','expiry'=>null,'renewal'=>'','renewNow'=>[],'autoRenew'=>[],'order'=>['state'=>'cancelled','kind'=>'registration']]);
+same('Missing Contact support Order cancelled',$card(storefrontDom($render($d,$summary($d))),'Expires'),'A closed order with no credit still needs us');
 $d=$domain(['expiry'=>null,'order'=>['state'=>'failed','kind'=>'transfer']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Missing Contact support Transfer did not finish',$card($dom,'Expires'),'A failed order: the fix, then the cause');
 same(1,$dom->query('//section[@id="renewal"]//dd/span[contains(@class,"domains-missing__line")][span[contains(@class,"domains-missing")]/following-sibling::*[1][self::a[contains(@class,"domains-missing__fix")]]]/following-sibling::*[1][contains(@class,"domains-sub")]')->length,'Fix sits on the Missing line, cause below');
@@ -242,11 +249,13 @@ $test=$domain(['testEnvironment'=>true]);$dom=storefrontDom($render($test));
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag--test")]')->length,'Test tag');
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'Test mode adds no banner');
 same(false,DomainPage::notice($domain())!==null,'No notice for an active domain');
+$expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE]),'/tickets/create');
+same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');
 
 // History: changes with dates and renewal invoices.
 $d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Done','date'=>'2026-10-20']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));
 same(['Change','Status','Date'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//th'))),'History columns');
-same(['Nameservers Done Oct 20, 2026','Renewal invoice INV-7 Paid Sep 30, 2026'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//tbody/tr'))),'History rows');
+same(['Nameservers Done Oct 20, 2026, 12:00 AM UTC','Renewal invoice INV-7 Paid Sep 30, 2026'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//tbody/tr'))),'History rows');
 same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Renewal invoice INV-7"]')->length,'Invoice row links');
 
 // Every help popover the page uses has an anchor.

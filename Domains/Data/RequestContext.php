@@ -22,6 +22,8 @@ final class RequestContext
         return $remaining;
     }
 
+    private int $completedReads = 0;
+    public function completedReads(): int { return $this->completedReads; }
     /** Both real read clients use this scope once per physical request. */
     public function withinRead(AccountBinding $driver, \Closure $wire): mixed
     {
@@ -57,7 +59,7 @@ final class RequestContext
 
     /** Observation opts into conservative failure holds even when adapters return failure values. */
     public function requireReadSuccess(bool $successful, #[\SensitiveParameter] ?\RuntimeException $failure=null): void
-    { if ($this->stopOnReadFailure&&!$successful) { throw $failure??new \DomainException('Registrar read failed.'); } }
+    { if ($successful) { $this->completedReads++; } if ($this->stopOnReadFailure&&!$successful) { throw $failure??new \DomainException('Registrar read failed.'); } }
 
     /** Observation/freshness checks must use the same accepted clock as request deadlines. */
     public function now(): \DateTimeImmutable { return $this->clock->now(); }

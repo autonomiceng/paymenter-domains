@@ -1,5 +1,5 @@
 <x-filament-panels::page>
-    <div @if($this->shouldLoadList()) wire:init="loadList" @endif style="display:grid;gap:1.5rem">
+    <div style="display:grid;gap:1.5rem">
         @if(count($accounts = $this->accounts()) > 1)
             <x-filament::tabs>
                 @foreach($accounts as $id => $name)

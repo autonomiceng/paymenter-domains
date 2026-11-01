@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, Capabilities, DispatchReadiness, Disposition, RequestContext, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Action, Capabilities, DispatchReadiness, RequestContext, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Both observations are unlocked. The second immediately precedes the seal and local consumption. */
 final readonly class TransferPreflight implements SealPreflight
@@ -22,11 +22,17 @@ final readonly class TransferPreflight implements SealPreflight
     {
         OperationClaims::outside(); $query = OperationClaims::query($op, $domain); $this->features->requireEnabled(Action::Transfer);
         if ($query->action !== Action::Transfer || $query->years !== 1 || !TransferInputs::validCode($op->payload['epp'] ?? null)) { throw new \DomainException('Transfer inputs incomplete.'); }
+        $retryBalance=null;
+        if(BalanceRetry::from($op)?->window){
+            $probe=$context->binding->registrarKey==='enom'&&EnomTestTransfer::enabled($context->binding)
+                ?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId);
+            $context->binding->requireMatch($probe->binding());$retryBalance=BalanceRetries::probe($op,$probe,$context);
+        }
         ContactSetup::requireReady($op); $privacy = $op->payload['privacy'] ?? false; $servers = $op->payload['nameservers'] ?? [];
-        if (!is_bool($privacy)) { throw new WriteHeld('write_acceptance_required'); }
+        if (!is_bool($privacy)) { throw new WriteHeld('order_not_supported'); }
         if ($context->binding->registrarKey === 'enom') {
             // Source PreConfig=0 keeps existing DNS; custom DNS/privacy need separate correction authority.
-            if ($privacy || $servers) { throw new WriteHeld('write_acceptance_required'); }
+            if ($privacy || $servers) { throw new WriteHeld('order_not_supported'); }
         } else {
             \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::transfer($query->name, $op->payload['epp'], $privacy, '1', $servers);
             if (!$this->profiles) { throw new WriteHeld('contact_profile_proof_required'); }
@@ -36,13 +42,9 @@ final readonly class TransferPreflight implements SealPreflight
         $capability = $this->accepted->requireCurrent($context->binding, $query, $op);
         $reader = $context->binding->registrarKey==='enom'&&EnomTestTransfer::enabled($context->binding)?$this->bindings->registrationPreflightReader($context->binding):$this->bindings->reader($context->binding->serverId); $context->binding->requireMatch($reader->binding());
         $observed = $context->now(); $transfer = $this->precheck->check($query->name, self::selection($op, $domain), $reader, $context);
-        $quote = $reader->quote($query, $context); $balance = BalanceReads::read($reader, $context, 'preflight');
-        foreach ([$quote, $balance] as $result) {
-            $context->binding->requireMatch($result->binding);
-            if ($result->disposition !== Disposition::Accepted) { throw new WriteHeld('write_acceptance_required'); }
-        }
-        $q = $quote->evidence()->quote;
-        if (!WriteMoney::cost($q, $query, $observed, $context->now()) || !WriteMoney::sufficient($balance->evidence()->balance, $q->cost)) { throw new WriteHeld('write_acceptance_required'); }
+        $quote = $reader->quote($query, $context); $balance = $retryBalance??BalanceReads::read($reader, $context, 'preflight');
+        WriteMoney::requireRead($context->binding, $quote, $balance);
+        $q = $quote->evidence()->quote; WriteMoney::requireFunds($q, $balance->evidence()->balance, $query, $observed, $context->now());
         return new DispatchReadiness($context->binding, $query, new Capabilities($context->binding, ['transfer' => $capability]),
             $q->cost, true, false, $observed, min($q->validUntil, $observed->modify('+120 seconds')), OperationClaims::payloadDigest($op),
             [...$transfer, 'premium' => false, 'privacy' => $privacy, 'name' => $query->name, 'years' => 1, 'cost' => ['amount' => $q->cost->amount, 'currency' => 'USD']]);

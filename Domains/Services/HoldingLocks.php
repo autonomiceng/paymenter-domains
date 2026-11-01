@@ -10,15 +10,15 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Oper
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false): array
+    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false): array
     {
-        if (!$advisory && DB::transactionLevel() !== 1) { throw new \LogicException('Holding locks require the outer transaction.'); }
+        if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
         ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
             'transactions' => $transactions, 'orders' => $orders, 'services' => $services, 'products' => $products,
             'plans' => $plans, 'service' => $service, 'product' => $product, 'plan' => $plan, 'cancel' => $cancel,
             'configs' => $configs, 'properties' => $properties, 'markers' => $markers, 'tax' => $tax,
             'upgrades' => $upgrades, 'links' => $links, 'opIds' => $opIds]
-            = $nativeLocks = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed, adoption: $foreignInvoices, additionalServices: $additionalServices, completeInvoices: $completeInvoices);
+            = $nativeLocks = HoldingNativeLocks::take((int) $seed->user_id, (int) $seed->service_id, $staffId, $advisory, $seed, adoption: $foreignInvoices, additionalServices: $additionalServices, completeInvoices: $completeInvoices, nativeReceipt: $nativeReceipt);
         $order = $orders->firstWhere('id', $service->order_id);
         $server = Server::whereKey($seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $account = Account::where('server_id', $seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
@@ -29,7 +29,7 @@ final class HoldingLocks
         $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
         if ($domain->service_id !== $seed->service_id || $domain->user_id !== $seed->user_id || $domain->server_id !== $seed->server_id || $domain->tld !== $seed->tld
-            || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== $domain->domain || $domain->authority_generation < 1
+            || $domain->adoptionPending() || !$domain->billing_managed || $domain->reservation_name !== ($released ? null : $domain->domain) || $domain->authority_generation < 1
             || $server->extension !== 'Domains' || $account->account_fingerprint !== $domain->account_fingerprint || $account->registrar_key !== $domain->registrar_key
             || $tld->account_fingerprint !== $domain->account_fingerprint || $tld->registrar_key !== $domain->registrar_key) {
             throw new \DomainException('Holding native authority changed.');

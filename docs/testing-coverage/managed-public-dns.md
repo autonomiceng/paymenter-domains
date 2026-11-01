@@ -15,7 +15,7 @@ atomic predecessor relink and continuity-only pointers, after-commit hints and d
 retained expired/deleted/moved-owner facts, full stamp races and exact claim replacement.
 Quota tests prove the shared watch/managed sixty-query pool, two-job ceiling and local
 saturation without failure. Long-TTL confirmation keeps badge freshness independent;
-101-source batches and invalid/conflicting hosting sources retain independent apex reads.
+101-source batches and invalid hosting sources retain independent apex reads.
 Owner fairness, bounded source rotation, managed-only DTO selection and registrar/financial
 isolation are exercised without network. The existing watch observer runs through the same
 pool. Mutation checks reject stamp bypass, watch creation and separate quota admission.

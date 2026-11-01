@@ -32,8 +32,8 @@ final class Registration extends RegistrationProtocol
         if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved); }
         $reference = $purchase->value('orderid');
         $reference = is_string($reference) && preg_match('/^[1-9][0-9]{0,19}$/D', $reference) ? $reference : null;
-        $expiry = Expiry::read($purchase); $status = $purchase->value('orderstatus');
-        $facts = new RegistrationEvidence($op->query, $reference, $expiry, null, []);
+        $expiry = Expiry::read($purchase, $expiryIssue); $status = $purchase->value('orderstatus');
+        $facts = new RegistrationEvidence($op->query, $reference, $expiry, null, [], expiryIssue: $expiryIssue);
         if ($purchase->code === '1300' || (is_string($status) && in_array(strtolower($status), ['pending', 'processing', 'queued'], true))) {
             return new DriverResult($op->binding, Disposition::Pending, SendState::Sent, ResultReason::Processing, new Evidence(registration: $facts));
         }

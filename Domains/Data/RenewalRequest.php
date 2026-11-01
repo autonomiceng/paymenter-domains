@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Data;
 final readonly class RenewalRequest
 {
     public function __construct(public int $domainId, public int $generation, public int $revision,
-        public string $expiry, public ?string $providerId, public int $years = 1, public ?string $obligationKey = null)
+        public string $expiry, public ?string $providerId, public int $years = 1, public ?string $obligationKey = null, public bool $manual = false)
     {
         new DateEvidence($expiry, ExpiryPrecision::Date, 'saved_anchor');
         if ($domainId < 1 || $generation < 1 || $revision < 1 || $years < 1 || $years > 10

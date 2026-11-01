@@ -12,7 +12,7 @@ final class StaffOperationReview
     /** Check status covers both a fresh read (recheck) and restarting reads after the read limit (resume_reads). */
     public const ACTIONS=['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync',
         'hold'=>'Put on hold','release'=>'Release hold','disposition'=>'Close request',
-        'refund'=>'Cancel and add credit','credit'=>'Retry credit','replacement'=>'Reissue renewal invoice'];
+        'refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'];
     public const CHANGED='This request changed. Reload the page and try again.';
     private array $before=[];
     private array $verifiedTicket=[];
@@ -65,11 +65,13 @@ final class StaffOperationReview
         if(!is_array($history)||!array_is_list($history)||count($history)>$limit){throw new StaffReviewRefused(self::CHANGED);}
         return $history;
     }
-    /** A release that did not stick: every path back to held lands here, so History can say why. */
+    /** A release that did not stick: every path back to held lands here, so History can say why. An order's first system hold keeps only its time
+     * and reason, apart from staff_actions: that history is for staff, and its cap must not fill with system rows. Later holds stay out. */
     public static function noteReturn(Operation $op): void
     {
         if(!$op->isDirty('state')||$op->state!=='held'||$op->safe_code==='staff_review_required'){return;}
         $history=$op->policy['staff_actions']??[];$last=is_array($history)&&$history!==[]?end($history):null;
+        if($history===[]&&in_array($op->action,['register','transfer','renew'],true)&&!isset($op->policy['first_hold'])){$op->policy=[...($op->policy??[]),'first_hold'=>['reason'=>$op->safe_code,'at'=>now()->format(DATE_ATOM)]];return;}
         if(!is_array($last)||($last['action']??null)!=='release'||count($history)>=100){return;}
         $history[]=['action'=>'engine_hold','phase'=>'completed','reason'=>$op->safe_code,'at'=>now()->format(DATE_ATOM),
             'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation];
@@ -98,9 +100,11 @@ final class StaffOperationReview
         $op=$l['operations']->firstWhere('id',$this->operationId)->fresh(); $d=$l['domain']->fresh(); $t=$this->verifiedTicket;
         $this->requireIdle($op);
         $history=$op->policy['staff_actions']??[];
-        $history[]=['key'=>$t['key'],'action'=>$this->action,'phase'=>$phase,'actor_id'=>$this->actorId,'reason'=>$this->reason,
+        $actor=User::find($this->actorId);
+        $history[]=['key'=>$t['key'],'action'=>$this->action,'phase'=>$phase,'actor_id'=>$this->actorId,'actor_name'=>$actor?(trim($actor->first_name.' '.$actor->last_name)?:'Staff #'.$actor->id):null,'reason'=>$this->reason,
             'at'=>$this->clock->now()->format(DATE_ATOM),'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,
-            'before'=>$this->before,'after'=>self::state($op,$d),...($failure?['safe_code'=>OperationFailure::code($failure)]:[])];
+            'before'=>$this->before,'after'=>self::state($op,$d),
+            ...($this->action==='recheck'&&$phase==='read_finished'&&in_array($op->action,['register','transfer','renew'],true)?['check'=>$op->policy['status_check']??['outcome'=>'unavailable']]:[]),...($failure?['safe_code'=>OperationFailure::code($failure)]:[])];
         $op->update(['policy'=>[...($op->policy??[]),'staff_actions'=>$history]]);
     }
     public function local(\Closure $write): mixed

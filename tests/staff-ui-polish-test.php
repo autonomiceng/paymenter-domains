@@ -69,10 +69,10 @@ $op=clone $base;$op->state='uncertain';$op->funding_basis='paid_invoice';$op->sa
 foreach([0=>' (under 1 hour so far)',1=>' (1 hour so far)',7=>' (7 hours so far)'] as $hours=>$age){
     $op->started_at=\Carbon\CarbonImmutable::createFromTimestampUTC(time()-$hours*3600-30);
     same('NameSilo has not confirmed this transfer.',PaidUncertainty::summary($op),'Paid uncertainty title snapshot');
-    same('New orders on this NameSilo account are paused until the result is known'.$age.'.',PaidUncertainty::holdSummary($op),'Paused orders copy '.$hours);
+    same('Paid domain changes on this NameSilo account wait until the result is known'.$age.'. Registrations and renewals still check the balance before sending.',PaidUncertainty::holdSummary($op),'Paused orders copy '.$hours);
 }
 $op->started_at=null;$op->created_at=null;
-same('New orders on this NameSilo account are paused until the result is known.',PaidUncertainty::holdSummary($op),'Absent timestamps omit the age');
+same('Paid domain changes on this NameSilo account wait until the result is known. Registrations and renewals still check the balance before sending.',PaidUncertainty::holdSummary($op),'Absent timestamps omit the age');
 $op->attempt=[];
 same('NameSilo has not confirmed this transfer.',RequestFacts::for($op)['outcome'],'Uncertain request copy snapshot');
 same(['Start after payment','Paymenter payment events'],array_keys(NativePaidHooks::notices()),'Payment event labels snapshot');

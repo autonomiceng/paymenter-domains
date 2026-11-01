@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, OwnerRenewalController};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, OwnedDomains, RenewalCycles, RuntimeIneligible, RuntimeReason};
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();
 $billing=new DomainBilling($bindings,$guard,$clock);Queue::fake();
@@ -119,6 +120,7 @@ $refused($d,['years'=>'3'],'This domain already has a renewal invoice for a diff
 same($issued,$ledger(),'Different term on an issued cycle creates no invoice');
 same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Issued cycle links its invoice instead of a form');
 $html=$page($d);expect(str_contains($html,'Pay invoice')&&str_contains($html,'href="'.route('invoices.show',$invoice).'"')&&!str_contains($html,'Create invoice'),'Issued page links the invoice');
+expect(str_contains($html,'Early renewal not paid. Nothing is due until Oct 11, 2027.')&&!str_contains($html,'Due Oct 11, 2027'),'Customer reads the same early renewal words as staff');
 $setting('domains_manual_renewals_enabled',false);
 same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Off retains the issued-invoice link');
 same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Turning requests off still returns the issued invoice');
@@ -347,4 +349,11 @@ foreach([[new RuntimeIneligible(RuntimeReason::SpendingPaused),OwnerRenewalContr
 foreach([[null,'This domain already has a renewal invoice for a different term. Pay that invoice, or contact support to change it.'],['cancelled',OwnerRenewalController::CANCELLED],
     ['review','This renewal is under review. Contact support if you need an update on this renewal.']] as [$state,$copy]){same($copy,OwnerRenewalController::refusal(new DomainException('Existing renewal obligation requires review.'),$state),'Issued cycle copy for '.($state??'term'));}
 foreach([Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::class,App\Jobs\Server\CreateJob::class] as $job){Queue::assertNotPushed($job);}
+// Money that lands on a closed early invoice: the customer page says where it went.
+$setting('domains_manual_renewals_enabled',true);$retire=new RenewalCycles($bindings,$clock);$refunds=new Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
+$clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');[$source]=$prepare(placeholderComFixtureName('owner-late-credited-placeholder.com'));same('succeeded',$reconcile->run($source->id)->state,'Domain ready');$domain=$source->domain()->firstOrFail();
+$clock->instant=new DateTimeImmutable('2027-08-01T12:00:00Z');$closed=$billing->invoice($domain->id,$user,1);$op=Operation::where('invoice_id',$closed->id)->sole();DB::table('domains_operations')->where('id',$op->id)->update(['created_at'=>'2027-08-01 12:00:00']);
+$clock->instant=new DateTimeImmutable('2027-08-09T12:00:00Z');$retire->closeEarlyUnpaid($domain->id);same('cancelled',$closed->fresh()->status,'The week closes the invoice');
+App\Helpers\ExtensionHelper::addPayment($closed->id,null,'1.00');$refunds->creditRejected($op->id);
+expect(str_contains($page($domain),'We added $1.00 to account credit. You can apply it on an invoice.'),'Customer page says where the money went');
 echo "Owner renewal off, terms, foreign, replay, success, duplicate, issued link, auto-renew off, cycle states and calendar refusals passed.\n";$nativeSuccessful=true;

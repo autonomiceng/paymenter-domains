@@ -9,7 +9,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,HoldingLocks,StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement,HoldingLocks,StaffHoldingReview,UnpaidAcquisitionProof};
 final class AcquisitionActions
 {
     public const DESCRIPTION='Closes the unpaid order and releases the domain name.';
@@ -34,7 +34,8 @@ final class AcquisitionActions
     {
         if(!Staff::can('admin.domains.manage')||!Staff::can(AcquisitionRetirement::PERMISSION)
             ||!in_array($d->status,['registration_pending','transfer_pending'],true)){return [];}
-        try{$stamp=StaffHoldingReview::stamp(HoldingLocks::take($d,advisory:true));}catch(\Throwable){return [];}
+        // A paid order goes through Cancel and add credit on its request.
+        try{$l=HoldingLocks::take($d,advisory:true);$stamp=StaffHoldingReview::stamp($l);if(UnpaidAcquisitionProof::paid($l)){return [];}}catch(\Throwable){return [];}
         return [Action::make('retire_unpaid')->label('Cancel order')->color('danger')->requiresConfirmation()
             ->modalHeading('Cancel order?')->modalDescription(self::DESCRIPTION)->modalSubmitActionLabel('Cancel order')->modalWidth('lg')
             ->schema([Hidden::make('review_key')->default(fn()=>StaffHoldingReview::ticket((int)Auth::id(),(int)$d->id,'retire_unpaid',$stamp,app(Clock::class))),

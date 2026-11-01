@@ -13,14 +13,14 @@ foreach ([DomainStatus::SET,RequestStatus::SET,AccountStatus::SET] as $set) {
 }
 
 // 2.1 Domain.
-same(['Active','Pending registration','Pending transfer','Action required','Under review','Expired','Redemption','Failed','Cancelled'],
+same(['Active','Pending registration','Pending transfer','Awaiting payment','Action required','Under review','Expired','Redemption','Failed','Cancelled'],
     array_column(DomainStatus::SET,0),'Domain labels');
-same(['success','info','info','warning','warning','danger','danger','danger','gray'],array_column(DomainStatus::SET,1),'Domain tones');
+same(['success','info','info','info','warning','warning','danger','danger','danger','gray'],array_column(DomainStatus::SET,1),'Domain tones');
 foreach ([
     'active'=>$pill('Active','success'),
     'registration_pending'=>$pill('Pending registration','info'),
     'transfer_pending'=>$pill('Pending transfer','info'),
-    'awaiting_payment'=>$pill('Action required','warning','Invoice not paid'),
+    'awaiting_payment'=>$pill('Awaiting payment','info','Invoice not paid'),
     'awaiting_code'=>$pill('Action required','warning','Auth code needed'),
     'renewal_off_expiring'=>$pill('Action required','warning','Auto-renew off'),
     'watch.ns_changed'=>$pill('Action required','warning','Nameservers changed'),
@@ -29,11 +29,11 @@ foreach ([
     'held'=>$pill('Under review','warning'),
     'uncertain'=>$pill('Under review','warning'),
     'active_no_expiry'=>$pill('Under review','warning','Expiry missing'),
-    'expired'=>$pill('Expired','danger'),
-    'grace'=>$pill('Expired','danger','In grace period'),
+    'expired'=>$pill('Expired','danger',DomainStatus::LATE),
+    'grace'=>$pill('Expired','danger',DomainStatus::LATE),
     'watch.expired'=>$pill('Expired','danger','Renew at your registrar'),
-    'redemption'=>$pill('Redemption','danger'),
-    'watch.redemption'=>$pill('Redemption','danger'),
+    'redemption'=>$pill('Redemption','danger',DomainStatus::LATE),
+    'watch.redemption'=>$pill('Redemption','danger','Restore at your registrar'),
     'registration_rejected'=>$pill('Failed','danger','Registration did not finish'),
     'transfer_rejected'=>$pill('Failed','danger','Transfer did not finish'),
     'cancelled'=>$pill('Cancelled','gray'),

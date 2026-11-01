@@ -244,7 +244,7 @@ foreach(['enom','namesilo'] as $key){$registry->register($key,['token'],$verify,
 $balanceReads=static fn()=>array_sum(array_map(static fn($reader)=>count(array_filter($reader->calls,static fn($method)=>$method==='balance')),$readState->readers));
 $manualBindings=new AccountBindings($registry);$limiter=new AccountReadBudget($clock);$balances=new RegistrarBalances($manualBindings,$clock,$limiter);
 app()->instance(Clock::class,$clock);app()->instance(RegistrarBalances::class,$balances);
-staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,Page::class];$panel->pages($pages);
+staffPanel();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');$panel=Filament::getCurrentPanel();$pages=[RegistrarSetup::class,RegistrarAccount::class,Page::class];$panel->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $staff=staffUser([Staff::VIEW]);$denied=staffUser([]);Auth::login($denied);
 try{$balances->refresh($a->server_id);expect(false,'Refresh must reject missing permission');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Permission refusal');}
@@ -302,9 +302,10 @@ try{
     same($clock->now()->getTimestamp(),(int)$row($a)->attempted_at,'Consumed failure records its attempt');
 }finally{$readState->failedResult=false;DB::table(BalanceSchema::TABLE)->where('id',$savedBalance['id'])->update($savedBalance);$clock->instant=$savedTime;}
 // Render actual Filament page; neither credentials, fingerprints nor provider error text reach HTML or Livewire state.
+Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $shown=RegistrarBalances::facts($a,$clock->now());$serverName=App\Models\Server::findOrFail($a->server_id)->name;
 $render=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Registrars')->assertSee('Add funds')->assertSee($serverName)->assertSee($shown['balance']??'Missing');
-$account=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertSee('Check balance')->assertSee('Add funds')->assertSee($shown['balance']??'Missing');
+$account=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$a->server_id])->assertSee('Check balance')->assertSee('Add funds')->assertSee($shown['balance']??'Missing')->assertSee('Unpaid hold')->assertSee(Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::minutes((int)$a->server_id).' minutes');
 $html=$render->html().$account->html();foreach(['https://cp.enom.com/','https://ote.namesilo.com/cart/add-funds','noopener noreferrer'] as $needle){expect(str_contains($html,$needle),'Rendered account structure and official external links: '.$needle);}
 expect(!str_contains($html,'https://www.namesilo.com/cart/add-funds'),'OTE accounts never link to live funding');
 $liveServer=App\Models\Server::create(['name'=>'Synthetic live balance','extension'=>'Domains','type'=>'server','enabled'=>true]);

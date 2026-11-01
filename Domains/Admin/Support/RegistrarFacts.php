@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,Registrar
 use Illuminate\Support\Facades\{Blade,DB,Schema};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomTestSendLimit,NameSiloSandbox,RegistrarBalances};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -71,7 +71,7 @@ final class RegistrarFacts
     public static function balance(Account $account): array
     {
         $f=RegistrarBalances::facts($account,app(Clock::class)->now());
-        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],
+        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],
             'funds'=>RegistrarBalances::fundsUrl($account->registrar_key,$account->environment)];
     }
     /** Each Enom test login has its own rolling send limit. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
@@ -83,13 +83,17 @@ final class RegistrarFacts
         $full=$u['day']>=$u['day_limit']||$u['minute']>=$u['minute_limit'];
         $off=$u['day_limit']===0||$u['minute_limit']===0;
         return ['value'=>$u['day'].' of '.$u['day_limit'],'tone'=>$full?'danger':null,'sub'=>$off?EnomTestSendLimit::facts($uid):($full?'Limit reached. Try again later.':null),
-            'help'=>'Our test send limit allows '.$u['day_limit'].' requests per login in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too.'];
+            'help'=>'Our test send limit allows '.$u['day_limit'].' requests per login in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too. Transfer checks stop at '.intdiv($u['day_limit'],2).' total requests to leave room for checkout and other work. This is our safety cap; it is not an Enom limit.'];
     }
     public static function lastSync(Server $server): ?string
     {
-        if (!Schema::hasTable('domains_runtime_turns')) { return null; }
-        $at=DB::table('domains_runtime_turns')->where('server_id',$server->id)->value('finished_at');
-        return $at?gmdate('M j, Y H:i \U\T\C',(int)$at):null;
+        $account=Account::where('server_id',$server->id)->first();if(!$account){return null;}
+        $key=['server_id'=>$server->id,'account_fingerprint'=>$account->account_fingerprint];
+        // Worker turns also run when there is no registrar read. Only completed price reads belong here.
+        $at=Price::where($key)->max('observed_at');$price=$at?\Carbon\CarbonImmutable::parse($at)->getTimestamp():0;
+        $fill=Schema::hasTable(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)
+            ?(int)DB::table(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)->where($key)->value('filled_at'):0;
+        $latest=max($price,$fill);return $latest?gmdate('M j, Y H:i \U\T\C',$latest):null;
     }
     /** Verified Enom user ID for the account's mode. NameSilo has no user ID. */
     public static function apiUser(Account $account): ?string

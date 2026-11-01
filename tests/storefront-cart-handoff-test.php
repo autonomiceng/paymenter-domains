@@ -66,6 +66,8 @@ same(['Domains cart handoff failed.', ['exception_class' => DomainException::cla
 try { FormKeys::verify($used, 'order:'.$name); expect(false, 'Failed handoff key cannot replay'); }
 catch (Symfony\Component\HttpKernel\Exception\HttpException $error) { same(419, $error->getStatusCode(), 'Retry needs fresh search intent'); }
 foreach (['missing_flag', 'wrong_name', 'late_success'] as $mode) {
+    // Separate transport cases must outlast the shared failed-check backoff.
+    Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSeconds(11));
     $clock->instant = $now;
     resetWire(['reply' => static function ($form) use ($reply, $mode, $clock, $now): string {
         if ($mode === 'late_success') { $clock->instant = $now->modify('+10 seconds'); }
@@ -83,6 +85,7 @@ foreach (['missing_flag', 'wrong_name', 'late_success'] as $mode) {
     same(1, count($GLOBALS['enomWire']['forms']), $mode.' has one physical Check');
 }
 $clock->instant = $now; resetWire(['reply' => $reply]);
+Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSeconds(11));
 $order($name, '01'); same('invalid_action_or_term', end($logger->warnings)[1]['exception_message_key'], 'Bare DomainException is distinguished');
 same($generic, $session->get('domains_notice'), 'Other refusals keep the general notice');
 same([], $GLOBALS['enomWire']['forms'], 'Invalid term never reads provider');
@@ -112,5 +115,6 @@ Illuminate\Support\Facades\Event::listen(App\Events\CartItem\Creating::class, st
 resetWire(['reply' => $reply]); $order('private-placeholder.com');
 same(['Domains cart handoff failed.', ['exception_class' => DomainException::class, 'exception_message_key' => 'unclassified']], end($logger->warnings), 'Actual catch path withholds raw message and nested cause');
 same(1, $cart->items()->count(), 'Unknown failure cannot create a second cart item');
+Illuminate\Support\Carbon::setTestNow();
 echo "Storefront handoff transport, strict evidence, timing and retry checks passed.\n";
 $nativeSuccessful = true;

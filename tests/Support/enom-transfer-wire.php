@@ -3,7 +3,7 @@
 declare(strict_types=1);
 $transferReply=static function(array $p)use($transferState,$clock):string {
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Transfer request outside financial locks');
-    same('https://resellertest.enom.com/interface.asp',$GLOBALS['enomWire']['options'][CURLOPT_URL],'Transfer TEST route');
+    same(($transferState->environment??'test')==='live'?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp',$GLOBALS['enomWire']['options'][CURLOPT_URL],'Transfer environment route');
     $cmd=$p['Command'];$name=isset($p['SLD1'])?$p['SLD1'].'.'.$p['TLD1']:(isset($p['SLD'])?$p['SLD'].'.'.$p['TLD']:$transferState->name);
     if($cmd==='TP_CreateOrder'){$transferState->name=$name;$transferState->bill=$clock->now()->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');}
     $expiry='2028-10-21';[$label,$ending]=array_pad(explode('.',$name,2),2,'com');
@@ -12,7 +12,7 @@ $transferReply=static function(array $p)use($transferState,$clock):string {
         'PE_GetProductPrice'=>'<ProductPrice><ProductEnabled>true</ProductEnabled><Price>10.0000</Price></ProductPrice>',
         'GetBalance'=>'<AvailableBalance>100.00</AvailableBalance>',
         'TP_CreateOrder'=>'<transferorder><transferorderid>7001</transferorderid></transferorder>',
-        'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="456">'.$name.'</DomainName><Status><Belongs-To>'.($transferState->pending?'other-account':'test-uid').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
+        'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="456">'.$name.'</DomainName><Status><Belongs-To>'.($transferState->pending?'other-account':($transferState->uid??'test-uid')).'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
         'GetDNS'=>'<dns>ns1.provider.example</dns><dns>ns2.provider.example</dns>',
         'GetRenew'=>'<RenewName>0</RenewName>','GetRegLock'=>'<Reg-Lock>1</Reg-Lock>',
         'GetWPPSInfo'=>'<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',

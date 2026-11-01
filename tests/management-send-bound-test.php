@@ -33,7 +33,7 @@ for ($i = 2; $i <= 20; $i++) {
 }
 $before = count($state->calls);
 for ($i = 0; $i < 2; $i++) { $management->reconcile($op->id, $driver); $management->run($op->id, $driver); }
-same($before, count($state->calls), 'Lifetime limit refuses repeated entries before I/O');
+same($before, count($state->calls), 'Fast observation limit refuses repeated entries before I/O');
 same(42, $before, 'No-deferral case uses 1 prepare + 1 write + 20 pairs');
 commerceReject(fn () => $op->fresh()->update(['attempt' => [...$op->fresh()->attempt, 'management_observation_attempts' => 19]]));
 commerceReject(fn () => $op->fresh()->update(['attempt' => array_diff_key($op->fresh()->attempt, ['management_observation_attempts' => true])]));
@@ -162,7 +162,7 @@ $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.operat
 $failedHistory=count($op->fresh()->attempt['management_reads']??[]);
 for($i=1;$i<=20;$i++){
     $failed=false;
-    try{$staffRun($op);}catch(RuntimeException $error){$failed=true;}
+    try{$staffRun($op);}catch(\Paymenter\Extensions\Servers\Domains\Services\StaffReviewRefused $error){$failed=true;}
     $audit=$op->fresh()->policy['staff_actions'];
     same('read_failed',end($audit)['phase'],'Failed recovery read is not audited as completed');
     same(true,$failed,'Failed recovery read reaches the staff action error handler');
@@ -170,9 +170,75 @@ for($i=1;$i<=20;$i++){
 }
 same($failedHistory,count($op->fresh()->attempt['management_reads']??[]),'Failed legacy reads add no completed history');
 same($before+40,count($state->calls),'Twenty failed recovery observations are bounded');
-$management->reconcile($op->id,$driver);$staffRun($op);
+$management->reconcile($op->id,$driver);commerceReject(fn()=>$staffRun($op));
 same($before+40,count($state->calls),'Owner/background and exhausted staff entries cannot add sends');
 commerceReject(fn()=>$op->fresh()->update(['attempt'=>[...$op->fresh()->attempt,'management_legacy_observation_attempts'=>1]]));
 commerceReject(fn()=>$op->fresh()->update(['attempt'=>array_diff_key($op->fresh()->attempt,['management_legacy_observation_attempts'=>true])]));
+// A frozen automatic correction survives a long outage after its fast-read budget is spent.
+[$d,$driver,$original]=$holding(placeholderComFixtureName('bound-auto-recovery-placeholder.com'),\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed(['ns1.example.com','ns2.example.com'],'enom_getdns',$clock->now()));
+$state->renew=true;$state->apply=false;
+$driver=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($driver->capabilities()->binding,
+    static function($origin,$command,$parameters,$timeout)use($exchange,$state):string{
+        $reply=$exchange($origin,$command,$parameters,$timeout);
+        if($command==='GetRenew'&&$state->fault==='GetRenew'){throw new RuntimeException('Offline Enom outage');}
+        return $reply;
+    });
+$original->update(['policy'=>[...$original->policy,'reconciliation'=>[...($original->policy['reconciliation']??[]),'observed_corrections'=>['auto_renew']]]]);
+$op=\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$management,$driver);
+same('auto_renew_off',$op->action,'Automatic correction uses the frozen authorization');
+$state->fault='GetRenew';$management->run($op->id,$driver);
+for($i=1;$i<20;$i++){$management->reconcile($op->id,$driver);}
+$sealed=$op->fresh()->attempt;$funding=$op->fresh()->funding;$payload=$op->fresh()->payload;
+$clock->instant=$clock->now()->modify('+6 hours');$before=count($state->calls);
+$management->reconcile($op->id,$driver);
+same($before+2,count($state->calls),'Exhausted automatic correction still makes a slow status read during outage');
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
+$before=count($state->calls);
+try{$staffRun($op);expect(false,'Recent slow read must throttle Check status');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\StaffReviewRefused $e){expect(str_contains($e->getMessage(),'Try again'),'Throttled staff check gives the next step');}
+same($before,count($state->calls),'Staff cannot hammer an exhausted request');
+$clock->instant=$clock->now()->modify('+15 minutes');$before=count($state->calls);
+try{$staffRun($op);expect(false,'Outage must not be reported as Status checked');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\StaffReviewRefused $e){expect(str_contains($e->getMessage(),'15 minutes'),'Failed staff read gives a plain retry step');}
+same($before+2,count($state->calls),'Spaced Check status performs a real read after the fast budget');
+\Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
+$queued=\Illuminate\Support\Facades\Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class)->count();
+(new \Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch($clock))->enqueue($op->id,true);
+same($clock->now()->getTimestamp()+21600,(int)DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at'),'Normal scheduler waits until six hours after the staff read');
+same($queued,\Illuminate\Support\Facades\Queue::pushed(\Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class)->count(),'Cooldown does not enqueue another read');
+$clock->instant=$clock->now()->modify('+6 hours -1 second');$before=count($state->calls);
+$management->reconcile($op->id,$driver);same($before,count($state->calls),'Automatic recovery waits six hours after any reserved read');
+$clock->instant=$clock->now()->modify('+1 second');$state->fault='';$state->renew=false;
+$other=new DomainManagement($bindings,$clock,new WriteFeatures(management:true),true);
+$state->during=static function()use($other,$op,$driver,$state):void{
+    $before=count($state->calls);$other->reconcile($op->id,$driver);same($before,count($state->calls),'Concurrent tick cannot reserve another slow read');
+};
+same('succeeded',$management->reconcile($op->id,$driver)->state,'Automatic correction resolves alone when registrar reads recover');
+foreach($sealed as $field=>$value){if($field!=='management_read_at'){same($value,$op->fresh()->attempt[$field],'Recovery retains original sealed evidence');}}
+same($funding,$op->fresh()->funding,'Read recovery retains all funding');same($payload,$op->fresh()->payload,'Read recovery retains frozen authorized details');
+same(1,count(array_filter($state->calls,fn($v)=>$v[0]==='SetRenew')),'Slow and staff recovery never resend the correction');
+same(true,ManagementEvidence::resolved($op->fresh(),$d->fresh()),'Recovered correction releases management and renewal blocker');
+same('queued',$submit($d,$driver,'lock',['locked'=>false])->state,'Management can continue after autonomous readback');
+// A completed first history remains immutable while a spaced staff read resolves it.
+[$d,$driver,$op]=$uncertain('bound-full-history-recovery');
+for($i=1;$i<20;$i++){$management->reconcile($op->id,$driver);}
+$history=$op->fresh()->attempt['management_reads'];$clock->instant=$clock->now()->modify('+15 minutes');$state->locked=false;
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(static fn()=>$driver));
+\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+$budget=new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class,new \Paymenter\Extensions\Servers\Domains\Services\Runtime);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,$budget);
+$binding=$driver->capabilities()->binding;$origin=\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background;$lease=$budget->acquire($binding,$origin);$before=count($state->calls);
+try{$staffRun($op);expect(false,'Busy account must not report Status checked');}
+catch(\Paymenter\Extensions\Servers\Domains\Services\StaffReviewRefused $e){expect(str_contains($e->getMessage(),'account are busy')&&str_contains($e->getMessage(),'15 minutes'),'Busy account explains when to try again');}
+same($before,count($state->calls),'Recovery respects the normal account read budget');$budget->release($binding,$origin,$lease);
+$clock->instant=$clock->now()->modify('+15 minutes');$before=count($state->calls);$staffRun($op);
+same($before+2,count($state->calls),'Spaced staff check reads beyond a full completed history');
+same($history,$op->fresh()->attempt['management_reads'],'The first twenty completed reads stay immutable');
+same('succeeded',$op->fresh()->state,'Staff read can settle the sealed request after the fast limit');
+same(true,ManagementEvidence::resolved($op->fresh(),$d->fresh()),'Latest recovery read supplies completion proof');
+commerceReject(fn()=>$op->fresh()->update(['attempt'=>[...$op->fresh()->attempt,'management_recovery'=>['number'=>0,'at'=>$clock->now()->format(DATE_ATOM),'reviewed'=>false]]]));
+commerceReject(fn()=>$op->fresh()->update(['attempt'=>array_diff_key($op->fresh()->attempt,['management_recovery_read'=>true])]));
+commerceReject(fn()=>$op->fresh()->update(['state'=>'uncertain','completed_at'=>null]));
 $nativeSuccessful = true;
-echo "Management lifetime send bound: throwing read, deferrals, full history, concurrent observer, legacy refusal, 47-send maximum passed.\n";
+echo "Management send seal and paced read recovery: fast bounds, six-hour automatic checks, spaced staff checks and immutable history passed.\n";

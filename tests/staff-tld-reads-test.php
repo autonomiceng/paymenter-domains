@@ -96,7 +96,7 @@ $unknown->update(['wholesale'=>null,'hold_reason'=>'unknown_price','revision'=>$
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Not for sale')->assertSee('Cost missing');
 $row=collect(TldFacts::prices($t->fresh()))->first(fn($r)=>$r['action']==='register'&&$r['term']===1);
 expect(in_array('cost_missing',$row['flags'],true)&&$row['cost']===null,'Unknown cost remains explicit');
-$calls=$reads->calls;Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Sync failed')->assertSee('Saved prices are kept.')->assertDontSee('Unavailable');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSuccessful();same($calls,$reads->calls,'No reader factory on GET');
+$calls=$reads->calls;Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Sync failed')->assertSee('Fix the connection or our call limit, then use Sync prices. Daily retries continue.')->assertDontSee('Unavailable');Livewire::actingAs($u)->test(RegistrarSetup::class)->assertSuccessful();same($calls,$reads->calls,'No reader factory on GET');
 DB::table('domains_tlds')->where('id',$tlds[1]->id)->update(['account_fingerprint'=>str_repeat('f',64)]);
 Livewire::actingAs($u)->test(ListTlds::class)->assertCanNotSeeTableRecords([$tlds[1]]);
 $open=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]);$u->role->update(['permissions'=>[]]);$open->call('$refresh')->assertForbidden();

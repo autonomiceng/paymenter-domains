@@ -55,7 +55,7 @@ $registrationExchange = static function ($origin, $command, $p, $timeout) use ($
 };
 $scenarioCompose = static function (int $i, string $action, bool $enabled = true) use ($makeTransfer, $registrationExchange, $freshBindings, $claims, $clock, $state,
     &$engine, &$bridge, &$protocol, &$fresh, &$accepted, &$profiles, &$binding): void {
-    $state->duringWrite = null;
+    $state->duringWrite = null;$state->quote=$action==='register'?'6.00':'7.00';
     $makeTransfer($i, new WriteFeatures(registration: $action === 'register' && $enabled, transfer: $action === 'transfer' && $enabled));
     if ($action === 'transfer') { return; }
     $features = new WriteFeatures(registration: $enabled);

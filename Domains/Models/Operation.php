@@ -13,21 +13,27 @@ class Operation extends Model
     protected $table = 'domains_operations';
     protected $guarded = [];
     protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint'];
-    protected $casts = ['attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
+    protected $casts = ['retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
 
     protected static function booted(): void
     {
+        static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::guard($operation));
+        static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::guardCreation($operation));
         static::updating(static function (self $operation): void {
-            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason'])) {
+            if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number'])) {
                 throw new \DomainException('Operation binding and action are immutable.');
             }
         });
         static::updating(static function (self $operation): void {
+            \Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::guard($operation);
             $old = $operation->getOriginal('policy') ?? []; $new = $operation->policy ?? [];
+            if(isset($old['unsent_retry'])){
+                foreach($old['unsent_retry'] as $key=>$value){if(($new['unsent_retry'][$key]??null)!==$value){throw new \DomainException('Renewal retry identity is retained.');}}
+            }
             if (isset($old['renewal']) && $operation->isDirty(['base_expires_at', 'expected_expires_at'])) {
                 throw new \DomainException('Issued renewal expiry obligations are frozen.');
             }
-            foreach (['native_acquisition_cancelled_at', 'native_acquisition_closure', 'unpaid_retirement', 'checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
+            foreach (['funds_wait_at', 'funds_wait_until', 'native_acquisition_cancelled_at', 'native_acquisition_closure', 'unpaid_retirement', 'checkout', 'price', 'seller_revision', 'calendar', 'renewal', 'complimentary', 'management', 'privacy'] as $key) {
                 if (array_key_exists($key, $old) && ($new[$key] ?? null) !== $old[$key]) { throw new \DomainException('Checkout evidence is frozen.'); }
             }
             $old = $operation->getOriginal('cost') ?? []; $new = $operation->cost ?? [];
@@ -40,6 +46,7 @@ class Operation extends Model
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\OwnerSetup::guard($operation));
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ManagementEvidence::guard($operation));
         static::updating(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::noteReturn($operation));
+        static::updated(static fn (self $operation) => \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::settle($operation));
         static::updating(static function (self $operation): void {
             $before = $operation->getOriginal('policy') ?? []; $after = $operation->policy ?? [];
             if (array_key_exists('contact_disposition', $before)
@@ -127,7 +134,9 @@ class Operation extends Model
                     &&$validDeferrals&&!array_diff(array_keys($old),$allowed)
                     &&!array_intersect(array_keys($old),['execution','evidence','charge','order_candidates','provider_reference','registration','corrections','reconciliation','terminal']);
             }
-            $safeAttemptReset=$safeCapReset||$safeTestRetry;
+            $balanceCap=\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::capReset($operation);
+            $safeAttemptReset=$safeCapReset||$safeTestRetry||$balanceCap;
+            \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::guard($operation,$balanceCap);
             if($newRefusals!==$oldRefusals&&!$safeCapReset) { throw new \DomainException('TEST call refusal history requires a proven-unsent cap reset.'); }
             if (!array_key_exists('registration_admission', $old) && array_key_exists('registration_admission', $new)
                 && (($old['seal'] ?? null) !== 'absent' || ($new['seal'] ?? null) !== 'sealed' || $operation->action !== 'register')) {
@@ -149,6 +158,16 @@ class Operation extends Model
                 $before = $operation->getOriginal('funding') ?? []; $after = $operation->funding ?? [];
                 if (!$safeAttemptReset&&array_key_exists($key, $before) && (!array_key_exists($key, $after) || $after[$key] !== $before[$key])) {
                     throw new \DomainException('Claim funding evidence is frozen.');
+                }
+            }
+            $before=$operation->getOriginal('funding')??[];$after=$operation->funding??[];
+            $history=$before['late_credits']??[];$next=$after['late_credits']??[];
+            if(!is_array($history)||!is_array($next)||!array_is_list($next)||array_slice($next,0,count($history))!==$history){throw new \DomainException('Late money returns are append-only.');}
+            foreach($before['receipt_return_results']??[] as $key=>$result){
+                $next=$after['receipt_return_results'][$key]??null;
+                if(!is_array($next)||($result['state']??null)==='credited'&&$next!==$result){throw new \DomainException('Receipt returns are retained.');}
+                foreach(['amount_minor','key','refund_id'] as $field){
+                    if(isset($result[$field])&&($next[$field]??null)!==$result[$field]){throw new \DomainException('Receipt return identity is frozen.');}
                 }
             }
             foreach (['auto_pay', 'auto_pay_result'] as $key) {

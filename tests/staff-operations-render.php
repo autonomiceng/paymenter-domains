@@ -39,7 +39,9 @@ $render(Livewire::actingAs($user)->test(ViewOperation::class,['record'=>$complet
 $rows=[];
 foreach(StaffOperationReview::ACTIONS as $action=>$label){
     $copy=$op->replicate();$copy->safe_code='staff_review_required';$copy->operation_key='synthetic-modal-'.$action;$copy->state=match($action){'hold'=>'queued','credit','disposition','replacement'=>'rejected',default=>'held'};
-    if($action==='replacement'){$copy->action='renew';}$copy->save();
+    if($action==='replacement'){$copy->action='renew';}
+    if($action==='disposition'){$copy->action='register';$copy->completed_at=null;$copy->attempt=['seal'=>'absent','send_state'=>'definitely_unsent','disposition'=>'rejected','rejection_basis'=>'definitely_unsent'];}
+    $copy->save();
     // Only the money actions and Close request open a dialog; the rest run on click.
     $rows[$action]=['label'=>$label,'description'=>OperationActions::description($action)];
     if(in_array($action,['disposition','refund','credit','replacement'],true)){

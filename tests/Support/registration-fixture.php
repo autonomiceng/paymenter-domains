@@ -18,7 +18,8 @@ foreach (['enom', 'namesilo'] as $key) {
     $registry->register($key, ['token'], $verifier, static function (AccountBinding $b, array $c) use ($registration, $clock): FakeRegistrar {
         same(0, DB::transactionLevel(), 'Read factory outside locks');
         $registration->reads[] = $registration->query->name;
-        $quote = new QuoteEvidence($registration->query, new Money('99.00', 'USD'), CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+120 seconds'));
+        // Match the commerce fixture's USD 6 annual cost; write-path cases must stay inside the frozen order.
+        $quote = new QuoteEvidence($registration->query, new Money((6 * $registration->query->years).'.00', 'USD'), CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+120 seconds'));
         return new FakeRegistrar($b, new Capabilities($b, []), new DriverResult($b, Disposition::Accepted, SendState::Sent,
             ResultReason::Acknowledged, new Evidence(quote: $quote, balance: new Money('100.00', 'USD'), available: true, premium: false)));
     });

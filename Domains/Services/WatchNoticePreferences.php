@@ -13,8 +13,8 @@ final class WatchNoticePreferences
         $out=[];
         foreach(['account'=>self::account($owner),'target'=>self::scope($owner,$name)] as $key=>$scope) {
             $q=DB::table('domains_watch_preferences')->where('scope',$scope)->where('user_id',$owner);
-            if ($lock) { DB::table('domains_watch_preferences')->insertOrIgnore(['scope'=>$scope,'user_id'=>$owner]); }
-            $r=$q->when($lock,fn($q)=>$q->lockForUpdate())->first();$out[$key]=['enabled'=>$r?(bool)$r->enabled:true,'revision'=>$r?(int)$r->revision:1];
+            if ($lock) { DB::table('domains_watch_preferences')->insertOrIgnore(['scope'=>$scope,'user_id'=>$owner,'enabled'=>false]); }
+            $r=$q->when($lock,fn($q)=>$q->lockForUpdate())->first();$out[$key]=['enabled'=>$r?(bool)$r->enabled:false,'revision'=>$r?(int)$r->revision:1];
         }return $out;
     }
     /** Caller already holds current native owner/target locks; one POST updates both scopes. */

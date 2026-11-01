@@ -6,11 +6,11 @@ use Illuminate\Support\Facades\{Auth,DB,Route,Schema};
 use Filament\Facades\Filament;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList as Page;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,PslFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,PslFacts,PslActions};
 use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists,PslTransport,PslValidator,RuntimeWork,Installation};
 $entry=new Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();$entry->boot();
-staffPanel();$panel=Filament::getCurrentPanel();$panel->pages([Page::class]);
-Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn()=>Route::middleware($panel->getAuthMiddleware())->group(fn()=>Page::registerRoutes($panel)));
+staffPanel();$panel=Filament::getCurrentPanel();$panel->pages([Page::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class]);
+Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn()=>Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){Page::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::registerRoutes($panel);}));
 app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
 $clock=new PslClock;$count=0;$duringFetch=null;$list=new Lists($clock,new PslTransport(function()use(&$count,&$duringFetch){$count++;if($duringFetch){$run=$duringFetch;$duringFetch=null;$run();}return ['status'=>200,'body'=>pslFixture()];}),new PslValidator(128,5,1));
 app()->instance(Lists::class,$list);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -63,26 +63,17 @@ DB::table('domains_psl_status')->where('id',1)->update($savedStatus);$clock->at=
 Illuminate\Support\Carbon::setTestNow();Illuminate\Support\Facades\Bus::swap($bus);
 $rights=[Staff::VIEW,Page::VIEW,Page::MANAGE];$staff=staffUser($rights);Auth::setUser($staff);
 $setRights=function($permissions)use($staff){$staff->role()->first()->update(['permissions'=>$permissions]);};
+$setRights([Staff::VIEW,Page::VIEW]);Livewire::actingAs($staff)->test(Page::class)->assertSuccessful()->assertNoRedirect();same(0,$count,'Old bookmark does not fetch');
 $setRights([]);same(false,Page::canAccess(),'Default deny');Livewire::actingAs($staff)->test(Page::class)->assertForbidden();
 $setRights([Staff::VIEW,Page::MANAGE]);same(false,Page::canAccess(),'Manage cannot view alone');
-$setRights([Staff::VIEW,Page::VIEW]);Livewire::actingAs($staff)->test(Page::class)->assertSee('Not downloaded yet')->assertActionHidden('psl_download')->assertActionHidden('psl_source');same(0,$count,'GET no fetch');
 $setRights($rights);
-$page=Livewire::actingAs($staff)->test(Page::class)->assertSee('MPL-2.0')->assertSee('More help')->assertActionEnabled('psl_download');
-expect(!$page->instance()->getCachedHeaderActions()[0]->isConfirmationRequired(),'Download now has no dialog');same(0,$count,'Showing Download now does not fetch');
-$update=$page->instance()->getCachedHeaderActions()[0]->getActionFunction();
-$setRights([Staff::VIEW,Page::VIEW]);$page->assertActionHidden('psl_download');same(0,$count,'Fresh manage revoked');
-$denied=false;try{$update();}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached update callback rechecks manage');
-$setRights($rights);$page=Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'https://mirror.example.com/list']);
-$source=$page->instance()->getCachedHeaderActions()[2]->getActionFunction();
-$setRights([Staff::VIEW,Page::VIEW]);same(Lists::SOURCE,$list->source(),'Revoked source stays saved');
-$denied=false;try{$source(['url'=>'https://mirror.example.com/list']);}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Cached source callback rechecks manage');
-$setRights($rights);
-Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'http://mirror.example.com/list'])->callMountedAction()->assertHasActionErrors(['url']);
-Livewire::actingAs($staff)->test(Page::class)->mountAction('psl_source')->setActionData(['url'=>'https://mirror.example.com/list'])->callMountedAction()->assertHasNoActionErrors()->assertNotified('Source saved');same(0,$count,'Saving source no network');
-Livewire::actingAs($staff)->test(Page::class)->callAction('psl_download')->assertNotified('List updated')->assertActionHidden('psl_download')->assertSee('Next update allowed:');
-same(1,$count,'Native manual fetched once');same('Current',PslFacts::state($list),'Current state');
-// The page's expiry date must match the day new discovery actually stops.
-Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date after '.PslFacts::time((int)$list->current()->validated_at+90*86400).'.');
+$source=PslActions::source(fn()=>null)->getActionFunction();
+$setRights([Staff::VIEW,Page::VIEW]);
+$denied=false;try{$source(['url'=>'https://mirror.example.com/list']);}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$denied=$e->getStatusCode()===403;}expect($denied,'Source callback rechecks manage');
+$setRights($rights);$source(['url'=>'https://mirror.example.com/list']);same(0,$count,'Saving source sends nothing');
+same('updated',$list->update(),'First download');
+same([],PslActions::row(fn()=>null)['buttons'],'Healthy list has no staff buttons');
+same(1,$count,'One download');same('Current',PslFacts::state($list),'Current state');
 $before=DB::table('domains_psl_snapshots')->where('state','current')->first();
 $source(['url'=>'https://after-complete.example.com/list']);
 same('updated',$list->status()->last_result,'Source change preserves a completed update result');
@@ -104,33 +95,34 @@ same('domains-public-suffix-list',$job->uniqueId(),'Separate job has its own uni
 $clock->at+=60;$job->handle($list);same(4,$count,'Fresh cached list skips the download through the job');
 $clock->at+=7*86400-60;$failures=0;
 $failedList=new Lists($clock,new PslTransport(function()use(&$failures){$failures++;throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('timeout');}),new PslValidator(128,5,1));
-$saved=$list->current();$job->handle($failedList);
+$watchOnly=staffUser([Page::VIEW]); // Every Domains page also requires the base Domains view permission.
+$saved=$list->current();$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();$job->handle($failedList);
+same(0,App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$watchOnly->id)->count(),'No recovery link to a page this role cannot open');
+expect(App\Models\Notification::where('title','Public suffix list update failed')->count()>$notices,'Failed scheduled update alerts staff');$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();
 same(1,$failures,'Due job attempts one failed download');same('timeout',$list->status()->last_result,'Job retains the download failure');
 $failedAt=$list->status()->last_attempt_at;
 for($minute=1;$minute<=5;$minute++){$clock->at+=60;$job->handle($failedList);}
-same(1,$failures,'Failed download does not retry each minute through the job');
+same(1,$failures,'Failed download does not retry each minute through the job');same($notices,App\Models\Notification::where('title','Public suffix list update failed')->count(),'Skipped jobs do not repeat the alert');
 same($failedAt,$list->status()->last_attempt_at,'Skipped jobs do not renew the failed attempt age');
 same((array)$saved,(array)$list->current(),'Failed download retains the cached list');
 same(1,$job->tries,'Failed public-data jobs have no queue retry');
 $clock->at=$failedAt+7*86400-1;$job->handle($failedList);same(1,$failures,'Failed download preserves weekly admission');
 $clock->at++;$job->handle($failedList);same(2,$failures,'Failed download becomes eligible again after a week');
 
-$clock->at=(int)$list->current()->validated_at+90*86400;Livewire::actingAs($staff)->test(Page::class)->assertSee('The list is current.');
-$clock->at++;Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date')->assertSee('The list is over 90 days old.');
-DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lost_private']);Livewire::actingAs($staff)->test(Page::class)->assertSee('Many rules were removed. Review them before using this list.');
+$clock->at=(int)$list->current()->validated_at+90*86400;same('Current',PslFacts::state($list),'List current through expiry');
+$clock->at++;same('New discovery paused',PslFacts::state($list),'Discovery pauses after expiry');
+DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'rules_lost_private']);
 DB::table('domains_psl_status')->where('id',1)->update(['last_result'=>'dns_failed']);
 same("Couldn't download: the source name didn't resolve.",PslFacts::rows($list)['Last attempt result'],'Page facts keep a DNS failure apart from an unsafe address');
-Livewire::actingAs($staff)->test(Page::class)->assertSee("Couldn't download: the source name didn't resolve.");
+
 $manualFailures=0;$manualList=new Lists($clock,new PslTransport(function()use(&$manualFailures){$manualFailures++;throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('dns_failed');}),new PslValidator(128,5,1));
 app()->instance(Lists::class,$manualList);$manualSnapshot=(array)$manualList->current();$clock->at+=86400;
 session()->forget('filament.notifications');
-Livewire::actingAs($staff)->test(Page::class)->callAction('psl_download')->assertHasNoActionErrors()
-    ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't download: the source name didn't resolve."));
+same('dns_failed',$manualList->update(),'Failed download returns safe reason');
 same(1,$manualFailures,'Allowed manual download attempts exactly one fake exchange');
 same('dns_failed',$manualList->status()->last_result,'Manual action retains the safe failure');
 same($manualSnapshot,(array)$manualList->current(),'Manual failed download keeps current bytes');
 
-$page=Livewire::actingAs($staff)->test(Page::class);$setRights([Staff::VIEW,Page::MANAGE]);$page->call('$refresh')->assertForbidden();
 // The native migrator/retained-history preflight must neither replace lost data nor repair partial installs.
 $setRights($rights);$entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_psl_snapshots')->count(),'Lifecycle retains snapshot');
 DB::table('migrations')->where('migration','2026_10_19_000007_create_psl_snapshots')->delete();

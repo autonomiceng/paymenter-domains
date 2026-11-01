@@ -22,7 +22,7 @@ final class NativeServerGuard
             &&$page->getRecord()->is($record)&&$page->getMountedAction()?->getName()==='delete'){
             logger()->warning('Managed Domains server deletion refused.');
             $message='Domains still needs this server, so it cannot be deleted.';
-            if(Schema::hasTable('domains_accounts')&&Account::where('server_id',$record->getRawOriginal('id'))->where('processing_enabled',false)->exists()){$message.=' Processing is paused.';}
+            if(Schema::hasTable('domains_accounts')&&Account::where('server_id',$record->getRawOriginal('id'))->where('processing_enabled',false)->exists()){$message.=' Orders are off for this account.';}
             $message.=' Review orders on the registrar account page.';
             \Filament\Notifications\Notification::make()->danger()->title('Server could not be deleted')->body($message)->send();
             throw new \Filament\Support\Exceptions\Halt;

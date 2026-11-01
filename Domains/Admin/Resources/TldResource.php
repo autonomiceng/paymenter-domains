@@ -64,7 +64,7 @@ class TldResource extends Resource
                 ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'Use Sync prices.':TldFacts::costNote($renewal($record,$livewire)))->extraAttributes(['style'=>'white-space:nowrap']),
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
-                ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->description(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['reason']),
+                ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->description(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?trim($reason.'. '.(TldFacts::FIXES[$reason]??'')):null),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])

@@ -7,9 +7,10 @@ final readonly class RegistrationEvidence
 {
     public array $corrections;
     public function __construct(public Query $query, public ?string $orderReference, public ?DateEvidence $responseExpiry,
-        public ?DomainSnapshot $readback, array $corrections, public ?NameserverEvidence $nameservers = null)
+        public ?DomainSnapshot $readback, array $corrections, public ?NameserverEvidence $nameservers = null, public ?string $expiryIssue = null)
     {
-        if ($query->action !== Action::Register || count($corrections) > 4
+        if (($expiryIssue !== null && ($responseExpiry !== null || !in_array($expiryIssue, ['missing', 'invalid', 'conflicting'], true)))
+            || $query->action !== Action::Register || count($corrections) > 4
             || array_diff($corrections, ['nameservers', 'contacts', 'auto_renew', 'privacy'])
             || ($orderReference !== null && !preg_match('/^[1-9][0-9]{0,19}$/D', $orderReference))
             || ($readback && $readback->name !== $query->name)) { throw new \InvalidArgumentException('Invalid registration facts.'); }

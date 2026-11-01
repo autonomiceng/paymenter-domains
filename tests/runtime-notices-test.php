@@ -5,11 +5,9 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-fixture.php';require __DIR__.'/Support/staff-tlds.php';require __DIR__.'/Support/reminder-mail.php';
 use Illuminate\Support\Facades\{DB,Mail};
-use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,ReminderSchedules,Reminders,StaffSettingsReview as Review,StaffSettingsWrites,Runtime,RuntimeSchema,RuntimeWork,RuntimePorts};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 $staff=staffUser([...array_keys(Staff::permissions())]);$reminders=new Reminders($clock,$bindings);
 foreach($tlds as $t){ReminderSchedules::enroll($t->server_id);}
 foreach($tlds as $i=>$t){
@@ -43,14 +41,13 @@ $savedFingerprint=$op->domain->account_fingerprint;DB::table('domains_domains')-
 try{$rejectUnchanged($reviewFor('delivery_review',$t->server_id),['delivery_id'=>$id,'confirmed'=>true],'domains_reminder_deliveries',$id,'Current notification claim required.');}
 finally{DB::table('domains_domains')->where('id',$op->domain_id)->update(['account_fingerprint'=>$savedFingerprint]);}
 $r=new Review($staff->id,$t->server_id,null,'delivery_review',Review::ticket($staff->id,$t->server_id,null,'delivery_review',Review::stamp($t->server_id,null)),'Independently checked notification outcome');
-same([$id],array_keys(SettingsActions::openDeliveries($t->server_id)),'Mark notification checked offers the open one');$before=Mail::queued(DomainNotice::class)->count();$writer->run($r,['delivery_id'=>$id,'confirmed'=>true]);same([],SettingsActions::openDeliveries($t->server_id),'A checked notification is no longer offered');
+$before=Mail::queued(DomainNotice::class)->count();$writer->run($r,['delivery_id'=>$id,'confirmed'=>true]);
 same('reviewed',DB::table('domains_reminder_deliveries')->find($id)->state,'Original claim retained as reviewed');same($before,Mail::queued(DomainNotice::class)->count(),'Manual review does not resend');
 $rejectUnchanged($reviewFor('delivery_review',$t->server_id),['delivery_id'=>$id,'confirmed'=>true],'domains_reminder_deliveries',$id,'Current notification claim required.');
 $rejectUnchanged($r,['delivery_id'=>$id,'confirmed'=>true],'domains_reminder_deliveries',$id,'Review key used.');
 $key=\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($op->domain,'reminder_failed',$now->getTimestamp());$alert=DB::table('domains_obligation_alerts')->where('alert_key',$key)->sole();
 $alertId=(int)$alert->id;
 $otherKey=\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($op->domain,'unknown_expiry',$now->getTimestamp());$otherAlert=DB::table('domains_obligation_alerts')->where('alert_key',$otherKey)->sole();
-same([$alertId],array_keys(SettingsActions::openAlerts($t->server_id)),'Mark alert checked offers only the open notification alert');same([],SettingsActions::openAlerts($tlds[1]->server_id),'Another account offers none');
 $rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$alertId],'domains_obligation_alerts',$alertId,'Explicit notification check confirmation required.');
 $rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$otherAlert->id,'confirmed'=>true],'domains_obligation_alerts',(int)$otherAlert->id,'Current notification check alert required.');
 $rejectUnchanged($reviewFor('alert_review',$tlds[1]->server_id),['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Current notification check alert required.');
@@ -58,30 +55,12 @@ $savedFingerprint=$op->domain->account_fingerprint;DB::table('domains_domains')-
 try{$rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Current notification check alert required.');}
 finally{DB::table('domains_domains')->where('id',$op->domain_id)->update(['account_fingerprint'=>$savedFingerprint]);}
 $r=new Review($staff->id,$t->server_id,null,'alert_review',Review::ticket($staff->id,$t->server_id,null,'alert_review',Review::stamp($t->server_id,null)),'Independently inspected notification check');
-$writer->run($r,['alert_id'=>$alertId,'confirmed'=>true],$now);same([],SettingsActions::openAlerts($t->server_id),'A closed alert is no longer offered');expect(DB::table('domains_obligation_alerts')->find($alertId)->resolved_at!==null,'Manual check disposition retained');
+$writer->run($r,['alert_id'=>$alertId,'confirmed'=>true],$now);expect(DB::table('domains_obligation_alerts')->find($alertId)->resolved_at!==null,'Manual check disposition retained');
 $rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Current notification check alert required.');
 $rejectUnchanged($r,['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Review key used.');
 same(['Review notification outcome','Review notification check'],array_column(Review::historyRows(App\Models\Server::findOrFail($t->server_id)),'action'),'Both independent notification reviews retain audit rows');
-// Each choice reads apart, even two notices for one domain in the same minute.
-tldPanel();Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();$server=$t->server_id;$at=$now->getTimestamp();$old=$newTransfer(placeholderComFixtureName('oldest-notice-placeholder.com'),0,true,false);
-$notify=static fn(int $domain,string $key,string $template)=>DB::table('domains_reminder_deliveries')->insertGetId(['domain_id'=>$domain,'delivery_key'=>hash('sha256',$key),'template'=>$template,'state'=>'uncertain','created_at'=>$at]);
-$alarm=static fn(int $domain,string $key,string $code)=>DB::table('domains_obligation_alerts')->insertGetId(['alert_key'=>hash('sha256',$key),'domain_id'=>$domain,'generation'=>Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($domain)->authority_generation,'code'=>$code,'first_seen'=>$at,'last_seen'=>$at]);
-$oldDelivery=$notify($old->domain_id,'oldest','domains_domain_expired');$oldAlert=$alarm($old->domain_id,'oldest','reminder_failed');
-foreach(range(1,100) as $i){$notify($op->domain_id,'newer-'.$i,'domains_transfer_code_reminder');$alarm($op->domain_id,'newer-'.$i,'template_failed');}
-$paid=$notify($op->domain_id,'same-minute','domains_transfer_code_paid');$offered=SettingsActions::openDeliveries($server);
-same(100,count(array_unique($offered)),'Two notices in one minute read apart');
-same($op->domain->domain.' · Transfer needs an auth code · '.gmdate('M j, Y H:i',$at).' UTC · #'.$paid,$offered[$paid],'A choice names its type, time and reference');
-// A search reaches a notice past the newest 100, and the form takes it. Once closed, it can no longer be picked.
-foreach([['delivery_review','delivery_id',$oldDelivery,'Domain expired'],['alert_review','alert_id',$oldAlert,'Renewal reminder check']] as [$action,$field,$oldest,$type]){
-    $name=setupAction($action,$server);$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name)->assertActionMounted($name);
-    expect(!array_key_exists($oldest,$action==='alert_review'?SettingsActions::openAlerts($server):$offered),'The oldest starts outside the first 100');
-    $page->assertSchemaComponentExists($field,checkComponentUsing:function($select)use($oldest,$type){
-        foreach(['oldest-notice','#'.$oldest] as $search){same([$oldest],array_keys($select->getSearchResults($search)),'Search reaches the old notice by '.$search);}
-        same([$oldest],array_keys($select->getSearchResults($type)),'Search reaches it by its type words');same([],$select->getSearchResults('%'),'A wildcard is plain text');return true;});
-    $page->setActionData([$field=>$oldest,'confirmed'=>true,'reason'=>'Checked the oldest notice'])->callMountedAction()->assertHasNoActionErrors();
-    $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server])->mountAction($name);
-    $page->setActionData([$field=>$oldest,'confirmed'=>true,'reason'=>'Checked it a second time'])->callMountedAction()->assertHasActionErrors([$field]);
-}
-same('reviewed',DB::table('domains_reminder_deliveries')->find($oldDelivery)->state,'The old notification closes');expect(DB::table('domains_obligation_alerts')->find($oldAlert)->resolved_at!==null,'The old alert closes');
-same([],SettingsActions::openDeliveries($tlds[1]->server_id,id:$paid),'Another account cannot resolve the choice');
+// A clean pass closes a failed reminder; a failed template stays open until its retry succeeds.
+$alerts=Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::class;$open=static fn(string $code)=>DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code',$code)->whereNull('resolved_at')->count();
+$alerts::record($op->domain,'reminder_failed',$now->getTimestamp());$alerts::record($op->domain,'template_failed',$now->getTimestamp());
+$alerts::finish($op->domain->fresh(),[],$now->getTimestamp());same([0,1],[$open('reminder_failed'),$open('template_failed')],'Clean pass closes the failed reminder only');
 echo "Paired mandatory notices, optional reminder suppression,100-edit audit rotation and no-resend disposition passed.\n";$nativeSuccessful=true;

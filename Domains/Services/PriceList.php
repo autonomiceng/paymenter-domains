@@ -93,9 +93,11 @@ final class PriceList
             return [...$out,'Left out','Left out'];
         }
         foreach(self::ACTIONS as $action=>$label){$p=$row['prices'][$action];$none=$p['status']===self::TRANSFERS_OFF?'Off':'Missing';
-            $out=[...$out,$p['cost']===null?$none:self::money($p['cost']),$p['price']??$none,$p['profit']===null?$none:self::money($p['profit'],true),$p['status']==='Missing'?'':$p['status']];}
+            $out=[...$out,$p['cost']===null?$none:self::money($p['cost']),$p['price']??$none,$p['profit']===null?$none:self::money($p['profit'],true),in_array($p['status'],['Missing',self::TRANSFERS_OFF],true)?'':$p['status']];}
         return [...$out,$row['formula'],CardFee::describe($row['fee'])];
     }
+    /** Estimated profit as it shows on the price list. */
+    public static function profit(string $value): string {return self::money($value,true);}
     /** Display cents only; round estimated profit down, including a loss, without changing saved values. */
     private static function money(?string $value,bool $down=false): string
     {

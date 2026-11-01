@@ -8,7 +8,7 @@ final class ProtocolResult implements \JsonSerializable
 {
     private static ?\WeakMap $facts = null;
     public function __construct(public readonly string $status, public readonly ?string $code = null,
-        #[\SensitiveParameter] array $data = [])
+        #[\SensitiveParameter] array $data = [], public readonly ?int $responseBytes = null)
     {
         if (!in_array($status, ['success', 'rejected', 'unknown'], true)
             || ($code !== null && !preg_match('/^(?:[0-9]{1,6}|[a-z][a-z_]{0,63})$/D', $code))) {

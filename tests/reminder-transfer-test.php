@@ -10,7 +10,18 @@ $newTransfer = static function (string $name, int $i = 0, bool $paid = true, boo
 use App\Models\{EmailLog,Notification,NotificationTemplate};
 use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
-use Paymenter\Extensions\Servers\Domains\Services\{ReminderSchedules,Reminders,TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Services\{ReminderSchedules,ReminderTemplates,Reminders,TransferInputs};
+$oldReturn="If we don't have it by then, we'll cancel the transfer and add {{ \$amount }} to your account credit.";
+$newReturn="If we don't have it by then, we'll cancel the transfer and return {{ \$amount }} to your original payment method where we can, otherwise as account credit.";
+foreach(['domains_transfer_code_paid','domains_transfer_code_reminder'] as $key){
+    $template=NotificationTemplate::where('key',$key)->sole();$default=ReminderTemplates::definitions()[$key]['body'];
+    $old=str_replace($newReturn,$oldReturn,$default);expect($old!==$default,'Regression contains the exact shipped credit promise');
+    foreach([$old,$old."\n",'Custom transfer email'] as $body){
+        $template->update(['body'=>$body]);ReminderTemplates::ensure();
+        same($body===$old?$default:$body,$template->fresh()->body,'Only the exact shipped transfer body upgrades');
+    }
+    $template->update(['body'=>$default]);ReminderTemplates::ensure();same($default,$template->fresh()->body,'Transfer upgrade is stable');
+}
 $staff=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::POLICY]);
 foreach($tlds as $t){ReminderSchedules::enroll($t->server_id);ReminderSchedules::save($staff,$t->server_id,1,true,'60,30,7,1','3','transfer_test');}
 $reminders=new Reminders($clock,$bindings);$renders=[];
@@ -19,8 +30,10 @@ foreach([0,1] as $i){
     expect($reminders->remind($d->id),'Paid transfer with missing code is notified for each holder');
     same(false,$reminders->remind($d->id),'Paid notice deduplicates');
     $mail=Mail::queued(DomainNotice::class)->last();same('domains_transfer_code_paid',$mail->emailTemplate->key,'Initial paid template');
+    expect(str_contains($mail->render(),'original payment method where we can, otherwise as account credit'),'Paid notice promises the actual return route');
     $renders[]=str_replace([$d->domain,url('/domains/'.$d->id.'/transfer-code')],['example.com','https://example.test/domain'],$mail->render());
     $clock->instant=$now->modify('+23 days');expect($reminders->remind($d->id),'Final-week notice');
+    expect(str_contains(Mail::queued(DomainNotice::class)->last()->render(),'original payment method where we can, otherwise as account credit'),'Deadline reminder promises the actual return route');
     same(false,$reminders->remind($d->id),'Final-week notice deduplicates');
     $clock->instant=$now->modify('+30 days');same(false,$reminders->remind($d->id),'No code request at cutoff');
     $inputs->expireMissingCode($op->id);config(['settings.mail_disable'=>true]);
@@ -37,6 +50,7 @@ foreach([0,1] as $i){
     same(false,$reminders->remind($d->id),'Credit notice deduplicates');
     $last=Mail::queued(DomainNotice::class)->last();same('domains_domain_order_refunded',$last->emailTemplate->key,'Account credit wording');
     expect(!str_contains($last->render(),'registry did not accept'),'No invented registry rejection');
+    $credited=$op->fresh();$credited->update(['funding'=>[...$credited->funding,'late_credits'=>[[...$credited->funding['refund'],'amount'=>'1.00']]]]);expect($reminders->remind($d->id),'A later credit on the same request gets its own notice');same(false,$reminders->remind($d->id),'Later credit notice deduplicates');
 }
 same($renders[0],$renders[1],'Identical customer message for both holders');
 // Native USD formatting belongs to the administrator, including separators and both affixes.
@@ -70,15 +84,26 @@ same(false,$reminders->remind($op->domain_id),'Unavailable forced channel alerts
 same(0,DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->count(),'Temporary unavailability is retryable');
 config(['settings.mail_disable'=>false]);expect($reminders->remind($op->domain_id),'Restored forced channel can send');
 $op=$newTransfer(placeholderComFixtureName('historical-credit-placeholder.com'),0,true,false);$clock->instant=$now->modify('+30 days');$inputs->expireMissingCode($op->id);
-$clock->instant=$now->modify('+33 days');same(false,$reminders->remind($op->domain_id),'Old credit cannot backfill customer mail');
-expect(DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code','credit_notice_overdue')->exists(),'Overdue credit is staff-visible');
+$clock->instant=$now->modify('+33 days');expect($reminders->remind($op->domain_id),'Never-handed old credit recovers automatically');
+same(hash('sha256',$op->domain_id.':refund:'.$op->id),DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->sole()->delivery_key,'Recovery keeps original delivery key');
+same(false,(new Reminders($clock,$bindings))->remind($op->domain_id),'Recovered overdue credit stays once-only after restart');
+$credited=$op->fresh();$credited->update(['funding'=>[...$credited->funding,'late_credits'=>[[...$credited->funding['refund'],'amount'=>'1.00']]]]);
+expect($reminders->remind($op->domain_id),'Never-handed overdue late credit also recovers');
+same(false,$reminders->remind($op->domain_id),'Overdue late credit sends once');
 $clock->instant=$now;
 // Uncertain handoff is durable and cannot replay, even after a process restart.
-$op=$newTransfer(placeholderComFixtureName('uncertain-mail-placeholder.com'),0,true,false);$before=Mail::queued(DomainNotice::class)->count();
+$op=$newTransfer(placeholderComFixtureName('uncertain-mail-placeholder.com'),0,true,false);$clock->instant=$now->modify('+30 days');$inputs->expireMissingCode($op->id);$clock->instant=$now->modify('+33 days');$before=Mail::queued(DomainNotice::class)->count();
 EmailLog::creating(static function(){throw new RuntimeException('Synthetic queue boundary failure');});
 same(false,$reminders->remind($op->domain_id),'Handoff failure returns safely');
 same(false,(new Reminders($clock,$bindings))->remind($op->domain_id),'Restart never resends uncertain handoff');
+same('domains_domain_order_refunded',DB::table('domains_reminder_deliveries')->where('domain_id',$op->domain_id)->sole()->template,'Uncertain overdue refund retains exact delivery for review');
 same($before,Mail::queued(DomainNotice::class)->count(),'No replay after handoff failure');
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code','delivery_uncertain')->exists(),'Handoff uncertainty visible');
+// Email Logs follows the real send, because native logging skips these mail classes.
+$queued=Mail::queued(DomainNotice::class)->last();$log=EmailLog::findOrFail($queued->email_log_id);same('pending',$log->status,'Queued mail waits in Email Logs');
+try{$queued->send(new class{public function send(...$args){throw new RuntimeException('Synthetic mail server refusal');}});}catch(RuntimeException){}
+same(['failed','Synthetic mail server refusal'],[$log->fresh()->status,$log->fresh()->error],'Refused mail shows failed');
+$queued->send(new class{public function send(...$args){return null;}});
+same(['sent',null,true],[$log->fresh()->status,$log->fresh()->error,$log->fresh()->sent_at!==null],'Delivered mail shows sent');
 same(0,count($state->calls),'No provider writes from reminders');same(0,$state->reads,'No provider reads from reminders');
 echo "Both holders: native paid/code cutoff, actual credit notices, neutral content and uncertain handoff passed.\n";$nativeSuccessful=true;

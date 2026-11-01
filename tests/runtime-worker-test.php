@@ -58,8 +58,9 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $bindings->setProcessing($a->server_id,false);app(RuntimeWork::class)->operation($op->id);same('awaiting_payment',$op->fresh()->state,'Paused processing never executes paid queued acquisition');$bindings->setProcessing($a->server_id,true,static fn()=>null);
     $claimResult=$claims->claim($op->id);expect($claimResult!==null,'Installed claim available: '.$op->fresh()->state.' / '.$op->fresh()->safe_code);[$claimed,$domain]=$claimResult;$ctx=new RequestContext($b,RequestOrigin::Background,$now->modify('+300 seconds'),new RequestBudget(10),$clock);
     $sealed=$claims->seal($claimed,$preflight->inspect($claimed,$domain,$ctx),$clock->now());expect($sealed!==null,'Installed acquisition seals with real native funding');
-    $claims->finish($sealed,new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(registration:new RegistrationEvidence($query,'9001',$expiry,null,[]))));
-    $bindings->setProcessing($a->server_id,false);app(RuntimeWork::class)->operation($op->id);same('succeeded',$op->fresh()->state,'Paused runtime reconciliation completes original fake order');$bindings->setProcessing($a->server_id,true,static fn()=>null);$d->refresh();
+    $claims->finish($sealed,new DriverResult($b,$b->registrarKey==='enom'?Disposition::Unknown:Disposition::Accepted,SendState::Sent,$b->registrarKey==='enom'?ResultReason::Unresolved:ResultReason::Acknowledged,new Evidence(registration:new RegistrationEvidence($query,'9001',$b->registrarKey==='enom'?null:$expiry,null,[]))));
+    $originalAttempt=$op->fresh()->attempt;
+    $bindings->setProcessing($a->server_id,false);app(RuntimeWork::class)->operation($op->id);same('succeeded',$op->fresh()->state,'Paused runtime reconciliation completes original fake order');$bindings->setProcessing($a->server_id,true,static fn()=>null);$d->refresh();same($originalAttempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Background completion retains the original reply');same([],$writer->calls,'Background captured recovery never invokes a writer');
     ReminderSchedules::enroll($a->server_id);$schedule=DB::table('domains_reminder_schedules')->where('server_id',$a->server_id)->sole();ReminderSchedules::save($staff,$a->server_id,$schedule->revision,true,'60,30,7,1','3','Review installed reminders');
     App\Models\Server::find($a->server_id)->settings()->create(['key'=>'domains_manual_renewals_enabled','type'=>'boolean','value'=>true]);$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
     $d->service->product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['type'=>'boolean','value'=>true]);
@@ -119,8 +120,12 @@ for($n=0;$n<12;$n++){$token=$limiter->acquire($b,RequestOrigin::Interactive);$li
 try{$limiter->acquire($b,RequestOrigin::Interactive);expect(false,'Shared ceiling enforced');}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}
 // The existing domain cursor cancels both manual and scheduled debts, even when renewal is Off.
 foreach($expiryDebts as [$holding,$debt]){$holding->update(['renewal_policy'=>[...($holding->renewal_policy??[]),'owner_auto_renew'=>false]]);}
+// The same sweep closes an early renewal nobody paid. Its billing window here opens after this tick.
+[,$earlyDebt]=array_pop($expiryDebts);$earlyRenewal=Operation::where('invoice_id',$earlyDebt->id)->sole();
+DB::table('domains_operations')->where('id',$earlyRenewal->id)->update(['policy'=>encrypt(json_encode([...$earlyRenewal->policy,'calendar'=>[...$earlyRenewal->policy['calendar'],'issue'=>'2027-12-01']]),false)]);
 $clock->instant=new DateTimeImmutable('2027-10-17T23:58:00Z');app(RuntimeWork::class)->tick();
 foreach($expiryDebts as [$holding,$debt]){same('pending',$debt->fresh()->status,'Scheduled cleanup waits until expiry');}
+same(['cancelled','Early renewal not paid'],[$earlyDebt->fresh()->status,$earlyRenewal->fresh()->policy['unpaid_retirement']['reason']??null],'Scheduled work closes the early renewal');
 $clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');app(RuntimeWork::class)->tick();
 foreach($expiryDebts as [$holding,$debt]){
     same('cancelled',$debt->fresh()->status,'Existing scheduled work cancels expired renewal debt');

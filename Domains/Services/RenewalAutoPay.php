@@ -4,10 +4,10 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Helpers\{ExtensionHelper, NotificationHelper};
-use App\Models\{BillingAgreement, Gateway, Invoice, Service};
+use App\Models\{BillingAgreement, Gateway, Invoice, InvoiceItem, InvoiceTransaction, Service, ServiceCancellation};
 use Illuminate\Support\Facades\{DB, Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\Operation;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Operation, Tld};
 
 /** One saved-method attempt per newly issued debt. No retry entry point or funding authority. */
 final readonly class RenewalAutoPay
@@ -34,6 +34,70 @@ final readonly class RenewalAutoPay
         if ($reason === null) { DB::afterCommit(fn () => $this->charge($op->id, $marker)); }
     }
 
+    /** Current retained renewal authority. Call outside other transactions to freeze a gateway attempt; recheck with renewalAutoPayStillAllowed at confirm.
+     * The gateway owns attempt/decline proof; this method neither collects nor retires pending money.
+     * No result may be the first in-flight confirmation; the gateway's attempt record owns that proof.
+     * @return array{service_id:int,agreement_id:int,operation_id:int,operation_key:string,generation:int,cutoff:int}|null
+     */
+    public function renewalAutoPayContext(int $invoiceId): ?array
+    {
+        OperationClaims::outside();
+        try{
+            $ops=Operation::where('invoice_id',$invoiceId)->get();
+            if($ops->count()!==1){return null;}
+            $seed=$ops->first()->domain()->firstOrFail();
+            return DB::transaction(function()use($seed,$invoiceId):?array{
+                $l=HoldingLocks::take($seed);$op=$l['operations']->firstWhere('invoice_id',$invoiceId);
+                return $op ? $this->context($op,$l,true) : null;
+            });
+        }catch(\Throwable){return null;}
+    }
+
+    /** Plain-read final check for gateways already holding payment locks; errors never grant a debit. */
+    public function renewalAutoPayStillAllowed(int $invoiceId, array $expected): bool
+    {
+        try {
+            $op=Operation::where('invoice_id',$invoiceId)->sole();
+            $domain=$op->domain()->firstOrFail();$service=Service::findOrFail($domain->service_id);
+            $server=$service->product->server;$account=Account::where('server_id',$domain->server_id)->firstOrFail();
+            $adoption=$domain->adoption_id===null?null:Adoption::find($domain->adoption_id);
+            $cancel=NativeCancellation::withIntents(ServiceCancellation::where('service_id',$service->id)->get(),[(int)$service->id],true);
+            $operations=Operation::where('domain_id',$domain->id)->orderBy('id')->get();
+            $invoices=Invoice::whereIn('id',$operations->pluck('invoice_id'))->get();
+            $items=InvoiceItem::whereIn('invoice_id',$invoices->pluck('id'))->get();
+            $transactions=InvoiceTransaction::whereIn('invoice_id',$invoices->pluck('id'))->get();
+            $tld=Tld::where(['server_id'=>$domain->server_id,'tld'=>$domain->tld])->firstOrFail();
+            $native=['user'=>$service->user,'service'=>$service,'product'=>$service->product,'plan'=>$service->plan,
+                'orders'=>collect([$service->order]),'properties'=>$service->properties()->get(),'markers'=>$service->product->settings()->get(),
+                'configs'=>$service->configs()->get(),'upgrades'=>DB::table('product_upgrades')->where('product_id',$service->product_id)->orWhere('upgrade_id',$service->product_id)->get(),
+                'links'=>DB::table('config_option_products')->where('product_id',$service->product_id)->get()];
+            if($domain->adoptionPending()||!$domain->billing_managed||$domain->reservation_name!==$domain->domain
+                ||$account->account_fingerprint!==$domain->account_fingerprint||$account->registrar_key!==$domain->registrar_key){return false;}
+            $identity_source=HoldingIdentitySource::resolve($domain,HoldingNativeIdentity::capture($domain,$native,$tld),$adoption,$account,$cancel);
+            $current=$this->context($op,compact('domain','service','server','account','adoption','cancel','operations','invoices','items','transactions','identity_source'),false);
+            return $current!==null && $current===$expected;
+        } catch(\Throwable) { Log::warning('Domains renewal Auto Pay payment-time check failed; debit refused.'); return false; }
+    }
+
+    private function context(Operation $op,array $l,bool $lock): ?array
+    {
+        if(isset($op->policy['renewal']['late'])||$op->action!=='renew'||!in_array($op->state,['awaiting_payment','queued'],true)||!RenewalCycles::registrarVirgin($op)
+            ||!RenewalBillingSettings::read((int)$op->server_id,$lock)['scheduled']
+            ||EnomTestRenewal::holdsInvoices(CatalogueAcceptances::binding($l['account']))
+            ||$l['service']->subscription_id||($l['domain']->renewal_policy['automatic_spend_paused']??false)){return null;}
+        app(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account'],!$lock);
+        RenewalFunding::requireAuthority($op,$l);
+        $invoice=DomainBilling::existingInvoice($op,$l);
+        [$reason,$agreement,$gateway]=$this->eligibility($op,$invoice,$l,true,$lock);
+        $marker=$op->funding['auto_pay']??[];
+        if(in_array($op->funding['auto_pay_result']['status']??null,['unknown','submitted'],true)){return null;}
+        $cutoff=new \DateTimeImmutable($op->policy['calendar']['due'].'T00:00:00',$this->clock->now()->getTimezone());
+        if($reason!==null||$cutoff<=$this->clock->now()||(!array_key_exists('reason',$marker)||$marker['reason']!==null)
+            ||($marker['agreement_id']??null)!==$agreement->id||($marker['gateway_id']??null)!==$gateway->id){return null;}
+        return ['service_id'=>(int)$op->service_id,'agreement_id'=>(int)$agreement->id,'operation_id'=>(int)$op->id,
+            'operation_key'=>$op->operation_key,'generation'=>$op->authority_generation,'cutoff'=>$cutoff->getTimestamp()];
+    }
+
     /** Only definite non-collection permits unpaid retirement or replacement. */
     public static function unattempted(Operation $op): bool
     {
@@ -43,10 +107,11 @@ final readonly class RenewalAutoPay
         return is_array($result) && in_array($result['status'] ?? null, ['skipped', 'declined'], true);
     }
 
-    private function eligibility(Operation $op, Invoice $invoice, array $l, bool $scheduled): array
+    private function eligibility(Operation $op, Invoice $invoice, array $l, bool $scheduled, bool $lock = true): array
     {
         $s = $l['service']; $d = $l['domain'];
         $reason = match (true) {
+            LateRenewalQuote::deadline($op) !== null && (!EnomLateRenewal::accepted(CatalogueAcceptances::binding($l['account'])) || LateRenewalQuote::deadline($op) <= $this->clock->now()->modify('+25 seconds')) => 'late_renewal_closed',
             !$scheduled => 'manual_renewal',
             $op->currency !== 'USD' || $invoice->currency_code !== 'USD' || $s->currency_code !== 'USD' => 'currency',
             $s->status !== 'active' => 'service_inactive',
@@ -59,10 +124,10 @@ final readonly class RenewalAutoPay
             default => null,
         };
         if ($reason !== null) { return [$reason, null, null]; }
-        $agreement = BillingAgreement::whereKey($s->billing_agreement_id)->lockForUpdate()->first();
+        $agreement = BillingAgreement::whereKey($s->billing_agreement_id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
         if (!$agreement) { return ['no_agreement', null, null]; }
         if ((int)$agreement->user_id !== (int)$s->user_id) { return ['foreign_agreement', $agreement, null]; }
-        $gateway = Gateway::whereKey($agreement->gateway_id)->lockForUpdate()->first();
+        $gateway = Gateway::whereKey($agreement->gateway_id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
         return [!$gateway ? 'gateway_missing' : (!(bool)$gateway->enabled ? 'gateway_disabled' : null), $agreement, $gateway];
     }
 

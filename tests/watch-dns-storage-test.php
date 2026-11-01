@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/watch-dns.php';
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsAnswer,DnsQuery,DnsReading};
-use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,WatchDnsObservation,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchDnsObservation,WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{WatchDnsSchema,WatchDnsChecks,WatchDnsProjection};
 $f = dnsFixture(); extract($f); $now = 1800000000;
 WatchDnsSchema::install(); WatchDnsSchema::verify();
@@ -124,17 +124,6 @@ same($now+1001+86400,(int)DB::table('domains_watch_work')->where('kind','points'
 $again=$checks->begin($watch->id,$owner->id,'points',$now+1001+86400);expect($again!==null && $again->nextSourceCursor!==$overflow->nextSourceCursor,'Durable source window rotates beyond first source');
 expect($checks->finish($again,new DnsReading('points',website:true,email:false),$now+1002+86400,1,$again->nextSourceCursor),'Known positive survives omitted primary hosts');
 same(true,WatchDnsObservation::orderByDesc('id')->first()->website,'Overflow retains confirmed positive');
-$conflict=DB::transaction(fn()=>WatchProfile::create(['name'=>'Conflicting profile','nameservers'=>['ns.other.test'],'website_endpoints'=>[],'email_endpoints'=>[],'enabled'=>true,'revision'=>1,'edited_by'=>$owner->id,'reason'=>'Synthetic conflict']));
-$conflictProduct=$product->replicate();$conflictProduct->slug='dns-conflicting-hosting';$conflictProduct->save();
-$conflictMap=DB::table('domains_watch_product_maps')->insertGetId(['product_id'=>$conflictProduct->id,'edited_by'=>$owner->id,'reason'=>'Synthetic omitted conflict','property_key'=>'domain','enabled'=>true,'expected_ns_profile_id'=>$conflict->id,'revision'=>1,'created_at'=>now(),'updated_at'=>now()]);
-$omitted=DB::table('domains_watch_sources')->where('watch_id',$watch->id)->orderByDesc('id')->first();
-App\Models\Service::whereKey($omitted->service_id)->update(['product_id'=>$conflictProduct->id]);
-DB::table('domains_watch_sources')->where('id',$omitted->id)->update(['map_id'=>$conflictMap]);
-same(null,$checks->currentStamp($watch->id,$owner->id),'Omitted conflicting profile holds entire watch');
-DB::table('domains_watch_work')->where('kind','delegation')->update(['due_at'=>$now+1100,'backoff_until'=>null]);
-same(null,$checks->begin($watch->id,$owner->id,'delegation',$now+1100),'Overflow cannot save complete delegation against conflicting profile');
-DB::table('domains_watch_sources')->where('id',$omitted->id)->update(['map_id'=>$map->id]);
-App\Models\Service::whereKey($omitted->service_id)->update(['product_id'=>$product->id]);
 foreach ([$first,$profile] as $row) { dnsRefused(fn()=>$row->delete(),'Retained history cannot delete'); }
 dnsRefused(fn()=>$first->fill(['dns'=>'external'])->save(),'Observations immutable');
 dnsRefused(fn()=>$first->increment('started_at'),'Numeric observation updates refused');

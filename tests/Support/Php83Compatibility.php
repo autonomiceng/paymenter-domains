@@ -22,63 +22,12 @@ final class Php83Compatibility
     /** @param array<string, string> $sources filename => source, never executed */
     public static function scan(array $sources): array
     {
-        $files = []; $defined = [];
-        foreach ($sources as $file => $source) {
-            $tokens = []; $line = 1;
-            foreach (token_get_all($source) as $token) {
-                if (is_array($token)) {
-                    [$id, $text, $line] = $token;
-                    if (!in_array($id, [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) { $tokens[] = [$id, $text, $line]; }
-                    $line += substr_count($text, "\n");
-                } else { $tokens[] = [0, $token, $line]; }
-            }
-            $contexts = []; $scopes = [['namespace' => '', 'imports' => []]];
-            $scope = $depth = $round = $namespaceDepth = 0; $classes = []; $classBodies = []; $importTokens = [];
-            $properties = []; $attributes = self::attributeConstructors($tokens);
-            foreach ($tokens as $i => [$id, $text]) {
-                if ($id === T_NAMESPACE && in_array($tokens[$i + 1][0] ?? 0, [T_STRING, T_NAME_QUALIFIED], true)) {
-                    $scope = count($scopes); $scopes[] = ['namespace' => strtolower($tokens[$i + 1][1]), 'imports' => []];
-                    $namespaceDepth = ($tokens[$i + 2][1] ?? '') === '{' ? $depth + 1 : $depth;
-                } elseif ($id === T_NAMESPACE && ($tokens[$i + 1][1] ?? '') === '{') {
-                    $scope = count($scopes); $scopes[] = ['namespace' => '', 'imports' => []]; $namespaceDepth = $depth + 1;
-                }
-                $contexts[$i] = $scope;
-                if ($id === T_USE && $depth === $namespaceDepth && ($tokens[$i + 1][1] ?? '') !== '(') {
-                    $end = $i + 1;
-                    while (isset($tokens[$end]) && $tokens[$end][1] !== ';') { $end++; }
-                    for ($j = $i + 1; $j < $end; $j++) { $importTokens[$j] = true; }
-                    $scopes[$scope]['imports'] += self::imports(array_slice($tokens, $i + 1, $end - $i - 1));
-                }
-                if (in_array($id, [T_CLASS, T_TRAIT, T_INTERFACE, T_ENUM], true) && ($tokens[$i - 1][0] ?? 0) !== T_DOUBLE_COLON) {
-                    $body = $i + 1;
-                    if (($tokens[$body][1] ?? '') === '(') { $body = self::afterBalanced($tokens, $body, '(', ')'); }
-                    while (isset($tokens[$body]) && !($tokens[$body][0] === 0 && $tokens[$body][1] === '{')) { $body++; }
-                    $classBodies[$body] = true;
-                }
-                if ($id === T_FUNCTION && !isset($importTokens[$i])) {
-                    $name = $i + 1;
-                    if (($tokens[$name][1] ?? '') === '&') { $name++; }
-                    if (($tokens[$name][0] ?? 0) === T_STRING && (!$classes || $depth !== end($classes)[0])) {
-                        $defined[ltrim($scopes[$scope]['namespace'].'\\'.strtolower($tokens[$name][1]), '\\')] = true;
-                    }
-                }
-                if ($id === T_VARIABLE && $classes && [$depth, $round] === end($classes)) { $properties[$i] = true; }
-                if ($id === 0 && $text === '(') { $round++; }
-                if ($id === 0 && $text === ')') { $round--; }
-                if (($id === 0 && $text === '{') || $id === T_CURLY_OPEN || $id === T_DOLLAR_OPEN_CURLY_BRACES) {
-                    $depth++;
-                    if (isset($classBodies[$i])) { $classes[] = [$depth, $round]; }
-                }
-                if ($id === 0 && $text === '}') {
-                    if ($classes && end($classes)[0] === $depth) { array_pop($classes); }
-                    $depth--;
-                    if ($depth < $namespaceDepth) { $scope = 0; $namespaceDepth = 0; }
-                }
-            }
-            $files[$file] = [$tokens, $contexts, $scopes, $properties, $attributes];
-        }
+        $defined = [];
+        // Resolve user functions across files without retaining their token arrays.
+        foreach ($sources as $source) { self::parse($source, $defined); }
         $errors = [];
-        foreach ($files as $file => [$tokens, $contexts, $scopes, $properties, $attributes]) {
+        foreach ($sources as $file => $source) {
+            [$tokens, $contexts, $scopes, $properties, $attributes] = self::parse($source, $defined);
             foreach ($tokens as $i => [$id, $text, $line]) {
                 $reason = null; $next = $tokens[$i + 1][1] ?? '';
                 if (in_array($id, [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE], true) && $next === '(') {
@@ -116,8 +65,66 @@ final class Php83Compatibility
                 if ($id === T_NEW && self::unwrappedNew($tokens, $i)) { $reason = 'PHP 8.4 unparenthesized new dereference'; }
                 if ($reason !== null) { $errors[] = $file.':'.$line.': '.$reason; }
             }
+            unset($tokens, $contexts, $scopes, $properties, $attributes);
         }
         return $errors;
+    }
+
+    /** Per-file metadata is discarded after each pass; only declared function names survive. */
+    private static function parse(string $source, array &$defined): array
+    {
+        $tokens = []; $line = 1;
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token)) {
+                [$id, $text, $line] = $token;
+                if (!in_array($id, [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) { $tokens[] = [$id, $text, $line]; }
+                $line += substr_count($text, "\n");
+            } else { $tokens[] = [0, $token, $line]; }
+        }
+        $contexts = []; $scopes = [['namespace' => '', 'imports' => []]];
+        $scope = $depth = $round = $namespaceDepth = 0; $classes = []; $classBodies = []; $importTokens = [];
+        $properties = []; $attributes = self::attributeConstructors($tokens);
+        foreach ($tokens as $i => [$id, $text]) {
+            if ($id === T_NAMESPACE && in_array($tokens[$i + 1][0] ?? 0, [T_STRING, T_NAME_QUALIFIED], true)) {
+                $scope = count($scopes); $scopes[] = ['namespace' => strtolower($tokens[$i + 1][1]), 'imports' => []];
+                $namespaceDepth = ($tokens[$i + 2][1] ?? '') === '{' ? $depth + 1 : $depth;
+            } elseif ($id === T_NAMESPACE && ($tokens[$i + 1][1] ?? '') === '{') {
+                $scope = count($scopes); $scopes[] = ['namespace' => '', 'imports' => []]; $namespaceDepth = $depth + 1;
+            }
+            $contexts[$i] = $scope;
+            if ($id === T_USE && $depth === $namespaceDepth && ($tokens[$i + 1][1] ?? '') !== '(') {
+                $end = $i + 1;
+                while (isset($tokens[$end]) && $tokens[$end][1] !== ';') { $end++; }
+                for ($j = $i + 1; $j < $end; $j++) { $importTokens[$j] = true; }
+                $scopes[$scope]['imports'] += self::imports(array_slice($tokens, $i + 1, $end - $i - 1));
+            }
+            if (in_array($id, [T_CLASS, T_TRAIT, T_INTERFACE, T_ENUM], true) && ($tokens[$i - 1][0] ?? 0) !== T_DOUBLE_COLON) {
+                $body = $i + 1;
+                if (($tokens[$body][1] ?? '') === '(') { $body = self::afterBalanced($tokens, $body, '(', ')'); }
+                while (isset($tokens[$body]) && !($tokens[$body][0] === 0 && $tokens[$body][1] === '{')) { $body++; }
+                $classBodies[$body] = true;
+            }
+            if ($id === T_FUNCTION && !isset($importTokens[$i])) {
+                $name = $i + 1;
+                if (($tokens[$name][1] ?? '') === '&') { $name++; }
+                if (($tokens[$name][0] ?? 0) === T_STRING && (!$classes || $depth !== end($classes)[0])) {
+                    $defined[ltrim($scopes[$scope]['namespace'].'\\'.strtolower($tokens[$name][1]), '\\')] = true;
+                }
+            }
+            if ($id === T_VARIABLE && $classes && [$depth, $round] === end($classes)) { $properties[$i] = true; }
+            if ($id === 0 && $text === '(') { $round++; }
+            if ($id === 0 && $text === ')') { $round--; }
+            if (($id === 0 && $text === '{') || $id === T_CURLY_OPEN || $id === T_DOLLAR_OPEN_CURLY_BRACES) {
+                $depth++;
+                if (isset($classBodies[$i])) { $classes[] = [$depth, $round]; }
+            }
+            if ($id === 0 && $text === '}') {
+                if ($classes && end($classes)[0] === $depth) { array_pop($classes); }
+                $depth--;
+                if ($depth < $namespaceDepth) { $scope = 0; $namespaceDepth = 0; }
+            }
+        }
+        return [$tokens, $contexts, $scopes, $properties, $attributes];
     }
 
     private static function imports(array $tokens): array

@@ -30,8 +30,8 @@ foreach ($functions as $function) {
             'Must reject planted global/fallback call: '.$call);
     }
     compatibilityCheck(Php83Compatibility::scan([
-        'definition.php' => '<?php namespace Custom; function '.$function.'($value) {}',
         'caller.php' => '<?php namespace Custom; '.$function.'([]);',
+        'definition.php' => '<?php namespace Custom; function '.$function.'($value) {}',
     ]) === [], 'User function definitions resolve across shipped files: '.$function);
 }
 foreach ([

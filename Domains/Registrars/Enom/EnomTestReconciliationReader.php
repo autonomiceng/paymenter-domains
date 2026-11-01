@@ -19,7 +19,7 @@ final readonly class EnomTestReconciliationReader implements CatalogueReader
     public function reconcile(AttemptEvidence $attempt,RequestContext $c):ReconciliationResult
     {
         $renewal=$attempt->query->action===Action::Renew&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled($this->binding());
-        $transfer=$attempt->query->action===Action::Transfer&&\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::enabled($this->binding())&&is_string($attempt->transferReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference);
+        $transfer=$attempt->query->action===Action::Transfer&&(\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::enabled($this->binding())||\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding(),'catalogue'))&&is_string($attempt->transferReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference);
         $captured=is_string($attempt->providerReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->providerReference)&&$attempt->executionFacts;
         $history=$renewal&&$attempt->historyAcceptance?->covers($attempt,$c->now());
         if($attempt->binding->registrarKey!=='enom'||($attempt->binding->environment!==Environment::Test&&!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding(),'catalogue'))
@@ -30,5 +30,6 @@ final readonly class EnomTestReconciliationReader implements CatalogueReader
         return $this->reconciler->reconcile($attempt,$c);
     }
     public function catalogue(RequestContext $c):ReadResult{return $this->preview->catalogue($c);}
+    public function bulkPricing(bool $domainPricing, int $years, RequestContext $context): ReadResult { return $this->preview->bulkPricing($domainPricing, $years, $context); }
     public function catalogueBatch(CatalogueAcceptance $a,CatalogueFreshness $f,RequestContext $c):array{return $this->preview->catalogueBatch($a,$f,$c);}
 }

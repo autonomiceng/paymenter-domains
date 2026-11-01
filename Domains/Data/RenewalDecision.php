@@ -6,7 +6,8 @@ namespace Paymenter\Extensions\Servers\Domains\Data;
 final readonly class RenewalDecision implements \JsonSerializable
 {
     public function __construct(public RenewalCode $code, public RenewalStatus $status = RenewalStatus::Unknown,
-        public ?Money $cost = null, public ?\DateTimeImmutable $validUntil = null, public ?string $staffAlert = null) {}
+        public ?Money $cost = null, public ?\DateTimeImmutable $validUntil = null, public ?string $staffAlert = null,
+        public ?\DateTimeImmutable $renewalUntil = null, public ?string $providerExpiry = null) {}
     public function allowed(): bool { return $this->code === RenewalCode::Admitted; }
     public function jsonSerialize(): array { return ['code' => $this->code->value, 'staff_alert' => $this->staffAlert]; }
     public function __debugInfo(): array { return $this->jsonSerialize(); }

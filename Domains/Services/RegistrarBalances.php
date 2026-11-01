@@ -21,7 +21,9 @@ final readonly class RegistrarBalances
     public function daily(Account $account): void
     {
         OperationClaims::outside();
-        if (TestCatalogue::enabled(CatalogueAcceptances::binding($account))) { return; }
+        $binding=CatalogueAcceptances::binding($account);
+        // TEST remains manual-only. Live reads need the reviewed account/site deployment, not a write opt-in.
+        if(TestCatalogue::testDeployment($binding)||($account->registrar_key==='enom'&&$account->environment==='live'&&!EnomLive::enabled($binding,'catalogue'))){return;}
         if(!Schema::hasTable(BalanceSchema::TABLE)){return;}
         $claimedUntil=$this->claim($account,'daily_due_at',86400);
         if($claimedUntil!==null){
@@ -45,15 +47,18 @@ final readonly class RegistrarBalances
             CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($a));
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint);
             $row=(clone $q)->lockForUpdate()->first();$now=$this->clock->now()->getTimestamp();
-            if($row&&(int)$row->$field>$now){return null;}
-            if($row){$q->update([$field=>$now+$seconds]);}else{DB::table(BalanceSchema::TABLE)->insert(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint,$field=>$now+$seconds]);}
+            $live=$a->registrar_key==='enom'&&$a->environment==='live';
+            // A scheduled Live read and repeated manual checks share one durable one-minute claim.
+            if($row&&((int)$row->$field>$now||$live&&(int)$row->manual_due_at>$now)){return null;}
+            $values=[$field=>$now+$seconds]+($live?['manual_due_at'=>$now+60]:[]);
+            if($row){$q->update($values);}else{DB::table(BalanceSchema::TABLE)->insert(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint,...$values]);}
             return $now+$seconds;
         });
     }
     private function read(Account $account,string $source,RequestOrigin $origin): string
     {
         $binding=CatalogueAcceptances::binding($account);
-        try{$balanceOnly=$account->registrar_key==='namesilo'&&NameSiloSandbox::enrolled($account);
+        try{$balanceOnly=($account->registrar_key==='namesilo'&&NameSiloSandbox::enrolled($account))||EnomLive::enabled($binding,'catalogue');
             $reader=$this->bindings->reader((int)$account->server_id,$balanceOnly);$binding->requireMatch($reader->binding());
             if ($reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview) { throw new \DomainException('Use the reviewed staff balance probe.'); }}
         catch(\Throwable){BalanceReads::record($binding,null,$this->clock->now(),$source,'configuration_unavailable');return 'configuration_unavailable';}
@@ -86,7 +91,7 @@ final readonly class RegistrarBalances
             $code!==null=>'Last check failed. Use Check balance.',!$row?->read_at||$row->amount===null=>'Not checked yet. Use Check balance.',$unknown=>'Balance is not in USD. Ask the registrar to switch this account to USD.',default=>null};
         return ['status'=>$unknown?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($low?'Low balance':'OK'),'low'=>$low,
             'balance'=>$unknown?null:self::money($row->amount,$row->currency),'checked'=>$unknown?null:gmdate('M j, Y H:i \\U\\T\\C',(int)$row->read_at),
-            'cause'=>$cause,'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown']];
+            'cause'=>$cause,'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown'],'unreadable'=>$forecast['unreadable']];
     }
     /** Staff money: "USD 49,642.19". */
     private static function money(string $amount,string $currency): string

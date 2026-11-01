@@ -5,17 +5,13 @@ require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 
 $cases = [
-    'Live Enom Purchase route acceptance is unavailable.' => 'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
-    'Independent Live renewal review required.' => 'Tick the box to show you checked this on the live account. Nothing was saved.',
+    'Live Enom Purchase route acceptance is unavailable.' => 'This account can’t take orders on this site yet. See System checks. Nothing was saved.',
     'Live renewal deployment is unavailable.' => 'Live renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
-    'Independent Live management review required.' => 'Tick the box to show you checked this on the live account. Nothing was saved.',
     'Live management deployment is unavailable.' => 'Live changes are off for this account or site. Check the DNS, nameservers and contacts row on the account page. Nothing was saved.',
-    'Enom TEST acquisition route acceptance is unavailable.' => 'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
-    'Independent TEST renewal review required.' => 'Tick the box to show you checked this on the test account. Nothing was saved.',
+    'Enom TEST acquisition route acceptance is unavailable.' => 'This account can’t take orders on this site yet. See System checks. Nothing was saved.',
     'TEST renewal deployment is unavailable.' => 'Test renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
-    'Independent TEST management review required.' => 'Tick the box to show you checked this on the test account. Nothing was saved.',
     'TEST management deployment is unavailable.' => 'Test changes are off for this account or site. Check the DNS, nameservers and contacts row on the account page. Nothing was saved.',
-    'Enom TEST Purchase route acceptance is unavailable.' => 'This account can’t take orders on this site yet. Ask your site admin. Nothing was saved.',
+    'Enom TEST Purchase route acceptance is unavailable.' => 'This account can’t take orders on this site yet. See System checks. Nothing was saved.',
 ];
 foreach ($cases as $message => $guidance) {
     same($guidance, SettingsActions::refusal(new DomainException($message), 'acceptance'), 'Known refusal gives safe administrator guidance: '.$message);

@@ -37,12 +37,12 @@ foreach(['staff-domains'=>[ListDomains::class,[]],'staff-domain'=>[ViewDomain::c
 foreach([false,true] as $enabled){
     if(!$enabled){$bindings->setProcessing($t->server_id,true,static fn()=>null);} // Seed an already enabled synthetic account before the actual pause action.
     $action=setupAction('processing',$t->server_id);
-    $test=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($action)->assertActionMounted($action)->setActionData(['enabled'=>$enabled,'reason'=>'Review installed processing change']);
+    $test=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($action)->assertActionMounted($action);
     $test->call('$refresh');$render($test,'staff-processing-'.($enabled?'enable':'disable'));
-    if(!$enabled){$test->setActionData(['enabled'=>false,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction()->assertRedirect(RegistrarAccount::getUrl(['account'=>$t->server_id]));expect(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->value('processing_enabled'),'Native pause persisted');$render(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id]),'staff-processing-saved');}
+    if(!$enabled){$test->callMountedAction()->assertRedirect(RegistrarAccount::getUrl(['account'=>$t->server_id]));expect(!\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->value('processing_enabled'),'Native pause persisted');$render(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$t->server_id]),'staff-processing-saved');}
     if($enabled){
         session()->forget(['filament.notifications','filament.claimed_notifications']);
-        $test->setActionData(['enabled'=>true,'confirmed'=>true,'reason'=>'Review installed processing change'])->callMountedAction()
+        $test->callMountedAction()
             ->assertHasNoActionErrors()->assertNotified("Couldn't save");
         $retainedAccount=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->firstOrFail();
         same(false,$retainedAccount->processing_enabled,'Refused activation keeps the existing account disabled');

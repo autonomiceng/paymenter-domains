@@ -11,5 +11,5 @@ class ListConfiguration extends ListRecords
     public function getTitle(): string{return 'DNS templates';}
     public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
-    protected function getHeaderActions(): array{return [WatchActions::configuration('profile',null)];}
+    protected function getHeaderActions(): array{return [WatchActions::configuration(null)];}
 }

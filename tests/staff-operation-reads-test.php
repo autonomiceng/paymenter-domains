@@ -10,12 +10,40 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\Vi
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
+\Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
 [$check]=$prepare(placeholderComFixtureName('staff-recheck-placeholder.com'));$calls=count($observation->calls);
-$checkedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->callAction('recheck')->assertNotified('Status checked')
-    ->assertSee('Completed')->assertSee('Status checked')->assertDontSee('has not confirmed')->assertDontSee('More')->assertActionHidden('recheck');
+$checkedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->callAction('recheck')->assertNotified('Registrar checked')
+    ->assertSee('Completed')->assertSee('Registrar checked')->assertDontSee('has not confirmed')->assertDontSee('More')->assertActionHidden('recheck');
 same('succeeded',$check->fresh()->state,'Reconciliation engine verifies actual charge and expiry');expect(count($observation->calls)>$calls,'Only explicit action reads');
 $history=$check->fresh()->policy['staff_actions'];same('read_finished',end($history)['phase'],'Read result audited');
+// Captured unknown/sent replies use the same audited staff route as accepted orders.
+$preflight->cost='8.95';
+[$captured]=$prepare(placeholderComFixtureName('staff-captured-placeholder.com'),'captured');
+$original=$captured->attempt;
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$captured->id])->callAction('recheck')->assertNotified('Registrar checked');
+same('succeeded',$captured->fresh()->state,'Staff settles captured order without another purchase');
+same($original,array_diff_key($captured->fresh()->attempt,['reconciliation'=>true]),'Staff recovery preserves original unknown execution');
+// The send guard refuses before a response. The page must say that and name a next step.
+[$deferred]=$prepare(placeholderComFixtureName('staff-deferred-placeholder.com'),'captured');
+$observation->fault='send_guard';
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$deferred->id])->callAction('recheck')
+    ->assertNotified('Check delayed')->assertSee('Check delayed')->assertSee('Our sending settings paused this check.')->assertSee('The next check is at')->assertSee('UTC')->assertDontSee('Status checked');
+same('deferred',$deferred->fresh()->policy['status_check']['outcome'],'Guard refusal is saved as deferred, never checked');
+expect($deferred->fresh()->policy['status_check']['next_at']>$clock->now()->getTimestamp(),'Deferred read has an automatic next due time');
+[$uncheckable]=$prepare(placeholderComFixtureName('staff-no-reply-placeholder.com'),'null');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->id])->callAction('recheck')
+    ->assertNotified('Cannot check registrar')->assertSee('Support can check the original order.')->assertDontSee('Status checked');
+same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
+[$transportFailure]=$prepare(placeholderComFixtureName('staff-failed-read-placeholder.com'),'captured');
+$observation->fault='transport';
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$transportFailure->id])->callAction('recheck')
+    ->assertNotified('Cannot check registrar')->assertSee('Support can check the original order.');
+[$lastPoll]=$prepare(placeholderComFixtureName('staff-last-read-placeholder.com'),'captured');
+$policy=$lastPoll->policy;$policy['reconciliation']['polls']=4;$lastPoll->update(['policy'=>$policy]);$observation->fault='wrong-charge';
+$reconcile->run($lastPoll->id);
+same(null,$lastPoll->fresh()->policy['status_check']['next_at'],'Exhausted reads promise no automatic retry');
+
 // Proven completion with retained execution/seal closes every operation-scoped action.
 expect(($check->fresh()->attempt['execution']??null)!==null,'Completed fixture retains a known send response');
 $closed=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More')
@@ -60,9 +88,9 @@ foreach(['register','transfer'] as $action){
 
 // Read resume retains original attempt/funding; limits and current generation remain engine-owned.
 [$resume]=$prepare(placeholderComFixtureName('staff-resume-placeholder.com'));$p=$resume->policy;$p['reconciliation']=['polls'=>5];$resume->update(['policy'=>$p]);$original=$resume->fresh()->attempt;
-$resumedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_reads')->assertNotified('Status checked')
-    ->assertSee('Status checked')->assertActionHidden('resume_reads')->assertActionVisible('recheck');
-same(0,$resume->fresh()->policy['reconciliation']['polls'],'Bounded read budget reset');same($original,$resume->fresh()->attempt,'Read resume cannot reset attempt');
+$resumedPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->callAction('resume_reads')->assertNotified('Status checks restarted')
+    ->assertSee('Status checks restarted')->assertActionHidden('resume_reads')->assertActionVisible('recheck');
+same('scheduled',$resume->fresh()->policy['status_check']['outcome'],'Resume clears stale status');same($clock->now()->getTimestamp(),(int)DB::table('domains_runtime_operations')->where('operation_id',$resume->id)->value('due_at'),'Resume is due immediately');same(0,$resume->fresh()->policy['reconciliation']['polls'],'Bounded read budget reset');same($original,$resume->fresh()->attempt,'Read resume cannot reset attempt');
 $job=DB::table('domains_observation_work')->insertGetId(['server_id'=>$resume->server_id,'account_fingerprint'=>$resume->account_fingerprint,'domain_id'=>$resume->domain_id,
     'generation'=>$resume->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
 // Resume sync lives on the domain page; the request page does not offer it.
@@ -96,12 +124,11 @@ DB::table('domains_observation_work')->where('id',$job)->update(['resumes'=>20])
 [$renew,$domain,$binding]=$makeRenewal(placeholderComFixtureName('staff-renewal-placeholder.com'));$renew->update(['state'=>'held','safe_code'=>'renewal_funding_or_authority']);
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->callAction('release')->assertNotified('Hold released');
 same('queued',$renew->fresh()->state,'Held renewal re-release');$run($renew->fresh(),'hold');$run($renew->fresh(),'refund');
-// Crediting never implicitly frees the cycle. Replacement needs its own explicit reviewed authority.
-// Owner requests end at the confirmed expiry, so read the retained obligation inside the request window.
-$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');same($renew->invoice_id,$billing->invoice($domain->id,$user)->id,'Refund retains original obligation before explicit review');
-Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->callAction('replacement',['reason'=>'Replace exactly refunded unsuitable cycle'])->assertNotified('Renewal invoice reissued')
-    ->assertSee('Renewal invoice reissued')->assertSee('Replace exactly refunded unsuitable cycle');
-expect(RenewalReplacements::reviewed($renew->fresh(),$domain->fresh()),'Explicit replacement proof retained');
+// Exact old credit settlement automatically releases an ordinary replacement before expiry.
+$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$automatic=$billing->invoice($domain->id,$user);
+expect($automatic->id!==$renew->invoice_id,'Exact settled refund creates replacement without a staff step');
+expect(RenewalReplacements::reviewed($renew->fresh(),$domain->fresh()),'Automatic exact-settlement proof retained');
+same(null,$renew->fresh()->policy['renewal_replacement']['actor_id'],'Automatic recovery never invents a staff actor');
 same([],RenewalReplacements::activity($domain->fresh()),'Unchanged refunded debt shows no false financial warning');
 $clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$invoice=$billing->invoice($domain->id,$user);
 expect($invoice->id!==$renew->invoice_id,'Replacement creates separate invoice, keeps original');
@@ -121,7 +148,7 @@ same([(int)$renew->id],RenewalReplacements::activityIds($domain->fresh()),'Late 
 // The late payment shows on the refunded request it landed on; the replacement still offers Check status.
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->assertSee('Payment received after credit. Check the invoice.');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$replacement->id])->assertDontSee('Payment received after credit')
-    ->callAction('recheck')->assertNotified('Status checked');
+    ->callAction('recheck')->assertNotified('Registrar checked');
 same('succeeded',$replacement->fresh()->state,'Staff readback completes sealed replacement after old late payment');
 // Before admission, changed old settlement still blocks a new obligation.
 [$late,$lateDomain]=$makeRenewal(placeholderComFixtureName('staff-replacement-late-placeholder.com'));$run($late,'hold');$run($late->fresh(),'refund');$run($late->fresh(),'replacement');
@@ -138,11 +165,11 @@ foreach([4,5] as $polls){
 }
 
 $before=[$readRenew->fresh()->attempt,$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name];
-$renewPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id])->callAction('resume_reads')->assertNotified('Status checked')
-    ->assertActionHidden('resume_reads')->assertActionVisible('recheck')->assertSee('Status checked');
+$renewPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$readRenew->id])->callAction('resume_reads')->assertNotified('Status checks restarted')
+    ->assertActionHidden('resume_reads')->assertActionVisible('recheck')->assertSee('Status checks restarted');
 same(0,$readRenew->fresh()->policy['renewal_polls'],'Renewal read budget explicitly resumed');
 same($before,[$readRenew->fresh()->attempt,$readRenew->fresh()->funding,$readRenew->domain->fresh()->reservation_name],'Renewal resume preserves financial/send evidence');
-$renewPage->callAction('recheck')->assertNotified('Status checked')->assertSee('Completed')->assertDontSee('More')->assertDontSee('has not confirmed');
+$renewPage->callAction('recheck')->assertNotified('Registrar checked')->assertSee('Completed')->assertDontSee('More')->assertDontSee('has not confirmed');
 same('succeeded',$readRenew->fresh()->state,'Renewal readback completes original attempt');
 commerceReject(fn()=>$run($readRenew->fresh(),'disposition'));
 [$limitRenew,,$binding]=$makeRenewal(placeholderComFixtureName('staff-renewal-resume-limit-placeholder.com'));$runRenewal($limitRenew,$binding);$limitRenew->refresh();

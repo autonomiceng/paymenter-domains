@@ -135,7 +135,7 @@ foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-
     elseif($day>='2027-10-11'){same(range(1,9),$owners->present($calendar->fresh())->renewNow['terms']??null,'After due the same multi-year terms are offered');}
 }
 staffPanel();Auth::login(staffUser([Staff::VIEW]));$save($d,false);
-$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['On','Awaiting payment: invoice #'.$next->id]],[[$facts['Auto-renew']['value'],$facts['Auto-renew']['sub']],[$facts['Renewal invoices']['value'],$facts['Renewal invoices']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
+$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['Invoice #'.$next->id,'Awaiting payment']],[[$facts['Auto-renew']['value'],$facts['Auto-renew']['sub']],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
 Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])
     ->assertSee('Auto-renew turned off')->assertSee(trim($user->first_name.' '.$user->last_name)?:'Customer');
 // Staff can add a hard stop while the owner's reversible switch is Off.
@@ -146,12 +146,12 @@ $byName=[];foreach($actions as $action){$byName[$action->getName()]=$action;}
 expect($byName['stop']->isVisible()&&!$byName['resume']->isVisible(),'Staff can hard-stop an owner-Off holding');
 $l=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($second));
 $ticket=\Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview::ticket($staffActor->id,$second->id,'stop',\Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview::stamp($l),$clock);
-(new \Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview($guard,$clock))->run($staffActor,$second->id,'stop',$ticket,'Stop renewal after ownership review');
+(new \Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview($clock))->run($staffActor,$second->id,'stop',$ticket,'Stop renewal after ownership review');
 same('staff',$owners->present($second->fresh())->renewalOff,'Staff stop overrides owner Off');
 commerceReject(fn()=>$preference->set($user,$second->id,true));commerceReject(fn()=>$billing->invoice($second->id,$user));
 $l=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($second));
 $ticket=\Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview::ticket($staffActor->id,$second->id,'resume',\Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview::stamp($l),$clock);
-(new \Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview($guard,$clock))->run($staffActor,$second->id,'resume',$ticket,'Resume after ownership review');
+(new \Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview($clock))->run($staffActor,$second->id,'resume',$ticket,'Resume after ownership review');
 same('owner',$owners->present($second->fresh())->renewalOff,'Staff resume retains owner Off');
 // A rejected domain save never creates a false audit entry.
 [$saveDomain]=$holder('owner-save-failure-placeholder.com');$saveVeto=true;
