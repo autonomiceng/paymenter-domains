@@ -161,7 +161,7 @@ Transfers Off with the activation helper. No saved transfer-ending list uses Wha
 after that exact Live acceptance; a saved list still narrows the accepted endings.
 
 The retained `domains_enom_live_calls` table records daily UTC calls and reserved USD cost in
-integer millionths. A single conditional update checks both account limits before incrementing
+integer millionths. A single conditional update checks both of our account safety limits before incrementing
 them. Registration, transfer and renewal reserve their admitted cost before the durable seal. The physical
 wire consumes that same request reservation once. Free management reserves a call with zero cost;
 paid privacy remains unavailable, as in TEST. Read calls use the same daily account counter.

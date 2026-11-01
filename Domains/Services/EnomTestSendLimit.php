@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 /**
- * One limit per Enom TEST login: a rolling 24-hour ceiling and a per-minute rate.
+ * Our safety limit per Enom TEST login: a rolling 24-hour ceiling and a per-minute rate.
  * Checked once right before each physical send. Every admitted attempt stays counted, sent or not.
  */
 final class EnomTestSendLimit
