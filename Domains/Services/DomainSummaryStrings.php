@@ -10,6 +10,7 @@ final class DomainSummaryStrings
         $company=DnsSignalLabels::company();
         return DnsSignalLabels::strings($company)+['domain.registration.platform'=>'Registered with us','domain.registration.external'=>'External Registration','domain.registration.unknown'=>'Registration details unavailable','domain.details.partial'=>'Some details unavailable',
             'adopt.pending_notice'=>'We need to verify this registration before handling renewals.',
+            'domain.dns.not_configured'=>'DNS comparison not set up',
             'watch.paused'=>'Checks paused','watch.retired'=>'Watch ended','watch.not_checked'=>'Not checked yet','watch.stale'=>'Checks are out of date',
             'watch.partial'=>'Checks partly complete','watch.unknown'=>'We could not confirm the current details. We will check again.',
             'watch.no_coverage'=>'This registry does not provide a usable public expiry date.',

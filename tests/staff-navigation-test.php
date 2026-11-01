@@ -42,12 +42,12 @@ Livewire::actingAs(staffUser([Staff::VIEW]))->test(MonitoringSettings::class)->a
 
 // Normal monitoring pages hide deployment settings; direct settings bookmarks still work.
 $tabs=fn($page)=>array_map(fn(NavigationItem $i)=>[$i->getLabel(),$i->isActive()],$page->instance()->getSubNavigation());
-$list=Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful();same([['Domains',true]],$tabs($list),'List tabs');
+$list=Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful();same([['Domains',true],['DNS monitoring setup',false]],$tabs($list),'List tabs');
 // List pages carry no breadcrumb, like Domains and Registrars.
 same([],$list->instance()->getBreadcrumbs(),'Monitoring list has no breadcrumb');
 foreach([RoutingProfileResource\Pages\ListConfiguration::class] as $page){same([],Livewire::actingAs($manager)->test($page)->instance()->getBreadcrumbs(),'No breadcrumb: '.$page);}
 $settings=app(DnsResolverSettings::class);
-$tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Domains',false],['Settings',true]],$tabs($tab),'Settings tabs');
+$tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Domains',false],['DNS monitoring setup',false],['Settings',true]],$tabs($tab),'Settings tabs');
 // No saved resolver: Missing with its cause and the fix beside it, said once; nothing to test yet, no bootstrap IP.
 $once=fn($test,string $copy)=>same(1,substr_count(html_entity_decode(strip_tags($test->html()),ENT_QUOTES),$copy),'Said once: '.$copy);
 $tab->assertSee('DNS resolver')->assertSee('Resolver')->assertSee('Missing')->assertSee("No resolver set. Checks use the server's resolver.")->assertDontSee('Server default')->assertDontSee('Resolver IP address')->assertSee('If the resolver fails, checks retry once with the server')
@@ -89,23 +89,23 @@ same(['text'=>'Domain discovery has failed since '.$at.'. Ask your site admin to
 same(null,WatchMaintenance::notice(['reason'=>'checks_unsuccessful','families'=>['watch_dns','local'],'since'=>$since])['action'],'Local discovery failures cannot be repaired in resolver settings');
 // The queue timeout shows once, under Registrars > account > System checks, not on the monitoring list.
 same(null,WatchMaintenance::notice(['outage'=>true,'reason'=>'queue_configuration','since'=>null]),'Queue configuration has no monitoring notice');
-// The list shows the notice above the table with its one action.
+// The list shows the notice above the table with links to the relevant checks and settings.
 $clock=(object)['now'=>$since];app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true,fn()=>$clock->now));
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>180]);
 DB::table('domains_watch_schedule')->where('scope','dispatch')->delete();DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','due_at'=>$since,'progress_at'=>$since-86400,'data'=>json_encode(['started_at'=>$since-86400])]);
 // A stopped dispatcher needs server maintenance, even when staff can open Failed jobs.
 Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs');
 $manager->role->update(['permissions'=>[...$manager->role->permissions,'admin.failed_jobs.viewAny']]);
-$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs')->assertDontSee('Open Settings')->assertSee('Ask your site admin to restart them.')->assertCanSeeTableRecords([$watch]);
+$overdue=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Monitoring checks have not run since Jan 14, 2027 08:00 UTC.')->assertDontSee('Open Failed jobs')->assertDontSee('Resolver settings')->assertSee('Ask your site admin to restart them.')->assertCanSeeTableRecords([$watch]);
 $text=html_entity_decode(strip_tags($overdue->html()));expect(!str_contains($text,'—'),'No em dash');foreach(['unavailable','Public domain checks'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on the list');}
-// Resolver advice reaches the page's edit/test controls only for staff who can use them.
+// Resolver advice links to readable settings and affected checks; write controls keep their own permission checks.
 DB::beginTransaction();
 DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$since]);
 DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'health_watch_dns'],['cursor'=>$since-86400]);
 DB::table('domains_watch_work')->where('kind','delegation')->update(['attempts'=>1,'due_at'=>$since-86400]);
-Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertSee('Open Settings');
-Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertDontSee('Open Settings');
-putenv('SSLKEYLOGFILE=/synthetic-disabled');Livewire::actingAs($manager)->test(ListWatches::class)->assertDontSee('Open Settings');putenv('SSLKEYLOGFILE');
+Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertSee('Resolver settings');
+Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS checks have failed since ')->assertSee('Resolver settings')->assertSee('Affected checks');
+putenv('SSLKEYLOGFILE=/synthetic-disabled');Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Resolver settings')->assertSee('Affected checks');putenv('SSLKEYLOGFILE');
 DB::rollBack();
 config(['queue.connections.database.retry_after'=>60]);Livewire::actingAs($manager)->test(ListWatches::class)->assertDontSee('Queue timeout too short')->assertDontSee('retry_after');config(['queue.connections.database.retry_after'=>180]);
 // Disabled monitoring explains deployment setup without a Settings action, with or without rows.
@@ -113,14 +113,14 @@ app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers
 foreach([false,true] as $empty){
     if($empty){DB::beginTransaction();DB::table('domains_watch_names')->delete();}
     foreach([$viewer,$manager] as $actor){
-        $off=Livewire::actingAs($actor)->test(ListWatches::class)->assertSuccessful()->assertSee('Monitoring is not set up on this site.')->assertDontSee('Open Settings');
+        $off=Livewire::actingAs($actor)->test(ListWatches::class)->assertSuccessful()->assertSee('Monitoring is not set up on this site.')->assertDontSee('Resolver settings');
         $once($off,'Monitoring is not set up on this site.');
         if($actor->id===$manager->id){
             foreach(['Set up domain monitoring','Ask your site admin','Hosting products','five minutes','does not turn monitoring on']as$step){$off->assertSee($step);}$off->assertDontSee('WatchDiscoveryWork')->assertDontSee('retry_after');
             $off->assertSeeHtml('href="'.PublicSuffixList::getUrl().'"');
         }else{$off->assertDontSee('Set up domain monitoring')->assertDontSee('WatchDiscoveryWork')->assertDontSee('enabled: true');}
         $off->assertDontSee('Ask your administrator to turn it on.');
-        $doc=new DOMDocument();@$doc->loadHTML($off->html());$dom=new DOMXPath($doc);same(0,$dom->query('//a[@href="'.WatchResource::getUrl('settings').'"][contains(.,"Open Settings")]')->length,'Off notice has no misleading Settings action');
+        $doc=new DOMDocument();@$doc->loadHTML($off->html());$dom=new DOMXPath($doc);same(0,$dom->query('//a[@href="'.WatchResource::getUrl('settings').'"][contains(.,"Resolver settings")]')->length,'Off notice has no misleading Settings action');
     }
     if($empty){DB::rollBack();}
 }

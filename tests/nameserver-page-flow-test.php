@@ -39,6 +39,12 @@ DB::transaction(fn()=>$profile->fill(['enabled'=>true,'revision'=>2,'reason'=>'S
 $signals=new \Paymenter\Extensions\Servers\Domains\Services\ManagedPublicSignals(
     new \Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader(),true,fn()=>$clock->now()->getTimestamp(),$profile->id);
 expect($signals->enqueue($d->id,$user->id),'Public nameserver check enrolled');
+// This page fixture deliberately chooses its comparison template; a global default is not DNS intent.
+DB::transaction(function()use($d,$profile):void {
+    $config=\Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::findOrFail($d->id);
+    $config->fill(['profile_id'=>$profile->id,'revision'=>$config->revision+1])->save();
+});
+expect($signals->enqueue($d->id,$user->id),'Configured public nameserver check enrolled');
 $publicCheck=static function(array $hosts)use($signals,$d,$user,$clock):void {
     DB::table(\Paymenter\Extensions\Servers\Domains\Services\ManagedPublicWorkSchema::TABLE)->where('domain_id',$d->id)->where('kind','delegation')->update(['due_at'=>$clock->now()->getTimestamp(),'backoff_until'=>null]);
     $ticket=$signals->begin($d->id,$user->id,'delegation',$clock->now()->getTimestamp());

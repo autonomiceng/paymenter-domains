@@ -16,7 +16,7 @@ foreach([
     ['domains_domains',$id,['confirmed_revision'=>$d->confirmed_revision+1],['confirmed_revision'=>$d->confirmed_revision]],
     ['services',$service->id,['user_id'=>$other->id],['user_id'=>$uid]],
     ['domains_watch_profiles',$profile->id,['revision'=>3],['revision'=>2]],
-    ['domains_managed_public_config',$id,['revision'=>2],['revision'=>1]],
+    ['domains_managed_public_config',$id,['revision'=>ManagedPublicConfig::find($id)->revision+1],['revision'=>ManagedPublicConfig::find($id)->revision]],
 ]as[$table,$key,$changes,$restore]) {
     managedDue($id,$now);$field=$table==='domains_managed_public_config'?'domain_id':'id';
     $fake->answers['example.com|NS']=function()use($table,$key,$changes,$field){same(0,DB::transactionLevel(),'Mutation happens outside locks');DB::table($table)->where($field,$key)->update($changes);return managedNs();};
@@ -30,8 +30,9 @@ expect($signals->finish($second,new DnsReading('delegation','platform'),$now+122
 managedDue($id,$now+122);$late=$signals->begin($id,$uid,'delegation',$now+122);expect($late!==null,'Deadline fixture');
 expect(!$signals->finish($late,new DnsReading('delegation','external'),$now+167),'Forty-five second deadline rejects values');
 $time->now=$now+180;DB::transaction(function()use($id){$c=ManagedPublicConfig::find($id);$c->profile_id=null;$c->revision++;$c->save();});
-managedDue($id,$time->now);$calls=count($fake->calls);expect($signals->observe($id,$uid,'delegation'),'Missing profile records unknown');
-$last=ManagedPublicObservation::orderByDesc('id')->first();same('unknown',$last->result,'Profile absence remains unknown');same(null,$last->dns,'No registrar defaults inferred');same($calls,count($fake->calls),'No profile performs no DNS');
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>false]);
+managedDue($id,$time->now);$calls=count($fake->calls);$count=ManagedPublicObservation::count();expect(!$signals->observe($id,$uid,'delegation'),'Missing enabled template is not runnable');
+same($count,ManagedPublicObservation::count(),'Setup absence is not a failed check');same($calls,count($fake->calls),'No profile performs no DNS');
 DB::table('services')->where('id',$service->id)->update(['user_id'=>$other->id]);
 expect(!$signals->enqueue($id,$uid,$time->now),'Moved native owner retires managed work');
 expect(DB::table(ManagedPublicWorkSchema::TABLE)->whereNull('retired_at')->doesntExist(),'Moved holding cannot keep active work');

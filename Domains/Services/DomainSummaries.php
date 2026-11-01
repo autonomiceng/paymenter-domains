@@ -107,7 +107,8 @@ final class DomainSummaries
                     $fresh[$family]=['checkedAt'=>$attempt?->started_at,'stale'=>!$familyCurrent,'partial'=>$attempt?->partial??true,'nextCheck'=>$job?->due_at];
                 }
                 $signals['partial']=$signals['dns']['stale']||$signals['website']['stale']||$signals['email']['stale'];
-                $keys=DnsSignalLabels::projection($signals);$states=[];$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$issue=null;$waits=null;
+                $keys=DnsSignalLabels::projection($signals);$states=[];
+                if($kind==='managed' && !ManagedDnsSetup::usable($c->profiles[$c->configs[$id]->profile_id??0]??null)){$states[]='domain.dns.not_configured';}$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$issue=null;$waits=null;
                 if ($kind==='watch') {
                     $registryRows=$registry[$id]??collect();$r=$registryRows->first();$good=$registryRows->firstWhere('result','facts');$j=$jobs->firstWhere('kind','expiry');$match=$r && ($registryStamp=$c->stamp($kind,$id,'registry')) && hash_equals($registryStamp,$r->facts['presentation_stamp']??'');
                     $until=$r?->valid_until;if ($r && WatchRegistryChecks::urgent($r->facts['expiry']??null,$now)) { $until=min((int)$until,$r->started_at+43200); }

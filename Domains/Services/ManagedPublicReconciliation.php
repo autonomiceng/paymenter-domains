@@ -27,7 +27,7 @@ final readonly class ManagedPublicReconciliation
     /** Shared dispatch/health eligibility; dormant or obsolete managed targets are not outages. */
     public static function eligible(): \Illuminate\Database\Query\Builder
     {
-        return DB::table(ManagedPublicWorkSchema::TABLE)->whereIn('kind',['delegation','points'])
+        return ManagedDnsSetup::configured(DB::table(ManagedPublicWorkSchema::TABLE),ManagedPublicWorkSchema::TABLE.'.domain_id',ManagedPublicWorkSchema::TABLE.'.user_id')->whereIn('kind',['delegation','points'])
                 ->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_domains as d')->whereColumn('d.id',ManagedPublicWorkSchema::TABLE.'.domain_id')
                     ->whereColumn('d.authority_generation',ManagedPublicWorkSchema::TABLE.'.generation')->whereColumn('d.user_id',ManagedPublicWorkSchema::TABLE.'.user_id')
                     ->whereColumn('d.account_fingerprint',ManagedPublicWorkSchema::TABLE.'.account_fingerprint')->whereIn('d.status',['active','grace']))->whereNull('retired_at')->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','<>','awaiting_acceptance'));

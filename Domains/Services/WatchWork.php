@@ -23,6 +23,8 @@ final class WatchWork
         return !in_array($c['driver']??'sync',['sync','null'],true) && (int)($c['retry_after']??0)>=180;
     }
     private function signals(): ManagedPublicSignals { return new ManagedPublicSignals($this->reader,$this->active(),$this->clock,$this->managedProfile); }
+    public function enrollManaged(int $id,int $owner): void
+    { $this->signals()->enqueue($id,$owner,($this->clock)()); }
     public function tick(): int
     {
         if (!$this->active() || !$this->queueReady() || DB::transactionLevel()!==0 || !Schema::hasTable('domains_watch_schedule')) { return 0; }

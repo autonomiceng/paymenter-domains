@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,WatchName};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,ManagedPublicReconciliation,ManagedPublicWorkSchema,PublicDnsQuota};
 extract(managedFixture(hosting:false));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+// This source-free fixture explicitly chooses its comparison template; a global default is not intent.
+DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::create(['domain_id'=>$id,'user_id'=>$uid,'profile_id'=>$profile->id,'notice_preferences'=>[]]));
 $off=new ManagedPublicReconciliation(new ManagedPublicSignals($fake));same(0,$off->sweep($now),'Default-off sweep does not accept A3 rows');
 $sweep=new ManagedPublicReconciliation($signals);same(1,$sweep->sweep($now,1),'Bounded daily pass accepts old A3 rows');same(0,WatchName::count(),'Source-free managed holding never creates watch');
 $work=DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','delegation')->first();same('ready',$work->safe_code,'Existing A3 dormant row accepted only in enabled sweep');
@@ -40,6 +42,7 @@ foreach(['missing','duplicate']as$damage){
     DB::table('domains_watch_names')->where('id',$transferWatch)->delete();
     $second=(array)$d->fresh()->getRawOriginal();$second['id']=2000;$second['domain']='second-placeholder.com';$second['reservation_name']='second-placeholder.com';$second['sld']='second-placeholder';$second['service_id']=2000;
     DB::table('domains_domains')->insert($second);
+    DB::table('domains_managed_public_config')->insert(['domain_id'=>2000,'user_id'=>$uid,'profile_id'=>$profile->id,'notice_preferences'=>'{}']);
     foreach(['delegation','points']as$kind) { $copy=(array)$work;unset($copy['id']);$copy['domain_id']=2000;$copy['kind']=$kind;DB::table(ManagedPublicWorkSchema::TABLE)->insert($copy); }
     foreach(['delegation','points']as$kind) { expect(!$signals->observe($id,$uid,$kind),'Broken marker safely yields dispatch turn'); }
     $blocked=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->get();
@@ -48,7 +51,7 @@ foreach(['missing','duplicate']as$damage){
     foreach(['delegation','points']as$kind) { expect(!$signals->observe($id,$uid,$kind),'Unavailable marker respects retry backoff'); }
     same([1,1],$blocked->map(fn($row)=>(int)DB::table(ManagedPublicWorkSchema::TABLE)->where('id',$row->id)->value('attempts'))->all(),'Early retry never advances failure count');
     same([2000,2000],array_column($sweep->due($now),'domain_id'),'Other holding of same owner gets next dispatch turn');
-    if($damage==='missing'){DB::table('settings')->insert($savedMarker);}else{$duplicateKey=null;}DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',2000)->delete();DB::table('domains_domains')->where('id',2000)->delete();
+    if($damage==='missing'){DB::table('settings')->insert($savedMarker);}else{$duplicateKey=null;}DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',2000)->delete();DB::table('domains_domains')->where('id',2000)->delete();DB::table('domains_managed_public_config')->where('domain_id',2000)->delete();
     expect($signals->enqueue($id,$uid,$now),'Restored native marker permits reconciliation');
     DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->update(['due_at'=>$now,'backoff_until'=>null,'attempts'=>0]);
     foreach(['delegation','points']as$kind){$ticket=$signals->begin($id,$uid,$kind,$now);expect($ticket!==null,'Repaired marker restores both public work kinds');$signals->defer($ticket,$now);}
@@ -72,6 +75,7 @@ $owners=[];for($i=0;$i<7;$i++) {
     $u=staffUser([]);$owners[]=(int)$u->id;$key=1000+$i;
     DB::table('domains_domains')->insert(['id'=>$key,'service_id'=>$key,'user_id'=>$u->id,'server_id'=>$d->server_id,'registrar_key'=>'enom',
         'account_fingerprint'=>$d->account_fingerprint,'domain'=>placeholderComFixtureName('fair'.$i.'-placeholder.com'),'reservation_name'=>placeholderComFixtureName('fair'.$i.'-placeholder.com'),'sld'=>'fair'.$i.'-placeholder','tld'=>'com','status'=>'active','authority_generation'=>1]);
+    DB::table('domains_managed_public_config')->insert(['domain_id'=>$key,'user_id'=>$u->id,'profile_id'=>$profile->id,'notice_preferences'=>'{}']);
     foreach(['delegation','points']as$kind){DB::table(ManagedPublicWorkSchema::TABLE)->insert(['domain_id'=>$key,'user_id'=>$u->id,'generation'=>1,
         'account_fingerprint'=>$d->account_fingerprint,'kind'=>$kind,'due_at'=>$now,'target_stamp'=>str_repeat('a',64),'safe_code'=>'ready']);}
 }

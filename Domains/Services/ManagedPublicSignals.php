@@ -24,7 +24,7 @@ final class ManagedPublicSignals
         catch (\LogicException|\RuntimeException) { return false; }
         if ($changed===null) { $this->retire($id,$now);return false; }
         // This runs after the relink transaction commits. The work rows, not the hint, are durable intent.
-        try { if ($changed && $this->hint) { ($this->hint)($id,$owner); } }
+        try { if ($changed && $this->hint && ManagedPublicReconciliation::eligible()->where('domain_id',$id)->exists()) { ($this->hint)($id,$owner); } }
         catch (\Throwable $e) {
             try { logger()->warning('Domains managed public check hint deferred.', ['domain_id' => $id, 'exception_class' => $e::class]); }
             catch (\Throwable) { /* Daily sweep repairs lost hints even if logging fails. */ }
@@ -45,7 +45,7 @@ final class ManagedPublicSignals
             $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$seed->authority_generation)->where('kind',$kind);
             $peek=$q->first();if (!$peek) { return null; }
             $t=(new ManagedPublicTarget())->capture($id,$owner,$now,(int)$peek->source_cursor);
-            if (!$t) { return null; }$d=$t['domain'];$c=$t['config'];$p=$t['profile'];$w=$q->lockForUpdate()->first();
+            if (!$t || !$t['profile']) { return null; }$d=$t['domain'];$c=$t['config'];$p=$t['profile'];$w=$q->lockForUpdate()->first();
             if (!$w || $w->retired_at!==null || $w->safe_code==='awaiting_acceptance' || (int)$w->user_id!==$owner
                 || $w->account_fingerprint!==$d->account_fingerprint || $w->due_at>$now || ($w->backoff_until??0)>$now
                 || ($w->lease_until??0)>$now || (int)$w->source_cursor!==(int)$peek->source_cursor) { return null; }
@@ -67,7 +67,6 @@ final class ManagedPublicSignals
         if (!$this->enqueue($id,$owner,$now)) { $this->unavailable($id,$owner,$kind,$now);return false; }
         try { $ticket=$this->begin($id,$owner,$kind,$now); } catch (\LogicException|\RuntimeException) { $ticket=null; }
         if (!$ticket) { $this->unavailable($id,$owner,$kind,$now);return false; }
-        if (!$ticket->profile) { return $this->finish($ticket,new DnsReading($kind),($this->clock)()); }
         $quota=new PublicDnsQuota();$token=$quota->acquire(($this->clock)());
         if ($token===null) { $this->defer($ticket,($this->clock)());return false; }
         try {
@@ -97,7 +96,7 @@ final class ManagedPublicSignals
                 $q->update($this->failure($w,$id,$ticket->kind,$ticket->startedAt,$now,$now<$ticket->startedAt?'clock_reversal':'deadline'));return false;
             }
             if ($ticket->sourceOverflow) { $reading=$reading->withOmittedHosts(); }
-            $complete=$reading->result()==='complete';$code=$ticket->profile===null?'profile_unavailable':$reading->safeCode();
+            $complete=$reading->result()==='complete';$code=$reading->safeCode();
             $confirmed=false;$earlyPoints=false;$delay=$ticket->interval;
             if ($complete && $ticket->kind==='delegation') { [$confirmed,$delay,$earlyPoints]=$this->confirmation($ticket,$reading,$now); }
             ManagedPublicObservation::create(['domain_id'=>$id,'user_id'=>$ticket->target->owner,'account_fingerprint'=>$ticket->target->account,
@@ -123,7 +122,7 @@ final class ManagedPublicSignals
             $d=Domain::whereKey($id)->where('user_id',$owner)->first();if (!$d) { return; }
             $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('user_id',$owner)
                 ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)->where('kind',$kind)
-                ->whereNull('retired_at')->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','<>','awaiting_acceptance'))->where('due_at','<=',$now)
+                ->whereNull('retired_at')->where(fn($q)=>$q->whereNull('safe_code')->orWhereNotIn('safe_code',['awaiting_acceptance','dns_not_configured']))->where('due_at','<=',$now)
                 ->where(fn($q)=>$q->whereNull('lease_until')->orWhere('lease_until','<=',$now))
                 ->where(fn($q)=>$q->whereNull('backoff_until')->orWhere('backoff_until','<=',$now));
             $w=$q->lockForUpdate()->first();if (!$w) { return; }
