@@ -10,8 +10,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, Pendin
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, Staff};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, ObservationRecords, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
 config(['settings.company_name'=>'Example Hosting']);
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
@@ -39,6 +40,19 @@ DB::table('domains_accounts')->where('server_id',$active->server_id)->update(['p
 same(['Synthetic registrar','Enom · Test'],[$f['Registrar']['value'],$f['Registrar']['sub']],'Registrar account name and registrar sub-line');
 same(['Yes','On','Off','Off'],[$f['In registrar account']['value'],$f['Transfer lock']['value'],$f['WHOIS privacy']['value'],$f['Registrar auto-renew']['value']],'Synced registrar facts');
 same([null,'Fills in by itself within a day'],[$f['Last sync']['value'],$f['Last sync']['sub']],'Never synced is Missing with its cause');
+// Core sync cannot populate on-demand DNS inventory; staff needs the record-read action in either state.
+$dnsSetting=App\Models\Server::findOrFail($active->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
+$beforeDns=$active->fresh()->observation;$dnsMissing=[[$value($active,'DNS records'),$sub($active,'DNS records')]];
+$coreObservation=$beforeDns;unset($coreObservation['followup']);$active->fresh()->update(['observation'=>$coreObservation]);
+$binding=CatalogueAcceptances::binding(Account::where('server_id',$active->server_id)->firstOrFail());
+ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active->domain,owned:true,
+    expiry:new DateEvidence($active->provider_expires_at->format('Y-m-d'),ExpiryPrecision::Date,'synthetic_read'),
+    providerAutoRenew:false,privacy:false,locked:true,active:true),TransferStatus::Unknown,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+$dnsMissing[]=[$value($active,'DNS records'),$sub($active,'DNS records')];
+same([[null,'Use Sync now to read DNS records.'],[null,'Use Sync now to read DNS records.']],$dnsMissing,'Unread on-demand DNS names Sync now before and after a good core sync');
+same([null,'Registrar did not return it. Check the domain at the registrar.'],[$value($active,'Nameservers'),$sub($active,'Nameservers')],'Unread core facts keep their own recovery guidance');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Use Sync now to read DNS records.');
+$active->fresh()->update(['observation'=>$beforeDns,'last_synced_at'=>null]);$dnsSetting->delete();
 // Registrar facts and ownership holds belong to the current assignment only.
 $factObservation=$active->fresh()->observation;
 $stable=DomainFacts::for($active->fresh());

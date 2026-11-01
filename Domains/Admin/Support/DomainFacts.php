@@ -87,7 +87,7 @@ final class DomainFacts
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $records=OwnerRecords::forDomain($d); $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?$unread:implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.(ObservationProjection::sections($d)['dns']['at']??''):null])));
+                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?'Use Sync now to read DNS records.':implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.(ObservationProjection::sections($d)['dns']['at']??''):null])));
             }
             $glue=OwnerRecords::forDomain($d)['glue']??[];
             if ($glue) {
