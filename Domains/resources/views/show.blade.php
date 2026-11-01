@@ -15,7 +15,7 @@
 @endif
 <div class="domains-cols"><div>
 @foreach ($groups as $heading => $caps)
-@php($caps = array_values(array_filter($caps, fn ($cap) => isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))))
+@php($caps = array_values(array_filter($caps, fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused)))))
 @if ($caps)
 <section class="domains-panel" aria-labelledby="heading-{{ \Illuminate\Support\Str::slug($heading) }}"><div class="domains-panel__h"><h2 id="heading-{{ \Illuminate\Support\Str::slug($heading) }}" class="domains-h2">{{ $heading }}</h2></div>
 <ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $caps])</ul></section>

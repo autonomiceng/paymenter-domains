@@ -18,6 +18,11 @@ $transfers = new TransferPrecheck(new Rdap(static fn () => throw new RuntimeExce
 $adapter = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transfers), $clock); $adapter->boot(); $adapter->boot();
 $user = commerceUser(); $cart = commerceCart($user); $product = $native->product($tlds[0], 'register');
 same('domain', $adapter->fields($product)[0]['name'], 'Neutral native domain checkout field');
+$beforeFields=$reads->calls;
+foreach ($tlds as $tld) {
+    same(['domain'],array_column($adapter->fields($native->product($tld,'register')),'name'),'Neither registrar offers privacy at checkout');
+}
+same($beforeFields,$reads->calls,'Checkout display fields do not call a registrar');
 $line = commerceAdd($cart, $product, ' First-placeholder.COM. ', 3);
 same(['domain', 'domains_check'], array_keys($line->checkout_config), 'Only canonical name and opaque receipt retained');
 same('first-placeholder.com', $line->checkout_config['domain'], 'Canonical cart name');

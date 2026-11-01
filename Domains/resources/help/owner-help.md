@@ -69,6 +69,6 @@ Each domain has an owner (registrant) and admin, tech and billing contacts. You 
 - Changing the owner's name, organization or email may need email verification, and can block transfers for 60 days.
 - Some registrars apply contact changes in two steps. Send the new details first. Once they are approved, open Edit contacts again to use them.
 
-## Auto-renew
+## Renewal invoices
 
-Auto-renew sends a renewal invoice before your domain expires. The domain renews once that invoice is paid. With Auto Pay on, we charge your saved payment method for it. With Auto Pay off, or if the charge fails, you pay the invoice yourself. If you turn auto-renew off, the domain expires on the date shown unless you renew it.
+We send a renewal invoice before your domain expires. The domain renews once that invoice is paid. With Auto Pay on, we charge your saved payment method for it. With Auto Pay off, or if the charge fails, you pay the invoice yourself. If you turn renewal invoices off, the domain expires on the date shown unless you renew it.

@@ -47,6 +47,13 @@ Runtime::register();same(app(RuntimePorts::class),app(RuntimePorts::class),'One 
 $entry->boot();$entry->boot();
 same(1,count(Event::getListeners('navigation')),'One public navigation authority');
 same(1,count(Event::getListeners('navigation.dashboard')),'One dashboard navigation authority');
+require dirname(__DIR__).'/Domains/routes/web.php';
+require dirname(__DIR__).'/Domains/routes/owned.php';
+app('router')->getRoutes()->refreshNameLookups();
+$navigation=Event::dispatch('navigation')[0];
+$transfer=collect($navigation['children'])->firstWhere('name','Transfer a domain');
+same(route('domains.domains.transfer'),$transfer['url']??null,'Transfer entry remains discoverable while TEST transfers are off');
+same(route('domains.domains.index'),Event::dispatch('navigation.dashboard')[0]['url'],'Domains sidebar reaches the full owned list');
 $events=app(Illuminate\Console\Scheduling\Schedule::class)->events();
 same(1,count(array_filter($events,fn($e)=>$e->description==='domains-runtime')),'One scheduler authority');
 $ports=new RuntimePorts;$ports->initialManagedRecordObservations();$calls=0;

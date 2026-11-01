@@ -8,7 +8,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObligationAlerts, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalReplacements, RenewalStop};
+use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObligationAlerts, OwnerHelp, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalReplacements, RenewalStop};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Request-local allowlisted projection. Never cache across actors, call providers or serialize models.
  * Each fact is ['value'=>string|list<string>|null,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool].
@@ -16,12 +16,13 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final class DomainFacts
 {
     public const REGISTRATION=['Expires','Registrar','In registrar account','Contacts','Nameservers','DNS records','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
-    public const BILLING=['Customer','Service','Auto-renew','Renewal price','Next invoice','Open invoice'];
+    public const BILLING=['Customer','Service','Renewal invoices','Renewal price','Next invoice','Open invoice'];
     public static function help(): array
     {
         $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
         return ['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
-            'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.'];
+            'Renewal invoices'=>OwnerHelp::summary('auto-renew'),
+            'Registrar auto-renew'=>'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' the domain after the invoice is paid, so you are never charged by the registrar directly.'];
     }
     /** Open alerts by kind: the row each concerns and its tone. ObligationAlerts::LABELS has the words. The row keeps its value; with no value it is Missing.
      * Payment activity after the order closed shows in the status and the page notice instead. */
@@ -39,14 +40,14 @@ final class DomainFacts
         'unknown_price'=>['Renewal price','danger'],
         'unknown_cost'=>['Renewal price','danger'],
         'below_cost'=>['Renewal price','danger'],
-        'renewal_unpaid'=>['Auto-renew','warning'],
-        'held_obligation'=>['Auto-renew','warning'],
-        'invalid_invoice'=>['Auto-renew','warning'],
-        'credit_notice_overdue'=>['Auto-renew','warning'],
-        'schedule_binding'=>['Auto-renew','warning'],
-        'delivery_uncertain'=>['Auto-renew','warning'],
-        'template_failed'=>['Auto-renew','warning'],
-        'reminder_failed'=>['Auto-renew','warning'],
+        'renewal_unpaid'=>['Renewal invoices','warning'],
+        'held_obligation'=>['Renewal invoices','warning'],
+        'invalid_invoice'=>['Renewal invoices','warning'],
+        'credit_notice_overdue'=>['Renewal invoices','warning'],
+        'schedule_binding'=>['Renewal invoices','warning'],
+        'delivery_uncertain'=>['Renewal invoices','warning'],
+        'template_failed'=>['Renewal invoices','warning'],
+        'reminder_failed'=>['Renewal invoices','warning'],
         'missing_obligation'=>['Next invoice','danger'],
         'missing_execution'=>['Next invoice','danger'],
     ];
@@ -114,7 +115,7 @@ final class DomainFacts
             $off=match(true) {$renewal===null=>null,RenewalStop::adopted($renewal)=>'Set at import',$pending=>'Until import',
                 RenewalStop::blocksExisting($renewal)=>'Service cancellation pending',$cancel=>'Cancels at period end',
                 (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>'Turned off by customer',default=>null};
-            $f['Auto-renew']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL):self::fact($off?'Off':'On',sub:$off);
+            $f['Renewal invoices']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal invoices']):self::fact($off?'Off':'On',sub:$off,help:self::help()['Renewal invoices']);
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
             if (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }

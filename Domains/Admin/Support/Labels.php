@@ -29,6 +29,7 @@ final class Labels
     }
     public static function action(?string $value): string
     {
+        if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN&&in_array($value,['privacy_purchase','privacy_renew','privacy_enable','privacy_disable'],true)) { return 'Domain change'; }
         return ['register'=>'Registration','transfer'=>'Transfer','renew'=>'Renewal','nameservers'=>'Nameservers',
             'contacts'=>'Contacts','contact_profile'=>'Contacts','lock'=>'Transfer lock','auto_renew_off'=>'Turn off registrar auto-renew',
             'auth_code_email'=>'Auth code email','privacy_purchase'=>'WHOIS privacy purchase','privacy_renew'=>'WHOIS privacy renewal',
@@ -72,6 +73,7 @@ final class Labels
         try { $a=$op->attempt??[]; $kinds=[...(array_keys($a['corrections']??[])?:($a['evidence']['registration']['corrections']??[])),...($op->policy['reconciliation']['observed_corrections']??[])]; }
         catch (\Throwable) { $kinds=[]; }
         $names=['nameservers'=>'nameservers','contacts'=>'contact details','auto_renew'=>'auto-renew','privacy'=>'WHOIS privacy'];
+        if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { $names['privacy']='registrar details'; }
         return implode(', ',array_values(array_unique(array_filter(array_map(fn($kind)=>is_string($kind)?($names[$kind]??null):null,$kinds))))) ?: 'registrar details';
     }
     private const FEATURE_OFF='Not sent: feature off for this account';

@@ -137,7 +137,8 @@ class RegistrarAccount extends Page
     private function accountEntries(Server $s, ?Account $a): array
     {
         $fact=static fn(string $key,string $label,?string $value,?string $cause=null)=>MissingEntry::apply(TextEntry::make($key)->label($label)->state($value)->inlineLabel(),cause:$cause);
-        if (!$a) { return [$fact('registrar','Registrar',null,'Account not set up yet. Use Connect account.'),TextEntry::make('domains')->label('Domains')->state((string)\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count())->inlineLabel()]; }
+        $privacy=$fact('whois_privacy','WHOIS privacy',\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::registrarNotice());
+        if (!$a) { return [$fact('registrar','Registrar',null,'Account not set up yet. Use Connect account.'),TextEntry::make('domains')->label('Domains')->state((string)\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count())->inlineLabel(),$privacy]; }
         $entries=[$fact('registrar','Registrar',TldFacts::registrar($a->registrar_key)),$fact('mode','Mode',RegistrarFacts::mode($a))];
         if ($a->registrar_key==='enom') { $entries[]=$fact('api_user','API user',RegistrarFacts::apiUser($a),'Identity not verified yet. Use Edit API credentials.')->fontFamily(FontFamily::Mono); }
         if ($a->registrar_key==='enom'&&$a->environment==='live') {
@@ -155,6 +156,7 @@ class RegistrarAccount extends Page
                 ->belowContent($b['unreadable']>0?RegistrarFacts::warn(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE_RENEWAL):($b['without_cost']>0?RegistrarFacts::warn($b['without_cost'].' without a cost'):null));
         }
         $entries[]=TextEntry::make('domains')->label('Domains')->state((string)\Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count())->inlineLabel();
+        $entries[]=$privacy;
         if ($calls=RegistrarFacts::calls($a)) {
             $entry=MissingEntry::apply(TextEntry::make('calls')->label('API calls, last 24 hours')->state($calls['value'])->inlineLabel(),cause:$calls['value']===null?$calls['sub']:null,color:$calls['tone']);
             if ($calls['value']!==null&&$calls['sub']) { $entry->belowContent($calls['sub']); }

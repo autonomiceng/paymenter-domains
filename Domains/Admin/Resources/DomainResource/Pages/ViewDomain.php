@@ -49,9 +49,9 @@ class ViewDomain extends ViewRecord
             $components[]=Callout::make('DNS comparison not set up')->status('info')->columnSpanFull()
                 ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW)?new HtmlString('<a href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::getUrl('dns-setup')).'">Choose DNS template</a>'):null);
         }
-        // Reminder issues sit under Auto-renew, then Open alerts, or alone when neither slot exists.
+        // Reminder issues sit under Renewal invoices, then Open alerts, or alone when neither slot exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?new HtmlString($review->size('sm')->toHtml()):null;
-        $byRow=isset($facts['Auto-renew']);
+        $byRow=isset($facts['Renewal invoices']);
         if (isset($facts['Open alerts'])) {
             $alert=$facts['Open alerts'];
             $components[]=Callout::make('Open alerts')->description(implode(' · ',$alert['value']))->status($alert['tone'])->columnSpanFull()
@@ -69,8 +69,8 @@ class ViewDomain extends ViewRecord
                 ->footer($buttons?new HtmlString('<div style="display:flex;flex-wrap:wrap;gap:.5rem">'.implode('',array_filter($buttons)).'</div>'):null);
         }
         $section=fn(string $title,array $labels)=>Section::make($title)->schema(array_merge(...array_map(fn(string $label)=>[self::entry($label,$facts[$label],$edits['rows'][$label]??[]),
-            ...($label==='Auto-renew'&&$button?[TextEntry::make('notice_review')->hiddenLabel()->state($button)]:[])],
-            array_values(array_filter($labels,fn($label)=>isset($facts[$label]))))))->columnSpan(1)->extraAttributes(['class'=>'domains-facts']);
+            ...($label==='Renewal invoices'&&$button?[TextEntry::make('notice_review')->hiddenLabel()->state($button)]:[])],
+            array_values(array_filter($labels,fn($label)=>isset($facts[$label])&&($label!=='WHOIS privacy'||\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN))))))->columnSpan(1)->extraAttributes(['class'=>'domains-facts']);
         return $schema->components([...$components,Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()
             ->schema([$section('Registration',DomainFacts::REGISTRATION)->description($edits['held']),$section('Billing',DomainFacts::BILLING)])]);
     }

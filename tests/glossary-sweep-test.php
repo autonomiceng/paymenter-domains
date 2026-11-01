@@ -16,7 +16,7 @@ $source=static fn(string $class):string=>(string)file_get_contents((new Reflecti
 
 // Help: the auth code and WHOIS privacy headings keep their old anchors, so old links still land on them.
 same(['nameservers'=>'Nameservers','glue-records'=>'Glue records','dns-records'=>'DNS records','dnssec'=>'DNSSEC','transfer-lock'=>'Transfer lock',
-    'transfer-code'=>'Auth code','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auto-renew'=>'Auto-renew'],OwnerHelp::ANCHORS,'Help headings use the glossary terms');
+    'transfer-code'=>'Auth code','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auto-renew'=>'Renewal invoices'],OwnerHelp::ANCHORS,'Help headings use the glossary terms');
 same('Also called an EPP code. Treat it like a password.',OwnerHelp::SUMMARIES['transfer-code'],'Auth code popover: the help page names transfer code once');
 $md=file_get_contents(OwnerHelp::path());
 expect(str_contains($md,"How each setting on a domain page works. Changes show in History once the registrar confirms them."),'Help intro');
@@ -25,7 +25,8 @@ same(1,substr_count($md,'(also called EPP code or transfer code)'),'The auth cod
 expect(str_contains($md,'**Use the default nameservers**'),'Help names the nameservers button as the page does');
 $none($md,['Activity','Domain privacy','domain privacy','administrative contact','EPP code)','auth code or EPP','could not','cannot','do not','does not'],'Help page');
 $help=$plain((new OwnerHelpController)->show()->render());
-foreach(['Auth code','WHOIS privacy','History'] as $term){expect(str_contains($help,$term),'Rendered help says '.$term);}
+expect(!str_contains($help,'WHOIS privacy'),'Rendered help hides privacy');
+foreach(['Auth code','History'] as $term){expect(str_contains($help,$term),'Rendered help says '.$term);}
 
 // Emails: definitions use the glossary terms, said once.
 $r=ReminderTemplates::definitions();
@@ -108,7 +109,8 @@ $owned=static fn(array $setup,array $transfer)=>new OwnedDomain('example.com','I
 $setup=view('domains::setup',['domain'=>$owned([],[])])->render();$dom=storefrontDom($setup);
 same(['Finish setup'],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//h1'))),'Setup title');
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No confirm checkbox: the button confirms');
-expect(str_contains($plain($setup),'Turn on WHOIS privacy (free)'),'Setup privacy option');
+expect(!str_contains($plain($setup),'WHOIS privacy'),'Setup hides privacy even when the registrar supports it');
+same(0,$dom->query('//input[@name="privacy"]')->length,'Setup has no privacy input');
 $held=$plain(view('domains::setup',['domain'=>$owned(['required'=>false],[])])->render());
 expect(str_contains($held,'Under review Your order is on hold. Contact support and we’ll sort it out.'),'Held setup: pill and one line, no reason line');
 config(['settings.tickets_disabled'=>true]);
