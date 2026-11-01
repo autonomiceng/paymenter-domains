@@ -9,6 +9,7 @@ final class AcquisitionSetup
     public static function validate(Domain $d, Operation $op, array $servers, bool $privacy): array
     {
         if (!in_array($d->registrar_key,['enom','namesilo'],true)) { throw new SetupValidation(['nameservers']); }
+        if (!$servers && $op->action==='register') { $servers=NewDomainDns::forOperation($op); }
         if ($privacy && ($d->registrar_key==='enom'||$d->tld==='us')) { throw new SetupValidation(['privacy']); }
         try {
             if ($d->registrar_key==='enom') {

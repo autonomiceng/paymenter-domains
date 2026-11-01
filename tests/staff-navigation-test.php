@@ -20,7 +20,7 @@ Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($
 // Six pages in one Domains group, in the planned order; every other page leaves the menu but keeps its route.
 $all=[DomainResource::class,OperationResource::class,TldResource::class,RegistrarSetup::class,WatchResource::class,RoutingProfileResource::class,
     PendingAdoptionResource::class,RegistrarAccount::class,RegistrarBalances::class,ActivationStatus::class,PublicSuffixList::class,DnsResolver::class];
-same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring'],array_map(fn($c)=>$c::getNavigationLabel(),array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()))),'Dormant menu hides monitoring configuration');
+same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring','DNS templates'],array_map(fn($c)=>$c::getNavigationLabel(),array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()))),'Registration DNS templates stay reachable without monitoring');
 app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
 $menu=array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()));usort($menu,fn($a,$b)=>[$a::getNavigationSort()??PHP_INT_MAX]<=>[$b::getNavigationSort()??PHP_INT_MAX]);
 same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring','DNS templates'],array_map(fn($c)=>$c::getNavigationLabel(),$menu),'Six staff pages in order');

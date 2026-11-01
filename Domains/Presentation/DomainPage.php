@@ -29,7 +29,7 @@ final class DomainPage
             in_array('watch.ns_changed', $s?->stateKeys ?? [], true) => ['tone' => 'warn', 'text' => $d->name.' stopped using '.DnsSignalLabels::nameservers().$movedAt.'.',
                 'action' => isset($d->management['nameservers']) ? ['label' => 'Change nameservers', 'url' => $d->actions['show'].'?edit=nameservers#edit-nameservers'] : $contact],
             $setup && $phase === 'cutoff' && ($d->setup['contacts'] ?? false) => ['tone' => 'warn', 'text' => 'The auth code deadline passed. Update your details so we can finish the transfer.', 'action' => ['label' => 'Update details', 'url' => $setup]],
-            $setup && ($d->setup['defaults'] ?? false) && !($d->setup['contacts'] ?? false) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.DnsSignalLabels::nameservers().'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
+            $setup && ($d->setup['defaults'] ?? false) && !($d->setup['contacts'] ?? false) => ['tone' => 'info', 'text' => 'Choose nameservers before registration starts, or we use '.(implode(', ', $d->setup['defaultNameservers'] ?? []) ?: 'the registrar’s default nameservers').'.', 'action' => ['label' => 'Choose nameservers', 'url' => $setup]],
             (bool) $setup => ['tone' => 'warn', 'text' => 'Finish setup to start registration.', 'action' => ['label' => 'Finish setup', 'url' => $setup]],
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
@@ -37,6 +37,7 @@ final class DomainPage
             $order === 'paid' && !isset($d->order['next']) => ['tone' => 'info', 'text' => 'Paid. We’re finishing the '.$word.'. There’s nothing you need to do.', 'action' => $contact],
             self::checkHeld($d) => ['tone' => 'warn', 'text' => 'We can’t read this domain’s details right now. Our team needs to check it.', 'action' => $contact],
             $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],
+            $d->dnsCorrection => ['tone'=>'info','text'=>'Your domain is registered, but the registrar could not confirm your chosen nameservers. Set up DNS with your provider, then change nameservers.','action'=>isset($d->management['nameservers'])?['label'=>'Change nameservers','url'=>$d->actions['show'].'?edit=nameservers#edit-nameservers']:null],
             $d->changesUnavailable => ['tone' => 'info', 'text' => 'Changes to this domain are on hold right now. Try again later.', 'action' => $contact],
             default => null,
         };

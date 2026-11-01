@@ -171,4 +171,50 @@ same('unknown', $result->attempt['execution']['disposition'], 'Recovery preserve
 same($original, array_diff_key($result->attempt, ['reconciliation' => true]), 'Recovery preserves the seal and original reply facts');
 $engine->execute($op->id); $reconcile->run($op->id);
 same($purchases, count($registration->purchases), 'Captured recovery never repeats Purchase');
-echo "Enom registration, correction, guard and policy composition checks passed\n"; $nativeSuccessful = true;
+
+
+require __DIR__.'/Support/new-domain-dns.php';
+// A real accepted Purchase followed by a registrar refusal must remain a registered, usable holding.
+$registration->mode='clean';$registration->calls=[];
+$refusalExchange=static function($origin,$command,$parameters,$timeout)use($exchange,$registration):string{
+    if($command==='ModifyNS'){
+        $registration->calls[]=$command;
+        return '<interface-response><Command>ModifyNS</Command><ErrCount>1</ErrCount><Done>true</Done><errors><Err1>Invalid nameserver information</Err1></errors></interface-response>';
+    }
+    if($command==='GetDNS'){
+        $registration->calls[]=$command;
+        return '<interface-response><Command>GetDNS</Command><ErrCount>0</ErrCount><Done>true</Done><dns>dns1.name-services.com</dns><dns>dns2.name-services.com</dns></interface-response>';
+    }
+    return $exchange($origin,$command,$parameters,$timeout);
+};
+$makeEngine($binding,$refusalExchange);$op=$new('template-refused.example.com');$result=$runRegistration($op);$assertRetained($result,['nameservers']);
+$observation->name=$op->domain->domain;$observation->years=1;$observation->expiryYears=null;$observation->reference='1234';$observation->fault='captured-charge';
+$result=$reconcile->run($op->id);$d=$result->domain->fresh();
+same(['succeeded','active',false],[$result->state,$d->status,$result->policy['reconciliation']['staff_alert']],'Nameserver refusal does not undo registration or ask staff');
+same('6.00',$result->cost['actual']['amount'],'Original Purchase remains financially complete');
+same(['dns1.name-services.com','dns2.name-services.com'],\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::nameservers($d)->nameservers,'Fallback registrar nameservers retained');
+$correctionCalls=[];
+$correctionDriver=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($binding,static function($origin,$command,$parameters,$timeout)use(&$correctionCalls,$d,$refusalExchange):string{
+    $correctionCalls[]=$command;
+    if($command==='GetDomainInfo'){return '<interface-response><Command>GetDomainInfo</Command><ErrCount>0</ErrCount><Done>true</Done><GetDomainInfo><DomainName DomainNameID="456">'.$d->domain.'</DomainName><Status><Belongs-To>account-enom</Belongs-To></Status></GetDomainInfo></interface-response>';}
+    return $refusalExchange($origin,$command,$parameters,$timeout);
+});
+$correctionEngine=new \Paymenter\Extensions\Servers\Domains\Services\DomainManagement($freshBindings,$clock,new WriteFeatures(management:true),true);
+\Illuminate\Support\Facades\Cache::flush();
+$correction=\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$correctionEngine,$correctionDriver);
+expect($correction!==null,'Existing machinery creates the nameserver correction');
+$correction=$correctionEngine->run($correction->id,$correctionDriver);
+same('rejected',$correction->state,'Definite nameserver refusal is final: '.$correction->state.' / '.$correction->safe_code);
+same(null,\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$correctionEngine,$correctionDriver),'Rejected correction creates no new retry');
+same(1,count(array_filter($correctionCalls,fn($c)=>$c==='ModifyNS')),'Only one correction write');
+$alerts=\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::retained(\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d),$clock->now()->getTimestamp()));
+same([],$alerts,'Refused ancillary nameserver correction raises no staff alert');
+$owned=$owners->present($d);$notice=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($owned,null);
+same('info',$notice['tone'],'Fallback is a quiet customer information note');
+expect(str_contains($notice['text'],'Your domain is registered')&&str_contains($notice['text'],'Set up DNS'),'Customer sees what happened and how to proceed');
+expect(!collect($owned->progress)->contains('state','Under review'),'Refused DNS correction does not send customer to staff');
+// A registration template is not evidence of a hosted zone.
+$dns=\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::proven(\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d),null,null,collect(),[]));
+same([null,null,null],$dns,'Registration template without hosting supplies no monitoring expectation');
+
+echo "Enom registration, template defaults, quiet correction and policy checks passed\n";$nativeSuccessful=true;

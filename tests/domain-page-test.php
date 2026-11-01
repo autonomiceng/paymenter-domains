@@ -227,7 +227,7 @@ same([null,null],[$card($dom,'Auto-renew'),$card($dom,'Next invoice')],'No renew
 $saved=new OwnedDomain(...[...get_object_vars($pending),'transfer'=>['open'=>true,'received'=>true,'phase'=>'editing']]);
 $dom=storefrontDom($render($saved));same('Saved Change auth code',$card($dom,'Auth code'),'Saved auth code');same(['Saved',['Change auth code']],$split($dom,'Auth code'),'Change auth code sits on its own line');same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'No notice once saved');
 $setup=static fn(array $s,array $t=[])=>$domain(['status'=>'Action required','tone'=>'warn','renewal'=>'','management'=>[],'actions'=>['show'=>'/domains/1','setup'=>'/domains/1/setup'],'setup'=>$s,'transfer'=>$t]);
-same('Choose nameservers before registration starts, or we use Example Hosting nameservers. Choose nameservers',$norm(storefrontDom($render($setup(['defaults'=>true,'contacts'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameservers setup notice');
+same('Choose nameservers before registration starts, or we use the registrar’s default nameservers. Choose nameservers',$norm(storefrontDom($render($setup(['defaults'=>true,'contacts'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameservers setup notice');
 same('Finish setup to start registration. Finish setup',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Setup notice');
 same('The auth code deadline passed. Update your details so we can finish the transfer. Update details',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true],['phase'=>'cutoff','open'=>false,'received'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Cutoff notice');
 $import=$domain(['status'=>'Under review','tone'=>'info','renewal'=>'','management'=>[],'renewNow'=>[],'autoRenew'=>[],'setupPending'=>true]);
@@ -266,3 +266,7 @@ expect(str_contains($html, '.domains .domains-card > div { position: relative;')
 expect(str_contains($html, '.domains .domains-ph { position: relative;'), 'Status help anchors to the full page header');
 expect(preg_match('/\\.domains \\.domains-help-pop \\{[^}]*white-space: normal;/s',$html)===1, 'Card help resets inherited label nowrap');
 $nativeSuccessful=true;echo "Client domain page checked.\n";
+
+$d=$domain(['dnsCorrection'=>true]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
+same('Your domain is registered, but the registrar could not confirm your chosen nameservers. Set up DNS with your provider, then change nameservers. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Refused registration DNS gives a quiet next step');
+expect(str_contains($html,'To use this domain, buy a service or point it to your own nameservers.'),'Domain without hosting explains the next step');

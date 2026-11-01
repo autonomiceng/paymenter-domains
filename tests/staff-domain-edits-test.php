@@ -81,6 +81,11 @@ same($before,Operation::count(),'A finished contact save stays idempotent after 
 $staleContacts->callMountedAction();same($before,Operation::count(),'An old contact modal cannot queue the former owner email');
 $staleContacts->assertNotified(Filament\Notifications\Notification::make()->danger()->title("Couldn't save this change")->body('This changed after you opened it. Reload the page and try again.'));
 
+// Registrar record forms need observed registrar delegation, including after a nameserver edit.
+$registrarDns=static function()use($edit,$last,$finish):void {
+    $edit('Nameservers','nameservers',['nameservers'=>"dns1.name-services.com\ndns2.name-services.com"])->assertNotified(ManagementForms::REQUESTED);$finish($last('nameservers'));
+};
+$registrarDns();
 // DNS and SRV: the owner's replacement list, and a row keeps its place in it.
 expect(!isset(DomainFacts::for($d->fresh())['DNS records']),'No DNS row while DNS tools are off');
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
@@ -117,6 +122,7 @@ $ns=['nameservers'=>"ns7.example.com\nns8.example.com"];$page=$open('Nameservers
 $page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last('nameservers');
 $replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$before+1,$op->id],[Operation::count(),$last('nameservers')->id],'The same open form returns the same request');$finish($op);
 $edit('Nameservers','nameservers',$ns)->assertNotified(ManagementForms::REQUESTED);expect($last('nameservers')->id!==$op->id,'A new open after a finished edit is a new request');$finish($last('nameservers'));
+$registrarDns();
 // Retrying a finished DNS form finds its request, though the list has moved on since.
 $page=$open('DNS records','dns')->setActionData(['records'=>[[...$add,'address'=>'8.8.4.8']]]);$replay=clone $page;$before=Operation::count();
 $page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last('dns');$finish($op);$state->dns[]=['name'=>'late','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10];Illuminate\Support\Facades\Cache::flush();

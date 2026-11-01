@@ -6,7 +6,6 @@ use Filament\Tables\{Table,Columns\TextColumn};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OnOffSwitch,WatchReadResource};
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration,ViewConfiguration};
-use Paymenter\Extensions\Servers\Domains\Services\WatchWork;
 class RoutingProfileResource extends WatchReadResource
 {
     protected static ?string $model=WatchProfile::class;
@@ -17,8 +16,6 @@ class RoutingProfileResource extends WatchReadResource
     protected static ?string $pluralModelLabel='DNS templates';
     protected static ?string $breadcrumb='DNS templates';
     protected static ?string $slug='dns-routing-profiles';
-    /** Configuration only helps after the deployment composes monitoring. */
-    public static function shouldRegisterNavigation(): bool{return parent::shouldRegisterNavigation()&&app(WatchWork::class)->active();}
     public static function table(Table $table): Table
     {
         return $table->columns([TextColumn::make('name')->label('Template')->wrap(),TextColumn::make('nameservers')->label('Nameservers')->listWithLineBreaks()->wrap(),

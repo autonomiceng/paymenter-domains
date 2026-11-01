@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,Registrar
 function tldPanel(): void
 {
     \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
+    \Paymenter\Extensions\Servers\Domains\Services\WatchDnsSchema::install();
     // The Registrars list reads balances; bind the clock as Services/Runtime.php does when nothing else did.
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->singleton(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,\Paymenter\Extensions\Servers\Domains\Data\SystemClock::class);}
     \Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__,2).'/Domains/resources/views');
@@ -29,7 +30,7 @@ function tldRefusal(callable $call,string $message): void
 /** Account actions shared by write assertions and rendered fixtures. */
 function staffSetupActions(): array
 {
-    return ['configure','probe','import','processing','enroll_sandbox',
+    return ['new_domain_dns','configure','probe','import','processing','enroll_sandbox',
         'test_renewal','test_transfer','test_management','live_renewal','live_management','live_transfer','late_renewal','renewal_billing','unpaid_hold','default_rule','card_fee'];
 }
 
