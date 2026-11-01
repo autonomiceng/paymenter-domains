@@ -67,6 +67,7 @@ Illuminate\Support\Once::flush();
 Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits',false)
     ->call('checkout',['contact'=>$contact,'save_account'=>true])->assertHasNoErrors();
 same('42 Account Street',ContactDetails::collect($user)['registrant']['address1'],'Checkout saves account only with explicit consent');
+same(config('app.countries.US'),$user->properties()->where('key','country')->value('value'),'Saved account country remains a native select value');
 same('42 Account Street',Domain::where('domain',$name)->sole()->operations()->sole()->payload['contacts']['tech']['address1'],'Consent preserves the validated order snapshot');
 same([], $state->calls, 'Inline contact recovery performs no direct provider sends');
 same(0, $state->reads, 'Inline contact recovery performs no direct provider reads');

@@ -40,7 +40,8 @@ final class OrderContact
         $map = ['organization_name'=>'company_name', 'address1'=>'address', 'address2'=>'address2', 'city'=>'city',
             'state_province'=>'state', 'postal_code'=>'zip', 'country'=>'country', 'phone'=>'phone'];
         foreach ($map as $field => $key) {
-            $owner->properties()->updateOrCreate(['key'=>$key], ['name'=>$key, 'value'=>$contact[$field]]);
+            $value = $field === 'country' ? config('app.countries')[$contact[$field]] : $contact[$field];
+            $owner->properties()->updateOrCreate(['key'=>$key], ['name'=>$key, 'value'=>$value]);
         }
     }
 
