@@ -15,6 +15,11 @@ use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
+    public function getHeader(): ?\Illuminate\Contracts\View\View { return view('domains::staff.domain-header'); }
+    public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); }
+    public function managementProgress(): array
+    { return \Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($this->getRecord()); }
+
     protected static string $resource = DomainResource::class;
     /** Wider label column for Registration and Billing so labels with a help icon stay on one line at desktop width. */
     private const FACTS_STYLE='<style>@media (min-width:40rem){.domains-facts .fi-in-entry.fi-in-entry-has-inline-label{grid-template-columns:minmax(0,40%) minmax(0,1fr) minmax(0,1fr)}}'
@@ -49,6 +54,11 @@ class ViewDomain extends ViewRecord
             $components[]=Callout::make('DNS comparison not set up')->status('info')->columnSpanFull()
                 ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW)?new HtmlString('<a href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::getUrl('dns-setup')).'">Choose DNS template</a>'):null);
         }
+        $progress=$this->managementProgress();
+        if (isset($edits['rows']['Auth code']) || isset($progress['auth_code_email'])) { $facts['Auth code']=['value'=>$d->registrar_key==='namesilo'?'Admin contact email':'Registrant email','sub'=>null,'url'=>null,'tone'=>null,'help'=>null,'demo'=>false]; }
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
+            if (isset($facts[$label],$progress[$setting])) { $facts[$label]['sub']=$progress[$setting]['text']; }
+        }
         // Reminder issues sit under Auto-renew, then Open alerts, or alone when neither slot exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?new HtmlString($review->size('sm')->toHtml()):null;
         $byRow=isset($facts['Auto-renew']);
@@ -72,7 +82,7 @@ class ViewDomain extends ViewRecord
             ...($label==='Auto-renew'&&$button?[TextEntry::make('notice_review')->hiddenLabel()->state($button)]:[])],
             array_values(array_filter($labels,fn($label)=>isset($facts[$label]))))))->columnSpan(1)->extraAttributes(['class'=>'domains-facts']);
         return $schema->components([...$components,Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()
-            ->schema([$section('Registration',DomainFacts::REGISTRATION)->description($edits['held']),$section('Billing',DomainFacts::BILLING)])]);
+            ->schema([$section('Registration',[...DomainFacts::REGISTRATION,'Auth code'])->description($edits['held']),$section('Billing',DomainFacts::BILLING)])]);
     }
     private static function entry(string $label, array $fact, array $edits=[]): TextEntry
     {

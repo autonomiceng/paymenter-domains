@@ -76,6 +76,19 @@ final class DomainManagement
                 if (($old->policy['management']['correction'] ?? null) !== $correction || $old->action !== $action || (int)$old->authorized_by !== (int) $actor->id || ($terms===null && ($old->policy['management']['input'] ?? null) !== $clean)) { throw new \DomainException('Management key reused.'); }
                 return $old;
             }
+            // The domain lock serializes new nonces and both actors for the same setting.
+            foreach ($l['operations']->sortByDesc('id') as $peer) {
+                if (!in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true) || $peer->operation_key===$key || !isset($peer->policy['management']) || ManagementProgress::setting($peer->action)!==ManagementProgress::setting($action)
+                    || $peer->authority_generation!==$d->authority_generation || $peer->account_fingerprint!==$d->account_fingerprint
+                    || !ManagementProgress::pending($peer,$d)) { continue; }
+                if ($peer->action===$action && ($peer->policy['management']['input']??null)===$clean) { return $peer; }
+                // A claimed or sealed write must finish/read back before another choice can send.
+                if (!ManagementEvidence::idle($peer) || $peer->invoice_id || ($peer->attempt['seal']??'absent')!=='absent') { return $peer; }
+                $peer->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$this->clock->now(),
+                    'attempt'=>[...($peer->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent',
+                        'management_terminal'=>['actor_id'=>(int)$actor->id,'at'=>$this->clock->now()->format(DATE_ATOM)]]]);
+            }
+
             if($terms!==null&&($pending=ManagementPrivacy::pending($l,$action))){return $pending;}
             if ($initial !== null && $l['stamp'] !== $initial) { throw new \DomainException('Privacy authority changed.'); }
             $this->peers($l, correction: $correction, action: $action);
@@ -109,10 +122,10 @@ final class DomainManagement
                 'attempt'=>[...($op->attempt??[]),'seal'=>$op->attempt['seal']??'absent','send_state'=>'definitely_unsent','management_terminal'=>$terminal]]);return $op;
         });
     }
-    public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive): Operation
+    public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
     {
         $work=fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
-            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : EntryDeadline::INTERACTIVE_SECONDS);
+            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds)));
         if(!$this->testManagement){return $work();}
         $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
         return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();

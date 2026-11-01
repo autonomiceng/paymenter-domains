@@ -8,7 +8,7 @@ use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactValidation,ManagementForms,OwnedDomains,OwnerFormValidation};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactValidation,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
 /** Staff edits on the domain page: the owner's form path and every check it runs, credited to the staff member. */
 final class DomainEditActions
 {
@@ -37,6 +37,11 @@ final class DomainEditActions
         if (isset($m['lock'])) { $rows['Transfer lock']=[self::lock($d,$m['lock']['state'])]; }
         foreach (['dns'=>'Edit','srv'=>'Edit SRV'] as $kind=>$label) {
             if (isset($m[$kind]['records'])) { $rows['DNS records'][]=self::records($d,$kind,$label,$m[$kind]); }
+        }
+        if (isset($m['auth_code_email']) && $m['auth_code_email']['actions']) { $rows['Auth code']=[self::edit($d,'auth_code_email','Email auth code','Email the auth code?',[],fn(array $data)=>[],"We'll email it to the ".$m['auth_code_email']['recipient'].'.',submit:'Email auth code')]; }
+        $progress=ManagementProgress::for($d);
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
+            if (($progress[$setting]['pending']??false)) { unset($rows[$label]); }
         }
         return ['rows'=>$rows,'held'=>$page->changesUnavailable?self::held($d):null];
     }

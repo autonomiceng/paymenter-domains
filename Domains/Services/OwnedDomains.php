@@ -171,7 +171,7 @@ final readonly class OwnedDomains
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }
-                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'owner'; }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
@@ -192,13 +192,15 @@ final readonly class OwnedDomains
                 'privacy'=>['privacy_enable','privacy_disable',...(!$section['free']&&$section['price']?['privacy_purchase','privacy_renew']:[])],default=>[$key] };
             foreach ($intents as $form) { $section['actions'][$form]=route('domains.domains.manage',[$d->id,$form]); }
         } unset($section);
+        $progressBySetting=$forms?ManagementProgress::for($d):[];
         $unavailable=$forms && $d->status==='active' && $service?->status==='active';
         if ($management && $forms) {
             $all=array_merge(...array_values(array_map(fn($section)=>array_keys($section['actions']),$management)));
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all)??[]; } catch (\Throwable) { $allowed=[]; }
-            foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions']) { unset($management[$key]); } } unset($section);
+            foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
             $unavailable=$management===[];
         }
+        foreach ($management as $key=>&$section) { $section['progress']=$progressBySetting[ManagementProgress::setting($key)]??null; } unset($section);
         // Only the exact retained issued renewal invoice supplies a due date.
         $renewalDue=null; $earlyRenewal=false;
         $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();
