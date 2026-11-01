@@ -11,6 +11,10 @@ use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest, RequestBudget,
 [$d,$driver,$original]=$holding('baseline');
 staffPanel(); $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 same(PrivacyMode::Free,$driver->capabilities()->privacy,'Free privacy declared');
+$forms=new \Paymenter\Extensions\Servers\Domains\Services\ManagementForms($management,new \Paymenter\Extensions\Servers\Domains\Services\OwnerPorts(fn()=>$driver));
+$before=[$d->operations()->count(),$ms->calls];
+commerceReject(fn()=>$forms->submit($user,$d,'privacy_enable',['privacy'=>'1'],$key()));
+same($before,[$d->operations()->count(),$ms->calls],'Hidden free privacy cannot be enabled by posting the old form');
 foreach (['dns','ds','auth_code_display'] as $cap) { same(Support::Unsupported,$driver->capabilities()->get($cap)->support,'Advanced tools unsupported'); }
 foreach ([['nameservers',['nameservers'=>['NS3.EXAMPLE.NET.','ns4.example.net']],'changeNameServers'],['lock',['locked'=>false],'domainUnlock'],
     ['lock',['locked'=>true],'domainLock'],['privacy_enable',[],'addPrivacy'],['privacy_disable',[],'removePrivacy'],['auto_renew_off',[],'removeAutoRenewal'],['auth_code_email',[],'retrieveAuthCode']] as [$action,$payload,$cmd]) {

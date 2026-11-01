@@ -171,7 +171,7 @@ expect(str_starts_with($card($dom,'Renewal invoices'),'On Turn off'),'Renewal in
 same(['On',['Turn off']],$split($dom,'Renewal invoices'),'Renewal invoices action sits on its own line');
 same('$14.99/yr',$card($dom,'Renewal price'),'Renewal price');
 same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->length,'Renew now button');
-foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off renewal invoices?',$name.' expires on Mar 1, 2027 unless you renew it.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
+foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off renewal invoices?','This stops new renewal invoices. An invoice already issued stays payable. Paying it can still renew '.$name.'.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'An active domain has no notice');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'Empty history');
 
@@ -266,9 +266,9 @@ $expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Serve
 same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');
 
 // History: changes with dates and renewal invoices.
-$d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Completed','date'=>'2026-10-20']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));
-same([['Nameservers','Oct 20, 2026, 12:00 AM UTC','Completed'],['Invoice #INV-7','Sep 30, 2026','Paid']],array_map(static fn(DOMNode $li)=>[...array_map($norm,iterator_to_array($dom->query('./div/*',$li))),$norm($dom->query('./span[last()]',$li)->item(0))],iterator_to_array($dom->query('//section[@id="history"]//ol[@class="domains-trace"]/li'))),'History steps: what, when, how it ended');
-same(['ok','ok'],array_map(fn($n)=>substr($n->getAttribute('class'),strlen('domains-status domains-tone-')),iterator_to_array($dom->query('//section[@id="history"]//li/span[@aria-hidden="true"]'))),'Finished steps carry the green mark');
+$d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Completed','date'=>'2026-10-20'],['label'=>'WHOIS privacy','state'=>'Completed','date'=>'2026-10-21','by'=>'Ada']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));
+same([['Nameservers','Oct 20, 2026, 12:00 AM UTC','Completed'],['Domain change','By Ada','Oct 21, 2026, 12:00 AM UTC','Completed'],['Invoice #INV-7','Sep 30, 2026','Paid']],array_map(static fn(DOMNode $li)=>[...array_map($norm,iterator_to_array($dom->query('./div/*',$li))),$norm($dom->query('./span[last()]',$li)->item(0))],iterator_to_array($dom->query('//section[@id="history"]//ol[@class="domains-trace"]/li'))),'History steps: what, when, how it ended; privacy keeps its actor and date under a neutral label');
+same(['ok','ok','ok'],array_map(fn($n)=>substr($n->getAttribute('class'),strlen('domains-status domains-tone-')),iterator_to_array($dom->query('//section[@id="history"]//li/span[@aria-hidden="true"]'))),'Finished steps carry the green mark');
 same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Invoice #INV-7"]')->length,'Invoice step links');
 // The mark span is empty; it shows only when the stylesheet draws its hexagon (content), as in the approved mock.
 expect(preg_match('/\.domains-trace li > \.domains-status::before \{[^}]*content: ""/',file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/styles.blade.php'))===1,'History marks are drawn');

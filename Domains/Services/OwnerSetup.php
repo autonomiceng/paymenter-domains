@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
 /** Local, explicit, immutable acquisition setup. Never sends or changes contacts/funding/outcomes. */
 final class OwnerSetup
 {
@@ -41,7 +42,8 @@ final class OwnerSetup
                 if ($invoice->status==='paid' && !TransferInputs::deadline($op,$this->clock->now())) { throw new \DomainException('Unverified payment date.'); }
                 TransferInputs::requireEditable($op,$this->clock->now());
             }
-            $servers=$input['nameservers']??[]; $privacy=$input['privacy']??false;
+            $servers=$input['nameservers']??[];
+            $privacy=PrivacyVisibility::SHOWN?($input['privacy']??false):($op->payload['privacy']??false);
             if (!is_array($servers)||!is_bool($privacy)) { throw new \DomainException('Setup unavailable.'); }
             if ($privacy&&$caps->privacy!==PrivacyMode::Free) { throw new SetupValidation(['privacy']); }
             $desired=AcquisitionSetup::validate($d,$op,$servers,$privacy); $old=$op->policy['owner_setup']??null;
