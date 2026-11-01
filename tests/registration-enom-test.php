@@ -174,6 +174,7 @@ same($purchases, count($registration->purchases), 'Captured recovery never repea
 
 
 require __DIR__.'/Support/new-domain-dns.php';
+$editableRegistration=$op;
 // A real accepted Purchase followed by a registrar refusal must remain a registered, usable holding.
 $registration->mode='clean';$registration->calls=[];
 $refusalExchange=static function($origin,$command,$parameters,$timeout)use($exchange,$registration):string{
@@ -219,5 +220,17 @@ expect(!collect($owned->progress)->contains('state','Under review'),'Refused DNS
 // A registration template is not evidence of a hosted zone.
 $dns=\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::proven(\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d),null,null,collect(),[]));
 same([null,null,null],$dns,'Registration template without hosting supplies no monitoring expectation');
+
+// Corrupt only the encrypted payload on existing editable and completed registrations: the real owner page must still render.
+storefrontViews();$request=\Illuminate\Http\Request::create('/domains','GET');$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());
+$controller=new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners);
+foreach([$editableRegistration,$result] as $registrationCase){
+    $ciphertext=\Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$registrationCase->id)->value('payload');
+    \Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$registrationCase->id)->update(['payload'=>'not-encrypted']);
+    try{
+        $page=$controller->show($request,$registrationCase->domain_id);$domain=$page->getData()['domain'];
+        expect(str_contains($page->render(),$domain->name)&&$domain->setup['defaultNameservers']===[]&&!$domain->dnsCorrection,'Unreadable registration payload leaves the customer page usable without invented DNS facts');
+    }finally{\Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$registrationCase->id)->update(['payload'=>$ciphertext]);}
+}
 
 echo "Enom registration, template defaults, quiet correction and policy checks passed\n";$nativeSuccessful=true;

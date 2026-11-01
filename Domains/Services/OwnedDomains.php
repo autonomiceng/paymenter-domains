@@ -100,7 +100,7 @@ final readonly class OwnedDomains
             && $op->started_at===null && $op->request_fingerprint===null && $op->completed_at===null
             && in_array($service?->status,['pending','active'],true) && !$service->cancellation
             && in_array($d->status,['registration_pending','transfer_pending'],true)) {
-            $defaults=NewDomainDns::forOperation($op);
+            try { $defaults=NewDomainDns::forOperation($op); } catch (\Throwable) { $defaults=[]; }
             $setup['defaults']=$setup['defaults']||$defaults!==[];$setup['defaultNameservers']=$defaults;
             $setup['nameservers']=$op->action==='register'||$d->registrar_key==='namesilo';
             $setup['privacy']=$caps?->privacy===PrivacyMode::Free;
@@ -237,12 +237,13 @@ final readonly class OwnedDomains
         }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';
         if ($service) { $actions['autoPay']=route('services.show',$service->id).'#auto-pay'; }
+        try { $dnsCorrection=RegistrationDns::pending($op,$d); } catch (\Throwable) { $dnsCorrection=false; }
         return new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
             $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
             order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
-            dnsCorrection:RegistrationDns::pending($op,$d), statusReason:$pill['reason'], earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
+            dnsCorrection:$dnsCorrection, statusReason:$pill['reason'], earlyRenewal:$earlyRenewal, demo:DemoData::is($d), syncPaused:DemoData::syncPaused($d), owner:self::owner($contacts??[]),
             daysLeft:$d->provider_expires_at?(int)\Carbon\CarbonImmutable::parse($this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'),'UTC')->diffInDays(\Carbon\CarbonImmutable::parse($d->provider_expires_at->format('Y-m-d'),'UTC'),false):null);
     }
     /** Details by role as last stored: the registration request, then confirmed contact changes in order. Throws on unreadable data. Shared by the customer and staff domain pages. */
