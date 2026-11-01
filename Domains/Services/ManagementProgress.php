@@ -17,9 +17,10 @@ final class ManagementProgress
         $scope=$d->operations()->whereIn('action',['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'])
             ->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint);
         $latest=(clone $scope)->selectRaw('MAX(id)')->groupBy('action');
-        // Include unfinished legacy debt: a newer retired result must not hide a retained sealed request.
-        $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('state',['queued','awaiting_payment','running','pending','uncertain','held']))
-            ->orderByDesc('id')->get()->sortByDesc(fn($op)=>self::pending($op,$d));
+        $retained=(clone $scope)->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','!=','management_retired'))->selectRaw('MAX(id)')->groupBy('action');
+        // Prefer retained work, pending then finished; newer retired history must not hide its real result.
+        $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('id',$retained)->orWhereIn('state',['queued','awaiting_payment','running','pending','uncertain','held']))
+            ->orderByDesc('id')->get()->sortByDesc(fn($op)=>self::pending($op,$d)?2:($op->safe_code==='management_retired'?0:1));
         foreach($candidates as $op){
             if(!isset($op->policy['management']) || !in_array($op->action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)){continue;}
             $key=self::setting($op->action); if(isset($rows[$key])){continue;}

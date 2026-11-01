@@ -53,6 +53,7 @@ $old=$op->created_at;$op->update(['created_at'=>$old->copy()->subSeconds(31)]);
 expect(ManagementProgress::for($d)['lock']['slow'],'Slow status survives reload');
 $state->fault='';$state->locked=false;same('succeeded',$management->reconcile($op->id,$driver)->state,'Readback completes the original operation');
 expect(!ManagementProgress::for($d)['lock']['pending'],'Completion stops polling');
+same($op->id,ManagementProgress::for($d)['lock']['id'],'Completion keeps the confirmed retained result instead of newer retired history');
 $html=$controller->show($request,$d->id)->render();expect(str_contains($html,'id="form-lock"'),'Completion restores the action');
 // A local failed attempt may retry safely, while a lost reply may not send again.
 Cache::flush();$state->fault='refused';$op=$submit($d,$driver,'lock',['locked'=>true]);same('rejected',$management->run($op->id,$driver)->state,'A provider refusal finishes');
