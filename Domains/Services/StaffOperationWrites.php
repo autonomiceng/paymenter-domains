@@ -7,9 +7,15 @@ use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 /** Explicit local writers. Never clears attempt evidence, sends a request or releases paid uncertainty. */
 final class StaffOperationWrites
 {
+    /** Shared action/state eligibility for the offer and writer; locked attempt proof is still required below. */
+    public static function holdable(Operation $op): bool
+    {
+        return in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)
+            &&in_array($op->action,['register','transfer','renew','privacy_purchase','privacy_renew'],true);
+    }
     public static function hold(Operation $op,array $l): void
     {
-        if(!in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)||!in_array($op->action,['register','transfer','renew','privacy_purchase','privacy_renew'],true)) {
+        if(!self::holdable($op)) {
             throw new \DomainException('Only an unattempted queued request can be held.'); }
         self::virgin($op,$l); $op->update(['state'=>'held','safe_code'=>'staff_review_required']);
     }
