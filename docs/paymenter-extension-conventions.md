@@ -19,7 +19,10 @@ Paymenter must take new upstream releases without an extension release. Ship an 
   the signed page memo binds acceptance to the displayed lines and retail. No other component, native class,
   route, request or database resolver is changed. Native Cart and Livewire lifecycle dependencies are pinned in
   the checkout upgrade tripwire. A changed total requires another checkout click because only the customer
-  can accept a changed price.
+  can accept a changed price. The same checkout call accepts one whole order contact from the theme through
+  request-local input. Shared registrar/TLD validation runs before the native order and again inside invoice binding;
+  invalid contacts roll back the native order, invoice and service together. Recovery uses the same contact fields,
+  paid-identity/unsent locks and audited replacement, then wakes the existing registration queue path.
 - **Never gate on the Paymenter version.** No supported-version list at runtime, and no refusal, pause or banner just because the version changed. Disable behavior only on evidence that it is broken.
 - **Guard invariants at the write.** A scoped observer refuses only the specific invalid change, logs it, and tells staff. Native renewals and saves continue for everything else.
 - **Check required hooks, not versions.** If a feature depends on a Paymenter class, event or listener, verify it at boot. If one is missing, pause only that feature and show staff exactly what is missing.

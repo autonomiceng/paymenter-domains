@@ -73,6 +73,7 @@
     "tests/checkout-refresh-test.php",
     "tests/invoice-binding-test.php",
     "tests/contact-setup-test.php",
+    "tests/order-contact-form-test.php",
     "tests/operation-claims-test.php",
     "tests/operation-recovery-test.php",
     "tests/operation-contacts-test.php",

@@ -41,7 +41,7 @@ $stock = $hosting->fresh()->stock;
 // Keep the same mounted cart while signup/email verification outlasts the receipt.
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 $beforeReads = $reads->calls; $clock->instant = $now->modify('+6 minutes');
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(3, Order::count(), 'Expired eligibility refreshes without sending the customer back');
 same($beforeReads + 1, $reads->calls, 'Expired check costs one unlocked registrar read');
 same($stock - 1, $hosting->fresh()->stock, 'Mixed checkout continues normally');
@@ -105,13 +105,13 @@ foreach (['8.00','5.00'] as $cost) {
         $rates[] = new Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$cost,'synthetic',$now,$now->modify('+1 day'));
     }
     $prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
-    Illuminate\Support\Once::flush(); $checkout->call('checkout');
+    Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same(4,Order::count(),'A retained cart cannot charge an unseen synced price');
     same($history,[DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()],'Sync and refused checkout preserve issued invoices');
     same($services,DB::table('services')->orderBy('id')->get()->toJson(),'Sync leaves existing service prices to the renewal billing projection');
     same(number_format((float)$cost * 1.3, 2, '.', ''), $checkout->get('total')->total, 'Changed total is shown before acceptance');
     same($line->id, $cart->items()->sole()->id, 'Price changes keep the cart line in place');
-    $beforeReads = $reads->calls; Illuminate\Support\Once::flush(); $otherTab->call('checkout');
+    $beforeReads = $reads->calls; Illuminate\Support\Once::flush(); $otherTab->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same(4, Order::count(), 'Another tab must accept its own changed offer');
     same($checkout->get('total')->total, $otherTab->get('total')->total, 'Each tab shows the changed total');
     same($beforeReads, $reads->calls, 'Other tabs reuse the same fresh price check');
@@ -119,7 +119,7 @@ foreach (['8.00','5.00'] as $cost) {
 // An unchanged-price sync advances revisions without requiring another customer check.
 $beforeReads = $reads->calls;
 $prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(5,Order::count(),'A refreshed cart sells at the synced price');
 same($beforeReads, $reads->calls, 'Unchanged retail reuses the fresh receipt across price revisions');
 same('6.50',number_format((float)Invoice::latest('id')->first()->items()->sole()->price,2,'.',''),'Customer invoice equals the refreshed native offer after a falling cost');
@@ -131,15 +131,15 @@ $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ul
 same($beforeReads + 1, $reads->calls, 'Cart load repairs missing eligibility');
 // A failed refresh keeps the cart and money untouched, and repeated clicks do not burn reads.
 $clock->instant = $now->modify('+6 minutes'); $reads->available = false;
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(5, Order::count(), 'Failed eligibility cannot create an order');
 same($line->id, $cart->items()->sole()->id, 'Failed check keeps the cart for retry or editing');
 same($beforeReads + 2, $reads->calls, 'Expired receipt tries to repair itself before refusing');
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same($beforeReads + 2, $reads->calls, 'Repeated failed checks share the short backoff');
 $reads->available = true;
 Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSeconds(11));
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(6, Order::count(), 'Retry after a temporary check failure completes checkout');
 Illuminate\Support\Carbon::setTestNow();
 // Transfer expiry row: retry cannot refresh it, so the notice must lead to a working cart edit.
@@ -149,7 +149,7 @@ $cart = commerceCart($user); $transfer = $native->product($tlds[0], 'transfer');
 $line = commerceAdd($cart, $transfer, placeholderComFixtureName('expired-transfer-placeholder.com'));
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 $beforeReads = $reads->calls; $clock->instant = $now->modify('+6 minutes');
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(6, Order::count(), 'Expired transfer creates no order');
 same($beforeReads, $reads->calls, 'Transfer checkout cannot refresh expired proof');
 same($line->id, $cart->items()->sole()->id, 'Expired transfer stays available to edit or remove');
@@ -168,7 +168,7 @@ foreach ([172799=>true,172800=>false] as $age=>$allowed) {
     $clock->instant=$now->modify('+'.$age.' seconds');$cart=commerceCart($user);$before=Invoice::count();
     $configure=Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])
         ->withQueryParams(['plan'=>$plan->id,'config'=>['domain'=>placeholderComFixtureName('direct-age-'.$age.'-placeholder.com')]])
-        ->test(App\Livewire\Products\Checkout::class,['category'=>$product->category,'product'=>$product->slug])->call('checkout');
+        ->test(App\Livewire\Products\Checkout::class,['category'=>$product->category,'product'=>$product->slug])->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same($allowed?1:0,$cart->items()->count(),'Direct configuration respects the exact 48-hour price limit');
     same($before,Invoice::count(),'Configuration never creates an invoice on either side of the limit');
     if (!$allowed) {

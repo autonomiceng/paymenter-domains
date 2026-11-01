@@ -23,8 +23,13 @@ final class CartCheckoutRefresh
         });
         Livewire::listen('call', static function ($component, $method, $params, $context, $returnEarly) use ($admission): void {
             if ($component::class !== Cart::class || $method !== 'checkout') { return; }
+            OrderContact::clear();
+            if (!\Illuminate\Support\Facades\Auth::check()) { return; }
             try {
-                $admission->refresh(); $offers = $admission->offers();
+                $admission->refresh();
+                if ($params !== []) { OrderContact::begin(\Illuminate\Support\Facades\Auth::user(), $params[0] ?? null); }
+                foreach ($admission->contactTlds() as $tld) { OrderContact::capture(\Illuminate\Support\Facades\Auth::user(), $tld); }
+                $offers = $admission->offers();
                 if (!$offers) { return; }
                 $total = new Price(['price' => NativeCart::items()->sum(fn ($item) => $item->price->total * $item->quantity), 'currency' => NativeCart::get()->currency]);
                 if (\Livewire\store($component)->get('domains.offers') !== $offers
@@ -34,14 +39,19 @@ final class CartCheckoutRefresh
                     $component->gateways = ExtensionHelper::getCheckoutGateways($total->total, $total->currency->code, 'cart', NativeCart::items());
                     if (!in_array($component->gateway, array_column($component->gateways, 'id'))) { $component->gateway = $component->gateways[0]['id'] ?? null; }
                     $component->notify('Your cart changed. Review the total, then check out again.', 'warning');
-                    $returnEarly();
+                    OrderContact::clear(); $returnEarly();
                 }
-            } catch (\Throwable $e) { self::unavailable($component, $e); $returnEarly(); }
+            } catch (ContactValidation $e) {
+                foreach (OwnerFormValidation::contact($e)->messages('', registrar:$tld->registrar_key ?? 'enom') as $field => $message) { $component->addError($field, $message); }
+                $component->notify('Check the domain contact details below before payment.', 'error');
+                OrderContact::clear(); $returnEarly();
+            } catch (\Throwable $e) { OrderContact::clear(); self::unavailable($component, $e); $returnEarly(); }
         });
         Livewire::listen('dehydrate', static function ($component, $context) use ($admission): void {
             if ($component::class !== Cart::class) { return; }
             try { $offers = $admission->offers(); } catch (\Throwable) { $offers = null; }
             $context->addMemo('domains_offers', $offers);
+            OrderContact::clear();
         });
     }
 
