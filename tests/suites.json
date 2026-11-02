@@ -68,6 +68,7 @@
     "tests/card-fee-settings-test.php",
     "tests/catalogue-test.php",
     "tests/enom-pricing-test.php",
+    "tests/offer-conversion-test.php",
     "tests/seller-policy-test.php",
     "tests/namesilo-pricing-test.php",
     "tests/catalogue-sync-test.php",
