@@ -102,13 +102,14 @@ final class DomainFacts
             catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?(ObservationRecords::limitNotice($d)===null?'Not read yet':null):$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??(Staff::can('admin.domains.manage')?'Use Sync now to read them.':null)):implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
+                $f['DNS records']=self::fact($count===null?(ObservationRecords::limitNotice($d)===null?'Not read yet':null):$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??(Staff::can('admin.domains.manage')?'Use Sync now to read them.':null)):(empty($records['srv'])?null:count($records['srv']).' SRV '.(count($records['srv'])===1?'record':'records').'.'));
+                if ($count!==null) { $f['DNS records']['asOf']=$sections['dns']['at']??null; }
             }
             $glue=$records['glue']??[];
             if ($glue) {
                 $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
                 $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
-                $f['Glue records']=self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',array_filter([$at?'As of '.$at:null,...$warnings])),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.');
+                $f['Glue records']=[...self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);

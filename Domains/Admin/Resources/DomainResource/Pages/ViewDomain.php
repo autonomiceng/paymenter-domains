@@ -179,8 +179,16 @@ class ViewDomain extends ViewRecord
     }
     private static function blockedLabel(string $label, array $fact): string
     { return $label==='Transfer lock'?($fact['value']==='On'?'Turn off':'Turn on'):'Edit'; }
-    /** An open alert's cause takes the tone and its value stays plain, so the row says what to do, not that the value is wrong. Words that were on the row before the alert stay plain too. */
+    /** The row's words, after when it was read when the row has a read time. */
     private static function below(array $fact): string|HtmlString|null
+    {
+        $words=self::words($fact);
+        if (!isset($fact['asOf'])) { return $words; }
+        $read=Sheet::moment($fact['asOf'],'As of')->toHtml();
+        return new HtmlString($words===null?$read:$read.'. '.($words instanceof HtmlString?$words->toHtml():e($words)));
+    }
+    /** An open alert's cause takes the tone and its value stays plain, so the row says what to do, not that the value is wrong. Words that were on the row before the alert stay plain too. */
+    private static function words(array $fact): string|HtmlString|null
     {
         if ($fact['value']===null||$fact['sub']===null||!in_array($fact['tone'],['danger','warning'],true)) { return $fact['sub']; }
         $plain=$fact['plain']??null; if ($plain===null) { return RegistrarFacts::tone($fact['sub'],$fact['tone']); }

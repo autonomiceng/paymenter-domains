@@ -213,7 +213,7 @@ final readonly class OwnedDomains
             foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
-        foreach ($management as $key=>&$section) { $section['progress']=$progressBySetting[ManagementProgress::setting($key)]??null; } unset($section);
+        foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; $section['progress']=($row['settled']??false)?null:$row; } unset($section);
         // Only the exact retained issued renewal invoice supplies a due date.
         $renewalDue=null; $earlyRenewal=false;
         $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();

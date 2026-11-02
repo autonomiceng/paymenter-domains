@@ -35,6 +35,12 @@ same(['This registrar doesn\'t support this change.',null],[DomainEditActions::h
 $unknown=DomainEditActions::held($active,null)['held'];
 expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
 Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$processing]);
+// Progress sits under a row's own words, and a finished change stops talking.
+$rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
+$saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
+same(['ada@example.test Saving…','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
+same(['ada@example.test','Sync to read them'],array_column(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>true]]),'sub'),'A settled result shows nothing');
+same('ada@example.test Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['sub'],'A fresh result still shows');
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
 same(['Expires','Registrar','In registrar account','Transfer lock','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::SECTIONS['Registration'])),'Registration rows in order');
@@ -44,13 +50,16 @@ same(['Contacts','Nameservers'],array_values(array_intersect(array_keys($f),Doma
 same(false,isset($f['Glue records']),'No staff glue row without records');
 $beforeGlue=$active->fresh()->observation;$glueHost='ns1.'.$active->domain;
 ObservationRecords::save($active->fresh(),['glue'=>['state'=>'partial','records'=>[$glueHost=>'8.8.8.8']]],new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
-same([[$glueHost.' 8.8.8.8'],'As of 2026-10-20T15:05:00+00:00'],[$value($active,'Glue records'),$sub($active,'Glue records')],'Staff glue includes host, address and read time');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Glue records')->assertSee($glueHost)->assertSee('8.8.8.8')->assertSee('As of 2026-10-20T15:05:00+00:00');
+same([[$glueHost.' 8.8.8.8'],null,'2026-10-20T15:05:00+00:00'],[$value($active,'Glue records'),$sub($active,'Glue records'),DomainFacts::for($active->fresh())['Glue records']['asOf']??null],'Staff glue includes host, address and read time');
+$gluePage=strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Glue records')->assertSee($glueHost)->assertSee('8.8.8.8')->html());
+expect(str_contains($gluePage,'As of Oct 20, 2026')&&!str_contains($gluePage,'2026-10-20T15:05'),'Read times follow the date rule');
 // One record projection serves DNS, glue rows, timestamps and drift; lock/privacy retain their own reads.
 $glueDnsSetting=App\Models\Server::findOrFail($active->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 DB::flushQueryLog();DB::enableQueryLog();DomainFacts::for($active->fresh());$recordQueries=DB::getQueryLog();DB::disableQueryLog();
 $historyQueries=array_filter($recordQueries,fn($row)=>str_contains($row['query'],'domains_operations')&&str_contains($row['query'],'limit 101'));
 expect(count($historyQueries)<=3,'Staff record facts reuse one bounded history projection');
+ObservationRecords::save($active->fresh(),['dns'=>['state'=>'complete','records'=>[]],'srv'=>['state'=>'complete','records'=>[]]],new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+$read=DomainFacts::for($active->fresh())['DNS records'];same(['0 records',null,'2026-10-20T15:05:00+00:00'],[$read['value'],$read['sub'],$read['asOf']??null],'No SRV says nothing, and the read time stays a time');
 $glueDnsSetting->delete();
 $active->fresh()->update(['observation'=>$beforeGlue]);
 same([null,'Ask the customer to add them on the domain page'],[$f['Contacts']['value'],$f['Contacts']['sub']],'Unknown contacts say what to do next');
