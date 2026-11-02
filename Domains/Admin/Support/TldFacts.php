@@ -41,20 +41,20 @@ final class TldFacts
         $saved=Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get();
         return self::build($tld,$grants,$accepted,$ruleHash,$saved,static fn():?int=>self::sellerId($tld->tld));
     }
-    /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per
-     * account, including card fees; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
+    /** snapshot() for a page of TLD rows in a fixed number of reads: accounts and acceptances once per account, default
+     * pricing and the card fee once; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
     public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null): array
     {
         $grants ??= Staff::requireView();
         if($tlds->isEmpty()){return [];}
         $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();
         $accounts=Account::whereIn('server_id',$servers)->orderBy('id')->get()->groupBy('server_id')->map->first();
-        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];$defaults=[];$fees=[];
+        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];
+        // An invalid snapshot fails fee rules without retrying the setting for every row.
+        try{$fee=CardFee::read();}catch(\Throwable){$fee=[];}
+        try{$default=$tlds->contains(fn(Tld $t)=>$t->use_default_rule)?self::ruleHash($rules->defaultRule(false,$fee)):null;}catch(\Throwable){$default=null;}
         foreach($servers as $id){
             try{$accepted[$id]=CatalogueAcceptances::load(CatalogueAcceptances::binding($accounts[$id]??throw new \DomainException));}catch(\Throwable){$accepted[$id]=null;}
-            // An invalid snapshot fails fee rules without retrying the setting for every row.
-            try{$fees[$id]=CardFee::read($id);}catch(\Throwable){$fees[$id]=[];}
-            try{$defaults[$id]=$tlds->contains(fn(Tld $t)=>(int)$t->server_id===$id&&$t->use_default_rule)?self::ruleHash($rules->defaultRule($id,false,$fees[$id])):null;}catch(\Throwable){$defaults[$id]=null;}
         }
         $key=static fn($row)=>(int)$row->server_id.'|'.$row->account_fingerprint.'|'.$row->tld;
         $prices=Price::whereIn('server_id',$servers)->whereIn('tld',$names)->orderBy('action')->orderBy('term')->get()->groupBy($key);
@@ -63,7 +63,7 @@ final class TldFacts
             ->selectRaw('server_id, tld, account_fingerprint, count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy($key);
         $out=[];
         foreach($tlds as $t){
-            if($t->use_default_rule){$hash=$defaults[(int)$t->server_id];}else{try{$hash=self::ruleHash($rules->rule($t,false,$fees[(int)$t->server_id]));}catch(\Throwable){$hash=null;}}
+            if($t->use_default_rule){$hash=$default;}else{try{$hash=self::ruleHash($rules->rule($t,false,$fee));}catch(\Throwable){$hash=null;}}
             $seller=isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null;
             $out[$t->id]=[...self::build($t,$grants,$accepted[(int)$t->server_id],$hash,$prices[$key($t)]??collect(),static fn():?int=>$seller),
                 'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0),'demo'=>DemoData::is($accounts[(int)$t->server_id]??null)];
@@ -210,7 +210,7 @@ final class TldFacts
         }
     }
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
-    private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
+    private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Edit default pricing'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to Default pricing',
         'Select seller'=>'Registrar for new orders changed','Change registrar for new orders'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
         'Review lifecycle facts'=>'Grace and redemption changed','Sync TLD prices'=>'Prices synced'];
     /** Large edits omit detail maps; older entries also omit whether the default changed. Neither proves a TLD was unaffected. */
@@ -229,7 +229,7 @@ final class TldFacts
                     if($r['tld_id']){return $r['tld_id']===$tldId;}
                     if($r['action']==='Sync TLD prices'){return is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true));}
                     if($r['action']==='Edit what you sell'){return is_string($ending)&&(self::unknownSalesScope($r['input'])||isset($r['input']['rows'][$ending])||array_key_exists($ending,(array)($r['input']['changes']??[]))||($r['input']['rule_changed']??false));}
-                    return in_array($r['action'],['Edit card fee','Edit default rule','Publish prices'],true);
+                    return in_array($r['action'],['Edit card fee','Edit default rule','Edit default pricing','Publish prices'],true);
                 });
             }
             // One row per sync, not one per TLD it wrote.
