@@ -274,4 +274,9 @@ $dnsNextSteps=['correction_support'=>$dom->query('//div[contains(@class,"domains
 $d=$domain();$html=$render($d,$summary($d,['dnsKeys'=>['domain.dns.external','domain.points.external_empty'],'website'=>false,'email'=>false]));
 $dnsNextSteps['configured_dns_hint']=str_contains($html,'To use this domain, buy a service or point it to your own nameservers.');
 same(['correction_support'=>1,'configured_dns_hint'=>false],$dnsNextSteps,'DNS next steps: '.json_encode($dnsNextSteps));
+foreach([[true,null,'then change nameservers.','Change nameservers'],[false,'/support','then contact support to change nameservers.','Contact support'],[false,null,'Set up DNS with your provider. Nameserver changes are currently unavailable.',null]]as[$editor,$support,$step,$label]){
+    $notice=DomainPage::notice($domain(['dnsCorrection'=>true,'management'=>$editor?$management():[]]),$support);
+    expect(str_contains($notice['text'],$step),'Correction describes an available next step: '.json_encode([$editor,$support,$notice]));
+    same($label,$notice['action']['label']??null,'Correction action follows actual availability');
+}
 $nativeSuccessful=true;echo "Client domain page checked.\n";
