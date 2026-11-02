@@ -18,6 +18,13 @@ final class NewDomainDns
     }
     public static function nameservers(int $server,string $action): array
     { return $action==='register'?(self::profile($server)?->nameservers??[]):[]; }
+    /** Freeze the actual registration payload and its origin together; equality alone never proves a customer choice. */
+    public static function capture(int $server,string $action): array
+    {
+        if($action!=='register' || !($profile=self::profile($server))){return [];}
+        return ['nameservers'=>$profile->nameservers,'nameservers_origin'=>['source'=>'account_default',
+            'profile_id'=>(int)$profile->id,'profile_revision'=>(int)$profile->revision]];
+    }
     /** Captured choices survive account changes; legacy editable orders may use the current template. */
     public static function forOperation(Operation $op): array
     {

@@ -113,6 +113,7 @@ final class ManagedDnsSetup
                     if(!ManagementEvidence::resolved($op,$domain)){continue;}
                 }
                 if($op->action==='transfer'){$offer('external',2,$at);}
+                elseif($op->action==='register' && ($op->payload['nameservers_origin']['source']??null)==='account_default'){$offer('platform',2,$at);}
                 else{$nameservers($op->payload['nameservers']??null,2,$at,$management);}
             }
             catch(\Illuminate\Contracts\Encryption\DecryptException){$offer(null,2,$at,$management);}

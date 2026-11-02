@@ -249,6 +249,41 @@ same(array_fill_keys(['absent','stale','unreadable newer'],[false,[]]),$choiceRe
 DB::table('domains_operations')->whereIn('id',[$original->id,$resolved->id,$unresolved->id,$wrong->id])->delete();
 DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);
 DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
+// Checkout inheritance follows a new account comparison; explicit and legacy customer choices keep theirs.
+$savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
+$newDefault=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Replacement monitoring default','enabled'=>true,
+    'nameservers'=>['ns1.replacement.example','ns2.replacement.example'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$staff->id,'reason'=>'Synthetic changed default']));
+DB::transaction(fn()=>NewDomainDns::saveLocked($account,$newDefault->id));
+$originResults=[];
+foreach(['inherited default','explicit equal default','legacy unmarked','domain override','staff assignment']as$case){
+    DB::table('domains_managed_public_config')->where('domain_id',$id)->update([...$savedConfig,'profile_id'=>$case==='domain override'?$profile->id:null,
+        'expected_dns'=>$case==='staff assignment'?'external':'platform','edited_by'=>$case==='staff assignment'?$staff->id:null]);
+    $payload=['nameservers'=>$default->profile()->nameservers];
+    if($case!=='legacy unmarked'){$payload['nameservers_origin']=$case==='explicit equal default'?['source'=>'customer']:
+        ['source'=>'account_default','profile_id'=>(int)$default->id,'profile_revision'=>(int)$default->fresh()->revision];}
+    $registration=Operation::create(['domain_id'=>$id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
+        'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'action'=>'register','state'=>'succeeded','currency'=>'USD',
+        'operation_key'=>'provenance-'.str_replace(' ','-',$case),'payload'=>$payload,'completed_at'=>gmdate('Y-m-d H:i:s',$now-60)]);
+    DB::table('domains_managed_public_observations')->where('domain_id',$id)->delete();
+    $base=$now+10000+count($originResults)*2000;
+    foreach([$base,$base+901]as$sampleAt){
+        managedDue($id,$sampleAt);$ticket=$signals->begin($id,$uid,'delegation',$sampleAt);expect($ticket!==null,'Provenance remains monitored: '.$case);
+        expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external'),$sampleAt+1),'Old registration DNS differs from the effective comparison: '.$case);
+    }
+    $notice=DB::transaction(fn()=>WatchNoticeTarget::capture('managed',$id,$uid,$sampleAt+1));
+    $target=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$sampleAt+1));
+    $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$sampleAt+1);
+    $plan=\Paymenter\Extensions\Servers\Domains\Services\WatchNoticePlan::dns([],$notice['delegation'],$sampleAt+1,$notice['expected']);
+    $originResults[$case]=[$target['config']->expected_dns,$notice['expected'],array_column($plan['notices'],'kind'),$plan['portal'],
+        array_values(array_intersect($summary->stateKeys,['watch.ns_pending','watch.ns_changed']))];
+    DB::table('domains_operations')->where('id',$registration->id)->delete();
+}
+$inheritedOrigin=['platform',true,['ns_changed'],['ns_changed'],['watch.ns_pending']];$explicitOrigin=['external',false,[],[],[]];
+same(['inherited default'=>$inheritedOrigin,'explicit equal default'=>$explicitOrigin,'legacy unmarked'=>$explicitOrigin,'domain override'=>$inheritedOrigin,'staff assignment'=>$explicitOrigin],
+    $originResults,'Only inherited registrations follow the new comparison: '.json_encode($originResults));
+DB::transaction(fn()=>NewDomainDns::saveLocked($account,$default->id));
+DB::table('domains_watch_profiles')->where('id',$newDefault->id)->delete();
+DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 // A concurrent default change discards the old answer and the next check uses the new template.
 managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Default read captured');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>json_encode(['ns1.override.example','ns2.override.example'])]);

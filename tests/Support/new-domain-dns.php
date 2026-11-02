@@ -46,6 +46,8 @@ $makeEngine($binding,$captureExchange);
 $name=$binding->registrarKey==='enom'?'template-default.example.com':placeholderComFixtureName('template-default-placeholder.com');
 $op=$binding->registrarKey==='enom'?$new($name):$nsNew($name);
 same($template->nameservers,$op->payload['nameservers'],'Checkout freezes the account template without customer input');
+$origin=['source'=>'account_default','profile_id'=>(int)$template->id,'profile_revision'=>(int)$template->fresh()->revision];
+same($origin,$op->payload['nameservers_origin']??null,'Checkout retains inherited nameserver provenance for both registrars');
 $registration->query=\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op,$op->domain);
 $result=$engine->execute($op->id);same('pending',$result->state,'Default registration reaches financial observation: '.$result->safe_code);$assertRetained($result,[]);
 if($binding->registrarKey==='enom'){
@@ -57,6 +59,7 @@ $op=$binding->registrarKey==='enom'?$new('template-choice.example.com'):$nsNew(p
 $chosen=['ns1.customer.example','ns2.customer.example'];
 (new OwnerSetup($clock,$ports))->save($user,$op->domain_id,['nameservers'=>$chosen,'privacy'=>false]);
 same($chosen,$op->fresh()->payload['nameservers'],'Finish setup customer choice replaces the template');
+same(['source'=>'customer'],$op->fresh()->payload['nameservers_origin']??null,'Explicit owner setup replaces inherited provenance');
 $makeEngine($binding,$captureExchange);
 $registration->query=\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op->fresh(),$op->domain);
 $result=$engine->execute($op->id);same('pending',$result->state,'Customer choice reaches financial observation: '.$result->safe_code);$assertRetained($result,[]);
@@ -69,11 +72,16 @@ if($binding->registrarKey==='enom'){
     same([],AcquisitionSetup::validate($transfer->domain,$transfer,[],false)['nameservers'],'Enom transfer keeps existing nameservers');
     commerceReject(fn()=>AcquisitionSetup::validate($transfer->domain,$transfer,$template->nameservers,false));
 }
+$equal=$binding->registrarKey==='enom'?$new('template-equal.example.com'):$nsNew(placeholderComFixtureName('template-equal-placeholder.com'));
+(new OwnerSetup($clock,$ports))->save($user,$equal->domain_id,['nameservers'=>$template->nameservers,'privacy'=>false]);
+same(['source'=>'customer'],$equal->fresh()->payload['nameservers_origin']??null,'An explicit choice equal to the old default is still a customer choice');
+commerceReject(fn()=>$equal->fresh()->update(['payload'=>[...$equal->fresh()->payload,'nameservers_origin'=>$origin]]));
 $op=$binding->registrarKey==='enom'?$new('template-blank.example.com'):$nsNew(placeholderComFixtureName('template-blank-placeholder.com'));
 DB::transaction(fn()=>NewDomainDns::saveLocked($account,null));
 same(true,$owners->present($op->domain)->setup['defaults'],'Clearing the account template preserves the captured Finish setup default');
 (new OwnerSetup($clock,$ports))->save($user,$op->domain_id,['nameservers'=>[],'privacy'=>false]);
 same($template->nameservers,$op->fresh()->payload['nameservers'],'Blank Finish setup retains the frozen default');
+same($origin,$op->fresh()->payload['nameservers_origin']??null,'Blank Finish setup retains inherited provenance');
 DB::transaction(fn()=>NewDomainDns::saveLocked($account,null));
 $op=$binding->registrarKey==='enom'?$new('template-none.example.com'):$nsNew(placeholderComFixtureName('template-none-placeholder.com'));
 expect(!array_key_exists('nameservers',$op->payload),'Clearing the template preserves the original unconfigured payload');
