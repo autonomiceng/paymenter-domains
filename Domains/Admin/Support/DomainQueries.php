@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 /** Exact holding binding, independent of today's seller. No financial interpretation of state labels. */
 final class DomainQueries
 {
@@ -31,33 +32,16 @@ final class DomainQueries
     {
         return self::related($q,fn($ops)=>$ops->whereIn('attention.state',$states));
     }
-    /** Domains with an alert still shown on the detail page. */
+    /** Unresolved alerts, excluding staff releases through the detail list's shared read scope. */
     public static function openAlerts(Builder $q): Builder
     {
-        $ids=[];
-        self::alertPages($q,function(array $page) use (&$ids):void { array_push($ids,...$page); });
-        return $q->whereIntegerInRaw('domains_domains.id',$ids);
+        return $q->whereExists(ObligationAlerts::open()->selectRaw('1')
+            ->whereColumn('domains_obligation_alerts.domain_id','domains_domains.id'));
     }
-    /** The cached menu count retains a total, not every matching domain id. */
+    /** Two fixed queries on a cold cache: release candidates, then the SQL aggregate. */
     public static function openAlertCount(Builder $q): int
     {
-        $count=0;
-        self::alertPages($q,function(array $page) use (&$count):void { $count+=count($page); });
-        return $count;
-    }
-    /** Policy is encrypted: use the detail page's rule, never a second SQL interpretation of staff releases.
-     * Only unresolved-alert candidates are read, 200 domains at a time, with their inputs batched per page. */
-    private static function alertPages(Builder $q, \Closure $consume): void
-    {
-        (clone $q)->whereExists(fn($a)=>$a->selectRaw('1')->from('domains_obligation_alerts as a')
-            ->whereColumn('a.domain_id','domains_domains.id')->whereNull('a.resolved_at'))
-            ->reorder()->with('latestAcquisition')->chunkById(200,function($page) use ($consume):void {
-                $ids=[];
-                foreach (StaffDomainInputs::for($page) as $id=>$inputs) {
-                    if ($inputs['alerts']) { $ids[]=$id; }
-                }
-                $consume($ids);
-            },'domains_domains.id','id');
+        return self::openAlerts($q)->count();
     }
     public static function creditReview(Builder $q): Builder
     {

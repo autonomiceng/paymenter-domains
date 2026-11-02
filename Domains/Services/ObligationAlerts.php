@@ -37,10 +37,30 @@ final class ObligationAlerts
         'reminder_failed'=>'Renewal reminder check failed. Check the registrar account.',
     ];
     private const REVIEW=['operation_review','held_obligation'];
+    private const IN_FLIGHT=['queued','running','pending'];
     /** Transfers finish within 7 days, and a paid renewal this close to expiry can't wait. */
     private const WAIT_DAYS=7;
     /** Transfer polling backs off to twelve hours, so a full day with no read means reads have stopped. */
     private const READ_STALE_SECONDS=86400;
+    /** Shared read scope for the menu, filter and detail list. Only in-flight reviews need encrypted release data.
+     * One candidate query, then one caller query; no domain projection or per-request database reads. */
+    public static function open(?array $domains=null): \Illuminate\Database\Query\Builder
+    {
+        $open=DB::table('domains_obligation_alerts')->whereNull('domains_obligation_alerts.resolved_at');
+        if ($domains!==null) { $open->whereIn('domains_obligation_alerts.domain_id',$domains); }
+        $candidates=(clone $open)->join('domains_operations as review_operation','review_operation.id','=','domains_obligation_alerts.operation_id')
+            ->whereColumn('review_operation.domain_id','domains_obligation_alerts.domain_id')
+            ->whereIn('domains_obligation_alerts.code',self::REVIEW)->whereIn('review_operation.state',self::IN_FLIGHT)
+            ->get(['domains_obligation_alerts.id','domains_obligation_alerts.last_seen','review_operation.state','review_operation.policy']);
+        $released=[];
+        foreach ($candidates as $row) {
+            // Use the model's encrypted-array cast on these two columns only; no model query or relations.
+            $op=(new Operation)->setRawAttributes(['state'=>$row->state,'policy'=>$row->policy],true);
+            try { if (self::released($op,(int)$row->last_seen)) { $released[]=(int)$row->id; } }
+            catch (\Throwable) { /* Unreadable history cannot prove the alert cleared. */ }
+        }
+        return $open->whereIntegerNotInRaw('domains_obligation_alerts.id',$released);
+    }
     public static function key(Domain $d,string $code,?int $operationId=null,?string $identity=null):string
     {
         return hash('sha256',implode(':',[$d->id,$d->account_fingerprint,$d->authority_generation,$d->provider_expires_at?->format('Y-m-d')??'unknown',$operationId??0,$code,$identity??'']));
@@ -100,14 +120,13 @@ final class ObligationAlerts
             &&empty($review['read_failed'])&&$read>$now-self::READ_STALE_SECONDS
             &&(($review['transfer_status']??null)==='pending'||$first);
     }
-    /** An alert stays live unless its own cause is proven cleared. Only two causes can be: a request that succeeded with nothing
-     * left to check, and a hold staff released that nothing has raised since. The next inspection closes those; staff pages
-     * stop counting them now. Anything we can't read stays live. */
+    /** Existing detail-only cleanups that need additional encrypted evidence. Releases are already removed by open().
+     * Anything we can't read stays live. */
     public static function outdated(object $alert,?Operation $op,Collection $operations,Domain $d):bool
     {
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
-        try{return in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||self::released($op,(int)$alert->last_seen));}
+        try{return in_array($alert->code,self::REVIEW,true)&&$op->state==='succeeded'&&!self::flagged($op,$operations,$d);}
         catch(\Throwable){return false;}
     }
     /** A request that succeeds closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.
@@ -146,7 +165,7 @@ final class ObligationAlerts
     private static function released(Operation $op,int $lastSeen):bool
     {
         $history=$op->policy['staff_actions']??[];$last=$history?end($history):[];
-        return in_array($op->state,['queued','running','pending'],true)&&($last['action']??null)==='release'&&($last['phase']??null)==='completed'
+        return in_array($op->state,self::IN_FLIGHT,true)&&($last['action']??null)==='release'&&($last['phase']??null)==='completed'
             &&is_string($last['at']??null)&&$lastSeen<strtotime($last['at']);
     }
     /** Resolve only after a successful, complete inspection, retaining all historical rows. */
