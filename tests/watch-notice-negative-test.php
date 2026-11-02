@@ -37,6 +37,15 @@ expect((static function()use($n,$uid):bool {try{WatchNoticeDelivery::prepare($n,
 $watchPage()->assertSee('template has an error. Fix it in Notification templates.');
 $template->update(['body'=>'{{ $domain }} {{ $date }} <a href="{{ $domain_url }}">View domain checks</a>']);
 $claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Fixed template can claim');
+// A successful preparation rearms this same notice/channel, even before a delivery is accepted.
+$health=WatchAudit::where('event','notice_health')->count();
+$template->update(['body'=>'@php throw new \\RuntimeException("Synthetic second render failure"); @endphp']);
+same(null,$delivery->reserve($n->id,'mail',$at),'Same notice fails again after template recovery');
+same($health+1,WatchAudit::where('event','notice_health')->count(),'Second render failure after recovery is recorded');
+same(null,$delivery->reserve($n->id,'mail',$at),'Second failure remains safe to retry');
+same($health+1,WatchAudit::where('event','notice_health')->count(),'Second failure episode still deduplicates');
+$template->update(['body'=>'{{ $domain }} {{ $date }} <a href="{{ $domain_url }}">View domain checks</a>']);
+same($claim,$delivery->reserve($n->id,'mail',$at),'Recovery keeps the existing unhanded claim');
 $nativePref=NotificationPreference::create(['user_id'=>$uid,'notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>true]);
 expect(!$delivery->handoff($claim,$at),'Native opt-out after reservation suppresses mail');
 [$n,$at]=$new();same(['mail'=>false,'app'=>true],$delivery->deliver($n->id,$at),'Independent native app preference honored');
