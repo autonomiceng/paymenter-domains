@@ -100,7 +100,18 @@ expect($value!==null && str_contains($value->textContent,'ns1.example.net') && s
 $status=$xpath->query('.//*[@data-management-pending="nameservers"]',$value)->item(0);
 expect($status!==null && !str_contains($status->textContent,'ns1.example.net'),'Polling updates only the status, preserving the confirmed nameservers');
 // A later registrar read can differ without changing the completed request's result.
+$pendingNameservers=$owners->present($d->fresh());
 same('succeeded',$management->run($nameservers->id,$driver)->state,'Nameserver request completes');
+foreach ([$pendingNameservers,$owners->present($d->fresh())] as $dto) {
+    $paused=new ($dto::class)(...[...get_object_vars($dto),'syncPaused'=>true]);
+    $row=storefrontDom(view('domains::partials.owner-management',['domain'=>$paused,'caps'=>['nameservers']])->render())->query('//*[@id="nameservers"]')->item(0);
+    foreach ($dto->management['nameservers']['current'] as $server) {
+        expect(!str_contains($row->textContent,$server),'Paused sync hides stored nameservers even while pending');
+    }
+    if ($dto->management['nameservers']['progress']['pending']) {
+        expect(str_contains($row->textContent,$dto->management['nameservers']['progress']['text']),'Paused sync retains the pending status');
+    }
+}
 $saved=ManagementReadRecovery::latest($nameservers->fresh());$observation=$d->fresh()->observation;
 $later=(new DateTimeImmutable($saved['at']))->modify('+1 minute')->format(DATE_ATOM);
 $outside=['ns5.example.net','ns6.example.net'];
