@@ -5,7 +5,7 @@
         .domains-sell-left{display:flex;gap:.5rem;align-items:flex-start;color:inherit}.domains-sell-left-mark{flex:none;width:1rem;height:1rem;margin-block-start:.125rem;color:var(--warning-500)}
         .domains-sell-table{--domains-sell-edge:20px;--domains-sell-rule:var(--beco-line-soft,var(--gray-200))}.dark .domains-sell-table{--domains-sell-rule:var(--beco-line-soft,#ffffff14)}
         /* What the skin's table head says for a plain cell, for the Register, Renew and Transfer cells above it. */
-        .domains-sell-table .fi-ta-header-group-cell{padding:8px 20px;border-width:0 0 1px 1px;border-style:solid;border-color:var(--domains-sell-rule);color:var(--beco-fg-2,var(--gray-400));font-size:13px;font-weight:400;line-height:20px}.domains-sell-table .fi-ta-header-cell{border:0}.domains-sell-table thead .fi-ta-selection-cell{padding-block:8px}
+        .domains-sell-table .fi-ta-header-group-cell{padding:8px 20px;border-width:0 0 1px 1px;border-style:solid;border-color:var(--domains-sell-rule);color:var(--beco-fg-2,var(--gray-400));font-size:13px;font-weight:400;line-height:20px}.domains-sell-table .fi-ta-header-cell{border:0}.domains-sell-table thead .fi-ta-selection-cell{padding-block:8px;text-align:start}
         .domains-sell-choices{display:flex;flex-wrap:wrap;gap:.5rem}
         .domains-sell-note{padding:.5rem 20px;font-size:.8125rem;color:var(--gray-500)}.dark .domains-sell-note{color:var(--gray-400)}
         .domains-price-help{display:grid;gap:1rem;font-size:.875rem}
