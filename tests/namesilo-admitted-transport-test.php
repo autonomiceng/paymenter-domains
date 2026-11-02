@@ -6,13 +6,12 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\Server;
-use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Environment,Money};
+use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,Installation,LiveReservationLimit,LiveReservations};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,Installation,LiveReservations};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-expect(class_exists(AdmittedTransport::class),'NameSilo must provide a budgeted, one-send admitted transport');
+expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/AdmittedTransport.php'),'NameSilo must provide a budgeted, one-send admitted transport');
 // Namespaced cURL functions make accidental sockets impossible while exercising the physical boundary.
 function hrtime(bool $number=false): int {return $GLOBALS['wire']['ns'];}
 function curl_init(): object {++$GLOBALS['wire']['inits'];return new \stdClass;}
@@ -28,11 +27,13 @@ function curl_exec($handle): bool {
 function curl_getinfo($handle,int $option): int {return $GLOBALS['wire']['status'];}
 function curl_close($handle): void {++$GLOBALS['wire']['closed'];}
 function resetWire(array $overrides=[]): void {$GLOBALS['wire']=$overrides+['ns'=>0,'options'=>[],'sends'=>0,'inits'=>0,'closed'=>0,'parameters'=>[],'timeout'=>false,'status'=>200,'chunks'=>['{}']];}
+ini_set('zend.exception_ignore_args','0');
 resetWire();(new Installation)->install();
 $clock=new FakeClock(new \DateTimeImmutable('2026-11-02T12:00:00Z'));app()->instance(Clock::class,$clock);
 $server=Server::create(['name'=>'Synthetic NameSilo','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','environment'=>'live',
-    'stable_identity'=>'local-account-1','live_site'=>'https://billing.example.com','processing_enabled'=>true]));
+    'stable_identity'=>'local-account-1']));
+Account::withVerifiedBindingWrite(fn()=>$account->update(['live_site'=>'https://billing.example.com','processing_enabled'=>true]));
 $binding=CatalogueAcceptances::binding($account);
 $settings=['fingerprint'=>$binding->fingerprint,'daily_call_cap'=>100,'daily_spend_limit_usd'=>'20.00','currency'=>'USD','balance_funding'=>true];
 config(['app.url'=>'https://billing.example.com','domains.namesilo_live.site'=>'https://billing.example.com',
