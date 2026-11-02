@@ -104,7 +104,8 @@ final class AccountChecklist
     {
         $on=(bool)$a->processing_enabled;
         $status=$on?'matched':app(AccountBindings::class)->configurationStatus((int)$a->server_id);
-        $cause=match(true){$status==='site_unbound'||(!$on&&$status==='matched'&&$a->registrar_key==='enom'&&$a->environment==='live'&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a)))=>'Orders are paused. Use Activate to check setup and turn on Orders.',
+        $cause=match(true){$status==='site_unbound'&&$a->registrar_key==='namesilo'=>'Orders are paused. Ask your site admin to confirm the Live site for this account.',
+            $status==='site_unbound'||(!$on&&$status==='matched'&&$a->registrar_key==='enom'&&$a->environment==='live'&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a)))=>'Orders are paused. Use Activate to check setup and turn on Orders.',
             $status==='matched'=>'Orders are paused. Check setup, then turn on Orders.',default=>'Orders are paused. Fix the API connection first.'};
         return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:$cause,'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
     }

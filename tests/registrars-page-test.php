@@ -374,6 +374,10 @@ $billing=$siloRows()['Renewals'];
 expect(str_contains($billing['cause'],'Billing is paused')&&str_contains($billing['cause'],'site admin')&&str_contains($billing['help'],'billing only'), 'NameSilo explains billing and the sending setup');
 $siloLive=App\Models\Server::create(['name'=>'Synthetic Live NameSilo','extension'=>'Domains','type'=>'server','enabled'=>true]);
 $bindings->configure((int)$siloLive->id,'namesilo',Environment::Live,['token'=>'synthetic-live-namesilo-orders']);
+same('site_unbound',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo starts without a confirmed site');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$siloLive->id])
+    ->assertSee('Orders are paused. Ask your site admin to confirm the Live site for this account.')
+    ->assertActionDoesNotExist('activate_live');
 DB::table('domains_accounts')->where('server_id',$siloLive->id)->update(['live_site'=>$site]);
 same('matched',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo credentials and saved site match');
 $siloLiveRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::where('server_id',$siloLive->id)->sole(),['label'=>'Active','reason'=>null]),null,'label');
