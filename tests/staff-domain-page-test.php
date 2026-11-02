@@ -255,7 +255,7 @@ try {
     $syncNotices=new \Filament\Notifications\Livewire\Notifications;$syncNotices->mount();
     $syncTitles=$syncNotices->notifications->map(fn($notice)=>$notice->getTitle())->values()->all();
     expect(!in_array('Sync queued',$syncTitles,true),'Second staff is not promised a silently dropped sync');
-    same(['A sync is already running. Refresh this page in a few minutes.'],$syncTitles,'Second staff gets refresh guidance without a queued promise');
+    same(["A sync was already requested. If nothing changes in 15 minutes, press Sync now again. If it still doesn't run, check the queue worker."],$syncTitles,'Second staff gets retry and worker guidance without a queued promise');
     same(1,$syncConnection->size(),'Two staff clicks retain one holding read, including its reservation');
     config(['queue.default'=>'sync','queue.connections.sync.driver'=>'sync']);
     Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertNotified(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::WORKER);

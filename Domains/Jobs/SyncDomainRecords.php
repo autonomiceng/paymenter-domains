@@ -17,9 +17,10 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
 {
     use Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
     public const TIMEOUT=300;
+    public const UNIQUE_FOR=900;
     public const WORKER='Sync now needs a database or Redis queue with retry_after above 300 seconds. Ask your site admin to check the queue worker, then try again.';
     public int $timeout=self::TIMEOUT;
-    public int $uniqueFor=900;
+    public int $uniqueFor=self::UNIQUE_FOR;
     public int $tries=1;
     public bool $failOnTimeout=true;
     public function __construct(public int $actor,public int $domain,public int $generation,public string $fingerprint) {}
