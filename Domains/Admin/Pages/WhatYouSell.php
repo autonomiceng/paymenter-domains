@@ -251,7 +251,7 @@ class WhatYouSell extends Page implements HasTable
     private function moneyGroup(string $action): ColumnGroup
     {
         $cell=fn(SellRow $record,string $field)=>$this->reads()->cell($record,$action,$field);
-        $column=fn(string $field,string|\Closure $label)=>TextColumn::make($action.'_'.$field)->label($label)->alignEnd()->visible(fn()=>$this->canSeeCosts())->toggleable(isToggledHiddenByDefault:$action!=='register')
+        $column=fn(string $field,string|\Closure $label)=>TextColumn::make($action.'_'.$field)->label($label)->alignEnd()->extraHeaderAttributes(['class'=>'domains-sell-'.$action])->extraCellAttributes(['class'=>'domains-sell-'.$action])->visible(fn()=>$this->canSeeCosts())->toggleable(isToggledHiddenByDefault:$action!=='register')
             ->state(fn(SellRow $record)=>$cell($record,$field)['text'])->color(fn(SellRow $record)=>$cell($record,$field)['tone'])->tooltip(fn(SellRow $record)=>$cell($record,$field)['hint'])
             ->badge(fn(SellRow $record)=>$cell($record,$field)['mark'])->extraAttributes(fn(SellRow $record)=>$cell($record,$field)['mark']?['data-beco-tone'=>'err']:[]);
         return ColumnGroup::make(PriceList::ACTIONS[$action],[
@@ -301,7 +301,7 @@ class WhatYouSell extends Page implements HasTable
                 TextColumn::make('terms')->label('Terms')->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow $record)=>$this->reads()->terms($record)),
                 TextColumn::make('pricing')->label('Pricing')->visible($costs)->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow $record)=>$this->reads()->pricing($record)),
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
-                TextColumn::make('status')->label('Status')->badge()->state(fn(SellRow $record)=>$this->reads()->status($record)['label'])
+                TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(SellRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])
                     ->description(fn(SellRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(SellRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
                     ->url(fn(SellRow $record)=>isset($this->reads()->status($record)['open'])?TldResource::getUrl('index'):null),

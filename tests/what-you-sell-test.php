@@ -100,6 +100,7 @@ same(0,$calls()-$before,'Opening a full page sends nothing');
 // The summary counts what is for sale, the title stays the section's, and no head button competes with the row buttons.
 $page->assertSee(SellRule::rows($binding)->get()->filter(fn(SellRow $r)=>SellRule::decide($r,SellRule::read($binding,CatalogueAcceptances::load($binding)))==='sell')->count().' TLDs for sale.')->assertDontSee('TLDs selected');
 same('TLDs & pricing',$page->instance()->getTitle(),'Both tabs keep the title');same('gray',$page->instance()->getAction('rule',false)->getColor(),'Default for new TLDs is a quiet button');
+$html=$page->html();expect(preg_match('~<th\b[^>]*domains-sell-register~',$html)&&preg_match('~<td\b[^>]*domains-sell-register~',$html)&&preg_match('~<td\b[^>]*domains-sell-status~',$html),'Group columns carry the class their rules hang on');
 // The panel skin sets its table class first, and this page must add to it.
 \Filament\Tables\Table::configureUsing(static fn($table)=>$table->extraAttributes(['class'=>'panel-skin']));
 expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->html(),'domains-sell-table panel-skin'),'The page keeps the skin table class');
