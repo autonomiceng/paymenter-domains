@@ -72,7 +72,7 @@ final class Installation
             $retryRecorded=in_array(RenewalRetrySchema::MIGRATION,$ran,true);
             if(Schema::hasColumn('domains_operations','retry_number')&&!$retryRecorded){throw new \DomainException('Retained renewal retry storage has no installation record.');}
             if($retryRecorded){RenewalRetrySchema::verify();}
-            if(in_array(ManagementProgressIndex::MIGRATION,$ran,true)){ManagementProgressIndex::verify();}
+            if(in_array(ManagementProgressIndex::MIGRATION,$ran,true)){ManagementProgressIndex::upgrade();}
             $sendsRecorded=in_array(EnomTestSendLimitSchema::MIGRATION,$ran,true);
             $sendsPresent=array_filter(array_map(Schema::hasTable(...),EnomTestSendLimitSchema::tables()));
             if($sendsPresent&&!$sendsRecorded){throw new \DomainException('Retained TEST send history has no installation record.');}

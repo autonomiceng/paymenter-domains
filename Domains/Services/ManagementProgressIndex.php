@@ -46,6 +46,11 @@ final class ManagementProgressIndex
         });
         self::verify();
     }
+    public static function upgrade(): void
+    {
+        if (!Schema::hasColumn('domains_operations','management_pending')) { throw new \RuntimeException('Management progress storage is missing.'); }
+        self::install();
+    }
     public static function verify(): void
     {
         if (!Schema::hasColumn('domains_operations','management_pending')) { throw new \RuntimeException('Management progress storage is missing.'); }
