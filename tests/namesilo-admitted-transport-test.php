@@ -9,7 +9,7 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,Installation,LiveReservations};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,Installation,LiveReservationLimit,LiveReservations};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/AdmittedTransport.php'),'NameSilo must provide a budgeted, one-send admitted transport');
 // Namespaced cURL functions make accidental sockets impossible while exercising the physical boundary.
@@ -112,7 +112,7 @@ $grant->run('renewal',45,function()use($grant,$params,$renew,$deny):void {
     same(1,$GLOBALS['wire']['sends'],'Exactly one attempt on timeout');expect(!$grant->unconsumed(45),'Lost reply grants no unsent proof');$deny(fn()=>$renew($params));
 });
 resetWire(['status'=>302]);$denyResponse=false;try{$read();}catch(\RuntimeException){$denyResponse=true;}expect($denyResponse,'Redirect is unresolved');same(1,$GLOBALS['wire']['sends'],'Redirect not retried');
-resetWire(['chunks'=>[str_repeat('x',Api\CurlTransport::BODY_LIMIT),'x']]);try{$read();}catch(\RuntimeException){}same(1,$GLOBALS['wire']['sends'],'Oversize body not retried');
+resetWire(['chunks'=>[str_repeat('x',Api\CurlTransport::BODY_LIMIT),'x']]);$denyResponse=false;try{$read();}catch(\RuntimeException){$denyResponse=true;}expect($denyResponse,'Oversize body is unresolved');same(1,$GLOBALS['wire']['sends'],'Oversize body not retried');
 foreach([CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,CURLOPT_PROXY=>'',CURLOPT_NOPROXY=>'*',CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS] as $option=>$value){same($value,$GLOBALS['wire']['options'][$option],'Fixed TLS and routing options');}
 expect(in_array(true,$writeChecks,true)&&in_array(false,$writeChecks,true),'Credentials freshly checked for reads and writes');
 // Existing purchase mappings retain explicit privacy and auto-renew-off flags at the admitted boundary.
@@ -132,5 +132,22 @@ $grant->run('management',47,function()use($grant,$exchange,$origin):void {
     $grant->reserve('domainLock',['domain'=>'example.com']);$exchange($origin,'domainLock',['domain'=>'example.com'],20000);
 });
 same(3,$GLOBALS['wire']['sends'],'Registration, transfer and free management each send exactly once');
+// Existing management discovery lists glue through the read path and pays for exactly one call.
+resetWire();$before=$used();$listed=false;
+try{$listed=$exchange($origin,'listRegisteredNameServers',['domain'=>'example.com'],20000)==='{}';}catch(LiveReservationLimit){}
+expect($listed,'Existing glue inventory read reaches the admitted transport');
+same(['used'=>$before['used']+1,'spend_micros'=>$before['spend_micros']],$used(),'Glue list reserves one call and no spend');
+same(1,$GLOBALS['wire']['sends'],'Glue list sends once without a mutation grant');
+same($origin.'/listRegisteredNameServers',strtok($GLOBALS['wire']['options'][CURLOPT_URL],'?'),'Glue list keeps the fixed batch route');
+// A glue mutation needs its own management reservation and cannot replay that grant.
+resetWire();$before=$used();$glue=['domain'=>'example.com','new_host'=>'ns1','ip1'=>'192.0.2.1'];
+$sendGlue=fn()=>$exchange($origin,'addRegisteredNameServer',$glue,20000);
+$deny($sendGlue);
+$grant->run('management',48,function()use($grant,$glue,$sendGlue,$deny):void {
+    $grant->reserve('addRegisteredNameServer',$glue);$sendGlue();
+    expect(!$grant->unconsumed(48),'Glue mutation consumes its single-send grant');$deny($sendGlue);
+});
+same(['used'=>$before['used']+1,'spend_micros'=>$before['spend_micros']],$used(),'Glue mutation counts its reservation once without spend');
+same(1,$GLOBALS['wire']['sends'],'Glue mutation sends once and refuses replay');
 echo "NameSilo admitted transport enforces reservations, fixed routes, one send and redacted uncertain outcomes.\n";
 $nativeSuccessful=true;
