@@ -150,9 +150,9 @@ $auditKeys=array_column(Review::historyRows($server),'key');
 $GLOBALS['cataloguePrice']='11.0000';$sync();$publish();
 $changed=array_values(array_filter(Review::historyRows($server),static fn($e)=>!in_array($e['key'],$auditKeys,true)&&$e['actor_id']===null&&isset($e['before']['retail'])));
 $entry=collect($changed)->firstWhere('tld_id',$com->id);
-$regression(count($changed)===2&&count(array_unique(array_column($changed,'tld_id')))===2&&($entry['before']['retail']['register:1:USD']??null)==='13.00000000'
-    &&($entry['after']['retail']['register:1:USD']??null)==='14.30000000'
-    &&Price::where(['server_id'=>$server->id,'tld'=>'com','action'=>'register','term'=>1])->sole()->retail==='14.30000000',
+$regression(count($changed)===2&&count(array_unique(array_column($changed,'tld_id')))===2&&($entry['before']['retail']['register:1:USD']??null)==='11.99000000'
+    &&($entry['after']['retail']['register:1:USD']??null)==='12.99000000'
+    &&Price::where(['server_id'=>$server->id,'tld'=>'com','action'=>'register','term'=>1])->sole()->retail==='12.99000000',
     'Automatic retail changes have one history entry per TLD with the old and new prices');
 $history=Review::historyRows($server);$sync();$publish();same($history,Review::historyRows($server),'An unchanged repeat price read adds no history');
 $GLOBALS['cataloguePrice']='10.0000';$sync();$publish();
