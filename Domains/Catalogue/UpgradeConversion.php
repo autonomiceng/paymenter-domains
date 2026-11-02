@@ -155,18 +155,44 @@ final class UpgradeConversion
         return $out;
     }
 
-    /** Count-only comparison report; unknown/ambiguous observations block no old caller. */
+    /** Original-row digests plus a bounded comparison of the actual staged intent/costs/retail. */
     public function report(AccountBinding $binding, array $before): array
     {
-        [, , $source] = $this->source($binding);
-        $queue = $this->queue($binding)->first(); $issues = [];
+        [$accepted, $rule, $source] = $this->source($binding);
+        $queue = $this->queue($binding)->first(); $issues = []; $mismatches = [];
         $this->scoped('domains_tlds', $binding)->where('catalogue_converted', true)->orderBy('id')->chunkById(250,
-            static function ($rows) use (&$issues): void {
-                foreach ($rows as $row) {
-                    foreach (UpgradeEvidence::json($row->catalogue_issues) as $code) { $issues[$code] = ($issues[$code] ?? 0) + 1; }
+            function ($rows) use ($binding, $accepted, $rule, &$issues, &$mismatches): void {
+                $names = $rows->pluck('tld');
+                $legacyRows = $this->scoped(SellTableSchema::ROWS, $binding)->whereIn('tld', $names)->get()->keyBy('tld');
+                $allPrices = $this->scoped('domains_prices', $binding)->whereIn('tld', $names)->orderBy('id')->get()->groupBy('tld');
+                foreach ($rows as $tld) {
+                    $prices = $allPrices[$tld->tld] ?? collect();
+                    $evidence = UpgradeEvidence::prices($prices->where('catalogue_created', false)->all(), $legacyRows[$tld->tld] ?? null, $tld);
+                    $intent = UpgradeEvidence::intent($rule, $accepted, $legacyRows[$tld->tld] ?? null, $tld);
+                    $actual = [];
+                    foreach ($prices as $price) {
+                        if ($price->catalogue_observation !== null) {
+                            $key = $price->action.':'.$price->term.($price->currency === 'USD' ? '' : ':'.$price->currency);
+                            $actual[$key] = UpgradeEvidence::json($price->catalogue_observation);
+                        }
+                    }
+                    ksort($actual);
+                    $checks = ['intent' => UpgradeEvidence::json($tld->catalogue_intent) === json_decode(self::json($intent), true),
+                        'costs' => $actual === $evidence['costs'],
+                        'retained_retail' => UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2) === $evidence['retained']];
+                    foreach ($checks as $check => $matches) {
+                        if (!$matches) { $mismatches[$check] = ($mismatches[$check] ?? 0) + 1; }
+                    }
+                    foreach ($evidence['issues'] as $code) { $issues[$code] = ($issues[$code] ?? 0) + 1; }
                 }
             });
-        return [...UpgradeComparison::compare($before), 'complete' => (bool) ($queue?->offer_conversion_complete ?? false),
+        $defaults = new Intent($rule !== null ? $rule['mode'] !== 'only' : !$accepted,
+            $rule['years'] ?? 1, $rule['transfers'] ?? false, $rule['max_cost'] ?? null);
+        $storedDefaults = DB::table('domains_accounts')->where('server_id', $binding->serverId)->value('catalogue_defaults');
+        if (UpgradeEvidence::json($storedDefaults) !== json_decode(self::json($defaults), true)) { $mismatches['defaults'] = 1; }
+        $comparison = UpgradeComparison::compare($before);
+        return [...$comparison, 'compatible' => $comparison['compatible'] && $mismatches === [],
+            'staging_mismatches' => $mismatches, 'complete' => (bool) ($queue?->offer_conversion_complete ?? false),
             'source_unchanged' => $queue?->offer_conversion_source === $source, 'issues' => $issues,
             'converted' => $this->scoped('domains_tlds', $binding)->where('catalogue_converted', true)->count(),
             'activated' => false];

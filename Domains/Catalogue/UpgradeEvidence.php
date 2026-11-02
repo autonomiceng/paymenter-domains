@@ -14,7 +14,7 @@ final class UpgradeEvidence
         $hasList = $accepted !== null && $accepted !== [];
         $defaultSell = $rule !== null ? $rule['mode'] !== 'only' : !$hasList;
         $choice = $row?->choice;
-        $sell = match ($choice) { 'sell' => true, 'skip' => false, default => null };
+        $sell = match ($choice) { 'sell' => true, 'skip' => ($rule['mode'] ?? null) === 'all' ? null : false, default => null };
         $longest = $row?->longest === null ? null : (int) $row->longest;
         $transfers = $row?->transfer === null ? null : (bool) $row->transfer;
         // Acceptance supplies only missing overrides when there is no saved account default.

@@ -116,6 +116,12 @@ same(false, json_decode($orgRows['transfer:1']->catalogue_observation, true)['en
 same('19.95', UpgradeComparison::query('domains_tlds')->where('id', $org->id)->sole()->catalogue_retained_annual_retail, 'Missing current cost does not erase last published annual retail');
 same(1, $report['issues']['conflicting_price:register:1'], 'Comparison flags conflicting exact-term sources');
 same(null, DB::table('domains_tlds')->where([...$key, 'tld' => 'net'])->value('catalogue_facts'), 'Acceptance-only candidates carry no invented facts');
+$originalIntent = $converted->catalogue_intent;
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => '{}']);
+$corrupt = $converter->report($binding, $before);
+same(false, $corrupt['compatible'], 'Comparison detects incorrect staged intent even when original rows are unchanged');
+same(1, $corrupt['staging_mismatches']['intent'], 'Comparison names the staged intent mismatch');
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => $originalIntent]);
 $stagedBefore = DB::table('domains_tlds')->orderBy('id')->get()->toJson();
 same(['converted' => 0, 'complete' => true], $converter->batch($binding), 'Completed conversion is idempotent');
 same($stagedBefore, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Rerun does not advance revisions or dates');
@@ -138,20 +144,26 @@ same([false, true, 1, true], [$otherIntent['defaultSell'], $otherIntent['sell'],
 $nativeTables = DB::connection()->select("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'domains_%' AND name NOT LIKE 'sqlite_%'");
 config(['database.connections.offer_prefix' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => 'b2_', 'foreign_key_constraints' => false]]);
 DB::setDefaultConnection('offer_prefix'); Schema::swap(DB::connection()->getSchemaBuilder());
+$migrator->setConnection('offer_prefix');
 foreach ($nativeTables as $definition) {
     $sql = preg_replace('/^(CREATE TABLE )([\"`]?)([a-z_][a-z0-9_]*)([\"`]?)/i', '$1"b2_'.$definition->name.'"', $definition->sql, 1);
     DB::statement($sql);
 }
 (new Installation)->install();
 $freshKey = fixtureAccount(10, 'namesilo', 'synthetic-prefixed');
+Server::findOrFail(10)->settings()->create(['key' => SellRule::KEY, 'type' => 'array', 'encrypted' => false,
+    'value' => ['mode' => 'all', 'max_cost' => null, 'years' => 1, 'transfers' => false]]);
 $freshBinding = CatalogueAcceptances::binding(Account::where('server_id', 10)->sole());
 $rows = [];
 for ($i = 0; $i < 1007; $i++) { $rows[] = [...$freshKey, 'tld' => 'suffix'.str_pad((string) $i, 4, '0', STR_PAD_LEFT)]; }
 foreach (array_chunk($rows, 100) as $chunk) { DB::table(SellTableSchema::ROWS)->insert($chunk); }
+DB::table(SellTableSchema::ROWS)->where('tld', 'suffix0000')->update(['choice' => 'skip']);
 $freshBefore = UpgradeComparison::capture(); $convertedCount = 0;
 do { $part = $converter->batch($freshBinding, 250); $convertedCount += $part['converted']; } while (!$part['complete']);
 same(1007, $convertedCount, 'Bounded prefixed conversion reaches every offer beyond one thousand');
 same(1007, DB::table('domains_tlds')->count(), 'Discovered offers get one permanent candidate each');
+$allIntent = json_decode(DB::table('domains_tlds')->where('tld', 'suffix0000')->value('catalogue_intent'), true);
+same([true, null], [$allIntent['defaultSell'], $allIntent['sell']], 'Legacy all mode continues to ignore old skip rows');
 same(0, DB::table('domains_tlds')->where('enabled', true)->count(), 'Discovered candidates do not activate old sales');
 same(true, $converter->report($freshBinding, $freshBefore)['compatible'], 'Prefixed fresh install preserves original rows through conversion');
 same(['converted' => 0, 'complete' => true], $converter->batch($freshBinding), 'Large conversion rerun is idempotent');

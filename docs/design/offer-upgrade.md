@@ -18,7 +18,7 @@ including after completion; this is a one-time conversion, never continuing sync
 change requires a reviewed comparison/forward correction before B6, not clearing the marker blindly.
 
 - Account defaults and nullable SellRow choice/longest/transfer overrides become B1 `Intent` data.
-  Acceptance supplies missing choices only without saved defaults. Derived action/registry/renewal
+  Acceptance supplies missing choices only without saved defaults. Legacy `all` still ignores old skip rows. Derived action/registry/renewal
   flags do not become provider facts or explicit staff stops. Hidden endings stay governed by the
   existing hidden-ending policy.
 - Normalized observations live only in `domains_prices.catalogue_observation`. Exact price rows and
@@ -36,7 +36,8 @@ change requires a reviewed comparison/forward correction before B6, not clearing
 
 `UpgradeConversion::report(binding, before)` compares the original retained/native identity and row
 sets, including seller revisions, settings, mappings, services, invoices, payments, credits and frozen
-operation evidence. It reports completion, unchanged sources and issue counts; `activated` is always
+operation evidence. It also recomputes staged intent/costs/retained retail against legacy sources and reports mismatches.
+It reports completion, unchanged sources and issue counts; `activated` is always
 false. Added staging candidates are explicitly excluded from the original-row digests. Any original
 row difference blocks B6. Review unknown/current-offer availability separately; a compatible report
 is not an activation grant or proof of installed MySQL concurrency/provider behavior. Retain the full
