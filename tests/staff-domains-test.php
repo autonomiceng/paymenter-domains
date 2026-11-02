@@ -276,7 +276,8 @@ $excluded=[
     'DomainObservation.php'=>['records_disabled'], // Manual result rendered by SyncDomainRecords; scheduled work passes readRecords:false.
     'AccountBindings.php'=>['matched','server_unavailable','server_disabled','not_configured','site_invalid','site_unbound','site_mismatch','configuration_unavailable'],
     'RegistrarBalances.php'=>['rate_limited','configuration_unavailable','read_failed','test_call_refused'], // Balance facts.
-    'AdoptionReader.php'=>['identity_unconfirmed','expiry_disagrees','read_failed'], // Adoption RefusalCode messages.
+    'AdoptionReader.php'=>['identity_unconfirmed','expiry_disagrees','read_failed','auto_renew_on','auto_renew_unknown',
+        'expired','expiry_unconfirmed','state_unconfirmed'], // Adoption Review::LABELS presenter.
     'PublicSuffixList.php'=>['not_modified','identical','updated','internal_error','rate_limited','stored_rules_rejected'], // PslFacts.
     'PslRebaseline.php'=>['stored_rules_rejected','rules_lost'],
     'WatchMaintenance.php'=>['waiting','dispatch_overdue','checks_unsuccessful','current'], // Health summary().

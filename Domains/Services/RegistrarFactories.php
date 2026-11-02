@@ -46,7 +46,9 @@ final class RegistrarFactories
                 $accepted = CatalogueAcceptances::load($binding);
                 return new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), array_keys($accepted->endings));
             }, static fn(AccountBinding $binding, #[\SensitiveParameter] array $credentials): Enom\Driver =>
-                new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), []));
+                new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token']), []),
+                adoptionReaderFactory: static fn(AccountBinding $binding, #[\SensitiveParameter] array $credentials, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock): Enom\EnomAdoptionReader =>
+                    new Enom\EnomAdoptionReader($binding, $credentials['uid'], $credentials['token'], new Enom\Api\CurlTransport, $clock, Runtime::limiter()));
         }
         if ($namesilo) {
             $registry->register('namesilo', ['api_key'], $namesilo, static function (AccountBinding $binding, #[\SensitiveParameter] array $credentials): NameSilo\Driver {
