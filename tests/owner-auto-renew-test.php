@@ -47,7 +47,10 @@ $card->delete();same(false,$owners->present($d->fresh())->autoPay,'A removed car
 $d->service->update(['billing_agreement_id'=>null]);$card->forceDelete();App\Models\Gateway::whereKey($gateway->id)->delete();
 same([],$owners->present($d->fresh(),false)->autoRenew,'Read-only presentation hides switch');
 $save($d,true);same(0,$audit(),'Legacy On is idempotent without a write');
-$html=$page($d);foreach(['form="form-auto-renew" class="domains-a domains-linkbtn">Turn off</button>','Turn off renewal invoices?','>Turn off renewal invoices<','This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$d->domain.'.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
+$html=$page($d);foreach(['form="form-auto-renew" class="domains-a domains-linkbtn">Turn off</button>','Turn off renewal invoices?','>Turn off renewal invoices<',$d->domain.' expires on Oct 18, 2027 unless you renew it. This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$d->domain.'.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
+// Without a known expiry date the warning still says the domain expires unless renewed.
+$undated=view('domains::partials.owner-auto-renew',['keys'=>['auto-renew'=>'key'],'domain'=>(object)['name'=>$d->domain,'expiry'=>null,'autoRenew'=>['url'=>'/auto-renew','enabled'=>true],'actions'=>['show'=>'/domain']]])->render();
+expect(str_contains($undated,$d->domain.' expires unless you renew it. This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$d->domain.'.'),'Undated switch warns the domain expires');
 $stale=$req($d,['enabled'=>'0','confirmed'=>'1']);$controller->save($stale,$d->id);
 try{$controller->save($stale,$d->id);expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Consumed key rejected');}
 $save($d,false);same(1,$audit(),'Repeated Off adds no audit');
