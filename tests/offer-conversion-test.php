@@ -8,7 +8,7 @@ require __DIR__.'/Support/accounts.php';
 
 use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Server, Service};
 use Illuminate\Database\Migrations\Migrator;
-use Illuminate\Support\Facades\{Artisan, DB, Schema};
+use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{UpgradeComparison, UpgradeConversion};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation, OfferSchema, SellRule, SellTableSchema};
@@ -133,9 +133,16 @@ same(true, $converter->batch($other)['complete'], 'Annual-only registrar uses th
 $otherIntent = json_decode(DB::table('domains_tlds')->where('id', $namesilo->id)->value('catalogue_intent'), true);
 same([false, true, 1, true], [$otherIntent['defaultSell'], $otherIntent['sell'], $otherIntent['longest'], $otherIntent['transfers']], 'Legacy acceptance supplies missing intent without acting as facts');
 // Separate fresh, prefixed database; all native/extension queries must respect its prefix.
-config(['database.connections.offer_prefix' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => 'b2_', 'foreign_key_constraints' => true]]);
+// Native migration history contains unprefixed data SQL, so reuse its clean table definitions;
+// test the Domains installer with a prefix without pretending to qualify native migration SQL.
+$nativeTables = DB::connection()->select("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'domains_%' AND name NOT LIKE 'sqlite_%'");
+config(['database.connections.offer_prefix' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => 'b2_', 'foreign_key_constraints' => false]]);
 DB::setDefaultConnection('offer_prefix'); Schema::swap(DB::connection()->getSchemaBuilder());
-Artisan::call('migrate', ['--force' => true]); (new Installation)->install();
+foreach ($nativeTables as $definition) {
+    $sql = preg_replace('/^(CREATE TABLE )([\"`]?)([a-z_][a-z0-9_]*)([\"`]?)/i', '$1"b2_'.$definition->name.'"', $definition->sql, 1);
+    DB::statement($sql);
+}
+(new Installation)->install();
 $freshKey = fixtureAccount(10, 'namesilo', 'synthetic-prefixed');
 $freshBinding = CatalogueAcceptances::binding(Account::where('server_id', 10)->sole());
 $rows = [];

@@ -12,7 +12,7 @@ final class UpgradeComparison
 {
     public const TABLES = ['domains_accounts', 'domains_tlds', 'domains_prices', 'domains_sales_policies',
         'domains_sell_rows', 'domains_sell_fills', 'domains_observation_queues', 'domains_observation_work',
-        'domains_domains', 'domains_operations', 'products', 'plans', 'prices', 'settings',
+        'domains_domains', 'domains_operations', 'extensions', 'products', 'plans', 'prices', 'settings',
         'services', 'orders', 'invoices', 'invoice_items', 'invoice_transactions', 'credits',
         'jobs', 'failed_jobs', 'users', 'carts', 'cart_items'];
     private const MONEY = [
