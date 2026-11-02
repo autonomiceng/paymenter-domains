@@ -3,8 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
 use Filament\Resources\Pages\ListRecords;
-use Filament\Actions\Action;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Filament\Schemas\Components\{Callout,EmbeddedTable,RenderHook};
 use Filament\Schemas\Schema;
@@ -23,8 +22,7 @@ class ListTlds extends ListRecords
         foreach(Account::query()->whereIn('server_id',\App\Models\Server::where('extension','Domains')->where('type','server')->select('id'))->orderBy('server_id')->get() as $a){
             if(SettingsActions::syncOffered($a)){$servers[]=(int)$a->server_id;}
         }
-        return [...array_map(fn(int $s)=>SettingsActions::syncAll($s,count($servers)>1),$servers),
-            Action::make('price_list')->label('Price list')->url(TldResource::getUrl('price-list'))->visible(fn()=>Staff::can(Staff::COSTS))];
+        return array_map(fn(int $s)=>SettingsActions::syncAll($s,count($servers)>1),$servers);
     }
     public function content(Schema $schema): Schema
     {

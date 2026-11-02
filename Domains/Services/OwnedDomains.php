@@ -136,19 +136,25 @@ final readonly class OwnedDomains
         $progress=$d->provenance === 'adopted' ? [['label' => 'Imported', 'state' => 'Completed']] : [];
         $entries=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('updated_at')->orderByDesc('id')->limit(100)->get();
         foreach ($entries as $entry) {
-            if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
-            if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
-            $label=self::CHANGES[$entry->action]??null;
-            if (!$label) { continue; }
-            // Request status labels; a result counts only once the registrar's readback confirms it.
-            $resolved=ManagementEvidence::resolved($entry,$d);
-            $state=match (true) {
-                in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
-                $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
-                default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
-            };
-            $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
-                'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
+            try {
+                if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
+                if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
+                $label=self::CHANGES[$entry->action]??null;
+                if (!$label) { continue; }
+                // Request status labels; a result counts only once the registrar's readback confirms it.
+                $resolved=ManagementEvidence::resolved($entry,$d);
+                $state=match (true) {
+                    in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
+                    $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
+                    default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
+                };
+                $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
+                    'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
+            } catch (\Illuminate\Contracts\Encryption\DecryptException) {
+                if ($label=self::CHANGES[$entry->action]??null) {
+                    $progress[]=['label'=>$label,'state'=>'Unreadable','date'=>$entry->updated_at?->toIso8601String(),'note'=>ManagementProgress::UNREADABLE];
+                }
+            }
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {
             $label=['contacts'=>'Contacts','nameservers'=>'Nameservers','privacy'=>'WHOIS privacy','auto_renew'=>'Auto-renew'][$row['section']??'']??null;
@@ -171,15 +177,18 @@ final readonly class OwnedDomains
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }
-                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact':'owner'; }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
-            $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[];
+            try {
+                $sections=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationProjection::sections($d):[];
+                $records=$sections?OwnerRecords::forDomain($d,$sections):[];
+            } catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
             $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d);
             foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
-                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d):(ObservationProjection::sections($d)[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; $management[$kind]['warnings']=GlueDrift::warnings($d); } }
+                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d,$sections):($sections[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; $management[$kind]['warnings']=GlueDrift::warnings($d,known:$sections['known_glue']??[]); } }
                 if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
             }
         }
@@ -192,13 +201,15 @@ final readonly class OwnedDomains
                 'privacy'=>['privacy_enable','privacy_disable',...(!$section['free']&&$section['price']?['privacy_purchase','privacy_renew']:[])],default=>[$key] };
             foreach ($intents as $form) { $section['actions'][$form]=route('domains.domains.manage',[$d->id,$form]); }
         } unset($section);
+        $progressBySetting=$forms?ManagementProgress::for($d):[];
         $unavailable=$forms && $d->status==='active' && $service?->status==='active';
         if ($management && $forms) {
             $all=array_merge(...array_values(array_map(fn($section)=>array_keys($section['actions']),$management)));
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all)??[]; } catch (\Throwable) { $allowed=[]; }
-            foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions']) { unset($management[$key]); } } unset($section);
-            $unavailable=$management===[];
+            foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
+            $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
+        foreach ($management as $key=>&$section) { $section['progress']=$progressBySetting[ManagementProgress::setting($key)]??null; } unset($section);
         // Only the exact retained issued renewal invoice supplies a due date.
         $renewalDue=null; $earlyRenewal=false;
         $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();

@@ -61,7 +61,7 @@ same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every f
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
 same(0,$dom->query('//input[@type="checkbox"]')->length,'Owner management forms have no checkboxes');
 same(1,$dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__v")][contains(.,"'.$registrant['email_address'].'")]')->length,'Owner row shows the registrant email');
-if(isset($dto->management['auth_code_email'])){same($free?'We email it to the admin contact':'We email it to the owner',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]')->item(0)->textContent)),'Auth code row names who receives the code');}
+if(isset($dto->management['auth_code_email'])){same($free?'We email it to the admin contact email':'We email it to the registrant email',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]')->item(0)->textContent)),'Auth code row names who receives the code');}
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
 foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
@@ -115,9 +115,9 @@ expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]')->len
 expect($dom->query('//input[@name="contact[phone]"][@aria-invalid="true"]/ancestor::dialog[@open]')->length>0,'Invalid contact forms open without script');
 expect(str_contains($html,'Enter a phone number with its country code, such as +1 206 555 0100.'),'Contact error explains the expected format');
 $r=$post('auth_code_email');$controller->manage($r,$d->id,'auth_code_email');
-$dto=$owners->present($d->fresh());expect(!isset($dto->management['auth_code_email']),'Email cooldown removes the unavailable action');
+$dto=$owners->present($d->fresh());same([],$dto->management['auth_code_email']['actions'],'Email cooldown removes the action while retaining its stored status');
 $peer=$d->operations()->where('action','auth_code_email')->sole();Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$peer->id)->update(['state'=>'uncertain']);
-$dto=$owners->present($d->fresh());same([],$dto->management,'An unresolved peer removes management forms');expect($dto->changesUnavailable,'Peer block has a neutral notice');
+$dto=$owners->present($d->fresh());expect($dto->management['auth_code_email']['progress']['pending'],'An unresolved peer retains its pending status');same([],$dto->management['auth_code_email']['actions'],'Pending email has no repeat action');
 $before=Operation::count();
 Illuminate\Support\Facades\DB::table('services')->where('id',$d->service_id)->update(['user_id'=>commerceUser()->id]);$r=$post('lock',['locked'=>'0']);
 try{$controller->manage($r,$d->id,'lock');expect(false,'Native ownership drift refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}

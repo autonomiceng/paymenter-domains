@@ -54,7 +54,7 @@ ordinary nor late renewal admits them. There is no restore writer.
 
 ## TLD prices
 
-The TLD page **More** menu holds **Edit prices** and **Edit terms**. **Edit prices**
+The TLD page **More** menu holds **Edit prices** and **Open in What you sell**, where terms are bulk edited. **Edit prices**
 offers the account default or prices for that TLD only, shows the formula in words
 and previews register, renew and transfer for each sold term (cost, current price,
 price after saving, below-cost rows flagged). Saving publishes at once through the
@@ -70,7 +70,7 @@ default in **Edit prices** runs the `remove_override` review; the `publish` revi
 stays server-side with no button. Because saving publishes, both dialogs also need the
 publish permission.
 
-## Card fee and Price list
+## Card fee and saved prices
 
 **Card fee** sits beside default pricing on each account. It starts at 2.9% + $0.30
 per payment. Changes need the card-fee and publish permissions and keep an audit row.
@@ -82,11 +82,13 @@ plus the markup, then rounds up as selected. It rounds each year's price before
 multiplying by the years. Impossible percentages and overflow refuse the change.
 Below-cost sales rules still compare with registrar cost alone.
 
-**TLDs & pricing → Price list** requires the costs permission, including downloads.
-It shows saved exact-term prices, never a recalculated or invented multi-year price,
-with registrar costs and estimated profit (Est. profit) after the account's current
-card fee. The fixed fee counts once per chosen term. Each TLD shows Default or Custom
-pricing. Filters and CSV use the same matrix. Loss after fees is a separate flag from
+**What you sell** shows costs, the years choice, the pricing panel and the CSV only with
+the costs permission; without it staff get the page without them. Past 1-year Register
+it shows saved exact-term prices, never a recalculated or invented multi-year price,
+with registrar costs and estimated profit after the account's current card fee. Gray
+1-year Register prices are estimates and stay out of the CSV. The fixed fee counts once
+per chosen term. Each TLD shows Default or Custom pricing in the Pricing column. The Show
+filter and CSV use the same matrix. All accounts is view only. `/price-list` redirects here. Loss after fees is a separate flag from
 below registrar cost. The explanation names the current rule;
 a missed publication can leave a saved price on an earlier rule. Issued invoices never
 change. These are estimates: international cards, refunds and shared payments differ.

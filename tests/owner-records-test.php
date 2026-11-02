@@ -31,6 +31,11 @@ foreach($cases as$action=>$payload){
     $controller->manage($r,$d->id,$action);same($before+1,Operation::count(),$action.' creates one durable operation');same($io,count($state->calls),'POST never dispatches');
     $op=$d->operations()->orderByDesc('id')->firstOrFail();same('queued',$op->state,'Queued is not sent');
     try{$controller->manage($stale,$d->id,$action);expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Single-use action key');}
+    if(str_starts_with($action,'glue_')){
+        $pending=storefrontDom($page());$status=$pending->query('//li[@id="glue"]//*[@data-management-pending="glue"]')->item(0);
+        same('Saving…',trim((string)$status?->textContent),'Queued glue shows its status on the owner row');
+        same(0,$pending->query('//li[@id="glue"]//form')->length,'Pending glue has no second change control');
+    }
     same('succeeded',$management->run($op->id,$driver)->state,$action.' uses existing grant and typed readback');
     if($action==='dns'){same(' exact + % é雪  text ',$op->payload['records'][0]['address'],'TXT bytes preserved');expect(str_contains($page(),' exact + % é雪  text '),'Confirmed records reach real Blade');}
     if($action==='ds_add'){same(1,count($owners->present($d->fresh())->management['ds']['records']),'Single DS tuple renders');}
@@ -90,5 +95,7 @@ same(302,$controller->manage($r,$d->id,'srv')->getStatusCode(),'Pure-add stale p
 $op=$d->operations()->orderByDesc('id')->firstOrFail();expect(!isset($op->payload['records'][0]['host_id']),'Pure add acquires no provider identity');
 $io=count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts'));same('held',$management->run($op->id,$driver)->state,'Existing dispatch preflight holds a stale pure add');
 same($io,count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts')),'Stale pure add never writes');
-$server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());foreach(['dns','srv','ds']as$kind){expect(!isset($dto->management[$kind]),'Tools off removes each action');}expect(isset($dto->management['glue']),'Glue follows its own engine authority');
+$server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());
+foreach(['dns','srv','ds']as$kind){same([],$dto->management[$kind]['actions']??[],'Tools off removes each action');}
+same('Saved.',$dto->management['ds']['progress']['text']??null,'DNSSEC keeps its completed status when tools are off');expect(isset($dto->management['glue']),'Glue follows its own engine authority');
 $nativeSuccessful=true;echo "Native owner DNS/SRV/DS/glue grants, replay, exact TXT, current preimage, safe real Blade and maximum records passed.\n";

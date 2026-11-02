@@ -193,3 +193,28 @@ The 31/39 shared per-account exchange limiter must apply those limits to every w
 including multiple reads/writes within one management operation and registration/transfer flows.
 Gate 39 and any future NameSilo glue slice must retain an explicit IPv6-input rejection test
 before write admission, even if the glue capability is later enabled for IPv4.
+
+## Immediate controls
+
+Nameservers, transfer lock, contacts, DNS/SRV and auth-code email save one durable operation,
+then enter the interactive engine after the response, after commit. This path has our 75-second
+execution budget and needs no permanent worker. The existing minute scheduler/worker remains
+recovery if the response process dies or cannot start. Claims and send seals are unchanged;
+a sealed unclear reply can only be read back. Privacy keeps its existing payment and queue path.
+
+Under the domain lock, new nonces for the same unfinished setting return its operation. A new
+choice retires an older definitely-unsent, unsealed request; claimed or sealed work finishes
+first. DNS/SRV share a setting, as do contact profile creation and contact association. Once a
+request has definitely failed, an explicit retry may create a new operation.
+
+Both pages show stored progress on the control. Staff Livewire and the owner-only read endpoint
+poll every two seconds, then every ten seconds after thirty seconds. Polls never call a provider.
+Completion restores controls and reads confirmed facts; Saved does not mean DNS propagation.
+NameSilo retains profile approval followed by the separate association step.
+
+Enom's accepted deployment protocol now includes SynchAuthInfo. Existing saved management
+acceptance deliberately stops matching: review and save management acceptance for the expanded
+command set before enabling these controls on that deployment. Live activation gates remain.
+Email goes to Enom's registrant email, or NameSilo's administrative contact under its existing
+API contract. The ten-minute cooldown is our rule. Accepted means accepted for sending, never
+proof of delivery; no plaintext auth code is returned, displayed or logged.

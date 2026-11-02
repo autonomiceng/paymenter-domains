@@ -85,7 +85,8 @@ final class DomainFacts
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
-            $sections=ObservationProjection::sections($d); $records=OwnerRecords::forDomain($d,$sections);
+            try { $sections=ObservationProjection::sections($d); $records=OwnerRecords::forDomain($d,$sections); }
+            catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $count=isset($records['dns'])?count($records['dns']):null;
                 $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??'Use Sync now to read DNS records.'):implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
@@ -207,7 +208,7 @@ final class DomainFacts
                 'action'=>self::invoiceAction($invoice)];
         }
         if (RenewalReplacements::activity($d)) {
-            $invoice=$d->operations()->get()->first(fn(Operation $op)=>array_key_exists('renewal_replacement',$op->policy??[]))?->invoice_id;
+            $invoice=$d->operations()->where('action','renew')->get()->first(fn(Operation $op)=>array_key_exists('renewal_replacement',$op->policy??[]))?->invoice_id;
             return ['title'=>'Payment received after credit. Check the invoice.','tone'=>'warning','action'=>self::invoiceAction($invoice)];
         }
         if ($d->provenance==='adopted'&&($d->observation['adoption_review']['near_due']??false)===true&&!RenewalStop::stopped(RenewalStop::read($d))) {

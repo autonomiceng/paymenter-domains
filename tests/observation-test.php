@@ -64,9 +64,12 @@ same('readback_confirmed_awaiting_review',$d->fresh()->observation['corrections'
 same($op->policy['management']['correction_link'],$op->fresh()->attempt['management_reads'][0]['correction_link'],'Separate append-only progress links original section');
 same($before,$original->fresh()->getAttributes(),'Original corrections retained byte-for-byte');
 $policy=$op->fresh()->policy;$policy['management']['correction_link']['section']='contacts';commerceReject(fn()=>$op->fresh()->update(['policy'=>$policy]));
-// Same-clock requests created A/B but executed B/A project the final physical readback.
-Illuminate\Support\Facades\Cache::flush();$a=$submit($d,$driver,'nameservers',['nameservers'=>['ns5.example.com','ns6.example.com']]);
+// Same-clock legacy requests created A/B but executed B/A project the final physical readback.
+Illuminate\Support\Facades\Cache::flush();$a=$submit($d,$driver,'nameservers',['nameservers'=>['ns5.example.com','ns6.example.com']]);$legacy=$a->fresh()->getAttributes();
 $b=$submit($d,$driver,'nameservers',['nameservers'=>['ns7.example.com','ns8.example.com']]);
+same('management_retired',$a->fresh()->safe_code,'A new choice retires the earlier unsent request');
+// Retained work from before per-setting retirement can still contain both queued choices.
+DB::table('domains_operations')->where('id',$a->id)->update($legacy);
 same('succeeded',$management->run($b->id,$driver)->state,'Later request executes first');Illuminate\Support\Facades\Cache::flush();same('succeeded',$management->run($a->id,$driver)->state,'Earlier request executes last');
 $observer->run($d->id);same($a->operation_key,$d->fresh()->observation['sections']['nameservers']['operation_key'],'Projection follows durable readback sequence, not creation ID');
 // A real management preparation interleaving cannot be held by a background projection save.
