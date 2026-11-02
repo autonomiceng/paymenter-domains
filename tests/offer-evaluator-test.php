@@ -48,6 +48,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $unavailable($make(['hidden' => true]), 'staff_stopped');
     $unavailable($make(['accountReady' => false]), 'account_unavailable');
     $unavailable($make(['intent' => new Intent(maxAnnualCost: '10.99', sell: true)]), 'cost_limit');
+    $unavailable($make(['intent' => new Intent(maxAnnualCost: '10.00', stops: ['renew'])]), 'renewal_stopped');
     same(true, $evaluator->evaluate($make(['intent' => new Intent(defaultSell: false, sell: true)]), $query, Context::Public, $now)->available,
         $registrar.': explicit sell overrides the account default');
     $unavailable($make(['facts' => null]), 'unknown_facts');

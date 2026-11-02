@@ -22,7 +22,9 @@ is part of the new contract. A snapshot may have no costs yet; its empty feed de
 only authorized staff gets cost and specific reasons. Unknown/stale facts, unsupported registry/DNS/renewal
 families, missing/disabled/stale costs, staff stops, wrong sellers, pending publication and below-cost
 acquisition stay unavailable. The cost ceiling compares evidenced intended terms and annual renewal with
-an annual limit using exact integers; explicit Sell does not bypass it. Renewal retail may be below cost.
+an annual limit using exact integers; required annual renewal always counts, even if stopped. A renewal stop
+also rejects registration/transfer with `renewal_stopped`. Explicit Sell does not bypass the ceiling.
+Renewal retail may be below cost; holder-retail behavior is unchanged.
 
 `Revision` carries offer/defaults/selection versions. Offer changes include costs, facts and overrides;
 default changes include pricing/card fees. Publication must match all three versions. Locked queries must

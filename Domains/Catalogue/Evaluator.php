@@ -39,6 +39,7 @@ final class Evaluator
         $intent = $offer->intent; $action = $query->action; $term = $query->term;
         if (!$offer->accountReady) { return 'account_unavailable'; }
         if ($offer->hidden || !($intent->sell ?? $intent->defaultSell) || in_array($action, $intent->stops, true)) { return 'staff_stopped'; }
+        if ($action !== 'renew' && in_array('renew', $intent->stops, true)) { return 'renewal_stopped'; }
         if ($action === 'register' && $term > ($intent->longest ?? $intent->defaultLongest)
             || $action === 'transfer' && !($intent->transfers ?? $intent->defaultTransfers)) { return 'staff_term_stopped'; }
         if ($offer->seller === null || !$offer->feed->binding()->matches($offer->seller)
@@ -65,7 +66,7 @@ final class Evaluator
                 $offered = in_array($cost->term, $facts->terms[$cost->action] ?? [], true)
                     && ($cost->action !== 'register' || $cost->term <= ($intent->longest ?? $intent->defaultLongest))
                     && ($cost->action !== 'transfer' || ($intent->transfers ?? $intent->defaultTransfers))
-                    && !in_array($cost->action, $intent->stops, true);
+                    && ($cost->action === 'renew' || !in_array($cost->action, $intent->stops, true));
                 if ($cost->enabled && $offered && PricingRule::units($cost->total) > PricingRule::units($intent->maxAnnualCost) * $cost->term) { return 'cost_limit'; }
             }
         }
