@@ -7,10 +7,11 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * so an unpaid request waits rather than asking staff to act. */
 final class RequestStatus
 {
-    /** key => [label, tone] */
+    /** key => [label, tone]. A word a domain also shows is DomainStatus's word: one map for the domain head and its requests.
+     * Only In progress and Completed belong to requests alone. */
     public const SET = [
-        'waiting_payment' => ['Awaiting payment', 'info'], 'action_required' => ['Action required', 'warning'], 'in_progress' => ['In progress', 'info'], 'on_hold' => ['On hold', 'warning'], 'under_review' => ['Under review', 'warning'],
-        'completed' => ['Completed', 'success'], 'failed' => ['Failed', 'danger'], 'cancelled' => ['Cancelled', 'gray'],
+        'awaiting_payment' => DomainStatus::SET['awaiting_payment'], 'action_required' => DomainStatus::SET['action_required'], 'in_progress' => ['In progress', 'info'], 'under_review' => DomainStatus::SET['under_review'],
+        'completed' => ['Completed', 'success'], 'failed' => DomainStatus::SET['failed'], 'cancelled' => DomainStatus::SET['cancelled'],
     ];
     /** The registrar said no. Customers and staff read this same sentence, each with their own next step. */
     public const REFUSED = 'The registrar did not take this change.';
@@ -19,12 +20,13 @@ final class RequestStatus
     /** ManagementEvidence::outcome reads these. Customers and staff read the same sentence. */
     public const UNSENT = 'Not sent. Nothing changed at the registrar.';
     public const NOT_MADE = 'We couldn’t make this change.';
-    /** Operation state => [status key, default reason line] */
+    /** Operation state => [status key, default reason line]. A state a domain also has takes its key from DomainStatus::STATES,
+     * so a held request reads Under review, as its domain does, for every request kind. */
     public const STATES = [
-        'awaiting_payment' => ['waiting_payment', 'Customer has not paid the invoice. Not sent yet.'], 'awaiting_code' => ['action_required', 'Auth code needed'],
+        'awaiting_payment' => [DomainStatus::STATES['awaiting_payment'][0], 'Customer has not paid the invoice. Not sent yet.'], 'awaiting_code' => [DomainStatus::STATES['awaiting_code'][0], 'Auth code needed'],
         'queued' => ['in_progress', null], 'running' => ['in_progress', null], 'pending' => ['in_progress', null],
-        'held' => ['on_hold', 'Not sent'], 'uncertain' => ['under_review', self::UNCONFIRMED],
-        'succeeded' => ['completed', null], 'rejected' => ['failed', null], 'disposed' => ['cancelled', null], 'cancelled' => ['cancelled', null],
+        'held' => [DomainStatus::STATES['held'][0], 'Not sent'], 'uncertain' => [DomainStatus::STATES['uncertain'][0], self::UNCONFIRMED],
+        'succeeded' => ['completed', null], 'rejected' => ['failed', null], 'disposed' => ['cancelled', null], 'cancelled' => [DomainStatus::STATES['cancelled'][0], null],
     ];
     /** A request in any other state is still open. */
     public const FINISHED = ['succeeded', 'rejected', 'disposed', 'cancelled'];

@@ -143,8 +143,8 @@ final class RequestFacts
         try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
     }
-    /** A request's status, in the customer's words. Orders off stop all queued work: a queued request still reads In progress, as the
-     * customer sees it, and staff read the hold in its reason, in amber. With its domain (passed, or loaded with the row) a change reads as
+    /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request that waits on them is held for
+     * staff: it reads as held (Under review), the same word as its domain, with the hold in its reason. With its domain (passed, or loaded with the row) a change reads as
      * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
     {
@@ -152,7 +152,7 @@ final class RequestFacts
         $status=[...Labels::requestStatus($op),'reason'=>self::reason($op,$ordersOff)];
         try { $key=$d?ManagementProgress::statusKey($op,$d):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
-        if ($op->state==='queued'&&$ordersOff&&str_ends_with((string)$status['reason'],self::ORDERS_OFF)) { $status['tone']=RequestStatus::SET['on_hold'][1]; }
+        if ($op->state==='queued'&&$ordersOff&&str_ends_with((string)$status['reason'],self::ORDERS_OFF)) { [$status['label'],$status['tone']]=RequestStatus::SET[RequestStatus::STATES['held'][0]]; }
         return $status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */

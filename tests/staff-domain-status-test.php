@@ -289,14 +289,14 @@ $ended=$row('cancelled','register','disposed'); $ended->forceFill(['renewal_poli
 $live=$row('active','transfer','succeeded'); $live->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
 expect(!str_contains((string)DomainFacts::for($ended->fresh())['Registrar']['sub'],'orders paused'),'Cancelled domain has no paused orders');
 expect(str_contains((string)DomainFacts::for($live->fresh())['Registrar']['sub'],'orders paused'),'Live domain keeps the pause');
-// Orders off: the list and the heading read the customer's word, then the request's reason. The request keeps its own word.
+// Orders off: the list and the heading read the customer's word, then the request's reason. The request reads the same word.
 $offTransfer=$row('transfer_pending','transfer','held','processing'); $offChange=$row('something_new','nameservers','queued');
 Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>false]);
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
 $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()->getTableRecords()->keyBy('id');
 foreach ([$offTransfer,$offChange] as $d) {
     $op=$d->operations()->sole(); $line=RequestFacts::status($op); $status=DomainFacts::status($d->fresh());
-    same($op->state==='held'?'On hold':'In progress',$line['label'],'The request reads as the customer sees it');
+    same('Under review',$line['label'],'The request reads its domain\'s word');
     $read=['Under review',rtrim((string)$line['reason'],'.').'. Check request #'.$op->id.'.'];
     same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading keeps the customer word, then the request');
     same($read,[$columns['status']->record($records[$d->id])->getState(),$columns['note']->record($records[$d->id])->getState()],'The list reads as its request');
