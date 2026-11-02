@@ -12,6 +12,6 @@ class ListConfiguration extends ListRecords
     public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('DNS templates'); }
     public function getTitle(): string{return 'DNS templates';}
     public function getBreadcrumbs(): array{return [];}
-    public function getSubheading(): ?string{return null;}
+    public function getSubheading(): ?string{return 'A DNS template sets the nameservers for new domains and is what monitoring checks them against.';}
     protected function getHeaderActions(): array{return [WatchActions::configuration(null)];}
 }
