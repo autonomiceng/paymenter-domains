@@ -102,7 +102,10 @@ final class WatchFacts
         self::gate();
         return WatchName::where('ns_profile_id',$id)->whereIn('state',['active','paused'])->count()
             + \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configured(
-                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(time()),'domains_domains.id','domains_domains.user_id',profile:$id)->count();
+                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(time()),'domains_domains.id','domains_domains.user_id',profile:$id)
+                ->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as predecessor')
+                    ->whereColumn('predecessor.user_id','domains_domains.user_id')->whereColumn('predecessor.canonical_name','domains_domains.reservation_name')
+                    ->where('predecessor.ns_profile_id',$id)->whereIn('predecessor.state',['active','paused']))->count();
     }
     public static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':Missing::LABEL;}
 }
