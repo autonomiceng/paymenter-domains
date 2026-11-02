@@ -24,11 +24,15 @@ final class ApiCallLimitAction
         return Action::make('call_limits_'.$server)->label('Edit')->color('gray')
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('call_limits'))&&$account->registrar_key==='enom')
             ->modalHeading('Edit our call limits')->modalSubmitActionLabel('Save')
+            ->modalFooterActions(fn(Action $action)=>[$action->getModalCancelAction(),$action->getModalSubmitAction()])
             ->modalDescription('These limits are shared by every connection using this login. Lowering a limit below current usage stops further calls until usage falls below it. Calls already sent keep their results.')
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'call_limits',$stamp)),
+                // Filament's numeric state cast returns floats, even after integer validation.
                 TextInput::make('day')->label('Daily call limit')->default($limits['day']??null)->required()->integer()->minValue(1)->maxValue(ApiCallLimits::MAX)
+                    ->dehydrateStateUsing(static fn($state):int=>(int)$state)
                     ->helperText('Our daily limit on registrar calls. It stops a runaway job. '.($test?'Counts the last 24 hours.':'Resets at midnight UTC.')),
-                TextInput::make('minute')->label('Calls per minute')->default($limits['minute']??null)->visible($test)->required($test)->integer()->minValue(1)->maxValue(ApiCallLimits::MAX),
+                TextInput::make('minute')->label('Calls per minute')->default($limits['minute']??null)->visible($test)->required($test)->integer()->minValue(1)->maxValue(ApiCallLimits::MAX)
+                    ->dehydrateStateUsing(static fn($state):int=>(int)$state),
                 Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(2)->rules(['regex:'.StaffReason::SINGLE_LINE])->helperText('Use one line. Do not include credentials.')])
             ->action(static function(array $data)use($server):void {
                 try{
