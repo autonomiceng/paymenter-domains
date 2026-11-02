@@ -70,9 +70,12 @@ ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active
     expiry:new DateEvidence($active->provider_expires_at->format('Y-m-d'),ExpiryPrecision::Date,'synthetic_read'),
     providerAutoRenew:false,privacy:false,locked:true,active:true),TransferStatus::Unknown,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
 $dnsMissing[]=[$value($active,'DNS records'),$sub($active,'DNS records')];
-same([[null,'Use Sync now to read DNS records.'],[null,'Use Sync now to read DNS records.']],$dnsMissing,'Unread on-demand DNS names Sync now before and after a good core sync');
+same([['Not read yet',null],['Not read yet',null]],$dnsMissing,'Unread on-demand DNS is a plain state, not Missing');
+$unread=DomainFacts::for($active->fresh())['DNS records'];same(null,$unread['tone'],'Unread DNS has no tone');
+same('success',DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),['DNS records'=>$unread],false)['tone'],'A healthy domain stays green with its DNS unread');
+Auth::setUser(staffUser([Staff::VIEW,'admin.domains.manage']));same(['Not read yet','Use Sync now to read them.'],[$value($active,'DNS records'),$sub($active,'DNS records')],'Staff who can sync are told how');Auth::setUser($viewer);
 same([null,'Registrar did not return it. Check the domain at the registrar.'],[$value($active,'Nameservers'),$sub($active,'Nameservers')],'Unread core facts keep their own recovery guidance');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Use Sync now to read DNS records.');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Not read yet');
 // Persistent record limits name the condition and a next step that changes it.
 foreach ([
     'child_host_limit'=>"Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",
