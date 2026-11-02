@@ -146,7 +146,7 @@ final class UpgradeConversion
         foreach (['domains_tlds', SellTableSchema::ROWS, 'domains_prices'] as $table) {
             $column = DB::connection()->getQueryGrammar()->wrap('tld');
             $binary = DB::connection()->getDriverName() === 'sqlite' ? $column.' COLLATE BINARY' : 'CAST('.$column.' AS BINARY)';
-            foreach (DB::table($table)->where(self::key($binding))->select('tld')->whereRaw($binary.' > ?', [$cursor])
+            foreach (UpgradeComparison::retained($table)->where(self::key($binding))->select('tld')->whereRaw($binary.' > ?', [$cursor])
                 ->orderByRaw($binary)->distinct()->limit($limit)->pluck('tld') as $name) { $names[$name] = true; }
         }
         foreach (array_keys($accepted ?? []) as $name) { if (strcmp((string) $name, $cursor) > 0) { $names[$name] = true; } }
@@ -170,41 +170,57 @@ final class UpgradeConversion
     {
         [$accepted, $rule, $source] = $this->source($binding);
         $queue = $this->queue($binding)->first(); $issues = []; $mismatches = [];
-        $this->scoped('domains_tlds', $binding)->where('catalogue_converted', true)->orderBy('id')->chunkById(250,
-            function ($rows) use ($binding, $accepted, $rule, &$issues, &$mismatches): void {
-                $names = $rows->pluck('tld');
-                $legacyRows = $this->scoped(SellTableSchema::ROWS, $binding)->whereIn('tld', $names)->get()->keyBy('tld');
-                $allPrices = $this->scoped('domains_prices', $binding)->whereIn('tld', $names)->orderBy('id')->get()->groupBy('tld');
-                foreach ($rows as $tld) {
-                    $prices = $allPrices[$tld->tld] ?? collect();
-                    $evidence = UpgradeEvidence::prices($prices->where('catalogue_created', false)->all(), $legacyRows[$tld->tld] ?? null, $tld);
-                    $intent = UpgradeEvidence::intent($rule, $accepted, $legacyRows[$tld->tld] ?? null, $tld);
-                    $actual = [];
-                    foreach ($prices as $price) {
-                        if ($price->catalogue_observation !== null) {
-                            $key = $price->action.':'.$price->term.($price->currency === 'USD' ? '' : ':'.$price->currency);
-                            $actual[$key] = UpgradeEvidence::json($price->catalogue_observation);
-                        }
+        $expected = 0; $present = 0; $converted = 0; $cursor = '';
+        // Traverse the same retained source union as conversion, never the staged subset.
+        do {
+            $names = $this->names($binding, $accepted, $cursor, 250);
+            $expected += count($names);
+            $rows = $this->scoped('domains_tlds', $binding)->whereIn('tld', $names)->get()->keyBy('tld');
+            $legacyRows = $this->scoped(SellTableSchema::ROWS, $binding)->whereIn('tld', $names)->get()->keyBy('tld');
+            $allPrices = $this->scoped('domains_prices', $binding)->whereIn('tld', $names)->orderBy('id')->get()->groupBy('tld');
+            foreach ($names as $name) {
+                $tld = $rows[$name] ?? null;
+                if ($tld === null) { $mismatches['missing_offer'] = ($mismatches['missing_offer'] ?? 0) + 1; continue; }
+                $present++;
+                if ($tld->registrar_key !== $binding->registrarKey) { $mismatches['offer_identity'] = ($mismatches['offer_identity'] ?? 0) + 1; }
+                if (!$tld->catalogue_converted) { $mismatches['unconverted_offer'] = ($mismatches['unconverted_offer'] ?? 0) + 1; continue; }
+                $converted++;
+                $prices = $allPrices[$tld->tld] ?? collect();
+                $evidence = UpgradeEvidence::prices($prices->where('catalogue_created', false)->all(), $legacyRows[$tld->tld] ?? null, $tld);
+                $intent = UpgradeEvidence::intent($rule, $accepted, $legacyRows[$tld->tld] ?? null, $tld);
+                $actual = [];
+                foreach ($prices as $price) {
+                    if ($price->catalogue_observation !== null) {
+                        $key = $price->action.':'.$price->term.($price->currency === 'USD' ? '' : ':'.$price->currency);
+                        $actual[$key] = UpgradeEvidence::json($price->catalogue_observation);
                     }
-                    ksort($actual);
-                    $checks = ['intent' => self::canonical(UpgradeEvidence::json($tld->catalogue_intent)) === self::canonical(json_decode(self::json($intent), true)),
-                        'costs' => self::canonical($actual) === self::canonical($evidence['costs']),
-                        'retained_retail' => UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2) === $evidence['retained']];
-                    foreach ($checks as $check => $matches) {
-                        if (!$matches) { $mismatches[$check] = ($mismatches[$check] ?? 0) + 1; }
-                    }
-                    foreach ($evidence['issues'] as $code) { $issues[$code] = ($issues[$code] ?? 0) + 1; }
                 }
-            });
+                ksort($actual);
+                $checks = ['intent' => self::canonical(UpgradeEvidence::json($tld->catalogue_intent)) === self::canonical(json_decode(self::json($intent), true)),
+                    'costs' => self::canonical($actual) === self::canonical($evidence['costs']),
+                    'retained_retail' => UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2) === $evidence['retained']];
+                foreach ($checks as $check => $matches) {
+                    if (!$matches) { $mismatches[$check] = ($mismatches[$check] ?? 0) + 1; }
+                }
+                foreach ($evidence['issues'] as $code) { $issues[$code] = ($issues[$code] ?? 0) + 1; }
+            }
+            if ($names !== []) { $cursor = $names[array_key_last($names)]; }
+        } while (count($names) === 250);
+        $extra = DB::table('domains_tlds')->where('server_id', $binding->serverId)->count() - $present;
+        if ($extra > 0) { $mismatches['extra_offer'] = $extra; }
+        $complete = (bool) ($queue?->offer_conversion_complete ?? false) && $converted === $expected
+            && $present === $expected && $extra === 0 && !isset($mismatches['offer_identity'])
+            && $queue->offer_conversion_cursor === $cursor;
+        if (!$complete) { $mismatches['completion'] = 1; }
         $defaults = new Intent($rule !== null ? $rule['mode'] !== 'only' : !$accepted,
             $rule['years'] ?? 1, $rule['transfers'] ?? false, $rule['max_cost'] ?? null);
         $storedDefaults = DB::table('domains_accounts')->where('server_id', $binding->serverId)->value('catalogue_defaults');
         if (self::canonical(UpgradeEvidence::json($storedDefaults)) !== self::canonical(json_decode(self::json($defaults), true))) { $mismatches['defaults'] = 1; }
         $comparison = UpgradeComparison::compare($before);
         return [...$comparison, 'compatible' => $comparison['compatible'] && $mismatches === [],
-            'staging_mismatches' => $mismatches, 'complete' => (bool) ($queue?->offer_conversion_complete ?? false),
+            'staging_mismatches' => $mismatches, 'complete' => $complete,
             'source_unchanged' => $queue?->offer_conversion_source === $source, 'issues' => $issues,
-            'converted' => $this->scoped('domains_tlds', $binding)->where('catalogue_converted', true)->count(),
+            'expected' => $expected, 'converted' => $converted,
             'activated' => false];
     }
 }

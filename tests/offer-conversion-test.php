@@ -135,6 +135,35 @@ $corrupt = $converter->report($binding, $before);
 same(false, $corrupt['compatible'], 'Comparison detects incorrect staged intent even when original rows are unchanged');
 same(1, $corrupt['staging_mismatches']['intent'], 'Comparison names the staged intent mismatch');
 DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => $originalIntent]);
+// Compare membership as well as values: each mutation leaves retained source digests untouched.
+$coverage = [];
+$checkCoverage = static function (string $case) use (&$coverage, $converter, $binding, $before): void {
+    $result = $converter->report($binding, $before);
+    $coverage[$case] = [$result['compatible'], $result['complete']];
+};
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_converted' => false, 'catalogue_intent' => null]);
+$checkCoverage('cleared_marker');
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_converted' => true, 'catalogue_intent' => $originalIntent]);
+$candidate = (array) DB::table('domains_tlds')->where([...$key, 'tld' => 'net'])->sole();
+DB::table('domains_tlds')->where('id', $candidate['id'])->delete();
+$checkCoverage('deleted_candidate');
+DB::table('domains_tlds')->insert($candidate);
+$extraId = DB::table('domains_tlds')->insertGetId([...$key, 'registrar_key' => 'enom', 'tld' => 'extra.example',
+    'catalogue_created' => true, 'catalogue_converted' => true, 'catalogue_intent' => '{}']);
+$checkCoverage('extra_identity');
+DB::table('domains_tlds')->where('id', $extraId)->delete();
+DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->update(['offer_conversion_complete' => false]);
+$checkCoverage('completion_cleared');
+DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->update(['offer_conversion_complete' => true, 'offer_conversion_cursor' => 'com']);
+$checkCoverage('completion_cursor');
+DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->update(['offer_conversion_cursor' => 'org']);
+same(['cleared_marker' => [false, false], 'deleted_candidate' => [false, false], 'extra_identity' => [false, false],
+    'completion_cleared' => [false, false], 'completion_cursor' => [false, false]], $coverage,
+    'Incomplete or extra staged offers reject comparison and completion: '.json_encode($coverage));
+same(true, $converter->report($binding, $before)['compatible'], 'Restored offer membership matches the completed conversion');
+$queue = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->sole();
+same([8, 100, 90, 95, 'transport_failed'], [(int) $queue->offer_feed_run, (int) $queue->offer_feed_tried_at,
+    (int) $queue->offer_feed_succeeded_at, (int) $queue->offer_feed_failed_at, $queue->offer_feed_failure], 'Legacy feed-state values survive conversion');
 $stagedBefore = DB::table('domains_tlds')->orderBy('id')->get()->toJson();
 same(['converted' => 0, 'complete' => true], $converter->batch($binding), 'Completed conversion is idempotent');
 same($stagedBefore, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Rerun does not advance revisions or dates');
@@ -146,6 +175,11 @@ catch (DomainException $error) { expect(str_contains($error->getMessage(), 'sour
 same(false, $converter->report($binding, $before)['compatible'], 'Comparison detects changed original intent');
 DB::table(SellTableSchema::ROWS)->where([...$key, 'tld' => 'com'])->update(['choice' => 'sell']);
 same(true, $converter->report($binding, $before)['compatible'], 'Restored source matches frozen comparison');
+// A rotated binding may not adopt the saved account or retained rows.
+$foreign = new Paymenter\Extensions\Servers\Domains\Data\AccountBinding($binding->registrarKey,
+    $binding->serverId, $binding->environment, 'synthetic-foreign-binding');
+try { $converter->batch($foreign); expect(false, 'Expected wrong-binding refusal'); }
+catch (Paymenter\Extensions\Servers\Domains\Data\AccountBindingMismatch $error) { expect(str_contains($error->getMessage(), 'binding'), 'Wrong-binding refusal is explicit'); }
 // Without a saved default, accepted intent fills only missing overrides on the other registrar.
 $other = CatalogueAcceptances::binding(Account::where('server_id', $namesilo->server_id)->sole());
 same(true, $converter->batch($other)['complete'], 'Annual-only registrar uses the same conversion');

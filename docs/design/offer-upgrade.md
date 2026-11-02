@@ -19,7 +19,8 @@ change requires a reviewed comparison/forward correction before B6, not clearing
 
 - Account defaults and nullable SellRow choice/longest/transfer overrides become B1 `Intent` data.
   Acceptance supplies missing choices only without saved defaults. Legacy `all` still ignores old skip rows. Derived action/registry/renewal
-  flags do not become provider facts or explicit staff stops. Hidden endings stay governed by the
+  flags do not become provider facts or explicit staff stops. The retained master Off becomes
+  explicit register/renew/transfer stops; a newly created disabled candidate does not invent a stop. Hidden endings stay governed by the
   existing hidden-ending policy.
 - Normalized observations live only in `domains_prices.catalogue_observation`. Exact price rows and
   annual fill cells compete by original observation time. Explicit dated disabled prices survive;
@@ -37,6 +38,8 @@ change requires a reviewed comparison/forward correction before B6, not clearing
 `UpgradeConversion::report(binding, before)` compares the original retained/native identity and row
 sets, including seller revisions, settings, mappings, services, invoices, payments, credits and frozen
 operation evidence. It also recomputes staged intent/costs/retained retail against legacy sources and reports mismatches.
+The retained TLD/SellRow/price/acceptance union defines expected identities. Every offer must exist and
+be converted; extra identities and completion/cursor disagreement reject compatibility and completion.
 It reports completion, unchanged sources and issue counts; `activated` is always
 false. Added staging candidates are explicitly excluded from the original-row digests. Any original
 row difference blocks B6. Review unknown/current-offer availability separately; a compatible report
