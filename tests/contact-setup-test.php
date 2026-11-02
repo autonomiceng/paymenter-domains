@@ -37,7 +37,7 @@ $checkProperties = static function (array $missing) use ($setupStaff): void {
         same($missing, ContactDetails::missingRequiredProperties(), 'Exact missing user property definitions');
         $page = Livewire::actingAs($setupStaff)->test(RegistrarSetup::class)->assertSuccessful();
         if ($missing) {
-            $page->assertSee("Customers can't enter ".implode(', ', $missing).'. Add them as custom properties.')
+            $page->assertSee("Customers can't enter ".implode(', ', $missing).' in Account. Add them as custom properties.')
                 ->assertSee('Open custom properties')->assertSeeHtml(e(App\Admin\Resources\CustomPropertyResource::getUrl('index')));
         } else {
             $page->assertDontSee("Customers can't enter")->assertDontSee('Open custom properties');
@@ -159,10 +159,34 @@ $raw = DB::table('domains_operations')->where('id', $op->id)->first();
 expect(!str_contains($raw->payload, 'Main Street') && !isset($op->toArray()['payload']), 'Encrypted and hidden snapshots');
 expect(!$op->domain->service->properties()->where('key', 'contacts')->exists(), 'No native contact property');
 require __DIR__.'/Support/frozen-contact-lifecycle.php';
+// Real Livewire + native transactions are needed to prove no unpaid invoice survives either validation gate.
+$incomplete=commerceUser();$cart=commerceCart($incomplete);commerceAdd($cart,$product,reservedFixtureName('contact-before-payment.test'));
+$beforeCounts=[App\Models\Order::count(),Invoice::count(),App\Models\Service::count(),Domain::count()];
+Illuminate\Support\Once::flush();
+$page=Livewire::actingAs($incomplete)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits',false)->call('checkout');
+$page->assertHasErrors(['contact.address1','contact.city','contact.postal_code','contact.country','contact.phone']);
+same($beforeCounts,[App\Models\Order::count(),Invoice::count(),App\Models\Service::count(),Domain::count()],'Incomplete account cannot create unpaid domain debt');
+$form=commerceOrderContact($incomplete);$form['phone']='bad';
+$page->call('checkout',['contact'=>$form,'save_account'=>false])->assertHasErrors(['contact.phone']);
+$form['phone']='+1.2065550100';$form['address1']='42 Order Only Street';
+$page->call('checkout',['contact'=>$form,'save_account'=>false])->assertHasNoErrors();
+$submitted=Domain::where('domain',reservedFixtureName('contact-before-payment.test'))->sole()->operations()->sole();
+same('42 Order Only Street',$submitted->payload['contacts']['admin']['address1'],'Submitted whole contact frozen for every role');
+same(0,$incomplete->properties()->count(),'Order-only details do not edit the account');
+// A direct caller/stale page still goes through the synchronous binding hook before commit.
+$cart=commerceCart($user);commerceAdd($cart,$product,reservedFixtureName('contact-stale-bind.test'));
+$beforeCounts=[App\Models\Order::count(),Invoice::count(),App\Models\Service::count(),Domain::count()];
+$staleContact=true;
+Illuminate\Support\Facades\Event::listen(App\Events\InvoiceItem\Creating::class,static function()use(&$staleContact,$user):void {
+    if($staleContact){contactProperty($user,'phone','invalid-after-admission');$staleContact=false;}
+});
+commerceCheckout($user,$cart);
+same($beforeCounts,[App\Models\Order::count(),Invoice::count(),App\Models\Service::count(),Domain::count()],'Binding recheck rolls back invoice, service, order and reservation');
+same(1,$cart->items()->count(),'Failed binding keeps the cart');
 // Invalid paid setup is held; invalid unpaid setup cannot gain a paid hold.
 contactProperty($user, 'phone', 'private-value');
 $heldName = reservedFixtureName('held-contact.test');
-$cart = commerceCart($user); commerceAdd($cart, $product, $heldName); commerceCheckout($user, $cart);
+$cart = commerceCart($user); commerceAdd($cart, $product, $heldName); commerceLegacyCheckout($user, $cart);
 $held = Domain::where('domain', $heldName)->sole()->operations()->sole(); $heldPayload = $held->payload;
 contactReject(static fn () => ContactRecovery::hold($held->id)); same('awaiting_payment', $held->fresh()->state, 'Unpaid cannot recover');
 DB::table('invoices')->where('id', $held->invoice_id)->update(['status' => 'paid']);

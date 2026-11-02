@@ -52,8 +52,23 @@ same($before,Operation::count(),'Rejected nameservers queue nothing');
 $edit('Nameservers','nameservers',['nameservers'=>"NS5.example.com.\nns6.example.com"])->assertNotified(ManagementForms::REQUESTED);
 $op=$last('nameservers');same('succeeded',$op->state,'Staff response termination starts and confirms the saved edit');same((int)$actor->id,(int)$op->authorized_by,'Credited to the staff member');
 same(['ns5.example.com','ns6.example.com'],$op->payload['nameservers'],'Same normalization as the owner form');
+// Real queued free changes must not offer purchase controls or an inapplicable status read.
+// Native Filament visibility is the boundary; a pure predicate test would miss permission/action wiring.
+$op=$management->request($actor,$d->id,'nameservers',$op->payload,bin2hex(random_bytes(32)),$driver);
+$permissions=$actor->role->permissions;
+$actor->role->update(['permissions'=>[...$permissions,'admin.invoices.update',...array_map(
+    \Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission(...),
+    array_keys(\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::ACTIONS))]]);
+commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\StaffOperationWrites::hold($op,[]));
+foreach(['queued','held','rejected'] as $stateName){
+    $op->update(['state'=>$stateName]);
+    $request=Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id]);
+    foreach(['hold','release','refund','credit','replacement','recheck','resume_reads'] as $action){$request->assertActionHidden($action);}
+    if($stateName==='queued'){$request->assertDontSee('More');}
+}
+$op->update(['state'=>'queued']);$actor->role->update(['permissions'=>$permissions]);
 // A sent request with no answer yet blocks the next edit, as it does for the owner, and the page says so.
-$op=$management->request($actor,$d->id,'nameservers',$op->payload,bin2hex(random_bytes(32)),$driver);$op->update(['state'=>'uncertain']);$busy=DomainEditActions::for($d->fresh());same([],$busy['rows'],'An unresolved request blocks the next edit');$view()->assertSee(ManagementForms::REQUESTED)->assertSee('wire:poll.2s',false);$op->update(['state'=>'queued']);
+$op->update(['state'=>'uncertain']);$busy=DomainEditActions::for($d->fresh());same([],$busy['rows'],'An unresolved request blocks the next edit');$view()->assertSee(ManagementForms::REQUESTED)->assertSee('wire:poll.2s',false);$op->update(['state'=>'queued']);
 $finish($op);
 
 // History names the staff member, and the customer sees Staff.

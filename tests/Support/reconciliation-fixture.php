@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, DateEvidence, Dis
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationClaims, OperationReconciliation, RegistrarRegistry};
-$observation = (object) ['name' => '', 'years' => 1, 'expiryYears' => null, 'reference' => '9001', 'fault' => '', 'billDate' => '10/18/2026 5:00:01 AM', 'calls' => [], 'during' => null];
+$observation = (object) ['name' => '', 'nameservers'=>[], 'years' => 1, 'expiryYears' => null, 'reference' => '9001', 'fault' => '', 'billDate' => '10/18/2026 5:00:01 AM', 'calls' => [], 'during' => null];
 $wire = new class($observation) implements Transport {
     public function __construct(private $state) {}
     public function send(Environment $env, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string {
@@ -20,6 +20,7 @@ $wire = new class($observation) implements Transport {
         $item = '<Description>'.($s->fault === 'history-zero' ? 'unrelated.example.com' : $s->name).'</Description><ProductType>Register</ProductType><Quantity>'.$s->years.'</Quantity><Status>Successful</Status><OrderStatus>Closed</OrderStatus><AmountPaid>8.95</AmountPaid><ExpiryDateTime>'.$expiry.'</ExpiryDateTime>';
         $data = match ($command) {
             ReadCommand::Info => '<GetDomainInfo><DomainName DomainNameID="456">'.$s->name.'</DomainName><Status><Belongs-To>'.($s->fault==='owner'?'another-account':'account-enom').'</Belongs-To><Expiration>'.$expiry.'</Expiration></Status></GetDomainInfo>',
+            ReadCommand::Nameservers => implode('',array_map(fn($ns)=>'<dns>'.$ns.'</dns>',$s->nameservers)),
             ReadCommand::Expiry => '<ExpirationDate>'.$expiry.'</ExpirationDate>',
             ReadCommand::Renewal => '<RenewName>0</RenewName>', ReadCommand::Lock => '<Reg-Lock>1</Reg-Lock>',
             ReadCommand::Privacy => '<GetWPPSInfo><WPPSAllowed>1</WPPSAllowed><WPPSExists>0</WPPSExists><WPPSEnabled>0</WPPSEnabled></GetWPPSInfo>',

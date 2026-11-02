@@ -198,7 +198,7 @@ same('rejected',$unpaidOp->fresh()->state,'Retired unpaid TEST operation remains
 same($before,count($GLOBALS['enomWire']['forms']),'Runtime tick sends no Enom reads');same($usedBeforePoll,enomTestSendCount(),'Runtime tick reserves no Enom calls');
 // Missing frozen contacts must reach the existing contact-specific hold and correction path before any Enom read.
 $incompleteUser=commerceUser();$incompleteUser->update(['email'=>'contact-owner@example.com']);$incompleteCart=commerceCart($incompleteUser);commerceAdd($incompleteCart,$product,placeholderComFixtureName('contacts-recovery-placeholder.com'));
-commerceCheckout($incompleteUser,$incompleteCart)->assertHasNoErrors();$contactOp=Domain::where('domain','contacts-recovery-placeholder.com')->sole()->operations()->sole();
+commerceLegacyCheckout($incompleteUser,$incompleteCart)->assertHasNoErrors();$contactOp=Domain::where('domain','contacts-recovery-placeholder.com')->sole()->operations()->sole();
 App\Helpers\ExtensionHelper::addPayment($contactOp->invoice_id,null,$contactOp->amount);
 same('paid',App\Models\Invoice::findOrFail($contactOp->invoice_id)->status,'Contact correction case receives native payment');
 expect($a->fresh()->processing_enabled,'Contact recovery fixture has processing enabled');expect($ports->accepted($a->fresh()),'Contact recovery fixture has accepted TEST runtime');

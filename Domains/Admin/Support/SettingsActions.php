@@ -2,6 +2,7 @@
 // Enom 444f31c pricing/setup action layout; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
@@ -31,6 +32,20 @@ final class SettingsActions
             if(!$loaded){$value=$read();$loaded=true;}
             return $value;
         };
+    }
+    /** Visibility only: reuse the current actor's role for this request. Writers authorize afresh. */
+    private static function canSee(string $permission): bool
+    {
+        $actor=Auth::user();
+        if(!$actor instanceof User){return false;}
+        $request=request();$key=self::class.'.staff_visibility';
+        $snapshot=$request->attributes->get($key);
+        if($snapshot===null||$snapshot['actor']!==$actor->getKey()){
+            $snapshot=['actor'=>$actor->getKey(),'user'=>User::with('role')->find($actor->getKey())];
+            $request->attributes->set($key,$snapshot);
+        }
+        $current=$snapshot['user'];
+        return $current!==null&&$current->hasPermission(Staff::VIEW)&&$current->hasPermission($permission);
     }
     /** The one plain sentence a settings dialog opens with. Detail lives in details(). */
     public static function description(string $name): string
@@ -85,8 +100,8 @@ final class SettingsActions
                     $fields[]=Hidden::make('default_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,'remove_override',$stamp));
                     $fields[]=Radio::make('pricing')->hiddenLabel()->live()->required()
                         ->options(fn()=>array_filter(['default'=>'Use the account default ('.($default()===null?'not readable':PricingRule::describe($default())).')','custom'=>'Set prices for this TLD only'],
-                            fn($key)=>Staff::can(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
-                        ->default(fn()=>((Tld::find($tld)?->use_default_rule??true)&&Staff::can(Review::permission('remove_override')))||!Staff::can(Review::permission('override'))?'default':'custom');
+                            fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
+                        ->default(fn()=>((Tld::find($tld)?->use_default_rule??true)&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
                 $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost','fixed'=>'Set my own price'])->required()->live()->default(fn()=>$rule()['mode'])->visible($own);
                 $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup'])->required()->maxLength(12)->live(debounce:500)
@@ -104,7 +119,7 @@ final class SettingsActions
                 };
                 $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))===null?'Enter prices to see what customers pay.':'Customer pays: '.PricingRule::describe($r))->key('formula');
                 if($name==='override'){$fields[]=\Filament\Schemas\Components\Html::make(fn($get)=>self::preview($tld,$entered($get)))->key('preview');}
-                else{$fields[]=\Filament\Schemas\Components\Text::make(fn()=>self::followers($server))->key('followers');}
+                else{$fields[]=\Filament\Schemas\Components\Html::make(fn()=>new \Illuminate\Support\HtmlString(e(self::followers($server)).self::tldListLink($server)))->key('followers');}
             }
             if($name==='card_fee'){
                 $fee=self::cached(static function()use($server):array{try{return CardFee::read($server);}catch(\Throwable){return CardFee::DEFAULT;}});
@@ -175,7 +190,7 @@ final class SettingsActions
             $turn=fn()=>self::switchOn($id,$server)?'Turn off':'Turn on';
             $label=$setup?fn()=>self::setupLabel($name,$registrar()!==null):Review::ACTIONS[$name];
             $out[]=Action::make($id.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
-                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||Staff::can(Review::permission('publish')))&&(!str_starts_with($name,'live_')||(Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&Staff::can(Staff::POLICY)&&(Staff::can(Review::permission($name))||($name==='override'&&Staff::can(Review::permission('remove_override'))))&&($name!=='test_transfer'||(EnomTestTransfer::deploymentEnabled()&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
+                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&(!str_starts_with($name,'live_')||(Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&self::canSee(Staff::POLICY)&&(self::canSee(Review::permission($name))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&($name!=='test_transfer'||(EnomTestTransfer::deploymentEnabled()&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
                 ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
                 ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name))))
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
@@ -245,7 +260,7 @@ final class SettingsActions
     public static function syncAll(int $server,bool $named=false): Action
     {
         return Action::make('sync_prices_'.$server)->label(fn()=>'Sync prices'.($named?': '.(\App\Models\Server::find($server)?->name ?? 'Server #'.$server):''))->color('gray')
-            ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('import'))&&self::syncOffered(Account::where('server_id',$server)->first()))
+            ->visible(fn()=>self::canSee(Staff::POLICY)&&self::canSee(Review::permission('import'))&&self::syncOffered(Account::where('server_id',$server)->first()))
             ->requiresConfirmation()->modalHeading('Sync prices')->modalDescription(fn()=>self::syncDescription($server))->modalSubmitActionLabel('Sync prices')
             ->fillForm(fn()=>['review_key'=>Review::ticket((int)Auth::id(),$server,null,'import',Review::stamp($server,null))])
             ->schema([Hidden::make('review_key')])
@@ -284,6 +299,13 @@ final class SettingsActions
         if($missing){$html.='<p style="margin-top:.5rem;color:rgb(220 38 38)">Some costs are missing. Use Sync prices on the TLD list first. Saving now changes nothing.</p>';}
         return new \Illuminate\Support\HtmlString($html);
     }
+    /** Link only when the current panel registers the TLD list. */
+    public static function tldListLink(int $server): string
+    {
+        try{$url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server]]]);}
+        catch(\Symfony\Component\Routing\Exception\RouteNotFoundException){return '';}
+        return ' <a class="fi-link" href="'.e($url).'">View TLDs</a>';
+    }
     /** Which TLDs a default pricing change publishes to, and which of them will wait for a price sync. */
     private static function followers(int $server): string
     {
@@ -295,8 +317,8 @@ final class SettingsActions
             ->whereIn('tld',$tlds->pluck('tld'))->where('currency','USD')->orderBy('id')->get()->groupBy('tld');
         $now=now()->toDateTimeImmutable();
         $waiting=$tlds->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireCosts($t,$now,$prices->get($t->tld,collect()));return false;}catch(\Throwable){return true;}});
-        $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.$tlds->map(fn($t)=>'.'.$t->tld)->implode(', ').'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
-        return $text.($waiting->isEmpty()?'':' Costs are missing for '.$waiting->map(fn($t)=>'.'.$t->tld)->implode(', ').'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices.');
+        $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($tlds->pluck('tld')->all()).'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
+        return $text.($waiting->isEmpty()?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting->pluck('tld')->all()).'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices.');
     }
     /** Notification text after a pricing or card fee change. */
     private static function published(array $summary,string $name): string

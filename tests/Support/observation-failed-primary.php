@@ -11,7 +11,7 @@ foreach (['nameservers'=>['nameservers'=>$state->ns], 'glue_add'=>['host'=>'ns1.
     same('succeeded',$management->run($op->id,$driver)->state,'Seed confirmed '.$action);
 }
 $clock->instant=$clock->now()->modify('+61 seconds');
-same('refreshed',$observer->run($d->id),'Seed complete inventory and successful fact timestamps');
+same('refreshed',$observer->run($d->id,readRecords:true),'Seed complete inventory and successful fact timestamps');
 $failedWork=new ObservationWork($observer,$clock,$budget);$failedWork->enroll($d->server_id);
 foreach (['malformed','transport'] as $failure) {
     $saved=$d->fresh();$prior=$saved->observation;
@@ -67,7 +67,9 @@ foreach (['malformed','transport'] as $failure) {
         $controller->manage($post($kind,['records'=>$rows,'preimage_digest'=>ManagementPayload::digest($rows,$kind)]),$d->id,$kind);
         same($count,Operation::count(),'Stale '.$kind.' POST remains blocked before resumed check');
     }
-    same('refreshed',$failedWork->tick(1)[$d->server_id],'Explicit resume confirms current inventory again');
+    same('refreshed',$failedWork->tick(1)[$d->server_id],'Resumed daily primary read succeeds');
+    expect(isset($d->fresh()->observation['record_failure']),'Daily read does not claim to have refreshed records');
+    same('refreshed',$observer->run($d->id,readRecords:true),'Sync now confirms current inventory again');
     expect(!isset($d->fresh()->observation['record_failure']),'Successful inventory replaces failure marker');
     same(1,storefrontDom($page())->query('//form[contains(@action,"/manage/dns")]')->length,'Successful resumed observation restores edit form');
     // Make the next failure due without reusing a hold or an exhausted job.

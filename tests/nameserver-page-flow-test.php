@@ -144,6 +144,7 @@ foreach (['matched'=>null,'name'=>'other.example.com','generation'=>2,'account_f
     $d->fresh()->update(['observation'=>$saved]);
     for ($cycle=0;$cycle<2;$cycle++) {
         $overflowFlag($d,'lock','locked',$field==='matched'?false:true,'Overflow lock '.$field.' cycle '.$cycle);
+        $clock->instant=$clock->now()->modify('+61 seconds'); // Separate scheduled turns share a minute budget.
         same('refreshed',$observer->run($d->id),'Repeated overflow lock sync '.$field);
         $overflowFlag($d,'lock','locked',$field==='matched'?false:true,'After overflow lock sync '.$field.' cycle '.$cycle);
     }
@@ -164,8 +165,9 @@ $missing=$d->fresh()->observation; unset($missing['sections']['nameservers']);
 $d->fresh()->update(['observation'=>$missing]);
 same('refreshed',$observer->run($d->id),'Overflow without a saved section completes');
 $pages($d,null,'Incomplete history cannot restore acquisition evidence',false);
-$clock->instant=new \DateTimeImmutable('2026-10-18T12:00:00Z');
+$afterLockChecks=$clock->now()->modify('+61 seconds');
 [$requested,$driver]=$holding('requested-page-placeholder.com',NameserverEvidence::requested(['ns1.example.net','ns2.example.net'],'registration_request',$clock->now()));
+$clock->instant=$afterLockChecks;
 Auth::setUser($viewer);
 $pages($requested,null,'Requested registration evidence stays unconfirmed');
 $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',(int)$requested->id,$clock->now()->getTimestamp());
@@ -192,6 +194,7 @@ foreach (['matched'=>null,'name'=>'other.example.com','generation'=>2,'account_f
     $requested->fresh()->update(['observation'=>$saved]);
     for ($cycle=0;$cycle<2;$cycle++) {
         $overflowFlag($requested,'privacy','privacy',$field==='matched'?true:false,'Overflow privacy '.$field.' cycle '.$cycle);
+        $clock->instant=$clock->now()->modify('+61 seconds');
         same('refreshed',$observer->run($requested->id),'Repeated overflow privacy sync '.$field);
         $overflowFlag($requested,'privacy','privacy',$field==='matched'?true:false,'After overflow privacy sync '.$field.' cycle '.$cycle);
     }

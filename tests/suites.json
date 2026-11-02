@@ -73,6 +73,7 @@
     "tests/checkout-refresh-test.php",
     "tests/invoice-binding-test.php",
     "tests/contact-setup-test.php",
+    "tests/order-contact-form-test.php",
     "tests/operation-claims-test.php",
     "tests/operation-recovery-test.php",
     "tests/operation-contacts-test.php",
@@ -389,7 +390,8 @@
     "tests/transfer-balance-watch-test.php",
     "tests/transfer-watch-daily-test.php",
     "tests/transfer-watch-recovery-test.php",
-    "tests/sell-automation-test.php"
+    "tests/sell-automation-test.php",
+    "tests/management-glue-namesilo-test.php"
   ],
   "ui": [],
   "runner": [

@@ -163,7 +163,7 @@ final readonly class OwnedDomains
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
         try { $contacts=$forms?self::contacts($d):[]; } catch (\Throwable) { $contacts=null; }
         if ($forms) {
-            $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
+            $labels=['glue'=>'Glue records','nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
             foreach ($labels as $cap=>$label) {
                 if ($policy!==null && ($cap!=='contacts'||$contacts!==null) && $d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
@@ -181,12 +181,14 @@ final readonly class OwnedDomains
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
-            try { $records=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?OwnerRecords::forDomain($d):[]; }
-            catch (\Illuminate\Contracts\Encryption\DecryptException) { $records=[]; }
+            try {
+                $sections=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationProjection::sections($d):[];
+                $records=$sections?OwnerRecords::forDomain($d,$sections):[];
+            } catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
             $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d);
             foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
-                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; }
+                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d,$sections):($sections[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; $management[$kind]['warnings']=GlueDrift::warnings($d,known:$sections['known_glue']??[]); } }
                 if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
             }
         }

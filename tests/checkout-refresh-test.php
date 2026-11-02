@@ -58,7 +58,7 @@ $mount = static function ($cart) use ($user) {
     Illuminate\Support\Once::flush();
     return Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 };
-$click = static function ($page): void { Illuminate\Support\Once::flush(); $page->call('checkout'); };
+$click = static function ($page) use ($user): void { Illuminate\Support\Once::flush(); $page->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]); };
 $cart = commerceCart($user);
 for ($i = 0; $i < 3; $i++) { commerceAdd($cart, $product, placeholderComFixtureName('paced-'.$i.'-placeholder.com')); $clock->advance(1); }
 $page = $mount($cart); $before = count($wire->calls); $clock->advance(301); $click($page);

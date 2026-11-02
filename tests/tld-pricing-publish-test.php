@@ -147,4 +147,5 @@ Livewire\Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admi
         ->body("Published new prices for 1 TLD. Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved."));
 $failAudit=false;same(2,$auditWrites,'Staff warning exercises the failed outcome audit');
 same('35.00',(new PricingRules)->defaultRule($t->server_id)['markup'],'Staff warning leaves the new default committed');
+require __DIR__.'/Support/pricing-upgrade.php';
 echo "Saving prices publishes them, matches the preview, keeps below-cost rules and refuses missing costs.\n";$nativeSuccessful=true;

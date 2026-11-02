@@ -129,6 +129,17 @@ final class CartAdmission
         return $offers;
     }
 
+    /** Local contact schemas for every domain line, including transfers. No availability reads. */
+    public function contactTlds(): array
+    {
+        $tlds = [];
+        foreach (NativeCart::items() as $item) {
+            $mapping = $this->native->mapping($item->product, $item->plan);
+            if ($mapping) { $tlds[$mapping['tld']->id] = $mapping['tld']; }
+        }
+        return array_values($tlds);
+    }
+
     private function admit(Order $order): void
     {
         $cart = NativeCart::get(); $lines = $selections = $names = [];

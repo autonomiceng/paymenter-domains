@@ -19,7 +19,7 @@ Glue records register your own nameservers, like ns1.example.com, with their IP 
 
 - Add one record for each nameserver hostname and IP address.
 - To change an IP address, update the record. To stop using a nameserver, delete it.
-- Only glue records added or changed here are listed. Others may already exist at the registrar.
+- Glue records are read when support uses Sync now and before a change. The date shows when they were read. Some registrars can only check known hostnames, so other glue records may exist there.
 
 Deleting a glue record that domains still use can stop those domains from resolving.
 

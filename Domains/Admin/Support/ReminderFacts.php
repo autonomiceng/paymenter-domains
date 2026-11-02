@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ReminderSchedules;
 final class ReminderFacts
 {
-    private const HELP='Emails customers before and after a domain expires, on the days shown. The 30-day reminder also needs Renewals on.';
+    private const HELP='Checks for expiry reminders on the days shown. Renewal state can skip a day. The 30-day reminder also needs Renewals on.';
     /** "Reminder emails" row for the account page: On or Off, with the days below. */
     public static function emails(int $server):array
     {
@@ -24,8 +24,15 @@ final class ReminderFacts
         if($before===null||$after===null){return ['label'=>'Reminder emails','value'=>Missing::LABEL,'tone'=>null,'cause'=>"Saved reminder days can't be read. Restore them from a backup.",'action'=>null,'help'=>self::HELP];}
         $sub=implode(', ',array_filter([$before?$list($before).' '.(count($before)===1&&$before[0]===1?'day':'days').' before':null,$after?$list($after).' '.(count($after)===1&&$after[0]==1?'day':'days').' after':null]));
         $changed=$r&&$r->account_fingerprint!==$binding;
-        return ['label'=>'Reminder emails','value'=>$r&&$r->enabled&&!$changed?'On':'Off','tone'=>$r&&$r->enabled&&!$changed?'success':null,
-            'cause'=>$changed?'Paused: account changed':($sub!==''?$sub:null),'action'=>null,'help'=>self::HELP,'buttons'=>$changed?[]:[ReminderAction::toggle($server)]];
+        $on=$r&&$r->enabled&&!$changed;
+        $mailOff=config('settings.mail_disable')||trim((string)config('mail.from.address'))==='';
+        $cause=match(true){$changed=>'Paused: account changed. Restore the saved account identity first.',
+            $r===null=>'Reminder schedule is missing. Restart the queue worker, then reload this page.',
+            !$on=>'Reminder emails are paused until you turn them on. Turn on to email customers on these days.',default=>null};
+        if($mailOff){$cause=trim(($cause??'').' Mail is not set up. Set up and enable email in Settings → Mail.');}
+        $cause=implode(' ',array_filter([$cause,$sub!==''?$sub:null]));
+        return ['label'=>'Reminder emails','value'=>$on?'On':'Off','tone'=>$changed||$mailOff?'warning':($on?'success':null),
+            'cause'=>$cause!==''?$cause:null,'action'=>null,'help'=>self::HELP,'buttons'=>$changed?[]:[ReminderAction::toggle($server)]];
     }
     public static function schedule(int $server):array
     {

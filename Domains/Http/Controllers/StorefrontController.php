@@ -24,7 +24,7 @@ final class StorefrontController extends Controller
         $endings = array_values(array_filter($allEndings, static fn ($row) => $row['terms'] !== []));
         $names = array_column($endings, 'tld');
         $raw = $this->string($request->query('name'), 300); $chosen = $this->string($request->query('tld'), 190);
-        $preferred = in_array($chosen, $names, true) ? $chosen : ($names[0] ?? null);
+        $preferred = in_array($chosen, $names, true) ? $chosen : self::defaultEnding($names);
         $parsed = $raw === '' ? ['sld' => null, 'ending' => null, 'error' => null] : self::parseName($raw);
         $notice = null;
         if ($parsed['ending'] !== null) {
@@ -154,6 +154,12 @@ final class StorefrontController extends Controller
         }
         return null;
     }
+    /** The TLD a search starts on: .com when it is on sale, otherwise the first A to Z. */
+    public static function defaultEnding(array $names): ?string
+    {
+        return in_array('com', $names, true) ? 'com' : ($names[0] ?? null);
+    }
+
     public static function parseName(string $raw): array
     {
         $value = strtolower(trim($raw));

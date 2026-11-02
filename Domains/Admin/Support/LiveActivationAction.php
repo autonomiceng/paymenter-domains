@@ -22,9 +22,8 @@ final class LiveActivationAction
     public static function summary(Account $a,?array $features=null): HtmlString
     {
         try{
-            $v=EnomLiveActivation::summary($a,$features);$html=HelpHint::beside(e($v['text']),$v['help'])->toHtml();
-            if($v['missing']){$html.='<ul style="margin-top:.75rem;list-style:disc;padding-inline-start:1.25rem">';foreach($v['missing'] as $cause){$html.='<li>'.e($cause).'</li>';}$html.='</ul>';}
-            return new HtmlString($html);
+            $v=EnomLiveActivation::summary($a,$features);
+            return new HtmlString(view('domains::admin.live-activation',['summary'=>$v])->render());
         }catch(\Throwable $e){
             \Illuminate\Support\Facades\Log::warning('Domains activation summary failed.',['exception_class'=>$e::class]);
             return new HtmlString(e('Live setup can’t be read. Reload this page, then check System checks.'));
@@ -34,7 +33,7 @@ final class LiveActivationAction
     {
         $id=(int)$a->server_id;$binding=CatalogueAcceptances::binding($a);
         return Action::make('activate_live')->label('Activate')->visible(fn()=>self::offered($a))
-            ->modalHeading('Activate live sales?')->modalSubmitActionLabel('Activate')->modalWidth('lg')
+            ->modalHeading('Activate live sales?')->modalSubmitActionLabel('Activate')->modalWidth('4xl')
             ->schema(function()use($a,$id,$stamp,$binding):array {
                 $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$id,null,'activate',$stamp)),Html::make(fn(Get $get)=>self::summary($a,array_combine(EnomLiveActivation::FEATURES,array_map(fn($feature)=>(bool)$get($feature),EnomLiveActivation::FEATURES))))];
                 $defaults=EnomLiveActivation::defaults($a);

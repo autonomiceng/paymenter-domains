@@ -171,13 +171,16 @@ final class DomainManagement
             });
             $claimed=true;
             $ctx = new RequestContext($r->binding, $origin, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter());
+            $driver->preparedRecords();
             $prepared = $driver->prepare($r, $ctx);
-            [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp): array {
+            $records = $driver->preparedRecords();
+            [$r, $stamp] = $this->locked($seed, $id, $driver, function ($l, $op) use ($prepared, $driver, $stamp, $records): array {
                 if ($l['stamp'] !== $stamp) { throw new \DomainException('Management authority changed during preparation.'); }
                 if ($op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management claim changed.'); }
                 $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action); $this->features->requireManagement();
                 $this->noInflight($op);
                 ManagementPreparation::requireFrozen($op, $prepared);
+                GlueRecords::prepared($l['domain'],$records,$this->clock->now());
                 $op->update(['payload' => $prepared]);
                 return [$this->descriptor($op, $l), HoldingLocks::take($l['domain'], (int)$op->authorized_by)['stamp']];
             });
@@ -253,12 +256,17 @@ final class DomainManagement
                 catch(\Throwable $error){throw new StaffReviewRefused('The registrar did not return a usable status. Try Check status again in 15 minutes. Automatic checks continue.');}
             }),EntryDeadline::INTERACTIVE_SECONDS);
     }
+    /** Shared state/send eligibility for a staff offer and the locked reader; this grants no read or retry. */
+    public static function canReconcile(Operation $op, \DateTimeImmutable $now): bool
+    {
+        return !($op->state==='running'&&$op->lease_expires_at>$now)
+            &&in_array($op->state,['uncertain','running'],true)&&($op->attempt['seal']??null)==='sealed';
+    }
     private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline, bool $reviewed=false): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$reviewed): ?array {
-            if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { return null; }
-            if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { return null; }
+            if (!self::canReconcile($op,$this->clock->now())) { return null; }
             $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
             try{$this->bindings->requireReadableLocked($l['server'],$l['account']);}
             catch(\Throwable $error){if($reviewed){throw new StaffReviewRefused('The registrar account cannot be read. Check its connection settings and try Check status again.');}throw $error;}
@@ -312,6 +320,10 @@ final class DomainManagement
                     default=>null,
                 };
                 if ($section!==null) { $projection['sections'][$section]=ObservationProjection::section($l['domain'],$entry); }
+                // Keep the latest per-host result (including deletion) after its operation leaves the history window.
+                if (in_array($op->action,['glue_add','glue_update','glue_delete'],true) && is_string($facts['host']??null) && $facts['host']!=='') {
+                    $projection['record_reads'][$facts['host']]=['identity'=>ObservationRecords::identity($l['domain']),...$entry];
+                }
             }
             $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
             return $op;

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestRegistration, OperationClaims, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestRegistration, ManagementEvidence, OperationClaims, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -161,6 +161,7 @@ final class RequestFacts
         if ($ordersBack && OperationClaims::ordersOffReturns($op)) { return 'Not sent. It will retry automatically.'; }
         // Orders off stops all queued work (RuntimeWork), for any request and whether or not it could send once they are on.
         $stopped=$op->state==='queued'&&!$account->processing_enabled?'Not sent. '.self::ORDERS_OFF:($ordersBack?'Not sent. This hold can’t be released. Cancel and refund it.':null);
+        if(ManagementEvidence::retryable($op)){return $stopped??'This change has already started and cannot be put on hold. It will retry automatically.';}
         $review=clone $op;
         if ($review->state==='queued') { $review->state='held';$review->safe_code=OperationClaims::balanceRefusalRetryable($op)?'registrar_balance_insufficient':'staff_review_required'; }
         try {
@@ -213,7 +214,10 @@ final class RequestFacts
             return ['title'=>$facts['outcome'],'body'=>implode(' ',array_filter([$recover?HistoryRecovery::CAUSE:($tooOld?HistoryRecovery::TOO_OLD:null),isset($op->policy['status_check'])?implode('. ',\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op)):null,$facts['auto_renew']??PaidUncertainty::holdSummary($op)])),'tone'=>'warning',
                 'action'=>$recover?HistoryRecovery::NAME:($tooOld?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
         }
-        if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) { return ['title'=>$ready,'tone'=>'warning','link'=>'registrars','link_label'=>self::ORDERS_SWITCH]; }
+        if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
+            $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
+            return ['title'=>$ready,'tone'=>'warning',...($ordersLink?['link'=>'registrars','link_label'=>self::ORDERS_SWITCH]:[])];
+        }
         $review=BalanceRetries::pending($op)?OperationClaims::balanceAdmissionReason($op)
             :(in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)?$op->safe_code:null);
         if(BalanceRetries::pending($op)&&self::heldByOrders($review,self::account($op)['account'])){$review=null;}

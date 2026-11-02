@@ -16,6 +16,7 @@
     $state = $section['state'] ?? null;
     // Stopped reads need our team, so they promise no time. The page notice has the one Contact support.
     $waits = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::checkHeld($domain) ? \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK : $fills('within a day');
+    if (in_array($cap,['dns','srv','ds','glue'],true) && !\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::checkHeld($domain)) { $waits='Contact support to sync these records.'; }
     // While the demo registrar is paused, synced values are unknown: nothing to do until it resumes.
     $paused = $domain->syncPaused && in_array($cap, ['nameservers', 'dns', 'srv', 'glue', 'ds', 'lock', 'privacy'], true);
 @endphp
@@ -55,13 +56,13 @@
 @endcomponent
 @endif
 @elseif (in_array($cap, ['dns', 'srv']))
-<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@endif</span>
+<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of {{ $section['asOf'] }}</span>@endif@endif</span>
 @if ($records !== null && $section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-dns')@endcomponent
 @endif
 @elseif (in_array($cap, ['glue', 'ds']))
-<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@elseif (!$records)<span class="domains-muted">{{ $cap === 'glue' ? 'No glue records' : 'Off' }}</span>@elseif ($cap === 'glue'){{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@else On · key tag {{ $records[0]['key_tag'] }}@endif</span>
+<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@elseif (!$records)<span class="domains-muted">{{ $cap === 'glue' ? 'No glue records' : 'Off' }}</span>@elseif ($cap === 'glue'){{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of {{ $section['asOf'] }}</span>@endif@else On · key tag {{ $records[0]['key_tag'] }}@endif@foreach ($section['warnings'] ?? [] as $warning)<span class="domains-sub domains-tone-warn">{{ $warning }}</span>@endforeach</span>
 @if ($section['actions'] ?? [])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">{{ $cap === 'glue' ? ($records ? 'Edit' : 'Add') : ($records && isset($section['actions']['ds_delete']) ? 'Remove' : 'Add DS record') }}</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-'.$cap)@endcomponent

@@ -1,0 +1,1 @@
+<label class="domains-checkbox"><input type="checkbox" name="save_account" value="1" @checked($saveAccount ?? false) @if ($accountModel ?? false) x-model="saveAccount" @endif><span>Also save this address and phone to my account</span></label>
