@@ -74,16 +74,23 @@ final class RegistrarFacts
         return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],
             'funds'=>RegistrarBalances::fundsUrl($account->registrar_key,$account->environment)];
     }
-    /** Each Enom test login has its own rolling send limit. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
+    /** Each Enom login shares our saved cap; TEST rolls for 24 hours and Live resets at UTC midnight. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
     public static function calls(Account $account): ?array
     {
-        if ($account->registrar_key!=='enom'||$account->environment!=='test') { return null; }
+        if ($account->registrar_key!=='enom') { return null; }
+        if ($account->environment==='live') {
+            try { $u=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account)); } catch (\Throwable) { $u=null; }
+            if ($u===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read our call count or limit. Check the API credentials and Live account setup.",'help'=>null]; }
+            $full=$u['used']>=$u['limit'];
+            return ['value'=>$u['used'].' of '.$u['limit'],'tone'=>$full?'danger':null,'sub'=>$full?'Limit reached. Further calls wait until the count resets.':null,
+                'help'=>'Our daily limit on registrar calls. It stops a runaway job. Resets at midnight UTC. Failed and unsent reservations count too.'];
+        }
         $uid=EnomTestSendLimit::login($account);$u=EnomTestSendLimit::usage((string)$uid);
         if ($uid===null||$u['day_limit']===null||$u['minute_limit']===null||$u['day']===null) { return ['value'=>null,'tone'=>null,'sub'=>EnomTestSendLimit::facts($uid),'help'=>null]; }
         $full=$u['day']>=$u['day_limit']||$u['minute']>=$u['minute_limit'];
         $off=$u['day_limit']===0||$u['minute_limit']===0;
         return ['value'=>$u['day'].' of '.$u['day_limit'],'tone'=>$full?'danger':null,'sub'=>$off?EnomTestSendLimit::facts($uid):($full?'Limit reached. Try again later.':null),
-            'help'=>'Our test send limit allows '.$u['day_limit'].' requests per login in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too. Transfer checks stop at '.intdiv($u['day_limit'],2).' total requests to leave room for checkout and other work. This is our safety cap; it is not an Enom limit.'];
+            'help'=>'Our test send limit allows '.$u['day_limit'].' requests per login in any 24 hours and '.$u['minute_limit'].' per minute. Failed requests count too. Transfer checks stop at '.intdiv($u['day_limit'],2).' total requests to leave room for checkout and other work. This is our own guard against a runaway job.'];
     }
     public static function lastSync(Server $server): ?string
     {

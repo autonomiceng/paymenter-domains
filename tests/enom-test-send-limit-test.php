@@ -4,11 +4,13 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
 require_once __DIR__.'/Support/accounts.php';
+use App\Models\Server;
 use Illuminate\Support\Facades\{DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestCalls,EnomTestSendLimit as Limit,EnomTestSendLimitSchema as Tables,Installation};
+use Paymenter\Extensions\Servers\Domains\Services\{ApiCallLimits,CatalogueAcceptances,EnomLive,EnomLiveCalls,EnomLiveCallSchema,PriceSync,StaffSettingsReview as Review,EnomTestCallLimit,EnomTestCalls,EnomTestSendLimit as Limit,EnomTestSendLimitSchema as Tables,Installation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 (new Installation)->install();(new Installation)->install();
 foreach(Tables::RETIRED as $table){expect(!Schema::hasTable($table),'Fresh install has no retired TEST budget table '.$table);}
@@ -63,4 +65,58 @@ Schema::rename('domains_enom_test_sends_moved',Tables::SENDS);same($before,sends
 same(false,admits(''),'An empty UID refuses');
 Tables::verify();(new Installation)->install();same($before,sends(),'Reinstall keeps every attempt');
 echo "Enom TEST send limit: rolling 24 hours, per minute, accounts, settings, LIVE, transactions and errors passed.\n";
+
+// Native fixture is required: reviewed native settings, permissions, shared login counts and atomic audit.
+require_once __DIR__.'/Support/staff-tlds.php';
+$staff=staffUser(['admin.domains.view','admin.domains.manage-policy',Review::permission('configure')]);
+$server=Server::findOrFail(1);$account=Account::where('server_id',1)->sole();
+$binding=CatalogueAcceptances::binding($account);
+$review=static function(?string $stamp=null)use($staff): Review {
+    return new Review($staff->id,1,null,'call_limits',Review::ticket($staff->id,1,null,'call_limits',$stamp??Review::stamp(1,null)),'Adjust our runaway guard');
+};
+$write=static fn($r,$day,$minute=3)=>ApiCallLimits::save($r,['day'=>$day,'minute'=>$minute]);
+same(true,admits($uid),'Seed current usage before lowering the guard');
+$before=PriceSync::callsToday($binding);
+CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>false,'renewal_safe'=>true]]);
+DB::table('domains_observation_queues')->insert(['server_id'=>1,'account_fingerprint'=>$binding->fingerprint,'catalogue_hold'=>'catalogue_call_capacity']);
+$stale=$review();$changed=$review();$write($changed,2,2);
+same(['used'=>$before['used'],'limit'=>2],PriceSync::callsToday($binding),'Sync capacity sees the saved cap immediately');
+same(['day'=>2,'minute'=>2],Limit::limits($uid),'Physical guard reads the same saved limits');
+expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],'0 calls left'),'The capacity check immediately shows the reduced allowance');
+same(false,admits($uid),'Lowering below usage refuses further sends');
+same(5,Limit::usage('other-uid')['day_limit'],'Another login keeps the config default');
+same(2,Limit::usage(strtoupper($uid))['day_limit'],'UID case aliases share the saved cap');
+tldRefusal(fn()=>$write($stale,10),'Settings changed. Reload this page.');
+tldRefusal(fn()=>$write($changed,10),'Settings changed. Reload this page.');
+$rows=Review::historyRows($server);$audit=end($rows);
+same($staff->id,$audit['actor_id'],'Switch log records the staff member');expect(isset($audit['at']),'Switch log records when');
+same(['day'=>5,'minute'=>3],$audit['before']['call_limits'],'Switch log records old effective limits');
+same(['day'=>2,'minute'=>2],$audit['after']['call_limits'],'Switch log records new limits');
+foreach([0,-1,100001,'1.5',true,'1e3'] as $bad){
+    try{$write($review(),$bad);expect(false,'Invalid cap accepted');}catch(DomainException){}
+    same(2,Limit::usage($uid)['day_limit'],'Invalid edit leaves the guard intact');
+}
+$denied=$review();$staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage-policy']]);
+tldRefusal(fn()=>$write($denied,10),'Current staff permissions required.');
+same(2,Limit::usage($uid)['day_limit'],'Revoked settings permission refuses the edit');
+
+// The same override feeds Live readers and its atomic reservation guard, without touching reserved spend.
+$staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage-policy',Review::permission('configure')]]);
+$write($review(),100,3);
+expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],'98 calls left'),'Raising the cap immediately updates the failed sync check without claiming a successful sync');
+config(['app.url'=>'https://billing.example.test','domains.enom_live.site'=>'https://billing.example.test','domains.enom_identity.environment'=>'live']);
+$liveServer=Server::create(['name'=>'Synthetic live cap','type'=>'server','extension'=>'Domains','enabled'=>true]);
+$live=Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$liveServer->id,'registrar_key'=>'enom','environment'=>'live','stable_identity'=>'live-cap-uid']));
+Account::withVerifiedBindingWrite(fn()=>$live->update(['live_site'=>'https://billing.example.test']));
+$liveBinding=CatalogueAcceptances::binding($live);
+config(['domains.enom_live.accounts'=>['live-cap-uid'=>['fingerprint'=>$liveBinding->fingerprint,'daily_call_cap'=>6,'daily_spend_limit_usd'=>'25.00']]]);
+EnomLiveCalls::reserve($liveBinding);
+EnomLiveCalls::reserve($liveBinding);
+$liveReview=new Review($staff->id,$liveServer->id,null,'call_limits',Review::ticket($staff->id,$liveServer->id,null,'call_limits',Review::stamp($liveServer->id,null)),'Adjust our Live runaway guard');
+$write($liveReview,1);
+same(['used'=>2,'limit'=>1],PriceSync::callsToday($liveBinding),'Live sync capacity uses the same saved cap immediately');
+try{EnomLiveCalls::reserve($liveBinding);expect(false,'Live send exceeded lowered cap');}catch(EnomTestCallLimit){}
+same('25.00',EnomLive::account($liveBinding)['daily_spend_limit_usd'],'Daily spend is unchanged');
+same(2,(int)DB::table(EnomLiveCallSchema::TABLE)->value('used'),'Lowering never resets reservations');
+echo "Reviewed per-login call cap writes, stale pages, audit and TEST/Live sync/send readers passed.\n";
 $nativeSuccessful=true;

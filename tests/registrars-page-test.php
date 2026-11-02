@@ -266,7 +266,9 @@ config(['domains.enom_test_sends_per_day'=>50]);
 Illuminate\Support\Facades\Schema::rename(EnomTestSendLimitSchema::SENDS,'domains_test_sends_saved');
 same("Couldn't read our test send count, so no Enom test requests are sent. Try again.",$capFacts::calls($capAccount)['sub'],'Unreadable count has its own cause');
 Illuminate\Support\Facades\Schema::rename('domains_test_sends_saved',EnomTestSendLimitSchema::SENDS);
-$liveCap=clone $capAccount;$liveCap->environment='live';same(null,$capFacts::calls($liveCap),'Live account omits the TEST cap');
+$liveCap=clone $capAccount;$liveCap->environment='live';$liveCapFacts=$capFacts::calls($liveCap);
+same(null,$liveCapFacts['value'],'Unconfigured Live account never reports the TEST count or cap');
+expect(str_contains($liveCapFacts['sub'],'Live account setup'),'Missing Live count or cap says what to fix');
 
 config(['domains.enom_test_sends_per_day'=>'many']);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('Our test send limit on this site is invalid, so no Enom test requests are sent. Ask your site admin to fix it.');

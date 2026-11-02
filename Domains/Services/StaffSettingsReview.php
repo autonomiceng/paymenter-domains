@@ -11,7 +11,7 @@ final class StaffSettingsReview
     public const KEY='domains_staff_settings_audit';
     public const KEYS='domains_staff_review_keys';
     public const HISTORY_LIMIT=50;
-    public const ACTIONS=['late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Record what Enom said','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+    public const ACTIONS=['call_limits'=>'Edit call limits','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Record what Enom said','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
         'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
     private bool $activating=false;
@@ -28,7 +28,7 @@ final class StaffSettingsReview
     /** Saving these publishes prices, so they also need the publish permission. */
     public const PUBLISHES=['override','remove_override','default_rule','card_fee'];
     public static function permission(string $action): string
-    {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return 'admin.domains.settings.'.$action;}
+    {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return $action==='call_limits'?'admin.domains.settings.configure':'admin.domains.settings.'.$action;}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
     {
         $read=static fn($q)=>($lock?$q->lockForUpdate():$q)->get();
@@ -42,7 +42,7 @@ final class StaffSettingsReview
         // What staff set on What you sell rows. Prices a fill writes there do not make a save stale.
         $sell=$tldId?[]:$read(DB::table(SellTableSchema::ROWS)->where('server_id',$serverId)->where(fn($q)=>$q->whereNotNull('choice')->orWhereNotNull('longest')->orWhereNotNull('transfer'))->orderBy('id')->select(['tld','choice','longest','transfer']))->map(fn($v)=>(array)$v)->all();
         $raw=static fn($rows)=>$rows->map(fn($v)=>$v->getRawOriginal())->all();
-        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId,$sell,$a?->environment==='live'?EnomLiveActivation::stamp($a):null],JSON_THROW_ON_ERROR));
+        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId,$sell,$a?ApiCallLimits::forAccount($a):null,$a?->environment==='live'?EnomLiveActivation::stamp($a):null],JSON_THROW_ON_ERROR));
     }
 
     public static function ticket(int $actor,int $server,?int $tld,string $action,string $stamp): string
@@ -149,6 +149,7 @@ final class StaffSettingsReview
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),
             ...(in_array($this->action,['activate','renewal_billing','test_renewal','live_renewal'],true)?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
+            ...($this->action==='call_limits'?['call_limits'=>$a?ApiCallLimits::forAccount($a):null]:[]),
             ...($this->action==='unpaid_hold'?['unpaid_hold'=>UnpaidHoldSetting::minutes($server)]:[]),
             'live_activation'=>$live,
             ...($this->action==='late_renewal'?['late_renewal'=>$a?EnomLateRenewal::stored(CatalogueAcceptances::binding($a)):false]:[]),
