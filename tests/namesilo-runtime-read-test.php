@@ -54,6 +54,7 @@ config(['domains.namesilo_live.accounts'=>[$identity=>['fingerprint'=>$binding->
 CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
 // Keep synthetic money as decimal strings, including while constructing the fake wire envelope.
 $GLOBALS['runtimeWire']=['calls'=>[],'options'=>[],'fail'=>false,'fixtures'=>[
+    'getPrices'=>['reply'=>['code'=>300,'detail'=>'success','com'=>['registration'=>'12.34','transfer'=>'12.35','renew'=>'12.36']]],
     'getAccountBalance'=>['reply'=>['code'=>300,'detail'=>'success','balance'=>'123.45']],
     'checkRegisterAvailability'=>['reply'=>['code'=>300,'detail'=>'success','available'=>[['domain'=>'example.com','price'=>'12.34','premium'=>0,'duration'=>1]]]],
     'getDomainInfo'=>['reply'=>['code'=>300,'detail'=>'success','created'=>'2026-01-01','expires'=>'2027-01-01','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',
