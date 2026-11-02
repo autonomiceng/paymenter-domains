@@ -121,9 +121,20 @@ $liveBinding=CatalogueAcceptances::binding($live);
 config(['domains.enom_live.accounts'=>['live-cap-uid'=>['fingerprint'=>$liveBinding->fingerprint,'daily_call_cap'=>6,'daily_spend_limit_usd'=>'25.00']]]);
 EnomLiveCalls::reserve($liveBinding);
 EnomLiveCalls::reserve($liveBinding);
+// Missing, zero and invalid Live limits need a settings fix, not a promise that midnight restores calls.
+foreach([null,0,'invalid'] as $badCap){
+    config(['domains.enom_live.accounts.live-cap-uid.daily_call_cap'=>$badCap]);
+    $facts=\Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::calls($live);
+    same('Our saved daily call limit is missing or 0. Ask your site admin to set a limit above 0 using Edit on API calls.',
+        $facts['sub'],'An unusable Live call limit names the settings fix instead of waiting for reset');
+    try{EnomLiveCalls::reserve($liveBinding);expect(false,'Unusable Live cap allowed a call');}catch(EnomTestCallLimit){}
+}
+config(['domains.enom_live.accounts.live-cap-uid.daily_call_cap'=>6]);
 $liveReview=new Review($staff->id,$liveServer->id,null,'call_limits',Review::ticket($staff->id,$liveServer->id,null,'call_limits',Review::stamp($liveServer->id,null)),'Adjust our Live runaway guard');
 $write($liveReview,1);
 same(['used'=>2,'limit'=>1],PriceSync::callsToday($liveBinding),'Live sync capacity uses the same saved cap immediately');
+same('Limit reached. Further calls wait until the count resets.',
+    \Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::calls($live)['sub'],'A positive exhausted Live limit still explains the count reset');
 try{EnomLiveCalls::reserve($liveBinding);expect(false,'Live send exceeded lowered cap');}catch(EnomTestCallLimit){}
 same('25.00',EnomLive::account($liveBinding)['daily_spend_limit_usd'],'Daily spend is unchanged');
 same(2,(int)DB::table(EnomLiveCallSchema::TABLE)->value('used'),'Lowering never resets reservations');

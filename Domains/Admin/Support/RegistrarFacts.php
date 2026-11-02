@@ -84,8 +84,8 @@ final class RegistrarFacts
                 $u=EnomLive::deployment($binding)?PriceSync::callsToday($binding):null;
             } catch (\Throwable) { $u=null; }
             if ($u===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read our call count or limit. Check the API credentials and Live account setup.",'help'=>null]; }
-            $full=$u['used']>=$u['limit'];
-            return ['value'=>$u['used'].' of '.$u['limit'],'tone'=>$full?'danger':null,'sub'=>$full?'Limit reached. Further calls wait until the count resets.':null,
+            $full=$u['used']>=$u['limit'];$off=$u['limit']===0;
+            return ['value'=>$u['used'].' of '.$u['limit'],'tone'=>$full?'danger':null,'sub'=>$off?'Our saved daily call limit is missing or 0. Ask your site admin to set a limit above 0 using Edit on API calls.':($full?'Limit reached. Further calls wait until the count resets.':null),
                 'help'=>'Our daily limit on registrar calls. It stops a runaway job. Resets at midnight UTC. Failed and unsent reservations count too.'];
         }
         $uid=EnomTestSendLimit::login($account);$u=EnomTestSendLimit::usage((string)$uid);
