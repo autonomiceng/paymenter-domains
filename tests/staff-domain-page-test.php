@@ -252,13 +252,15 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->ass
 // A change the system tries again by itself is no job, on the page or in the next sweep.
 $claim=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
 $stuck->update(['policy'=>['management'=>['action'=>'contacts']],'attempt'=>$claim,'started_at'=>now()]);
+expect(str_contains((string)$sub($active,'Registrar'),'Check request #'.$second->id.'.'),'The next held request is named once the first clears');
+DB::table('domains_obligation_alerts')->where('operation_id',$second->id)->delete();
 expect(!str_contains($headOf(),'Check request')&&!str_contains((string)$sub($active,'Registrar'),'Check'),'A retry that runs by itself names no request');
 $sweep=static fn(array $ops)=>ObligationAlerts::retained(['domain'=>$active->fresh(),'operations'=>collect($ops)],100);
 same($sweep([]),$sweep([$stuck->fresh()]),'The sweep raises no alert for it');
 $stuck->update(['attempt'=>[...$claim,'management_deferrals'=>array_fill(0,5,'2026-10-30T00:00:00+00:00')]]);
 expect(str_ends_with((string)$sub($active,'Registrar'),'Check request #'.$stuck->id.'.'),'When the tries run out the same alert is back');
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
-DB::table('domains_operations')->whereIn('id',[$done->id,$stuck->id,$closed->id])->delete();
+DB::table('domains_operations')->whereIn('id',[$done->id,$stuck->id,$closed->id,$second->id])->delete();
 Auth::setUser($viewer);
 // Nothing syncs on a domain that has ended, so a stopped sync is no step and has no button.
 ObligationAlerts::record($active->fresh(),'observation_review',time());
