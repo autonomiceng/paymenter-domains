@@ -38,9 +38,10 @@ final readonly class OwnerActionController
     {
         return $this->submit($request,$domain,'setup',function()use($request,$domain):void {
             $d=$this->owners->owned($request->user(),$domain);
-            $servers=OwnerNameservers::parse(($request->request->all()['nameservers']??null),$d->registrar_key==='enom',$d->registrar_key,$d->domain);
-            $privacy=PrivacyVisibility::SHOWN?$request->request->get('privacy','0'):'0';
+            $privacy=$request->request->get('privacy','0');
+            if (!PrivacyVisibility::SHOWN && $privacy==='1') { throw new OwnerFormValidation(['privacy']); }
             if (!in_array($privacy,['0','1'],true)) { throw new \Paymenter\Extensions\Servers\Domains\Services\SetupValidation(['privacy']); }
+            $servers=OwnerNameservers::parse(($request->request->all()['nameservers']??null),$d->registrar_key==='enom',$d->registrar_key,$d->domain);
             $this->setup->save($request->user(),$domain,['nameservers'=>$servers,'privacy'=>$privacy==='1']);
         },'Setup saved.');
     }

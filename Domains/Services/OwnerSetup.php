@@ -42,6 +42,7 @@ final class OwnerSetup
                 TransferInputs::requireEditable($op,$this->clock->now());
             }
             $servers=$input['nameservers']??[];
+            if (!PrivacyVisibility::SHOWN && ($input['privacy']??false)===true) { throw new OwnerFormValidation(['privacy']); }
             $privacy=PrivacyVisibility::SHOWN?($input['privacy']??false):($op->payload['privacy']??false);
             if (!is_array($servers)||!is_bool($privacy)) { throw new \DomainException('Setup unavailable.'); }
             if ($privacy&&$caps->privacy!==PrivacyMode::Free) { throw new SetupValidation(['privacy']); }
