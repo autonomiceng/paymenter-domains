@@ -19,7 +19,7 @@ $clock = new class implements Clock {
 app()->instance(Clock::class, $clock);
 $binding = static function (string $provider): AccountBinding {
     $s = Server::create(['name' => 'Synthetic feed account', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
-    $a = Account::withVerifiedBindingWrite(fn () => Account::create(['server_id' => $s->id, 'registrar_key' => $provider, 'environment' => 'test', 'stable_identity' => 'synthetic-'.$provider]));
+    $a = Account::withVerifiedBindingWrite(fn () => Account::create(['server_id' => $s->id, 'registrar_key' => $provider, 'environment' => 'test', 'stable_identity' => 'synthetic-'.$provider.'-'.$s->id]));
     return CatalogueAcceptances::binding($a);
 };
 $refuses = static function (callable $work): void {
