@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, ReadDeferred, ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, EnomTestCallLimit, ReadDeferred, ReadFailure};
 
 /** Dormant account worker on the retained queue. No container binding, job or caller switch.
  * $feed supplies bound adapters using existing admitted transports (including daily wire caps).
@@ -26,11 +26,16 @@ final class OfferWork
         $this->editQueue($binding, function ($q, $row) use ($origin): void {
             if ((int) $row->offer_lease > $this->at()) { return; }
             $work = OfferState::decode($row->offer_work);
+            if (!empty($work['pending']) || ($work['tries'] ?? 0) > 0) { return; }
             $work['feed_due'] = min($work['feed_due'] ?? $this->at(), $this->at());
             $work['origin'] = $origin->value;
             $q->update(['offer_work' => OfferState::json($work)]);
         });
     }
+
+    /** Fee/default changes wake bounded local republication without scheduling provider reads. */
+    public function wake(AccountBinding $binding): void
+    { $this->editQueue($binding, static function (): void {}); }
 
     /** Search/read hints only for a discovered offer. Repeated hints preserve failure backoff. */
     public function requestFacts(AccountBinding $binding, string $tld): void
@@ -138,7 +143,7 @@ final class OfferWork
             $work['pending'] = $pending; $work['feed_due'] = $this->at() + 86400; $work['tries'] = 0;
             $work['origin'] = RequestOrigin::Background->value;
             $this->save($b, $job, ['offer_feed_succeeded_at' => $this->at(), 'offer_feed_failure' => null]);
-        } catch (ReadDeferred) { $work['feed_due'] = $this->at() + 120; }
+        } catch (ReadDeferred|EnomTestCallLimit) { $work['feed_due'] = $this->at() + 120; }
         catch (\Throwable $error) {
             $guard(); $work['tries'] = ($work['tries'] ?? 0) + 1;
             $work['feed_due'] = $this->at() + $this->backoff($work['tries']);
@@ -160,7 +165,7 @@ final class OfferWork
             $writer->apply($command, $this->revision($b, $t->tld));
             $state['succeeded_at'] = $this->at(); $state['failure'] = null; $state['tries'] = 0;
             $due = max($this->at() + 120, $command->facts->freshUntil->getTimestamp());
-        } catch (ReadDeferred) { $due = $this->at() + 120; }
+        } catch (ReadDeferred|EnomTestCallLimit) { $due = $this->at() + 120; }
         catch (\Throwable $error) {
             $state['tries'] = ($state['tries'] ?? 0) + 1; $state['failed_at'] = $this->at(); $state['failure'] = ReadFailure::code($error);
             $due = $this->at() + $this->backoff($state['tries']);

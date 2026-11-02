@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,SellTableSchema::class,RenewalRetrySchema::class,ManagementProgressIndex::class,OfferSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,SellTableSchema::class,RenewalRetrySchema::class,ManagementProgressIndex::class,OfferSchema::class,OfferWorkSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -31,6 +31,7 @@ final class Installation
             }
             $ran=app(Migrator::class)->getRepository()->getRan();$recorded=in_array('2026_10_18_000001_create_domains_foundation',$ran,true);
             if($present&&!$recorded){throw new \DomainException('Retained Domains data has no installation record. Restore and verify its migration history before reinstalling.');}
+            if(in_array(OfferWorkSchema::MIGRATION,$ran,true)){OfferWorkSchema::verify();}
             if(in_array(OfferSchema::MIGRATION,$ran,true)){OfferSchema::verify();}
             // A complete preflight prevents a partial retained schema from being silently filled in.
             if($present){

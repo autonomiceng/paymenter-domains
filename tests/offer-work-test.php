@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueA
 
 // Real SQLite queue/writer/projection is needed for durable claims, restart and scoped publication.
 // Only the wire and clock are fake; no provider runtime or active scheduler is registered.
-expect(class_exists(OfferWork::class), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
+expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferWork.php'), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
 (new Installation)->install();
 extract(commerceFixture());
 $b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
@@ -43,7 +43,7 @@ $wire = new class implements Transport {
     }
 };
 $writer = new Writer(new Projection($native), $clock, static function (): void {}, static fn () => true);
-$factory = static fn ($binding) => new OfferFeed(new Driver(new Client($binding, 'synthetic-account', 'placeholder-key', $wire), ['com', 'org', 'co.uk']));
+$factory = static fn ($binding) => new OfferFeed(new Driver(new Client($binding, Account::where('server_id', $binding->serverId)->sole()->stable_identity, 'placeholder-key', $wire), ['com', 'org', 'co.uk']));
 $allowance = 25;
 $worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory,
     static function () use (&$allowance): int { return $allowance; });

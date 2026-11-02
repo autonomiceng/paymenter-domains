@@ -15,20 +15,19 @@ final class OfferSchema
         'domains_tlds' => ['catalogue_intent' => 'json', 'catalogue_facts' => 'json',
             'catalogue_revision' => 'revision', 'catalogue_published_revision' => 'json',
             'catalogue_retained_annual_retail' => 'money', 'catalogue_converted' => 'bool',
-            'catalogue_created' => 'bool', 'catalogue_issues' => 'json',
-            'offer_facts_due' => 'time', 'offer_facts_work' => 'json'],
+            'catalogue_created' => 'bool', 'catalogue_issues' => 'json'],
         'domains_prices' => ['catalogue_observation' => 'json', 'catalogue_created' => 'bool'],
         'domains_observation_queues' => ['offer_conversion_cursor' => 'cursor',
             'offer_conversion_source' => 'hash', 'offer_conversion_complete' => 'bool',
             'offer_feed_run' => 'revision', 'offer_feed_tried_at' => 'time',
             'offer_feed_succeeded_at' => 'time', 'offer_feed_failed_at' => 'time',
-            'offer_feed_failure' => 'hash', 'offer_queue_created' => 'bool',
-            'offer_work' => 'json', 'offer_claim' => 'hash', 'offer_lease' => 'revision', 'offer_turn' => 'revision'],
+            'offer_feed_failure' => 'hash', 'offer_queue_created' => 'bool'],
     ];
 
     /** Include exactly the retained additive columns in the original schema verifiers. */
     public static function retained(Blueprint $table, string $name): void
     {
+        OfferWorkSchema::retained($table, $name);
         foreach (self::COLUMNS[$name] as $column => $type) {
             if (Schema::hasColumn($name, $column)) { self::column($table, $column, $type); }
         }
