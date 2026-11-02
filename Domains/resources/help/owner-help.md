@@ -71,4 +71,4 @@ Each domain has an owner (registrant) and admin, tech and billing contacts. You 
 
 ## Renewal invoices
 
-We send a renewal invoice before your domain expires. The domain renews once that invoice is paid. With Auto Pay on, we charge your saved payment method for it. With Auto Pay off, or if the charge fails, you pay the invoice yourself. Turning renewal invoices off stops new invoices. An invoice already issued stays payable. Paying it can still renew your domain.
+We send a renewal invoice before your domain expires. The domain renews once that invoice is paid. With Auto Pay on, we charge your saved payment method for it. With Auto Pay off, or if the charge fails, you pay the invoice yourself. Turning renewal invoices off stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew your domain.
