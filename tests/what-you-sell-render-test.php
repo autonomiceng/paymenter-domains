@@ -23,6 +23,7 @@ DB::table('domains_tlds')->where('id',$second->id)->update(['use_default_rule'=>
 DB::table('domains_prices')->where(['server_id'=>$second->server_id,'action'=>'renew','term'=>1])->update(['retail'=>'8.10']);
 // Rows the demo has none of: a saved price below cost, a term with no saved price, a TLD left out and one the registrar no longer lists. They show the red loss, Missing, the amber line and the blocked row.
 DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>1])->update(['retail'=>'5.00']);
+DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>3])->update(['retail'=>null]);
 $left=$first->replicate();$left->tld='bad';$left->use_default_rule=false;$left->pricing_mode='unknown';$left->save();
 $gone=$first->replicate();$gone->tld='gone';$gone->save();
 $u=staffUser([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('acceptance')]);Auth::setUser($u);
@@ -44,6 +45,6 @@ foreach([1,3] as $years){
         writeRenderArtifact($out.'/what-you-sell-'.$years.'-year-'.$mode.'.html',$page);
     }
     expect(str_contains($html,'domains-sell-left'),'Left-out line in render');expect(str_contains($html,'list this TLD'),'Blocked row reason in render');
-    expect($years===3?str_contains($html,'Missing'):str_contains($html,'This price is below registrar cost.'),'Loss and Missing in render');
+    expect($years===3?str_contains($html,'To add one, open the TLD page and use Edit prices.'):str_contains($html,'This price is below registrar cost.'),'Loss and Missing in render');
 }
 echo "Native What you sell rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;
