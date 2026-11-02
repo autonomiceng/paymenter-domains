@@ -11,10 +11,14 @@ final class NewDomainDns
     public const KEY='domains_new_domain_dns_template';
     public const HELP='New registrations get these nameservers. Managed domains use this template for DNS monitoring unless assigned their own. Transfers keep their nameservers, and customer choices take priority. Records are checked only for domains with hosting.';
     public static function profile(int $server): ?WatchProfile
+    { return self::selection($server)['profile']; }
+    /** A saved None is a choice, but supplies no template. @return array{chosen:bool,profile:?WatchProfile} */
+    public static function selection(int $server): array
     {
-        $id=Server::find($server)?->settings()->where('key',self::KEY)->first()?->value;
+        $setting=Server::find($server)?->settings()->where('key',self::KEY)->first();$id=$setting?->value;
         $profile=$id?WatchProfile::find($id):null;
-        return ManagedDnsSetup::usable($profile)?$profile:null;
+        if(!ManagedDnsSetup::usable($profile)){$profile=null;}
+        return ['chosen'=>$setting!==null && ($id==='' || $profile!==null),'profile'=>$profile];
     }
     public static function nameservers(int $server,string $action): array
     { return $action==='register'?(self::profile($server)?->nameservers??[]):[]; }

@@ -54,9 +54,10 @@ final class ManagedDnsSetup
     {
         try {
             if($config?->edited_by!==null || ObservationProjection::registrationNameservers($domain)){return false;}
+            // A finish transaction may have opened its read view before waiting for the holding lock.
             $operations??=$domain->operations()->where('authority_generation',$domain->authority_generation)->where('account_fingerprint',$domain->account_fingerprint)
                 ->where('service_id',$domain->service_id)->where('server_id',$domain->server_id)->where('registrar_key',$domain->registrar_key)
-                ->whereIn('action',['register','transfer','nameservers'])->get();
+                ->whereIn('action',['register','transfer','nameservers'])->lockForUpdate()->get();
             foreach($operations as $op){
                 if($op->authority_generation!==$domain->authority_generation || $op->account_fingerprint!==$domain->account_fingerprint
                     || (int)$op->service_id!==(int)$domain->service_id || (int)$op->server_id!==(int)$domain->server_id || $op->registrar_key!==$domain->registrar_key){continue;}

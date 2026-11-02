@@ -66,23 +66,45 @@ $intentResults=[];
 foreach(['later customer change','adopted customer nameservers','legacy without baseline','platform import without baseline','platform first public read','return from inherited external','return then unchosen refresh','pending chosen change']as$case){
     $registration=null;$change=null;$leave=null;$local=$d->fresh();$savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
     if($case==='pending chosen change'){
+        // SQLite has no repeatable-read views: model the old operations snapshot only for nonlocking reads.
+        // A request becomes visible after finish's seed read and before its first holding-prefix lock.
+        $readView=(object)['phase'=>null,'late'=>null,'create'=>null,'current'=>false];
+        Operation::addGlobalScope('monitoring_finish_read_view',static function($query)use($readView):void{
+            if($readView->phase===null || $readView->late===null){return;}
+            if($query->getQuery()->lock){$readView->current=true;return;}
+            $query->where('domains_operations.id','<>',$readView->late);
+        });
+        DB::listen(static function($query)use($readView):void{
+            if($readView->phase==='seed' && str_starts_with($query->sql,'select') && str_contains($query->sql,'from "domains_domains"')){$readView->phase='waiting';}
+        });
+        DB::connection()->beforeExecuting(static function($sql)use($readView):void{
+            if($readView->phase==='waiting' && str_contains($sql,'from "users"')){
+                $readView->phase='current';$readView->late=($readView->create)()->id;
+            }
+        });
         $pendingResults=[];
         foreach(['queued','pending','running','uncertain']as$state){
-            foreach(['enrollment','before read','during read']as$when){
+            foreach(['enrollment','before read','during read',...($state==='uncertain'?['lock wait']:[])]as$when){
                 DB::transaction(fn()=>ManagedDnsSetup::assign(ManagedPublicConfig::find($id),$default,'platform',null,'hosting_product',$now));
                 $chosen=['ns1.customer.example','ns2.customer.example'];
                 $request=static fn()=>Operation::create(['domain_id'=>$id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
                     'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'operation_key'=>'monitoring-pending-choice',
                     'action'=>'nameservers','state'=>$state,'currency'=>'USD','payload'=>['nameservers'=>$chosen],'policy'=>['management'=>['section'=>'nameservers']],
                     'attempt'=>$state==='queued'?[]:['seal'=>'sealed'],'authorized_by'=>$uid]);
-                $pending=$when==='during read'?null:$request();
+                $pending=in_array($when,['during read','lock wait'],true)?null:$request();
                 if($when==='enrollment'){$refreshNameservers($d->fresh(),$default->profile()->nameservers,$chosen,$now);}
                 expect($signals->enqueue($id,$uid,$now),'Imported holding with in-flight choice is enrolled: '.$state.' / '.$when);
                 managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Platform read starts beside chosen request');
                 if($when==='during read'){$pending=$request();}
                 $answer=\Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset(new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery('example.com','NS'),
                     array_map(static fn($host)=>['host'=>'example.com','class'=>'IN','type'=>'NS','target'=>$host,'ttl'=>300],$default->profile()->nameservers));
-                expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform',queries:[$answer]),$now+1),'Platform NS read is accepted, including a choice created after begin');
+                if($when==='lock wait'){$readView->phase='seed';$readView->create=$request;}
+                try{expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform',queries:[$answer]),$now+1),'Platform NS read is accepted, including a choice created after begin');}
+                finally{$readView->phase=null;}
+                if($when==='lock wait'){
+                    expect($readView->late!==null && $readView->current,'Late request is present in the current holding-lock read after the old read view starts');
+                    $pending=Operation::findOrFail($readView->late);
+                }
                 $refreshNameservers($d->fresh(),$chosen,$chosen,$now+2);
                 expect($signals->enqueue($id,$uid,$now+2),'Unresolved chosen departure passes through enrollment again');
                 $answer=\Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset(new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery('example.com','NS'),
@@ -216,7 +238,7 @@ $returnIntent=[
     'staff_external'=>false,'leave_again'=>[false,[],[],[]],'staff_platform'=>true];
 same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'legacy without baseline'=>[...$quietIntent,'upgrade_intent'=>'external','later_reads'=>[[false,[],[],[]],[false,[],[],[]]],'staff_platform'=>true],
     'platform import without baseline'=>$platformImportIntent,'platform first public read'=>$platformImportIntent,
-    'return from inherited external'=>$returnIntent,'return then unchosen refresh'=>$returnIntent,'pending chosen change'=>array_fill(0,12,[true,false,[],[],[]])],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
+    'return from inherited external'=>$returnIntent,'return then unchosen refresh'=>$returnIntent,'pending chosen change'=>array_fill(0,13,[true,false,[],[],[]])],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
 // A newer unresolved success cannot hide an earlier confirmed customer choice.
 $local=$d->fresh();$savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
 DB::transaction(fn()=>ManagedDnsSetup::assign(ManagedPublicConfig::find($id),$default,'platform',null,'hosting_product',$now));

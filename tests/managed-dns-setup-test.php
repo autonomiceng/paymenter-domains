@@ -73,7 +73,7 @@ foreach([[] , [Staff::POLICY], [$dnsPermission], [Staff::POLICY,$dnsPermission]]
     $page=Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$id]);
     $canEdit?$page->assertSee('Set account DNS template'):$page->assertDontSee('Set account DNS template');
     if($canEdit){
-        $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id,'switch'=>'template']).'#switch-template';
+        $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]).'#switch-template';
         $page->assertSee('href="'.e($url).'">Set account DNS template',false);
     }
 }
