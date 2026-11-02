@@ -348,7 +348,8 @@ $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\Wat
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
 $action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('domain_settings_'.$enom->server_id,'content');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action);
-$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Default DNS template')->assertSee('Choose an enabled DNS template with Change.')->assertSee('Example Hosting does not sell it yet.');
+$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('New domains use')->assertSee('Choose an enabled DNS template with Change. Create one under DNS templates first.')->assertSee('Example Hosting does not sell it yet.');
+$page->assertActionExists($action,fn($action)=>$action->getLabel()==='Change'&&$action->getModalHeading()==='New domains use');
 $page->callAction($action,['dns_template'=>(string)$template->id])->assertHasNoActionErrors()->assertNotified('Saved');
 same($template->id,\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($enom->server_id)->id,'Account form saves the default');
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Shared registration DNS')->assertSee('ns1.provider.example');

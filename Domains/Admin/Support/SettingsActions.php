@@ -377,7 +377,7 @@ final class SettingsActions
     /** Dialog title: what the button does, as a question. */
     private static function setupHeading(string $name,bool $connected): string
     {
-        return match(true){$name==='new_domain_dns'=>'Default DNS template',$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
+        return match(true){$name==='new_domain_dns'=>'New domains use',$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
             default=>self::setupLabel($name,$connected).'?'};
     }
     private static function submitLabel(string $name,bool $connected): string

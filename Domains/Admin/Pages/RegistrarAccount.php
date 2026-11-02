@@ -78,7 +78,7 @@ class RegistrarAccount extends Page
             $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
             $id=(int)$s->id;
             $template=\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($id);
-            $entry=MissingEntry::apply(TextEntry::make('new_domain_dns')->label('Default DNS template')->state($template?->name)->inlineLabel(),cause:$template?null:'Choose an enabled DNS template with Change. Create one under DNS templates first.');
+            $entry=MissingEntry::apply(TextEntry::make('new_domain_dns')->label('New domains use')->state($template?->name)->inlineLabel(),cause:$template?null:'Choose an enabled DNS template with Change. Create one under DNS templates first.');
             if($template){$entry->belowContent(implode(', ',$template->nameservers));}
             $entry->hintAction(HelpHint::make(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::HELP));
             $sections[]=Section::make('Domain settings')->key('domain_settings_'.$id)->schema([Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'new_domain_dns')])->grow(false)])->from('md'),
