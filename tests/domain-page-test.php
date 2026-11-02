@@ -76,7 +76,7 @@ expect(str_contains($html,'.domains .domains-row__a .domains-a:hover, .domains .
 $inlineHover=strpos($html,'.domains .domains-a:hover { text-decoration: underline; }');
 $actionHover=strpos($html,'.domains .domains-row__a .domains-a:hover, .domains .domains-card dd > .domains-a:hover, .domains .domains-linkbtn:hover { text-decoration: none; }');
 expect($inlineHover!==false&&$actionHover!==false&&$actionHover>$inlineHover,'Action hover exceptions follow the inline rule so equal-specificity link buttons keep no underline');
-same(['We email it to the owner',['Email auth code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
+same(['We email it to the owner',['Email code']],[$text('auth_code_email'),$action('auth_code_email')],'Auth code row');
 same(0,$dom->query('//li[@id="auto_renew_off"]')->length,'Registrar auto-renew row is staff only');
 foreach(['nameservers'=>'nameservers','dns'=>'dns-records','glue'=>'glue-records','ds'=>'dnssec','lock'=>'transfer-lock','privacy'=>'privacy','auth_code_email'=>'transfer-code']as$id=>$anchor){
     same(1,$dom->query('//li[@id="'.$id.'"]//a[@href="'.route('domains.help').'#'.$anchor.'"]')->length,'Help popover links to help: '.$id);
@@ -178,9 +178,10 @@ same('Missing Contact support Not issued yet. Expected Oct 3, 2026.',$card($dom,
 // Planned, due, paid and cancelled invoices.
 // Renewal invoices On: Auto Pay has its own row and says what it does to the renewal invoice.
 $on=$domain(['renewal'=>'On','actions'=>['show'=>'/domains/1','autoPay'=>'/services/1#auto-pay']]);
-same('Off Manage Auto Pay We send you an invoice and you pay it to renew.',$card(storefrontDom($render($on,$summary($on))),'Auto Pay'),'Auto Pay off explains the invoice');
+$autoPay=static fn(DOMXPath $dom)=>[...$split($dom,'Auto Pay'),$norm($dom->query('//section[@id="renewal"]//dt[normalize-space(text())="Auto Pay"]/following-sibling::dd[1]/span[contains(@class,"domains-sub")]')->item(0))];
+same(['Off',['Manage Auto Pay'],'We send you an invoice and you pay it to renew.'],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay off explains the invoice');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
-same('On We charge your saved payment method for each renewal invoice.',$card(storefrontDom($render($on,$summary($on))),'Auto Pay'),'Auto Pay on says the card is charged');
+same(['On',[],'We charge your saved payment method for each renewal invoice.'],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay on says the card is charged');
 $d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice shows the issue date, as staff see it');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
@@ -261,7 +262,7 @@ same(['This domain has expired. Contact support to check whether it can still be
 
 // History: changes with dates and renewal invoices.
 $d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Completed','date'=>'2026-10-20']],'history'=>[['number'=>'INV-7','status'=>'Paid','url'=>'/invoices/7','date'=>'2026-09-30']]]);$dom=storefrontDom($render($d));
-same(['Nameservers Oct 20, 2026, 12:00 AM UTC Completed','Invoice #INV-7 Sep 30, 2026 Paid'],array_map($norm,iterator_to_array($dom->query('//section[@id="history"]//ol[@class="domains-trace"]/li'))),'History steps: what, when, how it ended');
+same([['Nameservers','Oct 20, 2026, 12:00 AM UTC','Completed'],['Invoice #INV-7','Sep 30, 2026','Paid']],array_map(static fn(DOMNode $li)=>[...array_map($norm,iterator_to_array($dom->query('./div/*',$li))),$norm($dom->query('./span[last()]',$li)->item(0))],iterator_to_array($dom->query('//section[@id="history"]//ol[@class="domains-trace"]/li'))),'History steps: what, when, how it ended');
 same(['ok','ok'],array_map(fn($n)=>substr($n->getAttribute('class'),strlen('domains-status domains-tone-')),iterator_to_array($dom->query('//section[@id="history"]//li/span[@aria-hidden="true"]'))),'Finished steps carry the green mark');
 same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Invoice #INV-7"]')->length,'Invoice step links');
 same(['ok','bad','warn','warn','muted','info','info'],array_map([DomainPage::class,'stepTone'],['Completed','Failed','Unpaid','Action required','Cancelled','Under review','On hold']),'Only a step the customer owns is amber; our work is blue');
