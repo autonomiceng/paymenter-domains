@@ -27,6 +27,7 @@
     "tests/profile-diagnostics-test.php",
     "tests/driver-contract-test.php",
     "tests/pricing-test.php",
+    "tests/offer-evaluator-test.php",
     "tests/ote-purchase-evidence-test.php",
     "tests/ote-renewal-probe-test.php",
     "tests/conversion-app-policy-test.php",
