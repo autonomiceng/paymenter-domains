@@ -210,7 +210,7 @@ $auth = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Credential
 $localRegistry = new RegistrarRegistry;
 $localRegistry->register('namesilo', ['api_key'], new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\AccountVerifier, $factory, authenticator: $auth);
 $local = new AccountBindings($localRegistry); app()->instance(AccountBindings::class, $local);
-foreach ([10, 11, 12] as $id) { Server::create(['id' => $id, 'name' => 'Local registrar', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]); }
+foreach ([10, 11, 12] as $id) { Server::forceCreate(['id' => $id, 'name' => 'Local registrar', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]); }
 $before = count($wire->calls);
 $reject(fn () => $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-one']));
 same($before, count($wire->calls), 'Local enrollment requires staff review before authentication');
