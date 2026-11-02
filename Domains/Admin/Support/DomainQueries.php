@@ -31,6 +31,12 @@ final class DomainQueries
     {
         return self::related($q,fn($ops)=>$ops->whereIn('attention.state',$states));
     }
+    /** Domains with an unresolved staff alert: the list's Open alerts filter and its menu count. */
+    public static function openAlerts(Builder $q): Builder
+    {
+        return $q->whereExists(fn($a)=>$a->selectRaw('1')->from('domains_obligation_alerts as a')
+            ->whereColumn('a.domain_id','domains_domains.id')->whereNull('a.resolved_at'));
+    }
     public static function creditReview(Builder $q): Builder
     {
         return self::related($q,fn($ops)=>RefundCandidates::query($ops,'attention.'));

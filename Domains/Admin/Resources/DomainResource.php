@@ -9,7 +9,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, Staff, StaffDomainInputs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount, Staff, StaffDomainInputs};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
@@ -39,6 +39,13 @@ class DomainResource extends Resource
         Staff::requireView();
         return parent::getEloquentQuery();
     }
+    /** Menu count: domains with an open alert, the list's Open alerts filter. Null at zero, so the menu shows nothing. */
+    public static function getNavigationBadge(): ?string
+    {
+        if (!Staff::can()) { return null; }
+        return NavigationCount::read('domains',fn()=>DomainQueries::openAlerts(Domain::query())->count());
+    }
+    public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {
         EmptyTable::apply($table,'No domains yet','They show here after a customer orders one.','No domains match');
@@ -82,8 +89,7 @@ class DomainResource extends Resource
                 }),
             // The account page's Domain alerts row links here with this filter and the account.
             Filter::make('alerts')->label('Open alerts')->toggle()
-                ->query(fn(Builder $query)=>$query->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_obligation_alerts as a')
-                    ->whereColumn('a.domain_id','domains_domains.id')->whereNull('a.resolved_at'))),
+                ->query(fn(Builder $query)=>DomainQueries::openAlerts($query)),
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
             ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25);
     }
