@@ -14,7 +14,7 @@
         .domains-sell-table .fi-ta-table-head-groups-row:not(:has(.fi-ta-header-group-cell ~ .fi-ta-header-group-cell)){display:none}
         .domains-sell-table .fi-ta-table td,.domains-sell-table .fi-ta-table th{white-space:nowrap}
         .domains-sell-table .fi-ta-table>thead>tr,.dark .domains-sell-table .fi-ta-table>thead>tr{background:none}
-        .fi-header-subheading .domains-help-beside{margin-inline:.625rem .875rem}
+        .fi-header-subheading .domains-help-beside{margin-inline:0 .875rem}
         .domains-sell-table .fi-ta-table tr>:first-child{padding-inline-start:20px}.domains-sell-table .fi-ta-table tr>:last-child{padding-inline-end:20px}
         .domains-sell-table .fi-ta-table td:first-child .fi-ta-text{padding-inline-start:0}.domains-sell-table .fi-ta-table td:last-child .fi-ta-text{padding-inline-end:0}
         /* Staff rows are one line at 44px. */
@@ -24,6 +24,10 @@
         .domains-sell-table .fi-ta-selection-cell{width:3rem;min-width:3rem}.domains-sell-table .fi-ta-selection-cell + .domains-sell-pin{left:3rem}
         @media(max-width:40rem){
             .domains-sell-note{padding-inline:12px}.domains-price-help dl{grid-template-columns:minmax(0,1fr)}
+            /* The account and year choices share a row, and search and the buttons wrap below, so nothing is cut. */
+            .domains-sell-table .fi-ta-header-toolbar>div:last-child{flex-wrap:wrap;width:100%;row-gap:.75rem}.domains-sell-table .fi-ta-header-toolbar>.fi-ta-actions:not(:has(>:not([style*="display: none"]))){display:none}
+            .domains-sell-choices{flex:1 0 100%;flex-wrap:nowrap}.domains-sell-choices .fi-input-wrp{flex:1 1 auto;min-width:0}
+            .domains-sell-table .fi-ta-header-toolbar .fi-ta-search-field{flex:1 0 100%;width:auto;max-width:none}
             .domains-sell-table .fi-ta-table tr>:first-child{padding-inline-start:12px}.domains-sell-table .fi-ta-table tr>:last-child{padding-inline-end:12px}
         }
     </style>
