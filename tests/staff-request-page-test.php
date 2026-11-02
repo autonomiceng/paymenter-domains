@@ -133,7 +133,7 @@ Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])
 
 // Completed: Completed pill, no notice and no More menu.
 $done=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$doneOp->id]);
-expect(str_contains((string)$done->instance()->getHeading(),'Completed'),'Completed pill');
+expect(str_contains($done->instance()->getSubheading()->toHtml(),'Completed'),'Completed pill');
 $done->assertDontSee('More')->assertDontSee('Registrar completion confirmed');
 
 // Cancelled with credit: History names staff actions in plain words; Credit row says Credit added.

@@ -72,6 +72,7 @@ try{
     same(1,$current->update(['value'=>'broken current ciphertext']),'Current history ciphertext is corrupted');
     $unreadable=TldFacts::history($server->id,$t->id);
     same(null,$unreadable,'Corrupt current history returns strict null');
+    tldPanel();
     Livewire\Livewire::actingAs($u)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee(DomainFacts::UNREADABLE);
 }finally{$current->update(['value'=>$ciphertext]);}
 same($ciphertext,(clone $current)->value('value'),'Current history restores the exact raw ciphertext');
