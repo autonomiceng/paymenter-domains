@@ -26,11 +26,17 @@ final class LocalAccountEnrollment
             authenticator: new NameSilo\CredentialAuthenticator($environment));
         return true;
     }
+    /** Encoding failures must never retain a built-in trace containing the submitted key. */
+    public static function keyFingerprint(#[\SensitiveParameter] array $credentials): string
+    {
+        try { return hash('sha256', json_encode($credentials, JSON_THROW_ON_ERROR)); }
+        catch (\Throwable) { throw new \InvalidArgumentException('Registrar credentials invalid.'); }
+    }
     public static function facts(AccountBinding $binding, string $identity, #[\SensitiveParameter] array $credentials): array
     {
         return ['contract' => 'local_account_enrollment_v1', 'binding' => $binding->fingerprint, 'identity' => $identity,
             'provider_confirmed_account' => false, 'credential_revision' => bin2hex(random_bytes(16)),
-            'key_fingerprint' => hash('sha256', json_encode($credentials, JSON_THROW_ON_ERROR))];
+            'key_fingerprint' => self::keyFingerprint($credentials)];
     }
     public static function validate(Account $account, #[\SensitiveParameter] array $facts, #[\SensitiveParameter] array $credentials): void
     {
@@ -38,7 +44,7 @@ final class LocalAccountEnrollment
             || ($facts['provider_confirmed_account'] ?? null) !== false || ($facts['identity'] ?? null) !== $account->stable_identity
             || ($facts['binding'] ?? null) !== $account->account_fingerprint
             || !is_string($facts['credential_revision'] ?? null) || !preg_match('/^[a-f0-9]{32}$/D', $facts['credential_revision'])
-            || ($facts['key_fingerprint'] ?? null) !== hash('sha256', json_encode($credentials, JSON_THROW_ON_ERROR))) {
+            || ($facts['key_fingerprint'] ?? null) !== self::keyFingerprint($credentials)) {
             throw new \DomainException('Local account enrollment changed.');
         }
     }

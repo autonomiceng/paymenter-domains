@@ -265,6 +265,22 @@ catch (DomainException $error) {
 ini_set('zend.exception_ignore_args', '1');
 same($beforeRows, Account::count(), 'Failed authentication creates no account');
 expect(!Server::findOrFail(11)->settings()->whereIn('key', ['domains_credentials', LocalAccountEnrollment::KEY])->exists(), 'Failed authentication saves no secrets');
+$malformedKey = "placeholder-key-\xFF";
+$malformedError = null;
+$before = count($wire->calls);
+$previousIgnoreArgs = ini_set('zend.exception_ignore_args', '0');
+try { $local->configure(11, 'namesilo', Environment::Live, ['api_key' => $malformedKey], $review(11)); }
+catch (Throwable $error) { $malformedError = $error; }
+finally { ini_set('zend.exception_ignore_args', $previousIgnoreArgs); }
+expect($malformedError !== null, 'Malformed credential is refused');
+for ($error = $malformedError; $error !== null; $error = $error->getPrevious()) {
+    expect(!str_contains($error->getMessage(), $malformedKey), 'Malformed credential is absent from exception messages');
+    expect(!str_contains(print_r($error->getTrace(), true), $malformedKey), 'Malformed credential is absent from exception trace arguments');
+}
+same(InvalidArgumentException::class, $malformedError::class, 'Malformed credential uses the safe validation exception');
+same('Registrar credentials invalid.', $malformedError->getMessage(), 'Malformed credential uses the existing safe validation error');
+same(null, $malformedError->getPrevious(), 'Malformed credential retains no original exception');
+same($before, count($wire->calls), 'Malformed credential is rejected before authentication');
 $wire->body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":300,"detail":"synthetic","balance":"0.00"}}';
 $other = $local->configure(12, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-other'], $review(12));
 expect(!$other->matches($localBinding), 'Independent local accounts have distinct random lineage');

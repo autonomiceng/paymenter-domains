@@ -127,7 +127,7 @@ final class AccountBindings
             $marked = $server->settings()->where('key', LocalAccountEnrollment::KEY)->exists();
             if (!LocalAccountEnrollment::enrolled($account) && !$marked) { continue; }
             $credentials = $this->configuration($account, false, $server);
-            if ($facts['key_fingerprint'] === hash('sha256', json_encode($credentials, JSON_THROW_ON_ERROR))) {
+            if ($facts['key_fingerprint'] === LocalAccountEnrollment::keyFingerprint($credentials)) {
                 throw new \DomainException('This key is already enrolled. Rotate it on its existing local account.');
             }
         }

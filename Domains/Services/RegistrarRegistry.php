@@ -49,7 +49,7 @@ final class RegistrarRegistry
         if (count($values) !== count($keys)) { throw new \InvalidArgumentException('Registrar credentials incomplete.'); }
         foreach ($keys as $name) {
             $value = $values[$name] ?? null;
-            if (!is_string($value) || trim($value) === '' || strlen($value) > 4096 || preg_match('/[\x00-\x1f\x7f]/', $value)) {
+            if (!is_string($value) || trim($value) === '' || strlen($value) > 4096 || preg_match('//u', $value) !== 1 || preg_match('/[\x00-\x1f\x7f]/', $value)) {
                 throw new \InvalidArgumentException('Registrar credentials invalid.');
             }
             $clean[$name] = $value;
