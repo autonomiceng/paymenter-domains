@@ -16,7 +16,7 @@ require __DIR__.'/Support/namesilo-registration-fixture.php';
 app()->instance(Clock::class,$clock);
 // These namespace functions replace every cURL call in AdmittedTransport; no socket is possible.
 function curl_init(): object {return new \stdClass;}
-function curl_setopt_array($h,array $options): bool {$GLOBALS['purchaseOptions']=$options;return true;}
+function curl_setopt_array($h,array $options): bool {$GLOBALS['purchaseOptions']=array_replace($GLOBALS['purchaseOptions']??[],$options);return true;}
 function curl_exec($h): bool {
     parse_str(parse_url($GLOBALS['purchaseOptions'][CURLOPT_URL],PHP_URL_QUERY),$p);
     $command=basename(parse_url($GLOBALS['purchaseOptions'][CURLOPT_URL],PHP_URL_PATH));
@@ -33,7 +33,7 @@ $accountKey='domains.namesilo_live.accounts.'.$account->stable_identity;
 config(['domains.namesilo_live.site'=>'https://billing.example.com',$accountKey=>$settings,
     'domains.namesilo_live.catalogue'=>true,'domains.namesilo_live.registration'=>true]);
 $ledger=new LiveReservations(new NameSiloLiveReservationPolicy);
-$prepare=static function(string $mode)use($binding,$makeEngine,$exchange,$registration,$clock,&$protocol,&$engine,$accountKey,$settings): void {
+$prepare=static function(string $mode)use($binding,$makeEngine,$exchange,$registration,$clock,&$protocol,&$engine,$accountKey,$settings,&$profiles,&$acceptance,$freshBindings,$claims,$bindingFor): void {
     $registration->mode=$mode==='success'?'stillon':'300';$registration->calls=[];
     $GLOBALS['physical']=[];config([$accountKey=>$settings,'domains.provider_send_guard'=>null]);
     $transport=new AdmittedTransport($binding,static fn(bool $write)=>['api_key'=>'placeholder-api-key']);
@@ -54,14 +54,14 @@ $prepare=static function(string $mode)use($binding,$makeEngine,$exchange,$regist
     $profileExchange=static fn($origin,$command,$p,$timeout)=>$exchange('https://ote.namesilo.com/apibatch',$command,$p,$timeout);
     $makeEngine($binding,$profileExchange);
     // Rebuild the genuine protocol/bridge with the physical exchange, retaining the same preflight/profile policy.
-    $protocol=new Registration($binding,$GLOBALS['profiles'],$wire);
-    commerceReject(fn()=>$protocol->useReservation(new SendReservation($GLOBALS['bindingFor'](0),new NameSiloLiveReservationPolicy)));
+    $protocol=new Registration($binding,$profiles,$wire);
+    commerceReject(fn()=>$protocol->useReservation(new SendReservation($bindingFor(0),new NameSiloLiveReservationPolicy)));
     $protocol->useReservation($transport->reservation);
     commerceReject(fn()=>$protocol->useReservation($transport->reservation));
-    $bridge=new Writer($binding,$GLOBALS['features']=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true),$GLOBALS['acceptance'],static function()use(&$engine){return $engine;},$protocol);
+    $bridge=new Writer($binding,$features=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true),$acceptance,static function()use(&$engine){return $engine;},$protocol);
     // Use the exact preflight policy objects required by DomainOperations::consume.
-    $fresh=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($GLOBALS['freshBindings'],$GLOBALS['features'],$GLOBALS['acceptance'],$GLOBALS['profiles']);
-    $engine=new \Paymenter\Extensions\Servers\Domains\Services\DomainOperations($GLOBALS['claims'],$fresh,$bridge,$clock);
+    $fresh=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($freshBindings,$features,$acceptance,$profiles);
+    $engine=new \Paymenter\Extensions\Servers\Domains\Services\DomainOperations($claims,$fresh,$bridge,$clock);
     if($mode==='unsent'){
         config(['domains.provider_send_guard'=>static function()use($registration):void {
             $op=Operation::where('operation_key',$GLOBALS['purchaseOperation'])->sole();
@@ -78,7 +78,7 @@ foreach(['success','unsent','timeout','cap','off'] as $mode){
     $after=$ledger->usage($binding);$writes=count(array_filter($GLOBALS['physical'],static fn($c)=>$c==='registerDomain'));
     same($money,$nativeMoney(),'Execution preserves native invoices, payments, credits and jobs');
     if($mode==='success'){
-        same('pending',$result->state,'Accepted purchase retained');same(1,$writes,'One physical purchase');
+        same('pending',$result->state,'Accepted purchase retained: '.$result->state.':'.($result->safe_code??'none').':'.implode(',',$GLOBALS['physical']).':'.implode(',',$registration->calls));same(1,$writes,'One physical purchase');
         same(['auto_renew'],array_keys($result->attempt['corrections']),'Auto-renew needs separately authorized work');
         expect(!in_array('removeAutoRenewal',$GLOBALS['physical'],true),'Purchase grant never performs cleanup mutation');
     }elseif($mode==='unsent'){
