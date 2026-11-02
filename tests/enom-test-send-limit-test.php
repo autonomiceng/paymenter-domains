@@ -7,7 +7,7 @@ require_once __DIR__.'/Support/accounts.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{ApiCallLimitAction,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Services\{ApiCallLimits,CatalogueAcceptances,EnomLive,EnomLiveCalls,EnomLiveCallSchema,PriceSync,StaffSettingsReview as Review,EnomTestCallLimit,EnomTestCalls,EnomTestSendLimit as Limit,EnomTestSendLimitSchema as Tables,Installation};
@@ -75,6 +75,7 @@ $review=static function(?string $stamp=null)use($staff): Review {
     return new Review($staff->id,1,null,'call_limits',Review::ticket($staff->id,1,null,'call_limits',$stamp??Review::stamp(1,null)),'Adjust our runaway guard');
 };
 $write=static fn($r,$day,$minute=3)=>ApiCallLimits::save($r,['day'=>$day,'minute'=>$minute]);
+same(['cancel','submit'],array_keys(ApiCallLimitAction::make($account,Review::stamp(1,null))->getModalFooterActions()),'Cancel comes before Save, as on every other dialog');
 same(true,admits($uid),'Seed current usage before lowering the guard');
 $before=PriceSync::callsToday($binding);
 CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>false,'renewal_safe'=>true]]);
