@@ -44,7 +44,7 @@ final class PslActions
         }
         if ($review===null&&($at=self::limitedUntil($list))!==null) { $subs[]='Next download allowed '.self::date($at); }
         if($tone!==null){$subs[]=$review!==null?'Automatic update stopped because many rules disappeared. Review the removals before replacing the saved list.':'Updates retry automatically each week. Check the scheduler and site logs if downloads keep failing.';}
-        return ['label'=>'Public suffix list','value'=>$value,'tone'=>$tone??'success','cause'=>$subs?implode(' · ',$subs):null,'action'=>null,'help'=>self::HELP,
+        return ['label'=>'Public suffix list','value'=>$value,'tone'=>$tone??'success','cause'=>$subs?implode('. ',$subs):null,'action'=>null,'help'=>self::HELP,
             'buttons'=>$review===null?[]:[self::accept($refresh)]];
     }
     public static function download(callable $refresh): Action

@@ -20,7 +20,7 @@ class RoutingProfileResource extends WatchReadResource
     {
         return $table->columns([TextColumn::make('name')->label('Template')->wrap(),TextColumn::make('nameservers')->label('Nameservers')->listWithLineBreaks()->wrap(),
             TextColumn::make('enabled')->label('Status')->state(fn($record)=>$record->enabled?'On':'Off')->formatStateUsing(fn(string $state)=>OnOffSwitch::html($state==='On'))])
-            ->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No DNS templates');
+            ->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->paginated([25,50,100])->defaultPaginationPageOption(25)->emptyStateHeading('No DNS templates');
     }
     public static function getPages(): array{return ['index'=>ListConfiguration::route('/'),'view'=>ViewConfiguration::route('/{record}')];}
 }

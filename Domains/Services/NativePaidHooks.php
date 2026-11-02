@@ -35,7 +35,7 @@ final class NativePaidHooks
         $dispatcher=Event::getFacadeRoot();
         $paid=class_exists(\App\Events\Invoice\Paid::class)&&is_callable([$dispatcher,'getRawListeners'])
             &&in_array([self::class,'paid'],$dispatcher->getRawListeners()[\App\Events\Invoice\Paid::class]??[],true);
-        return ['Start after payment'=>$paid?'Available':'Paused · the invoice-paid listener is missing. Scheduled checks still pick up paid orders.',
+        return ['Start after payment'=>$paid?'Available':'Paused. The invoice-paid listener is missing. Scheduled checks still pick up paid orders.',
             'Paymenter payment events'=>$missing?'Required Service listeners are missing in this process: '.implode(', ',$missing).'. New registrations and transfers that run here wait until a healthy process picks them up.':'Available'];
     }
 }

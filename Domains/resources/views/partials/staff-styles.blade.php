@@ -3,6 +3,9 @@
 .domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
 .domains-name-cell{overflow-wrap:break-word;min-width:11rem;max-width:24rem}
+.domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
+.domains-narrow{max-width:12rem}
+.domains-cut{max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .domains-watch-header .fi-ac{flex-wrap:wrap}
 @media (min-width:40rem){.domains-watch-header{flex-wrap:wrap!important}.domains-watch-header>div:first-child{flex:1 1 100%;min-width:0}.domains-watch-header .fi-header-actions-ctn{flex:1 1 30rem;min-width:0}}
 .domains-small{font-size:.75rem;opacity:.75}

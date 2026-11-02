@@ -155,7 +155,7 @@ final class AccountChecklist
     {
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
-            $at=$failure['at']===null?'':' · '.$failure['at'];
+            $at=$failure['at']===null?'':', '.$failure['at'];
             $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Fix the connection or our call limit, then use Sync prices. Daily retries continue.',null,self::PRICES);
             return [...$row,'buttons'=>self::priceButtons($a)];
         }

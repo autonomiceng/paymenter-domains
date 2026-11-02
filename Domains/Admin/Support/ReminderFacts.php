@@ -59,8 +59,8 @@ final class ReminderFacts
         };
         $hold=Schema::hasTable('domains_observation_queues')?DB::table('domains_observation_queues')->where('server_id',$server)->value('catalogue_hold'):null;
         $binding=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->value('account_fingerprint');
-        return ['Catalogue refresh'=>$hold?'On hold · inspect saved catalogue work before resuming':'No saved catalogue hold',
-            'Customer reminders'=>$r?($r->account_fingerprint!==$binding?'On hold · account changed':($r->enabled?'On':'Off')):'Not configured',
+        return ['Catalogue refresh'=>$hold?'On hold, inspect saved catalogue work before resuming':'No saved catalogue hold',
+            'Customer reminders'=>$r?($r->account_fingerprint!==$binding?'On hold, account changed':($r->enabled?'On':'Off')):'Not configured',
             'Days before expiry'=>$r?$days($r->before_days,true):'60, 30, 7, 1','Days after expiry'=>$r?$days($r->after_days):'3',
             'Notification safety'=>'Unknown expiry or price alerts staff. Queued mail is not delivery confirmation.'];
     }

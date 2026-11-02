@@ -47,7 +47,7 @@ same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observati
 // List: Request, Domain, Type, Status with reason, Created, Registrar account; Status, Type and Registrar account filters.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
 $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()
-    ->assertSee('Request #'.$heldOp->id)->assertSee('Oct 20, 2026 15:05 UTC')->assertSee('Synthetic registrar')
+    ->assertSee('Request #'.$heldOp->id)->assertSeeHtml('2026-10-20T15:05:00+00:00')->assertSee('Synthetic registrar')
     ->assertSee('On hold')->assertSee('Old registrar needs approval')->assertSee('Registrar account')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
 same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');

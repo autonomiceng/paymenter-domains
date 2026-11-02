@@ -263,7 +263,7 @@ final class EnomLiveActivation
     {
         $features??=self::defaults($a);$b=CatalogueAcceptances::binding($a);$balance=self::balance($a);$details=[];
         $details[]=implode(', ',array_map(static fn($feature)=>ucfirst($feature).' '.($features[$feature]?'On':'Off'),self::FEATURES)).'.';
-        $details[]='Account '.$b->fingerprint.' · site '.($a->live_site??'Missing: verify the API connection').'.';
+        $details[]='Account '.$b->fingerprint.', site '.($a->live_site??'Missing: verify the API connection').'.';
         $details[]='Balance '.($balance?->amount??'Missing: use Check balance').' '.($balance?->currency??'USD').'. '.EnomLiveCalls::facts($b);
         $billing=RenewalBillingSettings::read((int)$a->server_id);
         $details[]='Renewal invoices '.$billing['issue_days'].' days before expiry, due '.$billing['due_days'].' days before. Renewals also enable scheduled invoices and customer early renewals. Late renewal has a separate account switch.';

@@ -76,7 +76,7 @@ same('Paid domain changes on this NameSilo account wait until the result is know
 $op->attempt=[];
 same('NameSilo has not confirmed this transfer.',RequestFacts::for($op)['outcome'],'Uncertain request copy snapshot');
 same(['Start after payment','Paymenter payment events'],array_keys(NativePaidHooks::notices()),'Payment event labels snapshot');
-same('Paused · the invoice-paid listener is missing. Scheduled checks still pick up paid orders.',NativePaidHooks::notices()['Start after payment'],'Missing listener copy snapshot');
+same('Paused. The invoice-paid listener is missing. Scheduled checks still pick up paid orders.',NativePaidHooks::notices()['Start after payment'],'Missing listener copy snapshot');
 // An empty table says what fills it; a search that hid the rows says so instead.
 Livewire::actingAs($viewer)->test(ListDomains::class)->set('tableSearch','no-such-name')->assertSee('No domains match')->assertDontSee('No domains yet')->assertDontSee('after a customer orders');
 Livewire::actingAs($viewer)->test(ListOperations::class)->set('tableSearch','no-such-name')->assertSee('No requests match')->assertDontSee('Requests show here');
