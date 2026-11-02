@@ -54,7 +54,7 @@ ordinary nor late renewal admits them. There is no restore writer.
 
 ## TLD prices
 
-The TLD page **More** menu holds **Edit prices** and **Edit terms**. **Edit prices**
+The TLD page **More** menu holds **Edit prices** and **Open in What you sell**, where terms are bulk edited. **Edit prices**
 offers the account default or prices for that TLD only, shows the formula in words
 and previews register, renew and transfer for each sold term (cost, current price,
 price after saving, below-cost rows flagged). Saving publishes at once through the

@@ -105,7 +105,7 @@ Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertDontSee
 Livewire::actingAs($u)->test(PriceListPage::class)->assertRedirect(WhatYouSell::getUrl());
 // All accounts reads every account and saves none.
 $editor=staffUser(array_keys(Staff::permissions()));
-$all=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL)->assertCountTableRecords(2)->assertSee('Choose one account to sync or edit.')->assertActionDisabled('rule')->assertActionVisible('csv')->assertTableActionHidden('edit_terms',$shown)->assertTableBulkActionHidden('edit');
+$all=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL)->assertCountTableRecords(2)->assertSee('Choose one account to sync or edit.')->assertActionDisabled('rule')->assertActionVisible('csv')->assertTableBulkActionHidden('edit');
 same(1,substr_count($all->html(),'Choose one account to sync or edit.'),'The reason is said once');
 expect($all->instance()->getTable()->getColumn('account_name')->isVisible(),'All accounts names each row\'s account');
 $all->call('downloadCsv')->assertFileDownloaded('domain-prices-1-year.csv');

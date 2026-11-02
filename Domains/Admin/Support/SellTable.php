@@ -97,6 +97,12 @@ final class SellTable
         $this->rowTlds=$tlds->keyBy(fn(Tld $t)=>$t->server_id.':'.$t->tld)->all();$page=TldFacts::page($tlds);
         return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->server_id.':'.$t->tld=>$page[$t->id]])->all();
     }
+    /** The saved TLD behind a row, for its own page. A row nothing is saved for yet has none. */
+    public function tldId(SellRow $row): ?int
+    {
+        $this->facts();$tld=$this->rowTlds[self::key($row)]??null;
+        return $tld===null?null:(int)$tld->id;
+    }
     /** @return array{0:?string,1:?string,2?:bool,3?:?string} price, profit, whether they are estimates from the saved rule, and why the price is a loss. */
     public function numbers(SellRow $row): array
     {

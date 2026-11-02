@@ -33,7 +33,7 @@ $render=static function($test,string $name,string $extra='')use($out,$css){
     expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSee(['TLD','Registrar account','Domains','Renewal price','.com']);$render($list,'tlds');
-$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices','Edit terms'],false)
+$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices','Open in What you sell'],false)
     ->assertDontSee(['Publish prices','Use default pricing','Edit default pricing'],false);$render($view,'tld-revisions');
 // The header More menu, opened: its panel is hidden until clicked, so show it for the capture.
 $render($view,'tld-more-menu','.fi-ac .fi-dropdown-panel{display:block!important;position:absolute;right:0;z-index:50}');

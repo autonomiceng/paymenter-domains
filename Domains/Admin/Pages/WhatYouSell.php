@@ -207,7 +207,7 @@ class WhatYouSell extends Page implements HasTable
     public function tableNote(): ?string
     {
         if(!$this->canSeeCosts()||$this->bindings()===[]){return null;}
-        if(($years=$this->years())>1){return 'Saved prices in USD for '.$years.' years, never worked out from the 1-year price. Missing: no price is saved, hover over it for the next step. Off: not sold this long. To sell it longer, use Edit terms.';}
+        if(($years=$this->years())>1){return 'Saved prices in USD for '.$years.' years, never worked out from the 1-year price. Missing: no price is saved, hover over it for the next step. Off: not sold this long.'.($this->canEdit()?' To sell it longer, tick the row and use Edit selected.':'');}
         $more=array_intersect_key($this->getTable()->getVisibleColumns(),['renew_cost'=>1,'renew_price'=>1,'renew_profit'=>1,'transfer_cost'=>1,'transfer_price'=>1,'transfer_profit'=>1])!==[];
         return 'Prices in USD for 1 year. Gray prices are estimates: nothing is saved for that TLD yet.'.($more?' Off means that sale is turned off, or the TLD is not for sale.':'');
     }
@@ -251,6 +251,19 @@ class WhatYouSell extends Page implements HasTable
             $column('profit','Profit'),
         ])->alignCenter();
     }
+    /** Bulk edit's fields. With one TLD they say what that TLD has now, since this is also how a single row is edited. */
+    private function editFields(?SellRow $one): array
+    {
+        $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=$one?->longest??$rule['years']??null;$transfer=$one?->transfer??$rule['transfers']??null;
+        $keep=static fn(?string $now)=>[self::KEEP=>$now===null?'Leave as is':'Leave as is ('.$now.')'];
+        return [
+            Select::make('choice')->label('Sell')->required()->selectablePlaceholder(false)->default(self::KEEP)->options([self::KEEP=>'Leave as is','rule'=>'Use the default rule','sell'=>'Sell','skip'=>"Don't sell"])
+                ->hintAction(HelpHint::make($one===null?'Use the default rule clears Sell or Don’t sell for these TLDs. Cost limits and each row’s terms still apply.':'Use the default rule clears Sell or Don’t sell for this TLD. Cost limits and its terms still apply.')),
+            Select::make('longest')->label('Longest term')->required()->selectablePlaceholder(false)->default(self::KEEP)->visible($this->binding()?->registrarKey!=='namesilo')
+                ->options($keep($longest===null?null:$longest.' '.($longest===1?'year':'years'))+array_combine(range(1,10),array_map(fn(int $y)=>$y.' '.($y===1?'year':'years'),range(1,10)))),
+            Select::make('transfer')->label('Transfers')->required()->selectablePlaceholder(false)->default(self::KEEP)->options($keep($transfer===null?null:($transfer?'On':'Off'))+['on'=>'On','off'=>'Off']),
+        ];
+    }
     public function table(Table $table): Table
     {
         $costs=fn()=>$this->canSeeCosts();
@@ -270,6 +283,7 @@ class WhatYouSell extends Page implements HasTable
             ])
             ->columns([
                 TextColumn::make('tld')->label('TLD')->extraCellAttributes(['class'=>'domains-sell-pin'])->extraHeaderAttributes(['class'=>'domains-sell-pin'])->weight('medium')->fontFamily('mono')->sortable()->formatStateUsing(fn(string $state)=>'.'.$state)
+                    ->url(fn(SellRow $record)=>($id=$this->reads()->tldId($record))===null?null:TldResource::getUrl('view',['record'=>$id]))->color(fn(SellRow $record)=>$this->reads()->tldId($record)===null?null:'primary')
                     ->searchable(query:fn($query,string $search)=>$query->where('tld','like','%'.strtolower(ltrim(trim($search),'.')).'%')),
                 TextColumn::make('account_name')->label('Account')->visible(fn()=>$this->account===self::ALL)->state(fn(SellRow $record)=>$this->accounts()[(int)$record->server_id]??null),
                 TextColumn::make('terms')->label('Terms')->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow $record)=>$this->reads()->terms($record)),
@@ -277,31 +291,16 @@ class WhatYouSell extends Page implements HasTable
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
                 TextColumn::make('status')->label('Status')->badge()->state(fn(SellRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])
-                    ->description(fn(SellRow $record)=>$this->reads()->status($record)['next']??null)
+                    ->description(fn(SellRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(SellRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
                     ->url(fn(SellRow $record)=>isset($this->reads()->status($record)['open'])?TldResource::getUrl('index'):null),
-            ])
-            ->recordActions([
-                Action::make('edit_terms')->label('Edit terms')->link()->visible(fn()=>$this->canEdit())
-                    ->disabled(fn(SellRow $record)=>$this->reads()->blocked($record)!==null)->tooltip(fn(SellRow $record)=>$this->reads()->blocked($record))
-                    ->fillForm(fn(SellRow $record)=>['longest'=>$record->longest??$this->rule()['years'],'transfer'=>$record->transfer??$this->rule()['transfers']])
-                    ->schema(fn()=>[
-                        TextInput::make('longest')->label('Longest term')->integer()->required()->minValue(1)->maxValue(10)->suffix('years')->visible($this->binding()?->registrarKey!=='namesilo'),
-                        Toggle::make('transfer')->label('Transfers'),
-                    ])->action(function(array $data,SellRow $record):void {
-                        $this->write(['terms'=>[$record->tld=>['longest'=>(int)($data['longest']??1),'transfer'=>(bool)$data['transfer']]]]);
-                    }),
             ])
             ->checkIfRecordIsSelectableUsing(fn(SellRow $record)=>$this->reads()->blocked($record)===null)
             ->toolbarActions([
                 // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
                 BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
-                    ->modalHeading(fn($records)=>'Edit '.$records->count().' '.($records->count()===1?'TLD':'TLDs'))->modalSubmitActionLabel('Save')->modalWidth('md')
-                    ->schema(fn()=>[
-                        Select::make('choice')->label('Sell')->required()->selectablePlaceholder(false)->default(self::KEEP)->options([self::KEEP=>'Leave as is','rule'=>'Use the default rule','sell'=>'Sell','skip'=>"Don't sell"])->hintAction(HelpHint::make('Use the default rule clears Sell or Don’t sell for these TLDs. Cost limits and each row’s terms still apply.')),
-                        Select::make('longest')->label('Longest term')->required()->selectablePlaceholder(false)->default(self::KEEP)->visible($this->binding()?->registrarKey!=='namesilo')
-                            ->options([self::KEEP=>'Leave as is']+array_combine(range(1,10),array_map(fn(int $y)=>$y.' '.($y===1?'year':'years'),range(1,10)))),
-                        Select::make('transfer')->label('Transfers')->required()->selectablePlaceholder(false)->default(self::KEEP)->options([self::KEEP=>'Leave as is','on'=>'On','off'=>'Off']),
-                    ])->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(SellRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
+                    ->modalHeading(fn($records)=>$records->count()===1?'Edit .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save')->modalWidth('md')
+                    ->schema(fn($records)=>$this->editFields($records->count()===1?$records->first():null))
+                    ->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(SellRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
             ]);
     }
 }
