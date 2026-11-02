@@ -93,7 +93,7 @@ final class DomainFacts
             $facts=is_array($facts)&&ObservationProjection::matches($d,$facts)?$facts:[];
             $unread=self::unread($d,$sync);
             $f['In registrar account']=self::fact(ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
-            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?'Add them with Edit':'Ask the customer to add them on the domain page'); }
+            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page'); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);
@@ -250,13 +250,26 @@ final class DomainFacts
      * @return array{tone:string,step:string|HtmlString|null} */
     public static function head(Domain $d, array $status, array $facts, ?int $held=null): array
     {
-        $notice=self::notice($d); $request=$held??$status['request'];
+        $notice=self::notice($d); $request=self::headRequest($d,$status,$held,$notice);
         if (($notice['resume']??false)&&$request) { $notice['link']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
         $missing=array_filter($facts,fn(array $fact)=>$fact['value']===null&&!Missing::needsNothing($fact['sub']));
         $tone=$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])?'warning':$status['tone'];
         $mark=!in_array($tone,['warning','danger'],true);
         $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),default=>self::stepHtml($status,$mark) };
         return ['tone'=>$tone,'step'=>$step??($missing!==[]?'Some details are Missing. Each row says what to do.':null)];
+    }
+    public const ADD_CONTACTS='Add them with Edit';
+    /** While changes are on hold, Contacts' Missing says what comes before Edit, not just Edit. */
+    public static function whileHeld(array $facts, ?string $first): array
+    {
+        if (($facts['Contacts']['sub']??null)===self::ADD_CONTACTS) { $facts['Contacts']['sub']=($first??'Wait until changes are back on').', then add them with Edit.'; }
+        return $facts;
+    }
+    /** The one request the head names, or null. A notice names one only beside Resume sync. Rows name no other (withProgress). */
+    public static function headRequest(Domain $d, array $status, ?int $held=null, ?array $notice=null): ?int
+    {
+        $notice??=self::notice($d);
+        return $notice===null||($notice['resume']??false)?$held??$status['request']:null;
     }
     /** A notice in the head line: its words, then its links. */
     private static function noticeHtml(array $notice, bool $mark): HtmlString
@@ -383,16 +396,17 @@ final class DomainFacts
     private static function url(\Closure $make): ?string { try { return $make(); } catch (\Throwable) { return null; } }
     private static function flag(mixed $value, string $on='On', string $off='Off'): ?string { return is_bool($value)?($value?$on:$off):null; }
     /** Progress takes its own line under a row's words, so Contacts keeps its email; a Missing cause gives way to it. A settled or replaced result says nothing.
-     * A stopped change reads its request's line, never the sentence written for the customer. */
-    public static function withProgress(array $facts, array $progress): array
+     * A stopped change reads its request's line, never the sentence written for the customer. It names its request only when that is $named, the one the head names (headRequest),
+     * so the page sends staff to one request, and to none when none needs them. */
+    public static function withProgress(array $facts, array $progress, ?int $named=null): array
     {
         foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$setting) {
             $row=$progress[$setting]??null;
             if (!isset($facts[$label])||$row===null||($row['settled']??false)||($row['replaced']??false)) { continue; }
-            $stopped=isset($row['outcome']);
-            $text=$stopped?StaffDomainStatus::sentence($row['outcome']).' Check request #'.$row['id'].'.':$row['text'];
+            $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
+            $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
             if ($facts[$label]['value']===null) { $facts[$label]['sub']=$text; continue; }
-            $facts[$label]['progress']=['text'=>$text,'request'=>$stopped?$row['id']:null];
+            $facts[$label]['progress']=['text'=>$text,'request'=>$request];
         }
         return $facts;
     }

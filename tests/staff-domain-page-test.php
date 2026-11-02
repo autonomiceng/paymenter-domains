@@ -32,6 +32,7 @@ same('Changes are on hold: DNS, nameservers and contacts are Off for this regist
 expect(str_contains($switch['held'],'DNS, nameservers and contacts')&&$switch['request']===null,'A switch blames no request');
 expect(str_contains($switch['note']->toHtml(),'switch=dns#switch-dns'),'Turn them on lands on the switch');
 same(['On hold until request #7 is checked.',7],[DomainEditActions::held($active,7)['held'],DomainEditActions::held($active,7)['request']],'Only the blocking request is named');
+same('Wait until request #7 is checked, then add them with Edit.',DomainFacts::whileHeld(['Contacts'=>['value'=>null,'sub'=>DomainFacts::ADD_CONTACTS]],DomainEditActions::held($active,7)['first'])['Contacts']['sub'],'Contacts names the request in the way');
 same(['This registrar doesn\'t support this change.',null],[DomainEditActions::held($active,'Management capability unsupported.')['held'],DomainEditActions::held($active,'Management capability unsupported.')['request']],'A known refusal keeps its words');
 $unknown=DomainEditActions::held($active,null)['held'];
 expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
@@ -45,8 +46,15 @@ same(['ada@example.test','Sync to read them'],array_column(DomainFacts::withProg
 same('Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['text'],'A fresh result still shows');
 // Staff read the request's own line and where to look, not the sentence written for the customer.
 $stopped=['id'=>60,'pending'=>false,'text'=>'The contacts change failed. Try again. If it keeps happening, contact support.','outcome'=>'Not sent. Nothing changed at the registrar.','settled'=>false];
-same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'A stopped change names its request');
+same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
 expect(!isset(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Replaced by your latest choice.','replaced'=>true]])['Contacts']['progress']),'A replaced change says nothing to staff');
+// A Missing row never points at a blocked button: it says what comes first, and the blocked button keeps its real label.
+$noContacts=['Contacts'=>['value'=>null,'sub'=>DomainFacts::ADD_CONTACTS]];
+same('DNS, nameservers and contacts are Off. Turn them on, then add them with Edit.',DomainFacts::whileHeld($noContacts,$switch['first'])['Contacts']['sub'],'Contacts names the Off switch before Edit');
+same($rows,DomainFacts::whileHeld($rows,$switch['first']),'Contacts on file keep their email');
+same(['Change','Turn off','Turn on','Change','Edit'],[ViewDomain::blockedLabel('Transfer lock',['value'=>null]),ViewDomain::blockedLabel('Transfer lock',['value'=>'On']),ViewDomain::blockedLabel('Transfer lock',['value'=>'Off']),ViewDomain::blockedLabel('Nameservers',['value'=>['ns1.example.test']]),ViewDomain::blockedLabel('Contacts',['value'=>null])],'A blocked button reads like the real one');
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
 same(['Expires','Registrar','In registrar account','Transfer lock','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::SECTIONS['Registration'])),'Registration rows in order');

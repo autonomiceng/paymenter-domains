@@ -33,6 +33,7 @@ class ViewDomain extends ViewRecord
     /** One request's edits and facts: the head and the rows both read them. */
     private ?array $edits = null;
     private ?array $facts = null;
+    private ?array $domainStatus = null;
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
     public function getHeading(): HtmlString
     {
@@ -41,22 +42,24 @@ class ViewDomain extends ViewRecord
     }
     public function getSubheading(): string|Htmlable|null
     {
-        $d=$this->getRecord(); $status=DomainFacts::status($d);
+        $d=$this->getRecord(); $status=$this->status();
         $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']);
         return StatusMark::line($head['tone'],$status['label'],'domain-'.$d->id,$head['step']);
     }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
+    private function status(): array { return $this->domainStatus??=DomainFacts::status($this->getRecord()); }
     private function facts(): array
     {
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d)); $progress=$this->managementProgress();
         if ($this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
-        return $this->facts=DomainFacts::withProgress($facts,$progress);
+        if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
+        return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request']));
     }
     protected function afterActionCalled(Action $action): void
     {
         parent::afterActionCalled($action);
-        $this->edits=$this->facts=null;
+        $this->edits=$this->facts=$this->domainStatus=null;
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     public function hasCombinedRelationManagerTabsWithContent(): bool { return true; }
@@ -177,8 +180,9 @@ class ViewDomain extends ViewRecord
         if ($fact['url']&&isset(DomainFacts::LINKS[$label])) { $side[]=Sheet::link('open_'.md5($label),DomainFacts::LINKS[$label],$fact['url']); }
         return $side;
     }
-    private static function blockedLabel(string $label, array $fact): string
-    { return match ($label) { 'Transfer lock'=>$fact['value']==='On'?'Turn off':'Turn on','Email auth code'=>'Email code',default=>'Edit' }; }
+    /** A blocked button keeps the label the real one would have. */
+    public static function blockedLabel(string $label, array $fact): string
+    { return match ($label) { 'Transfer lock'=>DomainEditActions::lockLabel(['On'=>true,'Off'=>false][$fact['value']]??null),'Nameservers'=>'Change','Email auth code'=>'Email code',default=>'Edit' }; }
     /** The row's words, after when it was read when the row has a read time. */
     private static function below(array $fact): string|HtmlString|null
     {
