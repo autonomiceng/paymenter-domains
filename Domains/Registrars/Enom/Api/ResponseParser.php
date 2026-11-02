@@ -72,7 +72,7 @@ final class ResponseParser
             if (trim($line) === '' || str_starts_with(ltrim($line), ';')) { continue; }
             if (!preg_match('/^([a-z][a-z0-9_-]*)\s*[:=]\s*(.*)$/iD', $line, $parts)) { throw new \RuntimeException('Invalid price response.'); }
             $key = strtolower($parts[1]); $value = trim($parts[2]);
-            if (preg_match('/^(tld|tldid|minimumregistration|registerprice|resellerpricereg|registerenabled|renewprice|resellerpricerenew|renewenabled|transferprice|resellerpricetran|transferenabled|rgpprice|resellerpricergp|rgpenabled|idncategory)([1-9][0-9]{0,3})$/D', $key, $field)) {
+            if (preg_match('/^(currency|tld|tldid|minimumregistration|registerprice|resellerpricereg|registerenabled|renewprice|resellerpricerenew|renewenabled|transferprice|resellerpricetran|transferenabled|rgpprice|resellerpricergp|rgpenabled|idncategory)([1-9][0-9]{0,3})$/D', $key, $field)) {
                 $index = (int) $field[2];
                 if (isset($rows[$index][$field[1]])) { throw new \RuntimeException('Duplicate price field.'); }
                 $rows[$index][$field[1]] = $value;

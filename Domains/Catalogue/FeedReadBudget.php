@@ -17,7 +17,7 @@ final class FeedReadBudget implements ReadLimiter
     public function __construct(private readonly AccountReadBudget $minute, private readonly AccountBinding $binding,
         private readonly RequestOrigin $origin, int $calls, private readonly ?ReadLimiter $other = null)
     {
-        $this->token = $minute->acquire($binding, $origin); $this->left = $calls;
+        $this->token = $minute->reserve($binding, $origin, $calls); $this->left = $calls;
     }
     public function acquire(AccountBinding $binding, RequestOrigin $origin): string
     {
