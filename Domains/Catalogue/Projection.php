@@ -77,6 +77,8 @@ final class Projection
                     $price->fill(['price' => $available[$term], 'setup_fee' => '0.00'])->save();
                 }
             }
+            $product->stock = null;
+            if ($product->isDirty()) { $product->save(); }
         }
     }
 }

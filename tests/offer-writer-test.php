@@ -47,6 +47,7 @@ $orgRevision = $writer->apply(new FeedObserved($b, 'org', [
 $orgRead = static fn () => $writer->readOffers(new Query($b, ['org'], 'register'), Context::Public)[0];
 same(false, $orgRead()->available, 'New provider discovery grants neither facts nor seller authority');
 $orgRevision = $writer->apply(new FactsObserved($b, 'org', $facts($now, [1])), $orgRevision);
+$orgRevision = $writer->apply(Edit::override($b, 'org', new Intent(sell: true)), $orgRevision);
 $writer->apply(Edit::seller($b, 'org', ['register']), $orgRevision);
 same(true, $orgRead()->available, 'Explicit selection publishes a verified new offer');
 $org = Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $b->serverId)->where('tld', 'org')->sole();
@@ -131,11 +132,17 @@ same('7.80', $read($b)->retail, 'Partial feed retains omitted annual cost');
 $stable = $revision($b);
 expect($stable->matches($writer->apply(new FeedObserved($b, 'com', []), $stable)), 'Empty feed is a true no-op');
 expect($stable->matches($writer->apply(new FactsObserved($b, 'com', $facts($now->modify('-1 hour'))), $stable)), 'Older facts cannot overwrite newer evidence');
+$normalized = json_decode($oldFact, true); ksort($normalized['terms']); ksort($normalized);
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_facts' => json_encode($normalized)]);
+expect($stable->matches($writer->apply(new FactsObserved($b, 'com', $facts($now)), $stable)), 'Storage key ordering does not create conflicting facts');
 expect($stable->matches($writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '1.0000', $now)]), $stable)), 'Older cost cannot replace current term');
 commerceReject(static fn () => $writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '1.0000', $clock->time)]), $stable));
 $apply(new FeedObserved($b, 'com', [$cost('renew', 1, null, $clock->time)]));
 same(false, $read($b)->available, 'Positive disabled renewal observation withdraws new acquisitions');
 same('10.40', $read($b, Context::Holder, 'renew')->retail, 'Disabled renewal cost retains positive annual holder retail');
+$clock->time = $clock->time->modify('+1 minute');
+$apply(new FeedObserved($b, 'com', [$cost('renew', 1, '0.0000', $clock->time)]));
+same('10.40', $read($b, Context::Holder, 'renew')->retail, 'Nonpositive newly calculated retail retains positive holder retail');
 $clock->time = $clock->time->modify('+1 minute');
 $apply(new FeedObserved($b, 'com', [$cost('renew', 1, '20.0000', $clock->time)]));
 $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true),
