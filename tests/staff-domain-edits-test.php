@@ -55,6 +55,7 @@ $op=$last('nameservers');same('succeeded',$op->state,'Staff response termination
 same(['ns5.example.com','ns6.example.com'],$op->payload['nameservers'],'Same normalization as the owner form');
 // Real queued free changes must not offer purchase controls or an inapplicable status read.
 // Native Filament visibility is the boundary; a pure predicate test would miss permission/action wiring.
+// The saved edit already completed after the response; build separate unsent work for these checks.
 $op=$management->request($actor,$d->id,'nameservers',$op->payload,bin2hex(random_bytes(32)),$driver);
 $permissions=$actor->role->permissions;
 $actor->role->update(['permissions'=>[...$permissions,'admin.invoices.update',...array_map(
