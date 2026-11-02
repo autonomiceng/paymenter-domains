@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 final class OfferFeed implements PricedFeed
 {
     public function __construct(private readonly Driver $reader, private readonly CatalogueFreshness $freshness = new CatalogueFreshness) {}
+    public function factsReads(): int { return 0; }
     public function priceReads(): int { return 1; }
     public function prices(RequestContext $context): iterable
     {

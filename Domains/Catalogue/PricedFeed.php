@@ -7,4 +7,6 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 interface PricedFeed extends Feed
 {
     public function priceReads(): int;
+    /** Zero means no independently verified facts reader; never derive facts from prices. */
+    public function factsReads(): int;
 }
