@@ -14,8 +14,11 @@
         .domains-sell-table .fi-ta-table-head-groups-row:not(:has(.fi-ta-header-group-cell ~ .fi-ta-header-group-cell)){display:none}
         .domains-sell-table .fi-ta-table td,.domains-sell-table .fi-ta-table th{white-space:nowrap}
         .domains-sell-table .fi-ta-table>thead>tr,.dark .domains-sell-table .fi-ta-table>thead>tr{background:none}
-        .fi-header-subheading .domains-help-beside{margin-inline-end:.375rem}
+        .fi-header-subheading .domains-help-beside{margin-inline:.625rem .875rem}
         .domains-sell-table .fi-ta-table tr>:first-child{padding-inline-start:20px}.domains-sell-table .fi-ta-table tr>:last-child{padding-inline-end:20px}
+        .domains-sell-table .fi-ta-table td:first-child .fi-ta-text{padding-inline-start:0}.domains-sell-table .fi-ta-table td:last-child .fi-ta-text{padding-inline-end:0}
+        /* Staff rows are one line at 44px. */
+        .domains-sell-table .fi-ta-table td .fi-ta-text{padding-block:10px}.domains-sell-table .fi-ta-table td.fi-ta-selection-cell,.domains-sell-table .fi-ta-table td:last-child{padding-block:0}
         .domains-sell-table .fi-ta-selection-cell,.domains-sell-table .domains-sell-pin{position:sticky;left:0;z-index:1;background:var(--beco-card,Canvas)}
         .dark .domains-sell-table .fi-ta-selection-cell,.dark .domains-sell-table .domains-sell-pin{background:var(--beco-card,var(--gray-900))}
         .domains-sell-table .fi-ta-selection-cell{width:3rem;min-width:3rem}.domains-sell-table .fi-ta-selection-cell + .domains-sell-pin{left:3rem}

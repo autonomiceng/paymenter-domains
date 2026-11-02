@@ -193,7 +193,7 @@ $u->role->update(['permissions'=>[Staff::VIEW]]);
 foreach([fn()=>$service->read(),fn()=>$service->csv()] as $call){try{$call();expect(false,'Cost permission required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Forbidden costs');}}
 $page->call('downloadCsv')->assertForbidden();
 Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->assertActionHidden('csv')->assertDontSee('How prices are worked out')->assertDontSee('1-year cost')->assertDontSee('Prices in USD');
-Livewire::actingAs($u)->test(WhatYouSell::class)->set('years',3)->assertDontSee('3-year cost')->assertTableColumnStateSet('status','For sale',SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole());
+$page=Livewire::actingAs($u)->test(WhatYouSell::class)->set('years',3)->assertDontSee('3-year cost');$page->assertTableColumnStateSet('status','For sale',$page->instance()->getTableRecord((string)SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole()->getKey()));
 Livewire::actingAs($u)->test(PriceListPage::class)->assertRedirect(WhatYouSell::getUrl());
 Livewire::actingAs($u)->test(ListTlds::class)->assertDontSee('Price list');
 Auth::setUser(staffUser([Staff::COSTS]));try{$service->read();expect(false,'View permission required too');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Forbidden without view');}
