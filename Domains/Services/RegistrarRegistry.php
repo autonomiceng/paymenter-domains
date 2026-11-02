@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, AdoptionSource, Clock, RegistrarDriver};
+use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, AdoptionSource, Clock, CredentialAuthenticator, RegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 
 final class RegistrarRegistry
@@ -11,7 +11,7 @@ final class RegistrarRegistry
     private array $entries = [];
 
     public function register(string $key, array $credentialKeys, AccountVerifier $verifier, \Closure $readerFactory, ?\Closure $balanceFactory = null, bool $accountReadsOnly = false,
-        ?\Closure $registrationPreflightFactory = null, ?\Closure $adoptionReaderFactory = null): void
+        ?\Closure $registrationPreflightFactory = null, ?\Closure $adoptionReaderFactory = null, ?CredentialAuthenticator $authenticator = null): void
     {
         if (!in_array($key, ['enom', 'namesilo'], true) || isset($this->entries[$key]) || $credentialKeys === []) {
             throw new \InvalidArgumentException('Unsupported or duplicate registrar.');
@@ -23,7 +23,16 @@ final class RegistrarRegistry
             }
             $keys[$name] = true;
         }
-        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly, $registrationPreflightFactory, $adoptionReaderFactory];
+        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly, $registrationPreflightFactory, $adoptionReaderFactory, $authenticator];
+    }
+
+    public function localEnrollment(string $key): bool { return $this->entry($key)[7] !== null; }
+
+    public function authenticate(string $key, Environment $environment, #[\SensitiveParameter] array $credentials): void
+    {
+        $authenticator = $this->entry($key)[7] ?? throw new \DomainException('Local enrollment unavailable.');
+        try { $authenticator->authenticate($environment, $this->credentials($key, $credentials)); }
+        catch (\Throwable) { throw new \DomainException('Registrar key authentication failed.'); }
     }
 
     public function keys(): array { return array_keys($this->entries); }
@@ -58,7 +67,7 @@ final class RegistrarRegistry
             throw new IdentityRefused($error->reason);
         }
         catch (\Throwable) { throw new \RuntimeException('Registrar account ownership could not be verified.'); }
-        if($key==='namesilo'&&str_starts_with($identity,NameSiloSandbox::PREFIX)){throw new IdentityRefused('namesilo_identity_unavailable');}
+        if(str_starts_with($identity,LocalAccountEnrollment::PREFIX)||($key==='namesilo'&&str_starts_with($identity,NameSiloSandbox::PREFIX))){throw new IdentityRefused('namesilo_identity_unavailable');}
         return [new AccountBinding($key, $serverId, $environment, $identity), $identity];
     }
 

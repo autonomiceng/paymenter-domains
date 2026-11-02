@@ -17,10 +17,11 @@ final class AccountBindings
 
     public function __construct(private readonly RegistrarRegistry $registry) {}
 
-    /** First save and rotations both require positive provider identity; verification never holds locks. */
+    /** Provider identity or explicitly composed local enrollment; authentication never holds locks. */
     public function configure(int $serverId, string $registrar, Environment $environment, #[\SensitiveParameter] array $credentials, ?StaffSettingsReview $review = null): AccountBinding
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Account verification must run outside database locks.'); }
+        if ($this->registry->localEnrollment($registrar)) { return $this->configureLocal($serverId, $registrar, $environment, $credentials, $review); }
         if ($review) {
             if ($review->action !== 'configure' || $review->serverId !== $serverId) { throw new \DomainException('Configuration review mismatch.'); }
             $review->local(fn () => null, 'verification_requested'); // Consume before injected I/O.
@@ -28,6 +29,7 @@ final class AccountBindings
         $phase = 'verification_refused';
         try {
             $existing=Account::where('server_id',$serverId)->first();
+            if($existing&&LocalAccountEnrollment::enrolled($existing)){throw new \DomainException('Local enrollment requires its original composition.');}
             if($existing&&NameSiloSandbox::enrolled($existing)){throw new \DomainException('Sandbox enrollment is immutable.');}
             $credentials = $this->registry->credentials($registrar, $credentials);
             [$binding, $identity] = $this->registry->verify($registrar, $serverId, $environment, $credentials);
@@ -62,6 +64,93 @@ final class AccountBindings
         } finally { $review?->finish($phase); }
     }
 
+    /** The reviewed snapshot spans authentication: a concurrent edit cannot overwrite newer credentials. */
+    private function configureLocal(int $serverId, string $registrar, Environment $environment,
+        #[\SensitiveParameter] array $credentials, ?StaffSettingsReview $review): AccountBinding
+    {
+        if (!$review || $review->action !== 'configure' || $review->serverId !== $serverId) {
+            throw new \DomainException('Local enrollment requires a configuration review.');
+        }
+        $review->local(fn () => null, 'authentication_requested');
+        $phase = 'authentication_refused';
+        try {
+            $credentials = $this->registry->credentials($registrar, $credentials);
+            $account = Account::where('server_id', $serverId)->first();
+            if ($account) {
+                if (!LocalAccountEnrollment::enrolled($account) || $account->registrar_key !== $registrar || $account->environment !== $environment->value) {
+                    throw new \DomainException('Local account binding is immutable.');
+                }
+                $this->configuration($account, true);
+                $identity = $account->stable_identity;
+            } else {
+                $this->freshEnrollment($serverId);
+                $identity = LocalAccountEnrollment::PREFIX.bin2hex(random_bytes(16));
+            }
+            $binding = new AccountBinding($registrar, $serverId, $environment, $identity);
+            $facts = LocalAccountEnrollment::facts($binding, $identity, $credentials);
+            $this->uniqueLocalKey($facts, $serverId, $registrar, $environment);
+            $this->registry->authenticate($registrar, $environment, $credentials);
+            $enroll = false;
+            try {
+                DB::transaction(function () use ($review, $serverId, $binding, $identity, $credentials, $facts, &$enroll): void {
+                    $review->lockActor(); $review->lockAccounts(); $review->check(true);
+                    $this->uniqueLocalKey($facts, $serverId, $binding->registrarKey, $binding->environment, true);
+                    $account = Account::where('server_id', $serverId)->lockForUpdate()->first();
+                    if ($account) { $binding->requireMatch($this->binding($account)); }
+                    else {
+                        $this->freshEnrollment($serverId, true); $enroll = true;
+                        $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId,
+                            'registrar_key' => $binding->registrarKey, 'environment' => $binding->environment->value, 'stable_identity' => $identity]));
+                    }
+                    $this->saveSecret($serverId, LocalAccountEnrollment::KEY, json_encode($facts, JSON_THROW_ON_ERROR));
+                    $this->saveSecret($serverId, self::CREDENTIALS, json_encode($credentials, JSON_THROW_ON_ERROR));
+                    $this->saveSecret($serverId, self::VERIFIED, $this->digest($binding, $credentials));
+                    $account->processing_enabled = false;
+                    Account::withVerifiedBindingWrite(static fn () => $account->save());
+                    $review->record('authenticated_and_saved');
+                });
+            } catch (\Throwable) { throw new \DomainException('Local account configuration could not be saved.'); }
+            if ($enroll && Schema::hasTable('domains_reminder_schedules')) { ReminderSchedules::enroll($serverId); }
+            $phase = 'authentication_finished';
+            return $binding;
+        } finally { $review->finish($phase); }
+    }
+
+    private function uniqueLocalKey(#[\SensitiveParameter] array $facts, int $serverId, string $registrar, Environment $environment, bool $lock = false): void
+    {
+        $query = Account::where('registrar_key', $registrar)->where('environment', $environment->value)->where('server_id', '!=', $serverId)->orderBy('server_id');
+        if ($lock) { $query->lockForUpdate(); }
+        foreach ($query->get() as $account) {
+            $servers = Server::whereKey($account->server_id);
+            if ($lock) { $servers->lockForUpdate(); }
+            $server = $servers->firstOrFail();
+            $marked = $server->settings()->where('key', LocalAccountEnrollment::KEY)->exists();
+            if (!LocalAccountEnrollment::enrolled($account) && !$marked) { continue; }
+            $credentials = $this->configuration($account, false, $server);
+            if ($facts['key_fingerprint'] === hash('sha256', json_encode($credentials, JSON_THROW_ON_ERROR))) {
+                throw new \DomainException('This key is already enrolled. Rotate it on its existing local account.');
+            }
+        }
+    }
+
+    /** Capture at work admission and recheck immediately before a credential-bound save/send. */
+    public function credentialRevision(AccountBinding $expected): string
+    {
+        try {
+            $account = Account::where('server_id', $expected->serverId)->sole();
+            $expected->requireMatch($this->binding($account));
+            $credentials = $this->configuration($account, true);
+            $facts = json_decode($this->secret($expected->serverId, LocalAccountEnrollment::KEY), true, 8, JSON_THROW_ON_ERROR);
+            LocalAccountEnrollment::validate($account, $facts, $credentials);
+            return $facts['credential_revision'];
+        } catch (\Throwable) { throw new \DomainException('Registrar credential revision unavailable.'); }
+    }
+
+    public function requireCredentialRevision(AccountBinding $expected, string $revision): void
+    {
+        if (!hash_equals($this->credentialRevision($expected), $revision)) { throw new \DomainException('Registrar credentials changed.'); }
+    }
+
     /** Single-use staff review, authenticated OTE key, and a fresh local binding; no identity fallback. */
     public function enrollSandbox(int $serverId, Environment $environment, #[\SensitiveParameter] string $label,
         #[\SensitiveParameter] array $credentials, StaffSettingsReview $review): AccountBinding
@@ -71,12 +160,12 @@ final class AccountBindings
         try {
             NameSiloSandbox::requireTest($environment);
             $facts=NameSiloSandbox::facts($serverId,$label,$credentials);
-            $this->freshSandbox($serverId);$this->uniqueSandboxKey($facts);
+            $this->freshEnrollment($serverId);$this->uniqueSandboxKey($facts);
             NameSiloSandbox::checkKey($credentials);
             try {
                 $saved=DB::transaction(function()use($serverId,$environment,$credentials,$facts,$review):AccountBinding {
                     $review->lockActor();$review->lockAccounts();$review->check(true);
-                    NameSiloSandbox::requireTest($environment);$this->freshSandbox($serverId,true);$this->uniqueSandboxKey($facts,true);
+                    NameSiloSandbox::requireTest($environment);$this->freshEnrollment($serverId,true);$this->uniqueSandboxKey($facts,true);
                     $identity=NameSiloSandbox::identity($facts);$binding=new AccountBinding('namesilo',$serverId,$environment,$identity);
                     Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$serverId,'registrar_key'=>'namesilo',
                         'environment'=>$environment->value,'stable_identity'=>$identity,'processing_enabled'=>false]));
@@ -91,7 +180,7 @@ final class AccountBindings
         }finally{$review->finish($phase);}
     }
 
-    private function freshSandbox(int $serverId,bool $lock=false): void
+    private function freshEnrollment(int $serverId,bool $lock=false): void
     {
         $server=$this->server($serverId,$lock);
         // Inspect extension-owned retained state, not native application tables or framework internals.
@@ -102,10 +191,10 @@ final class AccountBindings
             if(!str_starts_with($table,'domains_')||in_array($table,[StaffSettingsReview::KEYS,AuditArchives::TABLE],true)
                 ||!Schema::hasColumn($table,'server_id')){continue;}
             $q=DB::table($table)->where('server_id',$serverId);if($lock){$q->lockForUpdate();}
-            if($q->exists()){throw new \DomainException('Sandbox enrollment requires a fresh server.');}
+            if($q->exists()){throw new \DomainException('Account enrollment requires a fresh server.');}
         }
         $q=$server->settings()->whereRaw("`key` LIKE ? ESCAPE '!'",['domains!_%'])->whereNotIn('key',[StaffSettingsReview::KEY,'domains_setup_note',NameSiloAccountGuard::EXPECTED]);
-        if($lock){$q->lockForUpdate();}if($q->exists()){throw new \DomainException('Sandbox enrollment requires a fresh server.');}
+        if($lock){$q->lockForUpdate();}if($q->exists()){throw new \DomainException('Account enrollment requires a fresh server.');}
     }
 
     private function uniqueSandboxKey(#[\SensitiveParameter] array $candidate,bool $lock=false): void
@@ -290,6 +379,11 @@ final class AccountBindings
             $credentials = $this->registry->credentials($binding->registrarKey, $credentials);
             if (!hash_equals($this->secret((int) $account->server_id, self::VERIFIED, $lockedServer, $advisory), $this->digest($binding, $credentials))) {
                 throw new \DomainException('Registrar credentials changed without verified rotation.');
+            }
+            $localMarker = ($lockedServer ?? $this->server((int) $account->server_id))->settings()->where('key', LocalAccountEnrollment::KEY)->exists();
+            if (LocalAccountEnrollment::enrolled($account) || $localMarker) {
+                $facts = json_decode($this->secret((int) $account->server_id, LocalAccountEnrollment::KEY, $lockedServer, $advisory), true, 8, JSON_THROW_ON_ERROR);
+                LocalAccountEnrollment::validate($account, $facts, $credentials);
             }
             if(NameSiloSandbox::enrolled($account)){
                 $facts=json_decode($this->secret((int)$account->server_id,NameSiloSandbox::KEY,$lockedServer,$advisory),true,8,JSON_THROW_ON_ERROR);

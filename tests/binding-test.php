@@ -177,5 +177,109 @@ try { $bindings->reader(1); expect(false, 'Wrong encryption key accepted'); }
 catch (Illuminate\Contracts\Encryption\DecryptException) { /* expected */ }
 finally { Account::encryptUsing($oldEncrypter); }
 same('account-a', $account->fresh()->stable_identity, 'Original key restores retained identity');
+// Local enrollment needs the real native settings encryption, review locks and retained lineage.
+// A unit fixture cannot establish their atomic behavior together.
+config(['domains.namesilo_account.environment' => 'live', 'app.url' => 'https://live.example.com']);
+$localBoot = new RegistrarRegistry;
+\Paymenter\Extensions\Servers\Domains\Services\RegistrarFactories::bootstrap($localBoot);
+expect(in_array('namesilo', $localBoot->keys(), true), 'NameSilo local enrollment is composed without an identity verifier');
+require __DIR__.'/Support/staff-panel.php';
+use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, SellTableSchema, NameSiloAccountGuard};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
+SellTableSchema::install(); StaffAuditSchema::install();
+$staff = staffUser(['admin.domains.view', 'admin.domains.manage-policy', StaffSettingsReview::permission('configure')]);
+$review = static function (int $id) use ($staff): StaffSettingsReview {
+    return new StaffSettingsReview((int) $staff->id, $id, null, 'configure',
+        StaffSettingsReview::ticket((int) $staff->id, $id, null, 'configure', StaffSettingsReview::stamp($id, null)), 'Rotate the synthetic local account key');
+};
+$wire = new class implements DeadlineTransport {
+    public array $calls = [];
+    public string $body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":300,"detail":"synthetic","balance":"0.00"}}';
+    public ?Closure $during = null;
+    public function send(WireEnvironment $environment, WireContext $context, RegistrarRequest $request, string $apiKey): TransportResponse
+    { throw new LogicException('Authentication requires a deadline.'); }
+    public function sendWithin(WireEnvironment $environment, WireContext $context, RegistrarRequest $request, string $apiKey, int $timeoutMs): TransportResponse
+    {
+        same(0, DB::transactionLevel(), 'Key authentication never holds database locks');
+        $this->calls[] = [$environment, $context, $request->command, $request->parameters(), $timeoutMs];
+        if ($this->during) { $during = $this->during; $this->during = null; $during(); }
+        return new TransportResponse(200, $this->body);
+    }
+};
+$auth = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\CredentialAuthenticator(Environment::Live, $wire);
+$localRegistry = new RegistrarRegistry;
+$localRegistry->register('namesilo', ['api_key'], new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\AccountVerifier, $factory, authenticator: $auth);
+$local = new AccountBindings($localRegistry); app()->instance(AccountBindings::class, $local);
+foreach ([10, 11, 12] as $id) { Server::create(['id' => $id, 'name' => 'Local registrar', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]); }
+$before = count($wire->calls);
+$reject(fn () => $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-one']));
+same($before, count($wire->calls), 'Local enrollment requires staff review before authentication');
+$firstReview = $review(10);
+$localBinding = $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-one'], $firstReview);
+same([[WireEnvironment::Live, WireContext::Interactive, 'getAccountBalance', [], 10000]], $wire->calls, 'Enrollment only authenticates through one bounded balance read');
+$a = Account::where('server_id', 10)->sole(); $identity = $a->stable_identity;
+expect(str_starts_with($identity, LocalAccountEnrollment::PREFIX), 'Local lineage is explicit, random and separate from provider identity');
+expect(!str_contains($identity, 'placeholder-key'), 'Credentials never become local identity');
+same([false, null], [$a->processing_enabled, $a->live_site], 'Authentication grants neither processing nor a live site');
+$reject(fn () => $local->reader(10));
+$local->confirmLiveSite(10, 'https://live.example.com');
+$revision = $local->credentialRevision($localBinding);
+$local->requireCredentialRevision($localBinding, $revision);
+foreach (Server::findOrFail(10)->settings()->get() as $setting) {
+    expect($setting->encrypted, 'Enrollment secrets, revision and audit are encrypted on first save');
+    expect(!str_contains($setting->getRawOriginal('value'), 'placeholder-key-one'), 'Enrollment stores no plaintext credentials');
+}
+$facts = json_decode(Server::findOrFail(10)->settings()->where('key', LocalAccountEnrollment::KEY)->sole()->value, true, 8, JSON_THROW_ON_ERROR);
+same(false, $facts['provider_confirmed_account'], 'Authentication makes no provider identity assertion');
+$guardClock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
+$guardContext = new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($localBinding,
+    \Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Interactive, $guardClock->now()->modify('+10 seconds'),
+    new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1), $guardClock);
+NameSiloAccountGuard::check($localBinding, $guardContext, static fn () => throw new RuntimeException('Default contact must not be read for local enrollment'));
+same(1, $guardContext->budget->remaining(), 'Local Live account guard needs no default email acceptance');
+$local->setProcessing(10, true, syntheticActivation());
+$rotated = $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-two'], $review(10));
+same($localBinding->fingerprint, $rotated->fingerprint, 'Key rotation retains local budget and holding lineage');
+same([$identity, 'https://live.example.com', false], [$a->fresh()->stable_identity, $a->fresh()->live_site, $a->fresh()->processing_enabled], 'Rotation preserves identity/site and pauses processing');
+$reject(fn () => $local->requireCredentialRevision($localBinding, $revision));
+$secondRevision = $local->credentialRevision($localBinding);
+expect($secondRevision !== $revision, 'Rotation replaces the credential revision');
+$reject(fn () => $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-one'], $firstReview));
+$before = count($wire->calls);
+$reject(fn () => $local->configure(10, 'namesilo', Environment::Test, ['api_key' => 'placeholder-key-three'], $review(10)));
+same($before, count($wire->calls), 'Environment repurpose refuses before authentication');
+$reject(fn () => $local->configure(11, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-two'], $review(11)));
+same($before, count($wire->calls), 'Duplicate key cannot create a new local budget lineage');
+$wire->during = static function (): void { Server::findOrFail(10)->settings()->create(['key' => 'domains_setup_note', 'value' => 'Concurrent staff edit', 'type' => 'string']); };
+$reject(fn () => $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-three'], $review(10)));
+same($secondRevision, $local->credentialRevision($localBinding), 'Concurrent setting edit cannot overwrite a newer reviewed snapshot');
+$beforeRows = Account::count();
+$wire->body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":110,"detail":"placeholder-key-rejected"}}';
+ini_set('zend.exception_ignore_args', '0');
+try { $local->configure(11, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-rejected'], $review(11)); expect(false, 'Rejected authentication accepted'); }
+catch (DomainException $error) {
+    same('Registrar key authentication failed.', $error->getMessage(), 'Rejected authentication has a safe reason');
+    same(null, $error->getPrevious(), 'Authentication retains no credential-bearing cause');
+    expect(!str_contains(print_r($error->getTrace(), true), 'placeholder-key-rejected'), 'Authentication failure trace hides credentials');
+}
+ini_set('zend.exception_ignore_args', '1');
+same($beforeRows, Account::count(), 'Failed authentication creates no account');
+expect(!Server::findOrFail(11)->settings()->whereIn('key', ['domains_credentials', LocalAccountEnrollment::KEY])->exists(), 'Failed authentication saves no secrets');
+$wire->body = '{"request":{"operation":"getAccountBalance"},"reply":{"code":300,"detail":"synthetic","balance":"0.00"}}';
+$other = $local->configure(12, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-other'], $review(12));
+expect(!$other->matches($localBinding), 'Independent local accounts have distinct random lineage');
+config(['app.url' => 'https://copied.example.com']);
+$before = count($wire->calls);
+$reject(fn () => $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-three'], $review(10)));
+same($before, count($wire->calls), 'Copied site cannot rotate or recover the original live binding');
+$reject(fn () => $local->requireCredentialRevision($localBinding, $secondRevision));
+config(['app.url' => 'https://live.example.com']);
+$credentialSetting = Server::findOrFail(10)->settings()->where('key', 'domains_credentials')->sole();
+$credentialSetting->value = '{"api_key":"placeholder-key-tampered"}'; $credentialSetting->save();
+expect(!$local->configurationAvailable(10), 'Unreviewed credential changes cannot authenticate the binding');
+$reject(fn () => $local->requireCredentialRevision($localBinding, $secondRevision));
+foreach (StaffSettingsReview::historyRows(Server::findOrFail(10)) as $entry) {
+    expect(!str_contains(json_encode($entry, JSON_THROW_ON_ERROR), 'placeholder-key'), 'Audit contains no key or raw balance response');
+}
 echo "Bindings: positive synthetic identity, immutable accounts/sites, encrypted settings and guarded rotation passed.\n";
 $nativeSuccessful = true;
