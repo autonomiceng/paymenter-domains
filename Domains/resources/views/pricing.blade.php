@@ -40,9 +40,9 @@
 
         <section class="domains-panel" aria-labelledby="domains-prices-heading">
             <h2 id="domains-prices-heading" class="domains-sr">Prices by TLD</h2>
-            <div id="domains-price-tools" hidden style="padding:1rem">
+            <div id="domains-price-tools" hidden class="domains-panel__b">
                 <label for="domains-price-filter" class="domains-label">Filter by TLD</label>
-                <input id="domains-price-filter" class="domains-input" type="search" placeholder="e.g. .com" autocomplete="off" spellcheck="false" aria-controls="domains-price-rows" style="max-width:100%">
+                <input id="domains-price-filter" class="domains-input" type="search" placeholder="e.g. .com" autocomplete="off" spellcheck="false" aria-controls="domains-price-rows">
                 <p id="domains-price-count" role="status" aria-live="polite"></p>
                 <button id="domains-price-all" class="domains-btn" type="button" hidden>Show all</button>
             </div>
@@ -70,7 +70,7 @@
                     </tbody>
                 </table>
             </div>
-            <p id="domains-price-empty" role="status" style="padding:1rem" hidden>No TLDs match your filter.</p>
+            <p id="domains-price-empty" role="status" class="domains-panel__b" hidden>No TLDs match your filter.</p>
         </section>
         @include('domains::partials.price-filter')
         <p class="domains-small domains-muted">Prices plus tax where applicable.@if ($longerTerms) Longer terms are priced per term; search for a name to see each total.@endif</p>
