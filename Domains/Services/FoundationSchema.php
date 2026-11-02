@@ -45,7 +45,11 @@ final class FoundationSchema
             if (Schema::hasColumn('domains_domains', 'provenance')) { $table->string('provenance', 32)->nullable(); }
             if (Schema::hasColumn('domains_domains', 'adoption_id')) { $table->unsignedBigInteger('adoption_id')->nullable(); }
         });
-        self::table('domains_operations', function (Blueprint $table) use ($legacyServiceIndex) {
+        $columns=Schema::hasTable('domains_operations')?Schema::getColumnListing('domains_operations'):[];
+        // A retained retry column precedes the progress column added by the later upgrade.
+        $progressLast=in_array('management_pending',$columns,true) && in_array('retry_number',$columns,true)
+            && array_search('retry_number',$columns,true)<array_search('management_pending',$columns,true);
+        self::table('domains_operations', function (Blueprint $table) use ($legacyServiceIndex,$progressLast) {
             $table->id();
             self::binding($table, true);
             $table->unsignedBigInteger('authority_generation')->nullable();
@@ -78,10 +82,14 @@ final class FoundationSchema
             $table->timestamp('lease_expires_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
+            if (!$progressLast && (!Schema::hasTable('domains_operations') || Schema::hasColumn('domains_operations','management_pending'))) {
+                ManagementProgressIndex::definition($table);
+            }
             if(Schema::hasColumn('domains_operations','retry_number')){
                 $table->unsignedTinyInteger('retry_number')->default(0);
                 $table->unique(['invoice_item_id','action','retry_number'],$table->getTable().'_debt_retry_u');
             }else{$table->unique(['invoice_item_id', 'action']);}
+            if ($progressLast) { ManagementProgressIndex::definition($table); }
         });
         self::table('domains_tlds', function (Blueprint $table) {
             $table->id();

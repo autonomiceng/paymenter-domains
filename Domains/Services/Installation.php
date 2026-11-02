@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,SellTableSchema::class,RenewalRetrySchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,SellTableSchema::class,RenewalRetrySchema::class,ManagementProgressIndex::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -72,6 +72,7 @@ final class Installation
             $retryRecorded=in_array(RenewalRetrySchema::MIGRATION,$ran,true);
             if(Schema::hasColumn('domains_operations','retry_number')&&!$retryRecorded){throw new \DomainException('Retained renewal retry storage has no installation record.');}
             if($retryRecorded){RenewalRetrySchema::verify();}
+            if(in_array(ManagementProgressIndex::MIGRATION,$ran,true)){ManagementProgressIndex::verify();}
             $sendsRecorded=in_array(EnomTestSendLimitSchema::MIGRATION,$ran,true);
             $sendsPresent=array_filter(array_map(Schema::hasTable(...),EnomTestSendLimitSchema::tables()));
             if($sendsPresent&&!$sendsRecorded){throw new \DomainException('Retained TEST send history has no installation record.');}

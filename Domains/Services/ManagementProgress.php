@@ -8,6 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 final class ManagementProgress
 {
     public const UNREADABLE='This change cannot be read. Contact support.';
+    public const ACTIONS=['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'];
     public static function setting(string $action): string
     { return match($action) { 'contact_profile'=>'contacts','srv'=>'dns',default=>$action }; }
     public static function pending(Operation $op, Domain $d): bool
@@ -16,17 +17,17 @@ final class ManagementProgress
     public static function for(Domain $d): array
     {
         $rows=[];$priorities=[];
-        $scope=$d->operations()->whereIn('action',['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'])
+        $scope=$d->operations()->whereIn('action',self::ACTIONS)
             ->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint);
         $latest=(clone $scope)->selectRaw('MAX(id)')->groupBy('action');
         $retained=(clone $scope)->where(fn($q)=>$q->whereNull('safe_code')->orWhere('safe_code','!=','management_retired'))->selectRaw('MAX(id)')->groupBy('action');
-        // Prefer retained work, pending then finished; stream bounded pages so newer holds cannot hide older work.
-        $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('id',$retained)->orWhereIn('state',['queued','awaiting_payment','running','pending','uncertain','held']))
-            ->lazyByIdDesc(100);
+        $pending=(clone $scope)->where('management_pending',true)->selectRaw('MAX(id)')->groupBy('action');
+        // At most three rows per action; pending selection is independent of finished history.
+        $candidates=(clone $scope)->where(fn($q)=>$q->whereIn('id',$latest)->orWhereIn('id',$retained)->orWhereIn('id',$pending))->orderByDesc('id')->limit(3*count(self::ACTIONS))->get();
         foreach($candidates as $op){
             $key=self::setting($op->action);
             try {
-                if(!isset($op->policy['management']) || !in_array($op->action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)){continue;}
+                if(!isset($op->policy['management'])){continue;}
                 $pending=self::pending($op,$d);$slow=$pending && $op->created_at->getTimestamp()<=now()->getTimestamp()-30;
                 $sent=($op->attempt['seal']??null)==='sealed';
                 $text=match(true){

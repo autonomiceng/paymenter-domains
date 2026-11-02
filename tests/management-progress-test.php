@@ -145,6 +145,9 @@ foreach ([['at'=>$saved['at']],['facts'=>['nameservers'=>['NS4.EXAMPLE.NET.','ns
 $d->update(['observation'=>$observation]);
 // Exhausted, definitely-unsent holds are resolved debt, so later requests can accumulate behind a stalled queued setting.
 Cache::flush();$queuedLock=$submit($d,$driver,'lock',['locked'=>false]);
+$recoverable=$nameservers->replicate();$recoverable->fill(['operation_key'=>'manage:'.$d->id.':'.$key(),'state'=>'held','safe_code'=>'management_unconfirmed',
+    'started_at'=>$clock->now(),'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('b',32),
+        'management_deferrals'=>array_fill(0,4,$clock->now()->format(DATE_ATOM))]]);$recoverable->save();
 for($i=0;$i<100;$i++) {
     $held=$nameservers->replicate();$held->fill(['operation_key'=>'manage:'.$d->id.':'.$key(),'state'=>'held','safe_code'=>'management_unconfirmed',
         'started_at'=>$clock->now(),'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32),
@@ -152,7 +155,32 @@ for($i=0;$i<100;$i++) {
 }
 same([],$management->available($user,$d->fresh(),$driver,['lock']),'Overflow hides advisory controls');
 same($queuedLock->id,$submit($d,$driver,'lock',['locked'=>false])->id,'Advisory overflow does not bound the request path');
-$rows=$controller->status($request,$d->id)->getData(true);
+$hydrated=[];$measuring=true;
+\Paymenter\Extensions\Servers\Domains\Models\Operation::retrieved(static function($op)use(&$hydrated,&$measuring):void{if($measuring){$hydrated[]=$op->id;}});
+$rows=$controller->status($request,$d->id)->getData(true);$measuring=false;
 same($queuedLock->id,$rows['lock']['id']??null,'Older pending lock survives more than 100 newer matching holds');
 expect($rows['lock']['pending'],'History overflow preserves the pending lock status');
+same($recoverable->id,$rows['nameservers']['id']??null,'Exhausted holds cannot hide an older recoverable hold for the same setting');
+expect($rows['nameservers']['pending'],'The older held change remains pending');
+expect(count($hydrated)<=21,'A status poll hydrates at most three candidates per management action, independent of held history');
+echo 'Status poll hydrated '.count($hydrated)." operation candidates.\n";
+// Upgrade the retained pre-index shape, including unreadable newer work, without changing history.
+\Paymenter\Extensions\Servers\Domains\Services\RenewalRetrySchema::install();
+\Illuminate\Support\Facades\Schema::table('domains_operations',function($table):void{$table->dropIndex('domains_operations_management_progress_i');$table->dropColumn('management_pending');});
+$raw=$held->getRawOriginal('policy');
+DB::table('domains_operations')->where('id',$held->id)->update(['policy'=>'unreadable retained hold']);
+try {
+    $retained=$held->fresh()->getRawOriginal();
+    \Paymenter\Extensions\Servers\Domains\Services\ManagementProgressIndex::install();
+    same($retained,array_diff_key($held->fresh()->getRawOriginal(),['management_pending'=>true]),'Backfill preserves request evidence and dates');
+    $hydrated=[];$measuring=true;$rows=$controller->status($request,$d->id)->getData(true);$measuring=false;
+    same($queuedLock->id,$rows['lock']['id'],'Backfill keeps the older queued setting');
+    same($held->id,$rows['nameservers']['id'],'Unreadable newer work stays visible after backfill');
+    expect($rows['nameservers']['unreadable']??false,'Backfill does not silently discard unreadable work');
+    expect(count($hydrated)<=21,'Backfilled history keeps bounded poll hydration');
+} finally {
+    DB::table('domains_operations')->where('id',$held->id)->update(['policy'=>$raw,'management_pending'=>null]);
+    \Paymenter\Extensions\Servers\Domains\Services\ManagementProgressIndex::install();
+}
+same($recoverable->id,$controller->status($request,$d->id)->getData(true)['nameservers']['id'],'Backfill retains an older recoverable hold behind newer exhausted holds');
 echo "Management pending controls, duplicate requests, local status and immediate start passed.\n";$nativeSuccessful=true;
