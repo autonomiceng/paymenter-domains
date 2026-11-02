@@ -8,7 +8,6 @@ use Filament\Support\Enums\FontFamily;
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,StatusMark,WatchReadResource,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainName,Missing};
-use Filament\Navigation\NavigationItem;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ListManagedDns,ListDnsFailures,MonitoringSettings,ViewWatch};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
@@ -17,19 +16,12 @@ class WatchResource extends WatchReadResource
     protected static ?string $model=WatchName::class;
     protected static ?string $navigationLabel='Domain monitoring';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-eye';
-    protected static ?int $navigationSort=6;
+    protected static ?int $navigationSort=4;
     protected static ?string $modelLabel='monitored domain';
     protected static ?string $pluralModelLabel='Domain monitoring';
     protected static ?string $breadcrumb='Domain monitoring';
     protected static ?string $slug='domain-watch';
     protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
-    /** Domains and Settings tabs on the list and Settings pages. */
-    public static function tabs(string $active): array
-    {
-        return [NavigationItem::make('Domains')->url(static::getUrl('index'))->isActiveWhen(fn()=>$active==='index'),
-            ...(\Illuminate\Support\Facades\Schema::hasTable('domains_domains') && \Illuminate\Support\Facades\Schema::hasTable('domains_accounts') && \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->exists()?[NavigationItem::make('DNS monitoring setup')->url(static::getUrl('dns-setup'))->isActiveWhen(fn()=>$active==='dns-setup')]:[]),
-            ...($active==='settings'&&MonitoringSettings::canAccess()?[NavigationItem::make('Settings')->url(static::getUrl('settings'))->isActiveWhen(fn()=>$active==='settings')]:[])];
-    }
     public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','registry','work']);}
     /** Missing in danger with its cause below; present values show $sub below. */
     private static function fact(TextColumn $column,\Closure $fact): TextColumn

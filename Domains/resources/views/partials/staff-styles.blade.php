@@ -9,6 +9,7 @@
 .domains-quiet{opacity:.75}
 .domains-strong{font-weight:500}
 .domains-nowrap{white-space:nowrap}
+.domains-blocked{opacity:.6;cursor:not-allowed}
 .domains-table-wrap{max-width:100%;overflow-x:auto}
 .domains-table{width:100%;border-collapse:collapse;font-size:.875rem}
 .domains-table th{padding:8px 12px;text-align:start;white-space:nowrap;font-weight:500}

@@ -32,10 +32,12 @@ class WhatYouSell extends Page implements HasTable
     public const ALL=0;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-check-circle';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
-    protected static ?int $navigationSort=4;
+    protected static bool $shouldRegisterNavigation=false;
     protected static ?string $title='TLDs & pricing';
     protected static ?string $slug='what-you-sell';
     protected string $view='domains::admin.what-you-sell';
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('What you sell'); }
     #[Url] public ?int $account=null;
     #[Url] public ?string $tld=null;
     #[Url] public int $years=1;

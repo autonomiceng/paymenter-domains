@@ -36,7 +36,7 @@ foreach (range(0,15) as $mask) {
     $page=Livewire::actingAs($user)->test(ViewDomain::class,['record'=>$held->id]);
     $page->assertSuccessful()->assertSee('Registration')->assertSee('Billing')->assertSet('data',[]);
     $activity=Livewire::actingAs($user)->test(RequestsRelationManager::class,['ownerRecord'=>$held,'pageClass'=>ViewDomain::class]);
-    $activity->assertCanSeeTableRecords([$held->operations()->sole()]);
+    $activity->assertSee('Request #'.$held->operations()->sole()->id);
     $body=$page->html().json_encode($page->snapshot).$activity->html().json_encode($activity->snapshot);
     expect(!str_contains($body,'PRIVATE-')&&!str_contains($body,'private-operation-'),'No secret/raw evidence in HTML or Livewire');
     expect(!str_contains($body,'827.43')&&!str_contains($body,'839.47')&&!str_contains($body,'Transfer code')&&!str_contains($body,'Auth code'),'Costs and metadata stay on the request page');
@@ -173,7 +173,7 @@ $neverPaid=RequestFacts::for($review); expect(array_key_exists('refund',$neverPa
 same([null,'No paid invoice recorded. No action needed.'],[$neverPaid['refund'],$neverPaid['refund_sub']],'Never-paid refund is Missing with its cause');
 // A cross-bound operation must never appear just because its domain_id was forged through privileged SQL.
 $ordinaryActivity=Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class]);
-$ordinaryActivity->assertCanSeeTableRecords([$active->operations()->sole()])->assertDontSee('Reason missing');
+$ordinaryActivity->assertSee('Request #'.$active->operations()->sole()->id)->assertDontSee('Reason missing');
 DB::table('domains_operations')->where('domain_id',$active->id)->update(['safe_code'=>'unmapped_reason_code']);
 Livewire::actingAs($viewer)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])
     ->assertSee('Missing (unmapped_reason_code)')->assertDontSee('Review retained evidence')->assertDontSee('Reason missing');

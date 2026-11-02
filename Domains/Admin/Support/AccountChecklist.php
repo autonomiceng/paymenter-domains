@@ -2,9 +2,11 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use App\Admin\Pages\Settings;
 use Filament\Actions\Action;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\{DB,Schema};
+use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldResource};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -194,7 +196,7 @@ final class AccountChecklist
             $paid['Paymenter payment events']!=='Available'=>self::row('Payment events',null,'danger','Service listeners are missing. Restart the queue worker.',null,self::PAYMENTS),
             $paid['Start after payment']!=='Available'=>self::row('Payment events','Delayed','warning',null,null,'Paid orders start on the next scheduled run. Restart the queue worker to fix it.'),
             default=>self::row('Payment events','OK',null,'Paid orders start right away.',null,self::PAYMENTS)}];
-        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning','Refunds stay on the balance, but the Credits page is hidden. Turn on Credits in Settings.',null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
+        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning',self::creditsCause(),null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
         $editor=NativeEditorNotice::missing();
         $checks[]=$editor===null?self::row('Domain editor','OK',null,'Domain editing is ready.',null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
         if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Update Paymenter or Domains. Until then, check each TLD is still for sale after a price change.',null,'Paymenter is missing '.$missing.'.'); }
@@ -204,6 +206,13 @@ final class AccountChecklist
         $checks[]=self::supportContact();
         $failing=array_values(array_filter($checks,fn($c)=>in_array($c['tone'],['danger','warning'],true)));
         return ['failing'=>$failing,'passing'=>array_values(array_filter($checks,fn($c)=>!in_array($c,$failing,true)))];
+    }
+    /** The way to Settings, for staff who can open it. */
+    private static function creditsCause(): string|HtmlString
+    {
+        $hidden='Refunds stay on the balance, but the Credits page is hidden.';
+        try { $url=Settings::canAccess()?Settings::getUrl():null; } catch (\Throwable) { $url=null; }
+        return $url?new HtmlString(e($hidden).' <a class="fi-link domains-link" href="'.e($url).'">Open Settings</a>'):$hidden.' Turn on Credits in Settings.';
     }
     private static function supportContact(): array
     {

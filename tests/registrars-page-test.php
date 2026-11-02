@@ -55,7 +55,7 @@ same($sync,Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::la
 Illuminate\Support\Facades\Schema::drop('domains_runtime_turns');
 config(['settings.credits_enabled'=>false]);
 $credits=collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits');
-expect($credits!==null&&str_contains($credits['cause'],'Turn on Credits in Settings.'),'Hidden Credits page warns with the setting to change');
+expect($credits!==null&&str_contains((string)$credits['cause'],'Turn on Credits in Settings.'),'Hidden Credits page warns with the setting to change');
 config(['settings.credits_enabled'=>true]);
 same(null,collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits'),'Warning clears when customers can use Credits');
 
@@ -293,6 +293,9 @@ $held=Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id'
 // A paid request waiting for the registrar shows on the Registrar requests row, never as the account's state.
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertDontSee('Request #'.$held->id.' unconfirmed');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Registrar requests')->assertSee('1 needs review');
+DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'succeeded']);
+same(['open'=>0,'review'=>0],Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::requests($silo->server_id),'Finished requests leave the count');
+DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'uncertain']);
 // Check balance: a failed read and the one-minute wait use the new toasts.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('checkBalance')->assertNotified("Couldn't check balance");
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('checkBalance')->assertNotified('Wait a minute before checking again.');

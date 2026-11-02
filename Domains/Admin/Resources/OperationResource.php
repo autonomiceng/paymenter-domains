@@ -16,7 +16,7 @@ class OperationResource extends Resource
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-arrows-right-left';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?string $navigationLabel='Registrar requests';
-    protected static ?int $navigationSort=2;
+    protected static bool $shouldRegisterNavigation=false;
     protected static ?string $modelLabel='registrar request';
     protected static ?string $pluralModelLabel='registrar requests';
     // Sentence case: Filament's default breadcrumb title-cases the plural label.

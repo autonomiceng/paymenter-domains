@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions;
 class ListConfiguration extends ListRecords
 {
     protected static string $resource=RoutingProfileResource::class;
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('DNS templates'); }
     public function getTitle(): string{return 'DNS templates';}
     public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}

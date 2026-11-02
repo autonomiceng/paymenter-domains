@@ -18,6 +18,8 @@ class TldResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?string $navigationLabel='TLDs & pricing';
     protected static ?int $navigationSort=3;
+    /** The menu item stays marked on What you sell, its tab. */
+    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getRouteName()]; }
     protected static ?string $modelLabel='TLD';
     protected static ?string $pluralModelLabel='TLDs';
     protected static ?string $breadcrumb='TLDs & pricing';

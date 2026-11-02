@@ -13,6 +13,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
@@ -24,11 +25,16 @@ class RegistrarSetup extends Page implements HasTable
     use InteractsWithTable;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-cog-6-tooth';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
-    protected static ?int $navigationSort=5;
+    protected static ?int $navigationSort=2;
     protected static ?string $title='Registrars';
     protected static ?string $slug='registrar-setup';
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::registrars('Accounts'); }
     /** Row facts per server for one render. */
     private array $rows=[];
+    /** The menu item stays marked on an account and on Registrar requests. */
+    public static function getNavigationItemActiveRoutePattern(): string|array
+    { return [static::getRouteName(),RegistrarAccount::getRouteName(),RegistrarHistory::getRouteName(),RegistrarBalances::getRouteName(),ActivationStatus::getRouteName(),OperationResource::getRouteBaseName().'.*']; }
     public static function canAccess(): bool {return Staff::can();}
     public function mount(): void {Staff::requireView();}
     protected function getHeaderActions(): array

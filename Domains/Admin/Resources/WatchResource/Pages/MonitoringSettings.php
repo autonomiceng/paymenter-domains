@@ -11,7 +11,7 @@ use Filament\Schemas\{Schema,Components\Callout};
 use Filament\Support\Enums\Width;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,Sheet,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,Sheet,Staff,StaffTabs};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\DnsResolverSettings;
@@ -24,7 +24,7 @@ class MonitoringSettings extends Page
     protected Width|string|null $maxContentWidth=Sheet::WIDTH;
     public static function canAccess(array $parameters=[]): bool{return Staff::can(PublicSuffixList::VIEW);}
     public function mount(): void{abort_unless(self::canAccess(),403);}
-    public function getSubNavigation(): array{return WatchResource::tabs('settings');}
+    public function getSubNavigation(): array{return StaffTabs::monitoring('Settings');}
     private static function requireManage(): void{abort_unless(self::canAccess()&&Staff::can(PublicSuffixList::MANAGE),403);}
     /** One resolver form: in the header once a resolver is saved, otherwise as the fix beside Missing. */
     private function edit(string $name): Action

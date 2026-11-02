@@ -10,7 +10,7 @@ use Filament\View\PanelsRenderHook;
 use Illuminate\Support\HtmlString;
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,WatchActions,WatchFindings,WatchQueries};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffTabs,WatchActions,WatchFindings,WatchQueries};
 use Paymenter\Extensions\Servers\Domains\Models\WatchName;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffWatchWrites,WatchMaintenance,WatchWork,ManagedDnsSetup};
 class ListWatches extends ListRecords
@@ -26,7 +26,7 @@ class ListWatches extends ListRecords
     public function getTitle(): string{return 'Domain monitoring';}
     public function getBreadcrumbs(): array{return [];}
     public function getSubheading(): ?string{return null;}
-    public function getSubNavigation(): array{return WatchResource::tabs('index');}
+    public function getSubNavigation(): array{return StaffTabs::monitoring('Monitored domains');}
     /** Request-scoped maintenance notice; false until read. */
     protected array|false|null $notice=false;
     protected array $failedFamilies=[];

@@ -155,7 +155,7 @@ final class DomainFacts
         // The page notice names a held order and the head names the top alert, so a review alert on a row would only repeat them.
         $inputs=StaffDomainInputs::for([$d])[$d->id]; $status=self::status($d,$inputs);
         $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:($status['alert']==='operation_review'?$status['request']:null);
-        $rows=array_filter($inputs['alerts'],fn(array $a)=>!($a['code']==='operation_review'&&$a['request']===$named&&$named!==null));
+        $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$a['request']===$named&&$named!==null));
         foreach (array_unique(array_column($rows,'code')) as $code) {
             // Late payment already has a status reason and its own notice.
             if ($code==='acquisition_late_money') { continue; }
@@ -213,6 +213,13 @@ final class DomainFacts
         $linked=$url&&str_ends_with($line,$check);
         if (!$linked&&!$status['act']) { return $line; }
         $html=new HtmlString($linked?e(substr($line,0,-strlen($check))).self::requestLink($url,$label).'.':e($line));
+        return $status['act']?StatusMark::act($html):$html;
+    }
+    /** The head of a domain a request is holding: the link first, then what it holds, said once for the page. */
+    public static function holdHtml(array $status): HtmlString
+    {
+        $url=self::requestUrl($status); $label='Check request #'.$status['request'];
+        $html=new HtmlString(($url?self::requestLink($url,$label):e($label)).' Changes are on hold until it is checked.');
         return $status['act']?StatusMark::act($html):$html;
     }
     /** A link to a request, in the text around it. */

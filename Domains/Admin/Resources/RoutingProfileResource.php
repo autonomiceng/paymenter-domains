@@ -11,7 +11,7 @@ class RoutingProfileResource extends WatchReadResource
     protected static ?string $model=WatchProfile::class;
     protected static ?string $navigationLabel='DNS templates';
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-document-duplicate';
-    protected static ?int $navigationSort=7;
+    protected static bool $shouldRegisterNavigation=false;
     protected static ?string $modelLabel='DNS template';
     protected static ?string $pluralModelLabel='DNS templates';
     protected static ?string $breadcrumb='DNS templates';
