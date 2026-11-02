@@ -52,7 +52,7 @@ class DomainResource extends Resource
     {
         EmptyTable::apply($table,'No domains yet','They show here after a customer orders one.','No domains match');
         return $table->modifyQueryUsing(fn (Builder $query) => $query
-            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.invoice_id,domains_operations.payload,domains_operations.policy,domains_operations.attempt,domains_operations.funding,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
+            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition']))->columns([
             DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->extraAttributes(['class'=>DomainName::CELL])),
             TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)

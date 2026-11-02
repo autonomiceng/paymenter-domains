@@ -143,10 +143,9 @@ final class RequestFacts
     /** A request's status. Orders off stop all queued work, so a queued request is On hold wherever it shows, not In progress. Lists pass $ordersOff as for reason(). */
     public static function status(Operation $op, bool $ordersOff=true): array
     {
-        $status=Labels::requestStatus($op);
-        if ($op->state!=='queued'||!$ordersOff) { return $status; }
-        try { $reason=self::readyMessage($op); } catch (\Throwable) { return $status; }
-        return $reason==='Not sent. '.self::ORDERS_OFF?[...RequestStatus::for('held'),'reason'=>$reason]:$status;
+        $status=[...Labels::requestStatus($op),'reason'=>self::reason($op,$ordersOff)];
+        if ($op->state!=='queued'||!$ordersOff||!str_ends_with((string)$status['reason'],self::ORDERS_OFF)) { return $status; }
+        return [...RequestStatus::for('held'),'reason'=>$status['reason']];
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string

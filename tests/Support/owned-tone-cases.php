@@ -14,7 +14,7 @@ declare(strict_types=1);
         'registration_rejected' => ['Failed', 'bad', 'Registration did not finish'], 'transfer_rejected' => ['Failed', 'bad', 'Transfer did not finish'],
         'needs_review' => ['Under review', 'info', null], 'expired' => ['Expired', 'bad', $late], 'grace' => ['Expired', 'bad', $late],
         'redemption' => ['Redemption', 'bad', $late], 'cancelled' => ['Cancelled', 'muted', null],
-        'unknown_status' => ['Under review', 'info', 'Status missing'],
+        'unknown_status' => ['Under review', 'info', 'We are on it, nothing for you to do'],
     ];
     foreach ($cases as $state => $expected) {
         $d = $base->fresh(); $d->status = $state; $d->provider_expires_at = $clock->now()->modify('+200 days');
