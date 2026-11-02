@@ -116,7 +116,11 @@ same(false, json_decode($orgRows['transfer:1']->catalogue_observation, true)['en
 same('19.95', UpgradeComparison::query('domains_tlds')->where('id', $org->id)->sole()->catalogue_retained_annual_retail, 'Missing current cost does not erase last published annual retail');
 same(1, $report['issues']['conflicting_price:register:1'], 'Comparison flags conflicting exact-term sources');
 same(null, DB::table('domains_tlds')->where([...$key, 'tld' => 'net'])->value('catalogue_facts'), 'Acceptance-only candidates carry no invented facts');
+// MySQL's JSON storage may reorder object keys; a comparison must keep types but ignore key order.
 $originalIntent = $converted->catalogue_intent;
+$reordered = json_decode($originalIntent, true); ksort($reordered);
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => json_encode($reordered)]);
+same(true, $converter->report($binding, $before)['compatible'], 'Equivalent JSON object key order does not change upgrade intent');
 DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => '{}']);
 $corrupt = $converter->report($binding, $before);
 same(false, $corrupt['compatible'], 'Comparison detects incorrect staged intent even when original rows are unchanged');
@@ -150,10 +154,11 @@ foreach ($nativeTables as $definition) {
     DB::statement($sql);
 }
 (new Installation)->install();
-$freshKey = fixtureAccount(10, 'namesilo', 'synthetic-prefixed');
-Server::findOrFail(10)->settings()->create(['key' => SellRule::KEY, 'type' => 'array', 'encrypted' => false,
+$freshAccount = fixtureAccount(1, 'namesilo', 'synthetic-prefixed');
+$freshKey = ['server_id' => 1, 'account_fingerprint' => $freshAccount['account_fingerprint']];
+Server::findOrFail(1)->settings()->create(['key' => SellRule::KEY, 'type' => 'array', 'encrypted' => false,
     'value' => ['mode' => 'all', 'max_cost' => null, 'years' => 1, 'transfers' => false]]);
-$freshBinding = CatalogueAcceptances::binding(Account::where('server_id', 10)->sole());
+$freshBinding = CatalogueAcceptances::binding(Account::where('server_id', 1)->sole());
 $rows = [];
 for ($i = 0; $i < 1007; $i++) { $rows[] = [...$freshKey, 'tld' => 'suffix'.str_pad((string) $i, 4, '0', STR_PAD_LEFT)]; }
 foreach (array_chunk($rows, 100) as $chunk) { DB::table(SellTableSchema::ROWS)->insert($chunk); }

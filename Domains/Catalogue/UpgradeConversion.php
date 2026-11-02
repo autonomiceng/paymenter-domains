@@ -155,6 +155,16 @@ final class UpgradeConversion
         return $out;
     }
 
+    /** JSON object ordering is not meaningful; scalar types and list ordering are. */
+    private static function canonical(mixed $value): mixed
+    {
+        if (!is_array($value)) { return $value; }
+        foreach ($value as &$item) { $item = self::canonical($item); }
+        unset($item);
+        if (!array_is_list($value)) { ksort($value); }
+        return $value;
+    }
+
     /** Original-row digests plus a bounded comparison of the actual staged intent/costs/retail. */
     public function report(AccountBinding $binding, array $before): array
     {
@@ -177,8 +187,8 @@ final class UpgradeConversion
                         }
                     }
                     ksort($actual);
-                    $checks = ['intent' => UpgradeEvidence::json($tld->catalogue_intent) === json_decode(self::json($intent), true),
-                        'costs' => $actual === $evidence['costs'],
+                    $checks = ['intent' => self::canonical(UpgradeEvidence::json($tld->catalogue_intent)) === self::canonical(json_decode(self::json($intent), true)),
+                        'costs' => self::canonical($actual) === self::canonical($evidence['costs']),
                         'retained_retail' => UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2) === $evidence['retained']];
                     foreach ($checks as $check => $matches) {
                         if (!$matches) { $mismatches[$check] = ($mismatches[$check] ?? 0) + 1; }
@@ -189,7 +199,7 @@ final class UpgradeConversion
         $defaults = new Intent($rule !== null ? $rule['mode'] !== 'only' : !$accepted,
             $rule['years'] ?? 1, $rule['transfers'] ?? false, $rule['max_cost'] ?? null);
         $storedDefaults = DB::table('domains_accounts')->where('server_id', $binding->serverId)->value('catalogue_defaults');
-        if (UpgradeEvidence::json($storedDefaults) !== json_decode(self::json($defaults), true)) { $mismatches['defaults'] = 1; }
+        if (self::canonical(UpgradeEvidence::json($storedDefaults)) !== self::canonical(json_decode(self::json($defaults), true))) { $mismatches['defaults'] = 1; }
         $comparison = UpgradeComparison::compare($before);
         return [...$comparison, 'compatible' => $comparison['compatible'] && $mismatches === [],
             'staging_mismatches' => $mismatches, 'complete' => (bool) ($queue?->offer_conversion_complete ?? false),
