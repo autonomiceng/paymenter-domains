@@ -13,6 +13,22 @@ $template=DB::transaction(fn()=>WatchProfile::create(['name'=>'Registration name
     'edited_by'=>$user->id,'reason'=>'Synthetic registration default']));
 DB::transaction(fn()=>NewDomainDns::saveLocked($account,$template->id));
 same([(int)$account->server_id],NewDomainDns::accounts($template->id),'Selected template identifies the registrar account');
+if($binding->registrarKey==='namesilo'){
+    $invalidName=placeholderComFixtureName('template-in-zone-placeholder.com');$outside=$template->nameservers;
+    foreach([$invalidName,'ns1.'.$invalidName]as$inZone){
+        DB::table('domains_watch_profiles')->where('id',$template->id)->update(['nameservers'=>json_encode([$inZone,'ns2.provider.example'])]);
+        $counts=[\App\Models\Order::count(),\App\Models\Invoice::count(),\App\Models\Service::count(),\Paymenter\Extensions\Servers\Domains\Models\Operation::count()];
+        $calls=$registration->calls;$cart=commerceCart($user);commerceAdd($cart,$nsProduct,$invalidName);$refused=commerceCheckout($user,$cart);
+        same($counts,[\App\Models\Order::count(),\App\Models\Invoice::count(),\App\Models\Service::count(),\Paymenter\Extensions\Servers\Domains\Models\Operation::count()],'In-zone default is refused before an order or payable invoice exists: '.$inZone);
+        same($calls,$registration->calls,'Invalid default never reaches the registration transport');
+        $refused->assertDispatched('notify',static fn($event,$params)=>($params[0]['type']??null)==='error'
+            &&str_contains($params[0]['message'],'nameservers outside')&&str_contains($params[0]['message'],'before payment'));
+        $legacy=new \Paymenter\Extensions\Servers\Domains\Models\Operation(['server_id'=>$binding->serverId,'registrar_key'=>'namesilo','action'=>'register','payload'=>[]]);
+        $legacy->setRelation('domain',new \Paymenter\Extensions\Servers\Domains\Models\Domain(['domain'=>$invalidName]));
+        same([],NewDomainDns::forOperation($legacy),'Legacy fallback never reintroduces a rejected in-zone default');
+    }
+    DB::table('domains_watch_profiles')->where('id',$template->id)->update(['nameservers'=>json_encode($outside)]);
+}
 foreach(['disable','delete'] as $change){
     try{
         DB::transaction(function()use($template,$change){$row=$template->fresh();if($change==='delete'){$row->delete();}else{$row->update(['enabled'=>false,'revision'=>$row->revision+1]);}});

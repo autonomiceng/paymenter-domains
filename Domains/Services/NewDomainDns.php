@@ -22,7 +22,11 @@ final class NewDomainDns
     public static function forOperation(Operation $op): array
     {
         if($op->action!=='register'){return [];}
-        return ($op->payload['nameservers']??[])?:self::nameservers((int)$op->server_id,'register');
+        if($saved=$op->payload['nameservers']??[]){return $saved;}
+        $defaults=self::nameservers((int)$op->server_id,'register');
+        try{if($defaults){self::validate($op->registrar_key,$defaults,$op->domain->domain);}}
+        catch(\InvalidArgumentException){return [];}
+        return $defaults;
     }
     public static function accounts(int $profile,bool $lock=false): array
     {
@@ -43,9 +47,9 @@ final class NewDomainDns
         }
         Server::findOrFail($account->server_id)->settings()->updateOrCreate(['key'=>self::KEY],['type'=>'string','encrypted'=>false,'value'=>$profile?(string)$profile->id:'']);
     }
-    public static function validate(string $registrar,array $servers): void
+    public static function validate(string $registrar,array $servers,?string $domain=null): void
     {
         if($registrar==='enom'){\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration::nameservers($servers);}
-        else{\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::nameservers($servers);}
+        else{\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::nameservers($servers,$domain);}
     }
 }
