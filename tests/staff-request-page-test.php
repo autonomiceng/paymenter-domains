@@ -123,7 +123,7 @@ DB::table('domains_operations')->where('id',$heldOp->id)->update(['action'=>'tra
 
 // Pending: no notice, no Sent to registrar row.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'pending','safe_code'=>null,'started_at'=>'2026-10-20 15:06:00']);
-Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('In progress')->assertSee('Sent to registrar')->assertSee('Oct 20, 2026 15:06 UTC');
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('In progress')->assertSee('Sent to registrar')->assertSeeHtml('2026-10-20T15:06:00+00:00');
 
 // Paid and unconfirmed: the notice names the registrar and how long new orders have been paused.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','funding_basis'=>'paid_invoice','started_at'=>now()->subHours(73)]);

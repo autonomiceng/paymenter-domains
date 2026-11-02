@@ -74,8 +74,10 @@ foreach($inputs as $action=>$input){
     if($action==='tld_settings'){same(1,(int)$defaults['min_years'],'Current minimum prefilled');same(3,(int)$defaults['max_years'],'Current maximum prefilled');}
     if($action==='seller'){same($t->server_id,(int)$defaults['seller'],'Current seller prefilled');expect($defaults['register']&&$defaults['transfer'],'Current seller actions prefilled');}
     if($action==='configure'){same('enom',$defaults['registrar'],'Bound registrar prefilled');same('test',$defaults['environment'],'Bound environment prefilled');expect(empty($defaults['token'])&&empty($defaults['uid']),'Credentials never prefilled');}
-    $page->setActionData([...$input,'reason'=>"Reviewed\u{2028}settings"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
-    same($key,$page->get('mountedActions.0.data.'.($action==='remove_override'?'default_key':'review_key')),'Settings reason error keeps the current review open');
+    if($action!=='probe'){ // A read asks no reason.
+        $page->setActionData([...$input,'reason'=>"Reviewed\u{2028}settings"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+        same($key,$page->get('mountedActions.0.data.'.($action==='remove_override'?'default_key':'review_key')),'Settings reason error keeps the current review open');
+    }
     $page->setActionData([...$input,'reason'=>'Confirm native action with saved facts'])->callMountedAction()->assertHasNoActionErrors()
         ->assertNotified($action==='card_fee'?\Filament\Notifications\Notification::make()->success()->title('Saved')->body('Card fee saved. No TLDs count the card fee in their prices, so no prices changed.'):($setup?($action==='probe'?'Balance updated':'Saved'):(in_array($action,['override','remove_override'],true)?'Prices published':'Change recorded')))->assertSet('mountedActions',[]);
     if($action==='remove_override'){expect($t->fresh()->use_default_rule,'Account default chosen in Edit prices');}

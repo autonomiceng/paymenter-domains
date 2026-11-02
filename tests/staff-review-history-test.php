@@ -23,7 +23,7 @@ $review('hold',$reason);
 same('Staff #'.$staff->id,$op->fresh()->policy['staff_actions'][0]['actor_name'],'Nameless actor saves a neutral staff identifier instead of email');
 $staff->update($staffNames);
 same('Staff #'.$staff->id,$op->fresh()->policy['staff_actions'][0]['actor_name'],'Restoring the actor name leaves saved history unchanged');
-$detail=$page()->assertSuccessful()->assertSee('Put on hold')->assertSee('Oct 18, 2026 12:00 UTC');
+$detail=$page()->assertSuccessful()->assertSee('Put on hold')->assertSeeHtml('2026-10-18T12:00:00+00:00');
 expect(str_contains($detail->html(),'&lt;script&gt;alert(&quot;review&quot;)&lt;/script&gt;'),'History escapes script reason');
 expect(!str_contains($detail->html(),$reason),'History never emits raw script reason');
 $review('release','Release after evidence review');

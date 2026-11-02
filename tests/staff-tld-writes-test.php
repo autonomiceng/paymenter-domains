@@ -41,6 +41,7 @@ foreach(array_diff(array_keys(Review::ACTIONS),staffNoButtonActions()) as $actio
         $page->mountAction($name)->assertActionMounted($name);
         same(['review_key','dns_template'],array_keys($page->get('mountedActions.0.data')),'The account DNS default asks for a template, with no typed reason');continue;
     }
+    if($action==='probe'){continue;} // A read asks no reason.
     $page->mountAction($name)->assertActionMounted($name)->setActionData(['reason'=>'x'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
 }
 // Every settings action is hidden without its own permission, even with view/manage access.
