@@ -69,7 +69,9 @@ final class UpgradeEvidence
                 $observations[$action.':1'][] = new Cost($action, 1, true, $amount, CostUnit::Annual,
                     'legacy_annual_fill', $at, $at->modify('+172800 seconds'));
             }
-            if (array_diff(array_keys(self::json($row->prices)), [1]) !== []) { $issues[] = 'unproven_bucket_terms'; }
+            try {
+                if (array_diff(array_keys(self::json($row->prices)), [1]) !== []) { $issues[] = 'unproven_bucket_terms'; }
+            } catch (\JsonException) { $issues[] = 'malformed_fill_prices'; }
         }
         // These obsolete columns have no retained unit/source contract. Do not guess their units or age.
         if ($tld !== null && ($tld->cost_register_terms !== null || $tld->cost_renew !== null || $tld->cost_transfer !== null)) {
