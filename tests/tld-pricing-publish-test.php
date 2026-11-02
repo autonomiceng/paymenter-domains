@@ -175,6 +175,9 @@ $everyAccount=pricingReview($u->id);$oneAccount=$review('override',$t->id);Tld::
 tldRefusal(fn()=>$writer->run($everyAccount,pricingForm(['markup'=>'47']),$now),'Settings changed. Reload this page.');
 $oneAccount=$review('override',$t->id);$writer->run(pricingReview($u->id),pricingForm(['markup'=>'47']),$now);
 tldRefusal(fn()=>$writer->run($oneAccount,$fields($rule),$now),'Settings changed. Reload this page.');
+// The save above also moved this account's prices, so change only the shared rule here.
+$shared=(new PricingRules)->defaultRule();$oneAccount=$review('override',$t->id);saveDefaultRule([...$shared,'markup'=>'48']);
+tldRefusal(fn()=>$writer->run($oneAccount,$fields($rule),$now),'Settings changed. Reload this page.');saveDefaultRule($shared);
 // A TLD with its own pricing that counts the card fee moves only when the fee really changes.
 $writer->run(new Review($u->id,$other->server_id,$other->id,'override',Review::ticket($u->id,$other->server_id,$other->id,'override',Review::stamp($other->server_id,$other->id)),'Synthetic reviewed price change'),
     $fields(['mode'=>'markup_fee_percent','markup'=>'5.00','round_up'=>'none','fixed'=>$rule['fixed']]),$now);
