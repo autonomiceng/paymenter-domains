@@ -9,6 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 
 final class PricingRules
 {
+    /** New connections count card fees, add 8%, then round up to .99. The upgrade pins older implicit rules. */
+    private const NEW_ACCOUNT_DEFAULT = [...PricingRule::DEFAULT, 'mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'ending_99'];
     /** Account-scoped fee snapshot for list reads; locked writers omit it. */
     public function rule(Tld $tld, bool $lock = false, ?array $fee = null): array
     {
@@ -26,7 +28,7 @@ final class PricingRules
         $query = $server->settings()->where('key', 'domains_pricing_default_rule');
         if ($lock) { $query->lockForUpdate(); }
         $setting = $query->first();
-        $rule = $setting ? $setting->value : PricingRule::DEFAULT;
+        $rule = $setting ? $setting->value : self::NEW_ACCOUNT_DEFAULT;
         if (!is_array($rule)) { throw new \DomainException('Invalid default pricing rule.'); }
         if (($rule['mode'] ?? null) === 'markup_fee_percent') { $rule['card_fee'] = $fee ?? CardFee::read($serverId, $lock); }
         return PricingRule::validate($rule);

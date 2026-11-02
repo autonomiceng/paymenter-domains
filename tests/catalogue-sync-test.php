@@ -57,6 +57,9 @@ $bindings = new AccountBindings($registry); $bound = [];
 foreach ([1 => 'enom', 2 => 'namesilo'] as $id => $key) {
     Server::create(['id' => $id, 'name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
     $bound[$id] = $bindings->configure($id, $key, Environment::Test, ['key' => 'synthetic-private-key']);
+    // This sync fixture keeps a known rule so hash and republication checks are independent of connection defaults.
+    Server::findOrFail($id)->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'],
+        ['type' => 'array', 'encrypted' => false, 'value' => PricingRule::DEFAULT]);
     $bindings->setProcessing($id, true, syntheticActivation());
 }
 $context = fn (int $id, int $budget = 20) => new RequestContext($bound[$id], RequestOrigin::Background, $clock->now()->modify('+5 minutes'), new RequestBudget($budget), $clock);

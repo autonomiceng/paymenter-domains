@@ -31,13 +31,15 @@ final class AccountBindings
             if($existing&&NameSiloSandbox::enrolled($existing)){throw new \DomainException('Sandbox enrollment is immutable.');}
             $credentials = $this->registry->credentials($registrar, $credentials);
             [$binding, $identity] = $this->registry->verify($registrar, $serverId, $environment, $credentials);
+            $enroll=false;
             try {
-                $saved = DB::transaction(function () use ($serverId, $binding, $identity, $credentials, $review): AccountBinding {
+                $saved = DB::transaction(function () use ($serverId, $binding, $identity, $credentials, $review,&$enroll): AccountBinding {
                     $review?->lockActor(); $review?->lockAccounts(); $review?->check(true);
                     $this->server($serverId, true);
                     $account = Account::where('server_id', $serverId)->lockForUpdate()->first();
                     if ($account) { if (!$binding->matches($this->binding($account))) { throw new IdentityRefused('identity_account_changed'); } }
                     else {
+                        $enroll=true;
                         $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId, 'registrar_key' => $binding->registrarKey,
                             'environment' => $binding->environment->value, 'stable_identity' => $identity,
                             'account_fingerprint' => $binding->fingerprint]));
@@ -54,6 +56,7 @@ final class AccountBindings
                 // The native transaction callback captures plaintext: never retain its exception trace.
                 throw new \DomainException('Registrar account configuration could not be saved.');
             }
+            if($enroll&&Schema::hasTable('domains_reminder_schedules')){ReminderSchedules::enroll($serverId);}
             $phase = 'verification_finished';
             return $saved;
         } finally { $review?->finish($phase); }
@@ -83,6 +86,7 @@ final class AccountBindings
                     $review->record('sandbox_enrollment_saved');return $binding;
                 });
             }catch(\Throwable){throw new \DomainException('Sandbox enrollment could not be saved.');}
+            if(Schema::hasTable('domains_reminder_schedules')){ReminderSchedules::enroll($serverId);}
             $phase='sandbox_enrollment_finished';return $saved;
         }finally{$review->finish($phase);}
     }
