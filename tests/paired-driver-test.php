@@ -63,7 +63,8 @@ foreach ([0, 1] as $i) {
     same($money, scenarioMoney(), 'Cart refusal creates no native finance');
 }
 // Retained holder retail is per account even when another, cheaper account sells.
-$rules = new Paymenter\Extensions\Servers\Domains\Services\PricingRules;
+$tlds[1]->update(['use_default_rule' => false, 'pricing_mode' => 'markup_percent', 'markup' => '30.00', 'round_up' => 'none']);
+$prices->republish($tlds[1]);
 saveDefaultRule(['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',
     'fixed' => ['register' => '100.00', 'renew' => '40.00', 'transfer' => '100.00']], $prices->republish(...));
 scenarioSwitch($sellers, $clock, $tlds[1]->server_id);
