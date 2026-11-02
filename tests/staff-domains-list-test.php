@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\Li
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
-staffPanel();[$held,$active]=staffData();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
+staffPanel();[$held,$active]=staffData();Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $list=function(?callable $queries=null)use($viewer){
     DB::flushQueryLog();DB::enableQueryLog();$page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
@@ -46,6 +46,18 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
     same(DomainFacts::for($held->fresh())['Renewal invoices']['value']??'Missing',$cell->getState(),'Auto-renew cell matches the domain page: '.$case);
     expect(in_array($cell->getState(),['On','Off','Missing'],true),'Auto-renew cell is not blank: '.$case);
 }
+// A pending import never bills renewals: the list says Off, Until import, like the domain page. By status or by provenance alone.
+$saved=(array)DB::table('domains_domains')->where('id',$held->id)->first(['status','provenance','provider_expires_at']);
+foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>'adoption_pending']] as $case=>$pending) {
+    DB::table('domains_domains')->where('id',$held->id)->update([...$pending,'provider_expires_at'=>today()->addDays(200)->format('Y-m-d')]);
+    [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);$page=DomainFacts::for($held->fresh())['Renewal invoices'];
+    same(['Off','Until import'],[$page['value'],$page['sub']],'Domain page says Off until import: pending '.$case);
+    same([$page['value'],$page['sub']],[$cell->getState(),$cell->getDescriptionBelow()],'List matches the domain page: pending '.$case);
+    DB::table('domains_domains')->where('id',$held->id)->update($saved);
+}
+DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelled']);
+[$columns,$records]=$list();same(null,$columns['auto_renew']->record($records[$held->id])->getState(),'Ended domains leave the cell blank');
+DB::table('domains_domains')->where('id',$held->id)->update($saved);
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>'not-readable']);
 [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
 same(['Missing',DomainFacts::UNREADABLE_RENEWAL],[$cell->getState(),$cell->getDescriptionBelow()],'Unreadable renewal settings show Missing with the cause');
