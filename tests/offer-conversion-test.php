@@ -149,7 +149,8 @@ DB::table('domains_tlds')->where('id', $candidate['id'])->delete();
 $checkCoverage('deleted_candidate');
 DB::table('domains_tlds')->insert($candidate);
 $extraId = DB::table('domains_tlds')->insertGetId([...$key, 'registrar_key' => 'enom', 'tld' => 'extra.example',
-    'catalogue_created' => true, 'catalogue_converted' => true, 'catalogue_intent' => '{}']);
+    'catalogue_created' => true, 'catalogue_converted' => true,
+    'catalogue_intent' => json_encode(new Intent(false, 3, true, '12.0000'))]);
 $checkCoverage('extra_identity');
 DB::table('domains_tlds')->where('id', $extraId)->delete();
 DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->update(['offer_conversion_complete' => false]);
