@@ -257,6 +257,18 @@ expect(str_ends_with((string)$sub($active,'Registrar'),'Check request #'.$stuck-
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
 DB::table('domains_operations')->whereIn('id',[$done->id,$stuck->id,$closed->id])->delete();
 Auth::setUser($viewer);
+// Nothing syncs on a domain that has ended, so a stopped sync is no step and has no button.
+ObligationAlerts::record($active->fresh(),'observation_review',time());
+Auth::setUser($staff); DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'cancelled']);
+$ended=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
+same('gray',$ended['tone'],'An ended domain keeps its own tone');
+expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
+expect($value($active,'Last sync')!=='Sync failed','An ended domain does not ask for a resume');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed');
+same(null,DomainFacts::sync($active->fresh()),'The list reads the same');
+DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
+DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
+Auth::setUser($viewer);
 DB::table('domains_observation_work')->where('id',$work)->delete();
 foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
     'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",

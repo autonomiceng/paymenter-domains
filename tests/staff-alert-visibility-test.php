@@ -26,6 +26,8 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     $html=html_entity_decode(strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful()->html()),ENT_QUOTES);
     foreach(DomainFacts::ALERTS as $code=>[$row]){
         $cause=$pageCause($code);
+        // Nothing syncs on an ended domain, so a stopped sync is no job there.
+        if($code==='observation_review'&&DomainFacts::ended($domain->fresh())){continue;}
         if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Sync failed')){$hidden[]=$code.'/'.$status;}
     }
 }

@@ -37,7 +37,7 @@ final class StaffDomainInputs
             $stops=$cancel->where('service_id',$d->service_id)->values();
             try { $off=RenewalStop::stopped(['domain'=>$d,'adoption'=>$adoptions->get($d->adoption_id),'cancel'=>$stops]); } catch (\Throwable) { $off=null; }
             $invoice=$invoices->get($d->latestAcquisition?->invoice_id);
-            $live=$rows->reject(fn(object $a)=>$a->code==='renewal_unpaid'&&$replaced
+            $live=$rows->reject(fn(object $a)=>$a->code==='renewal_unpaid'&&$replaced||$a->code==='observation_review'&&DomainFacts::ended($d)
                 ||ObligationAlerts::outdated($a,$a->operation_id===null?null:$ops->firstWhere('id',(int)$a->operation_id),$ops,$d));
             $inputs[$d->id]=['alerts'=>$live->map(fn(object $a)=>['code'=>$a->code,'request'=>$a->operation_id===null?null:(int)$a->operation_id])->values()->all(),
                 'late'=>$rows->contains('code','acquisition_late_money'),
