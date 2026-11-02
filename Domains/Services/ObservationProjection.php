@@ -88,7 +88,8 @@ final class ObservationProjection
         $ops=$d->operations()->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(101)->get();
         // Never treat a truncated history as a complete inventory. A fresh observation stands alone.
         $overflow=$ops->count()>100;
-        if ($overflow) {
+        $gap=$overflow && (!$inventory || $inventory['sequence']<($d->observation['management_sequence']??0));
+        if ($gap) {
             $sections=[];
             foreach (['nameservers','lock','privacy'] as $kind) {
                 $saved=$d->observation['sections'][$kind]??null;
@@ -121,7 +122,7 @@ final class ObservationProjection
                     if (($read['facts']['ip']??null)===null) { unset($glue[$host]); } else { $glue[$host]=$read['facts']['ip']; }
                 } else { $sections[$kind]=self::section($d, $read); }
         }
-        if ($overflow || count($glue)>50) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
+        if ($gap || count($glue)>50) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
         $sections['known_glue']=$glue; return $sections;
     }
     private static function corrections(Domain $d): array

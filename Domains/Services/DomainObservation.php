@@ -14,9 +14,7 @@ final class DomainObservation
     {
         OperationClaims::outside(); $seed=Domain::findOrFail($id);
         if (($generation!==null&&$seed->authority_generation!==$generation)||($fingerprint!==null&&$seed->account_fingerprint!==$fingerprint)) { throw new ReadDeferred('Stale observation work.'); }
-        $recordOverflow=$this->records && $seed->operations()->where('authority_generation',$seed->authority_generation)
-            ->where('account_fingerprint',$seed->account_fingerprint)->limit(101)->pluck('id')->count()>100;
-        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$recordOverflow,$readRecords): array {
+        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$readRecords): array {
             $l=HoldingLocks::take($seed); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             if (ObservationRecords::identity($seed)!==ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
             $binding=CatalogueAcceptances::binding($l['account']); $attempt=null;
@@ -26,9 +24,8 @@ final class DomainObservation
             }
             $recordProtected=$this->records!==null && (!$this->recordGate || ($this->recordGate)($l));
             $recordEnabled=$readRecords && $recordProtected;
-            $recordOverflow=$recordEnabled && ($recordOverflow || $l['operations']->where('authority_generation',$seed->authority_generation)->count()>100);
-            $knownGlue=$recordEnabled && !$recordOverflow ? (ObservationProjection::sections($l['domain'])['known_glue']??[]) : [];
-            $recordOverflow=$recordOverflow || count($knownGlue)>50;
+            $knownGlue=$recordEnabled ? (ObservationProjection::sections($l['domain'])['known_glue']??[]) : [];
+            $recordOverflow=count($knownGlue)>GlueDiscoveryLimit::HOSTS;
             return [$binding,$l['stamp'],$attempt,$l['domain'],$knownGlue,$recordOverflow,$recordEnabled,$recordProtected];
         });
         $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true);
@@ -60,6 +57,7 @@ final class DomainObservation
                     if (isset($records['failure_code'])) { $failureCode=ReadFailure::safe($records['failure_code']); }
                     if ($this->clock->now()>=$ctx->deadline) { throw new \DomainException('Observation deadline reached.'); }
                 } catch (ReadDeferred|EnomTestCallLimit) { $records=null; $deferred=true; }
+                catch (GlueDiscoveryLimit) { $records=null; $recordOverflow=true; }
                 catch (\Throwable $error) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; $failureCode=ReadFailure::code($error); }
             }
         }
@@ -68,13 +66,13 @@ final class DomainObservation
             $binding->requireMatch(CatalogueAcceptances::binding($l['account']));
             if ($stamp!==$l['stamp']) { throw new ReadDeferred('Observation authority changed.'); }
             if ($recordEnabled && $this->recordGate && !($this->recordGate)($l)) { throw new ReadDeferred('Record processing authority changed.'); }
-            if ($records!==null && count($records['glue']['records']??[])>50) { $records=null; $recordOverflow=true; }
+            if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
             if ($records!==null) { ObservationRecords::save($l['domain'],$records,$this->clock->now()); }
             if ($snapshot || $transfer!==TransferStatus::Unknown) { ObservationProjection::save($l['domain'],$snapshot,$transfer,$this->clock->now()); }
             $incomplete=$binding->registrarKey==='enom' && $records!==null
                 && array_filter(['dns','srv','ds'],fn($k)=>($records[$k]['state']??null)!=='complete');
             if ($recordEnabled && !$recordHeld && ($recordOverflow || $recordFailed || ($records['glue']['read_failed']??false) || $incomplete)) {
-                ObservationRecords::hold($l['domain'],$recordOverflow?'history_limit':($snapshot?->owned===false?'ownership_drift':'records_unavailable'),$this->clock->now(),$failureCode);
+                ObservationRecords::hold($l['domain'],$recordOverflow?'child_host_limit':($snapshot?->owned===false?'ownership_drift':'records_unavailable'),$this->clock->now(),$failureCode);
             }
             if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
             if ($deferred) { return 'read_deferred'; }

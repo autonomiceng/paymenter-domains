@@ -88,7 +88,7 @@ final class DomainFacts
             $sections=ObservationProjection::sections($d); $records=OwnerRecords::forDomain($d,$sections);
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?'Use Sync now to read DNS records.':implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
+                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??'Use Sync now to read DNS records.'):implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
             }
             $glue=$records['glue']??[];
             if ($glue) {
@@ -224,8 +224,7 @@ final class DomainFacts
         try {
             if (!ObservationRecords::stopped($d)) { return null; }
             if (!ObservationRecords::held($d)) { return 'Sync stopped after a failed check.'; }
-            return match($d->observation['record_hold']['reason']??null) {
-                'history_limit'=>'Sync stopped: DNS record history is full.',
+            return ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
                 'records_unavailable'=>"Sync stopped: couldn't read DNS records.",
                 default=>'Sync stopped: DNS record check failed.' };

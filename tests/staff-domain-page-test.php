@@ -58,6 +58,17 @@ $dnsMissing[]=[$value($active,'DNS records'),$sub($active,'DNS records')];
 same([[null,'Use Sync now to read DNS records.'],[null,'Use Sync now to read DNS records.']],$dnsMissing,'Unread on-demand DNS names Sync now before and after a good core sync');
 same([null,'Registrar did not return it. Check the domain at the registrar.'],[$value($active,'Nameservers'),$sub($active,'Nameservers')],'Unread core facts keep their own recovery guidance');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Use Sync now to read DNS records.');
+// Persistent record limits name the condition and a next step that changes it.
+foreach ([
+    'child_host_limit'=>"Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",
+    'history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.',
+] as $reason=>$next) {
+    ObservationRecords::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+    same([null,$next],[$value($active,'DNS records'),$sub($active,'DNS records')],'Missing DNS gives effective recovery for '.$reason);
+    same($next,DomainFacts::recordHold($active->fresh()),'Domain notice gives effective recovery for '.$reason);
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee($next);
+    $active->fresh()->update(['observation'=>$coreObservation]);
+}
 // A later core save without nameservers retains the last current snapshot.
 $snapshotAt=new DateTimeImmutable('2026-10-20T15:06:00+00:00');
 $snapshotNs=['ns-latest.example.net','ns-second.example.net'];
@@ -179,7 +190,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped after a failed check.')->assertSee('Resume sync')->assertSee('Sync failed');
 DB::table('domains_observation_work')->where('id',$work)->delete();
-foreach(['history_limit'=>'Sync stopped: DNS record history is full.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$title){
     ObservationRecords::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     same($title,DomainFacts::notice($active->fresh())['title'],'Record hold notice '.$reason);

@@ -275,17 +275,18 @@ foreach ([1,2] as $cycle) {
         foreach (['lock','privacy'] as $kind) { expect(!isset($rejected[$kind]),'Overflow refuses '.$field.' '.$kind); }
     }
     $clock->instant=$clock->now()->modify('+1 day');
-    same('refreshed',$observer->run($d->id,readRecords:true),'Overflow still refreshes domain facts cycle '.$cycle);
+    same('refreshed',$observer->run($d->id,readRecords:false),'Core-only sync still refreshes facts during overflow cycle '.$cycle);
     same($inventory,$d->fresh()->observation['records'],'Overflow cannot advance inventory cycle '.$cycle);
-    same('history_limit',$d->fresh()->observation['record_hold']['reason'],'History overflow keeps record discovery held');
+    expect(!ObservationRecords::held($d->fresh()),'Core-only sync does not manufacture a history hold');
     $preserved=$d->fresh()->observation['sections'];
     same($observation->nameservers,$preserved['nameservers']['facts']['nameservers'],'Daily read refreshes current nameservers during overflow');
 }
-same($recordIo,count($state->calls),'History overflow skips record discovery');
+same($recordIo,count($state->calls),'Core-only reads do not discover records during history overflow');
 expect(count($observation->calls)>$domainIo,'Daily domain reads continue across overflow cycles');
 
 // Overflow keeps fresh per-host evidence, and later confirmed deletion wins over inventory/preflight.
 $directHost='ns-direct.'.$d->domain;$overflowHost='ns-new.'.$d->domain;$inventoryHost='ns1.'.$d->domain;
+$state->glue[$directHost]='1.1.1.1';
 \Paymenter\Extensions\Servers\Domains\Services\GlueRecords::prepared($d->fresh(),['glue'=>['host'=>$directHost,'ip'=>'1.1.1.1']],$clock->now());
 $observed=['fresh direct read'=>ObservationProjection::sections($d->fresh())['known_glue'][$directHost]??null];
 require_once __DIR__.'/Support/FakeDnsReader.php';
@@ -311,7 +312,48 @@ $observed['aged inventory host delete']=$truncated['known_glue'][$inventoryHost]
 $expected=['fresh direct read'=>'1.1.1.1','fresh host drift check'=>true,'glue_add'=>'1.1.1.1','glue_delete'=>null,
     'inventory host delete'=>null,'aged new host delete'=>null,'aged inventory host delete'=>null];
 foreach ($expected as $case=>$value) { if ($value!==$observed[$case]) { fwrite(STDERR,'Regression: '.$case.' expected '.json_encode($value).' got '.json_encode($observed[$case])."\n"); } }
+same('1.1.1.1',$observed['fresh direct read'],'Fresh persisted glue survives truncated history');
 same($expected,$observed,'Fresh direct/add evidence stays visible and drift-checked; newer deletes never resurrect after overflow');
 foreach (['dns','srv','ds'] as $kind) { expect(!isset($truncated[$kind]),'Deleted glue does not unlock truncated '.$kind.' list'); }
+
+
+// A fresh read safely replaces stale whole-list inventory despite the lifetime operation count.
+$recordIo=count($state->calls);$clock->instant=$clock->now()->modify('+61 seconds');
+ObservationRecords::hold($d->fresh(),'history_limit',$clock->now());
+same('refreshed',$observer->run($d->id,readRecords:true),'Sync recovers a legacy history-limit hold');
+expect(count($state->calls)>$recordIo,'More than100 operations no longer refuse record discovery');
+expect(!ObservationRecords::held($d->fresh()),'Successful discovery clears the old history hold');
+$freshRecords=OwnerRecords::forDomain($d->fresh());
+same('new',$freshRecords['dns'][0]['address'],'Fresh inventory is visible after overflow');
+same(8443,$freshRecords['srv'][0]['port'],'Fresh SRV inventory is visible after overflow');
+same(2,count($freshRecords['ds']),'Fresh DS inventory is visible after overflow');
+same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['records']['at'],'Fresh inventory advances its timestamp');
+same([$directHost=>'1.1.1.1'],array_column($freshRecords['glue'],'ip','host'),'Fresh discovery keeps the live direct host and cannot resurrect either delete');
+
+
+// The combined child-host limit is a specific hold; reducing its sources makes retry work.
+[$d,$driver]=$holding('candidate-limit-placeholder.com');
+// The registration fixture rewinds the clock; isolate this case from earlier quota windows.
+DB::table('domains_read_budgets')->where('server_id',$d->server_id)->delete();
+$profiles=[];
+for ($i=0;$i<26;$i++) {
+    $profiles[]=DB::table('domains_watch_profiles')->insertGetId(['name'=>'Limit fixture '.$i,
+        'nameservers'=>json_encode(['ns'.($i*2+1).'.'.$d->domain,'ns'.($i*2+2).'.'.$d->domain]),
+        'website_endpoints'=>'{}','email_endpoints'=>'{}','edited_by'=>$user->id,'reason'=>'synthetic']);
+}
+$limitActor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,'admin.domains.manage']);
+$limitJob=new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($limitActor->id,$d->id,$d->authority_generation,$d->account_fingerprint);
+$recordIo=count($state->calls);$clock->instant=$clock->now()->modify('+61 seconds');$limitJob->handle($observer);
+same($recordIo,count($state->calls),'Candidate limit makes no record-discovery calls');
+expect(isset($d->fresh()->observation['facts']),'Candidate limit still saves core facts');
+same('child_host_limit',$d->fresh()->observation['record_hold']['reason'],'Candidate limit has its own recoverable cause');
+$notice=App\Models\Notification::where('user_id',$limitActor->id)->latest('id')->firstOrFail();
+same("Couldn't read all records",$notice->title,'Candidate limit never reports Domain synced');
+same("Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",$notice->body,'Candidate-limit inbox gives the real limit and required source cleanup');
+DB::table('domains_watch_profiles')->where('id',array_pop($profiles))->delete();
+$clock->instant=$clock->now()->modify('+61 seconds');$limitJob->handle($observer);
+expect(!ObservationRecords::held($d->fresh()),'Reducing candidates to50 allows successful discovery ('.($d->fresh()->observation['record_hold']['reason']??'none').'/'.($d->fresh()->observation['record_hold']['code']??'none').')');
+same(50,count($d->fresh()->observation['records']['families']['glue']['candidates']),'Discovery retains every candidate at its limit');
+same('Domain synced',App\Models\Notification::where('user_id',$limitActor->id)->latest('id')->value('title'),'Retry after reducing sources honestly reports success');
 
 $nativeSuccessful=true;echo "Initial managed records: complete/unknown, identity, encryption, sequence, owner gates, glue and fair held work passed.\n";

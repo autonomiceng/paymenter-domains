@@ -14,7 +14,7 @@ final class GlueRecords
             $host=strtolower(rtrim($host,'.'));
             if (str_ends_with($host,'.'.$name) && filter_var($host,FILTER_VALIDATE_DOMAIN,FILTER_FLAG_HOSTNAME)) { $known[$host]??=''; }
         }
-        if (count($known)>50) { throw new \DomainException('Child-host history limit reached.'); }
+        if (count($known)>GlueDiscoveryLimit::HOSTS) { throw new GlueDiscoveryLimit(); }
         return $known;
     }
     public static function known(Domain $d, array $known, array $nameservers=[]): array
