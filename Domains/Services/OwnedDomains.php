@@ -72,10 +72,7 @@ final readonly class OwnedDomains
     /** Why a History change failed, in owner words. A test call cap stops the change before it is sent. */
     private static function failure(Operation $entry): string
     {
-        return match ($entry->safe_code) {
-            'management_provider_refused' => RequestStatus::REFUSED,
-            default => ManagementEvidence::outcome($entry) ?? RequestStatus::NOT_MADE,
-        };
+        return ManagementEvidence::outcome($entry) ?? RequestStatus::NOT_MADE;
     }
     public function present(Domain $d, bool $forms = true): OwnedDomain
     {

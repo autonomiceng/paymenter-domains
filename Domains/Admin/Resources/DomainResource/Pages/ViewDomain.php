@@ -184,6 +184,11 @@ class ViewDomain extends ViewRecord
     {
         $words=self::words($fact);
         if ($words!==null&&isset($fact['request'])) { $words=DomainFacts::linkRequest($words,$fact['request']); }
+        if (isset($fact['progress'])) {
+            $line=$fact['progress']['request']===null?$fact['progress']['text']:DomainFacts::linkRequest($fact['progress']['text'],$fact['progress']['request']);
+            $html=fn(string|HtmlString $text)=>$text instanceof HtmlString?$text->toHtml():e($text);
+            $words=$words===null?$line:new HtmlString($html($words).'<br>'.$html($line));
+        }
         if (!isset($fact['asOf'])) { return $words; }
         $read=Sheet::moment($fact['asOf'],'As of')->toHtml();
         return new HtmlString($words===null?$read:$read.'. '.($words instanceof HtmlString?$words->toHtml():e($words)));

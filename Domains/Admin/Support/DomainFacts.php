@@ -382,13 +382,17 @@ final class DomainFacts
     /** Links to pages the current panel may not register resolve to no link. */
     private static function url(\Closure $make): ?string { try { return $make(); } catch (\Throwable) { return null; } }
     private static function flag(mixed $value, string $on='On', string $off='Off'): ?string { return is_bool($value)?($value?$on:$off):null; }
-    /** Progress sits under a row's own words, so Contacts keeps its email; a Missing cause gives way to it. A settled result is over and says nothing. */
+    /** Progress takes its own line under a row's words, so Contacts keeps its email; a Missing cause gives way to it. A settled or replaced result says nothing.
+     * A stopped change reads its request's line, never the sentence written for the customer. */
     public static function withProgress(array $facts, array $progress): array
     {
         foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
             $row=$progress[$setting]??null;
-            if (!isset($facts[$label])||$row===null||($row['settled']??false)) { continue; }
-            $facts[$label]['sub']=$facts[$label]['value']===null?$row['text']:trim(($facts[$label]['sub']??'').' '.$row['text']);
+            if (!isset($facts[$label])||$row===null||($row['settled']??false)||($row['replaced']??false)) { continue; }
+            $stopped=isset($row['outcome']);
+            $text=$stopped?StaffDomainStatus::sentence($row['outcome']).' Check request #'.$row['id'].'.':$row['text'];
+            if ($facts[$label]['value']===null) { $facts[$label]['sub']=$text; continue; }
+            $facts[$label]['progress']=['text'=>$text,'request'=>$stopped?$row['id']:null];
         }
         return $facts;
     }

@@ -38,9 +38,14 @@ Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$p
 // Progress sits under a row's own words, and a finished change stops talking.
 $rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
 $saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
-same(['ada@example.test Saving…','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
+same(['ada@example.test','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
+same(['text'=>'Saving…','request'=>null],DomainFacts::withProgress($rows,$saving)['Contacts']['progress'],'Progress takes its own line under the email');
 same(['ada@example.test','Sync to read them'],array_column(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>true]]),'sub'),'A settled result shows nothing');
-same('ada@example.test Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['sub'],'A fresh result still shows');
+same('Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['text'],'A fresh result still shows');
+// Staff read the request's own line and where to look, not the sentence written for the customer.
+$stopped=['id'=>60,'pending'=>false,'text'=>'The contacts change failed. Try again. If it keeps happening, contact support.','outcome'=>'Not sent. Nothing changed at the registrar.','settled'=>false];
+same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'A stopped change names its request');
+expect(!isset(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Replaced by your latest choice.','replaced'=>true]])['Contacts']['progress']),'A replaced change says nothing to staff');
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
 same(['Expires','Registrar','In registrar account','Transfer lock','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::SECTIONS['Registration'])),'Registration rows in order');

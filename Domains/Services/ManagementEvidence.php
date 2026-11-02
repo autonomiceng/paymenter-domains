@@ -37,6 +37,7 @@ final class ManagementEvidence
     /** What a stopped or ended change did at the registrar, the one line staff and customers read. Null when the result really is unknown. */
     public static function outcome(Operation $op): ?string
     {
+        if($op->safe_code==='management_provider_refused'){return RequestStatus::REFUSED;}
         if(!in_array($op->state,['held','rejected'],true)){return null;}
         try{$unsent=self::idle($op)||$op->state==='rejected'&&($op->attempt['send_state']??null)==='definitely_unsent';}catch(\Throwable){$unsent=false;}
         return $unsent?RequestStatus::UNSENT:($op->state==='rejected'?RequestStatus::NOT_MADE:null);
