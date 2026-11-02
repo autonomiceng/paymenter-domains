@@ -9,7 +9,7 @@ abstract class RegistrationProtocol extends RegistrationTransport
     private readonly \SensitiveParameterValue $exchange;
     private ?WriteReservation $reservation=null;
     final public function useReservation(WriteReservation $reservation): void
-    { if($this->reservation){throw new \LogicException('Reservation already bound.');}$this->reservation=$reservation; }
+    { if($this->reservation||!$reservation->bindsTo($this->binding)){throw new \LogicException('Reservation binding unavailable.');}$this->reservation=$reservation; }
     final public function withinReservation(\Paymenter\Extensions\Servers\Domains\Models\Operation $op,\Closure $work): mixed
     {
         if(!$this->reservation){return $work();}

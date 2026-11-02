@@ -55,7 +55,9 @@ $prepare=static function(string $mode)use($binding,$makeEngine,$exchange,$regist
     $makeEngine($binding,$profileExchange);
     // Rebuild the genuine protocol/bridge with the physical exchange, retaining the same preflight/profile policy.
     $protocol=new Registration($binding,$GLOBALS['profiles'],$wire);
+    commerceReject(fn()=>$protocol->useReservation(new SendReservation($GLOBALS['bindingFor'](0),new NameSiloLiveReservationPolicy)));
     $protocol->useReservation($transport->reservation);
+    commerceReject(fn()=>$protocol->useReservation($transport->reservation));
     $bridge=new Writer($binding,$GLOBALS['features']=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true),$GLOBALS['acceptance'],static function()use(&$engine){return $engine;},$protocol);
     // Use the exact preflight policy objects required by DomainOperations::consume.
     $fresh=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($GLOBALS['freshBindings'],$GLOBALS['features'],$GLOBALS['acceptance'],$GLOBALS['profiles']);
