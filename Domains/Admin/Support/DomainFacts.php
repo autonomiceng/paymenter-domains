@@ -226,6 +226,7 @@ final class DomainFacts
             if (!ObservationRecords::held($d)) { return 'Sync stopped after a failed check.'; }
             return ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+                'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
                 'records_unavailable'=>"Sync stopped: couldn't read DNS records.",
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }

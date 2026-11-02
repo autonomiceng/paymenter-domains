@@ -72,7 +72,7 @@ final class DomainObservation
             $incomplete=$binding->registrarKey==='enom' && $records!==null
                 && array_filter(['dns','srv','ds'],fn($k)=>($records[$k]['state']??null)!=='complete');
             if ($recordEnabled && !$recordHeld && ($recordOverflow || $recordFailed || ($records['glue']['read_failed']??false) || $incomplete)) {
-                ObservationRecords::hold($l['domain'],$recordOverflow?'child_host_limit':($snapshot?->owned===false?'ownership_drift':'records_unavailable'),$this->clock->now(),$failureCode);
+                ObservationRecords::hold($l['domain'],$recordOverflow?'child_host_limit':($snapshot?->owned===false?'ownership_drift':(($records['glue']['read_failed']??false)&&!$incomplete?'glue_unavailable':'records_unavailable')),$this->clock->now(),$failureCode);
             }
             if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
             if ($deferred) { return 'read_deferred'; }

@@ -191,6 +191,7 @@ Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->doma
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped after a failed check.')->assertSee('Resume sync')->assertSee('Sync failed');
 DB::table('domains_observation_work')->where('id',$work)->delete();
 foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+    'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$title){
     ObservationRecords::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     same($title,DomainFacts::notice($active->fresh())['title'],'Record hold notice '.$reason);

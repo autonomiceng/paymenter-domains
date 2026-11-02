@@ -21,7 +21,9 @@ $managementExchange = static function ($origin, $cmd, $p, $timeout) use ($ms): s
             'locked'=>$ms->locked?'Yes':'No', 'private'=>$ms->privacy?'Yes':'No', 'auto_renew'=>$ms->renew?'Yes':'No',
             'nameservers'=>array_map(fn($ns)=>['nameserver'=>$ns],$ms->ns), 'contact_ids'=>$ms->ids];
     } elseif ($cmd === 'listRegisteredNameServers') {
-        $reply['hosts']=array_map(fn($host,$ips)=>['host'=>$host,'ip'=>$ips],array_keys($ms->glue),array_values($ms->glue));
+        // Published wire JSON repeats ip keys, rather than returning an address array.
+        $hosts=array_map(static fn($host,$ips)=>'{"host":'.json_encode($host).','.implode(',',array_map(static fn($ip)=>'"ip":'.json_encode($ip),$ips)).'}',array_keys($ms->glue),array_values($ms->glue));
+        return '{"request":{"operation":"listRegisteredNameServers"},"reply":{"code":300,"detail":"success","hosts":['.implode(',',$hosts).']}}';
     } elseif ($cmd === 'contactList') {
         $reply['contact'] = ($ms->profiles[$p['contact_id']] ?? []) + ['contact_id'=>$p['contact_id'],'default_profile'=>$ms->fault==='default'?'1':'0'];
         if ($ms->fault === 'mismatch') { $reply['contact']['email']='different@example.com'; }

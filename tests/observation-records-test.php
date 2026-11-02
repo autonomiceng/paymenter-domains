@@ -151,6 +151,13 @@ foreach(['GetHosts','GetDomainInfo','CheckNSStatus']as$fault){
  $clearRecords();$state->fault=$fault;$clock->instant=$clock->now()->modify('+61 seconds');
  same('refreshed',$observer->run($d->id,readRecords:true),'Failed record read holds only records: '.$fault);
  same('1.1.1.1',OwnerRecords::forDomain($d->fresh())['glue'][0]['ip'],'Failed read retains confirmed partial child history');
+ if($fault==='CheckNSStatus') {
+  same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Glue parser failure still saves fresh core facts');
+  foreach(['dns','srv','ds'] as $kind) { same('complete',$d->fresh()->observation['records']['families'][$kind]['state'],'Glue parser failure preserves completed '.$kind); }
+  \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
+  same("Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Glue failure is not presented as a stopped whole-domain sync');
+  \Illuminate\Support\Facades\Auth::login($user);
+ }
 }
 $state->fault='';$clearRecords();
 $state->glue=[];$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);same([],OwnerRecords::forDomain($d->fresh())['glue'],'Exact missing-host proof removes local history');
