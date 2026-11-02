@@ -151,7 +151,9 @@ final readonly class OwnedDomains
                 $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
                     'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
-                $progress[]=['label'=>self::CHANGES[$entry->action]??'Change','state'=>'Unreadable','date'=>$entry->updated_at?->toIso8601String(),'note'=>ManagementProgress::UNREADABLE];
+                if ($label=self::CHANGES[$entry->action]??null) {
+                    $progress[]=['label'=>$label,'state'=>'Unreadable','date'=>$entry->updated_at?->toIso8601String(),'note'=>ManagementProgress::UNREADABLE];
+                }
             }
         }
         foreach (array_slice($obs['corrections']??[],0,100) as $row) {

@@ -94,6 +94,18 @@ foreach (['attempt','policy'] as $field) {
         same($before,$state->calls,'Unreadable status and pages perform no registrar calls');
     } finally { DB::table('domains_operations')->where('id',$damaged->id)->update([$field=>$raw]); }
 }
+// Unreadable financial history is not a management change; unreadable changes remain visible.
+$registration=$d->operations()->where('action','register')->firstOrFail();
+$renewal=$registration->replicate();$renewal->fill(['action'=>'renew','operation_key'=>'renew:history:'.$key(),'invoice_id'=>null,'invoice_item_id'=>null]);$renewal->save();
+foreach ([$registration,$renewal,$nameservers] as $entry) {
+    $raw=$entry->getRawOriginal('policy');
+    DB::table('domains_operations')->where('id',$entry->id)->update(['policy'=>'unreadable synthetic history']);
+    try {
+        $unreadable=array_values(array_filter($owners->present($d->fresh(),false)->progress,fn($row)=>$row['state']==='Unreadable'));
+        same($entry->action==='nameservers'?['Nameservers']:[],array_column($unreadable,'label'),'Only unreadable management actions enter change history');
+    } finally { DB::table('domains_operations')->where('id',$entry->id)->update(['policy'=>$raw]); }
+}
+DB::table('domains_operations')->where('id',$renewal->id)->delete();
 $doc=new DOMDocument();@$doc->loadHTML($controller->show($request,$d->id)->render());$xpath=new DOMXPath($doc);
 $value=$xpath->query('//*[@id="nameservers"]/*[contains(@class,"domains-row__v")]')->item(0);
 expect($value!==null && str_contains($value->textContent,'ns1.example.net') && str_contains($value->textContent,'ns2.example.net'),'Pending row keeps both confirmed nameservers visible');
