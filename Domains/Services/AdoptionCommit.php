@@ -56,6 +56,8 @@ final class AdoptionCommit
                     || $d->domain !== $target->name) { throw new AdoptionRefused(RefusalCode::ResultReview); }
                 return $d;
             }
+            // Fresh import admission requires current local composition; committed replay remains idempotent.
+            $this->bindings->requireAdoptionSource($extension['account']->registrar_key);
             if ($e['provider_domain_id'] !== null && Domain::where('server_id', $target->serverId)->where('provider_domain_id', $e['provider_domain_id'])
                 ->where('domain', '!=', $target->name)->lockForUpdate()->exists()) { throw new AdoptionRefused(RefusalCode::IdentityReview); }
             $capture = $this->mapping->capture($target, new StaffContext((int) $actor->id, $seed->reason, $e['requested_do_not_renew']), $lock);

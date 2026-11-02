@@ -7,12 +7,12 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,AdoptionSour
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,DateEvidence,Environment,ExpiryPrecision};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{AdoptionReadback,Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AdoptionCommit,AdoptionReader,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AdoptionCommit,AdoptionMapping,AdoptionReader,RegistrarRegistry};
 
 /** Reuse the native fixture to prove mapping, holding locks and a local-only confirmation together. */
-function exerciseSharedImport($native,$mapping,$clock,$staff,$owner,$context,$converted,$enomBinding,$wire): void
+function exerciseSharedImport($native,$prices,$clock,$staff,$owner,$context,$converted,$enomBinding): void
 {
-    $state=(object)['binding'=>null,'resultBinding'=>null,'calls'=>0,'facts'=>[
+    $state=(object)['binding'=>null,'resultBinding'=>null,'calls'=>0,'factories'=>0,'facts'=>[
         'name'=>'example-import.com','provider_id'=>null,
         'expiry'=>new DateEvidence('2027-10-20',ExpiryPrecision::Date,'synthetic_import'),
         'auto_renew'=>false,'ordinary'=>true,'registrar_hold'=>false,'redemption'=>false,'command_set_version'=>7]];
@@ -22,6 +22,7 @@ function exerciseSharedImport($native,$mapping,$clock,$staff,$owner,$context,$co
     };
     $registry->register('namesilo',['token'],$verifier,static fn()=>throw new LogicException('General reader must not serve import'),adoptionReaderFactory:
         static function($binding,$credentials,$clock)use($state){
+            $state->factories++;
             return new class($binding,$state) implements AdoptionSource {
                 public function __construct(private readonly AccountBinding $account,private readonly object $state) {}
                 public function binding(): AccountBinding { return $this->state->binding??$this->account; }
@@ -34,7 +35,8 @@ function exerciseSharedImport($native,$mapping,$clock,$staff,$owner,$context,$co
                 }
             };
         });
-    $bindings=new AccountBindings($registry);$tld=Tld::where('registrar_key','namesilo')->sole();
+    $bindings=new AccountBindings($registry);
+    $mapping=new AdoptionMapping($native,$prices,$clock,$bindings);$tld=Tld::where('registrar_key','namesilo')->sole();
     $binding=$bindings->configure($tld->server_id,'namesilo',Environment::Live,['token'=>'account-namesilo']);
     $unwired=new RegistrarRegistry;
     $unwired->register('namesilo',['token'],$verifier,static fn()=>throw new LogicException('No general-reader fallback'));
@@ -49,9 +51,10 @@ function exerciseSharedImport($native,$mapping,$clock,$staff,$owner,$context,$co
     $reader=new AdoptionReader($bindings,$mapping,$clock);
     // Another holding without an opaque reference must not collide on SQL NULL.
     DB::table('domains_domains')->where('id',$converted->id)->update(['server_id'=>$tld->server_id,'provider_domain_id'=>null]);
-    $money=scenarioMoney();$operations=Operation::count();$enomCalls=count($wire->calls);
+    $money=scenarioMoney();$operations=Operation::count();
     $review=$reader->preview($target,$context);
     same('ready',$review->code,'Shared preview accepts normalized evidence without an opaque ID');
+    same(1,$state->calls,'Ready preview performed one generic import read');
     $preview=Adoption::findOrFail($review->previewId);
     same('namesilo',$preview->registrar_key,'Preview retains selected registrar');
     same(null,$preview->evidence['provider_domain_id'],'Missing opaque reference stays null');
@@ -60,17 +63,39 @@ function exerciseSharedImport($native,$mapping,$clock,$staff,$owner,$context,$co
     unset($state->facts['provider_id']);
     same('read_failed',$reader->preview($target,$context)->code,'Missing reference evidence differs from explicit null');
     $state->facts['provider_id']=null;
-    foreach ([['ordinary',null,'state_unconfirmed'],['auto_renew',null,'auto_renew_unknown'],['name','other-placeholder.com','identity_unconfirmed'],
+    foreach ([['registrar_hold',true,'state_unconfirmed'],['redemption',true,'state_unconfirmed'],
+        ['provider_id',"invalid\nreference",'read_failed'],['command_set_version',0,'read_failed'],
+        ['ordinary',null,'state_unconfirmed'],['auto_renew',null,'auto_renew_unknown'],['name','other-placeholder.com','identity_unconfirmed'],
         ['expiry',new DateEvidence('2027-10-20T00:00:00',ExpiryPrecision::Local,'synthetic_import'),'expiry_unconfirmed']] as [$key,$value,$code]) {
         $old=$state->facts[$key];$state->facts[$key]=$value;
         same($code,$reader->preview($target,$context)->code,'Shared evidence refuses '.$key);
         $state->facts[$key]=$old;
     }
+    $private=$state->facts;$private['provider_id']='PRIVATE-REFERENCE';
+    $dto=AdoptionReadback::verified($binding,$private);
+    same(['status'=>'verified','refusal'=>null],json_decode(json_encode($dto),true),'DTO JSON projection contains status only');
+    ob_start();var_dump($dto);$debug=ob_get_clean();
+    expect(!str_contains($debug,'PRIVATE-REFERENCE')&&!str_contains($debug,$private['name'])&&!str_contains($debug,$binding->fingerprint),'DTO debug hides private evidence and account');
+    try { serialize($dto);expect(false,'DTO must reject serialization'); }
+    catch (LogicException) {}
     $state->resultBinding=$enomBinding;
     same('identity_unconfirmed',$reader->preview($target,$context)->code,'Cross-account readback refuses');
     $state->resultBinding=null;$state->binding=$enomBinding;$calls=$state->calls;
     same('account_unconfirmed',$reader->preview($target,$context)->code,'Cross-account source refuses before read');
     same($calls,$state->calls,'Mismatched source makes no read');$state->binding=null;
+    $unwiredBindings=new AccountBindings($unwired);
+    $unwiredMapping=new AdoptionMapping($native,$prices,$clock,$unwiredBindings);
+    $beforeAdmission=[$state->factories,$state->calls];$admitted=[];
+    $mapping->capture($target,$context);
+    try { $unwiredMapping->capture($target,$context);$admitted[]='mapping'; }
+    catch (DomainException $error) { same('Import reader is unavailable.',$error->getMessage(),'Mapping requires an import source'); }
+    // Keep mapping wired to prove confirmation checks its own current composition.
+    try { (new AdoptionCommit($mapping,$unwiredBindings,$clock))->confirm($preview->request_key,$preview->request_digest,$staff);$admitted[]='confirmation'; }
+    catch (DomainException $error) { same('Import reader is unavailable.',$error->getMessage(),'First confirmation requires an import source'); }
+    same([],$admitted,'Missing import source must refuse mapping and first confirmation: '.json_encode($admitted));
+    same('preview',$preview->fresh()->state,'Withdrawn adapter leaves preview uncommitted');
+    same(0,\Paymenter\Extensions\Servers\Domains\Models\Domain::where('service_id',$service->id)->count(),'Withdrawn adapter creates no holding');
+    same($beforeAdmission,[$state->factories,$state->calls],'Local admission never constructs or reads a source');
     $commit=new AdoptionCommit($mapping,$bindings,$clock);
     $domain=$commit->confirm($preview->request_key,$preview->request_digest,$staff);
     same('namesilo',$domain->registrar_key,'Committed holding retains selected registrar');
@@ -80,5 +105,5 @@ function exerciseSharedImport($native,$mapping,$clock,$staff,$owner,$context,$co
     same($domain->id,$commit->confirm($preview->request_key,$preview->request_digest,$staff)->id,'Neutral confirmation replay is idempotent');
     same($money,scenarioMoney(),'Import creates no invoices, payments or credits');
     same($operations,Operation::count(),'Import creates no purchase operation');
-    same($enomCalls,count($wire->calls),'Import never falls back to Enom transport');
+    same($beforeAdmission,[$state->factories,$state->calls],'Confirmation and replay remain local without constructing a reader');
 }

@@ -90,11 +90,18 @@ final class RegistrarRegistry
         $binding->requireMatch($driver->binding());return $driver;
     }
 
+    /** Local composition check only: never construct a reader or invoke a provider. */
+    public function requireAdoptionSource(string $key): void
+    {
+        $this->requireDomainReads($key);
+        if ($this->entry($key)[6] === null) { throw new \DomainException('Import reader is unavailable.'); }
+    }
+
     /** Named import handle, independent of the general domain reader and spending ports. */
     public function adoptionReader(AccountBinding $binding, #[\SensitiveParameter] array $credentials, Clock $clock): AdoptionSource
     {
-        $this->requireDomainReads($binding->registrarKey);
-        $factory = $this->entry($binding->registrarKey)[6] ?? throw new \DomainException('Import reader is unavailable.');
+        $this->requireAdoptionSource($binding->registrarKey);
+        $factory = $this->entry($binding->registrarKey)[6];
         $reader = $factory($binding, $this->credentials($binding->registrarKey, $credentials), $clock);
         if (!$reader instanceof AdoptionSource || $reader instanceof \Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver) {
             throw new \DomainException('Invalid import reader.');

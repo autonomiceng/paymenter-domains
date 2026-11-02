@@ -216,6 +216,10 @@ final class AccountBindings
         } catch (\Throwable) { return 'configuration_unavailable'; }
     }
 
+    /** Local import capability; safe during locked admission and independent of credentials/I/O. */
+    public function requireAdoptionSource(string $registrar): void
+    { $this->registry->requireAdoptionSource($registrar); }
+
     /** Named import factory: current credentials and exact site guard, independent of spending. */
     public function adoptionReader(AccountBinding $expected,
         \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock): \Paymenter\Extensions\Servers\Domains\Contracts\AdoptionSource

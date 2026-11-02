@@ -13,7 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 /** Same capture for preview and confirmation; locked confirmation retains the A0 prefix. */
 final class AdoptionMapping
 {
-    public function __construct(private readonly NativeCatalogue $native, private readonly PriceCatalogue $prices, private readonly Clock $clock) {}
+    public function __construct(private readonly NativeCatalogue $native, private readonly PriceCatalogue $prices, private readonly Clock $clock,
+        private readonly AccountBindings $bindings) {}
     public function capture(Target $target, StaffContext $staff, ?HoldingIdentityLock $lock = null): array
     {
         $service = $lock ? $lock->nativeRows($target->customerId)['service'] : Service::find($target->serviceId);
@@ -43,6 +44,7 @@ final class AdoptionMapping
         $binding = CatalogueAcceptances::binding($account);
         if ($binding->registrarKey !== $tld->registrar_key || $binding->environment !== $target->environment
             || $binding->fingerprint !== $tld->account_fingerprint) { throw new \DomainException('account_unconfirmed'); }
+        $this->bindings->requireAdoptionSource($binding->registrarKey);
         if ($domain && !$domain->adoptionPending()) { throw new \DomainException('competing_holding'); }
         if ($domain && ((int) $domain->service_id !== $target->serviceId || (int) $domain->user_id !== $target->customerId
             || (int) $domain->server_id !== $target->serverId || $domain->registrar_key !== $binding->registrarKey
