@@ -20,6 +20,7 @@
         .fi-header-subheading .domains-help-beside{margin-inline:0 .875rem}
         /* One edge with or without ticks: a text cell's own padding makes it, so the head and a tick box line up with it. */
         .domains-sell-table .fi-ta-table tr>:first-child{padding-inline-start:var(--domains-sell-edge)}.domains-sell-table .fi-ta-table tr>:last-child{padding-inline-end:var(--domains-sell-edge)}
+        .domains-sell-table .fi-ta-table>*>tr>.fi-ta-cell.fi-ta-selection-cell:first-child:not(:has(.fi-ta-text)){padding-inline-start:var(--domains-sell-edge)}
         .domains-sell-table .fi-ta-table td:first-child:has(.fi-ta-text){padding-inline-start:0}.domains-sell-table .fi-ta-table td:last-child:has(.fi-ta-text){padding-inline-end:0}
         .domains-sell-table .fi-ta-table td:first-child .fi-ta-text{padding-inline-start:var(--domains-sell-edge)}.domains-sell-table .fi-ta-table td:last-child .fi-ta-text{padding-inline-end:var(--domains-sell-edge)}
         /* The mock's thin rules, only when more than one group shows. Hidden columns leave the page, so a rule goes on the first of each group still there. */
