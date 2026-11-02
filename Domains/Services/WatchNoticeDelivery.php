@@ -136,7 +136,9 @@ final class WatchNoticeDelivery
             $state=WatchNotices::state($n->scope,true);$key=$n->id.'|'.$channel;
             if (!($state['render_failures'][$key]??false)) {
                 $state['render_failures'][$key]=true;WatchNotices::write($n->scope,$n->user_id,$state,$now);
-                WatchNoticeHealth::record($n->user_id,(int)($n->watch_id??$n->managed_domain_id),$n->target_kind,'render_failed',$now,'domains_watch_'.$n->kind);
+                WatchNoticeHealth::record($n->user_id,(int)($n->watch_id??$n->managed_domain_id),$n->target_kind,'render_failed',$now,
+                    // With site mail off, prepare() throws only for a template that always sends mail.
+                    ['template'=>'domains_watch_'.$n->kind,'channel'=>$channel]+($channel==='mail'&&config('settings.mail_disable')?['mail_paused'=>true]:[]));
             }
         });
     }

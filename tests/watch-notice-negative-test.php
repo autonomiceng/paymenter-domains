@@ -31,11 +31,16 @@ require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Do
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
 $watchPage=fn()=>Livewire\Livewire::actingAs($staff[0])->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id]);
 $watchPage()->assertSee('Customer alert failed '.gmdate('M j, Y H:i',$at).' UTC.')->assertSee($template->name)->assertSee('template has an error. Fix it in Notification templates.');
+// Another channel going out proves nothing about the broken mail body: the step stays until mail from this template goes out.
+$app=$delivery->reserve($n->id,'app',$at+1);expect($app!==null && $delivery->handoff($app,$at+1),'App goes out while mail is broken');
+expect((static function()use($n,$uid):bool {try{WatchNoticeDelivery::prepare($n,'mail',App\Models\User::findOrFail($uid));return false;}catch(\Throwable){return true;}})(),'Mail still cannot be prepared');
+$watchPage()->assertSee('template has an error. Fix it in Notification templates.');
 $template->update(['body'=>'{{ $domain }} {{ $date }} <a href="{{ $domain_url }}">View domain checks</a>']);
 $claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Fixed template can claim');
 $nativePref=NotificationPreference::create(['user_id'=>$uid,'notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>true]);
 expect(!$delivery->handoff($claim,$at),'Native opt-out after reservation suppresses mail');
-$app=$delivery->reserve($n->id,'app',$at);expect($app!==null && $delivery->handoff($app,$at),'Independent native app preference honored');
+[$n,$at]=$new();same(['mail'=>false,'app'=>true],$delivery->deliver($n->id,$at),'Independent native app preference honored');
+$watchPage()->assertSee('template has an error');
 [$n,$at]=$new();$nativePref->update(['mail_enabled'=>true,'in_app_enabled'=>false]);
 $r=$delivery->deliver($n->id,$at);same(['mail'=>true,'app'=>false],$r,'Native mail on app off independent');
 $watchPage()->assertDontSee('template has an error');
@@ -49,6 +54,7 @@ $queued=Mail::queued(NoticeMail::class)->count();$health=WatchAudit::where('even
 same(['mail'=>false,'app'=>true],$delivery->deliver($n->id,$at),'Forced watch mail pause preserves independent app delivery');
 same(0,DB::table('domains_watch_deliveries')->where('notice_id',$n->id)->where('channel','mail')->count(),'Unavailable forced watch mail consumes no delivery identity');
 same($health+1,WatchAudit::where('event','notice_health')->count(),'Unavailable forced watch mail alerts staff');
+$watchPage()->assertSee('template always sends mail. Turn off Disable Mail in Settings.')->assertDontSee('template has an error');
 config(['settings.mail_disable'=>false]);$claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Restored forced watch mail can reserve');
 config(['settings.mail_disable'=>true]);expect(!$delivery->handoff($claim,$at),'Forced watch mail paused after reservation waits');
 same('reserved',DB::table('domains_watch_deliveries')->find($claim)->state,'Mail pause preserves reserved forced watch claim');

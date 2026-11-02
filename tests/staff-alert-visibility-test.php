@@ -68,7 +68,7 @@ Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->as
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->domain)->assertSee('Domain alert needs review')->assertDontSee('PRIVATE-UNKNOWN-CODE');
 // A customer monitoring alert that could not be prepared shows its fix on the page its staff alert opens, for staff who see monitoring.
 Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::install();$watcher=staffUser([Staff::VIEW,'admin.domains.watch.view']);$failedAt=time();
-Paymenter\Extensions\Servers\Domains\Services\WatchNoticeHealth::record((int)$domain->user_id,(int)$domain->id,'managed','render_failed',$failedAt,'domains_watch_ns_changed');
+Paymenter\Extensions\Servers\Domains\Services\WatchNoticeHealth::record((int)$domain->user_id,(int)$domain->id,'managed','render_failed',$failedAt,['template'=>'domains_watch_ns_changed','channel'=>'mail']);
 Livewire::actingAs($watcher)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts')
     ->assertSee('Customer alert failed '.gmdate('M j, Y H:i',$failedAt).' UTC.')->assertSee('An alert template has an error. Fix it in Notification templates.');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertDontSee('Customer alert failed');
