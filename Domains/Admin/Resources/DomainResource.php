@@ -58,11 +58,11 @@ class DomainResource extends Resource
                 ->icon(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::icon(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
-            // Auto-renew applies until the domain has ended, so pending and under-review rows show it too.
-            TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(self::row($record,$livewire)['off']) {
-                null=>Missing::LABEL,true=>'Off',false=>'On'})
+            // Auto-renew applies until the domain has ended, so pending and under-review rows show it too. A pending import bills nothing until import, as on the domain page.
+            TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(true) {
+                self::row($record,$livewire)['off']===null=>Missing::LABEL,$record->adoptionPending()||self::row($record,$livewire)['off']=>'Off',default=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
+                ->description(fn($state,Domain $record)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:($state==='Off'&&$record->adoptionPending()?'Until import':null)),
             TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' · #'.$record->server_id:Missing::LABEL)
                 ->wrap()->extraAttributes(['style'=>'max-width:12rem;overflow-wrap:anywhere'])
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
