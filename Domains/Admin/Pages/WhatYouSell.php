@@ -162,13 +162,16 @@ class WhatYouSell extends Page implements HasTable
         }
         Notification::make()->success()->title('Price sync queued')->body('You can keep working. The result will appear in your notifications.')->send();
     }
+    /** Filament puts Save first in a form dialog; these read Cancel, then Save. */
+    private static function cancelFirst(): \Closure
+    { return fn(Action $action)=>[$action->getModalCancelAction(),$action->getModalSubmitAction()]; }
     protected function getHeaderActions(): array
     {
         if($this->bindings()===[]){return [];}
         $all=fn()=>$this->account===self::ALL;$blocked=fn()=>$all()?['aria-disabled'=>'true']:[];
         return [
             Action::make('sync_now')->label('Sync prices')->color('gray')->visible(fn()=>$this->canSync()&&($all()||$this->readable()))->disabled($all)->extraAttributes($blocked)->action(fn()=>$this->syncNow()),
-            Action::make('rule')->label('Default for new TLDs')->color('gray')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save')
+            Action::make('rule')->label('Default for new TLDs')->color('gray')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save')->modalFooterActions(self::cancelFirst())
                 ->fillForm(fn()=>[...$this->rule(),'sell_new'=>$this->rule()['mode']==='only'?'no':'yes'])->schema(fn()=>[
                     Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
                         ->hintAction(HelpHint::make("For every TLD you have not set yourself, including ones the registrar adds later. Yes: they sell, unless the row is set to Don't sell. No: only rows set to Sell are sold. To change rows, tick them and use Edit selected.")),
@@ -307,7 +310,7 @@ class WhatYouSell extends Page implements HasTable
             ->toolbarActions([
                 // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
                 BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
-                    ->modalHeading(fn($records)=>$records->count()===1?'Edit .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save')->modalWidth('md')
+                    ->modalHeading(fn($records)=>$records->count()===1?'Edit .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save')->modalFooterActions(self::cancelFirst())->modalWidth('md')
                     ->schema(fn($records)=>$this->editFields($records->count()===1?$records->first():null))
                     ->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(SellRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
             ]);

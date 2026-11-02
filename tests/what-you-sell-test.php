@@ -34,6 +34,7 @@ $calls=static fn()=>count($GLOBALS['catalogueCalls']);
 $row=static fn(string $tld)=>SellRow::where(['server_id'=>$server->id,'tld'=>$tld])->sole();
 $select=static fn($page,string ...$tlds)=>$page->selectTableRecords(SellRow::where('server_id',$server->id)->whereIn('tld',$tlds)->pluck('id')->all());
 $rule=static function($page,array $data)use($staff){$page->callAction('rule',$data);return $page;};
+$footer=static fn($page)=>array_values(array_map(fn($action)=>$action->getLabel(),$page->instance()->getMountedAction()->getModalFooterActions()));
 
 // An account that is not connected gets a way forward, and no read.
 $before=$calls();
@@ -267,12 +268,13 @@ $count=$saves();$page->setActionData(['transfer'=>'on','longest'=>(string)$three
 same([3,true,'sell'],[$row('org')->longest,$row('org')->transfer,$row('org')->choice],'Bulk edit lands both fields and keeps the row choice');same($count+1,$saves(),'Bulk edit is one audited save');
 $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],[])->assertNotified('No changes');same($count+1,$saves(),'Leave as is saves nothing');
 // One tick is how a single row is edited, so the dialog says what that TLD has now.
-$select($page,'org')->mountTableBulkAction('edit',[$row('org')->id]);same('Edit .org',$page->instance()->getMountedAction()->getModalHeading(),'One ticked row reads as one TLD');
+$select($page,'org')->mountTableBulkAction('edit',[$row('org')->id]);same('Edit .org',$page->instance()->getMountedAction()->getModalHeading(),'One ticked row reads as one TLD');same(['Cancel','Save'],$footer($page),'Edit selected reads Cancel, then Save');
 $page->assertFormFieldExists('longest',fn($field)=>in_array('Leave as is (3 years)',$field->getOptions(),true))->assertFormFieldExists('transfer',fn($field)=>in_array('Leave as is (On)',$field->getOptions(),true))->callMountedAction()->assertNotified('No changes');
 $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],['longest'=>'1','transfer'=>'off']);
 
 // A saved 'all' ignored Don't sell, so it reads as Yes and its first save keeps the same TLDs on sale.
 Server::findOrFail($server->id)->settings()->updateOrCreate(['key'=>SellRule::KEY],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'all','max_cost'=>'100','years'=>1,'transfers'=>false]]);
+same(['Cancel','Save'],$footer(Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')),'Default for new TLDs reads Cancel, then Save');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')->assertSchemaStateSet(['sell_new'=>'yes'],'mountedActionSchema0')->callMountedAction()->assertNotified('Saved');
 same(['except',null],[SellRule::read($binding,null)['mode'],$row('com.au')->choice],'Saved all converts once');expect(isset(CatalogueAcceptances::load($binding)->endings['com.au']),'Conversion keeps what all was selling');
 $select($page,'com.au')->callTableBulkAction('edit',[$row('com.au')->id],['choice'=>'skip'])->assertNotified('Saved');
