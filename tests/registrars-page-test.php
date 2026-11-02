@@ -328,6 +328,28 @@ $site='https://billing.example.com';config(['app.url'=>$site,'domains.enom_live.
 same(['Not available yet',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['action']],'Live with no opt-in shows no switch');same(['Not available yet',null],[$checklist()['Transfers']['value'],$checklist()['Transfers']['action']],'Live transfers with no deployment approval or saved opt-in show no switch');$noKeys();
 config(['domains.enom_live.catalogue'=>true]);$noKeys();
 config(['domains.enom_live.accounts'=>[$enom->stable_identity=>['fingerprint'=>$liveBinding->fingerprint]]]);DB::table('domains_accounts')->where('id',$enom->id)->update(['live_site'=>$site]);
+// Verified Live credentials and a saved site do not replace current activation.
+$bindings->configure((int)$enom->server_id,'enom',Environment::Live,['token'=>$enom->stable_identity]);
+$liveEvidence=['fingerprint'=>$liveBinding->fingerprint,'site'=>$site,'confirmed_on'=>$clock->now()->format('Y-m-d'),
+    'reference'=>'synthetic-live-orders','sha256'=>str_repeat('a',64),'currency'=>'USD','complete_history'=>true];
+config(['domains.enom_live.accounts.'.$enom->stable_identity.'.evidence'=>$liveEvidence]);
+$activationClass=Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::class;
+$assertActivate=function(string $state)use($bindings,$enom,$liveBinding,$activationClass,$checklist,$admin):void {
+    same('matched',$bindings->configurationStatus((int)$enom->server_id),$state.' activation keeps verified credentials and the saved site');
+    expect(!$activationClass::current($liveBinding),$state.' activation is not current');
+    $orders=$checklist()['Orders'];
+    same(['Off','processing'],[$orders['value'],$orders['action']],$state.' activation leaves Orders paused with its existing switch');
+    expect(str_starts_with($orders['cause'],'Orders are paused. Use Activate to check setup and turn on Orders.'),$state.' activation sends Live Orders to Activate');
+    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to check setup and turn on Orders.');
+};
+$assertActivate('Missing');
+$activation=App\Models\Server::findOrFail($enom->server_id)->settings()->firstOrNew(['key'=>$activationClass::KEY]);
+$activation->encrypted=true;$activation->type='string';$activation->value=json_encode(['fingerprint'=>$liveBinding->fingerprint,'site'=>$site,
+    'evidence'=>hash('sha256',json_encode($liveEvidence,JSON_THROW_ON_ERROR))],JSON_THROW_ON_ERROR);$activation->save();
+expect($activationClass::current($liveBinding),'The saved activation matches current evidence');
+expect(str_starts_with($checklist()['Orders']['cause'],'Orders are paused. Check setup, then turn on Orders.'),'Current activation keeps the normal Orders next step');
+config(['domains.enom_live.accounts.'.$enom->stable_identity.'.evidence.sha256'=>str_repeat('b',64)]);
+$assertActivate('Stale');$activation->delete();
 same(['Off','Paused until setup is approved. Use Activate to see what is missing.',null],[$checklist()['Renewals']['value'],explode(' 1 managed domain',$checklist()['Renewals']['cause'])[0],$checklist()['Renewals']['action']],'Live turn-on is not a switch');
 $page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to see what is missing.')->assertActionDoesNotExist(setupAction('live_renewal',(int)$enom->server_id));
 Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$enom->server_id,$page->instance()->reviewStamp,'live_renewal')->getActionFunction()([],$page->instance());
@@ -335,6 +357,7 @@ same(0,App\Models\Server::findOrFail($enom->server_id)->settings()->where('key',
 DB::table('domains_accounts')->where('id',$enom->id)->update(['environment'=>'test','live_site'=>null,'account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint,
     'identity_fingerprint'=>hash('sha256',json_encode(['enom','test',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint]);
+$bindings->configure((int)$enom->server_id,'enom',Environment::Test,['token'=>$enom->stable_identity]);
 config(['domains.enom_identity.environment'=>'test','domains.enom_writes.renewal'=>true,'domains.enom_catalogue.enabled'=>false]);$noKeys();
 same('Not available yet',$checklist()['Transfers']['value'],'TEST site off shows no switch');
 config(['domains.enom_catalogue.enabled'=>true,'domains.enom_writes.transfer'=>true]);$noKeys();
@@ -349,6 +372,12 @@ foreach(['Renewals'=>'test_renewal','DNS, nameservers and contacts'=>'test_manag
 }
 $billing=$siloRows()['Renewals'];
 expect(str_contains($billing['cause'],'Billing is paused')&&str_contains($billing['cause'],'site admin')&&str_contains($billing['help'],'billing only'), 'NameSilo explains billing and the sending setup');
+$siloLive=App\Models\Server::create(['name'=>'Synthetic Live NameSilo','extension'=>'Domains','type'=>'server','enabled'=>true]);
+$bindings->configure((int)$siloLive->id,'namesilo',Environment::Live,['token'=>'synthetic-live-namesilo-orders']);
+DB::table('domains_accounts')->where('server_id',$siloLive->id)->update(['live_site'=>$site]);
+same('matched',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo credentials and saved site match');
+$siloLiveRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::where('server_id',$siloLive->id)->sole(),['label'=>'Active','reason'=>null]),null,'label');
+same('Orders are paused. Check setup, then turn on Orders.',$siloLiveRows['Orders']['cause'],'Live NameSilo Orders never asks for Enom activation');
 foreach(['invoices','customer credit','Auto Pay','paid renewals'] as $effect){expect(str_contains($offRows['Renewals']['help'],$effect),'Renewals explains '.$effect);}
 $testBinding=CatalogueAcceptances::binding(Account::findOrFail($enom->id));
 $review=new StaffSettingsReview($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::ticket($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::stamp((int)$enom->server_id,null)),'Approve test renewal setup');
@@ -356,5 +385,13 @@ Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::review($review,['
 $late=$checklist()['Late renewal'];
 same(['Off','late_renewal'],[$late['value'],$late['action']],'Ready Test late renewal keeps its separate approval');
 expect(str_contains($late['cause'],'paused')&&str_contains($late['cause'],'expired domains')&&!str_contains($late['cause'],'evidence'),'Ready Test late renewal explains billing without asking for Live evidence');
+same(null,$late['tone'],'A future-expiry managed domain is not a Late renewal warning');
+expect(!str_contains($late['cause'],'managed domain'),'Late renewal does not count a healthy future-expiry domain');
+$domain=Domain::where('server_id',$enom->server_id)->sole();$savedExpiry=$domain->getRawOriginal('provider_expires_at');
+DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$clock->now()->modify('-1 day')->format('Y-m-d')]);
+$expiredLate=$checklist()['Late renewal'];
+same('warning',$expiredLate['tone'],'An expired managed domain needs Late renewal attention');
+expect(str_contains($expiredLate['cause'],'1 managed domain needs attention'),'Late renewal counts the expired managed domain');
+DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$savedExpiry]);
 require __DIR__.'/Support/reminder-upgrade.php';
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;

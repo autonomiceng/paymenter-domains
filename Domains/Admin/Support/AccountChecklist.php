@@ -104,14 +104,16 @@ final class AccountChecklist
     {
         $on=(bool)$a->processing_enabled;
         $status=$on?'matched':app(AccountBindings::class)->configurationStatus((int)$a->server_id);
-        $cause=match($status){'matched'=>'Orders are paused. Check setup, then turn on Orders.','site_unbound'=>'Orders are paused. Use Activate to check setup and turn on Orders.',default=>'Orders are paused. Fix the API connection first.'};
+        $cause=match(true){$status==='site_unbound'||(!$on&&$status==='matched'&&$a->registrar_key==='enom'&&$a->environment==='live'&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a)))=>'Orders are paused. Use Activate to check setup and turn on Orders.',
+            $status==='matched'=>'Orders are paused. Check setup, then turn on Orders.',default=>'Orders are paused. Fix the API connection first.'};
         return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:$cause,'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
     }
     /** An Off feature needs attention when this account already manages domains. No settings change here. */
     private static function paused(Account $a,array $row): array
     {
         if($row['value']!=='Off'||$row['label']==='Transfers'){return $row;}
-        $count=Domain::where('server_id',$a->server_id)->where('billing_managed',true)->count();
+        $count=Domain::where('server_id',$a->server_id)->where('billing_managed',true)
+            ->when($row['label']==='Late renewal',fn($query)=>$query->whereDate('provider_expires_at','<',app(Clock::class)->now()->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('Y-m-d')))->count();
         if($count>0){$row['tone']='warning';$row['cause'].=' '.$count.' managed domain'.($count===1?' needs':'s need').' attention while this is off.';}
         return $row;
     }
