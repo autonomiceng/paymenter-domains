@@ -33,10 +33,10 @@ echo "All alert kinds visible in every domain state.\n";
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->delete();
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'registration_pending']);
 ObligationAlerts::record($domain,'unknown_expiry',time());
-// Alerts without an applicable row belong above the fact sections, once each.
+// Alerts without an applicable row sit on the Open alerts row in Registration, once each.
 ObligationAlerts::record($domain,'missing_obligation',time());
 $pending=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id]);
-$pending->assertSeeInOrder(['Open alerts','Expiry missing','Renewal invoice missing','Registration']);
+$pending->assertSeeInOrder(['Registration','Open alerts','Expiry missing','Renewal invoice missing']);
 $text=html_entity_decode(strip_tags($pending->html()),ENT_QUOTES);
 same(1,substr_count($text,'Renewal invoice missing'),'Fallback cause appears once');
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)

@@ -6,10 +6,11 @@ use App\Models\User;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 /** One domain's history: registrar requests, staff renewal changes and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
 final class DomainHistory
 {
-    private const HOLDINGS = ['stop' => 'Renewal stopped', 'resume' => 'Renewal resumed', 'reprice' => 'Renewal price updated'];
+    private const HOLDINGS = ['stop' => 'Renewal stopped', 'resume' => 'Renewal resumed', 'reprice' => 'Renewal price updated', 'resume_observation' => 'Sync resumed'];
     /** @return list<Operation|array> */
     public static function entries(Domain $domain): array
     {
@@ -23,7 +24,7 @@ final class DomainHistory
         $names=$ids?User::query()->whereIn('id',$ids)->get(['id','first_name','last_name'])->mapWithKeys(fn(User $u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)])->all():[];
         foreach (array_values($holdings) as $i=>$h) {
             $rows[]=['__key'=>'holding-'.$i,'time'=>self::at($h['at']??null),'event'=>self::HOLDINGS[$h['action']??'']??'Renewal changed',
-                'sub'=>is_string($h['reason']??null)?$h['reason']:null,'status'=>null,'by'=>$names[$h['actor_id']??0]??'Staff'];
+                'sub'=>is_string($h['reason']??null)&&$h['reason']!==(StaffOperationReview::ACTIONS[$h['action']??'']??null)?$h['reason']:null,'status'=>null,'by'=>$names[$h['actor_id']??0]??'Staff'];
         }
         foreach ($audits as $a) {
             $enabled=null; try { $enabled=$a->data['enabled']??null; } catch (\Throwable) {}

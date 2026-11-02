@@ -58,7 +58,7 @@ class RegistrarSetup extends Page implements HasTable
     public function table(Table $table): Table
     {
         $row=fn(Server $s)=>$this->row($s);
-        $missing=static fn(TextColumn $column)=>$column->color(fn($state,Server $record)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null);
+        $missing=static fn(TextColumn $column)=>$column->color(fn($state,Server $record)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null);
         return $table->query(self::accounts())->defaultSort('id')->paginated(false)->heading('Accounts')->searchPlaceholder('Search account')
             ->emptyStateHeading('No registrar accounts')->emptyStateDescription('Add one to start selling domains.')
             ->recordUrl(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id]))

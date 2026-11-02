@@ -58,11 +58,11 @@ class TldResource extends Resource
                 ->description(fn(Tld $record,$livewire)=>TldFacts::registrar($record->registrar_key).', '.strtolower(TldFacts::pricing($record))
                     .($row($record,$livewire)['seller']===(int)$record->server_id?', new orders':''))->wrap(),
             TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['retail']??Missing::LABEL)
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn($state)=>$state===Missing::LABEL?'Use Sync prices.':null)->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['cost']??Missing::LABEL)
                 ->color(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL||TldFacts::costNote($renewal($record,$livewire))?Missing::COLOR:null)
-                ->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'Use Sync prices.':TldFacts::costNote($renewal($record,$livewire)))->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])

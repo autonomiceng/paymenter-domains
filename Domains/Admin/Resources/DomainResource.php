@@ -73,11 +73,11 @@ class DomainResource extends Resource
             // Renewal invoices apply until the domain has ended, so pending and under-review rows show it too.
             TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(self::row($record,$livewire)['off']) {
                 null=>Missing::LABEL,true=>'Off',false=>'On'})
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
             TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' #'.$record->server_id:Missing::LABEL)
                 ->toggleable(isToggledHiddenByDefault:true)->wrap()->extraAttributes(['class'=>'domains-wrap domains-narrow'])
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found. Check Registrars.':(self::REGISTRARS[$record->registrar_key]??null)),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(self::statusOptions())

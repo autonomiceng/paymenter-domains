@@ -151,6 +151,10 @@ $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id
 $page->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
+// One head line: no box on the page, and green can't sit over rows that need work.
+$page->assertDontSeeHtml('fi-callout');
+$missingHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()),false);
+same(['warning','Some details are Missing. Each row says what to do.'],[$missingHead['tone'],$missingHead['step']],'Active over a Missing row turns amber and says where to look');
 same(null,DomainFacts::notice($active->fresh()),'A healthy domain has no notice');
 $notice=DomainFacts::notice($held);
 same(['Transfer not sent: old registrar needs approval.','Check request #'.$held->operations()->sole()->id],[$notice['title'],$notice['action']['label']],'Held request notice');
@@ -164,13 +168,15 @@ foreach(['register'=>'Registration','transfer'=>'Transfer'] as $action=>$label){
 }
 DB::table('domains_operations')->where('id',$heldOperation->id)->update(['action'=>$noticeOriginal['action'],'safe_code'=>$noticeOriginal['safe_code']]);
 
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Check request #');
+$heldPage=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Check request #')->assertDontSeeHtml('fi-callout');
+same(1,substr_count(html_entity_decode(strip_tags($heldPage->html()),ENT_QUOTES),'Transfer not sent: old registrar needs approval.'),'The reason is said once on the page');
+same(1,substr_count((string)$heldPage->instance()->getSubheading(),'data-beco-tone="warn"'),'One amber mark in the head of a held domain');
 // The request page head sweeps like the domain head, so it needs the same mark. A Note's step looks like the link its cell is.
 $heldRequest=$held->operations()->sole()->id;
 Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
 $note=DomainFacts::note(DomainFacts::status($held),null)['text'];
 same(e(substr($note,0,-strlen('Check request #'.$heldRequest.'.'))).'<span class="domains-link">Check request #'.$heldRequest.'</span>.',(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note step looks like a link');
-same('Sync failed. Sync again from the domain.',DomainFacts::noteStep('Sync failed. Sync again from the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
+same('Sync failed. Use Resume sync on the domain.',DomainFacts::noteStep('Sync failed. Use Resume sync on the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
 
 // An old sweep failure must not conceal a definitely-unsent order's actual staff reason.
 $unsent=Domain::create(['server_id'=>$held->server_id,'registrar_key'=>$held->registrar_key,'account_fingerprint'=>$held->account_fingerprint,
@@ -197,6 +203,10 @@ same('Sync failed. Use Resume sync.',$sub($active,'Expires'),'Missing expiry nam
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped after a failed check.')->assertSee('Resume sync')->assertSee('Sync failed');
+Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()),false);
+same('warning',$stoppedHead['tone'],'Active over a stopped sync turns amber');
+expect(str_contains((string)$stoppedHead['step'],'Sync stopped after a failed check. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
+Auth::setUser($viewer);expect(str_contains((string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()),false)['step'],'Ask staff who can resume sync.'),'Without the right the step names who can');
 DB::table('domains_observation_work')->where('id',$work)->delete();
 foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
     'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
