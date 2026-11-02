@@ -14,7 +14,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, Doma
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, DomainManagement, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
-config(['settings.company_name'=>'Example Hosting']);
+// Saving global settings reloads Paymenter settings from the table.
+App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['value'=>'Example Hosting','type'=>'string','encrypted'=>false]);config(['settings.company_name'=>'Example Hosting']);
+
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Data\SystemClock);
