@@ -88,6 +88,7 @@ same(false,str_contains(json_encode($row('com')->prices),'99.00'),'No retail val
 
 // The full page spends nothing either, shows where prices came from, and leaves out hidden TLDs.
 $before=$calls();
+expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->instance()->getTable()->getColumnManagerApplyAction()->getAlpineClickHandler(),'close()'),'Apply columns closes the column menu');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices from')->assertSee(Carbon\CarbonImmutable::createFromTimestamp((int)PriceFill::last($binding)->filled_at)->format('M j, Y, g:i A T'))
     ->assertSee('.com')->assertSee('.org')->assertSee('.com.au')->assertSee('.trading')->assertSee('No cost yet')->assertCanNotSeeTableRecords([$row('xyz'),$row('adult')])
     ->assertSee('8.95')->assertSee('Prices in USD for 1 year.')->assertDontSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
