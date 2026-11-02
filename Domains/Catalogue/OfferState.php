@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit};
+use Paymenter\Extensions\Servers\Domains\Services\EndingChoices;
 
 /** Persistence codec. Facts have one independent age; normalized costs never carry fact proofs. */
 final class OfferState
@@ -63,6 +64,7 @@ final class OfferState
         foreach (['register', 'transfer'] as $action) { if ($policy?->{$action.'_enabled'}) { $actions[] = $action; } }
         return new Snapshot(new FeedObserved($binding, $tld->tld, $costs), self::facts($tld->catalogue_facts), new Intent(...$intent),
             $revision, $publishing ? $revision : $published, $retail, $selected ? $binding : null, $actions,
-            $ready, retainedAnnualRetail: UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2));
+            $ready, hidden: EndingChoices::hidden($tld->tld),
+            retainedAnnualRetail: UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2));
     }
 }

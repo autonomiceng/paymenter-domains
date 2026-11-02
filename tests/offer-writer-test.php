@@ -221,5 +221,33 @@ DB::transaction(static function () use ($writer, $n): void {
     $d = $writer->readOffers(new Query($n, ['com'], 'register', expected: ['com' => new Revision(0, 0, 0)]), Context::Locked)[0];
     same(false, $d->available, 'Locked admission refuses stale revisions');
 });
+// Configured hidden endings close every acquisition path, while existing holdings can renew.
+Server::whereKey($b->serverId)->update(['enabled' => true]);
+$apply(Edit::seller($b, 'com', ['register', 'transfer']));
+same(true, $read($b)->available, 'Hidden-ending fixture starts selected, ready and published');
+$holderRetail = $read($b, Context::Holder, 'renew')->retail;
+$hiddenConfig = config('domains.hidden_endings');
+config(['domains.hidden_endings' => ['.COM']]);
+foreach ([Context::Public, Context::Staff] as $context) {
+    foreach (['register', 'transfer'] as $action) {
+        same(false, $read($b, $context, $action)->available, 'Configured hidden ending refuses '.$context->name.' '.$action);
+    }
+}
+same('staff_stopped', $read($b, Context::Staff)->reason, 'Hidden ending is an explicit acquisition stop');
+$hiddenLocked = DB::transaction(static fn () => $writer->readOffers(new Query($b, ['com'], 'register',
+    expected: ['com' => $revision($b)]), Context::Locked)[0]);
+same(false, $hiddenLocked->available, 'Configured hidden ending refuses locked admission with current revisions');
+$apply(Edit::republish($b, 'com'));
+foreach (['register', 'transfer'] as $action) {
+    same(0, DB::table('prices')->whereIn('plan_id', $native->product($enom, $action)->plans()->pluck('id'))->count(),
+        'Hidden-ending republication withdraws native '.$action.' prices');
+}
+same([true, $holderRetail, 'retained_renewal'], [$read($b, Context::Holder, 'renew')->available,
+    $read($b, Context::Holder, 'renew')->retail, $read($b, Context::Holder, 'renew')->warning],
+    'Existing holder retains annual renewal retail for a hidden ending');
+same($products, Product::orderBy('id')->pluck('id')->all(), 'Hidden-ending publication preserves native product identities');
+same($plans, Plan::orderBy('id')->pluck('id')->all(), 'Hidden-ending publication preserves native plan identities');
+same($obligations, $frozen(), 'Hidden ending preserves existing service, financial and operation snapshots');
+config(['domains.hidden_endings' => $hiddenConfig]);
 $nativeSuccessful = true;
 echo "Dormant offer writer, revisions, atomic native projection and retained renewal checks passed.\n";
