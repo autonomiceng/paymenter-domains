@@ -115,5 +115,22 @@ resetWire(['status'=>302]);$denyResponse=false;try{$read();}catch(\RuntimeExcept
 resetWire(['chunks'=>[str_repeat('x',Api\CurlTransport::BODY_LIMIT),'x']]);try{$read();}catch(\RuntimeException){}same(1,$GLOBALS['wire']['sends'],'Oversize body not retried');
 foreach([CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,CURLOPT_PROXY=>'',CURLOPT_NOPROXY=>'*',CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS] as $option=>$value){same($value,$GLOBALS['wire']['options'][$option],'Fixed TLS and routing options');}
 expect(in_array(true,$writeChecks,true)&&in_array(false,$writeChecks,true),'Credentials freshly checked for reads and writes');
+// Existing purchase mappings retain explicit privacy and auto-renew-off flags at the admitted boundary.
+resetWire();
+foreach([
+    ['registration',Api\PurchaseMapping::register('example.com',1,false,'123',['ns1.example.net','ns2.example.net'])],
+    ['transfer',Api\PurchaseMapping::transfer('example.com','placeholder-epp',true,'123',['ns1.example.net','ns2.example.net'])],
+] as [$feature,$mapping]){
+    $grant->run($feature,46,function()use($grant,$mapping,$exchange,$origin):void {
+        $grant->reserve($mapping->command,$mapping->parameters(),new Money('1.00','USD'));
+        $exchange($origin,$mapping->command,$mapping->parameters(),20000);
+        $wire=array_slice($GLOBALS['wire']['parameters'],-1)[0];same('0',$wire['auto_renew'],'Purchase explicitly disables provider auto-renew');
+        same((string)$mapping->parameters()['private'],$wire['private'],'Explicit privacy choice survives transport');expect(!isset($wire['payment_id']),'No external funding selection');
+    });
+}
+$grant->run('management',47,function()use($grant,$exchange,$origin):void {
+    $grant->reserve('domainLock',['domain'=>'example.com']);$exchange($origin,'domainLock',['domain'=>'example.com'],20000);
+});
+same(3,$GLOBALS['wire']['sends'],'Registration, transfer and free management each send exactly once');
 echo "NameSilo admitted transport enforces reservations, fixed routes, one send and redacted uncertain outcomes.\n";
 $nativeSuccessful=true;
