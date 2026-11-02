@@ -33,7 +33,7 @@ class WhatYouSell extends Page implements HasTable
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-check-circle';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?int $navigationSort=4;
-    protected static ?string $title='What you sell';
+    protected static ?string $title='TLDs & pricing';
     protected static ?string $slug='what-you-sell';
     protected string $view='domains::admin.what-you-sell';
     #[Url] public ?int $account=null;
@@ -168,7 +168,7 @@ class WhatYouSell extends Page implements HasTable
         $all=fn()=>$this->account===self::ALL;$blocked=fn()=>$all()?['aria-disabled'=>'true']:[];
         return [
             Action::make('sync_now')->label('Sync prices')->color('gray')->visible(fn()=>$this->canSync()&&($all()||$this->readable()))->disabled($all)->extraAttributes($blocked)->action(fn()=>$this->syncNow()),
-            Action::make('rule')->label('Default for new TLDs')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save')
+            Action::make('rule')->label('Default for new TLDs')->color('gray')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save')
                 ->fillForm(fn()=>[...$this->rule(),'sell_new'=>$this->rule()['mode']==='only'?'no':'yes'])->schema(fn()=>[
                     Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
                         ->hintAction(HelpHint::make("For every TLD you have not set yourself, including ones the registrar adds later. Yes: they sell, unless the row is set to Don't sell. No: only rows set to Sell are sold. To change rows, tick them and use Edit selected.")),
@@ -182,10 +182,11 @@ class WhatYouSell extends Page implements HasTable
             Action::make('csv')->label('Download CSV')->color('gray')->visible(fn()=>$this->canSeeCosts())->action(fn()=>$this->downloadCsv()),
         ];
     }
-    /** The list as the toolbar has it: same years, same price filter, this account or all of them. */
+    /** The list as the table holds it, on every page: same years, search, filters and focused TLD. Saved prices only, so an estimate row stays out. */
     public function downloadCsv(): \Symfony\Component\HttpFoundation\StreamedResponse
     {
-        $years=$this->years();$csv=app(PriceList::class)->csv($years,$this->getTableFilterState('show')['value']??'all',$this->account===self::ALL?null:$this->account);
+        $years=$this->years();$held=$this->getFilteredTableQuery()->get(['server_id','tld'])->map(fn(SellRow $row)=>SellTable::key($row))->all();
+        $csv=app(PriceList::class)->csv($years,$this->show()??'all',$this->account===self::ALL?null:$this->account,$held);
         return response()->streamDownload(static function()use($csv):void{echo $csv;},'domain-prices-'.$years.'-'.($years===1?'year':'years').'.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
     }
     /** The head line: what this account sells. All accounts has no one rule to sum, so it says why the buttons are off. */
@@ -194,7 +195,7 @@ class WhatYouSell extends Page implements HasTable
         if($this->account===self::ALL){return $this->mayEdit()||$this->canSync()?'Choose one account to sync or edit.':null;}
         if(($binding=$this->binding())===null){return null;}
         $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow $row)=>SellRule::decide($row,$this->rule())==='sell');
-        $summary=$wanted->count().' TLDs selected.';
+        $summary=$wanted->count().' '.($wanted->count()===1?'TLD':'TLDs').' for sale.';
         if($this->canSeeCosts()&&($highest=$wanted->max('high_cost'))!==null){$summary.=' Highest cost USD '.number_format((float)$highest,2).' a year.';}
         $filled=PriceFill::last($binding)?->filled_at;
         return new HtmlString(HelpHint::beside(e($summary),'Prices are checked before a TLD goes on sale. Orders must be on under Registrars. On Live, use Activate after reviewing setup and spending. Missing prices, unsupported registry details and prices below cost keep a TLD off.')
@@ -202,7 +203,8 @@ class WhatYouSell extends Page implements HasTable
     }
     /** The saved read the panel and the left-out warning show. Empty for staff without costs. */
     public function savedPrices(): array {return $this->reads()->saved();}
-    public function explanations(): array {return $this->reads()->explanations($this->canSeeCosts()?($this->getTableFilterState('show')['value']??null):null);}
+    public function explanations(): array {return $this->reads()->explanations($this->canSeeCosts()?$this->show():null);}
+    private function show(): ?string {return $this->getTableFilterState('show')['value']??null;}
     /** What the table's words mean, said once under the toolbar so cells stay plain numbers. */
     public function tableNote(): ?string
     {
@@ -234,10 +236,14 @@ class WhatYouSell extends Page implements HasTable
     }
     private function emptyHeading(): string
     {
-        $filtered=($this->getTableFilterState('show')['value']??null)!==null;
-        if($filtered&&$this->savedPrices()['skipped']!==[]){return 'No prices to show. Some TLDs are left out; see above.';}
-        return $filtered||$this->getTableSearch()?'No TLDs match':'No prices yet';
+        if(!$this->narrowed()){return 'No prices yet';}
+        $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
+        return $only&&$this->reads()->leftOutExplains($this->show())?'No prices to show. Some TLDs are left out; see above.':'No TLDs match';
     }
+    private function focused(): bool {return $this->tld!==null&&$this->getTableSearch()===$this->tld;}
+    private function switchedOn(string $filter): bool {return (bool)($this->getTableFilterState($filter)['isActive']??false);}
+    /** A search or filter is why rows are gone, so the way back is to clear it, not to read prices again. */
+    private function narrowed(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost');}
     /** Cost, Price and Profit for one sale. Renew and Transfer start off so the page stays one screen wide. */
     private function moneyGroup(string $action): ColumnGroup
     {
@@ -267,13 +273,16 @@ class WhatYouSell extends Page implements HasTable
     public function table(Table $table): Table
     {
         $costs=fn()=>$this->canSeeCosts();
-        return $table->query(fn()=>$this->reads()->rows($this->tld!==null&&$this->getTableSearch()===$this->tld?$this->tld:null))
+        return $table->query(fn()=>$this->reads()->rows($this->focused()?$this->tld:null))
             ->defaultSort('tld')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search TLDs')
             ->emptyStateHeading(fn()=>$this->emptyHeading())
-            ->emptyStateDescription(fn()=>$this->tld!==null&&$this->getTableSearch()===$this->tld
+            ->emptyStateDescription(fn()=>$this->focused()
                 ?'This TLD has no prices here yet. To load them, use Sync prices.'
-                :($this->getTableSearch()?null:($this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.')))
-            ->extraAttributes(['class'=>'domains-sell-table'])
+                :($this->narrowed()?null:($this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.')))
+            ->emptyStateActions([Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')?'Clear filters':'Clear search')->color('gray')
+                ->visible(fn()=>$this->narrowed()&&!$this->focused())->action(function():void {$this->removeTableFilters();$this->resetTableSearch();})])
+            // Merged, so the panel skin's table class stays and this head matches every other table.
+            ->extraAttributes(['class'=>'domains-sell-table'],merge:true)
             ->filters([
                 Filter::make('country')->label('Country TLDs')->query(fn($query)=>$query->where(fn($q)=>$q->where('tld','like','__')->orWhere('tld','like','%.__'))),
                 Filter::make('no_cost')->label('No cost yet')->query(fn($query)=>$query->whereNull('register_cost')),

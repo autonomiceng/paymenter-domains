@@ -110,7 +110,8 @@ final class PriceList
         if($down?($negative&&$remainder>0):$remainder>=50){$minor++;}
         return PricingRule::decimal($negative?-$minor:$minor);
     }
-    public function csv(int $years=1,string $filter='all',?int $serverId=null): string
+    /** @param ?list<string> $only server:tld keys to keep: the rows a table holds. */
+    public function csv(int $years=1,string $filter='all',?int $serverId=null,?array $only=null): string
     {
         $matrix=$this->read($years,$filter,$serverId);
         $stream=fopen('php://memory','w+');
@@ -120,6 +121,7 @@ final class PriceList
             fputcsv($stream,$values,',','"','');
         };
         $rows=[...$matrix['rows'],...$matrix['skipped']];
+        if($only!==null){$keep=array_flip($only);$rows=array_filter($rows,static fn(array $row):bool=>isset($keep[$row['server_id'].':'.ltrim($row['tld'],'.')]));}
         usort($rows,static fn(array $a,array $b):int=>strcmp($a['tld'],$b['tld'])?:$a['server_id']<=>$b['server_id']);
         $write($this->headings());foreach($rows as $row){$write($this->values($row));}
         rewind($stream);$csv=stream_get_contents($stream);fclose($stream);return $csv;

@@ -2,7 +2,9 @@
     <style>
         .domains-sell{display:grid;gap:1.5rem}
         .domains-sell-add{display:flex;gap:.75rem;align-items:center;max-width:24rem}.domains-sell-add .fi-input-wrp{flex:1}
-        .domains-sell-left{display:block}
+        .domains-sell-left{display:flex;gap:.5rem;align-items:flex-start;color:inherit}.domains-sell-left-mark{flex:none;width:1rem;height:1rem;margin-block-start:.125rem;color:var(--warning-500)}
+        /* What the skin's table head says for a plain cell, for the Register, Renew and Transfer cells above it. */
+        .domains-sell-table .fi-ta-header-group-cell{padding:8px 20px;border:0;color:var(--beco-fg-2,var(--gray-400));font-size:13px;font-weight:400;line-height:20px}.domains-sell-table .fi-ta-header-cell{border:0}
         .domains-sell-choices{display:flex;flex-wrap:wrap;gap:.5rem}
         .domains-sell-note{padding:.5rem 20px;font-size:.8125rem;color:var(--gray-500)}.dark .domains-sell-note{color:var(--gray-400)}
         .domains-price-help{display:grid;gap:1rem;font-size:.875rem}

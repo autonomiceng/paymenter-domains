@@ -73,7 +73,7 @@ foreach($cases as $case){
         foreach([5,9,13] as $offset){same(['Left out','Left out','Left out','Left out: '.$reason],array_slice($record,$offset,4),'Omitted amounts never invent saved prices');}
         same(['Left out','Left out'],array_slice($record,17),'Unreadable formula and fee are explicit');
     }
-    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee('Left out')->assertSee('Some TLDs are left out')->assertSee("Their saved pricing can't be read, so no prices are shown for them. The rows below are not affected.",false)->assertSee($repair);
+    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee('Left out')->assertSee('left out:')->assertDontSee('Some TLDs are left out')->assertSee($repair);
     $html=$page->html();expect(str_contains($html,'= &lt;Bad &amp; account&gt;'),'Warning account names use HTML escaping');
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
     $warningText=$xpath->evaluate('normalize-space(//*[@data-price-omission])');
@@ -81,7 +81,7 @@ foreach($cases as $case){
     same("= <Bad & account>: ".$reason.'. '.count($ids).' TLDs left out: '.$labels.'. To fix, open = <Bad & account> under Registrars and use '.$repair.'.',$warningText,'Warning gives the exact grouped count, TLDs and repair location');
     same(count($ids),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
     $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
-    expect(strpos($html,'data-price-omission')<strpos($html,'<table'),'Warning is above the table');
+    expect(strpos($html,'class="domains-sell-note domains-sell-left"')>strpos($html,'fi-ta-header-toolbar')&&strpos($html,'data-price-omission')<strpos($html,'<table'),'Warning sits inside the table surface, above the rows');
     $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out; see above.');
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
@@ -90,6 +90,8 @@ foreach($cases as $case){
 // Bad custom pricing names its own TLD editor, rather than the account default editor.
 $custom->update(['pricing_mode'=>'unknown']);$watch=true;
 $matrix=$service->read();same([$custom->id],array_column($matrix['skipped'],'id'),'Only the malformed custom TLD is skipped');
+// One left-out TLD among readable rows is not why an amount filter is empty.
+Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$custom->server_id)->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('see above')->assertDontSee('use Sync prices');
 same('custom_rule',$matrix['skipped'][0]['cause'],'Custom failure retains its own repair cause');
 Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
 $records=$csvRows($service->csv());same("Left out: custom pricing can't be read",$records[4][8],'CSV gives the custom repair cause');

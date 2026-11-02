@@ -90,10 +90,18 @@ same(false,str_contains(json_encode($row('com')->prices),'99.00'),'No retail val
 // The full page spends nothing either, shows where prices came from, and leaves out hidden TLDs.
 $before=$calls();
 expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->instance()->getTable()->getColumnManagerApplyAction()->getAlpineClickHandler(),'close()'),'Apply columns closes the column menu');
+expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->instance()->getTable()->getFiltersApplyAction()->getAlpineClickHandler(),'$wire.applyTableFilters(); close()'),'Apply filters still applies, then closes the menu');
+expect(str_contains(Livewire::actingAs($staff)->test(ListTlds::class)->instance()->getTable()->getFiltersApplyAction()->getAlpineClickHandler(),'close()'),'One hook closes it on every table');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices from')->assertSee(Carbon\CarbonImmutable::createFromTimestamp((int)PriceFill::last($binding)->filled_at)->format('M j, Y, g:i A T'))
     ->assertSee('.com')->assertSee('.org')->assertSee('.com.au')->assertSee('.trading')->assertSee('No cost yet')->assertCanNotSeeTableRecords([$row('xyz'),$row('adult')])
     ->assertSee('8.95')->assertSee('Prices in USD for 1 year.')->assertDontSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
 same(0,$calls()-$before,'Opening a full page sends nothing');
+// The summary counts what is for sale, the title stays the section's, and no head button competes with the row buttons.
+$page->assertSee(SellRule::rows($binding)->get()->filter(fn(SellRow $r)=>SellRule::decide($r,SellRule::read($binding,CatalogueAcceptances::load($binding)))==='sell')->count().' TLDs for sale.')->assertDontSee('TLDs selected');
+same('TLDs & pricing',$page->instance()->getTitle(),'Both tabs keep the title');same('gray',$page->instance()->getAction('rule',false)->getColor(),'Default for new TLDs is a quiet button');
+// The panel skin sets its table class first, and this page must add to it.
+\Filament\Tables\Table::configureUsing(static fn($table)=>$table->extraAttributes(['class'=>'panel-skin']));
+expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->html(),'domains-sell-table panel-skin'),'The page keeps the skin table class');
 // An unpublished TLD uses its saved custom rule for both retail and profit estimates.
 $custom=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'org',
     'use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>'99.00','fixed_renew'=>'99.00','fixed_transfer'=>'99.00']);
@@ -129,6 +137,10 @@ same(0,preg_match('/\bendings?\b/i',strip_tags(preg_replace('/<(script|style)\b.
 $page->set('tableSearch','.co')->assertCanSeeTableRecords([$row('com')])->assertCanNotSeeTableRecords([$row('org')]);$page->set('tableSearch','');
 $page->filterTable('country')->assertCanSeeTableRecords([$row('com.au')])->assertCanNotSeeTableRecords([$row('trading')]);$page->filterTable('country',false);
 $page->filterTable('no_cost')->assertCanSeeTableRecords([$row('trading')])->assertCanNotSeeTableRecords([$row('org')]);$page->filterTable('no_cost',false);
+// An empty result says so and offers the way back. Prices are read, so it never says to sync.
+$clear=\Filament\Actions\Testing\TestAction::make('clear')->table();
+$page->set('tableSearch','nothing')->assertSee('No TLDs match')->assertDontSee('use Sync prices')->callAction($clear)->assertSet('tableSearch','')->assertCanSeeTableRecords([$row('com')]);
+$page->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('use Sync prices')->assertDontSee('left out')->callAction($clear)->assertCanSeeTableRecords([$row('com')]);
 
 // Each daily fill reads buckets and the catalogue: new unpriced TLDs must appear too.
 $before=$calls();$fill->daily($account);same(0,$calls()-$before,'Not due yet: Sync now counts as today');

@@ -103,20 +103,18 @@ final class SellTable
         $this->facts();$tld=$this->rowTlds[self::key($row)]??null;
         return $tld===null?null:(int)$tld->id;
     }
-    /** @return array{0:?string,1:?string,2?:bool,3?:?string} price, profit, whether they are estimates from the saved rule, and why the price is a loss. */
-    public function numbers(SellRow $row): array
+    /** @return array{0:?string,1:?string,2?:?string} estimated price, profit and why the price is a loss, from the saved rule. Only for a row with no saved price. */
+    private function numbers(SellRow $row): array
     {
-        if($row->register_cost===null){return [null,null];}
         $key=self::key($row);$server=(int)$row->server_id;
         if(isset($this->rowNumbers[$key])){return $this->rowNumbers[$key];}
         try{
-            $fee=$this->fees[$server]??=CardFee::read($server);$cost=(string)$row->register_cost;
-            $saved=collect($this->facts()[$key]['prices']??[])->first(fn(array $p)=>$p['action']==='register'&&$p['term']===1&&$p['retail']!==null&&!in_array('unpublished',$p['flags'],true));
+            $this->facts();$fee=$this->fees[$server]??=CardFee::read($server);$cost=(string)$row->register_cost;
             $tld=$this->rowTlds[$key]??null;
             $rule=$tld&&!$tld->use_default_rule?(new PricingRules)->rule($tld,false,$fee):($this->defaultRules[$server]??=(new PricingRules)->defaultRule($server,false,$fee));
-            $retail=$saved?Str::after($saved['retail'],'USD '):PricingRule::price($cost,$rule,'register');
+            $retail=PricingRule::price($cost,$rule,'register');
             $profit=PriceList::profit(CardFee::profit($retail,$cost,$fee));
-            return $this->rowNumbers[$key]=[$retail,$profit,$saved===null,self::loss(!PricingRule::covers($retail,$cost),str_starts_with($profit,'-'))];
+            return $this->rowNumbers[$key]=[$retail,$profit,self::loss(!PricingRule::covers($retail,$cost),str_starts_with($profit,'-'))];
         }catch(\Throwable){return [null,null];}
     }
     /** The saved prices for this view. Staff without costs never read them. */
@@ -142,32 +140,38 @@ final class SellTable
             foreach($kept as $server=>$rows){$any->orWhere(fn($one)=>$one->where('server_id',$server)->whereIn('tld',$rows->map(fn(array $r)=>ltrim($r['tld'],'.'))->all()));}
         });
     }
+    /** Left-out rows are why a price filter is empty only when they are all it had to read: the filter's own rows, or every row when it filters on amounts. */
+    public function leftOutExplains(string $filter): bool
+    {
+        return $this->kept($filter)['skipped']!==[]&&(in_array($filter,['default','own'],true)||$this->saved()['rows']===[]);
+    }
     public function pricing(SellRow $row): string {return $this->savedRow($row)['pricing']??'Default';}
     public function terms(SellRow $row): string
     {
         $longest=$row->longest??$this->rule((int)$row->server_id)['years'];
         return 'Up to '.$longest.' '.($longest===1?'year':'years').($row->longest===null?', default':'');
     }
-    /** One money cell. Register at 1 year shows the live cost and an estimate if nothing is saved; every other cell shows saved prices only.
+    /** One money cell. A saved price wins, even one a failed publish left on an old rule: its loss stays red and Below cost reads this same price.
+     * Register at 1 year shows the live cost and an estimate only when nothing is saved.
      * @return array{text:?string,tone:?string,hint:?string,mark:bool} */
     public function cell(SellRow $row,string $action,string $field): array
     {
         $saved=$this->savedRow($row);
-        if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the warning above the table.");}
+        if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the line above the rows.");}
         $prices=$saved['prices'][$action]??null;
         if($action==='register'&&$this->years===1&&$row->listed){
-            if($row->register_cost!==null){return $this->registerCell($row,$field);}
+            if(($prices['price']??null)===null&&$row->register_cost!==null){return $this->registerCell($row,$field);}
             if(($prices[$field]??null)===null&&$this->selling($row,'register')!=='sold'){return self::cellOf($field==='cost'?'No cost yet':null,'gray');}
         }
         return $this->savedCell($prices,$field,$this->selling($row,$action));
     }
     private function registerCell(SellRow $row,string $field): array
     {
-        [$price,$profit,$estimate,$loss]=$this->numbers($row)+[2=>false,3=>null];
+        [$price,$profit,$loss]=$this->numbers($row)+[2=>null];
         if($field==='cost'){return self::cellOf(Str::after((string)TldFacts::money((string)$row->register_cost,4),'USD '),null,$row->read_at===null?null:'Prices from '.self::time((int)$row->read_at));}
         if($price===null){return self::cellOf(null);}
-        if($field==='price'){return self::cellOf($price,$estimate?'gray':null,$estimate?self::ESTIMATE:null);}
-        return self::cellOf($profit,$loss!==null?'danger':($estimate?'gray':null),$loss??($estimate?self::ESTIMATE:null));
+        if($field==='price'){return self::cellOf($price,'gray',self::ESTIMATE);}
+        return self::cellOf($profit,$loss!==null?'danger':'gray',$loss??self::ESTIMATE);
     }
     /** Saved prices win: a price stays on screen even if its term has stopped selling. */
     private function savedCell(?array $saved,string $field,string $sold): array
@@ -194,5 +198,5 @@ final class SellTable
     private static function missing(string $step): array {return ['text'=>'Missing','tone'=>'danger','hint'=>$step,'mark'=>true];}
     private static function loss(bool $below,bool $loses): ?string {return $below?'This price is below registrar cost.':($loses?'This price loses money after the card fee.':null);}
     public static function time(int $at): string {return gmdate('M j, Y H:i',$at).' UTC';}
-    private static function key(SellRow $row): string {return $row->server_id.':'.$row->tld;}
+    public static function key(SellRow $row): string {return $row->server_id.':'.$row->tld;}
 }

@@ -333,7 +333,8 @@ Independent view/cost permissions, unknown/below-cost labels, stale refresh, for
 and HTML/Livewire credential secrecy are checked offline. Native action tests cover reason/confirmation,
 stale/replayed keys, current permissions, encrypted audit, margin holds, seller/holder separation,
 acceptance narrowing/recovery and fake-only credential/probe paths. Default setup performs no I/O.
-`tests/staff-tld-render.php` emits native fixtures to its output argument. No panel registration is installed.
+`tests/staff-tld-render-test.php` and `tests/what-you-sell-render-test.php` run in the native suite. Give either an
+output directory to keep the pages. No panel registration is installed.
 `tests/staff-tld-pricing-render.php OUTPUT_DIRECTORY` captures TLDs & pricing and the TLD page when prices are synced,
 when sync failed with its stored cause, and with no registrar for new orders, across two registrar accounts (one demo).
 `tests/tld-pricing-publish-test.php` checks that saving **Edit prices** publishes the previewed

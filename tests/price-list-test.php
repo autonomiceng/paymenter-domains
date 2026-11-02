@@ -123,6 +123,32 @@ $missing=$two->instance()->getTable()->getColumn('register_price')->record($two-
 same(['danger','To add one, open the TLD page and use Edit prices.'],[$missing->getColor(null),$missing->getTooltip()],'Every Missing says what to do next');
 $two->assertTableColumnStateSet('register_profit',null,$sells);
 CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,$accepted->endings);
+// The rule changed and this row's publish failed, so its saved $5 over a $6 cost is on the old rule: the loss stays red and Below cost reads that same price, whatever the live read says.
+foreach(['6.0000','4.0000'] as $live){
+    $sells->update(['register_cost'=>$live]);
+    $stale=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->filterTable('show','below_cost')->assertCanSeeTableRecords([$sells])
+        ->assertTableColumnStateSet('register_price','5.00',$sells)->assertTableColumnStateSet('register_cost','6.00',$sells)->assertTableColumnStateSet('register_profit','-1.45',$sells);
+    $money=fn(string $name)=>$stale->instance()->getTable()->getColumn($name)->record($stale->instance()->getTableRecord((string)$sells->id));
+    same([null,null],[$money('register_price')->getColor(null),$money('register_price')->getTooltip()],'A saved price is not an estimate');
+    same(['danger','This price is below registrar cost.'],[$money('register_profit')->getColor(null),$money('register_profit')->getTooltip()],'The saved loss stays red');
+}
+// Download CSV holds the table's rows across every restriction, and only saved prices: an estimate row never joins it.
+$au=$t->replicate();$au->tld='com.au';$au->save();
+$csvOf=static function($page):array{
+    $page->call('downloadCsv');
+    return array_column(array_slice(array_map(static fn($line)=>str_getcsv($line,',','"',''),preg_split('/\r?\n/',trim(base64_decode($page->effects['download']['content'])))),1),0);
+};
+$list=fn()=>Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id);
+same(['.com','.com.au'],$csvOf($list()),'Nothing narrowed: both saved TLDs');
+same(['.com.au'],$csvOf($list()->set('tableSearch','.au')),'Search narrows the CSV');
+same(['.com'],$csvOf(Livewire::withQueryParams(['tld'=>'com'])->actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->assertCountTableRecords(1)),'The focused TLD narrows the CSV');Livewire::withQueryParams([]);
+same(['.com.au'],$csvOf($list()->filterTable('country')),'Country TLDs narrows the CSV');
+same(['.com.au'],$csvOf($list()->filterTable('no_cost')),'No cost yet narrows the CSV');
+same(['.com'],$csvOf($list()->filterTable('show','below_cost')),'Show still narrows the CSV');
+same([],$csvOf($list()->filterTable('show','below_cost')->set('tableSearch','.au')),'Every restriction applies together');
+$estimate=SellRow::create(['server_id'=>$t->server_id,'account_fingerprint'=>$binding->fingerprint,'tld'=>'net','register_cost'=>'10.0000','renew_cost'=>'10.0000']);
+$list()->assertCanSeeTableRecords([$estimate])->assertTableColumnStateSet('register_price','18.00',$estimate);same(['.com','.com.au'],$csvOf($list()),'An unsaved estimate stays out');
+$estimate->delete();$au->delete();
 $escaped=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();expect(str_contains($escaped->html(),'&lt;First &amp; account&gt;'),'Account names are escaped');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Page, filters and CSV leave all revisions and prices unchanged');same(0,$reads->calls,'No provider calls');
 // Fees are current read facts, even when a price was published under an older fee.
