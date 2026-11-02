@@ -242,19 +242,29 @@ foreach(array_slice($full,1) as $missing){Livewire::actingAs(staffUser(array_val
 Livewire::actingAs($importer)->test(ListDomains::class)->assertActionVisible('adopt')->assertActionHasLabel('adopt','Import domain');
 config(['domains.adoption.enabled'=>false]);
 
-// The web action queues work; a registrar deadline must not hold the Livewire request open.
-$syncBus=\Illuminate\Support\Facades\Bus::getFacadeRoot();$syncQueue=config('queue');
-\Illuminate\Support\Facades\Bus::fake([\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::class]);
-config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900]);
+// Real database dispatch/reservation is needed: Bus::fake cannot prove unique-lock admission for two staff.
+$syncQueue=config('queue');$secondSyncStaff=staffUser($full);$reservedSync=null;$syncJob=null;
+config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900,'queue.connections.database.queue'=>'domains-sync-r3']);
+$syncConnection=app('queue')->connection('database');
 try {
     Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors()->assertNotified('Sync queued');
-    $syncJobs=\Illuminate\Support\Facades\Bus::dispatched(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::class);
-    same(1,$syncJobs->count(),'Sync now dispatches instead of reading on the web request');$syncJob=$syncJobs->first();
+    $reservedSync=$syncConnection->pop();expect($reservedSync!==null,'Staff A has a real reserved sync job');
+    $syncJob=unserialize($reservedSync->payload()['data']['command']);
     same([$importer->id,$active->id,$active->authority_generation,$active->account_fingerprint],[$syncJob->actor,$syncJob->domain,$syncJob->generation,$syncJob->fingerprint],'Queued sync binds actor and current holding');
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors();
+    $syncNotices=new \Filament\Notifications\Livewire\Notifications;$syncNotices->mount();
+    $syncTitles=$syncNotices->notifications->map(fn($notice)=>$notice->getTitle())->values()->all();
+    expect(!in_array('Sync queued',$syncTitles,true),'Second staff is not promised a silently dropped sync');
+    same(['A sync is already running. Refresh this page in a few minutes.'],$syncTitles,'Second staff gets refresh guidance without a queued promise');
+    same(1,$syncConnection->size(),'Two staff clicks retain one holding read, including its reservation');
     config(['queue.default'=>'sync','queue.connections.sync.driver'=>'sync']);
     Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertNotified(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::WORKER);
-    same(1,\Illuminate\Support\Facades\Bus::dispatched(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::class)->count(),'Sync queue refusal never falls back to inline reads');
-} finally { \Illuminate\Support\Facades\Bus::swap($syncBus);config(['queue'=>$syncQueue]); }
+    same(1,$syncConnection->size(),'Sync queue refusal never falls back to inline reads');
+} finally {
+    if ($reservedSync) { $reservedSync->delete(); }
+    if ($syncJob) { app(\Illuminate\Bus\UniqueLock::class)->release($syncJob); }
+    config(['queue'=>$syncQueue]);
+}
 
 // Open alerts: every recorded kind shows on the row it concerns with its cause. A row is Missing only when its own value is absent.
 $moneyAlerts=['refund_repair'=>'Service','funds_wait_review'=>'Registrar','renewal_funds'=>'Registrar'];

@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Jobs;
 use App\Models\{Notification,User};
-use Illuminate\Bus\Queueable;
+use Illuminate\Bus\{Queueable,UniqueLock};
+use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Queue\{ShouldQueue,ShouldBeUnique};
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\{InteractsWithQueue,SerializesModels};
@@ -23,13 +24,19 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public bool $failOnTimeout=true;
     public function __construct(public int $actor,public int $domain,public int $generation,public string $fingerprint) {}
     public function uniqueId(): string { return 'domains-record-sync:'.$this->domain.':'.$this->generation.':'.$this->fingerprint; }
-    public static function enqueue(int $actor,Domain $d): void
+    public static function enqueue(int $actor,Domain $d): bool
     {
         $connection=config('queue.connections.'.config('queue.default'),[]);
         // A reservation must outlive the read; sync queues would still block the staff page.
         if (!in_array($connection['driver']??null,['database','redis'],true)||(int)($connection['retry_after']??0)<=self::TIMEOUT) { throw new \DomainException(self::WORKER); }
         if ($d->status!=='active') { throw new \DomainException('Domain is no longer active. Reload this page.'); }
-        self::dispatch($actor,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
+        $job=new self($actor,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
+        $lock=app(UniqueLock::class);
+        if (!$lock->acquire($job)) { return false; }
+        // Dispatch directly after admission: PendingDispatch would try to acquire the same lock again.
+        try { app(Dispatcher::class)->dispatch($job); }
+        catch (\Throwable $error) { $lock->release($job); throw $error; }
+        return true;
     }
     public function handle(DomainObservation $observer): void
     {
