@@ -144,10 +144,11 @@ final class RequestFacts
         catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
     }
     /** A request's status, in the customer's words. Orders off stop all queued work: a queued request still reads In progress, as the
-     * customer sees it, and staff read the hold in its reason, in amber. With $d (the domain's Activity rail) a change reads as customer
-     * History does (ManagementProgress::statusKey). Lists pass $ordersOff as for reason(). */
+     * customer sees it, and staff read the hold in its reason, in amber. With its domain (passed, or loaded with the row) a change reads as
+     * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
     {
+        $d??=$op->relationLoaded('domain')?$op->domain:null;
         $status=[...Labels::requestStatus($op),'reason'=>self::reason($op,$ordersOff)];
         try { $key=$d?ManagementProgress::statusKey($op,$d):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
