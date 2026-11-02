@@ -45,7 +45,7 @@ foreach([0,1]as$i){
     $before=$op->fresh();$session->forget(['domains_status','errors']);
     $r=$req($d,'setup',['nameservers'=>$i?"ns1.example.com\nns2.example.com":'','privacy'=>'1']);
     $response=$action->setup($r,$d->id);
-    same(route('domains.domains.setup',$d->id),$response->getTargetUrl(),'Hidden privacy returns to setup');
+    same(url('/domains/'.$d->id.'/setup'),$response->getTargetUrl(),'Hidden privacy returns to setup');
     expect($session->get('errors')?->has('owner_action')===true,'Hidden privacy has a general visible refusal');
     expect(!$session->has('domains_status'),'Refused setup never reports success');
     expect(!isset($op->fresh()->policy['owner_setup']),'Refused hidden privacy leaves setup unfrozen');
