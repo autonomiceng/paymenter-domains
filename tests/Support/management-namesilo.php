@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, WriteFeatures};
 Queue::fake(); $management = new DomainManagement($readBindings, $clock, new WriteFeatures(management:true), true);
 $ms = (object) ['calls'=>[], 'ns'=>['ns1.provider.example.net','ns2.provider.example.net'], 'locked'=>true, 'privacy'=>false, 'renew'=>false,
-    'ids'=>[], 'profiles'=>[], 'next'=>900000, 'apply'=>true, 'fault'=>'', 'during'=>null, 'route'=>'api'];
+    'glue'=>[], 'ids'=>[], 'profiles'=>[], 'next'=>900000, 'apply'=>true, 'fault'=>'', 'during'=>null, 'route'=>'api'];
 $managementExchange = static function ($origin, $cmd, $p, $timeout) use ($ms): string {
     same(0, DB::transactionLevel(), 'Management I/O outside locks');
     same('https://ote.namesilo.com/'.$ms->route, $origin, 'Fixed origin and caller route');
@@ -20,6 +20,10 @@ $managementExchange = static function ($origin, $cmd, $p, $timeout) use ($ms): s
         $reply += ['created'=>'2020-01-01','expires'=>'2028-01-01','status'=>$ms->fault==='owner'?'Pending':'Active',
             'locked'=>$ms->locked?'Yes':'No', 'private'=>$ms->privacy?'Yes':'No', 'auto_renew'=>$ms->renew?'Yes':'No',
             'nameservers'=>array_map(fn($ns)=>['nameserver'=>$ns],$ms->ns), 'contact_ids'=>$ms->ids];
+    } elseif ($cmd === 'listRegisteredNameServers') {
+        // Published wire JSON repeats ip keys, rather than returning an address array.
+        $hosts=array_map(static fn($host,$ips)=>'{"host":'.json_encode($host).','.implode(',',array_map(static fn($ip)=>'"ip":'.json_encode($ip),$ips)).'}',array_keys($ms->glue),array_values($ms->glue));
+        return '{"request":{"operation":"listRegisteredNameServers"},"reply":{"code":300,"detail":"success","hosts":['.implode(',',$hosts).']}}';
     } elseif ($cmd === 'contactList') {
         $reply['contact'] = ($ms->profiles[$p['contact_id']] ?? []) + ['contact_id'=>$p['contact_id'],'default_profile'=>$ms->fault==='default'?'1':'0'];
         if ($ms->fault === 'mismatch') { $reply['contact']['email']='different@example.com'; }
@@ -33,10 +37,12 @@ $managementExchange = static function ($origin, $cmd, $p, $timeout) use ($ms): s
             'domainLock' => $ms->locked=true, 'domainUnlock' => $ms->locked=false,
             'addPrivacy' => $ms->privacy=true, 'removePrivacy' => $ms->privacy=false, 'removeAutoRenewal' => $ms->renew=false,
             'contactDomainAssociate' => $ms->ids=array_replace($ms->ids,array_diff_key($p,['domain'=>true])),
+            'addRegisteredNameServer','modifyRegisteredNameServer' => $ms->glue[$p['new_host']]=array_values(array_filter($p,fn($key)=>preg_match('/^ip[0-9]+$/D',$key),ARRAY_FILTER_USE_KEY)),
+            'deleteRegisteredNameServer' => $ms->glue=array_diff_key($ms->glue,[$p['current_host']=>true]),
             'retrieveAuthCode' => null, default => throw new LogicException('Unexpected management write'),
         };
     }
-    if ($ms->fault === 'lost' && !in_array($cmd,['getDomainInfo','contactList'],true)) { throw new RuntimeException('Synthetic lost acknowledgement'); }
+    if ($ms->fault === 'lost' && !in_array($cmd,['getDomainInfo','contactList','listRegisteredNameServers'],true)) { throw new RuntimeException('Synthetic lost acknowledgement'); }
     return json_encode(['request'=>['operation'=>$cmd],'reply'=>$reply]);
 };
 $holding = static function ($label, bool $complete=true) use ($prepare,$reconcile,&$binding,$ms,$managementExchange,$clock,$now) {
@@ -44,10 +50,10 @@ $holding = static function ($label, bool $complete=true) use ($prepare,$reconcil
     $original=$prepare('management-'.strtolower(str_replace('_','-',$label)));
     if ($complete) { same('succeeded',$reconcile->run($original->id)->state,'Native transfer completion establishes holding'); }
     Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
-    $ms->calls=[]; $ms->fault=''; $ms->apply=true; $ms->during=null; $ms->route='api';
+    $ms->calls=[]; $ms->glue=[]; $ms->fault=''; $ms->apply=true; $ms->during=null; $ms->route='api';
     $ms->ns=['ns1.provider.example.net','ns2.provider.example.net']; $ms->locked=true; $ms->privacy=false; $ms->renew=false; $ms->ids=[];
     Cache::flush(); return [$original->domain()->firstOrFail(), new Management($binding,$managementExchange), $original->fresh()];
 };
 $seq=0; $key=static function () use (&$seq) { return hash('sha256','namesilo-management-'.++$seq); };
 $submit=static fn($d,$driver,$action,$payload=[])=>$management->request($user,$d->id,$action,$payload,$key(),$driver);
-$writes=static fn()=>array_values(array_filter($ms->calls,fn($row)=>!in_array($row[0],['getDomainInfo','contactList'],true)));
+$writes=static fn()=>array_values(array_filter($ms->calls,fn($row)=>!in_array($row[0],['getDomainInfo','contactList','listRegisteredNameServers'],true)));

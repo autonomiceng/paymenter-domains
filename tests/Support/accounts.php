@@ -8,5 +8,8 @@ function fixtureAccount(int $serverId, string $registrar, string $identity): arr
 {
     App\Models\Server::create(['id' => $serverId, 'name' => 'Synthetic registrar', 'extension' => 'Domains', 'type' => 'server', 'enabled' => true]);
     $account = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => $serverId, 'registrar_key' => $registrar, 'environment' => Environment::Test->value, 'stable_identity' => $identity]));
+    // Generic arithmetic fixtures retain their known percentage rule; real connections cover the new default.
+    App\Models\Server::findOrFail($serverId)->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'],
+        ['type' => 'array', 'encrypted' => false, 'value' => \Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT]);
     return ['server_id' => $serverId, 'registrar_key' => $registrar, 'account_fingerprint' => $account->account_fingerprint];
 }

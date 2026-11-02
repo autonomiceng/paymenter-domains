@@ -75,7 +75,7 @@ final class ManagementRead
     public static function glue(ProtocolResult $r, string $host): ?string
     {
         if ($r->value('host_absent')===true) { return null; }
-        $ip=$r->value('checknsstatus.ipaddress'); $name=$r->value('checknsstatus.nsname');
+        $ip=$r->value('checknsstatus.ipaddress'); $name=$r->value('checknsstatus.name');
         if ($r->status!=='success' || $r->value('nschecksuccess')!=='1' || !is_string($ip) || !filter_var($ip,FILTER_VALIDATE_IP)
             || !is_string($name) || strtolower(rtrim($name,'.'))!==$host) { throw new \DomainException('Glue status unknown.'); } return $ip;
     }

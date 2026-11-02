@@ -46,7 +46,7 @@ $stock = $hosting->fresh()->stock;
 // Keep the same mounted cart while signup/email verification outlasts the receipt.
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 $beforeReads = $reads->calls; $clock->instant = $now->modify('+6 minutes');
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(3, Order::count(), 'Expired eligibility refreshes without sending the customer back');
 same($beforeReads + 1, $reads->calls, 'Expired check costs one unlocked registrar read');
 same($stock - 1, $hosting->fresh()->stock, 'Mixed checkout continues normally');
@@ -110,13 +110,13 @@ foreach (['8.00','5.00'] as $cost) {
         $rates[] = new Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$cost,'synthetic',$now,$now->modify('+1 day'));
     }
     $prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
-    Illuminate\Support\Once::flush(); $checkout->call('checkout');
+    Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same(4,Order::count(),'A retained cart cannot charge an unseen synced price');
     same($history,[DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()],'Sync and refused checkout preserve issued invoices');
     same($services,DB::table('services')->orderBy('id')->get()->toJson(),'Sync leaves existing service prices to the renewal billing projection');
     same(number_format((float)$cost * 1.3, 2, '.', ''), $checkout->get('total')->total, 'Changed total is shown before acceptance');
     same($line->id, $cart->items()->sole()->id, 'Price changes keep the cart line in place');
-    $beforeReads = $reads->calls; Illuminate\Support\Once::flush(); $otherTab->call('checkout');
+    $beforeReads = $reads->calls; Illuminate\Support\Once::flush(); $otherTab->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same(4, Order::count(), 'Another tab must accept its own changed offer');
     same($checkout->get('total')->total, $otherTab->get('total')->total, 'Each tab shows the changed total');
     same($beforeReads, $reads->calls, 'Other tabs reuse the same fresh price check');
@@ -124,7 +124,7 @@ foreach (['8.00','5.00'] as $cost) {
 // An unchanged-price sync advances revisions without requiring another customer check.
 $beforeReads = $reads->calls;
 $prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(5,Order::count(),'A refreshed cart sells at the synced price');
 same($beforeReads, $reads->calls, 'Unchanged retail reuses the fresh receipt across price revisions');
 same('6.50',number_format((float)Invoice::latest('id')->first()->items()->sole()->price,2,'.',''),'Customer invoice equals the refreshed native offer after a falling cost');
@@ -136,15 +136,15 @@ $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ul
 same($beforeReads + 1, $reads->calls, 'Cart load repairs missing eligibility');
 // A failed refresh keeps the cart and money untouched, and repeated clicks do not burn reads.
 $clock->instant = $now->modify('+6 minutes'); $reads->available = false;
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(5, Order::count(), 'Failed eligibility cannot create an order');
 same($line->id, $cart->items()->sole()->id, 'Failed check keeps the cart for retry or editing');
 same($beforeReads + 2, $reads->calls, 'Expired receipt tries to repair itself before refusing');
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same($beforeReads + 2, $reads->calls, 'Repeated failed checks share the short backoff');
 $reads->available = true;
 Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSeconds(11));
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(6, Order::count(), 'Retry after a temporary check failure completes checkout');
 Illuminate\Support\Carbon::setTestNow();
 // Transfer expiry row: retry cannot refresh it, so the notice must lead to a working cart edit.
@@ -154,7 +154,7 @@ $cart = commerceCart($user); $transfer = $native->product($tlds[0], 'transfer');
 $line = commerceAdd($cart, $transfer, placeholderComFixtureName('expired-transfer-placeholder.com'));
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 $beforeReads = $reads->calls; $clock->instant = $now->modify('+6 minutes');
-Illuminate\Support\Once::flush(); $checkout->call('checkout');
+Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(6, Order::count(), 'Expired transfer creates no order');
 same($beforeReads, $reads->calls, 'Transfer checkout cannot refresh expired proof');
 same($line->id, $cart->items()->sole()->id, 'Expired transfer stays available to edit or remove');
@@ -173,7 +173,7 @@ foreach ([172799=>true,172800=>false] as $age=>$allowed) {
     $clock->instant=$now->modify('+'.$age.' seconds');$cart=commerceCart($user);$before=Invoice::count();
     $configure=Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])
         ->withQueryParams(['plan'=>$plan->id,'config'=>['domain'=>placeholderComFixtureName('direct-age-'.$age.'-placeholder.com')]])
-        ->test(App\Livewire\Products\Checkout::class,['category'=>$product->category,'product'=>$product->slug])->call('checkout');
+        ->test(App\Livewire\Products\Checkout::class,['category'=>$product->category,'product'=>$product->slug])->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same($allowed?1:0,$cart->items()->count(),'Direct configuration respects the exact 48-hour price limit');
     same($before,Invoice::count(),'Configuration never creates an invoice on either side of the limit');
     if (!$allowed) {
@@ -182,4 +182,36 @@ foreach ([172799=>true,172800=>false] as $age=>$allowed) {
     }
 }
 Livewire\Livewire::withQueryParams([]);$clock->instant=$now;
+// Products\Checkout registered the runtime above; wire its invoice hooks to this partial fixture's adapter and clock.
+$binder=new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($adapter,$native,$prices,$clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$binder);$binder->boot();
+// The real stock theme has no order-contact form: its no-argument button needs an account repair path.
+// Native rendering, notifications and invoice rollback cannot be proved with a service-only unit fixture.
+PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
+$stockUser=commerceUser();$cart=commerceCart($stockUser);
+$stockUser->properties()->create(['key'=>'address','value'=>'42 Original Street']);
+$line=commerceAdd($cart,$product,placeholderComFixtureName('stock-contact-placeholder.com'));
+$before=[Order::count(),Invoice::count(),Service::count()];
+$stock=Livewire\Livewire::actingAs($stockUser)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits',false);
+$stock->assertSeeHtml('wire:click="checkout"')->assertDontSeeHtml('id="domains-checkout-contact"');
+Illuminate\Support\Once::flush();$stock->call('checkout');
+same($before,[Order::count(),Invoice::count(),Service::count()],'Stock contact refusal creates no order, invoice or service');
+same($line->id,$cart->items()->sole()->id,'Stock contact refusal retains the cart for account repair');
+$stock->assertDispatched('notify',static fn($event,$params)=>($params[0]['type']??null)==='error'
+    &&str_contains($params[0]['message'],'Account')&&str_contains($params[0]['message'],'phone')
+    &&str_contains($params[0]['message'],'cart')&&!str_contains($params[0]['message'],'below'));
+foreach(['city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'United States','phone'=>'+1.2065550100'] as $key=>$value){
+    $stockUser->properties()->create(['key'=>$key,'value'=>$value]);
+}
+Illuminate\Support\Once::flush();$stock=Livewire\Livewire::actingAs($stockUser)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits',false);
+Illuminate\Support\Once::flush();$stock->call('checkout');
+same([$before[0]+1,$before[1]+1,$before[2]+1],[Order::count(),Invoice::count(),Service::count()],'Stock checkout succeeds after account repair without a theme change');
+same('+1.2065550100',\Paymenter\Extensions\Servers\Domains\Models\Operation::latest('id')->firstOrFail()->payload['contacts']['registrant']['phone'],'Stock account repair freezes the corrected contact on the order');
+// One saved property must not suppress ordinary fixtures' generated whole order contact.
+$partialUser=commerceUser();$cart=commerceCart($partialUser);
+$partialUser->properties()->create(['key'=>'phone','value'=>'+1.2025550100']);
+commerceAdd($cart,$product,placeholderComFixtureName('partial-account-fixture-placeholder.com'));
+commerceCheckout($partialUser,$cart);
+same($before[0]+2,Order::count(),'Partial-account commerce fixtures still submit a complete order contact');
+same(1,$partialUser->properties()->count(),'Generated fixture contacts do not save missing account details');
 $nativeSuccessful = true; echo "Native cart batch admission, mixed invoices, stale selections and eligibility refusals passed.\n";

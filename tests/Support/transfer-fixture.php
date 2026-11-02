@@ -65,7 +65,11 @@ $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=tru
     $policy = DB::table('domains_sales_policies')->where('tld','com')->first();
     if ((int) $policy->server_id !== $tlds[$i]->server_id) { $sellers->change('com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
     if(Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}
-    else{$cart = commerceCart($user); commerceAdd($cart,$native->product($tlds[$i],'transfer'),$name); commerceCheckout($user,$cart);
+    else{$cart = commerceCart($user); commerceAdd($cart,$native->product($tlds[$i],'transfer'),$name);
+        // Synthetic retained transfers can have incomplete contacts from the former checkout.
+        try { \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate($tlds[$i]->registrar_key, \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user)); $legacyContacts=false; }
+        catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation) { $legacyContacts=true; }
+        $legacyContacts?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart);
         $op = Domain::where('domain',$name)->sole()->operations()->sole();}
     if ($paid) { App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount); $inputs->paymentAccepted($op->id); }
     if ($code) { $r = Illuminate\Http\Request::create('/internal-transfer-input','POST',['transfer_code'=>'SyntheticOnly']); $r->setUserResolver(fn()=>$user); $inputs->submitCode($r,$op->id); }

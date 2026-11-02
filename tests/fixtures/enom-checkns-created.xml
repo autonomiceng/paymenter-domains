@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<interface-response>
+<NsCheckSuccess>1</NsCheckSuccess>
+<CheckNsStatus>
+<ipaddress>192.0.2.1</ipaddress>
+<attrib-id>created-host.example.test</attrib-id>
+<attrib-crdate>2000-01-01T00:00:00.000000Z</attrib-crdate>
+<server>reader-created.example.test</server>
+<attrib-clid>registry.example.test</attrib-clid>
+<rgserver>gateway.example.test</rgserver>
+<name>ns-glue.example.test</name>
+<status>ok</status>
+<attrib-crid>registry.example.test</attrib-crid>
+</CheckNsStatus>
+<RRPCode>200</RRPCode>
+<RRPText>Command completed successfully</RRPText>
+<Command>CHECKNSSTATUS</Command>
+<APIType>API</APIType>
+<Language>eng</Language>
+<ErrCount>0</ErrCount>
+<ResponseCount>0</ResponseCount>
+<MinPeriod>1</MinPeriod>
+<MaxPeriod>10</MaxPeriod>
+<Server/>
+<Site>eNom</Site>
+<IsLockable>True</IsLockable>
+<IsRealTimeTLD>True</IsRealTimeTLD>
+<TimeDifference>+08.00</TimeDifference>
+<ExecTime>0.000</ExecTime>
+<Done>true</Done>
+<TrackingKey>tracking-created.example.test</TrackingKey>
+<RequestDateTime>1/1/2000 12:00:00 AM</RequestDateTime>
+<debug><![CDATA[]]></debug>
+</interface-response>

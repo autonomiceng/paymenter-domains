@@ -24,7 +24,7 @@ $adapter = new CartAdmission($native,$sellers,$eligibility,$clock); $adapter->bo
 $user = commerceUser(); $other = commerceUser(); $product = $native->product($tlds[0],'transfer');
 $refunds = new Refunds($clock); $inputs = new TransferInputs($clock,$refunds);
 $new = static function (string $name, bool $paid=true) use($user,$product): Operation {
-    $cart=commerceCart($user); commerceAdd($cart,$product,$name); commerceCheckout($user,$cart);
+    $cart=commerceCart($user); commerceAdd($cart,$product,$name); commerceLegacyCheckout($user,$cart);
     $op=Domain::where('domain',$name)->sole()->operations()->sole();
     if($paid){ App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount); }
     return $op->fresh();

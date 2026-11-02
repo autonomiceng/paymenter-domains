@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
  * A null value is Missing; a row that does not apply is absent. */
 final class DomainFacts
 {
-    public const REGISTRATION=['Expires','Registrar','In registrar account','Contacts','Nameservers','DNS records','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
+    public const REGISTRATION=['Expires','Registrar','In registrar account','Contacts','Nameservers','Glue records','DNS records','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
     public const BILLING=['Customer','Service','Renewal invoices','Renewal price','Next invoice','Open invoice'];
     public static function help(): array
     {
@@ -86,9 +86,16 @@ final class DomainFacts
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);
             $f['Nameservers']=self::fact($nameservers,sub:$nameservers?null:$unread,demo:$nameservers&&$account&&DemoData::is($account));
+            $sections=ObservationProjection::sections($d); $records=OwnerRecords::forDomain($d,$sections);
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
-                $records=OwnerRecords::forDomain($d); $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?$unread:(isset($records['srv'])?count($records['srv']).' SRV':null));
+                $count=isset($records['dns'])?count($records['dns']):null;
+                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??'Use Sync now to read DNS records.'):implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
+            }
+            $glue=$records['glue']??[];
+            if ($glue) {
+                $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
+                $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
+                $f['Glue records']=self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',array_filter([$at?'As of '.$at:null,...$warnings])),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.');
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
@@ -218,9 +225,9 @@ final class DomainFacts
         try {
             if (!ObservationRecords::stopped($d)) { return null; }
             if (!ObservationRecords::held($d)) { return 'Sync stopped after a failed check.'; }
-            return match($d->observation['record_hold']['reason']??null) {
-                'history_limit'=>'Sync stopped: DNS record history is full.',
+            return ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+                'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
                 'records_unavailable'=>"Sync stopped: couldn't read DNS records.",
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }

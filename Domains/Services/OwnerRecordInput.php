@@ -11,7 +11,7 @@ final class OwnerRecordInput
         return ($row['_delete']??null)==='1'
             || !array_filter(array_diff_key($row,['_delete'=>true,'_source'=>true,'host_id'=>true]),static fn($v)=>$v!==''&&$v!==null);
     }
-    public static function payload(string $action, #[\SensitiveParameter] array $p, string $name): array
+    public static function payload(string $action, #[\SensitiveParameter] array $p, string $name, string $registrar='enom'): array
     {
         $errors=[];
         $check=static function(string $field, \Closure $validate)use(&$errors):void {
@@ -61,7 +61,7 @@ final class OwnerRecordInput
             $result=['host'=>$host];
             if ($action!=='glue_delete') {
                 $ip=$p['ip']??'';
-                $check('glue.ip',static fn()=>ManagementPayload::publicIp(ManagementPayload::text($ip,64)));$result['ip']=$ip;
+                $check('glue.ip',static fn()=>ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$name,$registrar));$result['ip']=$ip;
             }
         }
         if ($errors) { throw new OwnerFormValidation(array_values(array_unique($errors))); }

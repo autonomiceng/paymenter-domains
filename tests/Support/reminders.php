@@ -9,7 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling,HolderPricing,N
 require __DIR__.'/reminder-mail.php';
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();$billing=new DomainBilling($bindings,$guard,$clock);
 $reminders=new Reminders($clock,$bindings);$staff=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::POLICY]);
-foreach($tlds as $t){ReminderSchedules::enroll((int)$t->server_id);}
+// These delivery scenarios explicitly start with reminders paused; new-account defaults are covered by the account upgrade test.
+foreach($tlds as $t){ReminderSchedules::enroll((int)$t->server_id);Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$t->server_id)->update(['enabled'=>false]);}
 $enable=static function(int $i=0,string $before='60,30,7,1',string $after='3')use($staff,$tlds):void {
     $r=Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$tlds[$i]->server_id)->first();
     ReminderSchedules::save($staff,(int)$tlds[$i]->server_id,(int)$r->revision,true,$before,$after,'test_schedule');

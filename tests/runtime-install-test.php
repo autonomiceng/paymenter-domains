@@ -64,7 +64,7 @@ commerceReject(fn()=>app(RuntimePorts::class)->registerInitialManagedRecordObser
 $f=commerceFixture(true,static fn()=>null);extract($f);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);
 $t=$tlds[0];app(NativeServerGuard::class)->pause($t->server_id);
 same(false,Account::where('server_id',$t->server_id)->sole()->processing_enabled,'Pause persists');
-ReminderSchedules::enroll($t->server_id);$row=DB::table('domains_reminder_schedules')->where('server_id',$t->server_id)->sole();same(false,(bool)$row->enabled,'Optional schedules default off');
+ReminderSchedules::enroll($t->server_id);$row=DB::table('domains_reminder_schedules')->where('server_id',$t->server_id)->sole();same(true,(bool)$row->enabled,'New connections default reminder schedules On');
 $u=staffUser(array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()));
 $review=fn()=>new Review($u->id,$t->server_id,null,'processing',Review::ticket($u->id,$t->server_id,null,'processing',Review::stamp($t->server_id,null)),'Review processing configuration');
 $writer=new StaffSettingsWrites($native,$sellers,$bindings);

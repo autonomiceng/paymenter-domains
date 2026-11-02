@@ -31,7 +31,7 @@ final readonly class ManagementForms
                 ? ['nameservers'=>[],'use_default'=>true] : ['nameservers'=>OwnerNameservers::parse($p['nameservers']??null,false,$d->registrar_key)],
             'lock'=>['locked'=>match($p['locked']??null){'1'=>true,'0'=>false,default=>throw new \DomainException}],
             'contacts','contact_profile'=>['role'=>$p['role']??'all','contact'=>$p['contact']??[]],
-            'dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'=>OwnerRecordInput::payload($action,$p,$d->domain),
+            'dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'=>OwnerRecordInput::payload($action,$p,$d->domain,$d->registrar_key),
             default=>[],
         };
         if ($action==='srv') { $payload=OwnerRecords::restoreSrv($d,$payload); }

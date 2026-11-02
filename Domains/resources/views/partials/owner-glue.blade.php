@@ -1,5 +1,7 @@
 {{-- Enom 444f31c child-host layout and copy; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @php $retry = $section['retry'] ?? null; @endphp
+@if ($section['asOf'] ?? null)<p class="domains-muted">As of {{ $section['asOf'] }}</p>@endif
+@foreach ($section['warnings'] ?? [] as $warning)<p class="domains-tone-warn">{{ $warning }}</p>@endforeach
 <p>Register your own nameservers, like ns1.example.com, with their IP addresses.</p>
 @foreach ([...($section['records'] ?? []), ['host'=>'','ip'=>'']] as $index=>$host)
 <details class="domains-more" @if ($retry && ($host['host'] ? $retry['values']['host'] === $host['host'] : $retry['action'] === 'glue_add')) open @endif><summary class="domains-record-value">{{ $host['host'] ?: 'Add a glue record' }}</summary>
@@ -14,7 +16,7 @@
 @include('domains::partials.record-field', ['key'=>'glue.host','id'=>'glue-'.$index.'-host','name'=>'host','label'=>'Hostname','current'=>$match ? $retry['values']['host'] : '', 'showError'=>$match, 'required'=>true,'limit'=>253,'options'=>null,'type'=>'text','hintId'=>'glue-'.$index.'-host-hint','hint'=>'Enter the full hostname, including this domain.'])
 @endif
 @if ($action!=='glue_delete')
-@include('domains::partials.record-field', ['key'=>'glue.ip','id'=>'glue-'.$index.'-ip','name'=>'ip','label'=>'IP address','labelSuffix'=>$host['host']?' for '.$host['host']:'','current'=>$match ? $retry['values']['ip'] : $host['ip'], 'showError'=>$match, 'required'=>true,'limit'=>64,'options'=>null,'type'=>'text','hintId'=>'glue-'.$index.'-ip-hint','hint'=>'One public IPv4 or IPv6 address.'])
+@include('domains::partials.record-field', ['key'=>'glue.ip','id'=>'glue-'.$index.'-ip','name'=>'ip','label'=>'IP address','labelSuffix'=>$host['host']?' for '.$host['host']:'','current'=>$match ? $retry['values']['ip'] : $host['ip'], 'showError'=>$match, 'required'=>true,'limit'=>($section['ipv4Only'] ?? false) ? 220 : 64,'options'=>null,'type'=>'text','hintId'=>'glue-'.$index.'-ip-hint','hint'=>($section['ipv4Only'] ?? false) ? 'Public IPv4 addresses, separated by commas. IPv6 is not supported by NameSilo.' : 'One public IPv4 or IPv6 address.'])
 @endif
 <button type="submit" class="domains-btn domains-btn--secondary">{{ $label }}</button>
 @if ($action === 'glue_delete')
