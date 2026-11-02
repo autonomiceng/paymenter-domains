@@ -16,7 +16,8 @@ final class NoticeHealth
         if(!Staff::can(Writes::VIEW)||!Schema::hasTable('domains_watch_audit')||!Schema::hasTable('domains_watch_deliveries')){return null;}
         try{
             // Newest first, one per cause: a fixed template must not hide a read outage that is still going on.
-            $records=WatchAudit::where('subject_type','public_notice')->where('subject_id',$id)->where('event','notice_health')->orderByDesc('id')->cursor()
+            // Bound each database result before filtering encrypted kinds, even when PDO buffers reads.
+            $records=WatchAudit::where('subject_type','public_notice')->where('subject_id',$id)->where('event','notice_health')->lazyByIdDesc(20)
                 ->filter(fn(WatchAudit $a)=>($a->data['target_kind']??null)===$kind)->take(20)->unique(fn(WatchAudit $a)=>implode('|',[$a->data['code']??'',$a->data['channel']??'',$a->data['template']??'']));
             $health=null;
             $a=$records->first(function(WatchAudit $a)use($kind,$id,$name,&$health):bool {
