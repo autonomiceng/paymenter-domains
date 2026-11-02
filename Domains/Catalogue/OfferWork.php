@@ -104,10 +104,12 @@ final class OfferWork
         $writer = $this->writer->withGuard($guard); $work = OfferState::decode($job->offer_work);
         try {
             $this->republish($writer, $b, $work);
-            if (!empty($work['pending'])) { $this->drain($writer, $b, $work); }
-            else {
-                $t = Tld::where('server_id', $server)->where('account_fingerprint', $b->fingerprint)
+            $t = Tld::where('server_id', $server)->where('account_fingerprint', $b->fingerprint)
                     ->whereNotNull('offer_facts_due')->where('offer_facts_due', '<=', $this->at())->orderBy('offer_facts_due')->orderBy('id')->first();
+            if (!empty($work['pending'])) {
+                if ($t) { $this->facts($writer, $b, $job, $t); }
+                $this->drain($writer, $b, $work);
+            } else {
                 $due = ($work['feed_due'] ?? PHP_INT_MAX) <= $this->at();
                 if ($t && (!$due || ($work['last'] ?? '') === 'feed')) {
                     $work['last'] = 'facts'; $this->facts($writer, $b, $job, $t);

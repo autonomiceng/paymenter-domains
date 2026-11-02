@@ -23,18 +23,26 @@ extract(commerceFixture());
 $b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
 $n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
 (new UpgradeConversion)->batch($b); (new UpgradeConversion)->batch($n);
-$clock = new class($now) implements Clock {
+$clock = new class($now->modify('+1 minute')) implements Clock {
     public function __construct(public DateTimeImmutable $time) {}
     public function now(): DateTimeImmutable { return $this->time; }
 };
 $wire = new class implements Transport {
     public array $calls = [];
+    public int $extra = 0;
+    public ?ReadCommand $fail = null;
+    public ?Closure $during = null;
     public function send(Environment $environment, ReadCommand $command, array $parameters, string $uid, string $token, int $timeoutMs): string
     {
         expect(DB::transactionLevel() === 0, 'Every provider read happens outside database locks');
         $this->calls[] = $command;
+        if ($this->during) { ($this->during)(); }
+        if ($this->fail === $command) { throw new RuntimeException('Synthetic wire failure with private body'); }
         $header = '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>';
-        if ($command === ReadCommand::Tlds) { return $header.'<TLDList><TLD>com</TLD><TLD>org</TLD><TLD>co.uk</TLD></TLDList></interface-response>'; }
+        if ($command === ReadCommand::Tlds) {
+            $extra = '';
+            for ($i = 0; $i < $this->extra; $i++) { $extra .= '<TLD>suffix'.chr(97 + intdiv($i, 26)).chr(97 + $i % 26).'</TLD>'; }
+            return $header.'<TLDList><TLD>com</TLD><TLD>org</TLD><TLD>co.uk</TLD>'.$extra.'</TLDList></interface-response>';  }
         if ($command === ReadCommand::TldInfo) {
             return $header.'<TLDs><TLD><TLD>'.$parameters['TLD'].'</TLD><Registration><Minimum>1</Minimum><Maximum>2</Maximum><Unit>year</Unit><DNSRequired>false</DNSRequired></Registration><ExtAttributes>false</ExtAttributes><Renewal><AutoRenewOnly>false</AutoRenewOnly></Renewal></TLD></TLDs></interface-response>';
         }
@@ -62,5 +70,14 @@ same(7, count($wire->calls), 'Concurrent cold requests coalesce to two Enom fact
 $worker->requestFacts($b, 'co.uk'); $worker->tick(1);
 same(7, count($wire->calls), 'Warm independent facts are reused');
 same('ready', $worker->status($b, 'co.uk')['state'], 'Lazy fact success is visible without granting sale authority');
+// A buffered account feed must not delay a cold search until the whole account has drained.
+$clock->time = $clock->time->modify('+1 minute'); $wire->extra = 30;
+$worker->requestFacts($b, 'org'); $worker->sync($b);
+$before = count($wire->calls); $worker->tick(1);
+same(5, count($wire->calls) - $before, 'A large account still has one fixed-size feed read group');
+same(8, $worker->status($b)['remaining'], 'Only 25 observations apply in one account turn');
+$before = count($wire->calls); $worker->tick(1);
+same(2, count($wire->calls) - $before, 'A pending feed batch cannot starve requested facts');
+same(0, $worker->status($b)['remaining'], 'Saved feed observations drain without rereading prices');
 $nativeSuccessful = true;
 echo "Dormant offer queue and lazy facts checks passed.\n";
