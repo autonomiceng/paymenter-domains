@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, RegistrationTransport, WriteGate};
+use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, RegistrationProtocol, RegistrationTransport, WriteGate};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AdmittedOperation, DispatchReadiness, DriverResult, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Named bridge only; raw mappings and descriptors cannot bypass the live engine + durable checks. */
@@ -15,18 +15,18 @@ abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
     { $this->transport = new \SensitiveParameterValue($transport); }
     final public function guardAccount(\Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,\DateTimeImmutable $deadline): void
     {
-        if($this->binding->registrarKey==='namesilo'&&$this->transport->getValue() instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol){
+        if($this->binding->registrarKey==='namesilo'&&$this->transport->getValue() instanceof RegistrationProtocol){
             $context=new RequestContext($this->binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$deadline,
                 new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1),$clock,Runtime::limiter());
             $this->transport->getValue()->guardAccount($context);
         }
     }
     final public function withinReservation(Operation $op,\Closure $work): mixed
-    { $port=$this->transport->getValue();return $port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol?$port->withinReservation($op,$work):$work(); }
+    { $port=$this->transport->getValue();return $port instanceof RegistrationProtocol?$port->withinReservation($op,$work):$work(); }
     final public function reservePurchase(Operation $op,DispatchReadiness $ready): void
-    { $port=$this->transport->getValue();if($port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol){$port->reservePurchase($op,$ready);} }
+    { $port=$this->transport->getValue();if($port instanceof RegistrationProtocol){$port->reservePurchase($op,$ready);} }
     final public function unconsumed(int $id): bool
-    { $port=$this->transport->getValue();return $port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol&&$port->unconsumed($id); }
+    { $port=$this->transport->getValue();return $port instanceof RegistrationProtocol&&$port->unconsumed($id); }
     final public function requireEnabled(Action $action): void { $this->features->requireEnabled($action); }
     final public function reserve(): void { OperationClaims::outside(); $this->accepted->reserve($this->binding); }
     final public function requireAtSeal(Operation $op, Domain $domain, DispatchReadiness $ready): void
@@ -50,14 +50,14 @@ abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
     }
     final public function checkComposition(\Paymenter\Extensions\Servers\Domains\Contracts\OperationPreflight $preflight): void
     {
-        if ($this->transport->getValue() instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol) {
+        if ($this->transport->getValue() instanceof RegistrationProtocol) {
             $this->requireComposition($preflight, $this->features, $this->accepted, $this->transport->getValue());
         }
     }
     final public function requireComposition($preflight, WriteFeatures $features, WriteAcceptance $accepted, RegistrationTransport $transport): void
     {
         if ($features !== $this->features || $accepted !== $this->accepted || $transport !== $this->transport->getValue()
-            || !$transport instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol || !$transport->bindsTo($this->binding)
+            || !$transport instanceof RegistrationProtocol || !$transport->bindsTo($this->binding)
             || !($transport instanceof \Paymenter\Extensions\Servers\Domains\Contracts\TransferProtocol ? $preflight instanceof TransferPreflight : $preflight instanceof RegistrationPreflight) || !$preflight->usesPolicy($features, $accepted, $transport)) {
             throw new \DomainException('Registration policy composition is unavailable.');
         }

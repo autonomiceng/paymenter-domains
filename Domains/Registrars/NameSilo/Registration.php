@@ -3,9 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, DateEvidence, Discrepancy, Disposition, DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, DispatchReadiness, Query, DateEvidence, Discrepancy, Disposition, DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, PurchaseMapping, RegistrarRequest, ResponseParser};
-use Paymenter\Extensions\Servers\Domains\Services\RegistrationProfiles;
+use Paymenter\Extensions\Servers\Domains\Services\{OperationClaims, RegistrationProfiles};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class Registration extends RegistrationProtocol
 {
     public function __construct(AccountBinding $binding, private readonly RegistrationProfiles $profiles, #[\SensitiveParameter] \Closure $exchange)
@@ -14,9 +15,9 @@ final class Registration extends RegistrationProtocol
         parent::__construct($binding, $exchange);
     }
     public function usesProfiles(RegistrationProfiles $profiles): bool { return $this->profiles === $profiles; }
-    protected function purchaseReservation(\Paymenter\Extensions\Servers\Domains\Models\Operation $op,\Paymenter\Extensions\Servers\Domains\Data\DispatchReadiness $ready): array
-    { $m=$this->mapping($ready->query,$op->payload,$op->operation_key,\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::payloadDigest($op));return [$m->command,$m->parameters()]; }
-    private function mapping(\Paymenter\Extensions\Servers\Domains\Data\Query $query,#[\SensitiveParameter] array $payload,string $key,string $digest): PurchaseMapping
+    protected function purchaseReservation(Operation $op,DispatchReadiness $ready): array
+    { $m=$this->mapping($ready->query,$op->payload,$op->operation_key,OperationClaims::payloadDigest($op));return [$m->command,$m->parameters()]; }
+    private function mapping(Query $query,#[\SensitiveParameter] array $payload,string $key,string $digest): PurchaseMapping
     {
         $roles = $this->profiles->wireRoles($key, $digest);
         if (count(array_unique($roles)) !== 1) { throw new \DomainException('Registration requires one proven four-role profile.'); }

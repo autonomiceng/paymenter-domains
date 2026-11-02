@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, Clock, OperationPreflight, SealPreflight, WriteGate};
-use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, AccountBinding, AdmittedOperation, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, AccountBinding, AdmittedOperation, Disposition, DriverResult, Money, RejectionBasis, ResultReason, SendState, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 
@@ -124,7 +124,7 @@ final class DomainOperations
             return $this->claims->finish($op, $result);
             });
         } catch (LiveReservationLimit) {
-            return $this->claims->finish($op,holdReason:'write_rate_limited');
+            return $this->interrupted($op,$binding,$result,'write_rate_limited');
         } catch (EnomTestCallLimit) {
             return $this->claims->holdTestCallCap($op);
         } catch (ReadDeferred) {
@@ -136,12 +136,12 @@ final class DomainOperations
             return $this->interrupted($op,$binding,$result); // Completion never repeats a send.
         }
     }
-    private function interrupted(Operation $op,AccountBinding $binding,?\Paymenter\Extensions\Servers\Domains\Data\DriverResult $result,?string $reason=null,?\Paymenter\Extensions\Servers\Domains\Data\Money $cost=null): Operation
+    private function interrupted(Operation $op,AccountBinding $binding,?DriverResult $result,?string $reason=null,?Money $cost=null): Operation
     {
         $unsent=$this->writer instanceof RegistrationBridge&&$this->writer->unconsumed((int)$op->id);
-        if($unsent){$result=new \Paymenter\Extensions\Servers\Domains\Data\DriverResult($binding,\Paymenter\Extensions\Servers\Domains\Data\Disposition::Rejected,
-            \Paymenter\Extensions\Servers\Domains\Data\SendState::DefinitelyUnsent,\Paymenter\Extensions\Servers\Domains\Data\ResultReason::Unsent,
-            rejectionBasis:\Paymenter\Extensions\Servers\Domains\Data\RejectionBasis::DefinitelyUnsent);}
+        if($unsent){$result=new DriverResult($binding,Disposition::Rejected,
+            SendState::DefinitelyUnsent,ResultReason::Unsent,
+            rejectionBasis:RejectionBasis::DefinitelyUnsent);}
         return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent);
     }
 }
