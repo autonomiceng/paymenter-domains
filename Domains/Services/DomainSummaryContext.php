@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchName,WatchSource,Wa
 /** Local display identities, loaded in batches. Digests grant no holding or write authority. */
 final class DomainSummaryContext
 {
-    public array $domains=[],$watches=[],$sources=[],$services=[],$orders=[],$products=[],$maps=[],$profiles=[],$configs=[],$properties=[];
+    public array $domains=[],$watches=[],$sources=[],$services=[],$orders=[],$products=[],$maps=[],$profiles=[],$configs=[],$properties=[],$defaults=[];
     public bool $staff=false;
     public function __construct(public int $owner,array $domainIds,array $watchIds)
     {
@@ -28,7 +28,10 @@ final class DomainSummaryContext
         $this->products=Product::whereIn('id',array_map(fn($s)=>$s->product_id,$this->services))->get()->keyBy('id')->all();
         $this->maps=WatchProductMap::whereIn('id',array_map(fn($s)=>$s->map_id,$this->sources))->get()->keyBy('id')->all();
         $this->configs=ManagedPublicConfig::where('user_id',$owner)->whereIn('domain_id',array_keys($this->domains))->get()->keyBy('domain_id')->all();
-        $this->profiles=WatchProfile::whereIn('id',[...array_map(fn($w)=>$w->ns_profile_id,$this->watches),...array_map(fn($c)=>$c->profile_id,$this->configs)])->get()->keyBy('id')->all();
+        $defaults=\App\Models\Setting::where('settingable_type',(new \App\Models\Server)->getMorphClass())->where('key',NewDomainDns::KEY)
+            ->whereIn('settingable_id',array_map(fn($d)=>$d->server_id,$this->domains))->pluck('value','settingable_id')->all();
+        $this->profiles=WatchProfile::whereIn('id',[...array_map(fn($w)=>$w->ns_profile_id,$this->watches),...array_map(fn($c)=>$c->profile_id,$this->configs),...array_values($defaults)])->get()->keyBy('id')->all();
+        foreach($this->domains as$id=>$d){$this->defaults[$id]=$defaults[$d->server_id]??null;}
         $this->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->whereIn('key',[...array_map(fn($m)=>$m->property_key,$this->maps),'domain'])->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$ids)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$this->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
     }
     /** Staff-only watch context; every identity is still checked against its row's owner. */
@@ -55,6 +58,12 @@ final class DomainSummaryContext
         $c->properties=Property::where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->whereIn('key',[...$keys,'domain'])->whereIn('id',DB::query()->fromSub(DB::table('properties')->where('model_type',(new Service)->getMorphClass())->whereIn('model_id',$serviceIds)->selectRaw('id, row_number() over (partition by model_type,model_id,'.$c->propertyKey().' order by id) as position'),'bounded')->where('position','<=',2)->select('id'))->orderBy('id')->get()->groupBy('model_id')->all();
         return $c;
     }
+    public function managedProfile(int $id): ?WatchProfile
+    {
+        $profile=$this->profiles[$this->configs[$id]->profile_id??0]??null;
+        if(!ManagedDnsSetup::usable($profile)){$profile=$this->profiles[$this->defaults[$id]??0]??null;}
+        return ManagedDnsSetup::usable($profile)?$profile:null;
+    }
     public function related(string $kind,int $id): array
     { return array_values(array_filter($this->sources,fn($s)=>$kind==='watch'?(int)$s->watch_id===$id:((int)$s->managed_domain_id===$id || $s->registrable_name===($this->domains[$id]->domain??null)))); }
     public function validSource(object $s): bool
@@ -69,7 +78,7 @@ final class DomainSummaryContext
     {
         $t=$kind==='watch'?($this->watches[$id]??null):($this->domains[$id]??null);if (!$t) { return null; }
         $sources=$this->related($kind,$id);$config=$kind==='managed'?($this->configs[$id]??null):null;
-        $profile=$this->profiles[$kind==='watch'?$t->ns_profile_id:$config?->profile_id]??null;
+        $profile=$kind==='watch'?($this->profiles[$t->ns_profile_id]??null):$this->managedProfile($id);
         if ($kind==='watch' && ($t->state!=='active' || !$sources)) { return null; }
         $evidence=[];
         foreach ($sources as $s) {

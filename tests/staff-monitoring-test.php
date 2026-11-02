@@ -14,12 +14,12 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';$f=noticeFixture();extract($f);\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();staffPanel();$panel=Filament::getCurrentPanel();$resources=[WatchResource::class,RoutingProfileResource::class];$panel->resources($resources);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$panel){foreach($resources as$r){$r::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 $manager=staffUser([Staff::VIEW,Writes::VIEW,Writes::MANAGE]);Auth::setUser($manager);
-// Monitoring-only configuration leaves the menu until the deployment supplies both activation gates.
+// Registration DNS templates remain reachable independently of monitoring activation.
 $monitoringReader=new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]);
 $discovery=new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null);
 foreach([[false,$discovery],[true,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork()]] as [$enabled,$producer]){
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$producer,$enabled));
-    foreach([RoutingProfileResource::class] as $resource){same(false,$resource::shouldRegisterNavigation(),'Unconfigured monitoring hides '.$resource);}
+    foreach([RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Registration DNS templates stay available without monitoring: '.$resource);}
     same(true,WatchResource::shouldRegisterNavigation(),'Monitoring status remains reachable');
 }
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$discovery,true));

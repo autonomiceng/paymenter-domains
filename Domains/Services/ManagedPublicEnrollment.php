@@ -30,6 +30,7 @@ final class ManagedPublicEnrollment
             $allSources=WatchSource::whereKey($peek->pluck('id'))->orderBy('id')->lockForUpdate()->get();
             [$proven,$expected,$proof]=ManagedDnsSetup::proven($l,$watch,$config,$allSources,$maps);
             $profile=$config?->profile_id?WatchProfile::whereKey($config->profile_id)->lockForUpdate()->first():$proven;
+            if(!ManagedDnsSetup::usable($profile)){$profile=ManagedDnsSetup::profile($d,$config,true);}
             if(!ManagedDnsSetup::usable($profile)){$profile=null;}
             foreach($sources as $source) {
                 $s=$l['services']->firstWhere('id',$source->service_id);$map=$maps[$source->map_id]??null;$o=$l['orders']->firstWhere('id',$s?->order_id);
@@ -77,7 +78,14 @@ final class ManagedPublicEnrollment
                     ->update(['claim'=>null,'lease_until'=>null,'safe_code'=>'dns_not_configured','attempts'=>0,'backoff_until'=>null]);
                 return $changed;
             }
+            $target=(new ManagedPublicTarget())->capture($id,$owner,$now);
+            if(!$target){throw new \RuntimeException('Managed DNS target unavailable.');}
             foreach(['delegation','points']as$kind) {
+                if($kind==='points' && !$target['check_records']){
+                    DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('kind','points')->whereNull('retired_at')
+                        ->update(['retired_at'=>$now,'claim'=>null,'lease_until'=>null,'attempts'=>0,'backoff_until'=>null,'safe_code'=>'no_hosting']);
+                    continue;
+                }
                 $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$d->authority_generation)->where('kind',$kind);
                 $inserted=$q->insertOrIgnore(['domain_id'=>$id,'user_id'=>$owner,'generation'=>$d->authority_generation,'account_fingerprint'=>$d->account_fingerprint,'kind'=>$kind,
                     'due_at'=>$now,'target_stamp'=>str_repeat('0',64),'origin_watch_id'=>$watch?->id,'origin_observation_id'=>$watch?->last_observation_id]);

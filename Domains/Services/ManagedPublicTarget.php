@@ -23,11 +23,14 @@ final class ManagedPublicTarget
         $maps=WatchProductMap::whereKey($peek->pluck('map_id'))->orderBy('id')->when($lock,fn($q)=>$q->lockForUpdate())->get()->keyBy('id');
         $config=ManagedPublicConfig::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
         if (!$config || (int)$config->user_id!==$owner) { return null; }
-        $profile=WatchProfile::whereKey($config->profile_id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
+        $profile=ManagedDnsSetup::profile($d,$config,$lock);
+        $choices=$l['operations']->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)
+            ->where('service_id',$d->service_id)->where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->where('state','succeeded')->sortByDesc('id');
+        $config->expected_dns=ManagedDnsSetup::expected($config,$profile,$d,$choices->whereIn('action',['register','transfer'])->first(),$choices->firstWhere('action','nameservers'));
         [$sources,$more]=$this->sources($id,$cursor,$lock);
         if ($more!==$overflow || $peek->pluck('id')->all()!==$sources->pluck('id')->all()) { return null; }
         $pending=WatchSource::where('user_id',$owner)->where('registrable_name',$d->domain)->where('state','watch')->exists();
-        $hosts=[$d->domain];$evidence=[];$omitted=$pending;
+        $hosts=[$d->domain];$evidence=[];$omitted=$pending;$checkRecords=false;
         foreach($sources as $source) {
             $s=$l['services']->firstWhere('id',$source->service_id);$m=$maps[$source->map_id]??null;
             $o=$l['orders']->firstWhere('id',$s?->order_id);$p=$l['products']->firstWhere('id',$s?->product_id);
@@ -39,14 +42,14 @@ final class ManagedPublicTarget
                 || ($source->hostname!==$d->domain && !str_ends_with($source->hostname,'.'.$d->domain)) || $props->count()!==1) { $omitted=true;continue; }
             try { if (DnsQuery::hostname($props->sole()->value)!==$source->hostname) { $omitted=true;continue; } }
             catch (\InvalidArgumentException|\TypeError) { $omitted=true;continue; }
-            $hosts[]=$source->hostname;
+            if($p->server_id!==null){$checkRecords=true;$hosts[]=$source->hostname;}
         }
         $stamp=hash('sha256',json_encode([$d->only(['id','domain','user_id','service_id','server_id','registrar_key','account_fingerprint','authority_generation','confirmed_revision','status']),
             $d->provider_expires_at->format('Y-m-d'),$l['identity_source'],$d->renewal_policy['billing_anchor']??null,$l['service']->status,
-            $config->getRawOriginal(),$profile?->getRawOriginal(),$evidence,$overflow,$pending],JSON_THROW_ON_ERROR));
+            $config->getRawOriginal(),$profile?->getRawOriginal(),$config->expected_dns,$evidence,$overflow,$pending],JSON_THROW_ON_ERROR));
         $hosts=array_values(array_unique($hosts));
         return ['domain'=>$d,'config'=>$config,'profile'=>$profile?->enabled?$profile:null,'stamp'=>$stamp,
-            'hosts'=>$hosts,'overflow'=>$overflow || $omitted,'next_source_cursor'=>$overflow?(int)$sources->first()->id:0];
+            'hosts'=>$hosts,'check_records'=>$checkRecords,'overflow'=>$overflow || $omitted,'next_source_cursor'=>$overflow?(int)$sources->first()->id:0];
     }
     private function sources(int $id,int $cursor,bool $lock): array
     {

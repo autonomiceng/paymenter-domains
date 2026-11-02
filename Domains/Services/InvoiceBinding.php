@@ -120,12 +120,13 @@ final class InvoiceBinding
             'domain' => $line['name'], 'server_id' => $s->serverId, 'registrar_key' => $s->registrar,
             'account_fingerprint' => $s->fingerprint, 'authority_generation' => 1, 'status' => $s->action === 'register' ? 'registration_pending' : 'transfer_pending',
             'snapshot' => ['checkout' => $checkout], 'renewal_policy' => $line['renewal']], [$s->tld]);
+        $defaults=NewDomainDns::nameservers($s->serverId,$s->action);
         $operation = Operation::create(['domain_id' => $domain->id, 'service_id' => $service->id, 'server_id' => $s->serverId,
             'registrar_key' => $s->registrar, 'account_fingerprint' => $s->fingerprint, 'authority_generation' => 1,
             'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => 'invoice-item:'.$item->id,
             'action' => $s->action, 'term' => $s->term, 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment',
             'amount' => $line['retail']['total'], 'currency' => 'USD', 'policy' => ['checkout' => $checkout, 'price' => self::price($s), 'seller_revision' => $line['selection']->policyRevision],
-            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => OrderContact::capture($service->user()->firstOrFail(), $line['setup_tld'])]);
+            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => OrderContact::capture($service->user()->firstOrFail(), $line['setup_tld']) + ($defaults?['nameservers'=>$defaults]:[])]);
         $service->forceFill(['plan_id' => $line['annual_plan_id'], 'price' => $line['annual_price'], 'label' => $line['name'], 'expires_at' => null]);
         NativeDomainGuard::initial($service, $domain);
         self::requireIdentity($operation, $domain, $service->fresh(), $invoice, $item);

@@ -6,15 +6,14 @@ require __DIR__.'/Support/managed-public.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,WatchName};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,ManagedPublicReconciliation,ManagedPublicWorkSchema,PublicDnsQuota};
-extract(managedFixture(hosting:false));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
-// This source-free fixture explicitly chooses its comparison template; a global default is not intent.
-DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::create(['domain_id'=>$id,'user_id'=>$uid,'profile_id'=>$profile->id,'notice_preferences'=>[]]));
+extract(managedFixture());$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+// Keep a proven hosting source to exercise both public work kinds; unhosted enrollment is covered in managed-dns-setup.
 $off=new ManagedPublicReconciliation(new ManagedPublicSignals($fake));same(0,$off->sweep($now),'Default-off sweep does not accept A3 rows');
-$sweep=new ManagedPublicReconciliation($signals);same(1,$sweep->sweep($now,1),'Bounded daily pass accepts old A3 rows');same(0,WatchName::count(),'Source-free managed holding never creates watch');
+$sweep=new ManagedPublicReconciliation($signals);same(1,$sweep->sweep($now,1),'Bounded daily pass accepts old A3 rows');same(1,WatchName::count(),'Hosted holding keeps its predecessor watch');
 $work=DB::table(ManagedPublicWorkSchema::TABLE)->where('kind','delegation')->first();same('ready',$work->safe_code,'Existing A3 dormant row accepted only in enabled sweep');
-$fail=true;
-DB::listen(static function($q)use(&$fail){
-    if ($fail && str_contains($q->sql,'domains_managed_public_config') && str_starts_with($q->sql,'select')) {
+$fail=true;$configReads=0;
+DB::listen(static function($q)use(&$fail,&$configReads){
+    if ($fail && str_contains($q->sql,'domains_managed_public_config') && str_starts_with($q->sql,'select') && ++$configReads===2) {
         $fail=false;throw new Illuminate\Database\QueryException('sqlite',$q->sql,[],new RuntimeException('Synthetic lock timeout'));
     }
 });
@@ -37,9 +36,7 @@ foreach(['missing','duplicate']as$damage){
     $marker=$product->settings()->where('key',$markerKey)->sole();$savedMarker=$marker->getRawOriginal();
     if($damage==='missing'){DB::table('settings')->where('id',$marker->id)->delete();}else{$duplicateKey=$markerKey;}
     expect(!$signals->enqueue($id,$uid,$now),'Damaged marker refuses public enrollment safely');
-    $transferWatch=DB::table('domains_watch_names')->insertGetId(['user_id'=>$uid,'canonical_name'=>$d->domain,'psl_revision'=>str_repeat('a',64),'state'=>'active','notice_preferences'=>'{}']);
     same(null,(new \Paymenter\Extensions\Servers\Domains\Services\ManagedPublicEnrollment)->reconcile($id,$uid,$now,transferOnly:true),'Transfer-only marker damage defers without throwing');
-    DB::table('domains_watch_names')->where('id',$transferWatch)->delete();
     $second=(array)$d->fresh()->getRawOriginal();$second['id']=2000;$second['domain']='second-placeholder.com';$second['reservation_name']='second-placeholder.com';$second['sld']='second-placeholder';$second['service_id']=2000;
     DB::table('domains_domains')->insert($second);
     DB::table('domains_managed_public_config')->insert(['domain_id'=>2000,'user_id'=>$uid,'profile_id'=>$profile->id,'notice_preferences'=>'{}']);
@@ -66,7 +63,7 @@ foreach(['domains_catalogue','domains_registrar']as$markerKey){foreach([['value'
     DB::table('settings')->where('id',$marker['id'])->update($marker);
     expect($signals->enqueue($id,$uid,$now),'Restored marker authority re-enrolls');
 }}
-$fake->answers['example.com|NS']=managedNs();expect($signals->observe($id,$uid,'delegation'),'Apex without any hosting source observed');same(['example.com|NS'],$fake->calls,'No registrar inventory or hosting lookup required');
+$fake->answers['example.com|NS']=managedNs();expect($signals->observe($id,$uid,'delegation'),'Independent apex observed');same(['example.com|NS'],$fake->calls,'No registrar inventory or hosting lookup required');
 same(0,$sweep->sweep($now,1),'Completed pass resets daily cursor');same($now+86400,(int)DB::table(PublicDnsQuota::TABLE)->value('sweep_due_at'),'Daily revisit durable');
 same(0,$sweep->sweep($now+1),'No unbounded repeat pass');
 DB::table('domains_domains')->where('id',$id)->delete();same(0,$sweep->sweep($now+86400),'Missing ledger row swept');
@@ -102,4 +99,4 @@ foreach(['watch_dns','managed_dns']as$family) {
     DB::table('domains_watch_schedule')->where('scope','dispatch')->update(['progress_at'=>$due+600]);same('checks_unsuccessful',$health->health($due+600)['reason'],'Stalled daily points eventually alert: '.$family);
     DB::table('domains_watch_work')->delete();DB::table('domains_watch_names')->where('id',9000)->delete();DB::table('domains_domains')->update(['status'=>'expired']);DB::table('domains_watch_schedule')->where('scope','like','health_%')->delete();
 }
-$nativeSuccessful=true;echo "Source-free apex, daily bounded sweep, old-generation retirement, repair and DNS-only due hints passed.\n";
+$nativeSuccessful=true;echo "Hosted apex, daily bounded sweep, old-generation retirement, repair and DNS-only due hints passed.\n";

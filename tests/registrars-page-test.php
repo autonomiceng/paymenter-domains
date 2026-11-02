@@ -337,4 +337,26 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_writes.renewal
 same('Not available yet',$checklist()['Transfers']['value'],'TEST site off shows no switch');
 config(['domains.enom_catalogue.enabled'=>true,'domains.enom_writes.transfer'=>true]);$noKeys();
 same(['Off','test_transfer'],[$checklist()['Transfers (experimental)']['value'],$checklist()['Transfers (experimental)']['action']],'TEST transfers get a real switch once the site allows them');
+// Real Livewire actions prove permissions, reviewed settings persistence and audit together.
+
+// Account registration defaults are local, audited and shared across providers.
+\Paymenter\Extensions\Servers\Domains\Services\WatchSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\WatchDnsSchema::install();
+config(['settings.company_name'=>'Example Hosting','app.name'=>'Generic app']);
+$template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Shared registration DNS','enabled'=>true,
+    'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
+    'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
+$action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('domain_settings_'.$enom->server_id,'content');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action);
+$page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Default DNS template')->assertSee('Choose an enabled DNS template with Change.')->assertSee('Example Hosting does not sell it yet.');
+$page->callAction($action,['dns_template'=>(string)$template->id])->assertHasNoActionErrors()->assertNotified('Saved');
+same($template->id,\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($enom->server_id)->id,'Account form saves the default');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Shared registration DNS')->assertSee('ns1.provider.example');
+$history=StaffSettingsReview::historyRows(App\Models\Server::find($enom->server_id));$last=end($history);
+same('Change new domain nameservers',$last['action'],'DNS template selection is audited');same($template->id,$last['after']['dns_template'],'Audit includes the selected template');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->callAction(TestAction::make('new_domain_dns_'.$silo->server_id)->schemaComponent('domain_settings_'.$silo->server_id,'content'),['dns_template'=>(string)$template->id])->assertHasNoActionErrors()->assertNotified('Saved');
+same(2,count(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts($template->id)),'One DNS template can serve both registrar accounts');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction($action,['dns_template'=>null])->assertHasNoActionErrors()->assertNotified('Saved');
+same(null,\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($enom->server_id),'Account form can restore the unconfigured behavior');
+
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;

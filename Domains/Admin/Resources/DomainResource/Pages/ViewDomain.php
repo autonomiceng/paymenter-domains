@@ -46,8 +46,8 @@ class ViewDomain extends ViewRecord
     {
         $d=$this->getRecord(); $facts=DomainFacts::for($d); $notice=DomainFacts::notice($d); $edits=DomainEditActions::for($d); $components=[];
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
-            $components[]=Callout::make('DNS comparison not set up')->status('info')->columnSpanFull()
-                ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW)?new HtmlString('<a href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::getUrl('dns-setup')).'">Choose DNS template</a>'):null);
+            $components[]=Callout::make('Set a default DNS template on the registrar account to start DNS monitoring.')->status('info')->columnSpanFull()
+                ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW)?new HtmlString('<a href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id])).'">Set account DNS template</a>'):null);
         }
         // Reminder issues sit under Auto-renew, then Open alerts, or alone when neither slot exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?new HtmlString($review->size('sm')->toHtml()):null;

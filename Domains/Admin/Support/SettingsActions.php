@@ -51,6 +51,7 @@ final class SettingsActions
     public static function description(string $name): string
     {
         return match($name){
+            'new_domain_dns'=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::HELP,
             'renewal_billing'=>'Set when renewal invoices go out.',
             'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
             'card_fee'=>'Sets the estimated card fee for this account. Saving publishes new prices for TLDs whose pricing adds a percentage to cost and card fee. Other prices and issued invoices stay the same.',
@@ -85,7 +86,7 @@ final class SettingsActions
     { return self::make($server,null,$stamp,true,[$name])[0]; }
     public static function make(int $server,?int $tld,string $stamp,bool $setup=false,?array $only=null): array
     {
-        $out=[];$names=$setup?['enroll_sandbox','configure','probe','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','late_renewal','processing','renew_early','renewal_billing','unpaid_hold','default_rule','card_fee']:['override','tld_settings','seller'];
+        $out=[];$names=$setup?['new_domain_dns','enroll_sandbox','configure','probe','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','late_renewal','processing','renew_early','renewal_billing','unpaid_hold','default_rule','card_fee']:['override','tld_settings','seller'];
         if($only!==null){$names=array_values(array_intersect($names,$only));}
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $id){
@@ -120,6 +121,10 @@ final class SettingsActions
                 $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))===null?'Enter prices to see what customers pay.':'Customer pays: '.PricingRule::describe($r))->key('formula');
                 if($name==='override'){$fields[]=\Filament\Schemas\Components\Html::make(fn($get)=>self::preview($tld,$entered($get)))->key('preview');}
                 else{$fields[]=\Filament\Schemas\Components\Html::make(fn()=>new \Illuminate\Support\HtmlString(e(self::followers($server)).self::tldListLink($server)))->key('followers');}
+            }
+            if($name==='new_domain_dns'){
+                $fields[]=Select::make('dns_template')->label('DNS template')->options(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::where('enabled',true)->orderBy('name')->get()->filter(fn($p)=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($p))->pluck('name','id')->all())
+                    ->default(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($server)?->id)->placeholder(Account::where('server_id',$server)->value('registrar_key')==='enom'?'None: keep registrar defaults':'None: Finish setup needs customer nameservers');
             }
             if($name==='card_fee'){
                 $fee=self::cached(static function()use($server):array{try{return CardFee::read($server);}catch(\Throwable){return CardFee::DEFAULT;}});
@@ -198,7 +203,7 @@ final class SettingsActions
                     try{$data=[...$data,...self::saved($id,$server)];
                         if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp),'reason'=>self::SWITCH_REASON];}
                         $default=$name==='override'&&($data['pricing']??null)==='default';
-                        $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??'')));
+                        $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??($name==='new_domain_dns'?'New domain DNS template changed.':''))));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
                         Notification::make()->status(($summary['audit_failed']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
                                 $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
@@ -365,14 +370,14 @@ final class SettingsActions
     }
     private static function setupLabel(string $name,bool $connected): string
     {
-        return match(true){$name==='late_renewal'=>'Late renewal',$name==='processing'=>'Orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
+        return match(true){$name==='new_domain_dns'=>'Change',$name==='late_renewal'=>'Late renewal',$name==='processing'=>'Orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
             $name==='enroll_sandbox'=>'Connect NameSilo test account',$name==='probe'=>'Test connection',
             $name==='renewal_billing'=>'Edit schedule',$name==='unpaid_hold'=>'Edit unpaid hold',$name==='default_rule'=>'Edit default pricing',$name==='card_fee'=>'Edit card fee',default=>Review::ACTIONS[$name]??$name};
     }
     /** Dialog title: what the button does, as a question. */
     private static function setupHeading(string $name,bool $connected): string
     {
-        return match(true){$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
+        return match(true){$name==='new_domain_dns'=>'Default DNS template',$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
             default=>self::setupLabel($name,$connected).'?'};
     }
     private static function submitLabel(string $name,bool $connected): string
@@ -434,6 +439,10 @@ final class SettingsActions
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
     {
+        if($name==='new_domain_dns' && $error instanceof \DomainException && in_array($error->getMessage(),[
+            'Choose an enabled DNS template. Create or turn on a template under DNS templates first.',
+            'This DNS template needs at least two valid nameservers supported by this registrar. Edit it under DNS templates, then try again.',
+        ],true)){return $error->getMessage();}
         if($name==='tld_settings'&&$error instanceof \DomainException&&($text=self::termsRefusal($error->getMessage(),$data,$server,$tld))!==null){return $text;}
         if($name==='acceptance'&&$error->getMessage()==='Audit entry too large. Changes held.'){return 'That is too many changes for one save. Save fewer at a time. Nothing was saved.';}
         if($name==='card_fee'&&$error instanceof \InvalidArgumentException&&!in_array($error->getMessage(),['This percentage cannot cover the card fee. Lower the markup or card fee.','The calculated price is too large.'],true)){
