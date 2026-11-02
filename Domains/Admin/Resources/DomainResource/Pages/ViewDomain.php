@@ -50,7 +50,7 @@ class ViewDomain extends ViewRecord
     {
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d)); $progress=$this->managementProgress();
-        if (in_array('auth_code_email',$this->edits()['offered'],true) || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
+        if ($this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
         return $this->facts=DomainFacts::withProgress($facts,$progress);
     }
     protected function afterActionCalled(Action $action): void

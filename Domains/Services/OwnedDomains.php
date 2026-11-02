@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Invoice, User};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{PrivacyMode, Support};
+use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, PrivacyMode, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, NativeIntent, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain, RequestStatus, StatusPill};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ManagementProfiles;
@@ -77,6 +77,11 @@ final readonly class OwnedDomains
     /** Who gets the auth code email. */
     public static function authCodeRecipient(Domain $d): string
     { return $d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
+    /** The domain and registrar take this change at all, whatever a switch says right now. */
+    private static function supported(Domain $d, ?Capabilities $caps, string $cap): bool
+    { return $d->status==='active' && $d->service?->status==='active' && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported; }
+    public function offersAuthCode(Domain $d): bool
+    { try { return self::supported($d,$this->ports->forDomain($d)->capabilities(),'auth_code_email'); } catch (\Throwable) { return false; } }
     public function present(Domain $d, bool $forms = true): OwnedDomain
     {
         if ($d->adoptionPending()) {
@@ -86,7 +91,7 @@ final readonly class OwnedDomains
                 Account::where('server_id',$d->server_id)->value('environment')==='test', setupPending:true, statusReason:$pill['reason'], demo:DemoData::is($d));
         }
         $op=$this->operation($d); $obs=$d->observation??[]; $service=$d->service;
-        $renewalState=RenewalStop::read($d);$policy=$renewalState['policy'];$offered=[];
+        $renewalState=RenewalStop::read($d);$policy=$renewalState['policy'];
         $actions=['show'=>route('domains.domains.show',$d->id),'setupSave'=>route('domains.domains.setup-save',$d->id),'contactsSave'=>route('domains.domains.contacts-save',$d->id),'codeSave'=>route('domains.domains.code-save',$d->id)]; $management=[]; $caps=null;
         try { $caps=$this->ports->forDomain($d)->capabilities(); } catch (\Throwable) {}
         $closed=self::closed($service?->status,$service&&($service->cancellation||NativeIntent::where('service_id',$service->id)->exists()));
@@ -168,8 +173,7 @@ final readonly class OwnedDomains
             $labels=['glue'=>'Glue records','nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
             foreach ($labels as $cap=>$label) {
-                $supported=$d->status==='active' && $service?->status==='active' && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported;
-                if ($supported) { $offered[]=$cap; }
+                $supported=self::supported($d,$caps,$cap);
                 if ($policy!==null && ($cap!=='contacts'||$contacts!==null) && $supported && !RenewalStop::blocksExisting($renewalState) && !($policy['automatic_spend_paused']??false)) { $management[$cap]=['label'=>$label]; }
             }
             if (isset($management['privacy'])) { $management['privacy']['free']=$caps->privacy===PrivacyMode::Free;
@@ -251,7 +255,7 @@ final readonly class OwnedDomains
         if ($service) { $actions['autoPay']=route('services.show',$service->id).'#auto-pay'; }
         try { $dnsCorrection=RegistrationDns::pending($op,$d); } catch (\Throwable) { $dnsCorrection=false; }
         return new OwnedDomain($d->domain,$pill['label'],$pill['tone'],$d->provider_expires_at?->format('Y-m-d'),$renewal,$price,
-            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, changesRefused:$unavailable?$refused:null, offered:$offered, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
+            $actions,$progress,$setup,$transfer,$management,$test,$unavailable,$renewalDue, changesRefused:$unavailable?$refused:null, adopted:$adopted, plannedRenewalDue:$plannedDue, history:$history, renewalInvoice:$renewalInvoice, originalDoNotRenew:$adopted && RenewalStop::adopted($renewalState),
             order:$order, autoPay:$policy!==null&&RenewalAutoPay::ready($service), renewNow:$policy===null?[]:$renewNow,
             renewalOff:$renewal==='Off'?RenewalStop::offReason($renewalState):null,
             autoRenew:$forms&&OwnerAutoRenew::available($renewalState)?['url'=>route('domains.domains.auto-renew',$d->id),'enabled'=>!RenewalStop::ownerOff($renewalState)]:[],
