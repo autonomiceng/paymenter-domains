@@ -23,6 +23,8 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 tldPanel();$staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
+// Saving a global setting reloads Paymenter settings from the table, so what these pages read must be rows.
+foreach(['default_currency'=>'USD','theme'=>'default'] as $key=>$value){App\Models\Setting::updateOrCreate(['key'=>$key,'settingable_type'=>null,'settingable_id'=>null],['value'=>$value]);}
 $server=Server::create(['name'=>'Synthetic TEST catalogue','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $settings=app(StaffSettingsWrites::class);$bindings=app(AccountBindings::class);$front=app(Storefront::class);
 $review=static function(string $action,?int $tld=null)use($server,$staff):Review {
