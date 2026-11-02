@@ -18,6 +18,8 @@
         .domains-sell-table .fi-ta-table td,.domains-sell-table .fi-ta-table th{white-space:nowrap}
         .domains-sell-table .fi-ta-table>thead>tr,.dark .domains-sell-table .fi-ta-table>thead>tr{background:none}
         .fi-header-subheading .domains-help-beside{margin-inline:0 .875rem}
+        /* With more than one group on, cells are 12px apart as in the mock, so every group fits a 1440 screen. The rules below keep the 20px edge. */
+        .domains-sell-table :where(.fi-ta-table:has(.fi-ta-header-group-cell ~ .fi-ta-header-group-cell)) :is(th.fi-ta-header-cell,td .fi-ta-text){padding-inline:12px}
         /* One edge with or without ticks: a text cell's own padding makes it, so the head and a tick box line up with it. */
         .domains-sell-table .fi-ta-table tr>:first-child{padding-inline-start:var(--domains-sell-edge)}.domains-sell-table .fi-ta-table tr>:last-child{padding-inline-end:var(--domains-sell-edge)}
         .domains-sell-table .fi-ta-table>*>tr>.fi-ta-cell.fi-ta-selection-cell:first-child:not(:has(.fi-ta-text)){padding-inline-start:var(--domains-sell-edge)}
