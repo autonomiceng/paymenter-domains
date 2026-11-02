@@ -9,6 +9,7 @@ use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,WhatYouSell};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -33,6 +34,7 @@ $calls=static fn()=>count($GLOBALS['catalogueCalls']);
 $row=static fn(string $tld)=>SellRow::where(['server_id'=>$server->id,'tld'=>$tld])->sole();
 $select=static fn($page,string ...$tlds)=>$page->selectTableRecords(SellRow::where('server_id',$server->id)->whereIn('tld',$tlds)->pluck('id')->all());
 $rule=static function($page,array $data)use($staff){$page->callAction('rule',$data);return $page;};
+$footer=static fn($page)=>array_values(array_map(fn($action)=>$action->getLabel(),$page->instance()->getMountedAction()->getModalFooterActions()));
 
 // An account that is not connected gets a way forward, and no read.
 $before=$calls();
@@ -54,16 +56,17 @@ Livewire::actingAs($staff)->test(ListTlds::class)->assertSee('Choose what you se
 
 // Opening the page, empty or full, never talks to the registrar.
 $before=$calls();
-$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('No prices yet')->assertSee('use Sync now')->assertActionVisible('sync_now');
+$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('No prices yet')->assertSee('use Sync prices')->assertActionVisible('sync_now');
 same(0,$calls()-$before,'Opening an empty page sends nothing');
-// A bound TLD can outlive its acceptance and sales row; Edit terms must explain how to load it.
+// A bound TLD can outlive its acceptance and sales row; the page must explain how to load it.
 CatalogueAcceptances::save($binding,0,[]);
 $unpriced=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'com','enabled'=>false]);
 expect(!isset(CatalogueAcceptances::load($binding)->endings['com'])&&!SellRow::where('server_id',$server->id)->where('tld','com')->exists(),'The bound TLD has neither acceptance nor a sales row');
 $detail=Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$unpriced->id])->assertActionVisible('tld_settings');
 $url=$detail->instance()->getAction('tld_settings',false)->getUrl();parse_str(parse_url($url,PHP_URL_QUERY),$missingQuery);
-Livewire::withQueryParams($missingQuery)->actingAs($staff)->test(WhatYouSell::class)->assertSet('tableSearch','com')->assertCountTableRecords(0)
-    ->assertActionVisible('sync_now')->assertSee('This TLD has no prices here yet. To load them, use Sync now.');
+Livewire::withQueryParams($missingQuery)->actingAs($staff)->test(WhatYouSell::class)->assertSet('tableSearch','com')->assertCountTableRecords(1)
+    ->assertTableColumnStateSet('status','Not for sale',(string)-$unpriced->id)->assertActionVisible('sync_now');
+Livewire::withQueryParams(['tld'=>'nothing'])->actingAs($staff)->test(WhatYouSell::class)->assertCountTableRecords(0)->assertSee('This TLD has no prices here yet. To load them, use Sync prices.');
 Livewire::withQueryParams([]);$unpriced->delete();
 // A sync driver cannot accidentally put a long registrar read back on the web request.
 config(['queue.default'=>'sync','queue.connections.sync.driver'=>'sync']);
@@ -87,24 +90,65 @@ same(false,str_contains(json_encode($row('com')->prices),'99.00'),'No retail val
 
 // The full page spends nothing either, shows where prices came from, and leaves out hidden TLDs.
 $before=$calls();
-$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices from '.gmdate('M j, Y H:i',(int)PriceFill::last($binding)->filled_at).' UTC')
+expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->instance()->getTable()->getColumnManagerApplyAction()->getAlpineClickHandler(),'close()'),'Apply columns closes the column menu');
+expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->instance()->getTable()->getFiltersApplyAction()->getAlpineClickHandler(),'$wire.applyTableFilters(); close()'),'Apply filters still applies, then closes the menu');
+expect(str_contains(Livewire::actingAs($staff)->test(ListTlds::class)->instance()->getTable()->getFiltersApplyAction()->getAlpineClickHandler(),'close()'),'One hook closes it on every table');
+$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices from')->assertSee(Carbon\CarbonImmutable::createFromTimestamp((int)PriceFill::last($binding)->filled_at)->format('M j, Y, g:i A T'))
     ->assertSee('.com')->assertSee('.org')->assertSee('.com.au')->assertSee('.trading')->assertSee('No cost yet')->assertCanNotSeeTableRecords([$row('xyz'),$row('adult')])
-    ->assertSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
+    ->assertSee('8.95')->assertSee('Prices in USD for 1 year.')->assertDontSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
 same(0,$calls()-$before,'Opening a full page sends nothing');
+// The summary counts what is for sale, the title stays the section's, and no head button competes with the row buttons.
+$sale=static fn(SellRow $r,CatalogueAcceptance $accepted)=>SellRule::decide($r,SellRule::read($binding,$accepted))==='sell'&&in_array(1,$accepted->endings[$r->tld]['register']??[],true);
+$page->assertSee(SellRule::rows($binding)->get()->filter(fn(SellRow $r)=>$sale($r,CatalogueAcceptances::load($binding)))->count().' TLDs for sale.')->assertDontSee('TLDs selected');
+// A TLD the rule picks is not for sale until the account accepts a registration term for it.
+$trading=$row('trading');$trading->update(['choice'=>'sell']);$accepted=CatalogueAcceptances::load($binding);
+expect(!isset($accepted->endings['trading'])&&SellRule::decide($trading->fresh(),SellRule::read($binding,$accepted))==='sell','The rule picks .trading, and no term is accepted');
+$forSale=SellRule::rows($binding)->get()->filter(fn(SellRow $r)=>$sale($r,$accepted))->count();
+Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee($forSale.' TLDs for sale.')->assertDontSee(($forSale+1).' TLDs for sale.');$trading->update(['choice'=>null]);
+same('TLDs & pricing',$page->instance()->getTitle(),'Both tabs keep the title');same('gray',$page->instance()->getAction('rule',false)->getColor(),'Default for new TLDs is a quiet button');
+$html=$page->html();expect(preg_match('~<th\b[^>]*domains-sell-register~',$html)&&preg_match('~<td\b[^>]*domains-sell-register~',$html)&&preg_match('~<td\b[^>]*domains-sell-status~',$html),'Group columns carry the class their rules hang on');
+// The panel skin sets its table class first, and this page must add to it.
+\Filament\Tables\Table::configureUsing(static fn($table)=>$table->extraAttributes(['class'=>'panel-skin']));
+expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->html(),'domains-sell-table panel-skin'),'The page keeps the skin table class');
 // An unpublished TLD uses its saved custom rule for both retail and profit estimates.
 $custom=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'org',
     'use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>'99.00','fixed_renew'=>'99.00','fixed_transfer'=>'99.00']);
-Livewire::actingAs($staff)->test(WhatYouSell::class)->assertTableColumnStateSet('price','USD 99.00',$row('org'))->assertTableColumnStateSet('profit','USD 85.82',$row('org'));
+Livewire::actingAs($staff)->test(WhatYouSell::class)->assertTableColumnStateSet('register_price','99.00',$row('org'))->assertTableColumnStateSet('register_profit','85.82',$row('org'));
 $custom->delete();
+// No row vanishes: a saved TLD shows here though the registrar no longer lists it, or it is hidden, and saves stay off those rows.
+$gone=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'gone']);
+$hiddenSaved=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'xyz']);
+$table=Livewire::actingAs($staff)->test(WhatYouSell::class)->set('tableRecordsPerPage',100);
+$shown=fn()=>collect($table->instance()->getTableRecords()->items())->pluck('tld')->all();
+expect(array_diff(array_map(fn(array $r)=>ltrim($r['tld'],'.'),app(PriceList::class)->read()['rows']),$shown())===[],'Every saved TLD shows');
+expect(array_diff(SellRow::where('server_id',$server->id)->whereNotIn('tld',['xyz','adult'])->pluck('tld')->all(),$shown())===[],'Every registrar row shows');
+$table->assertTableColumnStateSet('status','Not for sale',(string)-$gone->id)->assertTableColumnStateSet('status','Not for sale',$row('xyz'))->assertCanNotSeeTableRecords([$row('adult')])
+    ->assertDontSee('Edit terms');
+$cell=fn(string $column,string $id)=>$table->instance()->getTable()->getColumn($column)->record($table->instance()->getTableRecord($id));
+foreach([[(string)-$gone->id,"The registrar doesn't list this TLD."],[(string)$row('xyz')->id,'This TLD is hidden.']] as [$id,$reason]){
+    expect(!$table->instance()->getTable()->isRecordSelectable($table->instance()->getTableRecord($id)),'A row that cannot be edited has no tick');
+    same($reason,$cell('status',$id)->getTooltip(),'The row says why it has no tick');
+}
+// The way out of a row is its own TLD page; a row nothing is saved for has no page yet.
+same(TldResource::getUrl('view',['record'=>$gone->id]),$cell('tld',(string)-$gone->id)->getUrl(),'A saved TLD opens its page');
+same(null,$cell('tld',(string)$row('org')->id)->getUrl(),'A row with nothing saved has no link');
+$before=SellRow::where('server_id',$server->id)->count();$table->selectTableRecords([-$gone->id])->assertTableBulkActionVisible('edit');
+same($before,SellRow::where('server_id',$server->id)->count(),'Reading a saved TLD adds no sales row');
+expect(!$table->instance()->getTable()->isRecordSelectable($table->instance()->getTableRecord((string)-$gone->id)),'A row the registrar dropped has no tick');
+$gone->delete();$hiddenSaved->delete();
 // Profit shows cents. A card fee gives the stored figure more digits than that.
 $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>'2.9','fixed'=>'0.30']]);
 $html=Livewire::actingAs($staff)->test(WhatYouSell::class)->html();$server->settings()->where('key',CardFee::KEY)->delete();
-expect(preg_match('/USD -?[\d,]+\.\d{2}\b/',$html)===1&&preg_match('/USD -?[\d,]+\.\d{3}/',$html)===0,'Profit shows two decimals');same('2.05',PriceList::profit('2.0524'),'Display rounds, the saved figure stays');
+expect(preg_match('/>\s*-?[\d,]+\.\d{2}\s*</',$html)===1&&preg_match('/>\s*-?[\d,]+\.\d{3}\s*</',$html)===0,'Profit shows two decimals');same('2.05',PriceList::profit('2.0524'),'Display rounds, the saved figure stays');
 foreach(['independently verified','Purchase route','new import','25-second','resellertest','Verified','Reason','More years'] as $word){$page->assertDontSee($word);}
 same(0,preg_match('/\bendings?\b/i',strip_tags(preg_replace('/<(script|style)\b.*?<\/\1>/si','',$page->html()))),'The screen says TLD, never the other word');
 $page->set('tableSearch','.co')->assertCanSeeTableRecords([$row('com')])->assertCanNotSeeTableRecords([$row('org')]);$page->set('tableSearch','');
 $page->filterTable('country')->assertCanSeeTableRecords([$row('com.au')])->assertCanNotSeeTableRecords([$row('trading')]);$page->filterTable('country',false);
 $page->filterTable('no_cost')->assertCanSeeTableRecords([$row('trading')])->assertCanNotSeeTableRecords([$row('org')]);$page->filterTable('no_cost',false);
+// An empty result says so and offers the way back. Prices are read, so it never says to sync.
+$clear=\Filament\Actions\Testing\TestAction::make('clear')->table();
+$page->set('tableSearch','nothing')->assertSee('No TLDs match')->assertDontSee('use Sync prices')->callAction($clear)->assertSet('tableSearch','')->assertCanSeeTableRecords([$row('com')]);
+$page->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('use Sync prices')->assertDontSee('left out')->callAction($clear)->assertCanSeeTableRecords([$row('com')]);
 
 // Each daily fill reads buckets and the catalogue: new unpriced TLDs must appear too.
 $before=$calls();$fill->daily($account);same(0,$calls()-$before,'Not due yet: Sync now counts as today');
@@ -200,13 +244,13 @@ $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],['choice'=>'s
 
 
 // Longest term: one number. Terms the registrar switched off stay out, and a TLD with an exception keeps it.
-$page->callTableAction('edit_terms',$row('net'),['longest'=>10,'transfer'=>true]);
+$select($page,'net')->callTableBulkAction('edit',[$row('net')->id],['longest'=>'10','transfer'=>'on']);
 same(10,$row('net')->longest,'An exception is kept on its row');
 same(['net'=>['old'=>['choice'=>null,'longest'=>null,'transfer'=>null],'new'=>['choice'=>null,'longest'=>10,'transfer'=>null]]],$audited($server->id)['input']['rows'],'Audit records a term, even when the saved list stays the same');
 $select($page,'net')->callTableBulkAction('edit',[$row('net')->id],['choice'=>'sell'])->assertNotified('Saved');
 same([1,2,3,4],CatalogueAcceptances::load($binding)->endings['net']['register'],'Years past the last offered bucket stay out');
 same([],CatalogueAcceptances::load($binding)->endings['net']['transfer'],'No transfer without a transfer cost');
-$page->callTableAction('edit_terms',$row('net'),['longest'=>1,'transfer'=>true]);
+$select($page,'net')->callTableBulkAction('edit',[$row('net')->id],['longest'=>'1','transfer'=>'on']);
 same(null,$row('net')->longest,'Matching the rule clears the exception');
 
 // Sell new TLDs: everything nobody set with a cost is saved.
@@ -230,10 +274,14 @@ $select($page,'org')->mountTableBulkAction('edit',[$row('org')->id])->assertForm
 $count=$saves();$page->setActionData(['transfer'=>'on','longest'=>(string)$threeYears])->callMountedAction()->assertNotified('Saved');
 same([3,true,'sell'],[$row('org')->longest,$row('org')->transfer,$row('org')->choice],'Bulk edit lands both fields and keeps the row choice');same($count+1,$saves(),'Bulk edit is one audited save');
 $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],[])->assertNotified('No changes');same($count+1,$saves(),'Leave as is saves nothing');
-$page->callTableAction('edit_terms',$row('org'),['longest'=>1,'transfer'=>false]);
+// One tick is how a single row is edited, so the dialog says what that TLD has now.
+$select($page,'org')->mountTableBulkAction('edit',[$row('org')->id]);same('Edit .org',$page->instance()->getMountedAction()->getModalHeading(),'One ticked row reads as one TLD');same(['Cancel','Save'],$footer($page),'Edit selected reads Cancel, then Save');
+$page->assertFormFieldExists('longest',fn($field)=>in_array('Leave as is (3 years)',$field->getOptions(),true))->assertFormFieldExists('transfer',fn($field)=>in_array('Leave as is (On)',$field->getOptions(),true))->callMountedAction()->assertNotified('No changes');
+$select($page,'org')->callTableBulkAction('edit',[$row('org')->id],['longest'=>'1','transfer'=>'off']);
 
 // A saved 'all' ignored Don't sell, so it reads as Yes and its first save keeps the same TLDs on sale.
 Server::findOrFail($server->id)->settings()->updateOrCreate(['key'=>SellRule::KEY],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'all','max_cost'=>'100','years'=>1,'transfers'=>false]]);
+same(['Cancel','Save'],$footer(Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')),'Default for new TLDs reads Cancel, then Save');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')->assertSchemaStateSet(['sell_new'=>'yes'],'mountedActionSchema0')->callMountedAction()->assertNotified('Saved');
 same(['except',null],[SellRule::read($binding,null)['mode'],$row('com.au')->choice],'Saved all converts once');expect(isset(CatalogueAcceptances::load($binding)->endings['com.au']),'Conversion keeps what all was selling');
 $select($page,'com.au')->callTableBulkAction('edit',[$row('com.au')->id],['choice'=>'skip'])->assertNotified('Saved');
@@ -269,12 +317,12 @@ same($stale,CatalogueAcceptances::load($binding)->revision,'A stale save writes 
 
 // The same for a skipped row, where only the row changes. A price read in between stops nobody.
 $mine=Livewire::actingAs($staff)->test(WhatYouSell::class);$revision=CatalogueAcceptances::load($binding)->revision;
-Livewire::actingAs($staff)->test(WhatYouSell::class)->callTableAction('edit_terms',$row('com.au'),['longest'=>5,'transfer'=>false])->assertNotified('Saved');
+$select(Livewire::actingAs($staff)->test(WhatYouSell::class),'com.au')->callTableBulkAction('edit',[$row('com.au')->id],['longest'=>'5','transfer'=>'off'])->assertNotified('Saved');
 same($revision,CatalogueAcceptances::load($binding)->revision,'Only the row changed');
-$mine->callTableAction('edit_terms',$row('com.au'),['longest'=>2,'transfer'=>false])->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body('Someone else changed this account. Check the list and try again.'));
+$select($mine,'com.au')->callTableBulkAction('edit',[$row('com.au')->id],['longest'=>'2','transfer'=>'off'])->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body('Someone else changed this account. Check the list and try again.'));
 same(5,$row('com.au')->longest,'A stale row edit overwrites nothing');
 $mine=Livewire::actingAs($staff)->test(WhatYouSell::class);$fill->run($account);
-$mine->callTableAction('edit_terms',$row('com.au'),['longest'=>2,'transfer'=>false])->assertNotified('Saved');same(2,$row('com.au')->longest,'A price read does not make a save stale');
+$select($mine,'com.au')->callTableBulkAction('edit',[$row('com.au')->id],['longest'=>'2','transfer'=>'off'])->assertNotified('Saved');same(2,$row('com.au')->longest,'A price read does not make a save stale');
 
 // A save from before this screen has no order setup. Any save catches up, and reads nothing.
 $accepted=CatalogueAcceptances::load($binding);
@@ -289,6 +337,13 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$old->id])-
     ->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid-2','token'=>'catalogue-token','reason'=>'Connect synthetic blank'])->callMountedAction()->assertHasNoActionErrors();
 $oldBinding=CatalogueAcceptances::binding(Account::where('server_id',$old->id)->sole());
 CatalogueAcceptances::save($oldBinding,0,['org'=>['register'=>[1,3],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
+// All accounts only reads: the saved list shows as sold, with its terms, and nothing is written.
+$sellRows=DB::table(SellTableSchema::ROWS)->orderBy('id')->get()->toJson();$before=$calls();
+$all=Livewire::actingAs($staff)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL)->set('tableRecordsPerPage',100);
+$projected=collect($all->instance()->getTableRecords()->items())->first(fn(SellRow $r)=>(int)$r->server_id===$old->id&&$r->tld==='org');
+expect($projected!==null,'All accounts shows a sold TLD with no sales row yet');
+same(['Waiting for prices','Up to 3 years'],array_map(fn(string $c)=>$all->instance()->getTable()->getColumn($c)->record($projected)->getState(),['status','terms']),'It reads as sold, with its terms');
+same($sellRows,DB::table(SellTableSchema::ROWS)->orderBy('id')->get()->toJson(),'All accounts writes no sales row');same(null,SellRule::saved($oldBinding),'All accounts saves no rule');same($before,$calls(),'All accounts reads nothing from the registrar');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$old->id]);
 same('only',SellRule::read($oldBinding,CatalogueAcceptances::load($oldBinding))['mode'],'A saved list means only these');
 $kept=SellRow::where(['server_id'=>$old->id,'tld'=>'org'])->sole();same(['sell',3,true],[$kept->choice,$kept->longest,$kept->transfer],'Its row copies what is sold');
@@ -309,6 +364,10 @@ $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],['choice'=>'s
 same(['register'=>[],'renew'=>[1],'transfer'=>[],'registry'=>false,'renewal_safe'=>true],CatalogueAcceptances::load($binding)->endings['org'],'Holders keep renewals');
 $page->assertSee('Renewals only');
 config(['domains.hidden_endings'=>['org']]);Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$server->id])->assertSee('.org')->assertSee('Renewals only');config(['domains.hidden_endings'=>['.XYZ','adult']]);
+// Transfers still taken are part of the label.
+$accepted=CatalogueAcceptances::load($binding);CatalogueAcceptances::save($binding,$accepted->revision,['org'=>['register'=>[],'renew'=>[1],'transfer'=>[1],'registry'=>false,'renewal_safe'=>true]]+$accepted->endings);
+Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$server->id])->assertTableColumnStateSet('status','Renewals and transfers only',$row('org'));
+CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,$accepted->endings);
 
 // The checklist links here.
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
@@ -341,4 +400,8 @@ same(60,$entry['input']['counts']['rows'],'A long batch records its count');expe
 $queries=static function(int $perPage)use($page):int{DB::enableQueryLog();DB::flushQueryLog();$page->set('tableRecordsPerPage',$perPage);$count=count(DB::getQueryLog());DB::disableQueryLog();return $count;};
 $queries(100);$fifty=$queries(50);same($fifty,$queries(100),'Queries do not grow with rows');echo "Page render: $fifty queries\n";
 $page->assertSee('Waiting for prices');
+// NameSilo has no term to choose, so one row's dialog keeps Longest term hidden too.
+require_once __DIR__.'/Support/accounts.php';$silo=fixtureAccount((int)Server::max('id')+1,'namesilo','sell-one-row');
+$siloRow=SellRow::create(['server_id'=>$silo['server_id'],'account_fingerprint'=>$silo['account_fingerprint'],'tld'=>'com','register_cost'=>'10.0000','renew_cost'=>'10.0000']);
+Livewire::withQueryParams(['account'=>$silo['server_id']])->actingAs($staff)->test(WhatYouSell::class)->selectTableRecords([$siloRow->id])->mountTableBulkAction('edit',[$siloRow->id])->assertFormFieldExists('transfer')->assertFormFieldDoesNotExist('longest');
 echo "What you sell passed.\n";$nativeSuccessful=true;

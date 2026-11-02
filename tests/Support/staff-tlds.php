@@ -14,6 +14,7 @@ function tldPanel(): void
     // The Registrars list reads balances; bind the clock as Services/Runtime.php does when nothing else did.
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->singleton(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,\Paymenter\Extensions\Servers\Domains\Data\SystemClock::class);}
     \Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__,2).'/Domains/resources/views');
+    \Paymenter\Extensions\Servers\Domains\Admin\Support\SellToolbar::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\TableMenus::boot();
     staffPanel();$panel=Filament::getCurrentPanel();$panel->resources([TldResource::class])->pages([RegistrarSetup::class,RegistrarAccount::class,WhatYouSell::class]);
     Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(function()use($panel){
         Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){TldResource::registerRoutes($panel);RegistrarSetup::registerRoutes($panel);RegistrarAccount::registerRoutes($panel);WhatYouSell::registerRoutes($panel);});

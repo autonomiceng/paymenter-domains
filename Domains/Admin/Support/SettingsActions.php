@@ -407,7 +407,7 @@ final class SettingsActions
                 'register_allowed'=>$renewable&&$register!==[],'transfer_allowed'=>$renewable&&in_array(1,$row['transfer']??[],true)];
         }catch(\Throwable){return null;}
     }
-    /** The real reason an Edit terms change was refused, in plain words; null leaves the shared guidance. */
+    /** The real reason a change to a TLD's terms was refused, in plain words; null leaves the shared guidance. */
     private static function termsRefusal(string $message,array $data,int $server,?int $tld): ?string
     {
         $a=self::allowedTerms($server,$tld);$ending=isset($a['ending'])?'.'.$a['ending']:'this TLD';
