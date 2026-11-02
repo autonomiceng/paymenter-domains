@@ -27,10 +27,10 @@ final class OfferSchema
     /** Include exactly the retained additive columns in the original schema verifiers. */
     public static function retained(Blueprint $table, string $name): void
     {
-        OfferWorkSchema::retained($table, $name);
         foreach (self::COLUMNS[$name] as $column => $type) {
             if (Schema::hasColumn($name, $column)) { self::column($table, $column, $type); }
         }
+        OfferWorkSchema::retained($table, $name);
     }
 
     private static function column(Blueprint $t, string $name, string $type): void
