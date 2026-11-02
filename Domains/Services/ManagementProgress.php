@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 /** Stored state only. Shared by both controls and the owner status endpoint. */
 final class ManagementProgress
@@ -35,6 +36,7 @@ final class ManagementProgress
                     $pending=>'Saving…',
                     $op->state==='succeeded' && $op->action==='auth_code_email'=>'Email request accepted. Check the '.($d->registrar_key==='namesilo'?'admin contact email':'registrant email').'.',
                     $op->state==='succeeded' && $op->action==='contact_profile'=>'Details approved. Use the approved details to finish.',
+                    $op->state==='succeeded' && $op->action==='nameservers' && self::nameserversChanged($op,$d)=>'Nameservers changed after this request. Check them and change them if needed.',
                     $op->state==='succeeded'=>'Saved.',
                     $op->safe_code==='management_retired'=>'Replaced by your latest choice.',
                     default=>($op->action==='auth_code_email'?'The auth code email request failed.':'The '.strtolower(['lock'=>'Transfer lock','nameservers'=>'Nameservers','contacts'=>'Contacts','contact_profile'=>'Contacts','dns'=>'DNS records','srv'=>'DNS records'][$op->action]??'change').' change failed.').' Try again. If it keeps happening, contact support.',
@@ -49,5 +51,14 @@ final class ManagementProgress
             if(!isset($priorities[$key]) || $priority>$priorities[$key]){$rows[$key]=$row;$priorities[$key]=$priority;}
         }
         return $rows;
+    }
+    private static function nameserversChanged(Operation $op, Domain $d): bool
+    {
+        $current=ObservationProjection::nameservers($d);$read=ManagementReadRecovery::latest($op);
+        $saved=NameserverEvidence::fromArray(['nameservers'=>$read['facts']['nameservers']??null,'state'=>'observed',
+            'source'=>$d->registrar_key==='enom'?'enom_getdns':'namesilo_domain_info','at'=>$read['at']??null]);
+        if(!$current || $current->state!=='observed' || !$saved || new \DateTimeImmutable($current->at)<=new \DateTimeImmutable($saved->at)){return false;}
+        $before=$saved->nameservers;$after=$current->nameservers;sort($before);sort($after);
+        return $before!==$after;
     }
 }

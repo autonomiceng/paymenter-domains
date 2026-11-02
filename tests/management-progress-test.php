@@ -8,7 +8,7 @@ require __DIR__.'/Support/staff-panel.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagementForms,ManagementProgress,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagementForms,ManagementProgress,ManagementReadRecovery,ObservationProjection,OwnedDomains,OwnerPorts};
 [$d,$driver]=$holding(placeholderComFixtureName('pending-control-placeholder.com'),
     \Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed(['ns1.example.net','ns2.example.net'],'enom_getdns',$clock->now()));
 $op=$submit($d,$driver,'lock',['locked'=>false]);
@@ -99,6 +99,27 @@ $value=$xpath->query('//*[@id="nameservers"]/*[contains(@class,"domains-row__v")
 expect($value!==null && str_contains($value->textContent,'ns1.example.net') && str_contains($value->textContent,'ns2.example.net'),'Pending row keeps both confirmed nameservers visible');
 $status=$xpath->query('.//*[@data-management-pending="nameservers"]',$value)->item(0);
 expect($status!==null && !str_contains($status->textContent,'ns1.example.net'),'Polling updates only the status, preserving the confirmed nameservers');
+// A later registrar read can differ without changing the completed request's result.
+same('succeeded',$management->run($nameservers->id,$driver)->state,'Nameserver request completes');
+$saved=ManagementReadRecovery::latest($nameservers->fresh());$observation=$d->fresh()->observation;
+$later=(new DateTimeImmutable($saved['at']))->modify('+1 minute')->format(DATE_ATOM);
+$outside=['ns5.example.net','ns6.example.net'];
+$section=ObservationProjection::section($d,[...$saved,'at'=>$later,'facts'=>['nameservers'=>$outside]]);
+$d->update(['observation'=>[...$observation,'sections'=>[...$observation['sections'],'nameservers'=>$section]]]);
+$before=$state->calls;$changed='Nameservers changed after this request. Check them and change them if needed.';
+$rows=$controller->status($request,$d->id)->getData(true);
+same($changed,$rows['nameservers']['text'],'Newer differing nameservers must not be labelled Saved');
+$html=$controller->show($request,$d->id)->render();
+expect(str_contains($html,$changed) && str_contains($html,$outside[0]),'Owner sees current nameservers and what to do next');
+$page=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
+expect(str_contains($page->html(),$changed) && str_contains($page->html(),$outside[0]),'Staff sees the same current nameservers and next step');
+same('succeeded',$nameservers->fresh()->state,'Later observation keeps the request completed');
+same($before,$state->calls,'Comparing stored results performs no registrar calls');
+foreach ([['at'=>$saved['at']],['facts'=>['nameservers'=>['NS4.EXAMPLE.NET.','ns3.example.net']]],['generation'=>$d->authority_generation+1],['at'=>'invalid']] as $unchanged) {
+    $d->update(['observation'=>[...$observation,'sections'=>[...$observation['sections'],'nameservers'=>[...$section,...$unchanged]]]]);
+    same('Saved.',$controller->status($request,$d->id)->getData(true)['nameservers']['text'],'Only a newer valid differing read changes the status');
+}
+$d->update(['observation'=>$observation]);
 // Exhausted, definitely-unsent holds are resolved debt, so later requests can accumulate behind a stalled queued setting.
 Cache::flush();$queuedLock=$submit($d,$driver,'lock',['locked'=>false]);
 for($i=0;$i<100;$i++) {
