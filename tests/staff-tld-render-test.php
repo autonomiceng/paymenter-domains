@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,Registrar
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
-$out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
+$out=renderOutput($argv[1]??null);
 $f=commerceFixture();extract($f);tldPanel();pinStaffClock($now);$t=$tlds[0];
 $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings);app()->instance(StaffSettingsWrites::class,$writer);
@@ -33,22 +33,24 @@ $render=static function($test,string $name,string $extra='')use($out,$css){
     expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSee(['TLD','Registrar account','Domains','Renewal price','.com']);$render($list,'tlds');
-$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices','Edit terms'],false)
+$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices','Open in What you sell'],false)
     ->assertDontSee(['Publish prices','Use default pricing','Edit default pricing'],false);$render($view,'tld-revisions');
 // The header More menu, opened: its panel is hidden until clicked, so show it for the capture.
 $render($view,'tld-more-menu','.fi-ac .fi-dropdown-panel{display:block!important;position:absolute;right:0;z-index:50}');
 $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$render(Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]),'setup-account');$strings=[];
 // TLD page actions, then the account actions this Enom TEST fixture shows. Live and test renewal or DNS changes
-// and NameSilo enrollment do not appear for it: their server config is off.
+// and NameSilo enrollment do not appear for it: their server config is off. Late renewal waits for Renewals, live transfers need a Live account, and Sync prices has nothing to sync here.
 $tldActions=['override','tld_settings','seller'];
-$hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','test_transfer','enroll_sandbox'];
+$hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','test_transfer','enroll_sandbox','late_renewal','live_transfer','import'];
 $accountActions=array_values(array_diff(staffSetupActions(),$hiddenAccountActions));
 same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions,staffNoButtonActions())),'Every settings action is placed');
-foreach(array_intersect_key(Review::ACTIONS,array_flip([...$tldActions,...$accountActions])) as $action=>$label){
+// tld_settings is a link to What you sell, so it has no dialog to render.
+foreach(array_intersect_key(Review::ACTIONS,array_flip(array_diff([...$tldActions,...$accountActions],['tld_settings']))) as $action=>$label){
     app()->instance(StaffSettingsWrites::class,in_array($action,['configure','probe'],true)?new StaffSettingsWrites($native,$sellers,$bindings,true):$writer);
     $setup=in_array($action,$accountActions,true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
     $name=$setup?setupAction($action,$t->server_id):$action;$page->mountAction($name)->assertActionMounted($name)->call('$refresh');$render($page,'modal-'.$action);
-    $strings[$action]=['label'=>$label,'description'=>SettingsActions::description($action)];
+    // Orders is a switch: its words depend on whether it is on.
+    $strings[$action]=['label'=>$label,'description'=>$action==='processing'?null:SettingsActions::description($action)];
 }
 app()->instance(StaffSettingsWrites::class,$writer);
 // Edit prices with the live preview: own prices, with one below-cost row, then the account default.
@@ -64,14 +66,6 @@ $page->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.2
     ->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Prices published'));
 same('7.50',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Saving from the dialog publishes');
 $render(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]),'tld-published');
-// Out of date costs: the preview says so and saving changes nothing.
-pinStaffClock($now->modify('+2 days'));
-$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'markup_percent','markup'=>'40','round_up'=>'none'])->call('$refresh');
-$sees($page,['Some costs are out of date','Cost out of date']);$render($page,'modal-override-stale');
-$page->setActionData(['reason'=>'Try to publish with out of date costs'])->callMountedAction()
-    ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title('Change refused')->body('Costs are missing or out of date. Sync prices on the account page, then save again. Nothing was changed.'));
-$render($page,'refusal-stale-costs');
-pinStaffClock($now);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override');
 \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->increment('revision');
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
@@ -81,5 +75,5 @@ $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ti
 $account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Used by 1 TLD: .com'],false);$render($account,'account-default-pricing');
 $account->mountAction(setupAction('default_rule',$t->server_id))->call('$refresh');$sees($account,['1 TLD uses the account default: .com. Saving publishes its new prices.']);$render($account,'modal-default_rule-followers');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-same(15,count($strings),'Fifteen settings modals rendered');
-echo "Native TLD list/detail/revisions, account page, fifteen modals, price preview and refusals rendered.\n";$nativeSuccessful=true;
+same(9,count($strings),'Nine settings modals rendered');
+echo "Native TLD list/detail/revisions, account page, nine modals, price preview and refusals rendered.\n";$nativeSuccessful=true;

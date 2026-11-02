@@ -1,5 +1,5 @@
 <?php
-// Edit terms and Sync prices say what this account allows; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Open in What you sell and Sync prices say what this account allows; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\Auth;
@@ -84,7 +84,7 @@ $setting=App\Models\Server::findOrFail($t->server_id)->settings()->where('key',C
 $setting->value='invalid';$setting->save();$t->fresh()->update(['renew_enabled'=>false]);
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSuccessful()->assertActionVisible('restore_sales');
 $setting->value=$savedAcceptance;$setting->save();$t->fresh()->update($flags);
-echo "Edit terms guidance passed.\n";
+echo "Terms guidance passed.\n";
 
 // W6: Sync prices names the endings it syncs and where to add more.
 config(['domains.enom_catalogue.enabled'=>true,'domains.enom_identity.environment'=>'test']);
