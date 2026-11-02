@@ -64,7 +64,7 @@ foreach ([0, 1] as $i) {
 }
 // Retained holder retail is per account even when another, cheaper account sells.
 $rules = new Paymenter\Extensions\Servers\Domains\Services\PricingRules;
-$rules->saveDefaultRule($tlds[0]->server_id, ['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',
+saveDefaultRule(['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',
     'fixed' => ['register' => '100.00', 'renew' => '40.00', 'transfer' => '100.00']], $prices->republish(...));
 scenarioSwitch($sellers, $clock, $tlds[1]->server_id);
 $holder = new HolderPricing($prices);

@@ -20,7 +20,7 @@ $write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
 $accepted=CatalogueAcceptances::load($binding);
 same('https://resellertest.enom.com/interface.asp',$accepted->registrationRoute,'Existing staff catalogue acceptance records the TEST Purchase route');
 same(25,$accepted->registrationIntervalSeconds,'Existing staff catalogue acceptance records the worker request interval');
-$write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
+saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);

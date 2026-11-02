@@ -21,7 +21,7 @@ DB::beginTransaction();
 try{
     foreach([$t,$other] as $index=>$ending){
         $server=App\Models\Server::findOrFail($ending->server_id);
-        $server->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
+        App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
         $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>(string)($index+2),'fixed'=>'0.30']]);
     }
     DB::table('domains_tlds')->where('id',$t->id)->update(['use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']);
@@ -59,13 +59,13 @@ foreach(['register','renew','transfer'] as $action){
     $saved=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>$action,'term'=>1])->sole();$cell=$row['prices'][$action];
     same(PriceCatalogue::retail($saved->retail),$cell['price'],'Retail equals the published revision');
     same(PriceCatalogue::cost($saved->wholesale),$cell['cost'],'Exact saved term cost');same($saved->revision,$cell['revision'],'Retained revision identity');
-    same(CardFee::profit($cell['price'],$cell['cost'],CardFee::read($t->server_id)),$cell['profit'],'Profit uses current account fee');
+    same(CardFee::profit($cell['price'],$cell['cost'],CardFee::read()),$cell['profit'],'Profit uses current account fee');
 }
 $three=$service->read(3,'all',$t->server_id)['rows'][0]['prices'];same('23.40',$three['register']['price'],'Exact saved three-year total');
 same(null,$three['renew']['price'],'No synthesized three-year renewal');same(null,$three['transfer']['price'],'No synthesized transfer');
 $two=$service->read(2,'all',$t->server_id)['rows'][0]['prices'];same(null,$two['register']['price'],'Missing registration term is never annual times years');
 // A rule edit without publication must not reprice the saved totals.
-App\Models\Server::findOrFail($t->server_id)->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_percent','markup'=>'80','round_up'=>'whole']]);
+App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_percent','markup'=>'80','round_up'=>'whole']]);
 same('7.80',$service->read(1,'all',$t->server_id)['rows'][0]['prices']['register']['price'],'Current rule does not recompute published price');
 // Distinct below-cost and fee-loss rows, plus Default and Custom pricing filters.
 DB::table('domains_tlds')->where('id',$other->id)->update(['use_default_rule'=>false,'pricing_mode'=>'markup_amount','markup'=>'1.25','round_up'=>'none']);
@@ -200,7 +200,7 @@ expect(str_contains($service->csv(1,'all',$t->server_id),"'=1+1"),'CSV neutraliz
 // A real publication distinguishes the correct account fee from two readers agreeing on stale rows.
 foreach([$t,$other] as $index=>$ending){
     $server=App\Models\Server::findOrFail($ending->server_id);
-    $server->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
+    App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
     $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>(string)($index+2),'fixed'=>'0.30']]);
     DB::table('domains_tlds')->where('id',$ending->id)->update(['use_default_rule'=>$index===1,'pricing_mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']);
     $native->publish($ending->id,$now,null,static fn(Tld $locked)=>null);

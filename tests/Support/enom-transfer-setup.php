@@ -37,7 +37,7 @@ $write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid
 if(isset($transferConfigured)){$transferConfigured();}
 $write('probe');
 $write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>true]]]);
-$write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);$write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
+saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);$write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);$write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>true],$tld->id);
 if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);}$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void{$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void{$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
