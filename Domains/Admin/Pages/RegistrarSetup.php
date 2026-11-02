@@ -42,7 +42,7 @@ class RegistrarSetup extends Page implements HasTable
         Staff::requireView();$components=[];
         if ($missing=ContactDetails::missingRequiredProperties()) {
             $open=self::resourceUrl(\App\Admin\Resources\CustomPropertyResource::class,'index');
-            $components[]=Callout::make("Customers can't enter ".implode(', ',$missing).'. Add them as custom properties.')->warning()->columnSpanFull()
+            $components[]=Callout::make("Customers can't enter ".implode(', ',$missing).' in Account. Add them as custom properties.')->warning()->columnSpanFull()
                 ->footer($open?new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open custom properties</x-filament::button>',['url'=>$open])):null);
         }
         return $schema->components([...$components,EmbeddedTable::make()]);

@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery,ContactSetup}
 foreach([false,true]as$invalid){
     contactProperty($user,'phone',$invalid?'private-value':'(206) 555-0100');$user->unsetRelation('properties');
     $name=reservedFixtureName('lifecycle-frozen-'.(int)$invalid.'.test');
-    $cart=commerceCart($user);commerceAdd($cart,$product,$name);commerceCheckout($user,$cart);
+    $cart=commerceCart($user);commerceAdd($cart,$product,$name);$invalid?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart);
     $row=Domain::where('domain',$name)->sole()->operations()->sole();$snapshot=$row->payload;$rawPayload=$row->getRawOriginal('payload');
     DB::table('invoices')->where('id',$row->invoice_id)->update(['status'=>'paid']);
     InvoiceTransaction::create(['invoice_id'=>$row->invoice_id,'amount'=>$row->amount,'status'=>'succeeded']);

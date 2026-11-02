@@ -17,6 +17,16 @@ final class ContactDetails
     public static function limits(string $registrar): array
     { return array_combine(self::FIELDS, $registrar === 'namesilo' ? self::NS_LIMITS : array_fill(0, count(self::FIELDS), 255)); }
 
+    /** Suggested codes for the countries whose registrar validation requires them. */
+    public static function stateCodes(string $country): array
+    {
+        return match ($country) {
+            'US' => explode(' ', 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AS GU MP PR VI'),
+            'CA' => explode(' ', 'AB BC MB NB NL NS NT NU ON PE QC SK YT'),
+            default => [],
+        };
+    }
+
     public static function collect(User $owner): array
     {
         $properties = $owner->properties()->whereIn('key', [...self::REQUIRED_PROPERTIES, 'company_name', 'address2'])->pluck('value', 'key');
@@ -59,8 +69,7 @@ final class ContactDetails
             if ($phone === null) { $errors[] = 'contacts.'.$role.'.phone'; }
             else { $row['phone'] = $phone; }
             if ($registrar === 'namesilo' && in_array($country, ['US', 'CA'], true)) {
-                $states = $country === 'US' ? 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AS GU MP PR VI' : 'AB BC MB NB NL NS NT NU ON PE QC SK YT';
-                if (!in_array($row['state_province'], explode(' ', $states), true)) { $errors[] = 'contacts.'.$role.'.state_province'; }
+                if (!in_array($row['state_province'], self::stateCodes($country), true)) { $errors[] = 'contacts.'.$role.'.state_province'; }
                 if ($phone === null || !preg_match('/^\+1\.([2-9][0-9]{2}[2-9][0-9]{6})$/D', $phone, $matches)) { $errors[] = 'contacts.'.$role.'.phone'; }
                 else { $row['phone'] = $matches[1]; }
             }

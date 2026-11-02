@@ -10,7 +10,19 @@ final class ContactSetup
 {
     private static bool $recovering = false;
 
-    /** Called synchronously at invoice binding using the locked checkout owner and TLD. */
+    /** New orders must be ready before native Cart creates its invoice. Legacy capture stays read-only. */
+    public static function forOrder(Tld $tld, #[\SensitiveParameter] array $contacts): array
+    {
+        $contacts = ContactDetails::validate($tld->registrar_key, $contacts);
+        if (!RegistryInputs::supported($tld->registrar_key, $tld->tld, $tld->registry_fields)) {
+            throw new \DomainException('Registry details are not supported for this order.');
+        }
+        RegistryInputs::validate($tld->registrar_key, $tld->tld, $tld->registry_fields, []);
+        return ['contacts'=>$contacts, 'registry'=>[], 'registry_schema'=>$tld->registry_fields,
+            'setup_required'=>false, 'setup_fields'=>[], 'registry_supported'=>true];
+    }
+
+    /** Read retained account details for legacy/review paths; new invoices use forOrder(). */
     public static function capture(User $owner, Tld $tld): array
     {
         $contacts = ContactDetails::collect($owner); $fields = [];

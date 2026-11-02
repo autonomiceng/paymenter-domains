@@ -35,8 +35,8 @@ foreach ([0,1] as $i) {
     $html=$controller->show($request($user),$d->id)->render();
     same([['label'=>'Contacts','state'=>'Under review','date'=>$op->fresh()->updated_at->toIso8601String()],['label'=>'Nameservers','state'=>'Under review','date'=>null]],$owners->present($d->fresh())->progress,'Correction readback never closes original');expect(str_contains($html,'Under review')&&!str_contains($html,'Completed'),'Correction rows render open');expect(!str_contains($html,'PRIVATE'),'No correction evidence leakage');
     $op->update(['state'=>'held','safe_code'=>'contact_details_required']);
-    expect(str_contains($controller->setup($request($user),$d->id)->render(),'Use updated account details'),'Held contact recovery affordance');
-    expect(str_contains($controller->setup($request($user),$d->id)->render(),'Edit account details</a>'),'Account edit link differs from the recovery heading');
+    expect(str_contains($controller->setup($request($user),$d->id)->render(),'Save details and continue'),'Held contact recovery affordance');
+    same(1,storefrontDom($controller->setup($request($user),$d->id)->render())->query('//input[@name="contact[address1]"]')->length,'Inline recovery includes the shared address field');
     Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['safe_code'=>'registry_details_unsupported']));
     expect(!$owners->present($d->fresh())->transfer['open'],'Unsupported held input remains closed');expect(!isset($owners->present($d->fresh())->actions['setup']),'Unsupported hold offers no impossible setup');
     Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(fn()=>$op->update(['state'=>'pending','safe_code'=>'transfer_pending']));

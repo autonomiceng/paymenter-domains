@@ -10,9 +10,10 @@
           "Domains/Services/CheckoutEligibility.php",
           "Domains/Services/CartCheckoutRefresh.php",
           "Domains/Services/WatchTransfer.php",
-          "Domains/Http/Controllers/WatchTransferController.php"
+          "Domains/Http/Controllers/WatchTransferController.php",
+          "Domains/Services/OrderContact.php"
         ],
-        "review": "Re-review outer transaction, ordered locks, event payloads, prices and atomic mixed-cart rollback. Verify Cart::add creates a new line and returns its id, synchronous admission events run the comparison guard, and failed handoff cleanup deletes only that new line. Verify the exact Cart lifecycle refreshes before mount/checkout locks, signed memo comparison stops price changes, and early return prevents order creation. Verify Cart::getOnce reads the cookie cart uncached and carts.user_id remains the owner for WatchTransfer::cartAction.",
+        "review": "Re-review outer transaction, ordered locks, event payloads, prices and atomic mixed-cart rollback. Verify Cart::add creates a new line and returns its id, synchronous admission events run the comparison guard, and failed handoff cleanup deletes only that new line. Verify the exact Cart lifecycle refreshes before mount/checkout locks, signed memo comparison stops price changes, and early return prevents order creation. Verify Cart::getOnce reads the cookie cart uncached and carts.user_id remains the owner for WatchTransfer::cartAction. Verify the exact native Cart checkout call exposes its input to the scoped call listener, forwards extra arguments without native signature changes, and returnEarly prevents invoice creation. Recheck request-local contact cleanup at outer transaction end and whole-contact validation before Order admission and InvoiceItem binding.",
         "files": {
           "vendor/livewire/livewire/src/Mechanisms/HandleComponents/HandleComponents.php": "1db85f3949a766bff3f62e51e3a7bc0363a337b3aae105baa7a75296fa2c52de",
           "vendor/livewire/livewire/src/Mechanisms/HandleComponents/ComponentContext.php": "81e0a9b5a6c809ae318ef5c1106baac967de6002479d0f51a8e873fe6fd40110",
@@ -39,7 +40,9 @@
           "app/Models/Order.php": "bf84e020f4ec611cf8c2a4645297e9ba8ddc145546f6fe9149c6a593253fcc33",
           "app/Observers/CartItemObserver.php": "80c4bb31c6fc702da35f18571e5fd11724934d2e71d247e809c008b8894a776d",
           "app/Observers/CartObserver.php": "3f6a715f6e087d443cd9d90b6002766f3d30ca4ebe9c39e3536925f1bd1ab6bc",
-          "app/Observers/OrderObserver.php": "bd94fee32d8e031140e00a661d81d89611ca9fca975356525160de083177fe7a"
+          "app/Observers/OrderObserver.php": "bd94fee32d8e031140e00a661d81d89611ca9fca975356525160de083177fe7a",
+          "vendor/livewire/livewire/src/Wrapped.php": "a40837a7a6267d73890fd16fadffc7db2e10167c93fefc0d2a199affefc01d90",
+          "vendor/livewire/livewire/src/ImplicitlyBoundMethod.php": "789d4a1e773ea6d09bf19ab43d2a58773e4f966f31b7f0952b7d11c13127e227"
         }
       },
       "funding-renewal": {
