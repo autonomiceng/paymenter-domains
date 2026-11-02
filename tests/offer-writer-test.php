@@ -70,10 +70,10 @@ DB::listen(static function ($q) use (&$nativeUpdates, &$lockQueries, &$captureLo
 $expected = $revision($b); $captureLocks = true;
 $writer->apply(Edit::republish($b, 'com'), $expected); $captureLocks = false;
 $positions = [];
-foreach (['categories', 'products', 'plans', 'prices', 'servers', 'domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices'] as $table) {
+foreach (['categories', 'products', 'plans', 'prices', 'extensions', 'domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices'] as $table) {
     foreach ($lockQueries as $i => $sql) { if (preg_match('/\bfrom\s+["`]?'.preg_quote($table, '/').'["`\s]/', $sql)) { $positions[] = $i; break; } }
 }
-same(9, count($positions), 'Every native/domain lock group is exercised: '.json_encode($lockQueries));
+same(9, count($positions), 'Every native/domain lock group is exercised');
 $sorted = $positions; sort($sorted); same($sorted, $positions, 'Native locks precede server, account, selection, offer and price locks');
 same([], $nativeUpdates, 'Unchanged native rows are not updated during republication');
 $stale = $revision($b); $apply(Edit::override($b, 'com', new Intent(sell: false)));
