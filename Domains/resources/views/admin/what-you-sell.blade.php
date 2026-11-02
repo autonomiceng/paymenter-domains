@@ -2,6 +2,7 @@
     <style>
         .domains-sell{display:grid;gap:1.5rem}
         .domains-sell-add{display:flex;gap:.75rem;align-items:center;max-width:24rem}.domains-sell-add .fi-input-wrp{flex:1}
+        .domains-sell-left{display:block}
         .domains-sell-choices{display:flex;flex-wrap:wrap;gap:.5rem}
         .domains-sell-note{padding:.5rem 20px;font-size:.8125rem;color:var(--gray-500)}.dark .domains-sell-note{color:var(--gray-400)}
         .domains-price-help{display:grid;gap:1rem;font-size:.875rem}
@@ -12,6 +13,8 @@
         /* One group needs no second header row. Filament would print it above a single Register. */
         .domains-sell-table .fi-ta-table-head-groups-row:not(:has(.fi-ta-header-group-cell ~ .fi-ta-header-group-cell)){display:none}
         .domains-sell-table .fi-ta-table td,.domains-sell-table .fi-ta-table th{white-space:nowrap}
+        .domains-sell-table .fi-ta-table>thead>tr,.dark .domains-sell-table .fi-ta-table>thead>tr{background:none}
+        .fi-header-subheading .domains-help-beside{margin-inline-end:.375rem}
         .domains-sell-table .fi-ta-table tr>:first-child{padding-inline-start:20px}.domains-sell-table .fi-ta-table tr>:last-child{padding-inline-end:20px}
         .domains-sell-table .fi-ta-selection-cell,.domains-sell-table .domains-sell-pin{position:sticky;left:0;z-index:1;background:var(--beco-card,Canvas)}
         .dark .domains-sell-table .fi-ta-selection-cell,.dark .domains-sell-table .domains-sell-pin{background:var(--beco-card,var(--gray-900))}
