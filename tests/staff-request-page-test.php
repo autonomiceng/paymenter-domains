@@ -171,6 +171,15 @@ $elsewhere=(clone $unsent)->forceFill(['registrar_key'=>'namesilo']);
 same(['title'=>$title,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info'],$told($elsewhere),'A retry that runs by itself asks nothing');
 $spent=(clone $elsewhere)->forceFill(['attempt'=>[...$claim,'management_deferrals'=>array_fill(0,5,'2026-10-30T00:00:00+00:00')]]);
 same(['title'=>$title,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'],$told($spent),'Spent tries send staff to the domain');
+// Orders off stop all queued work, so a queued request reads On hold on its page, in the list and on the domain's rail.
+$queued=$heldOp->fresh()->forceFill(['state'=>'queued','safe_code'=>null,'invoice_id'=>null,'funding_basis'=>'non_billable_management']);
+$orders=Paymenter\Extensions\Servers\Domains\Models\Account::where('account_fingerprint',$heldOp->account_fingerprint);
+$orders->update(['processing_enabled'=>true]);
+same('In progress',RequestFacts::status($queued)['label'],'Queued with Orders on is moving');
+$orders->update(['processing_enabled'=>false]);
+same(['On hold','warning','Not sent. Orders are off for this account.'],array_values(RequestFacts::status($queued)),'Queued with Orders off is stopped');
+same('On hold',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($queued,$heldOp->domain,true)['status']['label'],'The rail reads the same');
+same('In progress',RequestFacts::status($queued,false)['label'],'A list that knows Orders are on skips the check');
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');

@@ -66,6 +66,7 @@ $cases['redemption']=[$row('redemption','transfer','succeeded',null,-40),'redemp
 $cases['rejected']=[$row('registration_rejected','register','rejected','preflight_failed'),'failed','Failed','Registration did not finish.'];
 $cases['credited order']=[$row('registration_rejected','register','rejected','refund_approved',funding:['refund'=>['to'=>'account_credit']]),'cancelled','Cancelled','Order cancelled.'];
 $cases['cancelled order']=[$row('cancelled','register','disposed','acquisition_cancelled_unpaid'),'cancelled','Cancelled',null];
+$waiting=$row('something_new','nameservers','queued');$cases['unknown status with a request waiting']=[$waiting,'under_review','Under review','Status missing. Check request #'.$waiting->operations()->sole()->id.'.'];
 $unknown=$row('something_new','transfer','succeeded');$cases['unknown status']=[$unknown,'under_review','Under review','Status missing. Check request #'.$unknown->latestAcquisition->id.'.'];
 // An order reads as it does for the customer once its invoice is known. Paid orders keep only what the customer still owes.
 $invoiced=static function(Domain $d, string $status, ?int $owner=null): Domain {

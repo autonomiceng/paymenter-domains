@@ -200,7 +200,7 @@ final class DomainFacts
         [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
-        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal']);
+        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['stopped']);
     }
     /** The status reason, then the staff step, as sentences. */
     public static function statusLine(array $status): ?string

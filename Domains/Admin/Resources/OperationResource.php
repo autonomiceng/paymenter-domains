@@ -53,9 +53,9 @@ class OperationResource extends Resource
                 ->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainName::html((string)$state))
                 ->extraAttributes(['class'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainName::CELL]),
             TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
-            TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>Labels::requestStatus($record)['tone'])
-                ->extraAttributes(fn($record)=>StatusMark::attributes(Labels::requestStatus($record)['tone'],'request-'.$record->id))
-                ->formatStateUsing(fn($record)=>Labels::requestStatus($record)['label'])->wrap()
+            TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['tone'])
+                ->extraAttributes(fn($record)=>StatusMark::attributes(RequestFacts::status($record,in_array($record->server_id,$off))['tone'],'request-'.$record->id))
+                ->formatStateUsing(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['label'])->wrap()
                 ->description(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off))),
             TextColumn::make('created_at')->label('Created')->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($state->getTimestamp()))->sortable()->visibleFrom('lg'),
             TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)

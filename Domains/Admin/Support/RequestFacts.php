@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, CatalogueAcceptances, EnomTestManagement, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
@@ -139,6 +140,14 @@ final class RequestFacts
     {
         try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
+    }
+    /** A request's status. Orders off stop all queued work, so a queued request is On hold wherever it shows, not In progress. Lists pass $ordersOff as for reason(). */
+    public static function status(Operation $op, bool $ordersOff=true): array
+    {
+        $status=Labels::requestStatus($op);
+        if ($op->state!=='queued'||!$ordersOff) { return $status; }
+        try { $reason=self::readyMessage($op); } catch (\Throwable) { return $status; }
+        return $reason==='Not sent. '.self::ORDERS_OFF?[...RequestStatus::for('held'),'reason'=>$reason]:$status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string

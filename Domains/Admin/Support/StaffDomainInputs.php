@@ -13,8 +13,8 @@ final class StaffDomainInputs
     /** Renewal request states that still have a next step. */
     private const OPEN_RENEWAL=['awaiting_payment','queued','running','pending','held','uncertain'];
     /** @param iterable<Domain> $domains
-     * @return array<int,array{alerts:list<array{code:string,request:?int}>,late:bool,renewal:?Operation,off:?bool,invoice:?Invoice,closed:bool}> by domain id.
-     * off: automatic renewal is off, null when its saved data can't be read. invoice and closed: what OwnedDomains::order reads. */
+     * @return array<int,array{alerts:list<array{code:string,request:?int}>,late:bool,renewal:?Operation,off:?bool,invoice:?Invoice,closed:bool,stopped:?int}> by domain id.
+     * off: automatic renewal is off, null when its saved data can't be read. invoice and closed: what OwnedDomains::order reads. stopped: the newest request not moving by itself. */
     public static function for(iterable $domains): array
     {
         $domains=collect($domains); $ids=$domains->pluck('id')->all();
@@ -30,6 +30,7 @@ final class StaffDomainInputs
         $adoptionIds=$domains->pluck('adoption_id')->filter()->unique()->values()->all();
         $adoptions=$adoptionIds?Adoption::whereIn('id',$adoptionIds)->get()->keyBy('id'):collect();
         $invoices=Invoice::whereIn('id',$domains->map(fn(Domain $d)=>$d->latestAcquisition?->invoice_id)->filter()->unique()->all())->get(['id','user_id','status'])->keyBy('id');
+        $stopped=Operation::query()->whereIn('domain_id',$ids)->whereIn('state',['queued','held','uncertain'])->orderBy('id')->pluck('id','domain_id');
         $inputs=[];
         foreach ($domains as $d) {
             $ops=$operations[$d->id]??collect(); $rows=$open[$d->id]??collect(); $current=RenewalCycles::current($d,$ops)->last();
@@ -42,7 +43,7 @@ final class StaffDomainInputs
             $inputs[$d->id]=['alerts'=>$live->map(fn(object $a)=>['code'=>$a->code,'request'=>$a->operation_id===null?null:(int)$a->operation_id])->values()->all(),
                 'late'=>$rows->contains('code','acquisition_late_money'),
                 'renewal'=>$current&&in_array($current->state,self::OPEN_RENEWAL,true)?$current:null,'off'=>$off,
-                'invoice'=>(int)$invoice?->user_id===(int)$d->user_id?$invoice:null,'closed'=>OwnedDomains::closed($statuses->get($d->service_id),$stops->isNotEmpty())];
+                'invoice'=>(int)$invoice?->user_id===(int)$d->user_id?$invoice:null,'closed'=>OwnedDomains::closed($statuses->get($d->service_id),$stops->isNotEmpty()),'stopped'=>$stopped[$d->id]??null];
         }
         return $inputs;
     }

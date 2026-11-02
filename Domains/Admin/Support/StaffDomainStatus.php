@@ -34,7 +34,7 @@ final class StaffDomainStatus
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
      * @param list<array{code:string,request:?int}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
-    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null): array
+    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?int $stopped=null): array
     {
         [$step, $specific, $request] = self::resolve($state, $d, $op);
         $act = $step !== null && !in_array($step, self::WAITING, true);
@@ -43,7 +43,7 @@ final class StaffDomainStatus
             if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top); $act = true; $named = $top['code']; }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal); }
         }
-        if ($shared['reason'] === DomainStatus::MISSING && $step === self::CHECK) { [$shared['reason'], $step, $request] = [null, $op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id]; }
+        if ($shared['reason'] === DomainStatus::MISSING && $step === self::CHECK) { [$shared['reason'], $step, $request] = [null, ($id = $op?->id ?? $stopped) ? 'Status missing.'.self::check($id) : 'Status missing. Check the domain at the registrar.', $id]; }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
     }
     /** Late money is checked first by the caller, so it takes the step. */
