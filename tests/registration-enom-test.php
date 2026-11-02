@@ -221,6 +221,12 @@ expect(!collect($owned->progress)->contains('state','Under review'),'Refused DNS
 $dns=\Illuminate\Support\Facades\DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::proven(\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d),null,null,collect(),[]));
 same([null,null,null],$dns,'Registration template does not prove a hosting-source comparison');
 
+// A spend hold leaves neither the customer editor nor automatic correction available: retain the existing staff alert.
+$makeEngine($binding,$refusalExchange);$heldOp=$new('template-held.example.com');$assertRetained($runRegistration($heldOp),['nameservers']);$heldDomain=$heldOp->domain->fresh();
+$heldDomain->update(['renewal_policy'=>[...$heldDomain->renewal_policy,'automatic_spend_paused'=>true]]);
+$observation->name=$heldDomain->domain;$heldResult=$reconcile->run($heldOp->id);$heldDomain=$heldResult->domain->fresh();
+same(['succeeded',false,true],[$heldResult->state,isset($owners->present($heldDomain)->management['nameservers']),$heldResult->policy['reconciliation']['staff_alert']],'Held nameserver correction stays on the existing staff alert while the owner editor is unavailable');
+
 // Corrupt only the encrypted payload on existing editable and completed registrations: the real owner page must still render.
 storefrontViews();$request=\Illuminate\Http\Request::create('/domains','GET');$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());
 $controller=new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners);

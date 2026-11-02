@@ -32,7 +32,7 @@ $management=static function(array $more=[]):array {
 $domain=static fn(array $more=[])=>new OwnedDomain(...[...['name'=>$name,'status'=>'Active','tone'=>'ok','expiry'=>'2027-03-01','renewal'=>'On','renewalPrice'=>'$14.99',
     'actions'=>['show'=>'/domains/1'],'progress'=>[],'setup'=>['required'=>false,'contacts'=>false,'defaults'=>true],'transfer'=>[],'management'=>$management(),'testEnvironment'=>false,
     'renewNow'=>['url'=>'/domains/1/renew','terms'=>[1,2,3],'order_by'=>'2027-02-28'],'autoRenew'=>['url'=>'/domains/1/auto-renew','enabled'=>true],'owner'=>['name'=>'Jane Doe','email'=>'jane@example.com']],...$more]);
-$summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed','domain.registration.platform',[],null,null,...['stateKeys'=>[],'labels'=>DomainSummaryStrings::all(),
+$summary=static fn(OwnedDomain $d,array $more=[])=>new DomainSummary($d->name,null,'managed',...['registrationKey'=>'domain.registration.platform','dnsKeys'=>[],'website'=>null,'email'=>null,'stateKeys'=>[],'labels'=>DomainSummaryStrings::all(),
     'expiry'=>$d->expiry,'expiryPrecision'=>'date','expirySource'=>null,'freshness'=>[],'renewalDueAt'=>null,'renewalPrice'=>$d->renewalPrice,'relatedServices'=>[],'hostnames'=>[],
     'urls'=>['detail'=>'/domains/1','support'=>'/tickets/create'],...$more]);
 $render=static fn(OwnedDomain $d,?DomainSummary $s=null)=>view('domains::show',['domain'=>$d,'summary'=>$s])->render();
@@ -265,8 +265,13 @@ expect(str_contains($html, '.domains .domains-card > div { position: relative;')
 
 expect(str_contains($html, '.domains .domains-ph { position: relative;'), 'Status help anchors to the full page header');
 expect(preg_match('/\\.domains \\.domains-help-pop \\{[^}]*white-space: normal;/s',$html)===1, 'Card help resets inherited label nowrap');
-$nativeSuccessful=true;echo "Client domain page checked.\n";
-
-$d=$domain(['dnsCorrection'=>true]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
+$d=$domain(['dnsCorrection'=>true]);$html=$render($d,$summary($d,['dnsKeys'=>['domain.dns.platform','domain.points.platform_empty'],'website'=>false,'email'=>false]));$dom=storefrontDom($html);
 same('Your domain is registered, but the registrar could not confirm your chosen nameservers. Set up DNS with your provider, then change nameservers. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Refused registration DNS gives a quiet next step');
 expect(str_contains($html,'To use this domain, buy a service or point it to your own nameservers.'),'Domain without hosting explains the next step');
+
+$d=$domain(['dnsCorrection'=>true,'management'=>[]]);$dom=storefrontDom($render($d,$summary($d)));
+$dnsNextSteps=['correction_support'=>$dom->query('//div[contains(@class,"domains-notice")]//a[@href="/tickets/create"][.="Contact support"]')->length];
+$d=$domain();$html=$render($d,$summary($d,['dnsKeys'=>['domain.dns.external','domain.points.external_empty'],'website'=>false,'email'=>false]));
+$dnsNextSteps['configured_dns_hint']=str_contains($html,'To use this domain, buy a service or point it to your own nameservers.');
+same(['correction_support'=>1,'configured_dns_hint'=>false],$dnsNextSteps,'DNS next steps: '.json_encode($dnsNextSteps));
+$nativeSuccessful=true;echo "Client domain page checked.\n";
