@@ -24,7 +24,7 @@ function curl_exec($h): bool {
     $command=basename($url['path']);$GLOBALS['runtimeWire']['calls'][]=[$url['path'],$params];
     expect(!in_array($command,['registerDomain','renewDomain','transferDomain','contactAdd','removeAutoRenewal'],true),'Read runtime cannot mutate');
     if($GLOBALS['runtimeWire']['fail']){throw new \RuntimeException($o[CURLOPT_URL]);}
-    $data=$GLOBALS['runtimeWire']['fixtures'][$command];
+    $data=['request'=>['operation'=>$command]]+$GLOBALS['runtimeWire']['fixtures'][$command];
     $body=json_encode($data,JSON_THROW_ON_ERROR);
     return ($o[CURLOPT_WRITEFUNCTION])($h,$body)===strlen($body);
 }
