@@ -21,7 +21,7 @@ class ManagementPayload
             $host = strtolower(rtrim(self::text($p['host'] ?? '', 253), '.'));
             if (!str_ends_with($host, '.'.$name) || !filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) { throw new \DomainException('Glue must be a child of this domain.'); }
             if ($action === 'glue_delete') { return ['host' => $host]; }
-            $ip = self::text($p['ip'] ?? '', 64); self::publicIp($ip); return ['host' => $host, 'ip' => strtolower($ip)];
+            $ip = $registrar==='namesilo' ? implode(', ',\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Glue::addresses($p['ip']??'')) : self::text($p['ip'] ?? '', 64); if ($registrar!=='namesilo') { self::publicIp($ip); } return ['host' => $host, 'ip' => strtolower($ip)];
         }
         if (in_array($action, ['ds_add', 'ds_delete'], true)) { return ['ds' => self::ds($p['ds'] ?? [])]; }
         if (in_array($action, ['dns', 'srv'], true)) {

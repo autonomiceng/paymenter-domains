@@ -71,9 +71,14 @@ final class ManagedPublicSignals
         if ($token===null) { $this->defer($ticket,($this->clock)());return false; }
         try {
             $reader=new QuotaDnsReader($this->reader,$quota,$token,$this->clock);
-            [$reading,$cursor,$sourceCursor]=(new DnsCollector($reader))->collect($ticket,new DnsContext($this->clock));
+            $context=new DnsContext($this->clock); $glue=[];
+            [$reading,$cursor,$sourceCursor]=$ticket->profile?(new DnsCollector($reader))->collect($ticket,$context):[new DnsReading($kind),$ticket->cursor,$ticket->sourceCursor];
+            if ($kind==='delegation') {
+                $domain=Domain::whereKey($id)->where('user_id',$owner)->first();
+                if ($domain) { $glue=GlueDrift::check($domain,$reader,$context,$ticket->cursor,($this->clock)(),$ticket->interval); $cursor=($ticket->cursor+count($glue['hosts']??[]))%2147483647; }
+            }
             if ($reader->saturated && $reading->result()==='unknown') { $this->defer($ticket,($this->clock)());return false; }
-            return $this->finish($ticket,$reading,($this->clock)(),$cursor,$sourceCursor,$reader->saturated);
+            return $this->finish($ticket,$reading,($this->clock)(),$cursor,$sourceCursor,$reader->saturated,$glue);
         } finally { $quota->release($token); }
     }
     public function defer(ManagedDnsTicket $t,int $now): void
@@ -81,11 +86,11 @@ final class ManagedPublicSignals
         DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$t->target->id)->where('generation',$t->target->generation)
             ->where('kind',$t->kind)->where('claim',$t->claim)->update(['claim'=>null,'lease_until'=>null,'due_at'=>max($now,$t->startedAt)+60,'safe_code'=>DB::raw("CASE WHEN safe_code IN ('ready','rotation') OR safe_code IS NULL THEN 'budget_exhausted' ELSE safe_code END")]);
     }
-    public function finish(ManagedDnsTicket $ticket,DnsReading $reading,int $now,int $cursor=0,?int $sourceCursor=null,bool $saturated=false): bool
+    public function finish(ManagedDnsTicket $ticket,DnsReading $reading,int $now,int $cursor=0,?int $sourceCursor=null,bool $saturated=false,array $glue=[]): bool
     {
         if (!$this->enabled || DB::transactionLevel()!==0 || $ticket->kind!==$reading->kind || $cursor<0
             || ($sourceCursor!==null && !in_array($sourceCursor,[$ticket->sourceCursor,$ticket->nextSourceCursor],true))) { return false; }
-        return DB::transaction(function()use($ticket,$reading,$now,$cursor,$sourceCursor,$saturated):bool {
+        return DB::transaction(function()use($ticket,$reading,$now,$cursor,$sourceCursor,$saturated,$glue):bool {
             $id=$ticket->target->id;$t=(new ManagedPublicTarget())->capture($id,$ticket->target->owner,$now,$ticket->sourceCursor);
             $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$ticket->target->generation)->where('kind',$ticket->kind);
             $w=$q->lockForUpdate()->first();if (!$w || $w->claim!==$ticket->claim) { return false; }
@@ -104,7 +109,7 @@ final class ManagedPublicSignals
                 'profile_id'=>$ticket->profileId,'profile_revision'=>$ticket->profileRevision,'source_digest'=>$ticket->stamp,'source_cursor'=>$ticket->sourceCursor,
                 'check_kind'=>$ticket->kind,'started_at'=>$ticket->startedAt,'completed_at'=>$now,'valid_until'=>$reading->result()==='unknown'?null:$ticket->startedAt+2*$ticket->interval,
                 'result'=>$reading->result(),'dns'=>$reading->dns,'website'=>$reading->website,'email'=>$reading->email,'mixed'=>$reading->mixed,'partial'=>!$complete,
-                'ns_confirmed'=>$confirmed,'safe_code'=>$code,'facts'=>[...$reading->facts(),'presentation_stamp'=>$ticket->presentationStamp],'digest'=>$reading->digest()]);
+                'ns_confirmed'=>$confirmed,'safe_code'=>$code,'facts'=>[...$reading->facts(),'presentation_stamp'=>$ticket->presentationStamp,'glue'=>GlueDrift::current($t['domain'],$glue)],'digest'=>$reading->digest()]);
             $budget=$saturated || in_array($code,['budget_exhausted','rotation'],true);
             $values=$complete?['attempts'=>0,'due_at'=>$now+$delay,'backoff_until'=>null]:($budget?
                 ['attempts'=>$w->attempts,'due_at'=>$now+($saturated?60:($code==='rotation'?$ticket->interval:60)),'backoff_until'=>null]:$this->failure($w,$id,$ticket->kind,$ticket->startedAt,$now,$code));
