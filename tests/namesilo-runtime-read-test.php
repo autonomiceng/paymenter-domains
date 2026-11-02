@@ -30,8 +30,9 @@ function curl_exec($h): bool {
 }
 ini_set('zend.exception_ignore_args','0');(new Installation)->install();
 $clock=new FakeClock(new \DateTimeImmutable('2026-11-02T12:00:00Z'));
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 config(['app.url'=>'https://billing.example.com','domains.namesilo_account.environment'=>'live',
-    'domains.namesilo_sandbox.enabled'=>false,'domains.namesilo_live.site'=>'https://billing.example.com','domains.namesilo_live.catalogue'=>true]);
+    'domains.namesilo_sandbox_enrollment.enabled'=>false,'domains.namesilo_live.site'=>'https://billing.example.com','domains.namesilo_live.catalogue'=>true]);
 $registry=new RegistrarRegistry;expect(RegistrarFactories::bootstrap($registry),'Local enrollment composition available');
 $bindings=new AccountBindings($registry);app()->instance(AccountBindings::class,$bindings);
 $server=Server::create(['name'=>'Synthetic runtime','type'=>'server','extension'=>'Domains','enabled'=>true]);
@@ -112,6 +113,10 @@ same($beforeUsage['used']+1,$usage()['used'],'Accepted rotation retains the same
 same('placeholder-rotated-key',end($GLOBALS['runtimeWire']['calls'])[1]['key'],'New read uses freshly validated key');
 $setting=$server->settings()->where('key','domains_credentials')->sole();$setting->value=json_encode($old,JSON_THROW_ON_ERROR);$setting->save();
 $deny(fn()=>$reader->balance($context()));$store($credentials,$facts);
+// The cached port cannot exceed the durable daily call cap.
+$beforeUsage=$usage();config(['domains.namesilo_live.accounts.'.$identity.'.daily_call_cap'=>$beforeUsage['used']]);
+$deny(fn()=>$reader->balance($context()));same($beforeUsage,$usage(),'Cap refusal cannot consume another call');
+config(['domains.namesilo_live.accounts.'.$identity.'.daily_call_cap'=>100]);
 // A transport timeout remains unresolved and counted, without fallback or a retry.
 $GLOBALS['runtimeWire']['fail']=true;$before=count($GLOBALS['runtimeWire']['calls']);$beforeUsage=$usage();
 $denyTimeout=false;try{$reader->balance($context());}catch(\Throwable $e){$denyTimeout=true;expect(!str_contains($e->getMessage().$e->getTraceAsString(),'placeholder-rotated-key'),'Timeout redacts rotated key');}
