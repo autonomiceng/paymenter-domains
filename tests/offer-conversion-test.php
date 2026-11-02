@@ -113,7 +113,7 @@ same('14.0000', json_decode($orgRows['register:2']->catalogue_observation, true)
 same('2020-01-01T00:00:00+00:00', json_decode($orgRows['register:2']->catalogue_observation, true)['observed_at'], 'Stale evidence is not refreshed by conversion');
 same(null, $orgRows['register:4']->catalogue_observation, 'Unknown units do not acquire a guessed amount');
 same(false, json_decode($orgRows['transfer:1']->catalogue_observation, true)['enabled'], 'Explicit dated disabled evidence survives ambiguous fill omissions');
-same('19.95', UpgradeComparison::query('domains_tlds')->where('id', $org->id)->value('catalogue_retained_annual_retail'), 'Missing current cost does not erase last published annual retail');
+same('19.95', UpgradeComparison::query('domains_tlds')->where('id', $org->id)->sole()->catalogue_retained_annual_retail, 'Missing current cost does not erase last published annual retail');
 same(1, $report['issues']['conflicting_price:register:1'], 'Comparison flags conflicting exact-term sources');
 same(null, DB::table('domains_tlds')->where([...$key, 'tld' => 'net'])->value('catalogue_facts'), 'Acceptance-only candidates carry no invented facts');
 $stagedBefore = DB::table('domains_tlds')->orderBy('id')->get()->toJson();
