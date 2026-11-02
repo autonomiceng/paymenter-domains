@@ -230,21 +230,23 @@ final class StaffSettingsWrites
                 foreach(Tld::where(['server_id'=>$a->server_id,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint])->where(fn($q)=>$q->where('use_default_rule',true)->orWhere('pricing_mode','markup_fee_percent'))->orderBy('tld')->get() as $tld){
                     $follows=true;
                     try{
-                        // Prices move only when the rule or fee they use really changed. A default TLD with missing costs is still named.
-                        if(!$prices->behindRule($tld,$now)){if($tld->use_default_rule){PriceCatalogue::requireCosts($tld,$now);}continue;}
+                        // Prices move only when the rule or fee they use really changed. Unchanged is fine; a change it can't follow is named below.
+                        $older=$prices->onOlderRule($tld);
+                        if($older||$tld->use_default_rule){PriceCatalogue::requireCosts($tld,$now);}
+                        if(!$older){continue;}
                         $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($now,&$follows):bool{
                             if(!$t->use_default_rule&&$t->pricing_mode!=='markup_fee_percent'){return $follows=false;}
                             PriceCatalogue::requireCosts($t,$now);return true;});
                         if($follows){$summary['published']++;}
                     }
                     catch(\Throwable $error){
-                        $summary['failed'][$name][]='.'.$tld->tld;
+                        $summary['failed'][$name.' #'.$a->server_id][]='.'.$tld->tld;
                         if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$tld->tld,'exception_class'=>$error::class]);}
                     }
                 }
             }
             catch(\Throwable $error){
-                $summary['failed'][$name]??=[];
+                $summary['failed'][$name.' #'.$a->server_id]??=[];
                 \Illuminate\Support\Facades\Log::warning('Domains default pricing account failed.',['server_id'=>(int)$a->server_id,'exception_class'=>$error::class]);
             }
         }

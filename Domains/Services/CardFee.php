@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 final class CardFee
 {
     public const DEFAULT=['percent'=>'2.90','fixed'=>'0.30'];
+    /** Reads a saved rule's own fields: no valid markup is refused with this fee. */
+    public const NONE=['percent'=>'0.00','fixed'=>'0.00'];
     public const KEY='domains_card_fee';
     public static function validate(array $fee): array
     {

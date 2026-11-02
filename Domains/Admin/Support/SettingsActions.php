@@ -94,8 +94,8 @@ final class SettingsActions
             $name=self::SHARED[$id]??$id;$switch=in_array($id,self::SWITCHES,true);$popup=isset(self::POPUPS[$id]);
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)))];
             if(in_array($name,['default_pricing','override'],true)){
-                // Saving writes rule and fee together, so an unreadable fee must not swap the saved rule for the built-in one.
-                $rule=self::cached(static function()use($tld,$name){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule(fee:CardFee::DEFAULT);}catch(\Throwable){return PricingRule::DEFAULT;}});
+                // Saving writes rule and fee together. The form shows only the rule's own fields, so no fee may swap them for the built-in rule.
+                $rule=self::cached(static function()use($tld,$name){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
                 $default=self::cached(static function(){try{return (new PricingRules)->defaultRule();}catch(\Throwable){return null;}});
                 $own=static fn($get)=>$name!=='override'||$get('pricing')!=='default';
                 if($name==='override'){
@@ -115,8 +115,8 @@ final class SettingsActions
                     ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
                 $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
                 if($name==='default_pricing'){
-                    $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>($saved()??CardFee::DEFAULT)['percent'])->required()->maxLength(6)->live(debounce:500);
-                    $fields[]=TextInput::make('fee_fixed')->label('Plus a fixed amount (USD)')->default(fn()=>($saved()??CardFee::DEFAULT)['fixed'])->required()->maxLength(12)->live(debounce:500);
+                    $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>$saved()['percent']??null)->required()->maxLength(6)->live(debounce:500);
+                    $fields[]=TextInput::make('fee_fixed')->label('Plus a fixed amount (USD)')->default(fn()=>$saved()['fixed']??null)->required()->maxLength(12)->live(debounce:500);
                     $fields[]=\Filament\Schemas\Components\Text::make('An estimate per payment. International cards and refunds can cost more, so set it a little high.')->key('fee_note');
                 }
                 $newFee=static fn($get)=>CardFee::validate(['percent'=>$get('fee_percent'),'fixed'=>$get('fee_fixed')]);

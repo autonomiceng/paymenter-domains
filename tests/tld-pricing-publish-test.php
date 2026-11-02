@@ -69,7 +69,7 @@ same('Costs are missing. Use Sync prices on the TLD list, then save again. Nothi
 $net=Tld::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>'net','enabled'=>true,'min_years'=>1,'max_years'=>1,'use_default_rule'=>true]);
 $before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
 $summary=$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'50','round_up'=>'whole']),$now);
-same(['published'=>2,'failed'=>['Synthetic'=>['.net']],'skipped'=>[]],$summary,'Default change publishes followers and names skipped TLDs');
+same(['published'=>2,'failed'=>['Synthetic #'.$t->server_id=>['.net']],'skipped'=>[]],$summary,'Default change publishes followers and names skipped TLDs');
 $history=Review::historyRows(App\Models\Server::findOrFail($t->server_id));$outcome=array_pop($history);$save=array_pop($history);
 same('publication_completed',$outcome['phase'],'Publication outcome is durably recorded after the loop');
 same($summary,$outcome['outcome'],'Reloaded outcome retains published count and failed TLDs');
@@ -81,7 +81,7 @@ foreach($rows($t->fresh()) as $key=>$p){same($before[$key]+1,$p->revision,'Follo
 same('markup_percent',(new PricingRules)->defaultRule()['mode'],'Default saved');
 // A TLD with its own prices does not follow the default.
 $writer->run($review('override',$t->id),$fields($rule),$now);$before=array_map(fn(Price $p)=>$p->revision,$rows($t->fresh()));
-same(['published'=>1,'failed'=>['Synthetic'=>['.net']],'skipped'=>[]],$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'40','round_up'=>'none']),$now),'Own-price TLD is not republished');
+same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.net']],'skipped'=>[]],$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'40','round_up'=>'none']),$now),'Own-price TLD is not republished');
 same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Own-price TLD revisions unchanged');
 $history=TldFacts::history($t->server_id,$t->id);
 same('Default pricing changed: publishing finished',$history[0]['change'],'Newest history row names the publication result');
@@ -112,7 +112,7 @@ $writer->run($review('remove_override',$t->id),[],$now);$before=array_map(fn(Pri
 // The switch lands after the reviewed default is saved, before the TLD is published.
 $switch=pricingReview($u->id);$armed=true;
 Tld::retrieved(function(Tld $tld)use(&$armed,$t):void{if($armed&&$tld->id===$t->id&&Illuminate\Support\Facades\DB::transactionLevel()===0){$armed=false;Tld::whereKey($t->id)->update(['use_default_rule'=>false]);}});
-same(['published'=>1,'failed'=>['Synthetic'=>['.net']],'skipped'=>[]],$writer->run($switch,pricingForm(['mode'=>'markup_percent','markup'=>'20','round_up'=>'none']),$now),'Other-account and switched TLDs are not published');
+same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.net']],'skipped'=>[]],$writer->run($switch,pricingForm(['mode'=>'markup_percent','markup'=>'20','round_up'=>'none']),$now),'Other-account and switched TLDs are not published');
 same('markup_percent',(new PricingRules)->defaultRule()['mode'],'Default saved before the switch');same('20.00',(new PricingRules)->defaultRule()['markup'],'New default saved');
 expect(!$armed,'Switch happened during the default save');
 same($before,array_map(fn(Price $p)=>$p->revision,$rows($t->fresh())),'Switched TLD revisions unchanged');
@@ -151,7 +151,7 @@ $other=$tlds[1];$otherServer=App\Models\Server::findOrFail($other->server_id);$o
 Tld::whereKey($other->id)->update(['use_default_rule'=>true]);$revisions=static fn(Tld $tld)=>array_map(fn(Price $p)=>$p->revision,$rows($tld->fresh()));
 $missing=$rows($t->fresh())['renew1'];$cost=$missing->wholesale;Price::whereKey($missing->id)->update(['wholesale'=>null]);
 $before=$revisions($other);$form=pricingForm(['mode'=>'markup_percent','markup'=>'45','round_up'=>'none']);
-same(['published'=>1,'failed'=>['Synthetic'=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'A failed account is named and the other still publishes');
+same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'A failed account is named and the other still publishes');
 foreach($revisions($other) as $key=>$revision){same($before[$key]+1,$revision,'The other account published');}
 Price::whereKey($missing->id)->update(['wholesale'=>$cost]);$before=$revisions($other);
 same(['published'=>1,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Saving again publishes only the account that missed out');
@@ -187,6 +187,13 @@ same($before,$revisions($other),'Own card-fee TLD waits for a fee change');$held
 same(['published'=>1,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),pricingForm(['fee_percent'=>'3.00']),$now),'A fee change republishes own card-fee pricing');
 foreach($revisions($other) as $key=>$revision){same($before[$key]+1,$revision,'Own card-fee TLD republished');}
 same($held,$revisions($t),'A fee change leaves a percentage default alone');
+// A fee change it can't follow is named, not counted as unchanged, and saving again once the cost is back moves it.
+$gap=$rows($other->fresh())['renew1'];$cost=$gap->wholesale;Price::whereKey($gap->id)->update(['wholesale'=>null]);$before=$revisions($other);$form=pricingForm(['fee_percent'=>'3.50']);
+same(['published'=>0,'failed'=>['Second account #'.$other->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Own card-fee TLD with a missing cost is named');
+same($before,$revisions($other),'A missing cost keeps the old prices');Price::whereKey($gap->id)->update(['wholesale'=>$cost]);
+same(['published'=>1,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Saving again publishes once the cost is back');
+foreach($revisions($other) as $key=>$revision){same($before[$key]+1,$revision,'Own card-fee TLD caught up');}$before=$revisions($other);
+same(['published'=>0,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$form,$now),'Once caught up it is unchanged');same($before,$revisions($other),'Unchanged prices stay');
 // The save needs both rights it replaced, and the two old actions no longer save.
 $weak=staffUser(array_values(array_diff($permissions,[Review::permission('card_fee')])));Auth::setUser($weak);
 tldRefusal(fn()=>$writer->run(pricingReview($weak->id,'Synthetic reviewed price change'),pricingForm(),$now),'Current staff permissions required.');Auth::setUser($u);

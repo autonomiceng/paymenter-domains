@@ -5,13 +5,17 @@ use App\Models\Server;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 return new class extends Migration {
-    /** What 000048 froze for accounts that never saved a rule. Nobody chose it, so it never wins. */
+    /** What 000048 writes, and also a rule someone may have saved. Only a row added after the mark is proven to be 000048's, so only that one never wins. */
     private const PINNED=['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none','fixed'=>['register'=>null,'renew'=>null,'transfer'=>null]];
     public function up(): void
     {
         DB::transaction(function():void {
-            $this->move('domains_pricing_default_rule',static fn(object $row)=>json_decode((string)$row->value,true)!=self::PINNED);
+            $mark=DB::table('settings')->whereNull('settingable_type')->whereNull('settingable_id')->where('key','domains_pricing_saved_through');
+            // No mark proves nothing, and a row nobody can place stays at the price someone may have chosen.
+            $through=(int)((clone $mark)->value('value')??PHP_INT_MAX);
+            $this->move('domains_pricing_default_rule',static fn(object $row)=>$row->id<=$through||json_decode((string)$row->value,true)!=self::PINNED);
             $this->move('domains_card_fee',static fn()=>true);
+            $mark->delete();
         });
     }
     /** The most recently saved value moves to one global row; the rest go. No TLD or publication writes. */

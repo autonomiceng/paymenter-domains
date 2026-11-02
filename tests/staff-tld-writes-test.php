@@ -77,7 +77,7 @@ expect(in_array('Default pricing changed',array_column(TldFacts::history($t->ser
 // Missing renewal cost: the default is saved, but this TLD keeps its published prices and says so.
 $renewalCost=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->sole();
 Price::whereKey($renewalCost->id)->update(['wholesale'=>null]);
-same(['published'=>1,'failed'=>['Synthetic'=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),pricingForm([...$fixed,'fixed_renew'=>'2.00']),$now->modify('+2 days')),'Missing-cost TLD is named');
+same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),pricingForm([...$fixed,'fixed_renew'=>'2.00']),$now->modify('+2 days')),'Missing-cost TLD is named');
 Price::whereKey($renewalCost->id)->update(['wholesale'=>$renewalCost->wholesale]);
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published'],TldFacts::salesState($t->fresh()),'Unpublished rule blocks ready status');
 Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->assertSee('Prices not published. Open Edit prices and save.');

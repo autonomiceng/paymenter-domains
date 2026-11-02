@@ -61,7 +61,7 @@ commerceReject(fn()=>$prices->current($t->server_id,$t->account_fingerprint,'com
 same($now->format('Y-m-d H:i:s'),Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'register','term'=>1])->sole()->observed_at->format('Y-m-d H:i:s'),'Card-fee republication never refreshes the saved cost');
 // Missing annual cost still blocks publication without undoing the saved fee.
 $renewal=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew'])->sole();$cost=$renewal->wholesale;$renewal->update(['wholesale'=>null,'revision'=>$renewal->revision+1]);$before=$rows();
-same(['published'=>1,'failed'=>['Synthetic'=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('22','2'),$later),'Follower missing annual cost reports its name');
+same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('22','2'),$later),'Follower missing annual cost reports its name');
 same(['percent'=>'22.00','fixed'=>'2.00'],CardFee::read(),'Fee still commits when publication cost is missing');same($before,$rows(),'Failed publication retains every old revision');
 $renewal->update(['wholesale'=>$cost,'revision'=>$renewal->revision+1]);
 // Register a real postcommit race on the matching fee save, after the completed audit and before fanout.
@@ -77,7 +77,7 @@ App\Models\Setting::saved(static function($setting)use($server,&$pending,&$raced
         App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->firstOrFail()->update(['type'=>'string','value'=>'unreadable']);$raced=true;
     });
 });
-same(['published'=>0,'failed'=>['Synthetic'=>['.com','.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('12','1'),$now),'Postcommit unreadable default becomes a named publication failure');
+same(['published'=>0,'failed'=>['Synthetic #'.$tlds[0]->server_id=>['.com'],'Synthetic #'.$tlds[1]->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('12','1'),$now),'Postcommit unreadable default becomes a named publication failure');
 expect($raced&&!$pending,'Genuine one-shot postcommit fault exercised');
 same(['percent'=>'12.00','fixed'=>'1.00'],CardFee::read(),'Committed fee survives postcommit default failure');same($ordinaryBefore,$ownRows(),'Postcommit fallback still excludes ordinary own rules');
 App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->firstOrFail()->update(['type'=>'array','value'=>$default]);
@@ -90,7 +90,7 @@ $display=new \Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueC
 $display->remember(static fn()=>['retained display']);
 $mountFee=static fn()=>Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->mountAction('default_pricing')->assertActionMounted('default_pricing');
 $page=$mountFee();$defaults=$page->get('mountedActions.0.data');
-same('2.90',$defaults['fee_percent'],'Unreadable fee form prefills default percent');same('0.30',$defaults['fee_fixed'],'Unreadable fee form prefills default fixed amount');
+same([null,null],[$defaults['fee_percent'],$defaults['fee_fixed']],'An unreadable fee is left for staff to enter');
 // The default's 5% markup can cover 60%; the own rule's 100% markup cannot.
 $page->setActionData(['fee_percent'=>'60','fee_fixed'=>'0','reason'=>'Refuse impossible own fee-mode rule'])->callMountedAction()->assertHasNoActionErrors()
     ->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't save")->body('No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.'));
@@ -112,4 +112,12 @@ same(['percent'=>'3.10','fixed'=>'0.40'],(new PricingRules)->rule($own->fresh())
 same('6.99',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Default follower republishes after repair');
 same('13.65',$prices->current($t->server_id,$t->account_fingerprint,'net','register',1,'USD',$now)->retail,'Own fee rule republishes after repair');
 same(null,$display->cachedRows(),'Successful repair invalidates display cache after commit');same(0,$reads->calls,'No provider calls in card fee changes or repair');
+// A fee-only edit keeps a rule that only works with its own fee, and an unreadable fee changes no rule field.
+$large=['mode'=>'markup_fee_percent','markup'=>'4000.00','round_up'=>'none'];$form=static fn(array $data)=>[$data['mode'],$data['markup'],$data['round_up']];$held=array_values($large);
+$writer->run(pricingReview($u->id),pricingForm($large,['percent'=>'1','fixed'=>'0']),$now);
+$page=$mountFee();$defaults=$page->get('mountedActions.0.data');same($held,$form($defaults),'Dialog opens on the saved rule');same('1.00',$defaults['fee_percent'],'Dialog opens on the saved fee');
+$page->setActionData(['fee_percent'=>'1.10','reason'=>'Adjust the card fee estimate'])->callMountedAction()->assertHasNoActionErrors();
+same($held,$form((new PricingRules)->defaultRule()),'A fee-only edit keeps the rule');same('1.10',CardFee::read()['percent'],'A fee-only edit saves the fee');
+$setting->fresh()->update(['type'=>'string','value'=>'unreadable']);
+same($held,$form($mountFee()->get('mountedActions.0.data')),'An unreadable fee keeps mode, markup and rounding');
 echo "Card fee, audit, mode changes and permissions passed.\n";$nativeSuccessful=true;
