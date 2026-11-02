@@ -41,14 +41,20 @@ Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$p
 $rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
 $saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
 same(['ada@example.test','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
-same(['text'=>'Saving…','request'=>null],DomainFacts::withProgress($rows,$saving)['Contacts']['progress'],'Progress takes its own line under the email');
+same(['text'=>'Saving…','request'=>null,'waiting'=>true],DomainFacts::withProgress($rows,$saving)['Contacts']['progress'],'Progress takes its own line under the email, and the row waits');
+same(false,DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['waiting'],'A fresh result no longer waits');
 same(['ada@example.test','Sync to read them'],array_column(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>true]]),'sub'),'A settled result shows nothing');
+// The lock is a mark: On, a hollow Off, and while a change is out, the change with what it was.
+$lockRow=['value'=>'On','sub'=>null,'progress'=>['text'=>'Sent. Checking the result…','request'=>null,'waiting'=>true]];
+same(['success','gray'],[ViewDomain::lockMark($lockRow,false)['mark'],ViewDomain::lockMark([...$lockRow,'value'=>'Off'],false)['mark']],'On reads OK and Off reads as the hollow Off mark');
+same(['Sent. Checking the result…','Was on.','info',false],(fn($m)=>[$m['value'],$m['sub'],$m['mark'],isset($m['progress'])])(ViewDomain::lockMark($lockRow,true)),'A waiting lock shows the change in progress and what it was, once');
+same(['1 of 2 differs.','2 of 3 differ.','1 of 1 differs.'],[DomainFacts::differs(1,2),DomainFacts::differs(2,3),DomainFacts::differs(1,0)],'The glue count reads above its detail');
 same('Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['text'],'A fresh result still shows');
 // Staff read the request's own line and where to look, not the sentence written for the customer.
 $stopped=['id'=>60,'pending'=>false,'text'=>'The contacts change failed. Try again. If it keeps happening, contact support.','outcome'=>'Not sent. Nothing changed at the registrar.','settled'=>false];
-same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
+same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
 expect(!isset(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Replaced by your latest choice.','replaced'=>true]])['Contacts']['progress']),'A replaced change says nothing to staff');
 // A Missing row never points at a blocked button: it says what comes first, and the blocked button keeps its real label.
 $noContacts=['Contacts'=>['value'=>null,'sub'=>DomainFacts::ADD_CONTACTS]];
@@ -151,7 +157,7 @@ $storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
 same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
 same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');
 same($before,$queries($active->fresh()),'Nameservers add no queries');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Transfer lock','Nameservers','ns1.example.net','ns2.example.net','ns3.example.net']);
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Transfer lock','Nameservers','ns1.example.net','ns2.example.net','ns3.example.net'])->assertSeeHtml('data-beco-tone="ok" data-beco-record="lock-'.$active->id.'"');
 foreach([[],['ns1.example.net',7],['a'=>'ns1.example.net'],'ns1.example.net'] as $bad){$storeNs($active,$bad);same(null,$value($active,'Nameservers'),'Unusable stored nameservers are Missing');}
 $storeNs($active,['ns1.example.net','ns2.example.net']);
 // Every Missing carries its cause.

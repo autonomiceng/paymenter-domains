@@ -109,7 +109,7 @@ final class DomainFacts
             if ($glue) {
                 $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
                 $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
-                $f['Glue records']=[...self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
+                $f['Glue records']=[...self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings?[self::differs(count($warnings),count(array_unique(array_column($glue,'host')))),...$warnings]:[]),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
@@ -406,10 +406,13 @@ final class DomainFacts
             $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
             $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
             if ($facts[$label]['value']===null) { $facts[$label]['sub']=$text; continue; }
-            $facts[$label]['progress']=['text'=>$text,'request'=>$request];
+            $facts[$label]['progress']=['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false)];
         }
         return $facts;
     }
+    /** A count above the glue detail: "1 of 2 differs." */
+    public static function differs(int $count, int $of): string
+    { return $count.' of '.max($count,$of).' '.($count===1?'differs':'differ').'.'; }
     private static function fact(string|array|null $value, ?string $sub=null, ?string $url=null, ?string $tone=null, ?string $help=null, bool $demo=false): array
     { return ['value'=>$value===''?null:$value,'sub'=>$sub===''?null:$sub,'url'=>$url,'tone'=>$tone,'help'=>$help,'demo'=>$demo]; }
 }

@@ -206,6 +206,8 @@ class ViewDomain extends ViewRecord
     }
     private function row(string $label, array $fact, array|Html $side): Flex
     {
+        $waiting=$fact['progress']['waiting']??false;
+        if ($label==='Transfer lock'&&in_array($fact['value'],['On','Off'],true)) { $fact=self::lockMark($fact,$waiting); }
         $entry=TextEntry::make('value_'.md5($label))->label($label)->state($fact['value'])
             ->belowContent(self::below($fact));
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
@@ -214,6 +216,14 @@ class ViewDomain extends ViewRecord
         if (isset($fact['at'])) { $entry->formatStateUsing(fn()=>Sheet::moment($fact['at'])); }
         if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
-        return Sheet::row(MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']),$side,key:'fact_'.md5($label));
+        $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']);
+        if (isset($fact['mark'])) { $entry=Sheet::state($entry,$fact['mark'],'lock-'.$this->getRecord()->id); }
+        return Sheet::row($entry,$side,pending:$waiting,key:'fact_'.md5($label));
+    }
+    /** The lock reads as a mark: On, a hollow Off, or the change on its way with what it was. */
+    public static function lockMark(array $fact, bool $waiting): array
+    {
+        if (!$waiting) { return [...$fact,'mark'=>$fact['value']==='On'?'success':'gray']; }
+        return [...$fact,'value'=>$fact['progress']['text'],'sub'=>'Was '.strtolower($fact['value']).'.','mark'=>'info','progress'=>null];
     }
 }
