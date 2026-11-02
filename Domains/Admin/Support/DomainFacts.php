@@ -85,7 +85,7 @@ final class DomainFacts
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
         $f['Registrar']=$account&&$registrar ? self::fact(\App\Models\Server::whereKey($d->server_id)->value('name')??$registrar,
             sub:implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
-                $paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false)?'orders paused':null])),
+                !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?'orders paused':null])),
             url:self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id)),
             demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':'Registrar account not found. Check Registrars.');
         if ($registered && $observation!==null) {
@@ -209,12 +209,12 @@ final class DomainFacts
     /** The status reason, then the staff step, as sentences. */
     public static function statusLine(array $status): ?string
     { return implode(' ',array_map(StaffDomainStatus::sentence(...),array_filter([$status['reason'],$status['step']])))?:null; }
-    /** The Note in the Domains list: the status line, or what a sync problem needs. $act: staff have a job here.
+    /** The Note in the Domains list: the status line, or what a sync problem needs. A stopped sync is amber (listTone), so the note always says it. $act: staff have a job here.
      * @return array{text:?string,act:bool} */
     public static function note(array $status, ?string $sync): array
     {
         $line=self::statusLine($status);
-        if ($line!==null) { return ['text'=>$line,'act'=>$status['act']]; }
+        if ($line!==null) { return $sync==='failed'&&!str_contains($line,'Sync ')?['text'=>'Sync stopped. '.$line,'act'=>true]:['text'=>$line,'act'=>$status['act']]; }
         return match($sync) { 'failed'=>['text'=>'Sync failed. '.(self::canResume()?'Use Resume sync on the domain.':self::ASK_RESUME),'act'=>true],'paused'=>['text'=>'Sync paused.','act'=>false],default=>['text'=>null,'act'=>false] };
     }
     /** The request a status step names, when this panel can open it. */

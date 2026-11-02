@@ -274,6 +274,17 @@ same(null,$columns['note']->record($records[$one->id])->getUrl(),'No request lin
 $soon=$row('active','transfer','succeeded',null,10); $soon->forceFill(['renewal_policy'=>['owner_auto_renew'=>false]])->saveQuietly();
 same(['Action required','Auto-renew off'],array_values(array_intersect_key(DomainFacts::status($soon->fresh()),['label'=>1,'reason'=>1])),'Auto-renew off near expiry');
 expect(in_array($soon->id,$ids('action_required'),true),'The status filter reads auto-renew off');
+// A list row is amber when its sync stopped, so its note says so too. The same request on a healthy domain stays as it is.
+$job=['reason'=>null,'step'=>'Registrar request needs a check. Check request #9.','act'=>true,'request'=>9];
+same(['text'=>'Sync stopped. Registrar request needs a check. Check request #9.','act'=>true],DomainFacts::note($job,'failed'),'A stopped sync is in the note');
+same(['text'=>'Registrar request needs a check. Check request #9.','act'=>true],DomainFacts::note($job,null),'No stopped sync, no mention');
+same('Sync stopped after a failed check. Use Resume sync below.',DomainFacts::note(['reason'=>null,'step'=>'Sync stopped after a failed check. Use Resume sync below.','act'=>true,'request'=>null],'failed')['text'],'A step about the sync does not say it twice');
+// An ended domain places no orders, so a saved pause on it says nothing. A live one still says it.
+$pausedPolicy=['automatic_spend_paused'=>true];
+$ended=$row('cancelled','register','disposed'); $ended->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
+$live=$row('active','transfer','succeeded'); $live->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
+expect(!str_contains((string)DomainFacts::for($ended->fresh())['Registrar']['sub'],'orders paused'),'Cancelled domain has no paused orders');
+expect(str_contains((string)DomainFacts::for($live->fresh())['Registrar']['sub'],'orders paused'),'Live domain keeps the pause');
 // Orders off: one state reads one way on the list, the heading and the request, because each reads the whole request.
 $offTransfer=$row('transfer_pending','transfer','held','processing'); $offChange=$row('something_new','nameservers','queued');
 Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>false]);
