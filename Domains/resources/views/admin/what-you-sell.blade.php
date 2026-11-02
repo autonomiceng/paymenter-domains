@@ -13,7 +13,7 @@
         .domains-sell-table .fi-ta-table-head-groups-row:not(:has(.fi-ta-header-group-cell ~ .fi-ta-header-group-cell)){display:none}
         .domains-sell-table .fi-ta-table td,.domains-sell-table .fi-ta-table th{white-space:nowrap}
         .domains-sell-table .fi-ta-table tr>:first-child{padding-inline-start:20px}.domains-sell-table .fi-ta-table tr>:last-child{padding-inline-end:20px}
-        .domains-sell-table .fi-ta-selection-cell,.domains-sell-table .domains-sell-pin{position:sticky;left:0;z-index:1;background:var(--beco-card,#fff)}
+        .domains-sell-table .fi-ta-selection-cell,.domains-sell-table .domains-sell-pin{position:sticky;left:0;z-index:1;background:var(--beco-card,Canvas)}
         .dark .domains-sell-table .fi-ta-selection-cell,.dark .domains-sell-table .domains-sell-pin{background:var(--beco-card,var(--gray-900))}
         .domains-sell-table .fi-ta-selection-cell{width:3rem;min-width:3rem}.domains-sell-table .fi-ta-selection-cell + .domains-sell-pin{left:3rem}
         @media(max-width:40rem){
