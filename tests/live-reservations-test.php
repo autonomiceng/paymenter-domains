@@ -40,11 +40,11 @@ $refuses=static function(callable $work):void {try{$work();throw new LogicExcept
 same('2026-11-01',$calls->reserve($other,new Money('0.75','USD')),'A second provider uses the shared UTC reservation path');
 same(['used'=>1,'spend_micros'=>750000],$calls->usage($other),'Providers with equal local identities keep separate counters');
 same(2,DB::table(EnomLiveCallSchema::TABLE)->count(),'Enom historical rows are retained alongside namespaced provider rows');
-$sameAccount=$account('namesilo','shared-local-account');
+$sameAccount=CatalogueAcceptances::binding(Account::where('server_id',$other->serverId)->sole());$calls=new LiveReservations($policy);
 $refuses(fn()=>$calls->reserve($sameAccount,new Money('0.250001','USD')));
-same(['used'=>1,'spend_micros'=>750000],$calls->usage($sameAccount),'A new server binding cannot reset account spend');
+same(['used'=>1,'spend_micros'=>750000],$calls->usage($sameAccount),'A reconstructed binding cannot reset account spend');
 $calls->reserve($sameAccount,new Money('0.25','USD'));
-same(['used'=>2,'spend_micros'=>1000000],$calls->usage($other),'Reservations survive service reconstruction and server changes');
+same(['used'=>2,'spend_micros'=>1000000],$calls->usage($other),'Reservations survive binding and service reconstruction');
 $refuses(fn()=>$calls->reserve($other,new Money('0.000001','USD')));
 $calls->reserve($other);$calls->reserve($sameAccount);$refuses(fn()=>$calls->reserve($other));
 same(['used'=>4,'spend_micros'=>1000000],$calls->usage($other),'Calls and spend share an atomic cap; refusals refund nothing');
@@ -69,12 +69,17 @@ $refuses(fn()=>$calls->reserve(new AccountBinding('namesilo',$other->serverId,En
 $test=$account('namesilo','test-account','test');$refuses(fn()=>$calls->reserve($test));
 DB::transaction(fn()=>$refuses(fn()=>$calls->reserve($other)));
 same(['used'=>3,'spend_micros'=>0],$calls->usage($other),'Policy, currency, binding and transaction refusals consume no capacity');
+// Historical account usage can predate the current server enrollment; no account rebinding is enabled here.
+DB::table(EnomLiveCallSchema::TABLE)->insert(['account'=>hash('sha256',"namesilo\0live\0restored-local-account"),'day'=>'2026-11-02','used'=>3,'spend_micros'=>900000]);
+$restored=$account('namesilo','restored-local-account');$restoredCalls=new LiveReservations($policy);
+same(['used'=>3,'spend_micros'=>900000],$restoredCalls->usage($restored),'A new local binding retains prior usage by stable identity');
+$restoredCalls->reserve($restored,new Money('0.10','USD'));$refuses(fn()=>$restoredCalls->reserve($restored));
 // A day change after the conditional update must refuse while retaining that reservation.
 DB::listen(static function($query)use($clock):void {
     if(str_starts_with($query->sql,'update')&&str_contains($query->sql,EnomLiveCallSchema::TABLE)){$clock->instant=$clock->instant->modify('+1 day');}
 });
 $refuses(fn()=>$calls->reserve($other));
-same(4,(int)DB::table(EnomLiveCallSchema::TABLE)->where('day','2026-11-02')->value('used'),'Rollover refusal retains the unsent reservation');
+same(4,(int)DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>hash('sha256',"namesilo\0live\0shared-local-account"),'day'=>'2026-11-02'])->value('used'),'Rollover refusal retains the unsent reservation');
 Schema::rename(EnomLiveCallSchema::TABLE,'domains_live_reservations_unreadable');
 $refuses(fn()=>$calls->reserve($other));
 Schema::rename('domains_live_reservations_unreadable',EnomLiveCallSchema::TABLE);
