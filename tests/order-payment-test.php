@@ -122,16 +122,19 @@ same('Not sent. Nothing changed at the registrar.',$failure->invoke(null,$op(['s
 same('We couldn’t make this change.',$failure->invoke(null,$op(['safe_code'=>'anything_else'])),'Any other failure still gets a reason');
 $domain=new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Nameservers','state'=>'Failed','date'=>'2026-10-27','note'=>'The registrar refused this change.','retry'=>true],['label'=>'Contacts','state'=>'Under review','date'=>'2026-10-20']],[],[],[],false);
 $table=storefrontDom(view('domains::partials.activity',['domain'=>$domain])->render());
-$cells=$table->query('//td[@data-label="Status"]');
-expect(str_contains($norm($cells->item(0)->textContent),'The registrar refused this change. Try again. Still stuck? Contact support'),'Failed row shows reason and next step');
-same('Under review',trim($cells->item(1)->textContent),'Other rows stay short');
+$steps=$table->query('//ol[@class="domains-trace"]/li');
+$word=fn($li)=>trim($table->query('./span[last()]',$li)->item(0)->textContent);
+expect(str_contains($norm($steps->item(0)->textContent),'The registrar refused this change. Try again. Still stuck? Contact support')&&$word($steps->item(0))==='Failed','Failed step shows reason and next step');
+same('Under review',$word($steps->item(1)),'Other steps end in their word');
 // Without Edit, the customer is told to ask us, never to try again.
 $noEdit=storefrontDom(view('domains::partials.activity',['domain'=>new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Contacts','state'=>'Failed','date'=>'2026-10-27','note'=>'Not sent. Nothing changed at the registrar.','retry'=>false]],[],[],[],false)])->render());
-same('FailedNot sent. Nothing changed at the registrar. Contact support to make this change.',$norm($noEdit->query('//td[@data-label="Status"]')->item(0)->textContent),'A failed change the customer can\'t make asks them to contact us');
+$step=$norm($noEdit->query('//ol[@class="domains-trace"]/li')->item(0)->textContent);
+expect(str_contains($step,'Not sent. Nothing changed at the registrar. Contact support to make this change.')&&!str_contains($step,'Try again'),'A failed change the customer can\'t make asks them to contact us');
 $row=['id'=>75,'pending'=>false,'text'=>'Not sent. Nothing changed at the registrar.'.Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::TRY_AGAIN];
 same('Not sent. Nothing changed at the registrar. Contact support to make this change.',OwnedDomains::askUs($row,false)['text'],'The row under a setting without Edit asks them to contact us');
 same($row,OwnedDomains::askUs($row,true),'With Edit, the row keeps Try again');
 $done=storefrontDom(view('domains::partials.activity',['domain'=>new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Renewal','state'=>'Cancelled','date'=>'2026-10-27','note'=>'We added $1.00 to account credit.']],[],[],[],false)])->render());
-same('CancelledWe added $1.00 to account credit.',$norm($done->query('//td[@data-label="Status"]')->item(0)->textContent),'A settled note asks for nothing more');
-same(2,$table->query('//td[@data-label="Date"][string-length(normalize-space())>0]')->length,'Both rows show a date');
+$step=$norm($done->query('//ol[@class="domains-trace"]/li')->item(0)->textContent);
+expect(str_contains($step,'We added $1.00 to account credit.')&&!str_contains($step,'Contact support')&&!str_contains($step,'Try again'),'A settled note asks for nothing more');
+same(2,$table->query('//ol[@class="domains-trace"]/li[.//time]')->length,'Both steps show a date');
 $nativeSuccessful=true;echo "Order payment checks passed.\n";

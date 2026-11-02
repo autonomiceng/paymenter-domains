@@ -1,8 +1,17 @@
-<section class="domains-panel" id="history" aria-labelledby="heading-history"><div class="domains-panel__h"><h2 id="heading-history" class="domains-h2">History</h2></div>
-@if (!$domain->progress && !$domain->history)<div class="domains-panel__b"><p class="domains-muted">No changes yet.</p></div>@else
-<div class="domains-tablewrap"><table class="domains-tbl domains-stackable"><thead><tr><th scope="col">Change</th><th scope="col">Status</th><th scope="col">Date</th></tr></thead><tbody>
-@foreach ($domain->progress as $row)<tr><td class="domains-cell-wide" data-label="Change">{{ $row['label'] }}@if ($row['by'] ?? null)<span class="domains-sub">By {{ $row['by'] }}</span>@endif</td> <td class="domains-cell-wide" data-label="Status">{{ $row['state'] }}@if ($row['note'] ?? null)<span class="domains-sub">{{ $row['note'] }}@if ($row['state'] === 'Failed')@if ($row['retry'] ?? false) Try again. @include('domains::partials.contact-support', ['before' => 'Still stuck? '])@else @include('domains::partials.contact-support', ['after' => ' to make this change.'])@endif @endif</span>@endif</td> <td class="domains-cell-wide" data-label="Date">@if ($row['date'] ?? null)@include('domains::partials.moment', ['at' => $row['date']])@endif</td></tr>@endforeach
-@foreach ($domain->history as $invoice)<tr><td class="domains-cell-wide" data-label="Change"><a class="domains-a" href="{{ $invoice['url'] }}">Renewal invoice {{ $invoice['number'] }}</a></td> <td class="domains-cell-wide" data-label="Status">{{ $invoice['status'] }}</td> <td class="domains-cell-wide" data-label="Date">@if ($invoice['date'] ?? null)@include('domains::partials.date', ['date' => $invoice['date']])@endif</td></tr>@endforeach
-</tbody></table></div>
+{{-- History as a trace: newest work first, the mark and the word say how each step ended. --}}
+@php
+    $tone = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::stepTone(...);
+    $steps = [...array_map(fn ($row) => [...$row, 'moment' => true], $domain->progress), ...$domain->history];
+    $all = request()->query('history') === 'all';
+@endphp
+<section class="domains-panel" id="history" aria-labelledby="heading-history"><div class="domains-panel__h"><h2 id="heading-history" class="domains-h2">History</h2>@if (count($steps) > 5 && !$all)<a class="domains-a" href="{{ $domain->actions['show'] }}?history=all#history">View all {{ count($steps) }}</a>@endif</div>
+@if (!$steps)<div class="domains-panel__b"><p class="domains-muted">No changes yet.</p></div>@else
+<ol class="domains-trace">@foreach ($all ? $steps : array_slice($steps, 0, 5) as $step)
+@php($word = $step['state'] ?? $step['status'])
+<li><span class="domains-status domains-tone-{{ $tone($word) }}" aria-hidden="true"></span><div>@if ($step['url'] ?? null)<a class="domains-a" href="{{ $step['url'] }}">Invoice #{{ $step['number'] }}</a>@else<b>{{ $step['label'] }}</b>@endif
+@if ($step['by'] ?? null)<span class="domains-sub">By {{ $step['by'] }}</span>@endif
+@if ($step['note'] ?? null)<span class="domains-sub">{{ $step['note'] }}@if ($word === 'Failed')@if ($step['retry'] ?? false) Try again. @include('domains::partials.contact-support', ['before' => 'Still stuck? '])@else @include('domains::partials.contact-support', ['after' => ' to make this change.'])@endif @endif</span>@endif
+@if ($step['date'] ?? null)<span class="domains-sub">@if ($step['moment'] ?? false)@include('domains::partials.moment', ['at' => $step['date']])@else @include('domains::partials.date', ['date' => $step['date']])@endif</span>@endif</div><span class="domains-tone-{{ $tone($word) }}">{{ $word }}</span></li>
+@endforeach</ol>
 @endif
 </section>

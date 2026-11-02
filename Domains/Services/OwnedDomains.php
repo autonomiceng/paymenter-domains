@@ -258,7 +258,7 @@ final readonly class OwnedDomains
             $invoiceIds = \Paymenter\Extensions\Servers\Domains\Models\HistoryLink::where('domain_id', $d->id)->where('user_id', $d->user_id)->pluck('invoice_id');
             // Dated by the last successful payment for a paid invoice, else by its issue date.
             $history = Invoice::whereKey($invoiceIds)->where('user_id', $d->user_id)->withMax(['transactions as succeeded_at' => fn ($q) => $q->where('status', 'succeeded')], 'created_at')->orderBy('id')->get()
-                ->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => ucfirst($i->status), 'url' => route('invoices.show', $i),
+                ->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => $i->status === 'pending' ? 'Unpaid' : ucfirst($i->status), 'url' => route('invoices.show', $i),
                     'date' => substr((string) ($i->status === 'paid' && $i->succeeded_at ? $i->succeeded_at : $i->created_at), 0, 10)])->all();
         }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';

@@ -98,6 +98,17 @@ final class DomainPage
         $setup = $d->actions['setup'] ?? null;
         return ['missing' => true, 'fix' => $setup && ($d->transfer['phase'] ?? null) === 'cutoff' && ($d->setup['contacts'] ?? false) ? ['label' => 'Update details', 'url' => $setup] : Missing::support($support)];
     }
+    /** The tone of a word in History: what ended well, what broke, what is the customer's to do, and what is still ours. */
+    public static function stepTone(string $word): string
+    {
+        return match ($word) {
+            'Completed', 'Paid' => 'ok',
+            'Failed' => 'bad',
+            'Unpaid', 'Action required' => 'warn',
+            'Cancelled' => 'muted',
+            default => 'info',
+        };
+    }
     public static function date(string $date): string
     {
         return CarbonImmutable::parse(substr($date, 0, 10), 'UTC')->format('M j, Y');

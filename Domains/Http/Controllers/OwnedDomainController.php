@@ -16,6 +16,7 @@ final readonly class OwnedDomainController
         $raw=$request->query('q');$search=is_string($raw)?trim(substr($raw,0,253)):'';
         $raw=$request->query('status');$filter=is_string($raw)&&isset(DomainStatus::SET[$raw])?$raw:'';
         $sort=in_array($request->query('sort'),['expiry','-expiry','name','-name'],true)?$request->query('sort'):'expiry';
+        $perPage=in_array((int)$request->query('per_page'),[25,50,100],true)?(int)$request->query('per_page'):25;
         // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops
         // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
         $rows=(new DomainSummaries())->listed($request->user(),now('UTC')->getTimestamp());
@@ -34,9 +35,9 @@ final readonly class OwnedDomainController
             return $desc?strcmp($b->name,$a->name):strcmp($a->name,$b->name);
         });
         $page=max(1,(int)$request->query('page',1));
-        $domains=new LengthAwarePaginator(array_slice($rows,($page-1)*25,25),count($rows),25,$page,['path'=>route('domains.domains.index'),'query'=>array_filter(['q'=>$search,'status'=>$filter,'sort'=>$sort],fn($v)=>$v!=='')]);
+        $domains=new LengthAwarePaginator(array_slice($rows,($page-1)*$perPage,$perPage),count($rows),$perPage,$page,['path'=>route('domains.domains.index'),'query'=>array_filter(['q'=>$search,'status'=>$filter,'sort'=>$sort,'per_page'=>$perPage===25?'':$perPage],fn($v)=>$v!=='')]);
         $transfersOffered=app(Storefront::class)->hasTransferOffers();
-        return view('domains::index',compact('domains','search','filter','sort','filterCounts','transfersOffered'));
+        return view('domains::index',compact('domains','search','filter','sort','perPage','filterCounts','transfersOffered'));
     }
     public function status(Request $request,int $domain)
     {
