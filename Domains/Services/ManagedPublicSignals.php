@@ -97,6 +97,15 @@ final class ManagedPublicSignals
             }
             if ($ticket->sourceOverflow) { $reading=$reading->withOmittedHosts(); }
             $complete=$reading->result()==='complete';$code=$reading->safeCode();
+            if($complete && $ticket->kind==='delegation'){
+                foreach($reading->queries as $answer){
+                    if($answer['name']!==$t['domain']->domain || $answer['type']!=='NS' || $answer['state']!=='rrset'){continue;}
+                    $baseline=\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::fromArray([
+                        'nameservers'=>array_values(array_unique(array_column($answer['records'],'value'))),'state'=>'observed','source'=>'public_dns_check','at'=>gmdate(DATE_ATOM,$ticket->startedAt)]);
+                    if($baseline){ManagedDnsSetup::retainBaseline($t['domain'],$t['config'],$baseline);}
+                    break;
+                }
+            }
             $confirmed=false;$earlyPoints=false;$delay=$ticket->interval;
             if ($complete && $ticket->kind==='delegation') { [$confirmed,$delay,$earlyPoints]=$this->confirmation($ticket,$reading,$now); }
             ManagedPublicObservation::create(['domain_id'=>$id,'user_id'=>$ticket->target->owner,'account_fingerprint'=>$ticket->target->account,

@@ -29,6 +29,7 @@ same(['example.com|NS'],$fake->calls,'No MX, A, AAAA or zone lookup for a domain
 same(0,ManagedPublicObservation::where('check_kind','points')->count(),'Missing zone produces no failed record observation');
 same(0,(int)DB::table(ManagedPublicWorkSchema::TABLE)->max('attempts'),'No-zone checks do not count as resolver failures');
 expect(!(new \Paymenter\Extensions\Servers\Domains\Services\WatchMaintenance())->health($now)['outage'],'A missing zone never raises a resolver alarm');
+DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);
 // Use real retained operation rows, so transfer/customer priority is checked through target capture and notice eligibility.
 $op=Operation::create(['domain_id'=>$id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
     'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'operation_key'=>'monitoring-customer-choice',
@@ -62,9 +63,9 @@ $refreshNameservers=static function($domain,array $actual,array $chosen,int $at)
     DB::table('domains_domains')->where('id',$domain->id)->update(['observation'=>$domain->getAttributes()['observation']]);
 };
 $intentResults=[];
-foreach(['later customer change','adopted customer nameservers','legacy without baseline','return from inherited external','return then unchosen refresh']as$case){
+foreach(['later customer change','adopted customer nameservers','legacy without baseline','platform import without baseline','platform first public read','return from inherited external','return then unchosen refresh']as$case){
     $registration=null;$change=null;$leave=null;$local=$d->fresh();$savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
-    $legacy=$case==='legacy without baseline';$refresh=$case==='return then unchosen refresh';$returned=$case==='return from inherited external'||$refresh;
+    $publicFirst=$case==='platform first public read';$platformImport=$case==='platform import without baseline'||$publicFirst;$legacy=$case==='legacy without baseline'||$platformImport;$refresh=$case==='return then unchosen refresh';$returned=$case==='return from inherited external'||$refresh;
     $customerNs=['ns1.customer.example','ns2.customer.example'];
     if($case!=='adopted customer nameservers' && !$legacy){
         if($returned){
@@ -90,11 +91,19 @@ foreach(['later customer change','adopted customer nameservers','legacy without 
     DB::table('domains_domains')->where('id',$id)->update(['observation'=>$local->getAttributes()['observation']]);
     if($legacy){
         DB::transaction(fn()=>ManagedDnsSetup::assign(ManagedPublicConfig::find($id),$default,'platform',null,'hosting_product',$now));
-        $refreshNameservers($local->fresh(),$customerNs,$customerNs,$now);
+        $initialNs=$platformImport?$default->profile()->nameservers:$customerNs;
+        if(!$publicFirst){$refreshNameservers($local->fresh(),$initialNs,$initialNs,$now);}
         same(null,\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::registrationNameservers($local->fresh()),'Legacy import has no manufactured acquisition baseline');
         same(0,Operation::where('domain_id',$id)->where('state','succeeded')->count(),'Legacy import has no successful choice');
+        expect($signals->enqueue($id,$uid,$now),'Normal enrollment retains the first usable import read without a provider call');
+        if($publicFirst){
+            $fake->answers['example.com|NS']=\Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset(new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery('example.com','NS'),
+                array_map(static fn($host)=>['host'=>'example.com','class'=>'IN','type'=>'NS','target'=>$host,'ttl'=>300],$initialNs));
+            managedDue($id,$now);expect($signals->observe($id,$uid,'delegation'),'An import with no stored section uses its first ordinary public DNS read');
+        }
         $upgradeIntent=DB::transaction(fn()=>(new ManagedPublicTarget())->capture($id,$uid,$now))['config']->expected_dns;
     }
+    if($platformImport){$refreshNameservers($local->fresh(),$customerNs,$customerNs,$now+1);expect($signals->enqueue($id,$uid,$now+1),'Later enrollment must not replace the platform baseline');}
     if($case==='adopted customer nameservers'){$refreshNameservers($local->fresh(),$default->profile()->nameservers,$customerNs,$now+1);}
     DB::table('domains_managed_public_observations')->where('domain_id',$id)->delete();
     $returnExpected=null;
@@ -119,11 +128,11 @@ foreach(['later customer change','adopted customer nameservers','legacy without 
         $intentResults[$case]['upgrade_intent']=$upgradeIntent;$intentResults[$case]['later_reads']=[];
         foreach([$default->profile()->nameservers,$customerNs]as$index=>$actual){
             $at=$checkedAt+$index+1;$refreshNameservers($local->fresh(),$actual,$customerNs,$at);
+            expect($signals->enqueue($id,$uid,$at),'Later reads pass through ordinary enrollment');
             $later=DB::transaction(fn()=>WatchNoticeTarget::capture('managed',$id,$uid,$at));
             $laterPlan=\Paymenter\Extensions\Servers\Domains\Services\WatchNoticePlan::dns($plan['state'],$later['delegation'],$at,$later['expected']);
             $laterSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$at);
             $intentResults[$case]['later_reads'][]=[$later['expected'],array_column($laterPlan['notices'],'kind'),$laterPlan['portal'],array_values(array_intersect($laterSummary->stateKeys,['watch.ns_pending','watch.ns_changed']))];
-            same(null,\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::registrationNameservers($local->fresh()),'Later reads do not manufacture a legacy baseline');
         }
         DB::transaction(fn()=>ManagedDnsSetup::assign(ManagedPublicConfig::find($id),$default,'platform',(int)$staff->id,'staff',$at));
         $intentResults[$case]['staff_platform']=DB::transaction(fn()=>WatchNoticeTarget::capture('managed',$id,$uid,$at))['expected'];
@@ -159,10 +168,13 @@ foreach(['later customer change','adopted customer nameservers','legacy without 
     DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 }
 $quietIntent=['expected'=>false,'notices'=>[],'portal'=>[],'summary'=>[]];
+$platformImportIntent=['expected'=>true,'notices'=>['ns_changed'],'portal'=>['ns_changed'],'summary'=>['watch.ns_pending'],'upgrade_intent'=>'platform',
+    'later_reads'=>[[true,[],['ns_changed'],['watch.ns_pending']],[true,[],['ns_changed'],['watch.ns_pending']]],'staff_platform'=>true];
 $returnIntent=[
     'expected'=>true,'notices'=>['ns_changed'],'portal'=>['ns_changed'],'summary'=>['watch.ns_pending'],'return_expected'=>true,
     'staff_external'=>false,'leave_again'=>[false,[],[],[]],'staff_platform'=>true];
-same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'legacy without baseline'=>[...$quietIntent,'upgrade_intent'=>null,'later_reads'=>[[false,[],[],[]],[false,[],[],[]]],'staff_platform'=>true],
+same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'legacy without baseline'=>[...$quietIntent,'upgrade_intent'=>'external','later_reads'=>[[false,[],[],[]],[false,[],[],[]]],'staff_platform'=>true],
+    'platform import without baseline'=>$platformImportIntent,'platform first public read'=>$platformImportIntent,
     'return from inherited external'=>$returnIntent,'return then unchosen refresh'=>$returnIntent],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
 // A concurrent default change discards the old answer and the next check uses the new template.
 managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Default read captured');

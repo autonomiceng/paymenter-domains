@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsQuery;
+use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation,ManagedPublicConfig,WatchProfile,WatchAudit};
 /** Local comparison configuration only. A template never writes customer DNS or registrar defaults. */
 final class ManagedDnsSetup
@@ -47,6 +48,27 @@ final class ManagedDnsSetup
         $id=\App\Models\Server::find($domain->server_id)?->settings()->where('key',NewDomainDns::KEY)->first()?->value;
         $profile=$id?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return self::usable($profile)?$profile:null;
+    }
+    /** Caller holds the current holding lock. Reads establish missing import history once; choices always win. */
+    public static function retainBaseline(Domain $domain,?ManagedPublicConfig $config,?NameserverEvidence $read=null,?iterable $operations=null): bool
+    {
+        try {
+            if($config?->edited_by!==null || ObservationProjection::registrationNameservers($domain)){return false;}
+            $operations??=$domain->operations()->where('authority_generation',$domain->authority_generation)->where('account_fingerprint',$domain->account_fingerprint)
+                ->where('service_id',$domain->service_id)->where('server_id',$domain->server_id)->where('registrar_key',$domain->registrar_key)
+                ->where('state','succeeded')->whereIn('action',['register','transfer','nameservers'])->get();
+            foreach($operations as $op){
+                if($op->state!=='succeeded' || $op->authority_generation!==$domain->authority_generation || $op->account_fingerprint!==$domain->account_fingerprint
+                    || (int)$op->service_id!==(int)$domain->service_id || (int)$op->server_id!==(int)$domain->server_id || $op->registrar_key!==$domain->registrar_key){continue;}
+                if(in_array($op->action,['register','transfer'],true) || ($op->action==='nameservers' && ManagementEvidence::resolved($op,$domain))){return false;}
+            }
+            // Prefer a previously stored identity-valid read on upgrade; never replace a valid baseline.
+            $read=ObservationProjection::nameservers($domain)??$read;
+            if(!$read || $read->state!=='observed'){return false;}
+            Domain::withoutTimestamps(fn()=>$domain->update(['observation'=>ObservationProjection::recordNameservers($domain,$read)]));
+            return true;
+        }
+        catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}
     }
     /** Staff intent wins; otherwise use the newest retained choice before acquisition evidence or inherited defaults. */
     public static function expected(?ManagedPublicConfig $config,?WatchProfile $profile,Domain $domain,?Operation $acquisition,?Operation $change): ?string

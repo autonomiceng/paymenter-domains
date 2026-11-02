@@ -54,6 +54,7 @@ final class ManagedPublicEnrollment
                     'reason'=>'managed_enrollment']);
             }
             if($config->profile_id===null && $proven){ManagedDnsSetup::assign($config,$proven,$expected,null,$proof,$now);$changed=true;}
+            if(ManagedDnsSetup::retainBaseline($d,$config,operations:$l['operations'])){$changed=true;}
             $watchChanged=$watch && in_array($watch->state,['active','paused'],true);
             if ($watchChanged) {
                 $changed=true;$before=$watch->revision;
