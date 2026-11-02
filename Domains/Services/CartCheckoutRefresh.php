@@ -43,7 +43,9 @@ final class CartCheckoutRefresh
                 }
             } catch (ContactValidation $e) {
                 foreach (OwnerFormValidation::contact($e)->messages('', registrar:$tld->registrar_key ?? 'enom') as $field => $message) { $component->addError($field, $message); }
-                $component->notify('Check the domain contact details below before payment.', 'error');
+                $component->notify($params === []
+                    ? 'Check your '.implode(', ', $e->labels()).' in Account. Save your details, then return to the cart and try checkout again.'
+                    : 'Check the domain contact details below before payment.', 'error');
                 OrderContact::clear(); $returnEarly();
             } catch (\Throwable $e) { OrderContact::clear(); self::unavailable($component, $e); $returnEarly(); }
         });

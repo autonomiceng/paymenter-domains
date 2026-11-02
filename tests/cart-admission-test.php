@@ -177,4 +177,32 @@ foreach ([172799=>true,172800=>false] as $age=>$allowed) {
     }
 }
 Livewire\Livewire::withQueryParams([]);$clock->instant=$now;
+// The real stock theme has no order-contact form: its no-argument button needs an account repair path.
+// Native rendering, notifications and invoice rollback cannot be proved with a service-only unit fixture.
+PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
+$stockUser=commerceUser();$cart=commerceCart($stockUser);
+$stockUser->properties()->create(['key'=>'address','value'=>'42 Original Street']);
+$line=commerceAdd($cart,$product,placeholderComFixtureName('stock-contact-placeholder.com'));
+$before=[Order::count(),Invoice::count(),Service::count()];
+$stock=Livewire\Livewire::actingAs($stockUser)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits',false);
+$stock->assertSeeHtml('wire:click="checkout"')->assertDontSeeHtml('id="domains-checkout-contact"');
+Illuminate\Support\Once::flush();$stock->call('checkout');
+same($before,[Order::count(),Invoice::count(),Service::count()],'Stock contact refusal creates no order, invoice or service');
+same($line->id,$cart->items()->sole()->id,'Stock contact refusal retains the cart for account repair');
+$stock->assertDispatched('notify',static fn($event,$params)=>($params[0]['type']??null)==='error'
+    &&str_contains($params[0]['message'],'Account')&&str_contains($params[0]['message'],'phone')
+    &&str_contains($params[0]['message'],'cart')&&!str_contains($params[0]['message'],'below'));
+foreach(['city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'United States','phone'=>'+1.2065550100'] as $key=>$value){
+    $stockUser->properties()->create(['key'=>$key,'value'=>$value]);
+}
+Illuminate\Support\Once::flush();$stock=Livewire\Livewire::actingAs($stockUser)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits',false);
+Illuminate\Support\Once::flush();$stock->call('checkout');
+same([$before[0]+1,$before[1]+1,$before[2]+1],[Order::count(),Invoice::count(),Service::count()],'Stock checkout succeeds after account repair without a theme change');
+// One saved property must not suppress ordinary fixtures' generated whole order contact.
+$partialUser=commerceUser();$cart=commerceCart($partialUser);
+$partialUser->properties()->create(['key'=>'phone','value'=>'+1.2025550100']);
+commerceAdd($cart,$product,placeholderComFixtureName('partial-account-fixture-placeholder.com'));
+commerceCheckout($partialUser,$cart);
+same($before[0]+2,Order::count(),'Partial-account commerce fixtures still submit a complete order contact');
+same(1,$partialUser->properties()->count(),'Generated fixture contacts do not save missing account details');
 $nativeSuccessful = true; echo "Native cart batch admission, mixed invoices, stale selections and eligibility refusals passed.\n";

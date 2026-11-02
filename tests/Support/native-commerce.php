@@ -25,7 +25,8 @@ function commerceCheckout(User $user, Cart $cart)
     Illuminate\Support\Once::flush();
     $page=Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
     // Ordinary commerce cases supply the contact form; account-specific cases define their own properties.
-    return $user->properties()->whereIn('key',['address','city','zip','country','phone'])->exists() ? $page->call('checkout')
+    $required=['address','city','zip','country','phone'];
+    return $user->properties()->whereIn('key',$required)->distinct()->count('key')===count($required) ? $page->call('checkout')
         : $page->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 }
 
