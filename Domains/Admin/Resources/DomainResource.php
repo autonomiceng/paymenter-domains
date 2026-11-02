@@ -59,7 +59,7 @@ class DomainResource extends Resource
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
             // Auto-renew applies until the domain has ended, so pending and under-review rows show it too.
-            TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(self::row($record,$livewire)['off']) {
+            TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(self::row($record,$livewire)['off']) {
                 null=>Missing::LABEL,true=>'Off',false=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
