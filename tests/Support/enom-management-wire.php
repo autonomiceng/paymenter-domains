@@ -13,6 +13,7 @@ $manageReply=static function(array $p)use($s,$reply):string {
     $body=match($c){
         'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="'.$s->id.'">paid-test-placeholder.com</DomainName><Status><Belongs-To>'.$s->owner.'</Belongs-To><Expiration>2027-10-21</Expiration></Status></GetDomainInfo>',
         'GetDNS'=>implode('',array_map(static fn($n)=>'<dns>'.$n.'</dns>',$s->ns)),
+        'SynchAuthInfo'=>'<InfoSynched>true</InfoSynched>',
         'GetRegLock'=>'<Reg-Lock>'.(int)$s->locked.'</Reg-Lock>',
         'GetHosts'=>'<DomainServices><HostRecords>true</HostRecords></DomainServices>'.implode('',array_map(static fn($v)=>'<host><name>'.$v['name'].'</name><type>'.$v['type'].'</type><address>'.htmlspecialchars($v['address'],ENT_XML1).'</address><mxpref>'.$v['mx_pref'].'</mxpref></host>',$s->dns)),
         'GetDomainSRVHosts'=>'<srv-records>'.implode('',array_map(static fn($v)=>'<srv><hostname>_'.$v['service'].'</hostname><protocol>_'.$v['protocol'].'</protocol><priority>'.$v['priority'].'</priority><weight>'.$v['weight'].'</weight><port>'.$v['port'].'</port><address>'.$v['target'].'</address></srv>',$s->srv??[])).'</srv-records>',

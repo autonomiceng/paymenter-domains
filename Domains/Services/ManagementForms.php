@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
 /** The one path from a change form to the request queue, for owner and staff alike. */
 final readonly class ManagementForms
 {
-    public const REQUESTED='Change requested. Check History for updates.';
+    public const REQUESTED='Saving…';
     public const NAMESERVERS_RISK='If the new nameservers aren’t set up, your website and email stop working.';
     public const CONTACTS_RISK='Changing the owner’s name, organization or email can block transfers for 60 days.';
     public const RECORDS_RISK='Anything that uses these records, like your website or email, can stop working.';
@@ -48,6 +48,8 @@ final readonly class ManagementForms
             default=>false,
         };
         if ($risky&&($p['confirmed']??null)!=='1') { throw new OwnerConfirmRequired; }
-        Runtime::management($d,$this->management)->request($actor,(int)$d->id,$action,$payload,$nonce,$this->ports->forDomain($d),recordIdentity:$records?ObservationRecords::identity($d):null);
+        $engine=Runtime::management($d,$this->management); $driver=$this->ports->forDomain($d);
+        $op=$engine->request($actor,(int)$d->id,$action,$payload,$nonce,$driver,recordIdentity:$records?ObservationRecords::identity($d):null);
+        if (in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)) { ManagementStart::afterResponse($op,$engine,$driver); }
     }
 }

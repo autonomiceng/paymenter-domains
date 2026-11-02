@@ -65,7 +65,7 @@ same($calls,count($GLOBALS['identityCalls']),'Daily balance stays off wire even 
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function():never {throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');}));
 app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();
 same($calls,count($GLOBALS['identityCalls']),'Runtime turn cannot promote staff factory to background reads');
-try{app(AccountBindings::class)->adoptionReader($binding,app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class),new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\CurlTransport);expect(false,'Identity bootstrap cannot construct an adoption domain reader');}
+try{app(AccountBindings::class)->adoptionReader($binding,app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));expect(false,'Identity bootstrap cannot construct an adoption domain reader');}
 catch(DomainException $e){same('Domain reads require separate deployment composition.',$e->getMessage(),'Adoption has a separate deployment gate');}
 same($calls,count($GLOBALS['identityCalls']),'Adoption factory refuses before any domain read');
 // Retained live account plus TEST deployment must refuse staff reads before transport construction.

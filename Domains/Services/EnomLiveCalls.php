@@ -2,49 +2,27 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,Money};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-/** Daily UTC reservations. Failed and unsent attempts retain both call and spend reservations. */
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomLiveReservationPolicy;
+
+/** Enom transport compatibility, including the existing typed definitely-unsent refusal. */
 final class EnomLiveCalls
 {
-    private static array $checkoutHeadroom=[];
-    /** Narrow the physical reservation for this login only; checkout keeps its full allowance. */
+    private static function reservations(): LiveReservations {return new LiveReservations(new EnomLiveReservationPolicy);}
     public static function withCheckoutHeadroom(string $uid,\Closure $read): mixed
-    {
-        $account=hash('sha256',$uid);$nested=isset(self::$checkoutHeadroom[$account]);self::$checkoutHeadroom[$account]=true;
-        try{return $read();}finally{if(!$nested){unset(self::$checkoutHeadroom[$account]);}}
-    }
-    private static function micros(string $amount): int
-    {
-        if(!preg_match('/^(?:0|[1-9][0-9]{0,8})\.[0-9]{1,6}$/D',$amount)){throw new EnomTestCallLimit;}
-        [$whole,$fraction]=explode('.',$amount);return (int)$whole*1000000+(int)str_pad($fraction,6,'0');
-    }
+    {return LiveReservations::withCheckoutHeadroom('enom',$uid,$read);}
     public static function reserve(AccountBinding $b,?Money $cost=null): string
     {
         OperationClaims::outside();
-        try {
-            $row=EnomLive::account($b);$limit=$row['daily_call_cap']??0;$spend=$row['daily_spend_limit_usd']??'0.00';
-            if(!is_int($limit)||$limit<1||!is_string($spend)||$cost!==null&&$cost->currency!=='USD'){throw new EnomTestCallLimit;}
-            $ceiling=self::micros($spend);$amount=$cost?self::micros($cost->amount):0;
-            if($amount>$ceiling){throw new EnomTestCallLimit;}
-            $day=EnomTestCalls::day();
-            // The UID retains usage if a later deployment selects another server.
-            $uid=Account::where('server_id',$b->serverId)->sole()->stable_identity;$key=hash('sha256',$uid);
-            if(isset(self::$checkoutHeadroom[$key])){$limit=intdiv($limit,2);}
-            DB::table(EnomLiveCallSchema::TABLE)->insertOrIgnore(['account'=>$key,'day'=>$day,'used'=>0,'spend_micros'=>0]);
-            if(DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
-                ->where('spend_micros','<=',$ceiling-$amount)->update(['used'=>DB::raw('used + 1'),'spend_micros'=>DB::raw('spend_micros + '.$amount)])!==1){throw new EnomTestCallLimit;}
-            EnomTestCalls::assertReservedDay($day);return $day;
-        }catch(\Throwable){EnomTestCalls::refuse();}
+        try{return self::reservations()->reserve($b,$cost);}catch(\Throwable){EnomTestCalls::refuse();}
     }
     public static function facts(AccountBinding $b): string
     {
         try {
-            $config=EnomLive::account($b);$uid=Account::where('server_id',$b->serverId)->sole()->stable_identity;
-            $row=DB::table(EnomLiveCallSchema::TABLE)->where(['account'=>hash('sha256',$uid),'day'=>EnomTestCalls::day()])->first();
-            $micros=(int)($row->spend_micros??0);$amount=intdiv($micros,1000000).'.'.str_pad((string)($micros%1000000),6,'0',STR_PAD_LEFT);
-            return ($row->used??0).' / '.($config['daily_call_cap']??0).' calls under our daily call cap; '.$amount.' / '.($config['daily_spend_limit_usd']??'0.00').' USD reserved today (UTC). Failed and unsent reservations remain counted.';
+            $config=EnomLive::account($b);$row=self::reservations()->usage($b);
+            $micros=$row['spend_micros'];$amount=intdiv($micros,1000000).'.'.str_pad((string)($micros%1000000),6,'0',STR_PAD_LEFT);
+            return $row['used'].' / '.($config['daily_call_cap']??0).' calls under our daily call cap; '.$amount.' / '.($config['daily_spend_limit_usd']??'0.00').' USD reserved today (UTC). Failed and unsent reservations remain counted.';
         }catch(\Throwable){return 'Our live account safety limits could not be read; sends are refused.';}
     }
     public static function read(string $uid): string

@@ -58,7 +58,7 @@ final class RenewalReplacements
     /** Requests whose refunded debt needs a read-only ledger review. @return list<int> */
     public static function activityIds(Domain $d): array
     {
-        $ops=$d->operations()->get()->filter(fn($op)=>array_key_exists('renewal_replacement',$op->policy??[]));
+        $ops=$d->operations()->where('action','renew')->get()->filter(fn($op)=>array_key_exists('renewal_replacement',$op->policy??[]));
         if($ops->isEmpty()){return [];}
         $ids=$ops->pluck('invoice_id');$service=$d->service;
         $l=['domain'=>$d,'service'=>$service,'invoices'=>\App\Models\Invoice::whereIn('id',$ids)->get(),

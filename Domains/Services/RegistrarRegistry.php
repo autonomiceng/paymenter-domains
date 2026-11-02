@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, RegistrarDriver};
+use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, AdoptionSource, Clock, RegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 
 final class RegistrarRegistry
@@ -11,7 +11,7 @@ final class RegistrarRegistry
     private array $entries = [];
 
     public function register(string $key, array $credentialKeys, AccountVerifier $verifier, \Closure $readerFactory, ?\Closure $balanceFactory = null, bool $accountReadsOnly = false,
-        ?\Closure $registrationPreflightFactory = null): void
+        ?\Closure $registrationPreflightFactory = null, ?\Closure $adoptionReaderFactory = null): void
     {
         if (!in_array($key, ['enom', 'namesilo'], true) || isset($this->entries[$key]) || $credentialKeys === []) {
             throw new \InvalidArgumentException('Unsupported or duplicate registrar.');
@@ -23,7 +23,7 @@ final class RegistrarRegistry
             }
             $keys[$name] = true;
         }
-        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly, $registrationPreflightFactory];
+        $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly, $registrationPreflightFactory, $adoptionReaderFactory];
     }
 
     public function keys(): array { return array_keys($this->entries); }
@@ -88,6 +88,26 @@ final class RegistrarRegistry
             throw new \RuntimeException('Registrar preflight factory returned an invalid handle.');
         }
         $binding->requireMatch($driver->binding());return $driver;
+    }
+
+    /** Local composition check only: never construct a reader or invoke a provider. */
+    public function requireAdoptionSource(string $key): void
+    {
+        $this->requireDomainReads($key);
+        if ($this->entry($key)[6] === null) { throw new \DomainException('Import reader is unavailable.'); }
+    }
+
+    /** Named import handle, independent of the general domain reader and spending ports. */
+    public function adoptionReader(AccountBinding $binding, #[\SensitiveParameter] array $credentials, Clock $clock): AdoptionSource
+    {
+        $this->requireAdoptionSource($binding->registrarKey);
+        $factory = $this->entry($binding->registrarKey)[6];
+        $reader = $factory($binding, $this->credentials($binding->registrarKey, $credentials), $clock);
+        if (!$reader instanceof AdoptionSource || $reader instanceof \Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver) {
+            throw new \DomainException('Invalid import reader.');
+        }
+        $binding->requireMatch($reader->binding());
+        return $reader;
     }
 
     private function entry(string $key): array
