@@ -7,7 +7,7 @@ require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver,CatalogueReader,TransferPoller};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,Disposition,Environment,ExecutionRecord,Query,RequestBudget,RequestContext,RequestOrigin,SendState,TransferStatus};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,Environment,ExecutionRecord,Query,RequestBudget,RequestContext,RequestOrigin,SendState,TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,Installation,LiveReservations,LocalAccountEnrollment,RegistrarFactories,RegistrarRegistry,RuntimePorts};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
@@ -52,7 +52,13 @@ $store=static function(array $credentials,array $facts)use($save,$binding):void 
 $store($credentials,$facts);
 config(['domains.namesilo_live.accounts'=>[$identity=>['fingerprint'=>$binding->fingerprint,'currency'=>'USD','balance_funding'=>true,'daily_call_cap'=>100,'daily_spend_limit_usd'=>'20.00']]]);
 CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
-$GLOBALS['runtimeWire']=['calls'=>[],'options'=>[],'fail'=>false,'fixtures'=>json_decode(file_get_contents(__DIR__.'/fixtures/synthetic-success.json'),true,32,JSON_THROW_ON_ERROR)];
+// Keep synthetic money as decimal strings, including while constructing the fake wire envelope.
+$GLOBALS['runtimeWire']=['calls'=>[],'options'=>[],'fail'=>false,'fixtures'=>[
+    'getAccountBalance'=>['reply'=>['code'=>300,'detail'=>'success','balance'=>'123.45']],
+    'checkRegisterAvailability'=>['reply'=>['code'=>300,'detail'=>'success','available'=>[['domain'=>'example.com','price'=>'12.34','premium'=>0,'duration'=>1]]]],
+    'getDomainInfo'=>['reply'=>['code'=>300,'detail'=>'success','created'=>'2026-01-01','expires'=>'2027-01-01','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',
+        'nameservers'=>[['nameserver'=>'ns1.example.net','position'=>1],['nameserver'=>'ns2.example.net','position'=>2]],'contact_ids'=>['registrant'=>'123','administrative'=>'123','technical'=>'123','billing'=>'123']]],
+]];
 $context=static fn(RequestOrigin $origin=RequestOrigin::Background,int $budget=10)=>new RequestContext($binding,$origin,$clock->now()->modify('+240 seconds'),new RequestBudget($budget),$clock,stopOnReadFailure:true);
 $deny=static function(callable $work):void {
     $before=count($GLOBALS['runtimeWire']['calls']);$refused=false;
