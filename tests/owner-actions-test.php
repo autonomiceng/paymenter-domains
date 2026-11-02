@@ -41,9 +41,28 @@ foreach([0,1]as$i){
     $r=$req($d,'code',['transfer_code'=>'foreign'],$other);
     try{$action->code($r,$d->id);expect(false,'Foreign POST refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
     expect(!$r->request->has('transfer_code'),'Foreign secret scrubbed before ownership refusal');
-    $before=$op->fresh();$r=$req($d,'setup',['nameservers'=>$i?"ns1.example.com\nns2.example.com":'','privacy'=>$i?'1':'0','confirmed'=>'1']);
-    $action->setup($r,$d->id);$after=$op->fresh();expect(isset($after->policy['owner_setup']),'Explicit setup captured');
-    same(false,$after->payload['privacy'],'Hidden setup ignores a newly submitted privacy choice for either registrar');
+    // The existing native fixture covers the controller, frozen operation and real Blade notice together.
+    $before=$op->fresh();$session->forget(['domains_status','errors']);
+    $r=$req($d,'setup',['nameservers'=>$i?"ns1.example.com\nns2.example.com":'','privacy'=>'1']);
+    $response=$action->setup($r,$d->id);
+    same(route('domains.domains.setup',$d->id),$response->getTargetUrl(),'Hidden privacy returns to setup');
+    expect($session->get('errors')?->has('owner_action')===true,'Hidden privacy has a general visible refusal');
+    expect(!$session->has('domains_status'),'Refused setup never reports success');
+    expect(!isset($op->fresh()->policy['owner_setup']),'Refused hidden privacy leaves setup unfrozen');
+    same($before->payload,$op->fresh()->payload,'Refusal preserves all stored choices');
+    storefrontViews();app('view')->share('errors',$session->get('errors'));$page=$i?'setup':'show';
+    $html=(new OwnedDomainController($owners))->$page($r,$d->id)->render();
+    $notice=storefrontDom($html)->query('//*[@role="alert"]')->item(0)?->textContent??'';
+    expect(str_contains($notice,'WHOIS privacy is not offered yet.')&&str_contains($notice,'save again without it'),'Real setup page explains refusal and how to save again');
+    same(0,storefrontDom($html)->query('//input[@name="privacy"]')->length,'Refusal keeps the privacy field hidden');
+    app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
+    $requests=$d->operations()->count();
+    $action->manage($req($d,'privacy_purchase'),$d->id,'privacy_purchase');
+    same($notice,storefrontDom((new OwnedDomainController($owners))->$page($r,$d->id)->with('errors',$session->get('errors'))->render())->query('//*[@role="alert"]')->item(0)?->textContent??'','Management refusal gives the same visible explanation');
+    same($requests,$d->operations()->count(),'Refused management purchase creates no request');
+    $r=$req($d,'setup',['nameservers'=>$i?"ns1.example.com\nns2.example.com":'','confirmed'=>'1']);
+    $action->setup($r,$d->id);$after=$op->fresh();expect(isset($after->policy['owner_setup']),'Setup without a privacy choice saves after refusal');
+    same(false,$after->payload['privacy'],'Setup without privacy preserves the stored choice');
     same($exact,$after->payload['epp'],'Setup preserves code');same($before->policy['paid_at'],$after->policy['paid_at'],'Setup preserves paid clock');
     same($before->payload['contacts'],$after->payload['contacts'],'Setup preserves contacts');same($before->funding,$after->funding,'Setup grants no funding');
     commerceReject(fn()=>$after->update(['payload'=>[...$after->payload,'privacy'=>!$after->payload['privacy']]]));
@@ -67,9 +86,9 @@ foreach([0,1]as$i){
     $registration=Paymenter\Extensions\Servers\Domains\Models\Domain::where('domain',$registerName)->sole()->operations()->sole();
     if($i){
         foreach([[],['ns1.owner-register-1-placeholder.com','ns2.example.com'],['xn--bad.example.com','ns2.example.com']]as$invalid){
-            $r=$req($registration->domain,'setup',['nameservers'=>implode("\n",$invalid),'privacy'=>'1','confirmed'=>'1','password'=>'PRIVATE-PASSWORD']);$action->setup($r,$registration->domain_id);
+            $r=$req($registration->domain,'setup',['nameservers'=>implode("\n",$invalid),'privacy'=>'0','confirmed'=>'1','password'=>'PRIVATE-PASSWORD']);$action->setup($r,$registration->domain_id);
             expect($session->get('errors')->has('nameservers'),'Purchase grammar maps to a fixed field error');
-            same(['nameservers'=>implode("\n",$invalid),'privacy'=>'1'],$session->get('_old_input'),'Setup retains only submitted nonsecret fields');
+            same(['nameservers'=>implode("\n",$invalid),'privacy'=>'0'],$session->get('_old_input'),'Setup retains only submitted nonsecret fields');
             expect(!isset($registration->fresh()->policy['owner_setup']),'Invalid settings never freeze');
         }
         $us=clone $registration->domain;$us->domain=reservedFixtureName('synthetic.example.com');$us->tld='us';
@@ -82,23 +101,25 @@ foreach([0,1]as$i){
         same(0,storefrontDom($html)->query('//input[@name="privacy"]')->length,'Setup errors do not expose the hidden privacy choice');
         app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
     }
+    commerceReject(fn()=>$setup->save($user,$registration->domain_id,['nameservers'=>$i?['ns1.example.com','ns2.example.com']:[],'privacy'=>true]));
+    expect(!isset($registration->fresh()->policy['owner_setup']),'Local writer also refuses hidden privacy without freezing setup');
     // Exercise the actual POST grammar: blank nameservers use the account template on either registrar.
     $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Owner POST registration DNS '.$i,'enabled'=>true,
         'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
         'edited_by'=>$user->id,'reason'=>'Synthetic Finish setup default']));
     $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$registration->server_id)->sole();
     DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked($account,$template->id));
-    $session->forget('errors');$r=$req($registration->domain,'setup',['nameservers'=>'','privacy'=>$i?'1':'0']);nativeNormalizeInput($r);$action->setup($r,$registration->domain_id);
+    $session->forget('errors');$r=$req($registration->domain,'setup',['nameservers'=>'']);nativeNormalizeInput($r);$action->setup($r,$registration->domain_id);
     expect(!$session->has('errors'),'Blank Finish setup with a template passes the HTTP boundary');
     same($template->nameservers,$registration->fresh()->payload['nameservers'],'HTTP capture fills the selected template before dispatch');
     DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked($account,null));
     expect(isset($registration->fresh()->policy['owner_setup']),'Registration desired settings captured before dispatch');
-    same(false,$registration->fresh()->payload['privacy'],'Hidden setup ignores new privacy even at the local writer');
+    same(false,$registration->fresh()->payload['privacy'],'Setup without privacy keeps the stored choice');
     same('awaiting_payment',$registration->fresh()->state,'Setup creates no financial or processing authority');
 }
 $legacy=$newTransfer('owner-legacy-privacy-placeholder.com',1,true,true);
 $legacy->update(['payload'=>[...$legacy->payload,'privacy'=>true]]);
-$setup->save($user,$legacy->domain_id,['nameservers'=>['ns1.example.com','ns2.example.com'],'privacy'=>false]);
+$setup->save($user,$legacy->domain_id,['nameservers'=>['ns1.example.com','ns2.example.com']]);
 same(true,$legacy->fresh()->payload['privacy'],'Hidden setup preserves a previously stored privacy choice');
 $incomplete=$newTransfer(placeholderComFixtureName('owner-before-setup-placeholder.com'),1,true,true);$incomplete->update(['payload'=>[...$incomplete->payload,'nameservers'=>[]]]);$makeTransfer(1);
 $priorCalls=count($state->calls);$engine->execute($incomplete->id);same([],$incomplete->fresh()->attempt??[],'Incomplete setup consumes no acquisition attempt');same($priorCalls,count($state->calls),'Incomplete setup performs no transport');

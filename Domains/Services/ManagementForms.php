@@ -22,7 +22,7 @@ final readonly class ManagementForms
     {
         // Paid-service toggles and renewals require an existing subscription at the driver; new offerings stay closed.
         if (!PrivacyVisibility::SHOWN && ($action==='privacy_purchase' || $action==='privacy_enable' && $this->ports->forDomain($d)->capabilities()->privacy!==PrivacyMode::Paid)) {
-            throw new \DomainException('Change unavailable.');
+            throw new OwnerFormValidation(['privacy']);
         }
         $records=in_array($action,['dns','srv'],true);
         $current=$records?(OwnerRecords::forDomain($d)[$action]??throw new \DomainException('Current records required.')):null;
