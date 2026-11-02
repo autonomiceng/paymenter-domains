@@ -78,6 +78,21 @@ same([$t->id],array_column($service->read(1,'default')['rows'],'id'),'Default fi
 same('Price = cost + $1.25, per year, times years.',$service->read(1,'own')['rows'][0]['formula'],'Custom rule numbers shown');
 // Page and CSV are the same selected visible matrix, not an unfiltered export.
 $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('show','own')->assertSee('How prices are worked out');
+// The panel explains the rows the table holds: Show, search and the other filters narrow it.
+$panel=static function($page):array{$dom=new DOMDocument();@$dom->loadHTML($page->html());return array_map(fn($node)=>trim($node->textContent),iterator_to_array((new DOMXPath($dom))->query('//dt[@data-price-pricing]')));};
+$every=fn()=>Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL);
+same(['Default pricing','Custom pricing for .com'],$panel($every()),'Nothing narrowed: both formulas');
+same(['Custom pricing for .com'],$panel($page),'Show narrows the panel');
+same([],$panel($every()->set('tableSearch','.org')),'Search narrows the panel');
+same([],$panel($every()->filterTable('country')),'Country TLDs narrows the panel');
+same(['Default pricing'],$panel($every()->filterTable('show','default')->set('tableSearch','.com')),'Every restriction narrows the panel together');
+// A saved Show value this page no longer offers reads as all TLDs: the table, the panel, the empty state and the CSV agree.
+foreach(['bogus',['own']] as $value){
+    $odd=$every()->set('tableFilters.show.value',$value)->assertSuccessful()->assertCountTableRecords(2);
+    same(['Default pricing','Custom pricing for .com'],$panel($odd),'An unknown Show value explains every row');
+    $odd->call('downloadCsv');same(3,count(preg_split('/\r?\n/',trim(base64_decode($odd->effects['download']['content'])))),'An unknown Show value downloads every row');
+    $every()->set('tableFilters.show.value',$value)->set('tableSearch','.org')->assertSuccessful()->assertSee('No TLDs match');
+}
 same(['all'=>'All TLDs','below_cost'=>'Below cost','loses_money'=>'Loses money after card fee','default'=>'Default pricing','own'=>'Custom pricing'],PriceList::FILTERS,'Filter labels use Default and Custom');
 $page->assertSee('Profit')->assertDontSee('Rough profit')->assertDontSee('Own rule')->assertDontSee('Account default')->assertDontSee('Next step')->assertDontSee('Raise the price');
 $page->assertSee('International cards and refunds can cost more.')->assertSee('Issued invoices keep their prices.');

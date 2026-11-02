@@ -68,7 +68,7 @@ final class SellTable
     {
         if(!$row->listed){return ['label'=>'Not for sale','tone'=>'gray'];}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;$rule=$this->rule($server);
-        if($sold!==null&&$sold['register']===[]){return ['label'=>'Renewals only','tone'=>'gray'];}
+        if($sold!==null&&$sold['register']===[]){return ['label'=>$sold['transfer']===[]?'Renewals only':'Renewals and transfers only','tone'=>'gray'];}
         if($sold!==null&&SellRule::decide($row,$rule)==='limit'){
             $sales=$this->sales($row);
             return ['label'=>$sales['label']??'Waiting for prices','tone'=>$sales['tone']??'warning',
@@ -130,8 +130,13 @@ final class SellTable
         return $this->savedRows[self::key($row)]??null;
     }
     private function kept(string $filter): array {return $this->filtered[$filter]??=app(PriceList::class)->read($this->years,$filter,$this->scope());}
-    /** The formulas behind the rows in view: a filter narrows these along with the table. */
-    public function explanations(?string $filter): array {return ($filter===null?$this->saved():$this->kept($filter))['explanations'];}
+    /** The formulas behind the table's rows on every page: search and filters narrow these along with the table.
+     * @param list<string> $held server:tld keys the table holds */
+    public function explanations(array $held): array
+    {
+        $keep=array_flip($held);
+        return PriceList::explain(array_filter($this->saved()['rows'],static fn(array $row):bool=>isset($keep[$row['server_id'].':'.ltrim($row['tld'],'.')])));
+    }
     /** Narrows the table to the TLDs a price filter keeps. The same read as the CSV, so both list the same rows. */
     public function only(Builder $query,string $filter): Builder
     {

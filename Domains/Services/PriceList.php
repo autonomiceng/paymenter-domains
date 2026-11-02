@@ -58,19 +58,24 @@ final class PriceList
             if(match($filter){'below_cost'=>!$below,'loses_money'=>!$loss,'default'=>!$tld->use_default_rule,'own'=>$tld->use_default_rule,default=>false}){continue;}
             $rows[]=$row;
         }
-        $explanations=[];
-        foreach($rows as $row){
-            $key=$row['server_id'].':'.$row['pricing'].':'.$row['formula'];
-            $explanations[$key]??=['account'=>$row['account'],'pricing'=>$row['pricing'],'formula'=>$row['formula'],'fee'=>$row['fee'],'fee_in_price'=>$row['fee_in_price'],'tlds'=>[]];
-            $explanations[$key]['tlds'][]=$row['tld'];
-        }
         $warnings=[];
         foreach($skipped as $row){
             $key=$row['server_id'].':'.$row['cause'].($row['cause']==='custom_rule'?':'.$row['id']:'');
             $warnings[$key]??=['server_id'=>$row['server_id'],'account'=>$row['account'],'cause'=>$row['cause'],'tlds'=>[]];
             $warnings[$key]['tlds'][]=$row['tld'];
         }
-        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_values($warnings),'accounts'=>$accounts,'years'=>$years,'explanations'=>array_values($explanations)];
+        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_values($warnings),'accounts'=>$accounts,'years'=>$years,'explanations'=>self::explain($rows)];
+    }
+    /** One formula per account and pricing type, with the TLDs it prices. Grouped by account id, since two accounts can share a name. */
+    public static function explain(array $rows): array
+    {
+        $explanations=[];
+        foreach($rows as $row){
+            $key=$row['server_id'].':'.$row['pricing'].':'.$row['formula'];
+            $explanations[$key]??=['account'=>$row['account'],'pricing'=>$row['pricing'],'formula'=>$row['formula'],'fee'=>$row['fee'],'fee_in_price'=>$row['fee_in_price'],'tlds'=>[]];
+            $explanations[$key]['tlds'][]=$row['tld'];
+        }
+        return array_values($explanations);
     }
     /** Only saved-setting validation failures are recoverable here; database and programmer errors propagate. */
     private static function readSetting(\Closure $read): ?array

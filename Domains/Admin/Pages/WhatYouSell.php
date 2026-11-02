@@ -188,8 +188,8 @@ class WhatYouSell extends Page implements HasTable
     /** The list as the table holds it, on every page: same years, search, filters and focused TLD. Saved prices only, so an estimate row stays out. */
     public function downloadCsv(): \Symfony\Component\HttpFoundation\StreamedResponse
     {
-        $years=$this->years();$held=$this->getFilteredTableQuery()->get(['server_id','tld'])->map(fn(SellRow $row)=>SellTable::key($row))->all();
-        $csv=app(PriceList::class)->csv($years,$this->show()??'all',$this->account===self::ALL?null:$this->account,$held);
+        $years=$this->years();
+        $csv=app(PriceList::class)->csv($years,$this->show()??'all',$this->account===self::ALL?null:$this->account,$this->held());
         return response()->streamDownload(static function()use($csv):void{echo $csv;},'domain-prices-'.$years.'-'.($years===1?'year':'years').'.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
     }
     /** The head line: what this account sells. All accounts has no one rule to sum, so it says why the buttons are off. */
@@ -208,8 +208,12 @@ class WhatYouSell extends Page implements HasTable
     }
     /** The saved read the panel and the left-out warning show. Empty for staff without costs. */
     public function savedPrices(): array {return $this->reads()->saved();}
-    public function explanations(): array {return $this->reads()->explanations($this->canSeeCosts()?$this->show():null);}
-    private function show(): ?string {return $this->getTableFilterState('show')['value']??null;}
+    public function explanations(): array {return $this->canSeeCosts()?$this->reads()->explanations($this->held()):[];}
+    /** @return list<string> server:tld keys of every row the table holds, on every page */
+    private function held(): array {return $this->getFilteredTableQuery()->get(['server_id','tld'])->map(fn(SellRow $row)=>SellTable::key($row))->all();}
+    private function show(): ?string {return self::showFilter($this->getTableFilterState('show')['value']??null);}
+    /** A saved Show value this page no longer offers reads as no Show filter, so the page still opens. */
+    private static function showFilter(mixed $value): ?string {return is_string($value)&&$value!=='all'&&isset(PriceList::FILTERS[$value])?$value:null;}
     /** What the table's words mean, said once under the toolbar so cells stay plain numbers. */
     public function tableNote(): ?string
     {
@@ -292,8 +296,8 @@ class WhatYouSell extends Page implements HasTable
                 Filter::make('country')->label('Country TLDs')->query(fn($query)=>$query->where(fn($q)=>$q->where('tld','like','__')->orWhere('tld','like','%.__'))),
                 Filter::make('no_cost')->label('No cost yet')->query(fn($query)=>$query->whereNull('register_cost')),
                 SelectFilter::make('show')->label('Show')->placeholder(PriceList::FILTERS['all'])->visible($costs)->options(array_diff_key(PriceList::FILTERS,['all'=>true]))
-                    ->indicateUsing(fn(array $state)=>PriceList::FILTERS[$state['value']??'']??null)
-                    ->query(fn($query,array $data)=>($data['value']??null)===null?$query:$this->reads()->only($query,$data['value'])),
+                    ->indicateUsing(fn(array $state)=>($value=self::showFilter($state['value']??null))===null?null:PriceList::FILTERS[$value])
+                    ->query(fn($query,array $data)=>($value=self::showFilter($data['value']??null))===null?$query:$this->reads()->only($query,$value)),
             ])
             ->columns([
                 TextColumn::make('tld')->label('TLD')->extraCellAttributes(['class'=>'domains-sell-pin'])->extraHeaderAttributes(['class'=>'domains-sell-pin'])->weight('medium')->fontFamily('mono')->sortable()->formatStateUsing(fn(string $state)=>'.'.$state)

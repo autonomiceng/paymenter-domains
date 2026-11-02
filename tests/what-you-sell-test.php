@@ -357,6 +357,10 @@ $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],['choice'=>'s
 same(['register'=>[],'renew'=>[1],'transfer'=>[],'registry'=>false,'renewal_safe'=>true],CatalogueAcceptances::load($binding)->endings['org'],'Holders keep renewals');
 $page->assertSee('Renewals only');
 config(['domains.hidden_endings'=>['org']]);Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$server->id])->assertSee('.org')->assertSee('Renewals only');config(['domains.hidden_endings'=>['.XYZ','adult']]);
+// Transfers still taken are part of the label.
+$accepted=CatalogueAcceptances::load($binding);CatalogueAcceptances::save($binding,$accepted->revision,['org'=>['register'=>[],'renew'=>[1],'transfer'=>[1],'registry'=>false,'renewal_safe'=>true]]+$accepted->endings);
+Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$server->id])->assertTableColumnStateSet('status','Renewals and transfers only',$row('org'));
+CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,$accepted->endings);
 
 // The checklist links here.
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
