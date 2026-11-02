@@ -10,11 +10,13 @@ use Filament\Support\Enums\IconPosition;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,StatusMark,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
@@ -57,11 +59,11 @@ class RegistrarSetup extends Page implements HasTable
     {
         $row=fn(Server $s)=>$this->row($s);
         $missing=static fn(TextColumn $column)=>$column->color(fn($state,Server $record)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null);
-        return $table->query(Server::query()->where('extension','Domains'))->defaultSort('id')->paginated(false)->heading('Accounts')
+        return $table->query(self::accounts())->defaultSort('id')->paginated(false)->heading('Accounts')->searchPlaceholder('Search account')
             ->emptyStateHeading('No registrar accounts')->emptyStateDescription('Add one to start selling domains.')
             ->recordUrl(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id]))
             ->columns([
-                TextColumn::make('name')->label('Account')->weight('medium')->wrap()->description(fn(Server $record)=>$row($record)['summary'])
+                TextColumn::make('name')->label('Account')->searchable()->weight('medium')->wrap()->description(fn(Server $record)=>$row($record)['summary'])
                     ->suffix(fn(Server $record)=>$row($record)['demo']?DemoData::tag(inline:true):null),
                 TextColumn::make('mode')->label('Mode')->state(fn(Server $record)=>$row($record)['connected']?RegistrarFacts::mode($row($record)['account']):null),
                 TextColumn::make('status')->label('Status')->badge()->state(fn(Server $record)=>$row($record)['status']['label'])
@@ -71,6 +73,15 @@ class RegistrarSetup extends Page implements HasTable
                         return $b['value']===null?$b['cause']:($b['low']?RegistrarFacts::warn('Low balance'):'Checked '.$b['checked']);})),
                 TextColumn::make('due')->label('Due in 30 days')->state(fn(Server $record)=>$row($record)['balance']['due']??null)
                     ->description(fn(Server $record)=>($row($record)['balance']['without_cost']??0)>0?RegistrarFacts::warn($row($record)['balance']['without_cost'].' without a cost'):null),
+            ])
+            ->filters([
+                SelectFilter::make('registrar')->label('Registrar')->options(fn()=>Account::query()->distinct()->pluck('registrar_key')->mapWithKeys(fn(string $key)=>[$key=>TldFacts::registrar($key)])->all())
+                    ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $key)=>$q->whereIn('id',Account::where('registrar_key',$key)->select('server_id')))),
+                SelectFilter::make('mode')->label('Mode')->options(['live'=>'Live','test'=>'Test'])
+                    ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $mode)=>$q->whereIn('id',Account::where('environment',$mode==='live'?'=':'!=','live')->select('server_id')))),
+                // Status is worked out per account, so this one reads the rows.
+                SelectFilter::make('status')->label('Status')->options(fn()=>self::accounts()->get()->map(fn(Server $s)=>$this->row($s)['status']['label'])->unique()->sort()->mapWithKeys(fn(string $label)=>[$label=>$label])->all())
+                    ->query(fn(Builder $query,array $data)=>$query->when($data['value']??null,fn(Builder $q,string $label)=>$q->whereIn('id',self::accounts()->get()->filter(fn(Server $s)=>$this->row($s)['status']['label']===$label)->modelKeys()))),
             ])
             ->recordActions([
                 Action::make('add_funds')->label('Add funds')->link()->icon('heroicon-m-arrow-top-right-on-square')->iconPosition(IconPosition::After)
@@ -88,6 +99,7 @@ class RegistrarSetup extends Page implements HasTable
         return $this->rows[$s->id]=['account'=>$a,'status'=>$status,'connected'=>$connected,'summary'=>RegistrarFacts::summary($s,$a),
             'demo'=>$a!==null&&DemoData::is($a),'balance'=>$connected?RegistrarFacts::balance($a):null];
     }
+    private static function accounts(): Builder { return Server::query()->where('extension','Domains'); }
     private static function resourceUrl(string $resource,string $page): ?string
     { try { return class_exists($resource)?$resource::getUrl($page):null; } catch (\Throwable) { return null; } }
 }

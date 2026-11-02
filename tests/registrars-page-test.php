@@ -77,6 +77,11 @@ foreach(['Registrar setup','Registrar balances','Server #','Unknown','Viewing us
     expect(!str_contains($html,$needle),'List never shows: '.$needle);}
 $missing=ContactDetails::missingRequiredProperties();
 if($missing){$list->assertSee("Customers can't enter")->assertSee('Add them as custom properties.')->assertSee('Open custom properties');}
+// Search and filters work on this short list too.
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Search account')->searchTable('Spare')->assertSee('Spare account')->assertDontSee('Old account');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('registrar','namesilo')->assertSee('Demo NameSilo')->assertDontSee('Enom test account')->assertDontSee('Spare account');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('mode','live')->assertDontSee('Enom test account');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('status','Not connected')->assertSee('Spare account')->assertDontSee('Enom test account');
 // Native create permission and a usable route are both required.
 $creator=staffUser([Staff::VIEW,'admin.servers.create']);
 $routes=app('router')->getRoutes();$withoutCreate=new Illuminate\Routing\RouteCollection;
