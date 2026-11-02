@@ -48,11 +48,11 @@ final class ManagedDnsSetup
         $profile=$id?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return self::usable($profile)?$profile:null;
     }
-    /** Staff intent wins; otherwise use the newest retained choice before local evidence or inherited defaults. */
+    /** Staff intent wins; otherwise use the newest retained choice before acquisition evidence or inherited defaults. */
     public static function expected(?ManagedPublicConfig $config,?WatchProfile $profile,Domain $domain,?Operation $acquisition,?Operation $change): ?string
     {
         if(!self::usable($profile)){return $config?->expected_dns;}
-        // Staff > retained choices > baseline local evidence > automatic inheritance, independent of the value.
+        // Staff > retained choices > acquisition baseline > automatic inheritance. Refreshes never choose intent.
         $intent=['order'=>[-1,0,0],'expected'=>null];
         $offer=static function(?string $expected,int $source,int $at,int $management=0)use(&$intent):void{
             if([$source,$at,$management]>$intent['order']){$intent=['order'=>[$source,$at,$management],'expected'=>$expected];}
@@ -68,8 +68,6 @@ final class ManagedDnsSetup
             try{
                 if($management){
                     if(!ManagementEvidence::resolved($op,$domain)){continue;}
-                    $readAt=ManagementReadRecovery::latest($op)['at']??null;
-                    if($readAt!==null){$at=(new \DateTimeImmutable($readAt))->getTimestamp();}
                 }
                 if($op->action==='transfer'){$offer('external',2,$at);}
                 else{$nameservers($op->payload['nameservers']??null,2,$at,$management);}
@@ -77,11 +75,10 @@ final class ManagedDnsSetup
             catch(\Illuminate\Contracts\Encryption\DecryptException){$offer(null,2,$at,$management);}
         }
         try{
-            $stored=ObservationProjection::nameservers($domain);
+            // This retained baseline precedes management refreshes; current sections are observations only.
+            $stored=ObservationProjection::registrationNameservers($domain);
             if($stored){
-                // A confirmed management section is a choice; baseline local evidence covers older/adopted holdings.
-                $management=isset($domain->observation['sections']['nameservers']) && $stored->state==='observed'?1:0;
-                $nameservers($stored->nameservers,$management?2:1,(new \DateTimeImmutable($stored->at))->getTimestamp(),$management);
+                $nameservers($stored->nameservers,1,(new \DateTimeImmutable($stored->at))->getTimestamp());
             }
         }
         catch(\Illuminate\Contracts\Encryption\DecryptException){$offer(null,1,PHP_INT_MAX);}

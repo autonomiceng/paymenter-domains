@@ -42,10 +42,29 @@ foreach(['register','transfer']as$action){
 }
 DB::table('domains_operations')->where('id',$op->id)->delete();
 // Confirm both external samples before checking portal and delivery policy for current customer intent.
+$refreshNameservers=static function($domain,array $actual,array $chosen,int $at)use($account,$clock):void{
+    $binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);$calls=[];
+    $port=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($binding,static function($origin,$command,$parameters,$timeout)use(&$calls,$actual,$domain):string{
+        $calls[]=$command;
+        $body=match($command){
+            'GetDomainInfo'=>'<GetDomainInfo><DomainName DomainNameID="'.$domain->provider_domain_id.'">'.$domain->domain.'</DomainName><Status><Belongs-To>account-enom</Belongs-To></Status></GetDomainInfo>',
+            'GetDNS'=>implode('',array_map(static fn($ns)=>'<dns>'.$ns.'</dns>',$actual)),
+        };
+        return '<interface-response><Command>'.$command.'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
+    });
+    $request=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$domain->id,$domain->domain,'nameservers',['nameservers'=>$chosen],$domain->provider_domain_id);
+    $context=new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(2),$clock);
+    $observed=$port->observe($request,$context);
+    same(['GetDomainInfo','GetDNS'],$calls,'Refresh reads the changed registrar state without a write or a nameserver request');
+    $projection=$domain->observation??[];
+    $projection['sections']['nameservers']=\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::section($domain,['operation_key'=>$request->key,'at'=>gmdate(DATE_ATOM,$at),'facts'=>$observed->facts()]);
+    $domain->observation=$projection;
+    DB::table('domains_domains')->where('id',$domain->id)->update(['observation'=>$domain->getAttributes()['observation']]);
+};
 $intentResults=[];
-foreach(['later customer change','adopted customer nameservers','return from inherited external']as$case){
+foreach(['later customer change','adopted customer nameservers','return from inherited external','return then unchosen refresh']as$case){
     $registration=null;$change=null;$leave=null;$local=$d->fresh();$savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
-    $returned=$case==='return from inherited external';
+    $refresh=$case==='return then unchosen refresh';$returned=$case==='return from inherited external'||$refresh;
     $customerNs=['ns1.customer.example','ns2.customer.example'];
     if($case!=='adopted customer nameservers'){
         if($returned){
@@ -69,16 +88,19 @@ foreach(['later customer change','adopted customer nameservers','return from inh
             \Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed($customerNs,'namesilo_domain_info',new DateTimeImmutable('@'.$now)));
     }
     DB::table('domains_domains')->where('id',$id)->update(['observation'=>$local->getAttributes()['observation']]);
+    if($case==='adopted customer nameservers'){$refreshNameservers($local->fresh(),$default->profile()->nameservers,$customerNs,$now+1);}
     DB::table('domains_managed_public_observations')->where('domain_id',$id)->delete();
     $returnExpected=null;
     $samples=$returned?[[$now,'platform'],[$now+901,'platform'],[$now+1802,'external'],[$now+2703,'external']]:[[$now,'external'],[$now+901,'external']];
     foreach($samples as[$sampleAt,$observedDns]){
+        // A chosen, confirmed return is followed by an out-of-band departure, then the ordinary nameserver read.
+        if($refresh && $sampleAt===$now+1802){$refreshNameservers($local->fresh(),['ns1.customer.example','ns2.customer.example'],$customerNs,$sampleAt);}
         managedDue($id,$sampleAt);$ticket=$signals->begin($id,$uid,'delegation',$sampleAt);expect($ticket!==null,'Customer DNS remains monitored: '.$case);
         expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation',$observedDns),$sampleAt+1),'Customer DNS sample retained: '.$case);
         if($returned && $sampleAt===$now+901){$returnExpected=DB::transaction(fn()=>WatchNoticeTarget::capture('managed',$id,$uid,$sampleAt+1))['expected'];}
     }
     // The successful ledger choice must also survive an absent observation projection.
-    if($change){DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);}
+    if($change && !$refresh){DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);}
     $checkedAt=$sampleAt+1;
     $notice=DB::transaction(fn()=>WatchNoticeTarget::capture('managed',$id,$uid,$checkedAt));
     same(true,$notice['delegation']['ns_confirmed']??null,'Two matching external samples are confirmed: '.$case);
@@ -96,6 +118,7 @@ foreach(['later customer change','adopted customer nameservers','return from inh
         $leave=Operation::create([...$change->only(['domain_id','service_id','server_id','registrar_key','account_fingerprint','authority_generation','action','currency','policy']),
             'operation_key'=>$read['operation_key'],'state'=>'succeeded','payload'=>$read['facts'],'attempt'=>['seal'=>'sealed','management_reads'=>[$read]],'completed_at'=>gmdate('Y-m-d H:i:s',$checkedAt+1)]);
         DB::transaction(fn()=>ManagedDnsSetup::assign(ManagedPublicConfig::find($id),$default,'platform',null,'predecessor_watch',$checkedAt+1));
+        if($refresh){$refreshNameservers($local->fresh(),$default->profile()->nameservers,$read['facts']['nameservers'],$checkedAt+2);}
         foreach([$checkedAt+1,$checkedAt+902]as$sampleAt){
             managedDue($id,$sampleAt);$ticket=$signals->begin($id,$uid,'delegation',$sampleAt);expect($ticket!==null,'Authorized second leave remains monitored');
             expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external'),$sampleAt+1),'Authorized second leave sample retained');
@@ -116,9 +139,10 @@ foreach(['later customer change','adopted customer nameservers','return from inh
     DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 }
 $quietIntent=['expected'=>false,'notices'=>[],'portal'=>[],'summary'=>[]];
-same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'return from inherited external'=>[
+$returnIntent=[
     'expected'=>true,'notices'=>['ns_changed'],'portal'=>['ns_changed'],'summary'=>['watch.ns_pending'],'return_expected'=>true,
-    'staff_external'=>false,'leave_again'=>[false,[],[],[]],'staff_platform'=>true]],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
+    'staff_external'=>false,'leave_again'=>[false,[],[],[]],'staff_platform'=>true];
+same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'return from inherited external'=>$returnIntent,'return then unchosen refresh'=>$returnIntent],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
 // A concurrent default change discards the old answer and the next check uses the new template.
 managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Default read captured');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>json_encode(['ns1.override.example','ns2.override.example'])]);
