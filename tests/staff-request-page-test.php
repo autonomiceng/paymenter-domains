@@ -74,6 +74,10 @@ same(['recheck'],array_values(array_filter(['recheck','resume_reads'],fn($a)=>Pa
 $links=[];
 same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$active->server_id]),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($active)['Registrar']['url'],'Registrar row opens that account');
 same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl(),RegistrarFacts::accountUrl(0),'A missing account opens the list');
+same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$active->server_id,'switch'=>'orders']).'#switch-orders',RegistrarFacts::accountUrl($active->server_id,'orders'),'A switch link carries its anchor');
+same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl(),RegistrarFacts::accountUrl(0,'orders'),'A missing account has no switch to land on');
+same(['Go to Orders switch'=>'orders','Turn them on'=>'dns'],RequestFacts::SWITCH_LINKS,'Each link that promises a switch names it');
+same(['Orders','DNS, nameservers and contacts'],array_values(array_intersect_key(RegistrarFacts::SWITCHES,array_flip(RequestFacts::SWITCH_LINKS))),'Each named switch is a row on the account page');
 foreach(['configuration_unavailable','processing','balance','usd_balance_required','write_disabled','staff_review_required'] as $code){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $n=RequestFacts::notice($heldOp->fresh()); $links[$code]=[$n['link']??null,$n['link_label']??null,$n['action']??null];

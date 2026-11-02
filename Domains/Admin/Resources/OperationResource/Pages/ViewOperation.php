@@ -132,7 +132,7 @@ class ViewOperation extends ViewRecord
         $action=isset($notice['action'])?$this->getAction($notice['action'],false):null;
         $op=$this->getRecord();
         $link=match($notice['link']??null) {
-            'registrars'=>[$notice['link_label']??'Open account',self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id))],
+            'registrars'=>[$label=$notice['link_label']??'Open account',self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id,RequestFacts::SWITCH_LINKS[$label]??null))],
             'invoice'=>['Open invoice',$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null],
             'domain'=>['Open domain',$op->domain?self::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null],
             default=>null};

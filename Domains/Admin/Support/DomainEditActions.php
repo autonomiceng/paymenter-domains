@@ -62,7 +62,7 @@ final class DomainEditActions
     private static function switchOff(Domain $d): array
     {
         $off='Changes are on hold: DNS, nameservers and contacts are Off for this registrar account.';
-        $url=RegistrarFacts::accountUrl((int)$d->server_id);
+        $url=RegistrarFacts::accountUrl((int)$d->server_id,'dns');
         if ($url===null) { $held=$off.' Ask staff who can change registrar accounts.'; return ['held'=>$held,'note'=>$held,'request'=>null]; }
         return ['held'=>$off.' Turn them on, then reload this page.','note'=>new HtmlString(e($off).' '.DomainFacts::requestLink($url,'Turn them on').', then reload this page.'),'request'=>null];
     }

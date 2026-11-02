@@ -14,6 +14,7 @@
 .domains-strong{font-weight:500}
 .domains-nowrap{white-space:nowrap}
 .domains-blocked{opacity:.6;cursor:not-allowed}
+.domains-row-target{scroll-margin-top:5rem;box-shadow:inset 2px 0 var(--primary-500);background:color-mix(in srgb,var(--primary-500) 10%,transparent)}
 .domains-table-wrap{max-width:100%;overflow-x:auto}
 .domains-table{width:100%;border-collapse:collapse;font-size:.875rem}
 .domains-table th{padding:8px 12px;text-align:start;white-space:nowrap;font-weight:500}

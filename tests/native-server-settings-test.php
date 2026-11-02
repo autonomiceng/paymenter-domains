@@ -147,6 +147,10 @@ foreach([$first,$second] as $server){
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Handled refusal retains the account binding');
     serverSettingsReject(fn()=>$a->fresh()->delete());
     $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('System checks')->assertSee('Balance');
+    // A link that promises a switch lands on it: the row has its anchor, and only the one asked for is marked.
+    expect(str_contains($owned->html(),'id="switch-orders"')&&!str_contains($owned->html(),'domains-row-target'),'The Orders row has its anchor and no mark unasked');
+    $marked=static fn(string $switch)=>substr_count(Livewire::actingAs($staff)->withQueryParams(['switch'=>$switch])->test(RegistrarAccount::class,['account'=>$server->id])->html(),'domains-row-target');
+    same([1,0],[$marked('orders'),$marked('nothing')],'Only a known switch is marked');
     foreach([$secret,'PRIVATE-ROTATED-'.$a->registrar_key,$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($owned->html(),$private),'Owned setup excludes saved credentials, HMAC and fingerprints');}
     $audit=Review::historyRows($server->fresh());expect(count($audit)>=2,'Configuration and rotation retain audited review outcomes');
     foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG','domains_credentials',$savedDigest] as $private){expect(!str_contains(json_encode($audit),$private),'Retained owned audit excludes credentials and verification digest');}

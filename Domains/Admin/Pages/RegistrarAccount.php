@@ -29,6 +29,8 @@ class RegistrarAccount extends Page
     protected Width|string|null $maxContentWidth=Sheet::WIDTH;
     #[Locked] public int $account=0;
     public string $reviewStamp='';
+    /** The switch a link came for (RegistrarFacts::SWITCHES). */
+    #[Locked] public ?string $switch=null;
     private ?array $status=null;
     public static function canAccess(): bool { return Staff::can(); }
     public static function getRoutePath(Panel $panel): string { return '/'.static::getSlug($panel).'/{account}'; }
@@ -37,6 +39,7 @@ class RegistrarAccount extends Page
         Staff::requireView();
         abort_unless(Server::where('extension','Domains')->whereKey($account)->exists(),404);
         $this->account=$account;$this->reviewStamp=StaffSettingsReview::stamp($account,null);
+        $switch=request()->query('switch');$this->switch=is_string($switch)&&isset(RegistrarFacts::SWITCHES[$switch])?$switch:null;
     }
     protected function server(): Server { return Server::where('extension','Domains')->findOrFail($this->account); }
     private function record(): ?Account { return Account::where('server_id',$this->account)->first(); }
@@ -143,10 +146,16 @@ class RegistrarAccount extends Page
         foreach ($rows as $i=>$r) {
             $key=$prefix.'_'.$i;$entry=$this->entry($key,$r);
             $switch=in_array($r['value'],['On','Off'],true)&&(!empty($r['buttons'])||$r['action']||$r['cause']);
-            if ($switch) { $out[]=$this->switchRow($entry,$r);continue; }
-            $out[]=Sheet::row($entry,$this->side($r));
+            $out[]=$this->anchored($switch?$this->switchRow($entry,$r):Sheet::row($entry,$this->side($r)),$r['label']);
         }
         return $out;
+    }
+    /** A switch row has its anchor. A link that came for it marks it and brings it into view, also when SPA navigation leaves :target unset. */
+    private function anchored(Flex $row,string $label): Flex
+    {
+        $name=array_search($label,RegistrarFacts::SWITCHES,true);
+        if ($name===false) { return $row; }
+        return $row->extraAttributes(['id'=>'switch-'.$name,...($name===$this->switch?['class'=>'domains-row-target','x-init'=>"\$el.scrollIntoView({block:'center'})"]:[])],merge:true);
     }
     /** A row's action column. Rows that change a saved value say Edit. */
     private function side(array $r): array

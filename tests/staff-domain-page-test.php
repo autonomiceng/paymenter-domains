@@ -30,6 +30,7 @@ $processing=Account::where('server_id',$active->server_id)->value('processing_en
 $switch=DomainEditActions::held($active,DomainManagement::SWITCH_OFF);
 same('Changes are on hold: DNS, nameservers and contacts are Off for this registrar account. Turn them on, then reload this page.',strip_tags($switch['note'] instanceof Htmlable?$switch['note']->toHtml():$switch['note']),'The hold names the switch');
 expect(str_contains($switch['held'],'DNS, nameservers and contacts')&&$switch['request']===null,'A switch blames no request');
+expect(str_contains($switch['note']->toHtml(),'switch=dns#switch-dns'),'Turn them on lands on the switch');
 same(['On hold until request #7 is checked.',7],[DomainEditActions::held($active,7)['held'],DomainEditActions::held($active,7)['request']],'Only the blocking request is named');
 same(['This registrar doesn\'t support this change.',null],[DomainEditActions::held($active,'Management capability unsupported.')['held'],DomainEditActions::held($active,'Management capability unsupported.')['request']],'A known refusal keeps its words');
 $unknown=DomainEditActions::held($active,null)['held'];
