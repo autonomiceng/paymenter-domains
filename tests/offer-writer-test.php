@@ -22,8 +22,12 @@ extract(commerceFixture());
 [$enom, $namesilo] = $tlds;
 $b = CatalogueAcceptances::binding(Account::where('server_id', $enom->server_id)->sole());
 $n = CatalogueAcceptances::binding(Account::where('server_id', $namesilo->server_id)->sole());
+// A retained staff master stop is independent of saved/default selling intent.
+$enom->update(['enabled' => false]);
 $converter = new UpgradeConversion;
 $converter->batch($b); $converter->batch($n);
+$convertedIntent = json_decode(DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_intent'), true);
+same(['register', 'renew', 'transfer'], $convertedIntent['stops'], 'Converted staff master stop remains explicit offer intent');
 $clock = new class($now) implements Clock {
     public function __construct(public DateTimeImmutable $time) {}
     public function now(): DateTimeImmutable { return $this->time; }
@@ -54,9 +58,27 @@ $org = Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $b->s
 $orgProduct = $native->product($org, 'register');
 $products = Product::orderBy('id')->pluck('id')->all(); $plans = Plan::orderBy('id')->pluck('id')->all();
 $registration = $native->product($enom, 'register'); $annual = $native->annualPlan($registration);
-$apply(new FactsObserved($b, 'com', $facts($now)));
-$apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)));
 $read = static fn ($binding, $context = Context::Public, $action = 'register', $term = 1) => $writer->readOffers(new Query($binding, ['com'], $action, $term), $context)[0];
+$apply(new FactsObserved($b, 'com', $facts($now)));
+same('staff_stopped', $read($b, Context::Staff)->reason, 'Facts cannot release the converted master stop');
+$clock->time = $now->modify('+1 minute');
+$apply(new FeedObserved($b, 'com', [new Cost('register', 1, true, '6.0000', CostUnit::TermTotal,
+    'synthetic_feed', $clock->time, $clock->time->modify('+1 day'))]));
+$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3, defaultTransfers: true), PricingRule::DEFAULT));
+$apply(Edit::republish($b, 'com'));
+$writer->apply(Edit::republish($b, 'org'), $orgRead()->revision);
+$apply(Edit::seller($b, 'com', ['register', 'transfer']));
+foreach (['register', 'transfer'] as $action) {
+    same(false, $read($b, Context::Public, $action)->available, 'Automatic changes cannot release master-stopped '.$action);
+    same(0, DB::table('prices')->whereIn('plan_id', $native->product($enom, $action)->plans()->pluck('id'))->count(),
+        'Master-stopped '.$action.' has no native acquisition prices');
+}
+same(['register', 'renew', 'transfer'], json_decode(DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_intent'), true)['stops'],
+    'Feed, defaults, seller selection and republication preserve the explicit master stop');
+same('10.40', $read($b, Context::Holder, 'renew')->retail, 'Master-stopped holder keeps retained annual renewal retail');
+same($annual->id, $native->annualPlan($registration)->id, 'Master stop preserves the native annual holding identity');
+// Replacing the override intentionally supplies an empty stop list; background commands never do this.
+$apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)));
 same([true, '7.80'], [$read($b)->available, $read($b)->retail], 'Verified offer publishes through the single evaluator');
 same('23.40', $read($b, Context::Public, 'register', 3)->retail, 'Existing exact term preserves annual rounding');
 same($products, Product::orderBy('id')->pluck('id')->all(), 'Native product IDs survive initial projection');
