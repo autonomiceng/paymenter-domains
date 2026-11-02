@@ -24,6 +24,7 @@ native/PHP environment below and a fresh output directory under `TMPDIR`:
 ```sh
 suite-slot --quick python3 scripts/render-reminders.py "$BUTTON_RENDER_DIR" tests/Support/button-layout-render.php tests/domain-page-render.php
 suite-slot --quick node scripts/check-button-layout.cjs "$BUTTON_RENDER_DIR"
+suite-slot --quick node scripts/check-row-labels.cjs
 ```
 
 The renderer verifies the pinned read-only native dependency and renders real Blade with synthetic DTOs.
