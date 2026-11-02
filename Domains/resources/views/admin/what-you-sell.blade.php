@@ -16,6 +16,9 @@
         /* One group needs no second header row. Filament would print it above a single Register. */
         .domains-sell-table .fi-ta-table-head-groups-row:not(:has(.fi-ta-header-group-cell ~ .fi-ta-header-group-cell)){display:none}
         .domains-sell-table .fi-ta-table td,.domains-sell-table .fi-ta-table th{white-space:nowrap}
+        /* Status's next step and a word in a money cell (Left out, No cost yet) break onto a second line before the table outgrows its box. Prices have no spaces, so they never break. */
+        .domains-sell-table .fi-ta-table td.domains-sell-status .fi-ta-text-description{white-space:normal;min-width:9rem;max-width:15rem}
+        .domains-sell-table .fi-ta-table :is(td.domains-sell-register,td.domains-sell-renew,td.domains-sell-transfer) .fi-ta-text-item{white-space:normal}
         .domains-sell-table .fi-ta-table>thead>tr,.dark .domains-sell-table .fi-ta-table>thead>tr{background:none}
         .fi-header-subheading .domains-help-beside{margin-inline:0 .875rem}
         /* With more than one group on, cells are 12px apart as in the mock, so every group fits a 1440 screen. The rules below keep the 20px edge. */
