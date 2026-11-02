@@ -280,6 +280,7 @@ $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],['longest'=>'
 // A saved 'all' ignored Don't sell, so it reads as Yes and its first save keeps the same TLDs on sale.
 Server::findOrFail($server->id)->settings()->updateOrCreate(['key'=>SellRule::KEY],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'all','max_cost'=>'100','years'=>1,'transfers'=>false]]);
 same(['Cancel','Save'],$footer(Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')),'Default for new TLDs reads Cancel, then Save');
+same('Cancel',$footer(Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('default_pricing'))[0],'Default pricing reads Cancel first');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')->assertSchemaStateSet(['sell_new'=>'yes'],'mountedActionSchema0')->callMountedAction()->assertNotified('Saved');
 same(['except',null],[SellRule::read($binding,null)['mode'],$row('com.au')->choice],'Saved all converts once');expect(isset(CatalogueAcceptances::load($binding)->endings['com.au']),'Conversion keeps what all was selling');
 $select($page,'com.au')->callTableBulkAction('edit',[$row('com.au')->id],['choice'=>'skip'])->assertNotified('Saved');
