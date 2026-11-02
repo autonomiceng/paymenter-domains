@@ -202,6 +202,9 @@ final class DomainFacts
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
         return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['stopped']);
     }
+    /** The list's status tone. A stopped sync is a job for staff, as in the domain's head. */
+    public static function listTone(array $status, ?string $sync): string
+    { return $status['tone']==='success'&&$sync==='failed'?'warning':$status['tone']; }
     /** The status reason, then the staff step, as sentences. */
     public static function statusLine(array $status): ?string
     { return implode(' ',array_map(StaffDomainStatus::sentence(...),array_filter([$status['reason'],$status['step']])))?:null; }
@@ -280,7 +283,7 @@ final class DomainFacts
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::canResume()?'Use Resume sync below.':self::ASK_RESUME,'tone'=>'warning','resume'=>true]; }
+        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::restart($d),'tone'=>'warning','resume'=>true]; }
         if (AcquisitionPaymentReview::count($d)>0) {
             $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
                 ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
@@ -333,6 +336,12 @@ final class DomainFacts
             default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
     }
     private const ASK_RESUME='Ask staff who can resume sync.';
+    /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */
+    private static function restart(Domain $d): string
+    {
+        if (ObservationWork::currentId($d)!==null) { return self::canResume()?'Use Resume sync below.':self::ASK_RESUME; }
+        return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';
+    }
     private static function canResume(): bool { return Staff::can(StaffOperationReview::permission('resume_observation')); }
     /** The customer's own Off still lets them renew by hand or turn it back on. A staff stop blocks both, so its red button says what is left to stop. */
     private static function ownerOff(): string

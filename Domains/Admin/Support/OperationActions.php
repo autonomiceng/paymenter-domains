@@ -84,7 +84,7 @@ final class OperationActions
         foreach(self::make($op,StaffOperationReview::stamp($op,$d)) as $action){
             if($action->getName()==='resume_observation'){
                 return [$action->visible(fn()=>Staff::can(StaffOperationReview::permission('resume_observation'))
-                    &&!StaffOperationReview::liveLease($op,app(Clock::class))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d))];
+                    &&!StaffOperationReview::liveLease($op,app(Clock::class))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)];
             }
         }
         return [];

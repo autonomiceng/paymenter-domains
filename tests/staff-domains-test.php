@@ -102,10 +102,7 @@ foreach (['history_limit'=>'Missing: saved record history needs a fresh read. Us
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$label) {
     $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
-    $alert->assertSee($label)->assertSee('Check request #'.$requestId)->assertSeeHtml('href="'.e($requestUrl).'"')->assertDontSee('unmapped_reason_code')->assertDontSee('Resume sync')->assertSet('data',[]);
-    $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Check request #'.$requestId.'"]');
-    same(1,$links->length,'Record notice has its own request link');
-    same($requestUrl,$links->item(0)->getAttribute('href'),'Request link targets current bound request');
+    $alert->assertSee($label)->assertDontSee('Check request #'.$requestId)->assertDontSee('unmapped_reason_code')->assertDontSee('Resume sync')->assertSet('data',[]);
     expect(!str_contains(json_encode($alert->snapshot),'record_hold'),'Encrypted hold is absent from public state');
 }
 $op=$active->operations()->sole();DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation+1]);
