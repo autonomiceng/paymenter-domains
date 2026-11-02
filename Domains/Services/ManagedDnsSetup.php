@@ -57,7 +57,8 @@ final class ManagedDnsSetup
         $offer=static function(?string $expected,int $source,int $at,int $management=0)use(&$intent):void{
             if([$source,$at,$management]>$intent['order']){$intent=['order'=>[$source,$at,$management],'expected'=>$expected];}
         };
-        if($config){$offer($config->expected_dns,$config->edited_by!==null?3:0,$config->updated_at?->getTimestamp()??0);}
+        // An automatic platform comparison is not a choice; missing legacy history must stay quiet.
+        if($config && ($config->edited_by!==null || $config->expected_dns!=='platform')){$offer($config->expected_dns,$config->edited_by!==null?3:0,$config->updated_at?->getTimestamp()??0);}
         $nameservers=static function(?array $chosen,int $source,int $at,int $management=0)use($profile,$offer):void{
             if(!$chosen){return;}sort($chosen,SORT_STRING);
             $offer($chosen===$profile->profile()->nameservers?'platform':'external',$source,$at,$management);
