@@ -169,6 +169,8 @@ final class DomainFacts
                 continue;
             }
             $fact=$f[$row];
+            // The Last sync row already says it stopped, beside the button.
+            if ($code==='observation_review'&&str_ends_with((string)$fact['sub'],'Stopped until resumed.')) { continue; }
             $fact['sub']=$fact['sub']===null||$fact['sub']===$cause?$cause:StaffDomainStatus::sentence($fact['sub']).' '.$cause;
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone; $fact['alert']=true;
             $f[$row]=$fact;

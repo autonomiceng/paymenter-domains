@@ -3,7 +3,7 @@
 .domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
 .domains-name-cell{overflow-wrap:break-word;min-width:11rem;max-width:24rem}
-.domains-missing-mark{color:var(--danger-500)}
+.domains-missing-mark{display:block;color:var(--danger-500)}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
 .domains-cut{max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
