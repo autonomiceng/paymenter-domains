@@ -98,7 +98,13 @@ $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices fr
     ->assertSee('8.95')->assertSee('Prices in USD for 1 year.')->assertDontSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
 same(0,$calls()-$before,'Opening a full page sends nothing');
 // The summary counts what is for sale, the title stays the section's, and no head button competes with the row buttons.
-$page->assertSee(SellRule::rows($binding)->get()->filter(fn(SellRow $r)=>SellRule::decide($r,SellRule::read($binding,CatalogueAcceptances::load($binding)))==='sell')->count().' TLDs for sale.')->assertDontSee('TLDs selected');
+$sale=static fn(SellRow $r,CatalogueAcceptance $accepted)=>SellRule::decide($r,SellRule::read($binding,$accepted))==='sell'&&in_array(1,$accepted->endings[$r->tld]['register']??[],true);
+$page->assertSee(SellRule::rows($binding)->get()->filter(fn(SellRow $r)=>$sale($r,CatalogueAcceptances::load($binding)))->count().' TLDs for sale.')->assertDontSee('TLDs selected');
+// A TLD the rule picks is not for sale until the account accepts a registration term for it.
+$trading=$row('trading');$trading->update(['choice'=>'sell']);$accepted=CatalogueAcceptances::load($binding);
+expect(!isset($accepted->endings['trading'])&&SellRule::decide($trading->fresh(),SellRule::read($binding,$accepted))==='sell','The rule picks .trading, and no term is accepted');
+$forSale=SellRule::rows($binding)->get()->filter(fn(SellRow $r)=>$sale($r,$accepted))->count();
+Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee($forSale.' TLDs for sale.')->assertDontSee(($forSale+1).' TLDs for sale.');$trading->update(['choice'=>null]);
 same('TLDs & pricing',$page->instance()->getTitle(),'Both tabs keep the title');same('gray',$page->instance()->getAction('rule',false)->getColor(),'Default for new TLDs is a quiet button');
 $html=$page->html();expect(preg_match('~<th\b[^>]*domains-sell-register~',$html)&&preg_match('~<td\b[^>]*domains-sell-register~',$html)&&preg_match('~<td\b[^>]*domains-sell-status~',$html),'Group columns carry the class their rules hang on');
 // The panel skin sets its table class first, and this page must add to it.

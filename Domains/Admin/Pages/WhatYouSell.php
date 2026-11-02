@@ -197,7 +197,9 @@ class WhatYouSell extends Page implements HasTable
     {
         if($this->account===self::ALL){return $this->mayEdit()||$this->canSync()?'Choose one account to sync or edit.':null;}
         if(($binding=$this->binding())===null){return null;}
-        $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow $row)=>SellRule::decide($row,$this->rule())==='sell');
+        // For sale means the rule picks it and the account has accepted a registration this long. Renewals or transfers alone are not a sale.
+        $accepted=$this->reads()->accepted($binding->serverId);$years=$this->years();
+        $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow $row)=>SellRule::decide($row,$this->rule())==='sell'&&in_array($years,$accepted[$row->tld]['register']??[],true));
         $summary=$wanted->count().' '.($wanted->count()===1?'TLD':'TLDs').' for sale.';
         if($this->canSeeCosts()&&($highest=$wanted->max('high_cost'))!==null){$summary.=' Highest cost USD '.number_format((float)$highest,2).' a year.';}
         $filled=PriceFill::last($binding)?->filled_at;
