@@ -196,7 +196,11 @@ final class Writer implements Catalogue
     {
         StaffSettingsReview::append($server, ['key' => bin2hex(random_bytes(16)), 'actor_id' => $this->actorId,
             'at' => $now->format(DATE_ATOM), 'action' => 'catalogue_'.($command instanceof Edit ? $command->kind : ($command instanceof FeedObserved ? 'feed' : 'facts')),
-            'phase' => 'completed', 'tld' => $command->tld(), 'before' => get_object_vars($before), 'after' => get_object_vars($after)]);
+            'phase' => 'completed', 'tld' => $command->tld(), 'before' => get_object_vars($before), 'after' => get_object_vars($after),
+            'input' => $command instanceof Edit ? ['intent' => $command->intent, 'pricing_rule' => $command->rule,
+                'retained_annual_retail' => $command->retail, 'seller_actions' => $command->actions]
+                : ($command instanceof FeedObserved ? ['observations' => array_map(OfferState::encodeCost(...), $command->costs)]
+                    : ['facts' => OfferState::decode(OfferState::encodeFacts($command->facts))])]);
     }
 
     private function afterCommit(array $scopes): void

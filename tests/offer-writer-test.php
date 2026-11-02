@@ -39,6 +39,18 @@ $revision = static function ($binding) use ($writer): Revision {
 $apply = static fn ($command) => $writer->apply($command, $revision($command->binding()));
 $facts = static fn ($time, array $terms = [1, 3]) => new Facts(['register' => $terms, 'renew' => [1], 'transfer' => [1]],
     [], true, false, false, 'synthetic_facts', $time, $time->modify('+1 day'));
+// Discover a new offer through observations, without inventing facts or selecting a seller.
+$orgRevision = $writer->apply(new FeedObserved($b, 'org', [
+    new Cost('register', 1, true, '5.0000', CostUnit::TermTotal, 'synthetic_feed', $now, $now->modify('+1 day')),
+    new Cost('renew', 1, true, '6.0000', CostUnit::TermTotal, 'synthetic_feed', $now, $now->modify('+1 day')),
+]), new Revision(0, 0, 0));
+$orgRead = static fn () => $writer->readOffers(new Query($b, ['org'], 'register'), Context::Public)[0];
+same(false, $orgRead()->available, 'New provider discovery grants neither facts nor seller authority');
+$orgRevision = $writer->apply(new FactsObserved($b, 'org', $facts($now, [1])), $orgRevision);
+$writer->apply(Edit::seller($b, 'org', ['register']), $orgRevision);
+same(true, $orgRead()->available, 'Explicit selection publishes a verified new offer');
+$org = Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $b->serverId)->where('tld', 'org')->sole();
+$orgProduct = $native->product($org, 'register');
 $products = Product::orderBy('id')->pluck('id')->all(); $plans = Plan::orderBy('id')->pluck('id')->all();
 $registration = $native->product($enom, 'register'); $annual = $native->annualPlan($registration);
 $apply(new FactsObserved($b, 'com', $facts($now)));
@@ -51,16 +63,16 @@ same($plans, Plan::orderBy('id')->pluck('id')->all(), 'Native plan IDs survive i
 // Same prices on a new revision must cause no native row updates, including timestamps.
 $nativeUpdates = []; $lockQueries = []; $captureLocks = false;
 DB::listen(static function ($q) use (&$nativeUpdates, &$lockQueries, &$captureLocks): void {
-    if ($captureLocks && DB::transactionLevel() > 0 && str_starts_with($q->sql, 'select')) { $lockQueries[] = $q->sql; }
+    if ($captureLocks && DB::transactionLevel() > 0) { $lockQueries[] = strtolower($q->sql); }
     if (preg_match('/^update ["`](products|plans|prices)["`]/i', $q->sql)) { $nativeUpdates[] = $q->sql; }
 });
 $expected = $revision($b); $captureLocks = true;
 $writer->apply(Edit::republish($b, 'com'), $expected); $captureLocks = false;
 $positions = [];
 foreach (['categories', 'products', 'plans', 'prices', 'servers', 'domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices'] as $table) {
-    foreach ($lockQueries as $i => $sql) { if (str_contains($sql, 'from "'.$table.'"')) { $positions[] = $i; break; } }
+    foreach ($lockQueries as $i => $sql) { if (preg_match('/\bfrom\s+["`]?'.preg_quote($table, '/').'["`\s]/', $sql)) { $positions[] = $i; break; } }
 }
-same(9, count($positions), 'Every native/domain lock group is exercised');
+same(9, count($positions), 'Every native/domain lock group is exercised: '.json_encode($lockQueries));
 $sorted = $positions; sort($sorted); same($sorted, $positions, 'Native locks precede server, account, selection, offer and price locks');
 same([], $nativeUpdates, 'Unchanged native rows are not updated during republication');
 $stale = $revision($b); $apply(Edit::override($b, 'com', new Intent(sell: false)));
@@ -71,6 +83,7 @@ same($annual->id, $native->annualPlan($registration)->id, 'Withdrawal retains th
 $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)));
 // A persisted paid/native obligation never follows publication or a seller switch.
 $owner = commerceUser(); $cart = commerceCart($owner); $item = commerceAdd($cart, $registration, 'example.com');
+$unaffectedCart = commerceCart($owner); commerceAdd($unaffectedCart, $orgProduct, 'example.org');
 $order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
 $service = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $registration->id,
     'plan_id' => $annual->id, 'quantity' => 1, 'price' => '10.40', 'currency_code' => 'USD', 'status' => 'active']);
@@ -105,6 +118,7 @@ same($before, $state(), 'Offer, current prices, native plans/prices and audit ro
 expect($cart->items()->whereKey($item->id)->exists(), 'Rolled-back offer does not withdraw carts');
 $apply(Edit::override($b, 'com', new Intent(sell: false)));
 same(0, $cart->items()->count(), 'Committed changes withdraw only affected carts after commit');
+same(1, $unaffectedCart->items()->count(), 'Another ending on the same account stays in its cart');
 $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)));
 $oldFact = DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_facts');
 $clock->time = $now->modify('+1 minute');
@@ -137,10 +151,15 @@ $rule = ['mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'endi
     'fixed' => ['register' => null, 'renew' => null, 'transfer' => null], 'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']];
 $apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3), $rule));
 same(false, $read($b)->available, 'Changed account defaults leave old publications pending');
+same(false, $orgRead()->available, 'One defaults revision fences every offer on the account');
+same(0, $unaffectedCart->items()->count(), 'Defaults withdraw carts across the affected account');
 same('publication_pending', $read($b, Context::Staff)->reason, 'Pending defaults do not authorize new orders');
 commerceReject(static fn () => $writer->apply(Edit::republish($b, 'com'), $oldDefaults));
 $apply(Edit::republish($b, 'com'));
 same(true, $read($b)->available, 'Bounded local republication clears the defaults fence');
+same(false, $orgRead()->available, 'Republishing one offer cannot clear another offer fence');
+$writer->apply(Edit::republish($b, 'org'), $orgRead()->revision);
+same(true, $orgRead()->available, 'Independent local fan-out republishes the other offer');
 $feePrice = $read($b)->retail;
 $rule['card_fee']['fixed'] = '5.00';
 $apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3), $rule));
