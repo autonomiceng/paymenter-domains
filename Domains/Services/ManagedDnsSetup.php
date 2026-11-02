@@ -73,6 +73,23 @@ final class ManagedDnsSetup
         }
         catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}
     }
+    /** The newest confirmed change can sit behind newer unresolved successes. Both consumers use this decision. */
+    public static function choices(Domain $domain,iterable $operations): array
+    {
+        $acquisition=null;$change=null;
+        foreach(collect($operations)->sortByDesc('id') as $op){
+            if($op->state!=='succeeded' || (int)$op->domain_id!==(int)$domain->id || $op->authority_generation!==$domain->authority_generation
+                || $op->account_fingerprint!==$domain->account_fingerprint || (int)$op->service_id!==(int)$domain->service_id
+                || (int)$op->server_id!==(int)$domain->server_id || $op->registrar_key!==$domain->registrar_key){continue;}
+            if($acquisition===null && in_array($op->action,['register','transfer'],true)){$acquisition=$op;}
+            if($change===null && $op->action==='nameservers'){
+                try{if(ManagementEvidence::resolved($op,$domain)){$change=$op;}}
+                catch(\Illuminate\Contracts\Encryption\DecryptException){/* Unreadable confirmation is not a resolved choice. */}
+            }
+            if($acquisition!==null && $change!==null){break;}
+        }
+        return [$acquisition,$change];
+    }
     /** Staff intent wins; otherwise use the newest retained choice before acquisition evidence or inherited defaults. */
     public static function expected(?ManagedPublicConfig $config,?WatchProfile $profile,Domain $domain,?Operation $acquisition,?Operation $change): ?string
     {

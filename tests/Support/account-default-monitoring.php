@@ -217,6 +217,38 @@ $returnIntent=[
 same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'legacy without baseline'=>[...$quietIntent,'upgrade_intent'=>'external','later_reads'=>[[false,[],[],[]],[false,[],[],[]]],'staff_platform'=>true],
     'platform import without baseline'=>$platformImportIntent,'platform first public read'=>$platformImportIntent,
     'return from inherited external'=>$returnIntent,'return then unchosen refresh'=>$returnIntent,'pending chosen change'=>array_fill(0,12,[true,false,[],[],[]])],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
+// A newer unresolved success cannot hide an earlier confirmed customer choice.
+$local=$d->fresh();$savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
+DB::transaction(fn()=>ManagedDnsSetup::assign(ManagedPublicConfig::find($id),$default,'platform',null,'hosting_product',$now));
+$choiceBase=['domain_id'=>$id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
+    'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'action'=>'nameservers','state'=>'succeeded','currency'=>'USD',
+    'policy'=>['management'=>['section'=>'nameservers']],'completed_at'=>gmdate('Y-m-d H:i:s',$now)];
+$read=['sequence'=>1,'operation_key'=>'older-resolved-choice','generation'=>$d->authority_generation,'action'=>'nameservers','at'=>gmdate(DATE_ATOM,$now),'confirmed'=>true,
+    'facts'=>['nameservers'=>['ns1.customer.example','ns2.customer.example']]];
+$original=Operation::create([...$choiceBase,'action'=>'register','operation_key'=>'original-platform-registration',
+    'payload'=>['nameservers'=>$default->profile()->nameservers],'completed_at'=>gmdate('Y-m-d H:i:s',$now-60)]);
+$resolved=Operation::create([...$choiceBase,'operation_key'=>$read['operation_key'],'payload'=>$read['facts'],'attempt'=>['seal'=>'sealed','management_reads'=>[$read]]]);
+$unresolved=Operation::create([...$choiceBase,'operation_key'=>'newer-unresolved-choice','payload'=>['nameservers'=>$default->profile()->nameservers],'attempt'=>['seal'=>'sealed']]);
+$wrong=Operation::create([...$choiceBase,'operation_key'=>'wrong-generation-choice','payload'=>['nameservers'=>$default->profile()->nameservers],
+    'attempt'=>['seal'=>'sealed','management_reads'=>[[...$read,'operation_key'=>'wrong-generation-choice','generation'=>$d->authority_generation+1,'facts'=>['nameservers'=>$default->profile()->nameservers]]]]]);
+DB::table('domains_operations')->where('id',$wrong->id)->update(['authority_generation'=>$d->authority_generation+1]);
+$choiceResults=[];
+foreach(['absent','stale','unreadable newer']as$evidence){
+    if($evidence==='stale'){$refreshNameservers($local->fresh(),$default->profile()->nameservers,$default->profile()->nameservers,$now-90000);}
+    if($evidence==='unreadable newer'){DB::table('domains_operations')->where('id',$unresolved->id)->update(['attempt'=>'unreadable']);}
+    $sampleBase=$now+1000+count($choiceResults)*2000;
+    foreach([$sampleBase,$sampleBase+901]as$sampleAt){
+        managedDue($id,$sampleAt);$ticket=$signals->begin($id,$uid,'delegation',$sampleAt);expect($ticket!==null,'Retained choice permits ordinary monitoring');
+        expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external'),$sampleAt+1),'Current external sample follows the retained choice');
+    }
+    $notice=DB::transaction(fn()=>WatchNoticeTarget::capture('managed',$id,$uid,$sampleAt+1));
+    $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$sampleAt+1);
+    $choiceResults[$evidence]=[$notice['expected'],array_values(array_intersect($summary->stateKeys,['watch.ns_pending','watch.ns_changed']))];
+}
+same(array_fill_keys(['absent','stale','unreadable newer'],[false,[]]),$choiceResults,'Newest resolved choice survives unresolved, unreadable and wrong-identity successors: '.json_encode($choiceResults));
+DB::table('domains_operations')->whereIn('id',[$original->id,$resolved->id,$unresolved->id,$wrong->id])->delete();
+DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);
+DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 // A concurrent default change discards the old answer and the next check uses the new template.
 managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Default read captured');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>json_encode(['ns1.override.example','ns2.override.example'])]);

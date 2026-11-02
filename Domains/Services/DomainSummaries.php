@@ -76,11 +76,11 @@ final class DomainSummaries
         $servers=Server::with('settings')->whereIn('id',array_map(fn($d)=>$d->server_id,$c->domains))->get()->keyBy('id');
         $cycles=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->where('action','renew')->groupBy('domain_id'))->limit(250)->get()->groupBy('domain_id');
         $acquisitions=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->whereIn('action',['register','transfer'])->groupBy('domain_id'))->limit(250)->get()->keyBy('domain_id');
-        $dnsChoices=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
+        $dnsChoices=Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
             ->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')
             ->whereColumn('d.service_id','domains_operations.service_id')->whereColumn('d.server_id','domains_operations.server_id')->whereColumn('d.registrar_key','domains_operations.registrar_key')
-            ->where('domains_operations.state','succeeded')->whereIn('action',['register','transfer','nameservers'])->groupBy('domain_id','action'))
-            ->orderByDesc('id')->get()->groupBy('domain_id');
+            ->where('domains_operations.state','succeeded')->whereIn('domains_operations.action',['register','transfer','nameservers'])
+            ->orderByDesc('domains_operations.id')->get()->groupBy('domain_id');
         $invoices=Invoice::where('user_id',$uid)->whereIn('id',$cycles->flatten()->pluck('invoice_id')->merge($acquisitions->pluck('invoice_id')))->get()->keyBy('id');
         $targets=[...$c->domains,...$c->watches];
         $scopes=array_map(fn($t)=>WatchNoticePreferences::scope((int)$t->user_id,$t instanceof WatchName?$t->canonical_name:$t->domain),$targets);
@@ -159,7 +159,7 @@ final class DomainSummaries
                     if (!$expiry) { $waits=$pending?'import':(['registration_pending'=>'registration','transfer_pending'=>'transfer'][$t->status]??null); }
                 }
                 $choices=$dnsChoices->get($id,collect());
-                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?$t->expected_dns:ManagedDnsSetup::expected($c->configs[$id]??null,$c->managedProfile($id),$t,$choices->whereIn('action',['register','transfer'])->first(),$choices->firstWhere('action','nameservers'));
+                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?$t->expected_dns:ManagedDnsSetup::expected($c->configs[$id]??null,$c->managedProfile($id),$t,...ManagedDnsSetup::choices($t,$choices));
                 $scope=WatchNoticePreferences::scope($uid,$kind==='watch'?$t->canonical_name:$t->domain);$episode=$noticeStates[$scope]??null;if ($episode && (int)$episode->user_id!==$uid) { $episode=null; }
                 try { $episode=$episode?json_decode(Crypt::decryptString($episode->data),true,64,JSON_THROW_ON_ERROR):[]; if (!is_array($episode) || !is_array($episode['portal']??[]) || array_filter($episode['portal']??[],fn($v)=>!is_array($v) || array_filter($v,fn($key)=>!is_string($key)))) { $episode=[]; } } catch (\Throwable) { $episode=[]; }
                 $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];

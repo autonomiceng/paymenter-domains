@@ -24,9 +24,7 @@ final class ManagedPublicTarget
         $config=ManagedPublicConfig::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
         if (!$config || (int)$config->user_id!==$owner) { return null; }
         $profile=ManagedDnsSetup::profile($d,$config,$lock);
-        $choices=$l['operations']->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)
-            ->where('service_id',$d->service_id)->where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->where('state','succeeded')->sortByDesc('id');
-        $config->expected_dns=ManagedDnsSetup::expected($config,$profile,$d,$choices->whereIn('action',['register','transfer'])->first(),$choices->firstWhere('action','nameservers'));
+        $config->expected_dns=ManagedDnsSetup::expected($config,$profile,$d,...ManagedDnsSetup::choices($d,$l['operations']));
         [$sources,$more]=$this->sources($id,$cursor,$lock);
         if ($more!==$overflow || $peek->pluck('id')->all()!==$sources->pluck('id')->all()) { return null; }
         $pending=WatchSource::where('user_id',$owner)->where('registrable_name',$d->domain)->where('state','watch')->exists();
