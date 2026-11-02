@@ -74,8 +74,9 @@ class ViewDomain extends ViewRecord
         }
         $progress=$this->managementProgress();
         if (isset($edits['rows']['Auth code']) || isset($progress['auth_code_email'])) { $facts['Auth code']=['value'=>$d->registrar_key==='namesilo'?'Admin contact email':'Registrant email','sub'=>null,'url'=>null,'tone'=>null,'help'=>null,'demo'=>false]; }
+        $requests=[];
         foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
-            if (isset($facts[$label],$progress[$setting])) { $facts[$label]['sub']=$progress[$setting]['text']; }
+            if (isset($facts[$label],$progress[$setting])) { $requests[$label]=$progress[$setting]['text']; }
         }
         // Reminder issues sit under Auto-renew, then Open alerts, or alone when neither slot exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?new HtmlString($review->size('sm')->toHtml()):null;
@@ -97,6 +98,7 @@ class ViewDomain extends ViewRecord
                 ->footer($buttons?new HtmlString('<div style="display:flex;flex-wrap:wrap;gap:.5rem">'.implode('',array_filter($buttons)).'</div>'):null);
         }
         $section=fn(string $title,array $labels)=>Section::make($title)->schema(array_merge(...array_map(fn(string $label)=>[self::entry($label,$facts[$label],$edits['rows'][$label]??[]),
+            ...(isset($requests[$label])?[TextEntry::make('management_'.md5($label))->label($label.' request')->inlineLabel()->state($requests[$label])]:[]),
             ...($label==='Auto-renew'&&$button?[TextEntry::make('notice_review')->hiddenLabel()->state($button)]:[])],
             array_values(array_filter($labels,fn($label)=>isset($facts[$label]))))))->columnSpan(1)->extraAttributes(['class'=>'domains-facts']);
         return $schema->components([...$components,Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()

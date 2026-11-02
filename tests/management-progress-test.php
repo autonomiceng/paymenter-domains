@@ -183,4 +183,28 @@ try {
     \Paymenter\Extensions\Servers\Domains\Services\ManagementProgressIndex::install();
 }
 same($recoverable->id,$controller->status($request,$d->id)->getData(true)['nameservers']['id'],'Backfill retains an older recoverable hold behind newer exhausted holds');
+// The current DNS fact and its recovery helper are independent of an older completed change.
+[$dnsDomain,$dnsDriver]=$holding(placeholderComFixtureName('pending-dns-fact-placeholder.com'));
+$dnsDomain->server->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
+$state->srv=[['service'=>'sip','protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.']];
+$inventory=static fn()=>['dns'=>['state'=>'complete','records'=>$state->dns],'srv'=>['state'=>'complete','records'=>$state->srv],
+    'ds'=>['state'=>'complete','records'=>[]],'glue'=>['state'=>'partial','records'=>[]]];
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$clock->now());
+$dnsOp=$submit($dnsDomain,$dnsDriver,'dns',['records'=>[['name'=>'@','type'=>'TXT','address'=>'saved record','mx_pref'=>10]],
+    'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([])]);
+same('succeeded',$management->run($dnsOp->id,$dnsDriver)->state,'DNS change completes before the later failed sync');
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::failPrimary($dnsDomain->fresh(),$clock->now()->modify('+1 minute'));
+$dnsPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$dnsDomain->id]);
+$factRow=static fn($html,$label)=>storefrontDom($html)->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0);
+$missing=$factRow($dnsPage->html(),'DNS records');
+expect($missing&&str_contains($missing->textContent,'Missing')&&str_contains($missing->textContent,'Use Sync now to read DNS records.'),'Failed sync keeps the current DNS recovery instruction after a saved change');
+expect(!str_contains($missing->textContent,'Saved.'),'An older saved request is not the cause of Missing DNS');
+same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Failed sync does not rewrite the completed request');
+$dnsPage->assertSee('DNS records request')->assertSee('Saved.');
+$readAt=$clock->now()->modify('+2 minutes');
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
+$dnsPage->call('pollManagement');$available=$factRow($dnsPage->html(),'DNS records');
+expect($available&&str_contains($available->textContent,'1 record')&&str_contains($available->textContent,'1 SRV')
+    &&str_contains($available->textContent,'As of '.$readAt->format(DATE_ATOM)),'Available DNS keeps its as-of time and SRV count beside management status');
+$dnsPage->assertSee('DNS records request')->assertSee('Saved.');
 echo "Management pending controls, duplicate requests, local status and immediate start passed.\n";$nativeSuccessful=true;
