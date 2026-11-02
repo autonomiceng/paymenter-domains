@@ -23,9 +23,12 @@ final class SellTable
     private ?array $savedRead=null;
     private ?array $savedRows=null;
     private array $filtered=[];
+    private array $ruleSaved=[];
+    private array $legacy=[];
     /** @param array<int,AccountBinding> $bindings by server
-     * @param \Closure():array<SellRow> $page the rows on screen */
-    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page) {}
+     * @param \Closure():array<SellRow> $page the rows on screen
+     * @param bool $projected the page did not run SellRule::ensure, so rows show as ensure would save them, with no write */
+    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false) {}
     /** The registrar's list plus saved TLDs it no longer has, so a price with no sales row still shows.
      * Those rows stay read-only and carry the negated TLD id: a write here would add a sales row. Hidden TLDs show only when already saved.
      * The cast gives the id number affinity, so SQLite matches Filament's string keys. */
@@ -42,7 +45,41 @@ final class SellTable
         $saved=TldFacts::bound(DB::table('domains_tlds'))->whereIn('server_id',array_keys($this->bindings))
             ->whereNotExists(fn($row)=>$row->selectRaw('1')->from($table.' as s')->whereColumn('s.server_id','domains_tlds.server_id')->whereColumn('s.account_fingerprint','domains_tlds.account_fingerprint')->whereColumn('s.tld','domains_tlds.tld'))
             ->selectRaw('cast(-id as signed) as id,server_id,account_fingerprint,tld,null as choice,null as longest,null as transfer,null as register_cost,null as renew_cost,null as transfer_cost,null as high_cost,null as prices,null as read_at,0 as listed');
-        return SellRow::query()->fromSub($listed->unionAll($saved),$table)->when($focus!==null,fn($q)=>$q->where('tld',$focus));
+        $unsaved=$this->unsaved();
+        foreach($unsaved as $server=>$tlds){$saved->where(fn($other)=>$other->where('server_id','!=',$server)->orWhereNotIn('tld',$tlds));}
+        $all=$listed->unionAll($saved);
+        // Chunks keep each compound select under SQLite's limit.
+        foreach(array_chunk(array_merge(...array_map(fn(int $server,array $tlds)=>array_map(fn(string $tld)=>[$server,$tld],$tlds),array_keys($unsaved),array_values($unsaved))),200) as $chunk){
+            $part=null;
+            foreach($chunk as [$server,$tld]){
+                $one=DB::query()->selectRaw('cast(? as signed) as id,? as server_id,? as account_fingerprint,? as tld,null as choice,null as longest,null as transfer,null as register_cost,null as renew_cost,null as transfer_cost,null as high_cost,null as prices,null as read_at,1 as listed',
+                    [-($server*4294967296+crc32($tld)),$server,$this->bindings[$server]->fingerprint,$tld]);
+                $part=$part===null?$one:$part->unionAll($one);
+            }
+            $all->unionAll(DB::query()->fromSub($part,'unsaved')->select('*'));
+        }
+        return SellRow::query()->fromSub($all,$table)->when($focus!==null,fn($q)=>$q->where('tld',$focus));
+    }
+    /** @return array<int,list<string>> accepted TLDs with no sales row yet, by server. Only a projected read shows them; one account's view saves them first. */
+    private function unsaved(): array
+    {
+        if(!$this->projected){return [];}
+        $out=[];
+        foreach($this->bindings as $server=>$binding){
+            $accepted=array_map('strval',array_keys($this->accepted($server)));
+            if($accepted===[]){continue;}
+            $have=SellRule::rows($binding)->whereIn('tld',$accepted)->pluck('tld')->all();
+            if(($missing=array_values(array_diff($accepted,$have)))!==[]){$out[$server]=$missing;}
+        }
+        return $out;
+    }
+    /** A row as SellRule::ensure would save it: before any rule is saved, a TLD the account sells reads as Sell with its accepted terms. */
+    private function effective(SellRow $row): SellRow
+    {
+        if(!$this->projected||$row->choice!==null){return $row;}
+        $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;
+        if($sold===null||$sold['register']===[]||($this->ruleSaved[$server]??=SellRule::saved($this->bindings[$server])!==null)){return $row;}
+        return $this->legacy[self::key($row)]??=(clone $row)->forceFill(['choice'=>'sell','longest'=>max($sold['register']),'transfer'=>$sold['transfer']!==[]]);
     }
     /** @return array<string,array> what the account sells now */
     public function accepted(int $server): array
@@ -66,6 +103,7 @@ final class SellTable
     /** @return array{label:string,tone:string,next?:string,open?:bool} */
     public function status(SellRow $row): array
     {
+        $row=$this->effective($row);
         if(!$row->listed){return ['label'=>'Not for sale','tone'=>'gray'];}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;$rule=$this->rule($server);
         if($sold!==null&&$sold['register']===[]){return ['label'=>$sold['transfer']===[]?'Renewals only':'Renewals and transfers only','tone'=>'gray'];}
@@ -153,7 +191,7 @@ final class SellTable
     public function pricing(SellRow $row): string {return $this->savedRow($row)['pricing']??'Default';}
     public function terms(SellRow $row): string
     {
-        $longest=$row->longest??$this->rule((int)$row->server_id)['years'];
+        $row=$this->effective($row);$longest=$row->longest??$this->rule((int)$row->server_id)['years'];
         return 'Up to '.$longest.' '.($longest===1?'year':'years').($row->longest===null?', default':'');
     }
     /** One money cell. A saved price wins, even one a failed publish left on an old rule: its loss stays red and Below cost reads this same price.
@@ -191,6 +229,7 @@ final class SellTable
     /** sold: an accepted term. filling: the next sync accepts it. off: not sold this long, or at all. */
     private function selling(SellRow $row,string $action): string
     {
+        $row=$this->effective($row);
         if(!$row->listed){return 'off';}
         $server=(int)$row->server_id;$accepted=$this->accepted($server)[$row->tld]??null;
         if($accepted!==null){return in_array($this->years,$accepted[$action],true)?'sold':'off';}

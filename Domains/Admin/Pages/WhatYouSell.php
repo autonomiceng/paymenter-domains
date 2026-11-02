@@ -44,7 +44,8 @@ class WhatYouSell extends Page implements HasTable
     /** One request only, so a long list stays out of the page state. */
     private ?SellTable $reads=null;
     private ?array $accountNames=null;
-    private ?bool $hasReader=null;
+    /** @var array<int,bool> */
+    private array $readers=[];
     private array $rights=[];
     public static function canAccess(): bool {return Staff::can();}
     public static function getNavigationLabel(): string {return 'What you sell';}
@@ -95,24 +96,28 @@ class WhatYouSell extends Page implements HasTable
     /** Years are a cost view: staff without costs stay on the page they had. */
     public function years(): int {return $this->canSeeCosts()?$this->years:1;}
     /** Accounts with a price reader get their list from it; the rest type each TLD. */
-    public function readable(): bool
+    public function readable(): bool {return ($binding=$this->binding())!==null&&$this->hasReader($binding);}
+    /** Only checks the account's saved setup. It never contacts the registrar. */
+    private function hasReader(AccountBinding $binding): bool
     {
-        if($this->hasReader!==null){return $this->hasReader;}
-        try{return $this->hasReader=($binding=$this->binding())!==null&&app(PriceFill::class)->reader($binding)!==null;}catch(\Throwable){return $this->hasReader=false;}
+        if(isset($this->readers[$binding->serverId])){return $this->readers[$binding->serverId];}
+        try{return $this->readers[$binding->serverId]=app(PriceFill::class)->reader($binding)!==null;}catch(\Throwable){return $this->readers[$binding->serverId]=false;}
     }
-    private function readerNeedsAttention(): bool
+    /** Enom reads with its catalogue switched off are off on purpose, so only a reader that should exist asks for attention. */
+    private function readerNeedsAttention(?AccountBinding $binding=null): bool
     {
-        $binding=$this->binding();
-        return $binding!==null&&($binding->registrarKey!=='enom'||config($binding->environment->value==='live'?'domains.enom_live.catalogue':'domains.enom_catalogue.enabled')===true)&&!$this->readable();
+        $binding??=$this->binding();
+        return $binding!==null&&($binding->registrarKey!=='enom'||config($binding->environment->value==='live'?'domains.enom_live.catalogue':'domains.enom_catalogue.enabled')===true)&&!$this->hasReader($binding);
     }
     private function reads(): SellTable
     {
-        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items());
+        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL);
     }
     private function reload(): void
     {
-        $this->reads=null;$this->hasReader=null;
-        foreach($this->bindings() as $binding){try{SellRule::ensure($binding,CatalogueAcceptances::load($binding));}catch(\DomainException){}}
+        $this->reads=null;$this->readers=[];
+        // All accounts only reads: its table shows the same rows without saving them.
+        if($this->account!==self::ALL&&($binding=$this->binding())!==null){try{SellRule::ensure($binding,CatalogueAcceptances::load($binding));}catch(\DomainException){}}
         $this->reviewStamp=$this->account?SellRule::stamp($this->account):'';
         $this->flushCachedTableRecords();
     }
@@ -229,16 +234,20 @@ class WhatYouSell extends Page implements HasTable
             return $schema->components([Callout::make('Connect a registrar account first')->warning()->columnSpanFull()
                 ->footer(new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open Registrars</x-filament::button>',['url'=>RegistrarSetup::getUrl()])))]);
         }
-        $components=[];
-        if(($binding=$this->binding())!==null){
-            $state=PriceFill::last($binding);$readerFailed=$this->readerNeedsAttention();
+        $components=[];$all=$this->account===self::ALL;$button=static fn(string $label,string $url)=>new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">{{ $label }}</x-filament::button>',['url'=>$url,'label'=>$label]));
+        // All accounts warns for each account that needs it, by name, with a way to that account.
+        foreach($all?$this->bindings():array_filter([(int)$this->account=>$this->binding()]) as $server=>$binding){
+            $name=$this->accounts()[$server]??'Registrar account #'.$server;
+            $state=PriceFill::last($binding);$readerFailed=$this->readerNeedsAttention($binding);
             if($readerFailed){
-                $components[]=Callout::make('Check the registrar account to sync prices')->warning()->columnSpanFull()
-                    ->footer(new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open registrar account</x-filament::button>',['url'=>RegistrarAccount::getUrl(['account'=>$this->account])])));
+                $components[]=Callout::make($all?'Check '.$name.' to sync prices':'Check the registrar account to sync prices')->warning()->columnSpanFull()
+                    ->footer($button('Open registrar account',RegistrarAccount::getUrl(['account'=>$server])));
             }
             if(PriceFill::stale($state,app(Clock::class)->now()->getTimestamp())){
-                $components[]=Callout::make('Prices are out of date')->warning()->columnSpanFull()
-                    ->description(($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.SellTable::time((int)$state->filled_at).'. Those prices are still shown.').' We try again once a day. '.($readerFailed?'Check the registrar account.':'Use Sync prices to see what stopped the read.'));
+                $components[]=Callout::make($all?'Prices for '.$name.' are out of date':'Prices are out of date')->warning()->columnSpanFull()
+                    ->description(($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.SellTable::time((int)$state->filled_at).'. Those prices are still shown.').' We try again once a day. '
+                        .($readerFailed?'Check the registrar account.':($all?'Show this account and use Sync prices to see what stopped the read.':'Use Sync prices to see what stopped the read.')))
+                    ->footer($all&&!$readerFailed?$button('Show this account',self::getUrl(['account'=>$server])):null);
             }
         }
         return $schema->components([...$components,EmbeddedTable::make()]);

@@ -337,6 +337,13 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$old->id])-
     ->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid-2','token'=>'catalogue-token','reason'=>'Connect synthetic blank'])->callMountedAction()->assertHasNoActionErrors();
 $oldBinding=CatalogueAcceptances::binding(Account::where('server_id',$old->id)->sole());
 CatalogueAcceptances::save($oldBinding,0,['org'=>['register'=>[1,3],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
+// All accounts only reads: the saved list shows as sold, with its terms, and nothing is written.
+$sellRows=DB::table(SellTableSchema::ROWS)->orderBy('id')->get()->toJson();$before=$calls();
+$all=Livewire::actingAs($staff)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL)->set('tableRecordsPerPage',100);
+$projected=collect($all->instance()->getTableRecords()->items())->first(fn(SellRow $r)=>(int)$r->server_id===$old->id&&$r->tld==='org');
+expect($projected!==null,'All accounts shows a sold TLD with no sales row yet');
+same(['Waiting for prices','Up to 3 years'],array_map(fn(string $c)=>$all->instance()->getTable()->getColumn($c)->record($projected)->getState(),['status','terms']),'It reads as sold, with its terms');
+same($sellRows,DB::table(SellTableSchema::ROWS)->orderBy('id')->get()->toJson(),'All accounts writes no sales row');same(null,SellRule::saved($oldBinding),'All accounts saves no rule');same($before,$calls(),'All accounts reads nothing from the registrar');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$old->id]);
 same('only',SellRule::read($oldBinding,CatalogueAcceptances::load($oldBinding))['mode'],'A saved list means only these');
 $kept=SellRow::where(['server_id'=>$old->id,'tld'=>'org'])->sole();same(['sell',3,true],[$kept->choice,$kept->longest,$kept->transfer],'Its row copies what is sold');

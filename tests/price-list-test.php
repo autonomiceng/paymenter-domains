@@ -124,6 +124,14 @@ $all=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',WhatYo
 same(1,substr_count($all->html(),'Choose one account to sync or edit.'),'The reason is said once');
 expect($all->instance()->getTable()->getColumn('account_name')->isVisible(),'All accounts names each row\'s account');
 $all->call('downloadCsv')->assertFileDownloaded('domain-prices-1-year.csv');
+// All accounts warns for each account that needs a look, by name, with a way to it, and asks no registrar.
+$fills=Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS;$asked=$reads->calls;
+DB::table($fills)->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],
+    ['filled_at'=>app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()-Paymenter\Extensions\Servers\Domains\Services\PriceFill::STALE_SECONDS]);
+Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL)
+    ->assertSee('Prices for <First & account> are out of date')->assertSee('Show this account and use Sync prices to see what stopped the read.')->assertSeeHtml(e(WhatYouSell::getUrl(['account'=>$t->server_id])))
+    ->assertSee('Check Synthetic to sync prices')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$other->server_id])))->assertDontSee('Prices are out of date');
+same($asked,$reads->calls,'Warnings ask no registrar');DB::table($fills)->where('server_id',$t->server_id)->delete();
 $one=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',$t->server_id)->assertCountTableRecords(1)->assertActionEnabled('rule');
 expect(!$one->instance()->getTable()->getColumn('account_name')->isVisible(),'One account needs no Account column');
 // Past 1 year only saved totals show: Off when not sold that long, Missing with its step when sold and not saved.
@@ -226,8 +234,9 @@ same('Cost missing',$renew['status'],'Retained price explains the missing cost')
 foreach(['register','transfer'] as $action){same(null,$quarantined['prices'][$action]['price'],'Quarantined acquisition remains Missing');}
 $quarantineCsv=array_map(static fn($line)=>str_getcsv($line,',','"',''),preg_split('/\r?\n/',trim($service->csv(1,'all',$other->server_id))));
 same(['Missing',$retained->retail,'Missing','Cost missing'],array_slice($quarantineCsv[1],9,4),'CSV preserves retained renewal and unknown costs/profit');
-$sells=SellRow::where(['server_id'=>$other->server_id,'tld'=>'com'])->sole();
-Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$other->server_id)->assertTableColumnStateSet('renew_cost','Missing',$sells)->assertTableColumnStateSet('renew_price',$retained->retail,$sells)->assertTableColumnStateSet('renew_profit',null,$sells);
+// Opening one account saves its sales rows; All accounts never did.
+$one=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$other->server_id);$sells=SellRow::where(['server_id'=>$other->server_id,'tld'=>'com'])->sole();
+$one->assertTableColumnStateSet('renew_cost','Missing',$sells)->assertTableColumnStateSet('renew_price',$retained->retail,$sells)->assertTableColumnStateSet('renew_profit',null,$sells);
 same($quarantineBefore,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Quarantined matrix/export reads leave revisions unchanged');
 // Fresh costs permission is required for service, page and forged export calls after revocation.
 $u->role->update(['permissions'=>[Staff::VIEW]]);
