@@ -3,8 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue,PriceSync,PublicationEligibility};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue,PriceSync,PublicationEligibility,SellRule};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Saved facts only. No reader factory, credentials or provider calls. */
 final class TldFacts
@@ -327,8 +328,14 @@ final class TldFacts
             // Retain the failed sync, but show capacity under today's saved cap without a provider read.
             try{
                 $binding=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
-                $needed=PriceSync::batchedCalls($accepted,array_keys($accepted->endings));$left=PriceSync::callsLeft($binding);
-                if($left!==null){$cause=$left>=$needed?'Our daily call limit has room to retry the price sync ('.$left.' calls left)':'Price sync needs '.$needed.' calls; '.$left.' calls left under our current limit';}
+                $needed=PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
+                if(SellRule::saved($binding)!==null){
+                    $left=PriceSync::backgroundLeft($binding,app(Clock::class));
+                    $cause='Price sync needs '.$needed.' calls; '.$left.' calls left for automatic price reads';
+                }else{
+                    $left=PriceSync::callsLeft($binding);
+                    if($left!==null){$cause=$left>=$needed?'Our daily call limit has room to retry the price sync ('.$left.' calls left)':'Price sync needs '.$needed.' calls; '.$left.' calls left under our current limit';}
+                }
             }catch(\Throwable){} // Missing acceptance or usage keeps the original failure and its next step.
         }
         return ['cause'=>$cause,'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];

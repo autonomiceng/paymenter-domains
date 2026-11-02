@@ -9,7 +9,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomTestSendLimit,NameSiloSandbox,RegistrarBalances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,CatalogueAcceptances,EnomLive,EnomTestSendLimit,NameSiloSandbox,PriceSync,RegistrarBalances};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Facts shared by the Registrars list and the registrar account page. Values are null when Missing; 'cause' says why. */
 final class RegistrarFacts
@@ -79,7 +79,10 @@ final class RegistrarFacts
     {
         if ($account->registrar_key!=='enom') { return null; }
         if ($account->environment==='live') {
-            try { $u=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account)); } catch (\Throwable) { $u=null; }
+            try {
+                $binding=CatalogueAcceptances::binding($account);
+                $u=EnomLive::deployment($binding)?PriceSync::callsToday($binding):null;
+            } catch (\Throwable) { $u=null; }
             if ($u===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read our call count or limit. Check the API credentials and Live account setup.",'help'=>null]; }
             $full=$u['used']>=$u['limit'];
             return ['value'=>$u['used'].' of '.$u['limit'],'tone'=>$full?'danger':null,'sub'=>$full?'Limit reached. Further calls wait until the count resets.':null,

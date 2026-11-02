@@ -266,9 +266,14 @@ config(['domains.enom_test_sends_per_day'=>50]);
 Illuminate\Support\Facades\Schema::rename(EnomTestSendLimitSchema::SENDS,'domains_test_sends_saved');
 same("Couldn't read our test send count, so no Enom test requests are sent. Try again.",$capFacts::calls($capAccount)['sub'],'Unreadable count has its own cause');
 Illuminate\Support\Facades\Schema::rename('domains_test_sends_saved',EnomTestSendLimitSchema::SENDS);
-$liveCap=clone $capAccount;$liveCap->environment='live';$liveCapFacts=$capFacts::calls($liveCap);
+// A valid persisted Live binding must not fall back to TEST counts or limits when deployment is off.
+$liveCapServer=App\Models\Server::create(['name'=>'Synthetic Live count','extension'=>'Domains','type'=>'server','enabled'=>true]);
+$liveCap=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$liveCapServer->id,'registrar_key'=>'enom','environment'=>'live','stable_identity'=>'live-count-uid']));
+$identityEnvironment=config('domains.enom_identity.environment');config(['domains.enom_identity.environment'=>'test']);
+$liveCapFacts=$capFacts::calls($liveCap);
 same(null,$liveCapFacts['value'],'Unconfigured Live account never reports the TEST count or cap');
 expect(str_contains($liveCapFacts['sub'],'Live account setup'),'Missing Live count or cap says what to fix');
+config(['domains.enom_identity.environment'=>$identityEnvironment]);
 
 config(['domains.enom_test_sends_per_day'=>'many']);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Missing')->assertSee('Our test send limit on this site is invalid, so no Enom test requests are sent. Ask your site admin to fix it.');

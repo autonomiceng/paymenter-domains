@@ -104,6 +104,15 @@ same(2,Limit::usage($uid)['day_limit'],'Revoked settings permission refuses the 
 $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage-policy',Review::permission('configure')]]);
 $write($review(),100,3);
 expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],'98 calls left'),'Raising the cap immediately updates the failed sync check without claiming a successful sync');
+// A saved sell rule reserves 70% of the day for other work; daily room alone cannot promise an automatic retry.
+$server->settings()->create(['key'=>\Paymenter\Extensions\Servers\Domains\Services\SellRule::KEY,'type'=>'array','encrypted'=>false,
+    'value'=>['mode'=>'except','max_cost'=>null,'years'=>1,'transfers'=>false]]);
+DB::table(Tables::SENDS)->insert(array_fill(0,28,['account'=>Limit::account($uid),'command'=>'GetBalance','sent_at'=>$clock->now()->getTimestamp()]));
+same(70,PriceSync::callsLeft($binding),'Daily cap still has room at the automatic allowance threshold');
+same(0,PriceSync::backgroundLeft($binding,$clock),'Automatic price reads have no room at thirty percent used');
+same('Price sync needs 6 calls; 0 calls left for automatic price reads',
+    \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
+    'A retained capacity failure shows the automatic allowance without promising a retry');
 config(['app.url'=>'https://billing.example.test','domains.enom_live.site'=>'https://billing.example.test','domains.enom_identity.environment'=>'live']);
 $liveServer=Server::create(['name'=>'Synthetic live cap','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $live=Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$liveServer->id,'registrar_key'=>'enom','environment'=>'live','stable_identity'=>'live-cap-uid']));
