@@ -45,7 +45,8 @@ final class OfferReader
         }
         // Preserve query order and fail closed when a candidate disappeared.
         foreach ($query->tlds as $name) {
-            $result[$name] ??= new Decision($name, $query->action, $query->term, false, null, new Revision(0, 0, 0), 'unavailable');
+            $result[$name] ??= new Decision($name, $query->action, $query->term, false, null,
+                new Revision(0, $defaults['_revision'] ?? 0, (int) (($policies[$name] ?? null)?->revision ?? 0)), 'unavailable');
         }
         return array_map(static fn ($name) => $result[$name], $query->tlds);
     }

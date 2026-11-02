@@ -249,5 +249,28 @@ same($products, Product::orderBy('id')->pluck('id')->all(), 'Hidden-ending publi
 same($plans, Plan::orderBy('id')->pluck('id')->all(), 'Hidden-ending publication preserves native plan identities');
 same($obligations, $frozen(), 'Hidden ending preserves existing service, financial and operation snapshots');
 config(['domains.hidden_endings' => $hiddenConfig]);
+// Missing offers still participate in the real defaults and cross-account selection fences.
+$defaultsRevision = $apply(Edit::defaults($b, 'com', new Intent(defaultSell: true), PricingRule::DEFAULT));
+$orgSelection = $orgRead()->revision->selection;
+expect($defaultsRevision->defaults > 0 && $orgSelection > 0, 'Discovery fixtures have advanced defaults and seller selection');
+$missingDefault = $writer->readOffers(new Query($b, ['net'], 'register'), Context::Staff)[0];
+$missingSelected = $writer->readOffers(new Query($n, ['org'], 'register'), Context::Staff)[0];
+$decisionState = static fn ($d) => [$d->available, $d->retail, $d->revision->offer, $d->revision->defaults, $d->revision->selection];
+same([[false, null, 0, $defaultsRevision->defaults, 0], [false, null, 0, $revision($n)->defaults, $orgSelection]],
+    [$decisionState($missingDefault), $decisionState($missingSelected)],
+    'Absent discovery reads preserve real defaults and another account seller selection without availability');
+foreach ([[$b, 'net', $missingDefault], [$n, 'org', $missingSelected]] as [$binding, $ending, $missing]) {
+    $created = $writer->apply(new FeedObserved($binding, $ending, [new Cost('register', 1, true, '5.0000',
+        CostUnit::TermTotal, 'synthetic_feed', $clock->time, $clock->time->modify('+1 day'))]), $missing->revision);
+    same([1, $missing->revision->defaults, $missing->revision->selection],
+        [$created->offer, $created->defaults, $created->selection], 'Read revision authorizes first discovery of '.$ending);
+    $discovered = $writer->readOffers(new Query($binding, [$ending], 'register'), Context::Staff)[0];
+    expect($created->matches($discovered->revision), 'Discovered offer exposes its committed revision');
+    same(false, $discovered->available, 'Discovery grants no facts or seller permission for '.$ending);
+}
+$orgPolicy = DB::table('domains_sales_policies')->where('tld', 'org')->sole();
+same([$b->serverId, $orgSelection], [(int) $orgPolicy->server_id, (int) $orgPolicy->revision],
+    'Other-account discovery cannot change the existing seller or its revision');
+same($obligations, $frozen(), 'Discovery preserves existing service, financial and operation snapshots');
 $nativeSuccessful = true;
 echo "Dormant offer writer, revisions, atomic native projection and retained renewal checks passed.\n";

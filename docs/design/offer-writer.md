@@ -27,8 +27,10 @@ it takes server/account/selection/offer/price locks and compares every expected 
 
 Omitted and older observations are no-ops. Equal-time contradictions fail the transaction. Future observations
 are refused. A nonempty first observation can create an unselected candidate using current account defaults;
-its expected offer revision is zero. Explicit intent and verified facts still gate publication. Facts retain
-separate provenance/age and never appear on cost rows. Exact terms are never
+its expected offer revision is zero, while its defaults and selection revisions come from `readOffers` even
+when the offer is absent. Explicit intent and verified facts still gate publication. Configured hidden endings
+are loaded into every snapshot, closing new acquisition reads and projection while preserving holder renewal.
+Facts retain separate provenance/age and never appear on cost rows. Exact terms are never
 interpolated. Retail uses rational decimal integer arithmetic with existing annual rounding and card-fee rules,
 including totals that do not divide into a four-decimal annual rate. Positive retained annual renewal retail
 survives missing/disabled/stale or invalid new retail; valid current renewal pricing can update it. The explicit
