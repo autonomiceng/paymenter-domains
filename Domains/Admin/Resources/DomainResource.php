@@ -43,7 +43,7 @@ class DomainResource extends Resource
     public static function getNavigationBadge(): ?string
     {
         if (!Staff::can()) { return null; }
-        return NavigationCount::read('domains',fn()=>DomainQueries::openAlerts(Domain::query())->count());
+        return NavigationCount::read('domains',fn()=>DomainQueries::openAlertCount(Domain::query()));
     }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
