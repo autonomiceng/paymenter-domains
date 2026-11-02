@@ -19,7 +19,7 @@ $list=function(?callable $queries=null)use($viewer){
 };
 
 // Customer has its own column, and search finds a full name.
-$owner=$active->user;same(true,isset($list()[0]['customer']),'Customer column');
+$owner=App\Models\User::create(['first_name'=>'Ada','last_name'=>'Lovelace','email'=>'ada@example.test','password'=>'synthetic-password']);DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$owner->id]);same(true,isset($list()[0]['customer']),'Customer column');
 Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee('Search domain or customer')->searchTable($owner->first_name.' '.$owner->last_name)->assertCanSeeTableRecords([$active]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('nobody-by-this-name')->assertCountTableRecords(0);
 // Duplicate staff account names remain distinguishable in filters and rows.
