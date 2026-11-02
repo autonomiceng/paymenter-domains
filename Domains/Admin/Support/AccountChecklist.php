@@ -198,7 +198,7 @@ final class AccountChecklist
             default=>self::row('Payment events','OK',null,'Paid orders start right away.',null,self::PAYMENTS)}];
         if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning',self::creditsCause(),null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
         $editor=NativeEditorNotice::missing();
-        $checks[]=$editor===null?self::row('Domain editor','OK',null,'Domain editing is ready.',null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
+        $checks[]=$editor===null?self::row('Domain editor','OK',null,'This Paymenter version works with it. Each registrar account has its own switch.',null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
         if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Update Paymenter or Domains. Until then, check each TLD is still for sale after a price change.',null,'Paymenter is missing '.$missing.'.'); }
         if (($missing=NativeServerGuard::deletionNoticeMissing())!==null) { $checks[]=self::row('Account delete warning',null,'danger','Update Paymenter or Domains. Deleting a registrar account is still refused.',null,'Paymenter is missing '.$missing.'.'); }
         if (($missing=NativeServiceRefusal::missing())!==null) { $checks[]=self::row('Service change warning',null,'danger','Update Paymenter or Domains. Unsafe service changes are still refused.',null,'Paymenter is missing '.$missing.'.'); }

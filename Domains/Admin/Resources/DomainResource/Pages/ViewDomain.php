@@ -129,7 +129,7 @@ class ViewDomain extends ViewRecord
             foreach (array_intersect($labels,array_keys($facts)) as $label) {
                 $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$label===$slot?$button:null));
             }
-            $sections[]=Sheet::section($title,$rows,$title===$held?$edits['held']:null);
+            $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
         return $schema->components([Sheet::split([...$this->notices($d),...$sections],[$this->activity($d)])]);
     }

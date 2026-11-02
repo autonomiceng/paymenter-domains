@@ -4,15 +4,16 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\{Auth, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, PendingAdoptionResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainEditActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, DomainManagement, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
 config(['settings.company_name'=>'Example Hosting']);
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
@@ -23,6 +24,17 @@ DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$custo
 $value=static fn(Domain $d,string $label)=>array_key_exists($label,$facts=DomainFacts::for($d->fresh()))?$facts[$label]['value']:'absent';
 $sub=static fn(Domain $d,string $label)=>DomainFacts::for($d->fresh())[$label]['sub']??null;
 
+// A hold says what is really in the way, and never a request that doesn't exist.
+Illuminate\Support\Facades\Route::get('/admin/registrar-account/{account}',fn()=>'')->name('filament.admin.pages.registrar-account'); app('router')->getRoutes()->refreshNameLookups();
+$processing=Account::where('server_id',$active->server_id)->value('processing_enabled'); Account::where('server_id',$active->server_id)->update(['processing_enabled'=>true]);
+$switch=DomainEditActions::held($active,DomainManagement::SWITCH_OFF);
+same('Changes are on hold: DNS, nameservers and contacts are Off for this registrar account. Turn them on, then reload this page.',strip_tags($switch['note'] instanceof Htmlable?$switch['note']->toHtml():$switch['note']),'The hold names the switch');
+expect(str_contains($switch['held'],'DNS, nameservers and contacts')&&$switch['request']===null,'A switch blames no request');
+same(['On hold until request #7 is checked.',7],[DomainEditActions::held($active,7)['held'],DomainEditActions::held($active,7)['request']],'Only the blocking request is named');
+same(['This registrar doesn\'t support this change.',null],[DomainEditActions::held($active,'Management capability unsupported.')['held'],DomainEditActions::held($active,'Management capability unsupported.')['request']],'A known refusal keeps its words');
+$unknown=DomainEditActions::held($active,null)['held'];
+expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
+Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$processing]);
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
 same(['Expires','Registrar','In registrar account','Transfer lock','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::SECTIONS['Registration'])),'Registration rows in order');

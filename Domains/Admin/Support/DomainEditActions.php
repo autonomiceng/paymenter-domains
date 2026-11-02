@@ -7,8 +7,9 @@ use Filament\Forms\Components\{Hidden,Repeater,Select,TextInput,Textarea,Toggle}
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\{Auth,Log};
+use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactValidation,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactValidation,DomainManagement,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
 /** Staff edits on the domain page: the owner's form path and every check it runs, credited to the staff member. */
 final class DomainEditActions
 {
@@ -24,13 +25,13 @@ final class DomainEditActions
         'DNS tools disabled.'=>'DNS tools are off for this registrar account. Turn them on in Registrars, then try again.',
         'Management capability unsupported.'=>"This registrar doesn't support this change.",
     ];
-    /** @return array{rows:array<string,list<Action>>,held:?string,request:?int} Edits by Registration row, why none can run now, and the request behind that when one is. */
+    /** @return array{rows:array<string,list<Action>>,held:?string,note:string|HtmlString|null,request:?int} Edits by Registration row, why none can run now as plain words and as the section note, and the request behind that when one is. */
     public static function for(Domain $d): array
     {
-        if (!Staff::can('admin.domains.manage')) { return ['rows'=>[],'held'=>null,'request'=>null]; }
+        if (!Staff::can('admin.domains.manage')) { return ['rows'=>[],'held'=>null,'note'=>null,'request'=>null]; }
         try { $page=app(OwnedDomains::class)->present($d); }
         catch (\Throwable $error) { Log::warning('Domains staff edit forms failed.',['domain_id'=>$d->id,'exception_class'=>$error::class]);
-            return ['rows'=>[],'held'=>"Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page.",'request'=>null]; }
+            $held="Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page."; return ['rows'=>[],'held'=>$held,'note'=>$held,'request'=>null]; }
         $m=$page->management; $rows=[];
         if (!empty($m['contacts']['actions'])) { $rows['Contacts']=self::contacts($d,$m['contacts']); }
         if (isset($m['nameservers']['actions']['nameservers'])) { $rows['Nameservers']=[self::nameservers($d,$m['nameservers'])]; }
@@ -43,19 +44,27 @@ final class DomainEditActions
         foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
             if (($progress[$setting]['pending']??false)) { unset($rows[$label]); }
         }
-        [$held,$request]=$page->changesUnavailable?self::held($d):[null,null];
-        return ['rows'=>$rows,'held'=>$held,'request'=>$request];
+        return ['rows'=>$rows,...($page->changesUnavailable?self::held($d,$page->changesRefused):['held'=>null,'note'=>null,'request'=>null])];
     }
-    /** @return array{0:string,1:?int} why changes are on hold, and the request that holds them when one does */
-    private static function held(Domain $d): array
+    /** @return array{held:string,note:string|HtmlString,request:?int} what is really in the way, from the engine's own refusal; a request is named only when one is */
+    public static function held(Domain $d, int|string|null $refused): array
     {
+        $plain=static fn(string $held,?int $request=null)=>['held'=>$held,'note'=>$held,'request'=>$request];
         return match(true) {
-            \Paymenter\Extensions\Servers\Domains\Services\RenewalStop::policy($d)===null=>[DomainFacts::UNREADABLE_RENEWAL,null],
-            !Account::where('server_id',$d->server_id)->value('processing_enabled')=>['Changes are on hold: Orders are off for this registrar account. Turn Orders on in Registrars, then reload this page.',null],
-            (bool)($d->renewal_policy['automatic_spend_paused']??false)=>['Changes are on hold: orders are paused for this domain. Check the alerts on this page.',null],
-            ($request=DomainFacts::status($d)['request'])!==null=>['On hold until request #'.$request.' is checked.',$request],
-            default=>['Changes are on hold until the last request finishes. Check History, then reload this page.',null],
+            \Paymenter\Extensions\Servers\Domains\Services\RenewalStop::policy($d)===null=>$plain(DomainFacts::UNREADABLE_RENEWAL),
+            !Account::where('server_id',$d->server_id)->value('processing_enabled')=>$plain('Changes are on hold: Orders are off for this registrar account. Turn Orders on in Registrars, then reload this page.'),
+            (bool)($d->renewal_policy['automatic_spend_paused']??false)=>$plain('Changes are on hold: orders are paused for this domain. Check the alerts on this page.'),
+            $refused===DomainManagement::SWITCH_OFF=>self::switchOff($d),
+            is_int($refused)=>$plain('On hold until request #'.$refused.' is checked.',$refused),
+            default=>$plain(self::FAILURES[$refused]??"Changes are on hold right now. Reload this page. If it keeps happening, check the alerts on this page."),
         };
+    }
+    private static function switchOff(Domain $d): array
+    {
+        $off='Changes are on hold: DNS, nameservers and contacts are Off for this registrar account.';
+        $url=RegistrarFacts::accountUrl((int)$d->server_id);
+        if ($url===null) { $held=$off.' Ask staff who can change registrar accounts.'; return ['held'=>$held,'note'=>$held,'request'=>null]; }
+        return ['held'=>$off.' Turn them on, then reload this page.','note'=>new HtmlString(e($off).' '.DomainFacts::requestLink($url,'Turn them on').', then reload this page.'),'request'=>null];
     }
     private static function nameservers(Domain $d, array $m): Action
     {

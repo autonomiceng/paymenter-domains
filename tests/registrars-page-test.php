@@ -231,6 +231,7 @@ same([$alerted->domain.' registration','Service #'.$service->id.". Customer, ord
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$alerted->id])
     ->assertSeeHtml('href="'.e($serviceUrl).'"')->assertSeeInOrder(['Service','registration','Customer, order or service missing']);
 $groups=$page->instance()->checks();
+expect(!str_contains(json_encode($groups),'Domain editing is ready'),'A site check does not promise edits a registrar account can still block');
 expect(in_array('Domain editor',array_column($groups['passing'],'label'),true)&&in_array('Payment events',array_column($groups['failing'],'label'),true),'Failing checks stay apart from passing checks');
 // Public suffix list row: shown with the list permission; never downloaded is a failing check with Download now and Change source.
 $page->assertDontSee('Public suffix list');
