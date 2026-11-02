@@ -31,7 +31,7 @@ class ListManagedDns extends ListRecords
             TextColumn::make('user.email')->label('Customer')->wrap(),
             TextColumn::make('comparison')->label('DNS comparison')->state(fn()=>$this instanceof ListDnsFailures?'Retrying automatically':'Not configured'),
         ])->recordActions([Action::make('accountTemplate')->label('Set account DNS template')
-            ->visible(fn()=>!($this instanceof ListDnsFailures) && Staff::can(StaffWatchWrites::MANAGE))
+            ->visible(fn()=>!($this instanceof ListDnsFailures) && Staff::can(StaffWatchWrites::MANAGE) && Staff::canEditDefaultDns())
             ->url(fn(Domain $record)=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$record->server_id])),
             Action::make('assignTemplate')->label('Assign template')->modalSubmitActionLabel('Assign template')
             ->visible(fn()=>!($this instanceof ListDnsFailures) && Staff::can(StaffWatchWrites::MANAGE) && WatchProfile::where('enabled',true)->get()->contains(fn($p)=>ManagedDnsSetup::usable($p)))

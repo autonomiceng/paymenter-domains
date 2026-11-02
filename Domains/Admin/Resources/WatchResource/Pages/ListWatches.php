@@ -37,7 +37,7 @@ class ListWatches extends ListRecords
         $dnsFailure=($notice['action']??null)==='settings';
         $url=$dnsFailure&&MonitoringSettings::canAccess()?WatchResource::getUrl('settings'):null;
         $count=ManagedDnsSetup::affected(time())->count();
-        $canAssign=Staff::can(StaffWatchWrites::MANAGE);
+        $canAssign=Staff::can(StaffWatchWrites::MANAGE) && Staff::canEditDefaultDns();
         $setupText='DNS monitoring is not set up for '.$count.' '.($count===1?'domain.':'domains.');
         if($canAssign){$setupText.=' Set a default DNS template on the registrar account.';}
         $setup=$count?Callout::make($setupText)->status('info')
