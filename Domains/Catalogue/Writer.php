@@ -1,0 +1,203 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+
+use App\Models\{CartItem, Product, Server};
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, PricingRules, PricingRule, StaffSettingsReview, StorefrontCatalogueCache};
+
+/** Dormant single writer. Never registered or called by an active path before checked cutover.
+ * Callbacks authorize server-side commands/contexts and check LOCAL readiness, without provider I/O. */
+final class Writer implements Catalogue
+{
+    public function __construct(private readonly Projection $projection, private readonly Clock $clock,
+        private readonly \Closure $authorize, private readonly \Closure $ready, private readonly ?int $actorId = null) {}
+
+    public function readOffers(Query $query, Context $context): array
+    { return (new OfferReader($this->clock, $this->authorize, $this->ready))->readOffers($query, $context); }
+
+    public function apply(Command $command, Revision $expectedRevision): Revision
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Offer writer owns its native-first transaction.'); }
+        if (!$command instanceof FeedObserved && !$command instanceof FactsObserved && !$command instanceof Edit) {
+            throw new \InvalidArgumentException('Unknown offer command.');
+        }
+        ($this->authorize)($command, null);
+        $binding = $command->binding(); $name = $command->tld();
+        $seller = $command instanceof Edit && $command->kind === 'seller';
+        $defaultsEdit = $command instanceof Edit && $command->kind === 'defaults';
+        $seedQuery = Tld::where('tld', $name);
+        if (!$seller) { $seedQuery->where('server_id', $binding->serverId); }
+        $seeds = $seedQuery->orderBy('id')->get()->all();
+        if (!$seeds || count($seeds) > 500) { throw new \DomainException('Missing or oversized offer group.'); }
+        return DB::transaction(function () use ($command, $expectedRevision, $binding, $name, $seller, $defaultsEdit, $seeds): Revision {
+            $native = $defaultsEdit ? null : $this->projection->lock($seeds);
+            $ids = array_values(array_unique(array_map(static fn ($s) => (int) $s->server_id, $seeds))); sort($ids, SORT_NUMERIC);
+            $servers = $accounts = [];
+            foreach ($ids as $id) { $servers[$id] = Server::whereKey($id)->lockForUpdate()->firstOrFail(); }
+            foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->sole(); }
+            if (!isset($accounts[$binding->serverId])) { throw new \DomainException('Seller offer missing.'); }
+            $binding->requireMatch(CatalogueAcceptances::binding($accounts[$binding->serverId]));
+            $policy = DB::table('domains_sales_policies')->where('tld', $name)->lockForUpdate()->first();
+            $offers = Tld::whereIn('id', array_map(static fn ($s) => $s->id, $seeds))->select('*')->selectRaw('CAST(catalogue_retained_annual_retail AS CHAR) AS catalogue_retained_annual_retail')->orderBy('id')->lockForUpdate()->get();
+            $rows = UpgradeComparison::query('domains_prices')->whereIn('server_id', $ids)->where('tld', $name)->orderBy('id')->lockForUpdate()->get();
+            $target = $offers->firstWhere('server_id', $binding->serverId) ?? throw new \DomainException('Offer disappeared.');
+            $defaults = OfferState::decode($accounts[$binding->serverId]->catalogue_defaults);
+            $revision = OfferState::revision($target, $defaults, $policy); $revision->requireMatch($expectedRevision);
+            foreach ($offers as $offer) {
+                $account = $accounts[$offer->server_id]; $server = $servers[$offer->server_id];
+                if ($server->extension !== 'Domains' || !$offer->catalogue_converted || !$server->enabled
+                    || $offer->account_fingerprint !== $account->account_fingerprint || $offer->registrar_key !== $account->registrar_key) {
+                    throw new \DomainException('Offer binding or conversion changed.');
+                }
+            }
+            foreach ($rows as $p) {
+                if ($p->account_fingerprint !== $accounts[$p->server_id]->account_fingerprint || $p->registrar_key !== $accounts[$p->server_id]->registrar_key) {
+                    throw new \DomainException('Price binding changed.');
+                }
+            }
+            // Reauthorize after taking mutexes, before any command mutation.
+            ($this->authorize)($command, null); $now = $this->clock->now();
+            if ($defaultsEdit) {
+                $fee = $command->rule['card_fee'] ?? $defaults['card_fee'] ?? \Paymenter\Extensions\Servers\Domains\Services\CardFee::read($binding->serverId);
+                $defaults = [...get_object_vars($command->intent), '_revision' => $revision->defaults + 1,
+                    'pricing_rule' => $command->rule, 'card_fee' => $fee];
+                DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['catalogue_defaults' => OfferState::json($defaults)]);
+                $this->audit($servers[$binding->serverId], $command, $revision, new Revision($revision->offer, $revision->defaults + 1, $revision->selection), $now);
+                // All old publication revisions are now pending. B5 enumerates local republish commands.
+                $this->afterCommit([$binding->serverId => null]);
+                return new Revision($revision->offer, $revision->defaults + 1, $revision->selection);
+            }
+            $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now);
+            if (!$changed) { return $revision; }
+            if ($seller) {
+                $values = ['server_id' => $command->actions ? $binding->serverId : null,
+                    'registrar_key' => $command->actions ? $binding->registrarKey : null,
+                    'account_fingerprint' => $command->actions ? $binding->fingerprint : null,
+                    'register_enabled' => in_array('register', $command->actions, true),
+                    'transfer_enabled' => in_array('transfer', $command->actions, true), 'revision' => $revision->selection + 1];
+                if ($policy) { DB::table('domains_sales_policies')->where('id', $policy->id)->update($values); }
+                else { DB::table('domains_sales_policies')->insert(['tld' => $name, ...$values]); }
+                $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
+            }
+            $scopes = [];
+            foreach ($seller ? $offers : [$target] as $offer) {
+                $id = (int) $offer->server_id; $account = $accounts[$id]; $b = CatalogueAcceptances::binding($account);
+                $d = OfferState::decode($account->catalogue_defaults);
+                $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
+                if (!$command instanceof Edit || $command->kind !== 'retail') { $this->publishPrices($offer, $d, $now); }
+                $prices = UpgradeComparison::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
+                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, ($this->ready)($b), true);
+                $this->projection->write($offer, $snapshot, $now, $native);
+                $offer->catalogue_published_revision = OfferState::json($snapshot->revision);
+                // Raw update: dormant staging does not invoke active legacy model observers.
+                DB::table('domains_tlds')->where('id', $offer->id)->update([
+                    'catalogue_intent' => $offer->catalogue_intent, 'catalogue_facts' => $offer->catalogue_facts,
+                    'catalogue_revision' => $offer->catalogue_revision, 'catalogue_published_revision' => $offer->catalogue_published_revision,
+                    'catalogue_retained_annual_retail' => $offer->catalogue_retained_annual_retail]);
+                $scopes[$id] = $name;
+            }
+            $result = OfferState::revision($target, $defaults, $policy);
+            $this->audit($servers[$binding->serverId], $command, $revision, $result, $now);
+            $this->afterCommit($scopes);
+            return $result;
+        });
+    }
+
+    private function mutate(Command $command, Tld $target, $prices, \DateTimeImmutable $now): bool
+    {
+        if ($command instanceof Edit) {
+            if ($command->kind === 'override') {
+                $old = OfferState::decode($target->catalogue_intent);
+                foreach (['sell', 'longest', 'transfers', 'stops'] as $key) { $old[$key] = $command->intent->{$key}; }
+                $target->catalogue_intent = OfferState::json([...$old, 'pricing_rule' => $command->rule]);
+            }
+            if ($command->kind === 'retail') { $target->catalogue_retained_annual_retail = $command->retail; }
+            return true;
+        }
+        if ($command instanceof FactsObserved) {
+            $old = OfferState::facts($target->catalogue_facts); $new = $command->facts;
+            if ($new->observedAt > $now) { throw new \DomainException('Future facts observation.'); }
+            if ($old && $old->observedAt > $new->observedAt) { return false; }
+            if ($old && $old->observedAt == $new->observedAt) {
+                if (OfferState::encodeFacts($old) !== OfferState::encodeFacts($new)) { throw new \DomainException('Conflicting facts observation.'); }
+                return false;
+            }
+            $target->catalogue_facts = OfferState::encodeFacts($new); return true;
+        }
+        $changed = false;
+        foreach ($command->costs as $cost) {
+            if ($cost->observedAt > $now) { throw new \DomainException('Future cost observation.'); }
+            $p = $prices->first(static fn ($p) => $p->action === $cost->action && (int) $p->term === $cost->term && $p->currency === 'USD');
+            $old = $p?->catalogue_observation === null ? null : OfferState::cost(OfferState::decode($p->catalogue_observation));
+            if ($old && $old->observedAt > $cost->observedAt) { continue; }
+            if ($old && $old->observedAt == $cost->observedAt) {
+                $a = OfferState::encodeCost($old); $b = OfferState::encodeCost($cost); unset($a['source_unit'], $b['source_unit']);
+                if ($a !== $b) {
+                    throw new \DomainException('Conflicting cost observation.');
+                }
+                continue;
+            }
+            $values = ['catalogue_observation' => OfferState::json(OfferState::encodeCost($cost))];
+            if ($p) { DB::table('domains_prices')->where('id', $p->id)->update($values); }
+            else {
+                DB::table('domains_prices')->insert([...$values, 'server_id' => $target->server_id, 'registrar_key' => $target->registrar_key,
+                    'account_fingerprint' => $target->account_fingerprint, 'tld' => $target->tld, 'action' => $cost->action,
+                    'term' => $cost->term, 'currency' => 'USD', 'unit' => 'term_total', 'source' => $cost->source,
+                    'observed_at' => $cost->observedAt->format('Y-m-d H:i:s'), 'catalogue_created' => true]);
+            }
+            $changed = true;
+        }
+        return $changed;
+    }
+
+    private function publishPrices(Tld $tld, array $defaults, \DateTimeImmutable $now): void
+    {
+        $intent = OfferState::decode($tld->catalogue_intent);
+        $rules = new PricingRules;
+        $rule = array_key_exists('pricing_rule', $intent)
+            ? ($intent['pricing_rule'] ?? $defaults['pricing_rule'] ?? $rules->defaultRule((int) $tld->server_id))
+            : ($tld->use_default_rule ? ($defaults['pricing_rule'] ?? $rules->rule($tld)) : $rules->rule($tld));
+        if ($rule['mode'] === 'markup_fee_percent' && isset($defaults['card_fee'])) { $rule['card_fee'] = $defaults['card_fee']; }
+        $prices = UpgradeComparison::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
+        foreach ($prices as $p) {
+            if ($p->catalogue_observation === null) { continue; }
+            $cost = OfferState::cost(OfferState::decode($p->catalogue_observation));
+            try { $retail = Retail::quote($cost, $rule); }
+            catch (\InvalidArgumentException) { $retail = null; }
+            if ($cost->action === 'renew') {
+                if ($retail !== null && PricingRule::units($retail, 2) > 0 && $cost->fresh($now)) { $tld->catalogue_retained_annual_retail = $retail; }
+                else { $retail = UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2); }
+            }
+            $values = ['wholesale' => $cost->total, 'retail' => $retail, 'unit' => 'term_total', 'source' => $cost->source,
+                'observed_at' => $cost->observedAt->format('Y-m-d H:i:s'), 'fresh_until' => $cost->freshUntil->format('Y-m-d H:i:s'),
+                'eligibility' => null, 'hold_reason' => null, 'revision' => (int) $p->revision + 1];
+            DB::table('domains_prices')->where('id', $p->id)->update($values);
+        }
+    }
+
+    private function audit(Server $server, Command $command, Revision $before, Revision $after, \DateTimeImmutable $now): void
+    {
+        StaffSettingsReview::append($server, ['key' => bin2hex(random_bytes(16)), 'actor_id' => $this->actorId,
+            'at' => $now->format(DATE_ATOM), 'action' => 'catalogue_'.($command instanceof Edit ? $command->kind : ($command instanceof FeedObserved ? 'feed' : 'facts')),
+            'phase' => 'completed', 'tld' => $command->tld(), 'before' => get_object_vars($before), 'after' => get_object_vars($after)]);
+    }
+
+    private function afterCommit(array $scopes): void
+    {
+        StorefrontCatalogueCache::invalidateAfterCommit();
+        DB::afterCommit(static function () use ($scopes): void {
+            $tlds = DB::table('domains_tlds')->where(static function ($q) use ($scopes): void {
+                foreach ($scopes as $id => $ending) {
+                    $q->orWhere(static function ($q) use ($id, $ending): void { $q->where('server_id', $id); if ($ending !== null) { $q->where('tld', $ending); } });
+                }
+            })->pluck('id')->map(strval(...));
+            $products = Product::whereIn('server_id', array_keys($scopes))->whereHas('settings', static fn ($q) => $q->where('key', 'domains_catalogue')->where('value', '1'))
+                ->whereHas('settings', static fn ($q) => $q->where('key', 'domains_tld_id')->whereIn('value', $tlds))->pluck('id');
+            CartItem::whereIn('product_id', $products)->delete();
+        });
+    }
+}
