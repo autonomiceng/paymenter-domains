@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB,View};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\PriceList as PriceListPage;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule};
 extract(commerceFixture());tldPanel();Carbon\Carbon::setTestNow($now);
@@ -24,6 +24,8 @@ $setting=static function(string $key,mixed $value,bool $encrypted)use($server):v
 };
 $rawSettings=static fn():string=>DB::table('settings')->orderBy('id')->get()->toJson();
 $csvRows=static fn(string $csv):array=>array_map(static fn($line)=>str_getcsv($line,',','"',''),preg_split('/\r?\n/',trim($csv)));
+// The page adds missing sales rows on its first read. After that, reads write nothing.
+Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL);
 $cases=[
     ['domains_pricing_default_rule',[...PricingRule::DEFAULT,'markup'=>[]],'default_rule',[$t->id,$second->id],"default pricing can't be read",'Edit default pricing'],
     [CardFee::KEY,['percent'=>[],'fixed'=>'0'],'card_fee',[$t->id,$second->id,$custom->id],"card fee can't be read",'Edit card fee'],
@@ -70,16 +72,16 @@ foreach($cases as $case){
         foreach([5,9,13] as $offset){same(['Left out','Left out','Left out','Left out: '.$reason],array_slice($record,$offset,4),'Omitted amounts never invent saved prices');}
         same(['Left out','Left out'],array_slice($record,17),'Unreadable formula and fee are explicit');
     }
-    $page=Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->assertSee('Some TLDs are left out')->assertSee("Their saved pricing can't be read, so no prices are shown for them. The rows below are not affected.",false)->assertSee($repair);
+    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee('Left out')->assertSee('Some TLDs are left out')->assertSee("Their saved pricing can't be read, so no prices are shown for them. The rows below are not affected.",false)->assertSee($repair);
     $html=$page->html();expect(str_contains($html,'= &lt;Bad &amp; account&gt;'),'Warning account names use HTML escaping');
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
     $warningText=$xpath->evaluate('normalize-space(//*[@data-price-omission])');
     $labels=implode(', ',array_column($matrix['skipped'],'tld'));
     same("= <Bad & account>: ".$reason.'. '.count($ids).' TLDs left out: '.$labels.'. To fix, open = <Bad & account> under Registrars and use '.$repair.'.',$warningText,'Warning gives the exact grouped count, TLDs and repair location');
     same(count($ids),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
-    same(count($matrix['rows']),(int)$xpath->evaluate('count(//tr[@data-price-row])'),'Page and service retain the same healthy rows');
-    expect(strpos($html,'data-price-omission')<strpos($html,'<table data-price-list'),'Warning is above the table');
-    $page->set('serverId',(string)$t->server_id)->set('filter','default')->assertSee('No prices to show. Some TLDs are left out; see above.');
+    $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
+    expect(strpos($html,'data-price-omission')<strpos($html,'fi-ta-table'),'Warning is above the table');
+    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out; see above.');
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
     $watch=false;$server->settings()->where('key',$key)->delete();
@@ -88,7 +90,7 @@ foreach($cases as $case){
 $custom->update(['pricing_mode'=>'unknown']);$watch=true;
 $matrix=$service->read();same([$custom->id],array_column($matrix['skipped'],'id'),'Only the malformed custom TLD is skipped');
 same('custom_rule',$matrix['skipped'][0]['cause'],'Custom failure retains its own repair cause');
-Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
+Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
 $records=$csvRows($service->csv());same("Left out: custom pricing can't be read",$records[4][8],'CSV gives the custom repair cause');
 $watch=false;
 same([],$writes,'Service, page and export perform no database writes');
@@ -97,5 +99,5 @@ same(0,$reads->calls,'No provider calls');
 // Permission checks remain in force even when settings cannot be read.
 $u->role->update(['permissions'=>[Staff::VIEW]]);
 foreach([fn()=>$service->read(),fn()=>$service->csv()] as $call){try{$call();expect(false,'Costs permission required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Unreadable settings do not bypass permissions');}}
-Livewire::actingAs($u)->test(PriceListPage::class)->assertForbidden();
+Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->assertDontSee('Some TLDs are left out');
 echo "Unreadable settings are isolated with explicit page/export omissions and no writes.\n";$nativeSuccessful=true;

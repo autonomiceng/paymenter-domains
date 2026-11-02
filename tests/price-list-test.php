@@ -4,10 +4,11 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,PriceList as PriceListPage};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SellRow,Tld};
 use Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,PriceCatalogue,PriceList,PricingRules};
 $f=commerceFixture();extract($f);tldPanel();Carbon\Carbon::setTestNow($now);
@@ -76,10 +77,10 @@ same([$t->id,$other->id],array_column($service->read(1,'loses_money')['rows'],'i
 same([$t->id],array_column($service->read(1,'default')['rows'],'id'),'Default filter');same([$other->id],array_column($service->read(1,'own')['rows'],'id'),'Custom filter');
 same('Price = cost + $1.25, per year, times years.',$service->read(1,'own')['rows'][0]['formula'],'Custom rule numbers shown');
 // Page and CSV are the same selected visible matrix, not an unfiltered export.
-$page=Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->set('years',1)->set('filter','own')->assertSee('Custom')->assertSee('How prices are worked out');
+$page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->filterTable('show','own')->assertSee('How prices are worked out');
 same(['all'=>'All TLDs','below_cost'=>'Below cost','loses_money'=>'Loses money after card fee','default'=>'Default pricing','own'=>'Custom pricing'],PriceList::FILTERS,'Filter labels use Default and Custom');
-$page->assertSee('Est. profit')->assertDontSee('Rough profit')->assertDontSee('Own rule')->assertDontSee('Account default');
-$page->assertSee('International cards and refunds can cost more, so treat it as an estimate.')->assertSee('Issued invoices keep their prices.');
+$page->assertSee('Profit')->assertDontSee('Rough profit')->assertDontSee('Own rule')->assertDontSee('Account default')->assertDontSee('Next step')->assertDontSee('Raise the price');
+$page->assertSee('International cards and refunds can cost more.')->assertSee('Issued invoices keep their prices.');
 $page->call('downloadCsv')->assertFileDownloaded('domain-prices-1-year.csv');
 $matrix=$service->read(1,'own');$csv=$service->csv(1,'own');$lines=preg_split('/\r?\n/',trim($csv));$records=array_map(static fn($line)=>str_getcsv($line,',','"',''),$lines);
 same(2,count($records),'CSV contains only the visible filtered TLD');same($service->headings(),$records[0],'CSV headings match matrix headings');
@@ -87,19 +88,45 @@ $values=$records[1];same(['.com','Synthetic','1','Custom','USD'],$values===[]?[]
 same(['6.00','7.80','1.27','', '8.00','8.10','-0.44','Loses money after card fee','7.00','9.10','1.53',''],array_slice($values,5,12),'CSV exact visible action amounts and flags');
 same($matrix['rows'][0]['formula'],$values[17],'CSV includes visible explanation');
 same(['Register est. profit','Renew est. profit','Transfer est. profit'],[$records[0][7],$records[0][11],$records[0][15]],'CSV profit headers match the table');
-$dom=new DOMDocument();@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);foreach($values as $i=>$value){
-    if(in_array($i,[2,4,17,18],true)){continue;}
-    same($value,$xpath->evaluate('normalize-space(//table[@data-price-list]/tbody/tr//*[@data-price-value="'.$i.'"])'),'CSV equals rendered table value '.$i);
-}
-same($values[2],$xpath->evaluate('normalize-space(//*[@data-price-years])'),'CSV years equal visible caption');
-same($values[4],$xpath->evaluate('normalize-space(//*[@data-price-currency])'),'CSV currency equals visible caption');
-$page->assertSee($values[17])->assertSee('Card fee: '.$values[18]);
-// The explanation panel names each account and pricing type, with the formula in its own code line.
+$page->assertCountTableRecords(1);$shown=$page->instance()->getTableRecords()->items()[0];
+foreach(['register','renew','transfer'] as $index=>$action){foreach(['cost','price','profit'] as $offset=>$field){$page->assertTableColumnStateSet($action.'_'.$field,$values[5+$index*4+$offset],$shown);}}
+$page->assertTableColumnStateSet('account_name',$values[1],$shown)->assertTableColumnStateSet('pricing',$values[3],$shown)->assertSee('Prices in USD for 1 year.');
+$page->assertSee($values[17])->assertSee($values[18].' per payment.');
+// Red Profit carries its reason on hover. Price and Cost stay plain.
+$cell=fn(string $name,$record)=>$page->instance()->getTable()->getColumn($name)->record($record);
+same(['danger','This price loses money after the card fee.'],[$cell('renew_profit',$shown)->getColor(null),$cell('renew_profit',$shown)->getTooltip()],'A loss is a red Profit with its reason');
+same(null,$cell('renew_price',$shown)->getColor(null),'Only Profit goes red');
+// The panel names each account and pricing type, with the formula in its own code line.
+$dom=new DOMDocument();@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
 same($values[17],$xpath->evaluate('normalize-space(//*[@data-price-explanation]//code[@data-price-formula])'),'Formula shown as a code line');
-same('Custom',$xpath->evaluate('normalize-space(//*[@data-price-explanation]//*[@data-price-pricing])'),'Panel pricing badge matches the table');
-same(3,(int)$xpath->evaluate('count(//ul[@data-price-notes]/li)'),'Panel notes are a short list');
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Price list');expect(str_contains(TldResource::getUrl('price-list'),'/price-list'),'Price list has a named resource route');
-$escaped=Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->set('serverId',(string)$t->server_id);expect(str_contains($escaped->html(),'&lt;First &amp; account&gt;'),'Account names are escaped');
+same('Custom pricing for .com',$xpath->evaluate('normalize-space(//*[@data-price-pricing])'),'Panel names the TLD with custom pricing');
+same(4,(int)$xpath->evaluate('count(//dl[@data-price-notes]/dt)'),'Panel notes are a short list');
+Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertDontSee('Price list');expect(str_contains(TldResource::getUrl('price-list'),'/price-list'),'The old address keeps its route');
+Livewire::actingAs($u)->test(PriceListPage::class)->assertRedirect(WhatYouSell::getUrl());
+// All accounts reads every account and saves none.
+$editor=staffUser(array_keys(Staff::permissions()));
+$all=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL)->assertCountTableRecords(2)->assertSee('Choose one account to sync or edit.')->assertActionDisabled('rule')->assertActionVisible('csv')->assertTableActionHidden('edit_terms',$shown)->assertTableBulkActionHidden('edit');
+same(1,substr_count($all->html(),'Choose one account to sync or edit.'),'The reason is said once');
+expect($all->instance()->getTable()->getColumn('account_name')->isVisible(),'All accounts names each row\'s account');
+$all->call('downloadCsv')->assertFileDownloaded('domain-prices-1-year.csv');
+$one=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',$t->server_id)->assertCountTableRecords(1)->assertActionEnabled('rule');
+expect(!$one->instance()->getTable()->getColumn('account_name')->isVisible(),'One account needs no Account column');
+// Past 1 year only saved totals show: Off when not sold that long, Missing with its step when sold and not saved.
+DB::beginTransaction();
+$sells=SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole();
+$binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
+$three=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',3)->assertSee('3-year cost')->assertSee('Saved prices in USD for 3 years')
+    ->assertTableColumnStateSet('register_price','23.40',$sells)->assertTableColumnStateSet('renew_price','Off',$sells)->assertTableColumnStateSet('transfer_cost','Off',$sells);
+same(['Off','gray'],[$three->instance()->getTable()->getColumn('renew_cost')->record($sells)->getState(),$three->instance()->getTable()->getColumn('renew_cost')->record($sells)->getColor(null)],'Off is muted, not an alarm');
+$accepted=CatalogueAcceptances::load($binding)->endings['com']['register'];
+if(in_array(2,$accepted,true)){
+    $two=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',2)->assertTableColumnStateSet('register_price','Missing',$sells);
+    $missing=$two->instance()->getTable()->getColumn('register_price')->record($sells);
+    same(['danger','To add one, open the TLD page and use Edit prices.'],[$missing->getColor(null),$missing->getTooltip()],'Every Missing says what to do next');
+    $two->assertTableColumnStateSet('register_profit',null,$sells);
+}else{expect(false,'The fixture sells 2 years, so Missing is proved');}
+DB::rollBack();
+$escaped=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();expect(str_contains($escaped->html(),'&lt;First &amp; account&gt;'),'Account names are escaped');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Page, filters and CSV leave all revisions and prices unchanged');same(0,$reads->calls,'No provider calls');
 // Fees are current read facts, even when a price was published under an older fee.
 $feeServer=App\Models\Server::findOrFail($other->server_id);
@@ -118,7 +145,7 @@ same('Missing',$service->read(1,'all',$t->server_id)['rows'][0]['prices']['trans
 // Transfers off is not Missing: Sync can never fill it. CSV and screen say the same.
 DB::table('domains_tlds')->where('id',$t->id)->update(['transfer_enabled'=>false]);DB::table('domains_prices')->where(['server_id'=>$t->server_id,'action'=>'transfer','term'=>1])->update(['wholesale'=>null]);
 $off=$service->read(1,'all',$t->server_id)['rows'][0];same('Transfers off',$off['prices']['transfer']['status'],'Off says so');same(['Off','Off','Off',''],array_slice($service->values($off),13,4),'No Missing in the transfer cells');
-expect(!str_contains(Livewire::actingAs($u)->test(PriceListPage::class)->set('serverId',(string)$t->server_id)->html(),'class="missing">Off'),'Off is not painted as Missing');
+$sells=SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole();Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->assertTableColumnStateSet('transfer_cost','Off',$sells)->assertTableColumnStateSet('transfer_price','Off',$sells)->assertTableColumnStateSet('transfer_profit','Off',$sells);
 DB::rollBack();
 // Account labels cannot execute spreadsheet formulas.
 App\Models\Server::whereKey($t->server_id)->update(['name'=>'=1+1']);
@@ -161,14 +188,16 @@ same('Cost missing',$renew['status'],'Retained price explains the missing cost')
 foreach(['register','transfer'] as $action){same(null,$quarantined['prices'][$action]['price'],'Quarantined acquisition remains Missing');}
 $quarantineCsv=array_map(static fn($line)=>str_getcsv($line,',','"',''),preg_split('/\r?\n/',trim($service->csv(1,'all',$other->server_id))));
 same(['Missing',$retained->retail,'Missing','Cost missing'],array_slice($quarantineCsv[1],9,4),'CSV preserves retained renewal and unknown costs/profit');
-$quarantinePage=Livewire::actingAs($u)->test(PriceListPage::class)->assertSuccessful()->set('serverId',(string)$other->server_id)->assertSee('Cost missing');
-$dom=new DOMDocument();@$dom->loadHTML($quarantinePage->html());$xpath=new DOMXPath($dom);
-foreach([9=>'Missing',10=>$retained->retail,11=>'Missing',12=>'Cost missing'] as $index=>$expected){same($expected,$xpath->evaluate('normalize-space(//table[@data-price-list]/tbody/tr//*[@data-price-value="'.$index.'"])'),'Quarantined table agrees with CSV');}
+$sells=SellRow::where(['server_id'=>$other->server_id,'tld'=>'com'])->sole();
+Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$other->server_id)->assertTableColumnStateSet('renew_cost','Missing',$sells)->assertTableColumnStateSet('renew_price',$retained->retail,$sells)->assertTableColumnStateSet('renew_profit',null,$sells);
 same($quarantineBefore,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Quarantined matrix/export reads leave revisions unchanged');
 // Fresh costs permission is required for service, page and forged export calls after revocation.
 $u->role->update(['permissions'=>[Staff::VIEW]]);
 foreach([fn()=>$service->read(),fn()=>$service->csv()] as $call){try{$call();expect(false,'Cost permission required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Forbidden costs');}}
-$page->call('downloadCsv')->assertForbidden();Livewire::actingAs($u)->test(PriceListPage::class)->assertForbidden();
+$page->call('downloadCsv')->assertForbidden();
+Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->assertActionHidden('csv')->assertDontSee('How prices are worked out')->assertDontSee('1-year cost')->assertDontSee('Prices in USD');
+Livewire::actingAs($u)->test(WhatYouSell::class)->set('years',3)->assertDontSee('3-year cost')->assertTableColumnStateSet('status','For sale',SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole());
+Livewire::actingAs($u)->test(PriceListPage::class)->assertRedirect(WhatYouSell::getUrl());
 Livewire::actingAs($u)->test(ListTlds::class)->assertDontSee('Price list');
 Auth::setUser(staffUser([Staff::COSTS]));try{$service->read();expect(false,'View permission required too');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Forbidden without view');}
 Auth::setUser(staffUser([Staff::VIEW,Staff::COSTS]));

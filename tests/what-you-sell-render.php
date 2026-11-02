@@ -1,12 +1,12 @@
 <?php
-// Native light/dark price-list captures; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Native light/dark What you sell captures; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade,DB};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\PriceList;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 $out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
@@ -25,7 +25,7 @@ $u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 foreach([1,3] as $years){
-    $test=Livewire::actingAs($u)->test(PriceList::class)->assertSuccessful();
+    $test=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();
     // Resolve the sidebar's original request during the initial GET, before a test-only Livewire update.
     same('GET',\Filament\Support\original_request()->method(),'Static layout retains a GET request');
     $test->set('years',$years);
@@ -37,7 +37,7 @@ foreach([1,3] as $years){
     expect(str_contains($html,'How prices are worked out'),'Explanation in render');
     foreach(['light','dark'] as $mode){
         $page=preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1);
-        writeRenderArtifact($out.'/price-list-'.$years.'-year-'.$mode.'.html',$page);
+        writeRenderArtifact($out.'/what-you-sell-'.$years.'-year-'.$mode.'.html',$page);
     }
 }
-echo "Native price list rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;
+echo "Native What you sell rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;
