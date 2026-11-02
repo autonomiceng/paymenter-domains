@@ -171,6 +171,15 @@ $elsewhere=(clone $unsent)->forceFill(['registrar_key'=>'namesilo']);
 same(['title'=>$title,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info'],$told($elsewhere),'A retry that runs by itself asks nothing');
 $spent=(clone $elsewhere)->forceFill(['attempt'=>[...$claim,'management_deferrals'=>array_fill(0,5,'2026-10-30T00:00:00+00:00')]]);
 same(['title'=>$title,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'],$told($spent),'Spent tries send staff to the domain');
+// One line says what a stopped or ended change did, from its real state, for staff and customers alike.
+$line=static fn(Operation $op)=>Labels::requestStatus($op)['reason'];
+same($title,$line($unsent),'Held and never sent reads Not sent');
+same($title,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unsent,$unsent->domain,true)['status']['reason'],'The rail reads the same');
+$sealed=(clone $unsent)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);
+same('Registrar has not confirmed the result',$line($sealed),'Only a change that may have gone out is unknown');
+$failedUnsent=(clone $unsent)->forceFill(['state'=>'rejected']);
+same($title,$line($failedUnsent),'A failed change that never went out says so');
+same('We couldn’t make this change.',$line((clone $sealed)->forceFill(['state'=>'rejected'])),'A failed row never says the result is unknown');
 // Orders off stop all queued work, so a queued request reads On hold on its page, in the list and on the domain's rail.
 $queued=$heldOp->fresh()->forceFill(['state'=>'queued','safe_code'=>null,'invoice_id'=>null,'funding_basis'=>'non_billable_management']);
 $orders=Paymenter\Extensions\Servers\Domains\Models\Account::where('account_fingerprint',$heldOp->account_fingerprint);

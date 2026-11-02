@@ -73,9 +73,8 @@ final readonly class OwnedDomains
     private static function failure(Operation $entry): string
     {
         return match ($entry->safe_code) {
-            'enom_test_management_call_cap' => 'We didn’t send this change, so nothing changed.',
             'management_provider_refused' => RequestStatus::REFUSED,
-            default => 'We couldn’t make this change.',
+            default => ManagementEvidence::outcome($entry) ?? RequestStatus::NOT_MADE,
         };
     }
     public function present(Domain $d, bool $forms = true): OwnedDomain

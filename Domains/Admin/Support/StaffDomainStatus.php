@@ -101,7 +101,7 @@ final class StaffDomainStatus
     private static function stopped(Operation $op): string
     {
         $cause = RequestFacts::reason($op);
-        return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : 'Registrar has not confirmed the result')).self::check($op->id);
+        return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : RequestStatus::UNCONFIRMED)).self::check($op->id);
     }
     private static function check(int $id): string { return ' Check request #'.$id.'.'; }
     /** The first danger alert, else the oldest. */

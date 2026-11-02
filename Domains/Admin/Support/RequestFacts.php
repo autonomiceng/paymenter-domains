@@ -11,7 +11,6 @@ final class RequestFacts
     public const NO_TIME='No time recorded. No action needed.';
     private const ORDERS_OFF='Orders are off for this account.';
     private const ORDERS_SWITCH='Go to Orders switch';
-    private const UNSENT='Not sent. Nothing changed at the registrar.';
     /** Only these requests cost anything at the registrar. */
     private const PAID_ACTIONS=['register','transfer','renew','privacy_purchase','privacy_renew'];
     /** Why "Use updated account details" can't run, by service refusal. */
@@ -310,11 +309,11 @@ final class RequestFacts
         $again=ManagementEvidence::recoverable($op); $account=self::account($op)['account'];
         try { $off=$op->registrar_key==='enom'&&$account&&!EnomTestManagement::accepted(CatalogueAcceptances::binding($account)); } catch (\Throwable) { $off=false; }
         if ($off) {
-            return ['title'=>self::UNSENT,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on'.($again?' and we try again by ourselves.':', then make the change again on the domain page.'),
+            return ['title'=>RequestStatus::UNSENT,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on'.($again?' and we try again by ourselves.':', then make the change again on the domain page.'),
                 'tone'=>'warning','link'=>'registrars','link_label'=>'Turn them on'];
         }
-        return $again?['title'=>self::UNSENT,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info']
-            :['title'=>self::UNSENT,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'];
+        return $again?['title'=>RequestStatus::UNSENT,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info']
+            :['title'=>RequestStatus::UNSENT,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'];
     }
     public static function account(Operation $op): array
     {
