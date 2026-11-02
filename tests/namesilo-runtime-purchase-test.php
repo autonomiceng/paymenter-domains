@@ -71,6 +71,9 @@ $prepare=static function(string $mode)use($binding,$makeEngine,$exchange,$regist
 };
 foreach(['success','unsent','timeout','cap','off'] as $mode){
     $prepare($mode);$op=$nsNew(placeholderComFixtureName('writer-'.$mode.'-placeholder.com'));$GLOBALS['purchaseOperation']=$op->operation_key;
+    $foreign=clone $op;$foreign->server_id+=1000;$entered=false;
+    try{$protocol->withinReservation($foreign,static function()use(&$entered):void {$entered=true;});}catch(\Paymenter\Extensions\Servers\Domains\Services\WriteHeld){}
+    same(false,$entered,'Cross-account operation cannot enter the reservation scope');
     $before=$ledger->usage($binding);$money=$nativeMoney();
     if($mode==='cap'){config([$accountKey.'.daily_spend_limit_usd'=>'0.00']);}
     if($mode==='off'){config(['domains.namesilo_live.registration'=>false]);}
