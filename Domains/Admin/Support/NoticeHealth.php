@@ -16,8 +16,8 @@ final class NoticeHealth
         if(!Staff::can(Writes::VIEW)||!Schema::hasTable('domains_watch_audit')||!Schema::hasTable('domains_watch_deliveries')){return null;}
         try{
             // Newest first, one per cause: a fixed template must not hide a read outage that is still going on.
-            $records=WatchAudit::where('subject_type','public_notice')->where('subject_id',$id)->where('event','notice_health')->orderByDesc('id')->limit(20)->get()
-                ->filter(fn(WatchAudit $a)=>($a->data['target_kind']??null)===$kind)->unique(fn(WatchAudit $a)=>implode('|',[$a->data['code']??'',$a->data['channel']??'',$a->data['template']??'']));
+            $records=WatchAudit::where('subject_type','public_notice')->where('subject_id',$id)->where('event','notice_health')->orderByDesc('id')->cursor()
+                ->filter(fn(WatchAudit $a)=>($a->data['target_kind']??null)===$kind)->take(20)->unique(fn(WatchAudit $a)=>implode('|',[$a->data['code']??'',$a->data['channel']??'',$a->data['template']??'']));
             $health=null;
             $a=$records->first(function(WatchAudit $a)use($kind,$id,$name,&$health):bool {
                 $code=$a->data['code']??'';
@@ -40,7 +40,9 @@ final class NoticeHealth
         // Read outages use the customer page's words; the rest say who fixes them.
         $next=match($code){
             'render_failed'=>($a->data['mail_paused']??false)
-                ?'Site mail is off, and the "'.($template??'alert').'" template always sends mail. Turn off Disable Mail in Settings.'
+                ?(config('settings.mail_disable')
+                    ?'Site mail is off, and the "'.($template??'alert').'" template always sends mail. Turn off Disable Mail in Settings.'
+                    :'Mail is on. Delivery is not confirmed yet.')
                 :($template?'The "'.$template.'" template':'An alert template').' has an error. Fix it in Notification templates.',
             'expiry_unavailable'=>'We can’t read the public registry right now. We’ll keep checking.',
             'dns_unavailable'=>'We can’t read the public DNS right now. We’ll keep checking.',
