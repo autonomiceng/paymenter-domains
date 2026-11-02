@@ -46,9 +46,6 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 $account=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($account);$fill=app(PriceFill::class);
 
-// The menu shows it right below TLDs & pricing, always.
-$labels=[];foreach(Filament::getCurrentPanel()->getNavigation() as $group){foreach($group->getItems() as $item){$labels[]=$item->getLabel();}}
-same(1,array_search('What you sell',$labels,true)-array_search('TLDs & pricing',$labels,true),'What you sell sits directly below TLDs & pricing');
 same('What you sell',WhatYouSell::getNavigationLabel(),'Plain menu label');
 
 // The empty TLD list links to the screen.

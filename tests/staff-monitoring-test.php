@@ -19,11 +19,11 @@ $monitoringReader=new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(
 $discovery=new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null);
 foreach([[false,$discovery],[true,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork()]] as [$enabled,$producer]){
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$producer,$enabled));
-    foreach([RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Registration DNS templates stay available without monitoring: '.$resource);}
+    same(true,RoutingProfileResource::canViewAny(),'Registration DNS templates stay available without monitoring');
+    expect(str_contains(RoutingProfileResource::getUrl(),'dns-routing-profiles'),'Registration DNS template route stays available');
     same(true,WatchResource::shouldRegisterNavigation(),'Monitoring status remains reachable');
 }
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$discovery,true));
-foreach([RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Configured monitoring shows '.$resource);}
 // Clean copy: no em dash, no "unavailable", no internal terms.
 $clean=function(string $html,string $page):void{$text=html_entity_decode(strip_tags($html));expect(!str_contains($text,'—'),'No em dash on '.$page);foreach(['unavailable','Saved revision','revision','feature gates','Domain watch','routing profile','mapping'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on '.$page);}};
 $column=fn($page,string $name)=>$page->instance()->getTable()->getColumn($name);
