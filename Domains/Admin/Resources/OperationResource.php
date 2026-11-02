@@ -31,6 +31,16 @@ class OperationResource extends Resource
     public static function canGloballySearch(): bool { return false; }
     public static function getEloquentQuery(): Builder
     { Staff::requireView(); return OperationQueries::bound(parent::getEloquentQuery()); }
+    /** Statuses that wait on staff. Awaiting payment waits on the customer, and In progress on the registrar. */
+    public const NEEDS_STAFF=['on_hold','under_review'];
+    /** Menu count: requests On hold or Under review, the list's Status filter for those two. Null at zero, so the menu shows nothing. */
+    public static function getNavigationBadge(): ?string
+    {
+        if (!Staff::can()) { return null; }
+        $n=OperationQueries::status(static::getEloquentQuery(),self::NEEDS_STAFF)->count();
+        return $n>0?(string)$n:null;
+    }
+    public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {
         Staff::requireView();
