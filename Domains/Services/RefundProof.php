@@ -39,7 +39,8 @@ final class RefundProof
             return;
         }
         $sealed = ($a['seal'] ?? null) === 'sealed';
-        $allowed = $sealed ? ['claim_key', 'seal', 'dispatch_attempted_at', 'send_state', 'authorized_cost', 'renewal_mode', 'execution']
+        $acquisition=$sealed&&$op->registrar_key==='namesilo'&&in_array($op->action,['register','transfer'],true);
+        $allowed = $sealed ? ['claim_key', 'seal', 'dispatch_attempted_at', 'send_state', 'authorized_cost', ...($acquisition?[$op->action==='transfer'?'transfer_admission':'registration_admission']:['renewal_mode']), 'execution']
             : ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'disposition', 'rejection_basis', 'terminal'];
         if(!$sealed&&in_array($op->action,['privacy_purchase','privacy_renew'],true)&&array_key_exists('management_claim',$a)){
             $allowed[]='management_claim';$allowed[]='management_deferrals';if(!ManagementEvidence::deferrals($a)){throw new \DomainException('Unknown management deferral.');}
@@ -50,11 +51,11 @@ final class RefundProof
         if (array_diff(array_keys($a), $allowed)) { throw new \DomainException('Unresolved attempt facts prevent refund.'); }
         if ($sealed) {
             // Slice25 commits possibly_sent at seal; ONLY its exact typed local prewire result can override it.
-            if (!in_array($op->safe_code, ['renewal_definitely_unsent', 'refund_approved'], true) || $op->action !== 'renew' || ($a['send_state'] ?? null) !== 'possibly_sent'
+            if (!in_array($op->safe_code, [$acquisition?'acquisition_definitely_unsent':'renewal_definitely_unsent', 'refund_approved'], true) || (!$acquisition&&$op->action !== 'renew') || ($a['send_state'] ?? null) !== 'possibly_sent'
                 || ($a['execution'] ?? null) !== ['disposition' => 'rejected', 'send_state' => 'definitely_unsent', 'reason' => 'unsent', 'discrepancies' => []]
                 || !is_string($a['claim_key'] ?? null) || !preg_match('/^[a-f0-9]{32}$/D', $a['claim_key'])
-                || !$op->started_at || !$op->request_fingerprint || !isset($a['dispatch_attempted_at'], $a['authorized_cost'], $a['renewal_mode'])
-                || !in_array($a['renewal_mode'], ['ordinary', 'grace'], true) || !isset($f['claim'], $f['seal']) || $f['claim'] !== $f['seal']) {
+                || !$op->started_at || !$op->request_fingerprint || !isset($a['dispatch_attempted_at'], $a['authorized_cost'])
+                || ($acquisition?!isset($a[$op->action==='transfer'?'transfer_admission':'registration_admission']):!in_array($a['renewal_mode']??null, ['ordinary', 'grace'], true)) || !isset($f['claim'], $f['seal']) || $f['claim'] !== $f['seal']) {
                 throw new \DomainException('Sealed attempt is not proven prewire refusal.');
             }
         } elseif (($a['seal'] ?? null) !== 'absent' || ($a['send_state'] ?? null) !== 'definitely_unsent'

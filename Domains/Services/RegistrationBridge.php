@@ -21,6 +21,12 @@ abstract class RegistrationBridge implements AdmittedRegistrarDriver, WriteGate
             $this->transport->getValue()->guardAccount($context);
         }
     }
+    final public function withinReservation(Operation $op,\Closure $work): mixed
+    { $port=$this->transport->getValue();return $port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol?$port->withinReservation($op,$work):$work(); }
+    final public function reservePurchase(Operation $op,DispatchReadiness $ready): void
+    { $port=$this->transport->getValue();if($port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol){$port->reservePurchase($op,$ready);} }
+    final public function unconsumed(int $id): bool
+    { $port=$this->transport->getValue();return $port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol&&$port->unconsumed($id); }
     final public function requireEnabled(Action $action): void { $this->features->requireEnabled($action); }
     final public function reserve(): void { OperationClaims::outside(); $this->accepted->reserve($this->binding); }
     final public function requireAtSeal(Operation $op, Domain $domain, DispatchReadiness $ready): void

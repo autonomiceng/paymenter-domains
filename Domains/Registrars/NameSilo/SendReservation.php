@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Money};
 use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,OperationClaims};
 /** Worker-local transport guard. NS4 must arm after fresh funded admission, before the engine seals the attempt. */
-final class SendReservation
+final class SendReservation implements \Paymenter\Extensions\Servers\Domains\Contracts\WriteReservation
 {
     private ?array $scope=null;
     public function __construct(private readonly AccountBinding $binding,private readonly NameSiloLiveReservationPolicy $policy) {}

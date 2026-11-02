@@ -38,8 +38,10 @@ final class DomainOperations
 
     public function execute(int $id): Operation
     {
-        return $this->clock instanceof \Paymenter\Extensions\Servers\Domains\Data\SystemClock
+        $work=fn()=> $this->clock instanceof \Paymenter\Extensions\Servers\Domains\Data\SystemClock
             ? $this->clock->withinExecution(fn () => $this->executeEntered($id)) : $this->executeEntered($id);
+        try{return $this->writer instanceof RegistrationBridge?$this->writer->withinReservation(Operation::findOrFail($id),$work):$work();}
+        catch(WriteHeld $held){return $this->claims->holdUnclaimed($id,$held->reason);}
     }
 
     private function executeEntered(int $id): Operation
@@ -106,6 +108,7 @@ final class DomainOperations
             $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
             $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
             return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result,$entry):Operation {
+            if($this->writer instanceof RegistrationBridge){$this->writer->reservePurchase($op,$ready);}
             $sealed = $this->claims->seal($op, $ready, $entry, $this->preflight instanceof SealPreflight ? $this->preflight : null,
                 $this->writer instanceof WriteGate ? $this->writer : null,$context);
             if (!$sealed) { return $op->fresh(); }
@@ -120,15 +123,25 @@ final class DomainOperations
             } finally { unset($this->grants[$admitted]); }
             return $this->claims->finish($op, $result);
             });
+        } catch (LiveReservationLimit) {
+            return $this->claims->finish($op,holdReason:'write_rate_limited');
         } catch (EnomTestCallLimit) {
             return $this->claims->holdTestCallCap($op);
         } catch (ReadDeferred) {
             return $this->claims->defer($op);
         } catch (WriteHeld $held) {
-            return $this->claims->finish($op, $result, holdReason: $held->reason, holdCost: $held->cost);
+            return $this->interrupted($op,$binding,$result,$held->reason,$held->cost);
         } catch (\Throwable) {
             // Never chain a provider/input exception or expose raw evidence through diagnostic traces.
-            return $this->claims->finish($op, $result); // One completion retry retains the original result; never resend.
+            return $this->interrupted($op,$binding,$result); // Completion never repeats a send.
         }
+    }
+    private function interrupted(Operation $op,AccountBinding $binding,?\Paymenter\Extensions\Servers\Domains\Data\DriverResult $result,?string $reason=null,?\Paymenter\Extensions\Servers\Domains\Data\Money $cost=null): Operation
+    {
+        $unsent=$this->writer instanceof RegistrationBridge&&$this->writer->unconsumed((int)$op->id);
+        if($unsent){$result=new \Paymenter\Extensions\Servers\Domains\Data\DriverResult($binding,\Paymenter\Extensions\Servers\Domains\Data\Disposition::Rejected,
+            \Paymenter\Extensions\Servers\Domains\Data\SendState::DefinitelyUnsent,\Paymenter\Extensions\Servers\Domains\Data\ResultReason::Unsent,
+            rejectionBasis:\Paymenter\Extensions\Servers\Domains\Data\RejectionBasis::DefinitelyUnsent);}
+        return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent);
     }
 }
