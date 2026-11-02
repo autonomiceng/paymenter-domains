@@ -80,7 +80,7 @@ def main():
         consumers = {str(path.relative_to(ROOT/'Domains/resources/views'))[:-10]
                      for path in (ROOT/'Domains/resources/views').rglob('*.blade.php')
                      if re.search(r"@include\s*\(\s*['\"]domains::partials\.client-script['\"]", path.read_text())}
-        expected = consumers | {'partials.client-script', 'label-company', 'label-app', 'label-neutral', 'label-quoted', 'show-records'}
+        expected = consumers | {'partials.client-script', 'label-company', 'label-app', 'label-neutral', 'label-quoted', 'show-records', 'show-management-pending'}
         assert {path.stem for path in paths} == expected, 'Render cases must cover every client-script consumer'
         labels = {
             'label-company': 'Example Hosting nameservers filled in. Save to apply them.',
@@ -99,6 +99,11 @@ def main():
                 count += 1
             if path.stem in labels:
                 assert parser.live.get('data-nameservers-filled') == labels[path.stem], f'{path.name}: unchanged label'
+        pending = InlineScripts()
+        pending.feed((Path(temporary)/'show-management-pending.html').read_text())
+        checked = subprocess.run([node, str(ROOT/'tests/Support/management-poll.js')],
+                                 input=pending.scripts[-1], capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
         records = RecordForms()
         records.feed((Path(temporary)/'show-records.html').read_text())
         assert len(records.forms) == 2, 'Both DNS and SRV forms must render'

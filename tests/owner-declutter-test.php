@@ -12,9 +12,9 @@ app('view')->share('keys',array_fill_keys(['setup','recovery','code','renew','au
 app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $section=static fn(string $label,array $extra=[])=>['label'=>$label,'url'=>'/domains/1/manage/x','actions'=>[],...$extra];
 $management=static fn(?array $current)=>[
-    'nameservers'=>$section('Nameservers',['url'=>'/domains/1/manage/nameservers','max'=>12,'defaults'=>true,'current'=>$current,'defaultServers'=>OwnedDomains::DEFAULT_NAMESERVERS]),
-    'lock'=>$section('Transfer lock',['url'=>'/domains/1/manage/lock']),
-    'auth_code_email'=>$section('Transfer code',['url'=>'/domains/1/manage/auth_code_email','recipient'=>'domain owner']),
+    'nameservers'=>$section('Nameservers',['url'=>'/domains/1/manage/nameservers','actions'=>['nameservers'=>'/domains/1/manage/nameservers'],'max'=>12,'defaults'=>true,'current'=>$current,'defaultServers'=>OwnedDomains::DEFAULT_NAMESERVERS]),
+    'lock'=>$section('Transfer lock',['url'=>'/domains/1/manage/lock','actions'=>['lock'=>'/domains/1/manage/lock']]),
+    'auth_code_email'=>$section('Transfer code',['url'=>'/domains/1/manage/auth_code_email','actions'=>['auth_code_email'=>'/domains/1/manage/auth_code_email'],'recipient'=>'domain owner']),
     'glue'=>$section('Glue records',['records'=>[['host'=>'ns1.example.com','ip'=>'192.0.2.53']],'actions'=>['glue_add'=>'/a','glue_update'=>'/u','glue_delete'=>'/d']]),
     'privacy'=>$section('Domain privacy',['free'=>true,'price'=>null,'actions'=>['privacy_enable'=>'/e','privacy_disable'=>'/x']]),
 ];

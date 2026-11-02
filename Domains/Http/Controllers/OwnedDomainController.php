@@ -38,6 +38,11 @@ final readonly class OwnedDomainController
         $transfersOffered=app(Storefront::class)->hasTransferOffers();
         return view('domains::index',compact('domains','search','filter','sort','filterCounts','transfersOffered'));
     }
+    public function status(Request $request,int $domain)
+    {
+        $d=$this->owners->owned($request->user(),$domain);
+        return response()->json(\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d))->header('Cache-Control','no-store, private');
+    }
     public function show(Request $request,int $domain) { return $this->page($request,$domain,'show'); }
     public function setup(Request $request,int $domain) { return $this->page($request,$domain,'setup'); }
     public function code(Request $request,int $domain) { return $this->page($request,$domain,'code'); }

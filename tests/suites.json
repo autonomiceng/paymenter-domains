@@ -123,6 +123,7 @@
     "tests/transfer-completion-namesilo-test.php",
     "tests/transfer-safety-namesilo-test.php",
     "tests/management-test.php",
+    "tests/management-progress-test.php",
     "tests/nameserver-page-flow-test.php",
     "tests/management-records-test.php",
     "tests/management-privacy-test.php",

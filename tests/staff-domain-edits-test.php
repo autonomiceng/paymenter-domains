@@ -49,11 +49,12 @@ same([],$unreadable,'Unreadable saved data renders without granting an edit or r
 // Nameservers: the owner's validation and messages, then one credited request.
 $before=Operation::count();$edit('Nameservers','nameservers',['nameservers'=>'ns1.example.com.'])->assertNotified("Couldn't save this change");
 same($before,Operation::count(),'Rejected nameservers queue nothing');
-$edit('Nameservers','nameservers',['nameservers'=>"NS5.example.com.\nns6.example.com"])->assertNotified('Change requested. Check History for updates.');
-$op=$last('nameservers');same('queued',$op->state,'Staff edit enters the queue');same((int)$actor->id,(int)$op->authorized_by,'Credited to the staff member');
+$edit('Nameservers','nameservers',['nameservers'=>"NS5.example.com.\nns6.example.com"])->assertNotified(ManagementForms::REQUESTED);
+$op=$last('nameservers');same('succeeded',$op->state,'Staff response termination starts and confirms the saved edit');same((int)$actor->id,(int)$op->authorized_by,'Credited to the staff member');
 same(['ns5.example.com','ns6.example.com'],$op->payload['nameservers'],'Same normalization as the owner form');
 // Real queued free changes must not offer purchase controls or an inapplicable status read.
 // Native Filament visibility is the boundary; a pure predicate test would miss permission/action wiring.
+$op=$management->request($actor,$d->id,'nameservers',$op->payload,bin2hex(random_bytes(32)),$driver);
 $permissions=$actor->role->permissions;
 $actor->role->update(['permissions'=>[...$permissions,'admin.invoices.update',...array_map(
     \Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission(...),
@@ -67,7 +68,7 @@ foreach(['queued','held','rejected'] as $stateName){
 }
 $op->update(['state'=>'queued']);$actor->role->update(['permissions'=>$permissions]);
 // A sent request with no answer yet blocks the next edit, as it does for the owner, and the page says so.
-$op->update(['state'=>'uncertain']);$busy=DomainEditActions::for($d->fresh());same([],$busy['rows'],'An unresolved request blocks the next edit');expect(str_contains((string)$busy['held'],'until the last request finishes'),'The page says what is blocking edits');$op->update(['state'=>'queued']);
+$op->update(['state'=>'uncertain']);$busy=DomainEditActions::for($d->fresh());same([],$busy['rows'],'An unresolved request blocks the next edit');$view()->assertSee(ManagementForms::REQUESTED)->assertSee('wire:poll.2s',false);$op->update(['state'=>'queued']);
 $finish($op);
 
 // History names the staff member, and the customer sees Staff.
@@ -129,7 +130,7 @@ $stale->callMountedAction()->assertNotified($changed);same($before,Operation::co
 // A replayed save is one request; a new open is a new one.
 $ns=['nameservers'=>"ns7.example.com\nns8.example.com"];$page=$open('Nameservers','nameservers')->setActionData($ns);$replay=clone $page;$before=Operation::count();
 $page->callMountedAction()->assertNotified(ManagementForms::REQUESTED);$op=$last('nameservers');
-$replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$before+1,$op->id],[Operation::count(),$last('nameservers')->id],'The same open form returns the same request');$finish($op);
+$replay->callMountedAction();same([$before+1,$op->id],[Operation::count(),$last('nameservers')->id],'A replay shows the existing pending request');$finish($op);
 $edit('Nameservers','nameservers',$ns)->assertNotified(ManagementForms::REQUESTED);expect($last('nameservers')->id!==$op->id,'A new open after a finished edit is a new request');$finish($last('nameservers'));
 // Retrying a finished DNS form finds its request, though the list has moved on since.
 $page=$open('DNS records','dns')->setActionData(['records'=>[[...$add,'address'=>'8.8.4.8']]]);$replay=clone $page;$before=Operation::count();

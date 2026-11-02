@@ -11,6 +11,16 @@ use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimeP
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 $entry=new Domains([]);$entry->installed();
 foreach(Installation::SCHEMAS as $schema){$schema::verify();}
+// A preview installation already recorded the index migration before glue was included.
+$legacy=new \Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>999,'service_id'=>999,'server_id'=>999,
+    'registrar_key'=>'enom','account_fingerprint'=>str_repeat('a',64),'authority_generation'=>1,'operation_key'=>'retained-glue',
+    'action'=>'glue_add','state'=>'queued','currency'=>'USD','funding_basis'=>'non_billable_management','policy'=>['management'=>['input'=>['host'=>'ns1.example.com','ips'=>['192.0.2.1']]]]]);
+$legacyId=DB::table('domains_operations')->insertGetId($legacy->getAttributes());
+$retained=array_diff_key((array)DB::table('domains_operations')->find($legacyId),['management_pending'=>true]);
+$entry->upgraded('0.0.1');
+expect((bool)DB::table('domains_operations')->find($legacyId)->management_pending,'Upgrade indexes retained pending glue even when its migration is already recorded');
+same($retained,array_diff_key((array)DB::table('domains_operations')->find($legacyId),['management_pending'=>true]),'Upgrade preserves retained request evidence and dates');
+DB::table('domains_operations')->where('id',$legacyId)->delete();
 // An interrupted two-table install repairs only the missing table and retains the other table's rows.
 $sell=Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class;
 DB::table($sell::ROWS)->insert(['server_id'=>999,'account_fingerprint'=>str_repeat('a',64),'tld'=>'com']);
