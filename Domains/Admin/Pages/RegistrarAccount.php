@@ -150,12 +150,12 @@ class RegistrarAccount extends Page
         }
         return $out;
     }
-    /** A switch row has its anchor. A link that came for it marks it and brings it into view, also when SPA navigation leaves :target unset. */
+    /** A switch row has its anchor. A link that came for it marks it and brings it into view, also when SPA navigation leaves :target unset. It waits two frames because SPA navigation scrolls to the top after Alpine starts. */
     private function anchored(Flex $row,string $label): Flex
     {
         $name=array_search($label,RegistrarFacts::SWITCHES,true);
         if ($name===false) { return $row; }
-        return $row->extraAttributes(['id'=>'switch-'.$name,...($name===$this->switch?['class'=>'domains-row-target','x-init'=>"\$el.scrollIntoView({block:'center'})"]:[])],merge:true);
+        return $row->extraAttributes(['id'=>'switch-'.$name,...($name===$this->switch?['class'=>'domains-row-target','x-init'=>"requestAnimationFrame(()=>requestAnimationFrame(()=>\$el.scrollIntoView({block:'center'})))"]:[])],merge:true);
     }
     /** A row's action column. Rows that change a saved value say Edit. */
     private function side(array $r): array
