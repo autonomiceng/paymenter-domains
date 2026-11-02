@@ -56,10 +56,13 @@ final class ManagedDnsSetup
             if($config?->edited_by!==null || ObservationProjection::registrationNameservers($domain)){return false;}
             $operations??=$domain->operations()->where('authority_generation',$domain->authority_generation)->where('account_fingerprint',$domain->account_fingerprint)
                 ->where('service_id',$domain->service_id)->where('server_id',$domain->server_id)->where('registrar_key',$domain->registrar_key)
-                ->where('state','succeeded')->whereIn('action',['register','transfer','nameservers'])->get();
+                ->whereIn('action',['register','transfer','nameservers'])->get();
             foreach($operations as $op){
-                if($op->state!=='succeeded' || $op->authority_generation!==$domain->authority_generation || $op->account_fingerprint!==$domain->account_fingerprint
+                if($op->authority_generation!==$domain->authority_generation || $op->account_fingerprint!==$domain->account_fingerprint
                     || (int)$op->service_id!==(int)$domain->service_id || (int)$op->server_id!==(int)$domain->server_id || $op->registrar_key!==$domain->registrar_key){continue;}
+                // A choice in flight must not inherit the delegation it is replacing.
+                if($op->action==='nameservers' && !in_array($op->state,['succeeded','rejected','cancelled','disposed'],true)){return false;}
+                if($op->state!=='succeeded'){continue;}
                 if(in_array($op->action,['register','transfer'],true) || ($op->action==='nameservers' && ManagementEvidence::resolved($op,$domain))){return false;}
             }
             // Prefer a previously stored identity-valid read on upgrade; never replace a valid baseline.

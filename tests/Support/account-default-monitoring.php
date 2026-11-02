@@ -63,8 +63,49 @@ $refreshNameservers=static function($domain,array $actual,array $chosen,int $at)
     DB::table('domains_domains')->where('id',$domain->id)->update(['observation'=>$domain->getAttributes()['observation']]);
 };
 $intentResults=[];
-foreach(['later customer change','adopted customer nameservers','legacy without baseline','platform import without baseline','platform first public read','return from inherited external','return then unchosen refresh']as$case){
+foreach(['later customer change','adopted customer nameservers','legacy without baseline','platform import without baseline','platform first public read','return from inherited external','return then unchosen refresh','pending chosen change']as$case){
     $registration=null;$change=null;$leave=null;$local=$d->fresh();$savedConfig=ManagedPublicConfig::find($id)->getRawOriginal();
+    if($case==='pending chosen change'){
+        $pendingResults=[];
+        foreach(['queued','pending','running','uncertain']as$state){
+            foreach(['enrollment','before read','during read']as$when){
+                DB::transaction(fn()=>ManagedDnsSetup::assign(ManagedPublicConfig::find($id),$default,'platform',null,'hosting_product',$now));
+                $chosen=['ns1.customer.example','ns2.customer.example'];
+                $request=static fn()=>Operation::create(['domain_id'=>$id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
+                    'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'operation_key'=>'monitoring-pending-choice',
+                    'action'=>'nameservers','state'=>$state,'currency'=>'USD','payload'=>['nameservers'=>$chosen],'policy'=>['management'=>['section'=>'nameservers']],
+                    'attempt'=>$state==='queued'?[]:['seal'=>'sealed'],'authorized_by'=>$uid]);
+                $pending=$when==='during read'?null:$request();
+                if($when==='enrollment'){$refreshNameservers($d->fresh(),$default->profile()->nameservers,$chosen,$now);}
+                expect($signals->enqueue($id,$uid,$now),'Imported holding with in-flight choice is enrolled: '.$state.' / '.$when);
+                managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Platform read starts beside chosen request');
+                if($when==='during read'){$pending=$request();}
+                $answer=\Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset(new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery('example.com','NS'),
+                    array_map(static fn($host)=>['host'=>'example.com','class'=>'IN','type'=>'NS','target'=>$host,'ttl'=>300],$default->profile()->nameservers));
+                expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform',queries:[$answer]),$now+1),'Platform NS read is accepted, including a choice created after begin');
+                $refreshNameservers($d->fresh(),$chosen,$chosen,$now+2);
+                expect($signals->enqueue($id,$uid,$now+2),'Unresolved chosen departure passes through enrollment again');
+                $answer=\Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::rrset(new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery('example.com','NS'),
+                    array_map(static fn($host)=>['host'=>'example.com','class'=>'IN','type'=>'NS','target'=>$host,'ttl'=>300],$chosen));
+                foreach([$now+10,$now+911]as$at){
+                    managedDue($id,$at);$ticket=$signals->begin($id,$uid,'delegation',$at);expect($ticket!==null,'Requested external change stays monitored');
+                    expect($signals->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','external',queries:[$answer]),$at+1),'Requested external NS read is accepted');
+                }
+                $notice=DB::transaction(fn()=>WatchNoticeTarget::capture('managed',$id,$uid,$at+1));
+                same(true,$notice['delegation']['ns_confirmed']??null,'Requested external delegation is confirmed');
+                $plan=\Paymenter\Extensions\Servers\Domains\Services\WatchNoticePlan::dns([],$notice['delegation'],$at+1,$notice['expected']);
+                $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$at+1);
+                $pendingResults[$state.' / '.$when]=[\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::registrationNameservers($d->fresh())===null,
+                    $notice['expected'],array_column($plan['notices'],'kind'),$plan['portal'],array_values(array_intersect($summary->stateKeys,['watch.ns_pending','watch.ns_changed']))];
+                DB::table('domains_operations')->where('id',$pending->id)->delete();
+                DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);
+                DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
+            }
+        }
+        $intentResults[$case]=array_values($pendingResults);
+        expect(count(array_filter($pendingResults,static fn($result)=>$result!==[true,false,[],[],[]]))===0,'Pending chosen request never acquires read-derived intent: '.json_encode($pendingResults));
+        continue;
+    }
     $publicFirst=$case==='platform first public read';$platformImport=$case==='platform import without baseline'||$publicFirst;$legacy=$case==='legacy without baseline'||$platformImport;$refresh=$case==='return then unchosen refresh';$returned=$case==='return from inherited external'||$refresh;
     $customerNs=['ns1.customer.example','ns2.customer.example'];
     if($case!=='adopted customer nameservers' && !$legacy){
@@ -175,7 +216,7 @@ $returnIntent=[
     'staff_external'=>false,'leave_again'=>[false,[],[],[]],'staff_platform'=>true];
 same(['later customer change'=>$quietIntent,'adopted customer nameservers'=>$quietIntent,'legacy without baseline'=>[...$quietIntent,'upgrade_intent'=>'external','later_reads'=>[[false,[],[],[]],[false,[],[],[]]],'staff_platform'=>true],
     'platform import without baseline'=>$platformImportIntent,'platform first public read'=>$platformImportIntent,
-    'return from inherited external'=>$returnIntent,'return then unchosen refresh'=>$returnIntent],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
+    'return from inherited external'=>$returnIntent,'return then unchosen refresh'=>$returnIntent,'pending chosen change'=>array_fill(0,12,[true,false,[],[],[]])],$intentResults,'Nameserver intent follows the current choice and deliberate staff assignment: '.json_encode($intentResults));
 // A concurrent default change discards the old answer and the next check uses the new template.
 managedDue($id,$now);$ticket=$signals->begin($id,$uid,'delegation',$now);expect($ticket!==null,'Default read captured');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>json_encode(['ns1.override.example','ns2.override.example'])]);
