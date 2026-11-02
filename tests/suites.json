@@ -392,7 +392,8 @@
     "tests/transfer-watch-daily-test.php",
     "tests/transfer-watch-recovery-test.php",
     "tests/sell-automation-test.php",
-    "tests/management-glue-namesilo-test.php"
+    "tests/management-glue-namesilo-test.php",
+    "tests/menu-registrars-quiet-test.php"
   ],
   "ui": [],
   "runner": [

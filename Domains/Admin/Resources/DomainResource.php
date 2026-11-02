@@ -9,7 +9,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, Staff, StaffDomainInputs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount, Staff, StaffDomainInputs};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
@@ -43,8 +43,7 @@ class DomainResource extends Resource
     public static function getNavigationBadge(): ?string
     {
         if (!Staff::can()) { return null; }
-        $n=DomainQueries::openAlerts(Domain::query())->count();
-        return $n>0?(string)$n:null;
+        return NavigationCount::read('domains',fn()=>DomainQueries::openAlerts(Domain::query())->count());
     }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
