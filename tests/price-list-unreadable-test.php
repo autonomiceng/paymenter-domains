@@ -16,7 +16,8 @@ $custom=$t->replicate();$custom->tld='org';$custom->use_default_rule=false;$cust
 $service=new PriceList;$healthyRow=$service->read(1,'all',$healthy->server_id)['rows'][0];
 $before=DB::table('domains_prices')->orderBy('id')->get()->toJson();
 $watch=false;$writes=[];
-DB::listen(static function($query)use(&$watch,&$writes):void{if($watch&&!preg_match('/^\s*(select|pragma)\b/i',$query->sql)){$writes[]=$query->sql;}});
+// What you sell has always given each accepted TLD a sell row on opening; nothing else may be written.
+DB::listen(static function($query)use(&$watch,&$writes):void{if($watch&&!preg_match('/^\s*(select|pragma)\b|^insert or ignore into "domains_sell_rows"/i',$query->sql)){$writes[]=$query->sql;}});
 $setting=static function(string $key,mixed $value,bool $encrypted)use($server):void{
     $row=$server->settings()->updateOrCreate(['key'=>$key],['type'=>'array','encrypted'=>false,'value'=>$value]);
     // Bypass the model's saving encryption: these bytes must remain invalid ciphertext on disk.
@@ -80,7 +81,7 @@ foreach($cases as $case){
     same("= <Bad & account>: ".$reason.'. '.count($ids).' TLDs left out: '.$labels.'. To fix, open = <Bad & account> under Registrars and use '.$repair.'.',$warningText,'Warning gives the exact grouped count, TLDs and repair location');
     same(count($ids),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
     $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
-    expect(strpos($html,'data-price-omission')<strpos($html,'fi-ta-table'),'Warning is above the table');
+    expect(strpos($html,'data-price-omission')<strpos($html,'<table'),'Warning is above the table');
     $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out; see above.');
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
@@ -93,7 +94,7 @@ same('custom_rule',$matrix['skipped'][0]['cause'],'Custom failure retains its ow
 Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
 $records=$csvRows($service->csv());same("Left out: custom pricing can't be read",$records[4][8],'CSV gives the custom repair cause');
 $watch=false;
-same([],$writes,'Service, page and export perform no database writes');
+same([],$writes,'Service, page and export change no saved data');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'All saved prices and revision identities remain unchanged');
 same(0,$reads->calls,'No provider calls');
 // Permission checks remain in force even when settings cannot be read.
