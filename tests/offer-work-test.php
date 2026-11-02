@@ -79,5 +79,19 @@ same(8, $worker->status($b)['remaining'], 'Only 25 observations apply in one acc
 $before = count($wire->calls); $worker->tick(1);
 same(2, count($wire->calls) - $before, 'A pending feed batch cannot starve requested facts');
 same(0, $worker->status($b)['remaining'], 'Saved feed observations drain without rereading prices');
+// Failed cold reads do not erase known facts, and repeated search hints cannot reset backoff.
+$worker->requestFacts($b, 'suffixaa'); $wire->fail = ReadCommand::TldInfo;
+$before = count($wire->calls); $worker->tick(1);
+$failure = $worker->status($b, 'suffixaa');
+same('retrying', $failure['state'], 'A failed cold read exposes its automatic retry status');
+same($clock->now()->getTimestamp(), $failure['failed_at'], 'A failure has its own age');
+expect(!isset($failure['succeeded_at']), 'Failed metadata does not invent a successful observation');
+$worker->requestFacts($b, 'suffixaa'); $worker->tick(1);
+same($before + 1, count($wire->calls), 'Repeated cold requests respect failure backoff and stop after the first failed wire');
+$wire->fail = null; $clock->time = $clock->time->modify('+121 seconds'); $worker->tick(1);
+$success = $worker->status($b, 'suffixaa');
+same('ready', $success['state'], 'Automatic retry recovers without a staff step');
+same($failure['failed_at'], $success['failed_at'], 'A success does not rewrite failure age');
+same($clock->now()->getTimestamp(), $success['succeeded_at'], 'A success is dated separately');
 $nativeSuccessful = true;
 echo "Dormant offer queue and lazy facts checks passed.\n";

@@ -58,13 +58,13 @@ final class OfferWork
         if ($tld !== null) {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
             $state = OfferState::decode($t->offer_facts_work); $facts = OfferState::facts($t->catalogue_facts);
-            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : ($t->offer_facts_due === null ? 'unknown' : 'queued'),
+            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : ($t->offer_facts_due === null ? 'unknown' : (!empty($state['failure']) ? 'retrying' : 'queued')),
                 'due_at' => $t->offer_facts_due === null ? null : (int) $t->offer_facts_due];
         }
         $row = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->where('account_fingerprint', $binding->fingerprint)->first();
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }
         $work = OfferState::decode($row->offer_work);
-        return ['state' => (int) $row->offer_lease > $this->at() ? 'running' : (!empty($work['pending']) || ($work['feed_due'] ?? 0) <= $this->at() ? 'queued' : 'ready'),
+        return ['state' => (int) $row->offer_lease > $this->at() ? 'running' : (!empty($work['pending']) || ($work['feed_due'] ?? 0) <= $this->at() ? 'queued' : (!empty($row->offer_feed_failure) ? 'retrying' : 'ready')),
             'tried_at' => $row->offer_feed_tried_at, 'succeeded_at' => $row->offer_feed_succeeded_at,
             'failed_at' => $row->offer_feed_failed_at, 'failure' => $row->offer_feed_failure,
             'due_at' => $work['feed_due'] ?? null, 'remaining' => count($work['pending'] ?? [])];
