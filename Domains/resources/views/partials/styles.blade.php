@@ -485,6 +485,8 @@
 .domains .domains-trace li:last-child { padding-bottom: 0; }
 .domains .domains-trace li:last-child::before { display: none; }
 .domains .domains-trace b { font-weight: 500; }
+.domains .domains-trace li > .domains-status { height: 16px; margin-top: .125rem; }
+.domains .domains-trace li > .domains-status::before { content: ""; display: block; }
 .domains .domains-panel__h { padding: 1rem 1.25rem; border-bottom: 1px solid var(--e-line); }
 .domains .domains-panel__h h2, .domains .domains-card, .domains .domains-card dd { margin: 0; }
 .domains .domains-rows { list-style: none; margin: 0; padding: 0; }

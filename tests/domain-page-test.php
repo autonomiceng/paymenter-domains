@@ -265,6 +265,8 @@ $d=$domain(['progress'=>[['label'=>'Nameservers','state'=>'Completed','date'=>'2
 same([['Nameservers','Oct 20, 2026, 12:00 AM UTC','Completed'],['Invoice #INV-7','Sep 30, 2026','Paid']],array_map(static fn(DOMNode $li)=>[...array_map($norm,iterator_to_array($dom->query('./div/*',$li))),$norm($dom->query('./span[last()]',$li)->item(0))],iterator_to_array($dom->query('//section[@id="history"]//ol[@class="domains-trace"]/li'))),'History steps: what, when, how it ended');
 same(['ok','ok'],array_map(fn($n)=>substr($n->getAttribute('class'),strlen('domains-status domains-tone-')),iterator_to_array($dom->query('//section[@id="history"]//li/span[@aria-hidden="true"]'))),'Finished steps carry the green mark');
 same(1,$dom->query('//section[@id="history"]//a[@href="/invoices/7"][.="Invoice #INV-7"]')->length,'Invoice step links');
+// The mark span is empty; it shows only when the stylesheet draws its hexagon (content), as in the approved mock.
+expect(preg_match('/\.domains-trace li > \.domains-status::before \{[^}]*content: ""/',file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/styles.blade.php'))===1,'History marks are drawn');
 same(['ok','bad','warn','warn','muted','info','info'],array_map([DomainPage::class,'stepTone'],['Completed','Failed','Unpaid','Action required','Cancelled','Under review','On hold']),'Only a step the customer owns is amber; our work is blue');
 
 // Every help popover the page uses has an anchor.
