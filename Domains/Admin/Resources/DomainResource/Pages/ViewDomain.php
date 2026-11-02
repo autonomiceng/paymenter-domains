@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchRe
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, DomainHistory, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Sheet, Staff, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,StaffWatchWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
@@ -27,7 +27,7 @@ class ViewDomain extends ViewRecord
     protected static string $resource = DomainResource::class;
     protected Width|string|null $maxContentWidth = Sheet::WIDTH;
     /** Rows that keep their button, blocked, while changes are on hold. */
-    private const BLOCKED = ['Transfer lock','Contacts','Nameservers','DNS records'];
+    private const BLOCKED = ['Transfer lock','Email auth code','Contacts','Nameservers','DNS records'];
     /** The section that says why, when the head doesn't. */
     private const HELD_SECTION = 'Contacts and DNS';
     /** One request's edits and facts: the head and the rows both read them. */
@@ -50,7 +50,7 @@ class ViewDomain extends ViewRecord
     {
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d)); $progress=$this->managementProgress();
-        if (isset($this->edits()['rows']['Auth code']) || isset($progress['auth_code_email'])) { $facts['Auth code']=['value'=>$d->registrar_key==='namesilo'?'Admin contact email':'Registrant email','sub'=>null,'url'=>null,'tone'=>null,'help'=>null,'demo'=>false]; }
+        if (in_array('auth_code_email',$this->edits()['offered'],true) || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
         return $this->facts=DomainFacts::withProgress($facts,$progress);
     }
     protected function afterActionCalled(Action $action): void
@@ -178,7 +178,7 @@ class ViewDomain extends ViewRecord
         return $side;
     }
     private static function blockedLabel(string $label, array $fact): string
-    { return $label==='Transfer lock'?($fact['value']==='On'?'Turn off':'Turn on'):'Edit'; }
+    { return match ($label) { 'Transfer lock'=>$fact['value']==='On'?'Turn off':'Turn on','Email auth code'=>'Email code',default=>'Edit' }; }
     /** The row's words, after when it was read when the row has a read time. */
     private static function below(array $fact): string|HtmlString|null
     {

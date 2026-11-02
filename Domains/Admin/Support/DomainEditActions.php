@@ -25,13 +25,13 @@ final class DomainEditActions
         'DNS tools disabled.'=>'DNS tools are off for this registrar account. Turn them on in Registrars, then try again.',
         'Management capability unsupported.'=>"This registrar doesn't support this change.",
     ];
-    /** @return array{rows:array<string,list<Action>>,held:?string,note:string|HtmlString|null,request:?int} Edits by Registration row, why none can run now as plain words and as the section note, and the request behind that when one is. */
+    /** @return array{rows:array<string,list<Action>>,offered:list<string>,held:?string,note:string|HtmlString|null,request:?int} Edits by Registration row, why none can run now as plain words and as the section note, and the request behind that when one is. */
     public static function for(Domain $d): array
     {
-        if (!Staff::can('admin.domains.manage')) { return ['rows'=>[],'held'=>null,'note'=>null,'request'=>null]; }
+        if (!Staff::can('admin.domains.manage')) { return ['rows'=>[],'offered'=>[],'held'=>null,'note'=>null,'request'=>null]; }
         try { $page=app(OwnedDomains::class)->present($d); }
         catch (\Throwable $error) { Log::warning('Domains staff edit forms failed.',['domain_id'=>$d->id,'exception_class'=>$error::class]);
-            $held="Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page."; return ['rows'=>[],'held'=>$held,'note'=>$held,'request'=>null]; }
+            $held="Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page."; return ['rows'=>[],'offered'=>[],'held'=>$held,'note'=>$held,'request'=>null]; }
         $m=$page->management; $rows=[];
         if (!empty($m['contacts']['actions'])) { $rows['Contacts']=self::contacts($d,$m['contacts']); }
         if (isset($m['nameservers']['actions']['nameservers'])) { $rows['Nameservers']=[self::nameservers($d,$m['nameservers'])]; }
@@ -39,12 +39,12 @@ final class DomainEditActions
         foreach (['dns'=>'Edit','srv'=>'Edit SRV'] as $kind=>$label) {
             if (isset($m[$kind]['records'],$m[$kind]['actions'][$kind])) { $rows['DNS records'][]=self::records($d,$kind,$label,$m[$kind]); }
         }
-        if (isset($m['auth_code_email']) && $m['auth_code_email']['actions']) { $rows['Auth code']=[self::edit($d,'auth_code_email','Email auth code','Email the auth code?',[],fn(array $data)=>[],"We'll email it to the ".$m['auth_code_email']['recipient'].'.',submit:'Email auth code')]; }
+        if (isset($m['auth_code_email']) && $m['auth_code_email']['actions']) { $rows['Email auth code']=[self::edit($d,'auth_code_email','Email code','Email the auth code?',[],fn(array $data)=>[],"We'll email it to the ".$m['auth_code_email']['recipient'].'.',submit:'Email auth code')]; }
         $progress=ManagementProgress::for($d);
-        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$setting) {
             if (($progress[$setting]['pending']??false)) { unset($rows[$label]); }
         }
-        return ['rows'=>$rows,...($page->changesUnavailable?self::held($d,$page->changesRefused):['held'=>null,'note'=>null,'request'=>null])];
+        return ['rows'=>$rows,'offered'=>$page->offered,...($page->changesUnavailable?self::held($d,$page->changesRefused):['held'=>null,'note'=>null,'request'=>null])];
     }
     /** @return array{held:string,note:string|HtmlString,request:?int} what is really in the way, from the engine's own refusal; a request is named only when one is */
     public static function held(Domain $d, int|string|null $refused): array

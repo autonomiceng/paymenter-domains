@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final class DomainFacts
 {
     /** The page's sections and their rows, in order. */
-    public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','Auth code','WHOIS privacy','Registrar auto-renew','Last sync','Open alerts'],
+    public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew','Last sync','Open alerts'],
         'Renewal'=>['Renewal invoices','Renewal price','Next invoice','Open invoice'],
         'Contacts and DNS'=>['Contacts','Nameservers','Glue records','DNS records'],
         'Billing'=>['Customer','Service']];
@@ -386,7 +386,7 @@ final class DomainFacts
      * A stopped change reads its request's line, never the sentence written for the customer. */
     public static function withProgress(array $facts, array $progress): array
     {
-        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$setting) {
             $row=$progress[$setting]??null;
             if (!isset($facts[$label])||$row===null||($row['settled']??false)||($row['replaced']??false)) { continue; }
             $stopped=isset($row['outcome']);
