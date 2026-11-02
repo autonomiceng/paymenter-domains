@@ -49,8 +49,7 @@ class OperationResource extends Resource
         return $table->columns([
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
                 ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
-            OneLine::apply(TextColumn::make('domain.domain')->label('Domain')->searchable()->fontFamily('mono')
-                ->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainName::html((string)$state)),OneLine::NAME),
+            OneLine::apply(TextColumn::make('domain.domain')->label('Domain')->searchable()->fontFamily('mono'),OneLine::NAME),
             TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['tone'])
                 ->extraAttributes(fn($record)=>StatusMark::attributes(RequestFacts::status($record,in_array($record->server_id,$off))['tone'],'request-'.$record->id))

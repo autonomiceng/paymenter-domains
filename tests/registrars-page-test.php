@@ -300,6 +300,11 @@ $held=Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id'
 // A paid request waiting for the registrar shows on the Registrar requests row, never as the account's state.
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertDontSee('Request #'.$held->id.' unconfirmed');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Registrar requests')->assertSee('1 needs review');
+// The Balance sits by its label on the account sheet; money right-aligns only in table cells.
+$sheet=\Dom\HTMLDocument::createFromString(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->html(),LIBXML_NOERROR);
+$money=iterator_to_array($sheet->querySelectorAll('.domains-money'));
+expect($money!==[]&&array_filter($money,fn($node)=>$node->closest('.fi-ta-cell')!==null)===[],'The Balance is money on the sheet, not in a table');
+expect(preg_match('/(^|})\.domains-money\{[^}]*text-align/m',file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php'))===0,'Money right-aligns only in table cells, so the Balance stays by its label');
 DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'succeeded']);
 same(['open'=>0,'review'=>0],Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::requests($silo->server_id),'Finished requests leave the count');
 DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'uncertain']);

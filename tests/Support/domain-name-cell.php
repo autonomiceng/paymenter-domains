@@ -19,30 +19,36 @@ function domainNameStyle(Dom\Element $node): array
     return $style;
 }
 
+/** A staff table keeps a domain name on one line: no break points, and the staff sheet cuts it with "...". */
+function assertDomainNameOneLine(string $html, string $name, string $where): void
+{
+    $dom = Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$html, LIBXML_NOERROR);
+    $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll('.fi-ta-text-item')), static fn(Dom\Element $node) => trim($node->textContent) === $name));
+    same(1, count($items), $where.': one rendered domain name');
+    // A long name has a tooltip, so Filament wraps it in one more span: check for break points, not exact markup.
+    same(0, $items[0]->querySelectorAll('wbr')->length, $where.': no line breaks in the name, got '.trim($items[0]->innerHTML));
+    expect(str_contains((string) $items[0]->closest('.fi-ta-text')?->getAttribute('class'), 'domains-name-cell'), $where.': the cell is a one-line name');
+    $sheet = file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php');
+    expect(preg_match('/[^{}]*\.domains-name-cell[^{}]*\{[^}]*white-space:nowrap/', $sheet) === 1, $where.': the staff sheet keeps it on one line');
+}
+
 /**
- * A domain name wraps only at dots and hyphens. In a table cell, break-word keeps the column at its longest
- * label, so a normal name stays on one line, and max-width still breaks one label wider than the cell.
- * A link or page title sits in a flex or grid item, where break-word would push a long label past the column,
- * so it keeps anywhere: the <wbr> breaks come first. $element is 'table', 'link' or 'title'.
+ * A domain name in a link or page title wraps only at dots and hyphens. It sits in a flex or grid item, where
+ * break-word would push a long label past the column, so it keeps anywhere: the <wbr> breaks come first.
+ * $element is 'link' or 'title'.
  */
-function assertDomainNameWraps(string $html, string $name, string $where, string $element = 'table'): void
+function assertDomainNameWraps(string $html, string $name, string $where, string $element = 'link'): void
 {
     // The HTML5 parser treats <wbr> as a void element, as browsers do.
     $dom = Dom\HTMLDocument::createFromString('<!doctype html><meta charset="utf-8">'.$html, LIBXML_NOERROR);
-    $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll(['table'=>'.fi-ta-text-item', 'link'=>'a', 'title'=>'span.font-mono'][$element])),
+    $items = array_values(array_filter(iterator_to_array($dom->querySelectorAll(['link'=>'a', 'title'=>'span.font-mono'][$element])),
         static fn(Dom\Element $node) => trim($node->textContent) === $name));
     same(1, count($items), $where.': one rendered domain name');
     $item = $items[0];
     $markup = trim($item->innerHTML);
     same(domainNameMarkup($name), $markup, $where.': line breaks only after dots and hyphens, got '.$markup);
-    $cell = $element === 'table' ? $item->closest('.fi-ta-text') : $item;
-    expect($cell instanceof Dom\Element, $where.': domain cell found');
-    $style = domainNameStyle($cell);
     // A title with domains-mono wraps from the Domains staff stylesheet, so a plain install wraps it too.
-    $sheet = file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php');
-    if ($element === 'table' && str_contains((string) $cell->getAttribute('class'), 'domains-name-cell')) { expect(str_contains($sheet, '.domains-name-cell{overflow-wrap:break-word;min-width:11rem'), $where.': the Domains stylesheet sets the cell'); return; }
-    if (str_contains((string) $cell->getAttribute('class'), 'domains-mono')) { expect(str_contains(file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php'), '.domains-mono,'), $where.': the staff stylesheet wraps the name'); }
-    else { same($element === 'table' ? 'break-word' : 'anywhere', $style['overflow-wrap'] ?? null, $where.': labels break only when wider than the cell'); }
-    expect(!isset($style['word-break']), $where.': no word-break override');
-    if ($element === 'table') { same('11rem', $style['min-width'] ?? null, $where.': column keeps a minimum width'); }
+    if (str_contains((string) $item->getAttribute('class'), 'domains-mono')) { expect(str_contains(file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php'), '.domains-mono,'), $where.': the staff stylesheet wraps the name'); }
+    else { same('anywhere', domainNameStyle($item)['overflow-wrap'] ?? null, $where.': labels break only when wider than the line'); }
+    expect(!isset(domainNameStyle($item)['word-break']), $where.': no word-break override');
 }

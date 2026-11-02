@@ -29,11 +29,9 @@ $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;
 $page->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee($customer)->assertSee('Offline registrar (synthetic)')->assertDontSee('Missing');
 $instance=$page->instance();$columns=$instance->getTable()->getColumns();
 $records=$instance->getTableRecords()->keyBy('id');
-foreach([$held,$active,$uncertain] as $domain){assertDomainNameWraps($page->html(),$domain->domain,'Domains list '.$domain->domain);}
-same('&lt;b&gt;.<wbr>x-<wbr>y',$columns['domain']->record($records[$active->id])->formatState('<b>.x-y')->toHtml(),'Domains list escapes the name before adding line breaks');
+foreach([$held,$active,$uncertain] as $domain){assertDomainNameOneLine($page->html(),$domain->domain,'Domains list '.$domain->domain);}
 $pending=\Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionResource::table(\Filament\Tables\Table::make($instance))->getColumn('domain');
-assertDomainNameWraps($pending->record($records[$uncertain->id])->toEmbeddedHtml(),$uncertain->domain,'Adoption pending list');
-same('&lt;b&gt;.<wbr>x-<wbr>y',$pending->formatState('<b>.x-y')->toHtml(),'Adoption pending list escapes the name before adding line breaks');
+assertDomainNameOneLine($pending->record($records[$uncertain->id])->toEmbeddedHtml(),$uncertain->domain,'Adoption pending list');
 assertDomainNameWraps(Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$uncertain->id])->instance()->getHeading()->toHtml(),$uncertain->domain,'Domain page title','title');
 foreach([[$held,'On hold','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Under review','Old registrar needs approval. Check request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Under review','Check the domain and its requests.']] as [$domain,$label,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
