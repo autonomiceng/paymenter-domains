@@ -171,7 +171,7 @@ $siloClick('New renewal invoices stop. Issued invoices stay payable. Paid renewa
 same([false,false],$siloFlags(),'NameSilo Off clears both flags');same(['Off','renewals'],[$siloRows()['Renewals']['value'],$siloRows()['Renewals']['action']],'NameSilo can turn back on');
 same(['Needs Renewals on.',null,null],[$siloEarly()['value'],$siloEarly()['action'],$siloEarly()['cause']],'NameSilo early renewal needs Renewals, with no switch to show');
 
-$reminderQuery=DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id);$savedReminder=(array)(clone $reminderQuery)->sole();
+$reminderQuery=DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id);$savedReminder=(array)(clone $reminderQuery)->sole();$reminderQuery->update(['enabled'=>true]);
 foreach([[[1],'1 day before, 1 day after'],[[0],'0 days before, 0 days after'],[[2],'2 days before, 2 days after'],[[1,2],'2 and 1 days before, 1 and 2 days after'],[[],null]] as [$days,$expected]){
     $reminderQuery->update(['before_days'=>json_encode($days),'after_days'=>json_encode($days)]);
     same($expected,Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::emails((int)$enom->server_id)['cause'],'Reminder day grammar: '.json_encode($days));
@@ -318,6 +318,7 @@ DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=
     'identity_fingerprint'=>hash('sha256',json_encode(['enom','live',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
 same(Environment::Live,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->environment,'Healthy inverse uses a valid live binding');
 same($liveBinding->fingerprint,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->fingerprint,'Healthy inverse fingerprint matches live identity');
+DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>$liveBinding->fingerprint]);
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->assertDontSee('Restore the saved account identity first.');
 // Unavailable features explain themselves; Transfers names the deployment setting needed to enable its switch.
 $checklist=fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::findOrFail($enom->id),['label'=>'Active','reason'=>null]),null,'label');
@@ -333,6 +334,7 @@ Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$
 same(0,App\Models\Server::findOrFail($enom->server_id)->settings()->where('key','domains_enom_live_renewal')->count(),'A Live switch with empty form data creates no acceptance');
 DB::table('domains_accounts')->where('id',$enom->id)->update(['environment'=>'test','live_site'=>null,'account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint,
     'identity_fingerprint'=>hash('sha256',json_encode(['enom','test',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
+DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint]);
 config(['domains.enom_identity.environment'=>'test','domains.enom_writes.renewal'=>true,'domains.enom_catalogue.enabled'=>false]);$noKeys();
 same('Not available yet',$checklist()['Transfers']['value'],'TEST site off shows no switch');
 config(['domains.enom_catalogue.enabled'=>true,'domains.enom_writes.transfer'=>true]);$noKeys();
@@ -354,4 +356,5 @@ Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::review($review,['
 $late=$checklist()['Late renewal'];
 same(['Off','late_renewal'],[$late['value'],$late['action']],'Ready Test late renewal keeps its separate approval');
 expect(str_contains($late['cause'],'paused')&&str_contains($late['cause'],'expired domains')&&!str_contains($late['cause'],'evidence'),'Ready Test late renewal explains billing without asking for Live evidence');
+require __DIR__.'/Support/reminder-upgrade.php';
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;

@@ -27,7 +27,7 @@ foreach(['Renewal safety','Adoption readiness','Credentials','Worker cadence','W
 }
 same('60, 30, 7, 1',\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($tlds[0]->server_id)['Days before expiry'],'Default reminder display order');
 $scheduleTable=DB::table('domains_reminder_schedules');
-$scheduleTable->insert(['server_id'=>$tlds[0]->server_id,'account_fingerprint'=>$tlds[0]->account_fingerprint,'before_days'=>'[1,7,30,60]','after_days'=>'[7,1,3]','audit'=>'synthetic']);
+$scheduleTable->where('server_id',$tlds[0]->server_id)->update(['before_days'=>'[1,7,30,60]','after_days'=>'[7,1,3]']);
 $raw=$scheduleTable->where('server_id',$tlds[0]->server_id)->first();
 $sorted=\Paymenter\Extensions\Servers\Domains\Admin\Support\ReminderFacts::schedule($tlds[0]->server_id);
 same('60, 30, 7, 1',$sorted['Days before expiry'],'Saved reminders display descending');
