@@ -54,7 +54,7 @@ Livewire::actingAs($staff)->test(ListTlds::class)->assertSee('Choose what you se
 
 // Opening the page, empty or full, never talks to the registrar.
 $before=$calls();
-$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('No prices yet')->assertSee('use Sync now')->assertActionVisible('sync_now');
+$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('No prices yet')->assertSee('use Sync prices')->assertActionVisible('sync_now');
 same(0,$calls()-$before,'Opening an empty page sends nothing');
 // A bound TLD can outlive its acceptance and sales row; Edit terms must explain how to load it.
 CatalogueAcceptances::save($binding,0,[]);
@@ -62,8 +62,9 @@ $unpriced=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account
 expect(!isset(CatalogueAcceptances::load($binding)->endings['com'])&&!SellRow::where('server_id',$server->id)->where('tld','com')->exists(),'The bound TLD has neither acceptance nor a sales row');
 $detail=Livewire::actingAs($staff)->test(ViewTld::class,['record'=>$unpriced->id])->assertActionVisible('tld_settings');
 $url=$detail->instance()->getAction('tld_settings',false)->getUrl();parse_str(parse_url($url,PHP_URL_QUERY),$missingQuery);
-Livewire::withQueryParams($missingQuery)->actingAs($staff)->test(WhatYouSell::class)->assertSet('tableSearch','com')->assertCountTableRecords(0)
-    ->assertActionVisible('sync_now')->assertSee('This TLD has no prices here yet. To load them, use Sync now.');
+Livewire::withQueryParams($missingQuery)->actingAs($staff)->test(WhatYouSell::class)->assertSet('tableSearch','com')->assertCountTableRecords(1)
+    ->assertTableColumnStateSet('status','Not for sale',(string)-$unpriced->id)->assertActionVisible('sync_now');
+Livewire::withQueryParams(['tld'=>'nothing'])->actingAs($staff)->test(WhatYouSell::class)->assertCountTableRecords(0)->assertSee('This TLD has no prices here yet. To load them, use Sync prices.');
 Livewire::withQueryParams([]);$unpriced->delete();
 // A sync driver cannot accidentally put a long registrar read back on the web request.
 config(['queue.default'=>'sync','queue.connections.sync.driver'=>'sync']);
@@ -87,19 +88,32 @@ same(false,str_contains(json_encode($row('com')->prices),'99.00'),'No retail val
 
 // The full page spends nothing either, shows where prices came from, and leaves out hidden TLDs.
 $before=$calls();
-$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices from '.gmdate('M j, Y H:i',(int)PriceFill::last($binding)->filled_at).' UTC')
+$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices from')->assertSee(Carbon\CarbonImmutable::createFromTimestamp((int)PriceFill::last($binding)->filled_at)->format('M j, Y, g:i A T'))
     ->assertSee('.com')->assertSee('.org')->assertSee('.com.au')->assertSee('.trading')->assertSee('No cost yet')->assertCanNotSeeTableRecords([$row('xyz'),$row('adult')])
-    ->assertSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
+    ->assertSee('8.95')->assertSee('Prices in USD for 1 year.')->assertDontSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
 same(0,$calls()-$before,'Opening a full page sends nothing');
 // An unpublished TLD uses its saved custom rule for both retail and profit estimates.
 $custom=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'org',
     'use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>'99.00','fixed_renew'=>'99.00','fixed_transfer'=>'99.00']);
-Livewire::actingAs($staff)->test(WhatYouSell::class)->assertTableColumnStateSet('price','USD 99.00',$row('org'))->assertTableColumnStateSet('profit','USD 85.82',$row('org'));
+Livewire::actingAs($staff)->test(WhatYouSell::class)->assertTableColumnStateSet('register_price','99.00',$row('org'))->assertTableColumnStateSet('register_profit','85.82',$row('org'));
 $custom->delete();
+// No row vanishes: a saved TLD shows here though the registrar no longer lists it, or it is hidden, and saves stay off those rows.
+$gone=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'gone']);
+$hiddenSaved=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'xyz']);
+$table=Livewire::actingAs($staff)->test(WhatYouSell::class)->set('tableRecordsPerPage',100);
+$shown=fn()=>collect($table->instance()->getTableRecords()->items())->pluck('tld')->all();
+expect(array_diff(array_map(fn(array $r)=>ltrim($r['tld'],'.'),app(PriceList::class)->read()['rows']),$shown())===[],'Every saved TLD shows');
+expect(array_diff(SellRow::where('server_id',$server->id)->whereNotIn('tld',['xyz','adult'])->pluck('tld')->all(),$shown())===[],'Every registrar row shows');
+$table->assertTableColumnStateSet('status','Not for sale',(string)-$gone->id)->assertTableColumnStateSet('status','Not for sale',$row('xyz'))->assertCanNotSeeTableRecords([$row('adult')])
+    ->assertTableActionDisabled('edit_terms',(string)-$gone->id)->assertTableActionDisabled('edit_terms',$row('xyz'));
+$before=SellRow::where('server_id',$server->id)->count();$table->selectTableRecords([-$gone->id])->assertTableBulkActionVisible('edit');
+same($before,SellRow::where('server_id',$server->id)->count(),'Reading a saved TLD adds no sales row');
+expect(!$table->instance()->getTable()->isRecordSelectable($table->instance()->getTableRecord((string)-$gone->id)),'A row the registrar dropped has no tick');
+$gone->delete();$hiddenSaved->delete();
 // Profit shows cents. A card fee gives the stored figure more digits than that.
 $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>'2.9','fixed'=>'0.30']]);
 $html=Livewire::actingAs($staff)->test(WhatYouSell::class)->html();$server->settings()->where('key',CardFee::KEY)->delete();
-expect(preg_match('/USD -?[\d,]+\.\d{2}\b/',$html)===1&&preg_match('/USD -?[\d,]+\.\d{3}/',$html)===0,'Profit shows two decimals');same('2.05',PriceList::profit('2.0524'),'Display rounds, the saved figure stays');
+expect(preg_match('/>\s*-?[\d,]+\.\d{2}\s*</',$html)===1&&preg_match('/>\s*-?[\d,]+\.\d{3}\s*</',$html)===0,'Profit shows two decimals');same('2.05',PriceList::profit('2.0524'),'Display rounds, the saved figure stays');
 foreach(['independently verified','Purchase route','new import','25-second','resellertest','Verified','Reason','More years'] as $word){$page->assertDontSee($word);}
 same(0,preg_match('/\bendings?\b/i',strip_tags(preg_replace('/<(script|style)\b.*?<\/\1>/si','',$page->html()))),'The screen says TLD, never the other word');
 $page->set('tableSearch','.co')->assertCanSeeTableRecords([$row('com')])->assertCanNotSeeTableRecords([$row('org')]);$page->set('tableSearch','');

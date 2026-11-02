@@ -96,8 +96,10 @@ final class PriceList
             $out=[...$out,$p['cost']===null?$none:self::money($p['cost']),$p['price']??$none,$p['profit']===null?$none:self::money($p['profit'],true),in_array($p['status'],['Missing',self::TRANSFERS_OFF],true)?'':$p['status']];}
         return [...$out,$row['formula'],CardFee::describe($row['fee'])];
     }
-    /** Estimated profit as it shows on the price list. */
+    /** Estimated profit as it shows on What you sell and in the CSV. */
     public static function profit(string $value): string {return self::money($value,true);}
+    /** Saved cost as it shows on What you sell and in the CSV. */
+    public static function cost(string $value): string {return self::money($value);}
     /** Display cents only; round estimated profit down, including a loss, without changing saved values. */
     private static function money(?string $value,bool $down=false): string
     {
