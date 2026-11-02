@@ -42,7 +42,7 @@ class ViewDomain extends ViewRecord
     public function getSubheading(): string|Htmlable|null
     {
         $d=$this->getRecord(); $status=DomainFacts::status($d);
-        $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']!==null);
+        $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']);
         return StatusMark::line($head['tone'],$status['label'],'domain-'.$d->id,$head['step']);
     }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
@@ -183,6 +183,7 @@ class ViewDomain extends ViewRecord
     private static function below(array $fact): string|HtmlString|null
     {
         $words=self::words($fact);
+        if ($words!==null&&isset($fact['request'])) { $words=DomainFacts::linkRequest($words,$fact['request']); }
         if (!isset($fact['asOf'])) { return $words; }
         $read=Sheet::moment($fact['asOf'],'As of')->toHtml();
         return new HtmlString($words===null?$read:$read.'. '.($words instanceof HtmlString?$words->toHtml():e($words)));

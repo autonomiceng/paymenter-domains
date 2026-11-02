@@ -156,12 +156,16 @@ final class DomainFacts
     {
         // The head names a held order, or the top alert when no notice takes its place, so a review alert on a row would only repeat them.
         $inputs=StaffDomainInputs::for([$d])[$d->id]; $status=self::status($d,$inputs);
-        $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:($status['alert']==='operation_review'&&self::notice($d)===null?$status['request']:null);
+        $notice=self::notice($d);
+        $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:(in_array($status['alert'],['operation_review','held_obligation'],true)&&($notice===null||($notice['resume']??false))?$status['request']:null);
         $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$a['request']===$named&&$named!==null));
         foreach (array_unique(array_column($rows,'code')) as $code) {
             // Late payment already has a status reason and says so in the head.
             if ($code==='acquisition_late_money') { continue; }
             [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code);
+            // The row sends staff to the same place the head would.
+            $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
+            if ($request!==null) { $cause=str_replace('Check the request','Check request #'.$request,$cause); }
             if (!isset($f[$row])) {
                 $notice=$f['Open alerts']??self::fact([],tone:$tone);
                 $notice['value']=array_values(array_unique([...$notice['value'],$cause]));
@@ -175,6 +179,7 @@ final class DomainFacts
             if ($fact['sub']!==null&&$fact['sub']!==$cause) { $fact['plain']??=StaffDomainStatus::sentence($fact['sub']); }
             $fact['sub']=$fact['sub']===null||$fact['sub']===$cause?$cause:StaffDomainStatus::sentence($fact['sub']).' '.$cause;
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone; $fact['alert']=true;
+            if ($request!==null) { $fact['request']=$request; }
             $f[$row]=$fact;
         }
         // A failed customer monitoring alert: why, and what to do. The staff alert links here.
@@ -221,22 +226,31 @@ final class DomainFacts
         return $status['act']&&$mark?StatusMark::act($html):$html;
     }
     /** The head of a domain a request is holding: the link first, then what it holds, said once for the page. */
-    public static function holdHtml(array $status, bool $mark=true): HtmlString
+    public static function holdHtml(int $request, bool $mark=true): HtmlString
     {
-        $url=self::requestUrl($status); $label='Check request #'.$status['request'];
+        $url=self::requestUrl(['request'=>$request]); $label='Check request #'.$request;
         $html=new HtmlString(($url?self::requestLink($url,$label):e($label)).' Changes are on hold until it is checked.');
-        return $status['act']&&$mark?StatusMark::act($html):$html;
+        return $mark?StatusMark::act($html):$html;
+    }
+    /** A row's words with its "Check request #N" as a link, when this panel can open it. */
+    public static function linkRequest(string|HtmlString $words, int $request): string|HtmlString
+    {
+        $url=self::requestUrl(['request'=>$request]); $label='Check request #'.$request;
+        if (!$url) { return $words; }
+        return new HtmlString(str_replace($label,self::requestLink($url,$label),$words instanceof HtmlString?$words->toHtml():e($words)));
     }
     /** The page's one status line: the notice, else the hold, else the status step, under one mark.
      * Active can't stay green over a stopped sync or rows that need work. An amber or red state is already the mark, so its words get none of their own.
+     * $held is the request holding changes. It comes first, then the request the status names, and no request names none.
      * @return array{tone:string,step:string|HtmlString|null} */
-    public static function head(Domain $d, array $status, array $facts, bool $held): array
+    public static function head(Domain $d, array $status, array $facts, ?int $held=null): array
     {
-        $notice=self::notice($d);
+        $notice=self::notice($d); $request=$held??$status['request'];
+        if (($notice['resume']??false)&&$request) { $notice['link']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
         $missing=array_filter($facts,fn(array $fact)=>$fact['value']===null&&!Missing::needsNothing($fact['sub']));
         $tone=$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])?'warning':$status['tone'];
         $mark=!in_array($tone,['warning','danger'],true);
-        $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held=>self::holdHtml($status,$mark),default=>self::stepHtml($status,$mark) };
+        $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),default=>self::stepHtml($status,$mark) };
         return ['tone'=>$tone,'step'=>$step??($missing!==[]?'Some details are Missing. Each row says what to do.':null)];
     }
     /** A notice in the head line: its words, then its links. */
@@ -261,13 +275,11 @@ final class DomainFacts
     {
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
-        $request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
-        $requestLink=$request?['label'=>'Check request #'.$request,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$request]))]:null;
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::canResume()?'Use Resume sync below.':self::ASK_RESUME,'tone'=>'warning','resume'=>true,'link'=>$requestLink]; }
+        if (($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::canResume()?'Use Resume sync below.':self::ASK_RESUME,'tone'=>'warning','resume'=>true]; }
         if (AcquisitionPaymentReview::count($d)>0) {
             $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
                 ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');

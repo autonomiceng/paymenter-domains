@@ -160,6 +160,17 @@ foreach(['review'=>'Refund needs a check','pending'=>'Refund processing','refund
     expect(!str_contains($facts['refund_sub'],'Contact support')&&!str_contains($facts['refund_sub'],'We are returning'),'Staff guidance does not address the customer');
 }
 
+// A change that never reached the registrar says what happens next, since its page has no button.
+$claim=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
+$unsent=$doneOp->fresh()->forceFill(['state'=>'held','safe_code'=>'management_unconfirmed','action'=>'contacts','provider_order_id'=>null,'confirmed_expires_at'=>null,'funding'=>[],'started_at'=>now(),
+    'policy'=>['management'=>['action'=>'contacts']],'attempt'=>$claim]);
+$told=static fn(Operation $op)=>array_intersect_key(RequestFacts::notice($op,['reason'=>'Registrar has not confirmed the result']),['title'=>1,'body'=>1,'tone'=>1,'link'=>1,'link_label'=>1]);
+$title='Not sent. Nothing changed at the registrar.';
+same(['title'=>$title,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on and we try again by ourselves.','tone'=>'warning','link'=>'registrars','link_label'=>'Turn them on'],$told($unsent),'The switch is the next step');
+$elsewhere=(clone $unsent)->forceFill(['registrar_key'=>'namesilo']);
+same(['title'=>$title,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info'],$told($elsewhere),'A retry that runs by itself asks nothing');
+$spent=(clone $elsewhere)->forceFill(['attempt'=>[...$claim,'management_deferrals'=>array_fill(0,5,'2026-10-30T00:00:00+00:00')]]);
+same(['title'=>$title,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'],$told($spent),'Spent tries send staff to the domain');
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');
