@@ -299,7 +299,7 @@ final class DomainManagement
                 };
                 if ($section!==null) { $projection['sections'][$section]=ObservationProjection::section($l['domain'],$entry); }
                 // Keep the latest per-host result (including deletion) after its operation leaves the history window.
-                if (in_array($op->action,['glue_add','glue_update','glue_delete'],true)) {
+                if (in_array($op->action,['glue_add','glue_update','glue_delete'],true) && is_string($facts['host']??null) && $facts['host']!=='') {
                     $projection['record_reads'][$facts['host']]=['identity'=>ObservationRecords::identity($l['domain']),...$entry];
                 }
             }

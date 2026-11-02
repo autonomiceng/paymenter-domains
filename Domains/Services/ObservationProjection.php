@@ -122,7 +122,7 @@ final class ObservationProjection
                     if (($read['facts']['ip']??null)===null) { unset($glue[$host]); } else { $glue[$host]=$read['facts']['ip']; }
                 } else { $sections[$kind]=self::section($d, $read); }
         }
-        if ($gap || count($glue)>50) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
+        if ($gap || count($glue)>GlueDiscoveryLimit::HOSTS) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
         $sections['known_glue']=$glue; return $sections;
     }
     private static function corrections(Domain $d): array

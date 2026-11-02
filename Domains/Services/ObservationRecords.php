@@ -24,7 +24,7 @@ final class ObservationRecords
         }
         if (count($families['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { throw new GlueDiscoveryLimit(); }
         $glue=[];
-        foreach (array_slice($families['glue']['records']??[],0,50,true) as $host=>$ip) {
+        foreach (array_slice($families['glue']['records']??[],0,GlueDiscoveryLimit::HOSTS,true) as $host=>$ip) {
             try { $v=ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$d->domain,$d->registrar_key); $glue[$v['host']]=$v['ip']; }
             catch (\Throwable) { throw new \DomainException('Invalid child-host read.'); }
         }
