@@ -130,6 +130,16 @@ expect(!isset($f['Auto-renew']),'Auto-renew and renewal invoices are one row');
 same(today()->addDays(120-21)->format('M j, Y'),$f['Next invoice']['value'],'Next invoice from the billing calendar');
 expect(!isset($f['Open invoice']),'Open invoice hidden when none');
 same("Off on purpose. Example Hosting renews the domain after the invoice is paid, so you are never charged by the registrar directly.",DomainFacts::help()['Registrar auto-renew'],'Registrar auto-renew help');
+// "Off on purpose" belongs only on a registrar auto-renew that was seen off. On or not yet read gets no such help.
+$autoRenew=$active->fresh()->observation;
+foreach (['off'=>[false,'Off',true],'on'=>[true,'On',false],'unknown'=>[null,null,false]] as $case=>[$seen,$shown,$help]) {
+    $saved=$autoRenew;if ($seen===null) { unset($saved['facts']['auto_renew']); } else { $saved['facts']['auto_renew']=$seen; }
+    $active->fresh()->update(['observation'=>$saved]);$fact=DomainFacts::for($active->fresh())['Registrar auto-renew'];
+    same([$shown,$help?DomainFacts::help()['Registrar auto-renew']:null],[$fact['value'],$fact['help']],'Registrar auto-renew help only when seen off: '.$case);
+    $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
+    $help?$page->assertSee('Off on purpose'):$page->assertDontSee('Off on purpose');
+}
+$active->fresh()->update(['observation'=>$autoRenew]);
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
 same([null,'Fills in by itself within a day',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes');
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Fills in by itself within a day');

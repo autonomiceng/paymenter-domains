@@ -101,7 +101,8 @@ final class DomainFacts
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
             $privacy=OwnedDomains::storedFlag($d,'privacy','privacy');
             $f['WHOIS privacy']=self::fact(self::flag($privacy),sub:$privacy!==null?null:$unread);
-            $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,help:self::help()['Registrar auto-renew']);
+            $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,
+                help:($facts['auto_renew']??null)===false?self::help()['Registrar auto-renew']:null);
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
         if ($registered||$job||$d->last_synced_at) { $f['Last sync']=match(true) {
