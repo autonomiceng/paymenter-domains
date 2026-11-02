@@ -60,7 +60,10 @@ same(['History'],array_map($norm,iterator_to_array($dom->query('//div[contains(@
 $text=static fn(string $id)=>$norm($dom->query('//li[@id="'.$id.'"]/span[contains(@class,"domains-row__v")]')->item(0));
 $action=static fn(string $id)=>array_map($norm,iterator_to_array($dom->query('//li[@id="'.$id.'"]/*[contains(@class,"domains-row__a")]//*[self::a or self::button]')));
 $row=static fn(DOMXPath $x,string $id)=>[$norm($x->query('//li[@id="'.$id.'"]/span[contains(@class,"domains-row__v")]')->item(0)),array_map($norm,iterator_to_array($x->query('//li[@id="'.$id.'"]/*[contains(@class,"domains-row__a")]//*[self::a or self::button]')))];
-same(['ns1.host.example ns2.host.example',['Edit']],[$text('nameservers'),$action('nameservers')],'Nameservers row');
+same(['2 nameservers ns1.host.example, ns2.host.example',['Edit']],[$text('nameservers'),$action('nameservers')],'Nameservers row: the count, as in the mock, then the names');
+same(1,$dom->query('//li[@id="nameservers"]/span[contains(@class,"domains-row__v")]/span[contains(@class,"domains-ns-list")]')->length,'All names share one grey line, not a white first name');
+expect(str_contains($html,'.domains .domains-ns-list { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;'),'The name line wraps to 2 lines at most');
+expect(str_contains($html,'.domains .domains-sheet .domains-card dt, .domains .domains-sheet .domains-row__l { font-size: inherit; font-weight: 400; }'),'Settings labels are the size of the Renewal labels');
 same(['2 records',['Edit']],[$text('dns'),$action('dns')],'DNS records row');
 same(['No glue records',['Add']],[$text('glue'),$action('glue')],'Glue row');
 same(['Off',['Add DS record']],[$text('ds'),$action('ds')],'DNSSEC row');

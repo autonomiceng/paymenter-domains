@@ -27,7 +27,7 @@
 @if ($section['progress']['pending'] ?? false)
 <span class="domains-row__v">
 @if (!$paused && $cap === 'nameservers' && ($section['current'] ?? []))
-<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach
+@include('domains::partials.nameserver-list', ['servers' => $section['current']])
 @endif
 <span @class(['domains-sub' => !$paused && $cap === 'nameservers' && ($section['current'] ?? [])]) role="status" data-management-pending="{{ $cap }}" data-operation="{{ $section['progress']['id'] }}">{{ $section['progress']['text'] }}</span>
 </span>
@@ -35,7 +35,7 @@
 @if ($paused)
 <span class="domains-row__v">@include('domains::partials.missing', ['cause' => $fills('when sync resumes'), 'fix' => null, 'stack' => true])</span>
 @elseif ($cap === 'nameservers')
-<span class="domains-row__v">@if (!($section['current'] ?? []))@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach @endif</span>
+<span class="domains-row__v">@if (!($section['current'] ?? []))@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else @include('domains::partials.nameserver-list', ['servers' => $section['current']])@endif</span>
 @if ($section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}" aria-label="Edit nameservers">Edit</a></span>
 @php $useDefault = $confirmStep === 'nameservers' && ($retry['values']['use_default'] ?? '') === '1'; @endphp
