@@ -140,6 +140,7 @@ foreach(['list','capacity'] as $failureKind){
     same($noticeCount+1,App\Models\Notification::where('user_id',$staff->id)->where('title','Price sync keeps failing')->count(),'Repeated failure delivers a staff inbox alert');
     $alert=App\Models\Notification::where('user_id',$staff->id)->where('title','Price sync keeps failing')->latest('id')->firstOrFail();
     same(route('filament.admin.resources.domain-tlds.index'),$alert->url,'Sync failure alert opens the real TLD list');
+    same($server->name.': '.Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure($server->id)['cause'].'.',$alert->body,'Alert line uses the TLD list words, with no internal id or steps');
     DB::table('domains_prices')->where('server_id',$server->id)->where('tld','com')->update(['observed_at'=>$syncClock->now()->format('Y-m-d H:i:s')]);
     expect(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure($server->id)!==null,'Updating one TLD cannot hide an incomplete account sync');
     $syncClock->at=$syncClock->at->modify('+1 day');$scheduled->daily($a->fresh());

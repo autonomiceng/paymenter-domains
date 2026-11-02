@@ -11,11 +11,14 @@ final class WatchNoticeHealth
     {
         WatchAudit::create(['after_revision'=>hash('sha256',(string)$now),'subject_type'=>'public_notice','subject_id'=>$id,'user_id'=>$owner,'event'=>'notice_health',
             'reason'=>'Public domain notice needs review.','data'=>['target_kind'=>$kind,'code'=>$code],'created_at'=>gmdate('Y-m-d H:i:s',$now)]);
-        DB::afterCommit(static function():void {
+        // Name the domain and open its own page, where its checks show; the list alone can't say which one.
+        $managed=$kind==='managed';
+        $name=$managed?DB::table('domains_domains')->where('id',$id)->value('domain'):DB::table('domains_watch_names')->where('id',$id)->value('canonical_name');
+        $line='A customer notice for '.(is_string($name)&&$name!==''?$name:'a domain').' could not be prepared.';
+        DB::afterCommit(static function()use($line,$managed,$id):void {
             try {
-                \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send(
-                    'Domain monitoring check failed','Open Domain monitoring to see the domain.',
-                    'filament.admin.resources.domain-watch.index','admin.domains.watch.view');
+                \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Domain monitoring check failed',$line,
+                    $managed?'filament.admin.resources.domains.view':'filament.admin.resources.domain-watch.view','admin.domains.watch.view',parameters:['record'=>$id]);
             } catch (\Throwable) { \Illuminate\Support\Facades\Log::warning('Public notice staff inbox unavailable.'); }
         });
     }

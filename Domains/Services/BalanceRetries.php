@@ -56,8 +56,11 @@ final class BalanceRetries
         // One durable alert and one native inbox receipt for this hold, regardless of retry count.
         if(Schema::hasTable('domains_obligation_alerts')){ObligationAlerts::record($op->domain,'operation_review',$now->getTimestamp(),(int)$op->id);}
         $key=($stopped?'read-hold:':'balance-hold:').$op->operation_key.':'.$op->authority_generation.':'.$retry->record['held_at'];
+        // The request page carries the next step (MESSAGE or READ_STOPPED) and its actions.
+        $line=\Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::action($op->action).' of '.$op->domain->domain.($stopped?' stopped retrying.':' is waiting for registrar funds.');
+        $id=(int)$op->id;
         DB::afterCommit(static fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send(
-            $stopped?'Registrar reads keep failing':'Registrar balance is too low',($stopped?self::READ_STOPPED:self::MESSAGE).' Open request #'.$op->id.'.','filament.admin.resources.domains.index',deliveryKey:$key));
+            $stopped?'Registrar reads keep failing':'Registrar balance is too low',$line,'filament.admin.resources.registrar-requests.view',deliveryKey:$key,parameters:['record'=>$id]));
     }
     /** Our own rate guard proves nothing was sent, so nobody needs to act: it waits on the same timed retry as a balance hold. Called locked. */
     public static function rateHeld(Operation $op,\DateTimeImmutable $now): void

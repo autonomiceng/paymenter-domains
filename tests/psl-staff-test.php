@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,PslFacts,PslAction
 use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists,PslTransport,PslValidator,RuntimeWork,Installation};
 $entry=new Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();$entry->boot();
 staffPanel();$panel=Filament::getCurrentPanel();$panel->pages([Page::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class]);
-Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn()=>Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){Page::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::registerRoutes($panel);}));
+Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn()=>Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){Page::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($panel);}));
 app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
 $clock=new PslClock;$count=0;$duringFetch=null;$list=new Lists($clock,new PslTransport(function()use(&$count,&$duringFetch){$count++;if($duringFetch){$run=$duringFetch;$duringFetch=null;$run();}return ['status'=>200,'body'=>pslFixture()];}),new PslValidator(128,5,1));
 app()->instance(Lists::class,$list);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -98,7 +98,9 @@ $failedList=new Lists($clock,new PslTransport(function()use(&$failures){$failure
 $watchOnly=staffUser([Page::VIEW]); // Every Domains page also requires the base Domains view permission.
 $saved=$list->current();$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();$job->handle($failedList);
 same(0,App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$watchOnly->id)->count(),'No recovery link to a page this role cannot open');
-expect(App\Models\Notification::where('title','Public suffix list update failed')->count()>$notices,'Failed scheduled update alerts staff');$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();
+expect(App\Models\Notification::where('title','Public suffix list update failed')->count()>$notices,'Failed scheduled update alerts staff');
+$alert=App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$staff->id)->latest('id')->firstOrFail();
+same(['The saved list is still in use.',Page::getUrl()],[$alert->body,$alert->url],'One short line and the page with the next step');$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();
 same(1,$failures,'Due job attempts one failed download');same('timeout',$list->status()->last_result,'Job retains the download failure');
 $failedAt=$list->status()->last_attempt_at;
 for($minute=1;$minute<=5;$minute++){$clock->at+=60;$job->handle($failedList);}
@@ -107,7 +109,12 @@ same($failedAt,$list->status()->last_attempt_at,'Skipped jobs do not renew the f
 same((array)$saved,(array)$list->current(),'Failed download retains the cached list');
 same(1,$job->tries,'Failed public-data jobs have no queue retry');
 $clock->at=$failedAt+7*86400-1;$job->handle($failedList);same(1,$failures,'Failed download preserves weekly admission');
+$registrar=App\Models\Server::create(['name'=>'Synthetic registrar','extension'=>'Domains','type'=>'server','enabled'=>true]);$viewOnly=staffUser([Staff::VIEW]);
 $clock->at++;$job->handle($failedList);same(2,$failures,'Failed download becomes eligible again after a week');
+$alert=App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$staff->id)->latest('id')->firstOrFail();
+same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$registrar->id]),$alert->url,'With registrars the alert opens an account page, where System checks shows the list');
+same(0,App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$viewOnly->id)->count(),'Staff who cannot see the list row get no alert');
+App\Models\Server::withoutEvents(fn()=>$registrar->delete()); // Fixture only: the identity guard refuses model deletes of Domains servers.
 
 $clock->at=(int)$list->current()->validated_at+90*86400;same('Current',PslFacts::state($list),'List current through expiry');
 $clock->at++;same('New discovery paused',PslFacts::state($list),'Discovery pauses after expiry');
