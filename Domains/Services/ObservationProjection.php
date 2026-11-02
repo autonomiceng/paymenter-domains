@@ -97,14 +97,15 @@ final class ObservationProjection
             // Incomplete history cannot prove that acquisition nameservers are still current.
             $sections['nameservers']??=[];
         }
-        foreach ($overflow?[]:$ops as $op) {
+        foreach ($ops->take(100) as $op) {
+            if ($overflow && !in_array($op->action,['glue_add','glue_update','glue_delete'],true)) { continue; }
             if ($op->authority_generation!==$d->authority_generation||!isset($op->policy['management'])||!ManagementEvidence::resolved($op,$d)) { continue; }
             foreach (ManagementReadRecovery::reads($op) as $read) {
                 if (($read['confirmed']??false)!==true || ($inventory && in_array($op->action,['dns','srv','ds_add','ds_delete','glue_add','glue_update','glue_delete'],true) && ($read['sequence']??0)<=$inventory['sequence'])) { continue; }
                 $reads[]=['op'=>$op,'read'=>$read];
             }
         }
-        foreach ($overflow?[]:($d->observation['record_reads']??[]) as $read) {
+        foreach ($d->observation['record_reads']??[] as $read) {
             if (($read['identity']??null)===ObservationRecords::identity($d) && is_string($read['at']??null) && (!$inventory || ($read['at']>=$inventory['at'] && ($read['sequence']??0)>$inventory['sequence']))) { $reads[]=['op'=>(object)['action'=>$read['action'],'id'=>PHP_INT_MAX],'read'=>$read]; }
         }
         $reads=array_values(array_filter($reads,static fn($item)=>is_string($item['read']['at']??null)&&is_array($item['read']['facts']??null)&&is_string($item['read']['operation_key']??null)));

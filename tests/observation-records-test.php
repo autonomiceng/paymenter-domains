@@ -284,14 +284,34 @@ foreach ([1,2] as $cycle) {
 same($recordIo,count($state->calls),'History overflow skips record discovery');
 expect(count($observation->calls)>$domainIo,'Daily domain reads continue across overflow cycles');
 
-// After history overflow, a delete must not resurrect its own positive preflight read.
-$overflowHost='ns-new.'.$d->domain;
+// Overflow keeps fresh per-host evidence, and later confirmed deletion wins over inventory/preflight.
+$directHost='ns-direct.'.$d->domain;$overflowHost='ns-new.'.$d->domain;$inventoryHost='ns1.'.$d->domain;
+\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::prepared($d->fresh(),['glue'=>['host'=>$directHost,'ip'=>'1.1.1.1']],$clock->now());
+$observed=['fresh direct read'=>ObservationProjection::sections($d->fresh())['known_glue'][$directHost]??null];
+require_once __DIR__.'/Support/FakeDnsReader.php';
+$dns=new \Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader();
+$query=new \Paymenter\Extensions\Servers\Domains\Dns\DnsQuery($directHost,'A');
+$dns->answers[$query->key()]=\Paymenter\Extensions\Servers\Domains\Dns\DnsAnswer::negative($query);
+$drift=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::check($d->fresh(),$dns,new \Paymenter\Extensions\Servers\Domains\Dns\DnsContext(),0,$clock->now()->getTimestamp(),900);
+$observed['fresh host drift check']=$drift['hosts'][$directHost]['drift']??null;
 foreach (['glue_add'=>['host'=>$overflowHost,'ip'=>'1.1.1.1'],'glue_delete'=>['host'=>$overflowHost]] as $action=>$payload) {
     Cache::flush();$changed=$submit($d,$driver,$action,$payload);
     same('succeeded',$management->run($changed->id,$driver)->state,'Overflow child-host '.$action.' confirmed');
+    $observed[$action]=ObservationProjection::sections($d->fresh())['known_glue'][$overflowHost]??null;
 }
+$state->glue[$inventoryHost]='8.8.8.8';
+Cache::flush();$changed=$submit($d,$driver,'glue_delete',['host'=>$inventoryHost]);
+same('succeeded',$management->run($changed->id,$driver)->state,'Overflow inventory-host delete confirmed');
+$observed['inventory host delete']=ObservationProjection::sections($d->fresh())['known_glue'][$inventoryHost]??null;
+// Readbacks must remain current after the operation itself falls out of the bounded window.
+for ($i=0;$i<101;$i++) { $raw['operation_key']=hash('sha256','history-after-delete-'.$i);DB::table('domains_operations')->insert($raw); }
 $truncated=ObservationProjection::sections($d->fresh());
-expect(!isset($truncated['known_glue'][$overflowHost]),'Deleted child host is not current after history overflow');
+$observed['aged new host delete']=$truncated['known_glue'][$overflowHost]??null;
+$observed['aged inventory host delete']=$truncated['known_glue'][$inventoryHost]??null;
+$expected=['fresh direct read'=>'1.1.1.1','fresh host drift check'=>true,'glue_add'=>'1.1.1.1','glue_delete'=>null,
+    'inventory host delete'=>null,'aged new host delete'=>null,'aged inventory host delete'=>null];
+foreach ($expected as $case=>$value) { if ($value!==$observed[$case]) { fwrite(STDERR,'Regression: '.$case.' expected '.json_encode($value).' got '.json_encode($observed[$case])."\n"); } }
+same($expected,$observed,'Fresh direct/add evidence stays visible and drift-checked; newer deletes never resurrect after overflow');
 foreach (['dns','srv','ds'] as $kind) { expect(!isset($truncated[$kind]),'Deleted glue does not unlock truncated '.$kind.' list'); }
 
 $nativeSuccessful=true;echo "Initial managed records: complete/unknown, identity, encryption, sequence, owner gates, glue and fair held work passed.\n";
