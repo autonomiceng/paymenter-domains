@@ -330,8 +330,12 @@ final class TldFacts
                 $binding=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
                 $needed=PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
                 if(SellRule::saved($binding)!==null){
-                    $left=PriceSync::backgroundLeft($binding,app(Clock::class));
-                    $cause='Price sync needs '.$needed.' calls; '.$left.' calls left for automatic price reads';
+                    if(PriceSync::callsToday($binding)===null){
+                        $cause="Couldn't read our call count or limit. Try again.";
+                    }else{
+                        $left=PriceSync::backgroundLeft($binding,app(Clock::class));
+                        $cause='Price sync needs '.$needed.' calls; '.$left.' calls left for automatic price reads';
+                    }
                 }else{
                     $left=PriceSync::callsLeft($binding);
                     if($left!==null){$cause=$left>=$needed?'Our daily call limit has room to retry the price sync ('.$left.' calls left)':'Price sync needs '.$needed.' calls; '.$left.' calls left under our current limit';}

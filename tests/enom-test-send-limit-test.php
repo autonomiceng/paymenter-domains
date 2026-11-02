@@ -113,6 +113,18 @@ same(0,PriceSync::backgroundLeft($binding,$clock),'Automatic price reads have no
 same('Price sync needs 6 calls; 0 calls left for automatic price reads',
     \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
     'A retained capacity failure shows the automatic allowance without promising a retry');
+// Unknown usage still closes the execution guard, but it must not be presented as a measured zero.
+Schema::rename(Tables::SENDS,'domains_test_sends_unreadable');
+same(null,PriceSync::callsToday($binding),'Unreadable send storage makes usage unknown');
+same(0,PriceSync::backgroundLeft($binding,$clock),'Unknown usage keeps the automatic guard closed');
+same("Couldn't read our call count or limit. Try again.",
+    \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
+    'Unknown automatic capacity says what could not be read and gives a next step');
+Schema::rename('domains_test_sends_unreadable',Tables::SENDS);
+$write($review(),200,3);
+same('Price sync needs 6 calls; 25 calls left for automatic price reads',
+    \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
+    'Known positive automatic capacity remains a measured allowance');
 config(['app.url'=>'https://billing.example.test','domains.enom_live.site'=>'https://billing.example.test','domains.enom_identity.environment'=>'live']);
 $liveServer=Server::create(['name'=>'Synthetic live cap','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $live=Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$liveServer->id,'registrar_key'=>'enom','environment'=>'live','stable_identity'=>'live-cap-uid']));
