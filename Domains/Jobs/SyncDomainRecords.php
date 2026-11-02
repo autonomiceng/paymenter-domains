@@ -30,6 +30,8 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $connection=config('queue.connections.'.config('queue.default'),[]);
         // A reservation must outlive the read; sync queues would still block the staff page.
         if (!in_array($connection['driver']??null,['database','redis'],true)||(int)($connection['retry_after']??0)<=self::TIMEOUT) { throw new \DomainException(self::WORKER); }
+        $cache=config('cache.stores.'.config('cache.default').'.driver');
+        if (!in_array($cache,['redis','database','memcached'],true)) { throw new \DomainException('Sync now needs a shared cache to prevent duplicate reads. Ask your site admin to configure Redis, database or Memcached cache, then try again.'); }
         if ($d->status!=='active') { throw new \DomainException('Domain is no longer active. Reload this page.'); }
         $job=new self($actor,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
         $lock=app(UniqueLock::class);
@@ -46,6 +48,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         if (!$d||$d->status!=='active'||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { $this->notice('Sync stopped','Domain changed. Reload its page before trying Sync now again.'); return; }
         try {
             $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true);
+            if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
             $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
             $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?'Open the domain and check the sync notice, then try Sync now again.':'Refresh the domain page to see the saved records.');
         } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }

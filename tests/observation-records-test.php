@@ -38,6 +38,17 @@ $syncJob=new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($syncA
 $clock->instant=$clock->now()->modify('+61 seconds');$syncJob->handle($observer);
 same($clock->now()->format(DATE_ATOM),$d->fresh()->observation['records']['at'],'Queued worker saves record inventory through the observer');
 same('Domain synced',App\Models\Notification::where('user_id',$syncActor->id)->latest('id')->value('title'),'Queued worker reports completion in the staff inbox');
+// A closed record gate still refreshes core facts, but cannot promise fresh records.
+$syncInventory=$d->fresh()->observation['records'];$syncIo=[count($state->calls),count($observation->calls)];
+$clock->instant=$clock->now()->modify('+61 seconds');
+$syncJob->handle(new DomainObservation($readBindings,$clock,$budget,$ports,static fn()=>false));
+$syncNotice=App\Models\Notification::where('user_id',$syncActor->id)->latest('id')->firstOrFail();
+same('Records not read',$syncNotice->title,'Closed record gate is not reported as Domain synced');
+same('Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.',$syncNotice->body,'Closed gate explains the missing record read and next step');
+same($syncInventory,$d->fresh()->observation['records'],'Closed gate leaves record inventory and timestamp unchanged');
+same($syncIo[0],count($state->calls),'Closed gate makes no record calls');
+expect(count($observation->calls)>$syncIo[1],'Closed record gate still allows core facts to refresh');
+same('refreshed',(new DomainObservation($readBindings,$clock,$budget))->run($d->id),'Core-only observers keep their existing result');
 $syncActor->update(['role_id'=>null]);$syncIo=[count($state->calls),count($observation->calls)];$syncJob->handle($observer);
 same($syncIo,[count($state->calls),count($observation->calls)],'Revoked staff job sends no registrar reads');
 // An empty or wholly unknown refresh cannot release a primary-failure hold.
@@ -228,6 +239,8 @@ $state->privacy=true;$state->enabled=true;Cache::flush();$changed=$submit($d,$dr
 same('succeeded',$management->run($changed->id,$driver)->state,'History fixture has a real privacy readback');
 $preserved=$d->fresh()->observation['sections'];
 $raw=$changed->fresh()->getRawOriginal();unset($raw['id']);
+// Unsent rejected history is resolved without borrowing another operation's readback.
+$raw['state']='rejected';$raw['attempt']=null;
 for ($i=$d->operations()->count();$i<100;$i++) {
     $raw['operation_key']=hash('sha256','history-bound-'.$i);DB::table('domains_operations')->insert($raw);
 }
@@ -271,10 +284,14 @@ foreach ([1,2] as $cycle) {
 same($recordIo,count($state->calls),'History overflow skips record discovery');
 expect(count($observation->calls)>$domainIo,'Daily domain reads continue across overflow cycles');
 
-// Truncation blocks whole-list reconstruction, but must retain a fresh saved child-host read.
-\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::prepared($d->fresh(),['glue'=>['host'=>'ns-new.'.$d->domain,'ip'=>'1.1.1.1']],$clock->now());
+// After history overflow, a delete must not resurrect its own positive preflight read.
+$overflowHost='ns-new.'.$d->domain;
+foreach (['glue_add'=>['host'=>$overflowHost,'ip'=>'1.1.1.1'],'glue_delete'=>['host'=>$overflowHost]] as $action=>$payload) {
+    Cache::flush();$changed=$submit($d,$driver,$action,$payload);
+    same('succeeded',$management->run($changed->id,$driver)->state,'Overflow child-host '.$action.' confirmed');
+}
 $truncated=ObservationProjection::sections($d->fresh());
-same('1.1.1.1',$truncated['known_glue']['ns-new.'.$d->domain]??null,'Fresh persisted glue survives truncated history');
-foreach (['dns','srv','ds'] as $kind) { expect(!isset($truncated[$kind]),'Fresh glue does not unlock truncated '.$kind.' list'); }
+expect(!isset($truncated['known_glue'][$overflowHost]),'Deleted child host is not current after history overflow');
+foreach (['dns','srv','ds'] as $kind) { expect(!isset($truncated[$kind]),'Deleted glue does not unlock truncated '.$kind.' list'); }
 
 $nativeSuccessful=true;echo "Initial managed records: complete/unknown, identity, encryption, sequence, owner gates, glue and fair held work passed.\n";

@@ -243,10 +243,16 @@ Livewire::actingAs($importer)->test(ListDomains::class)->assertActionVisible('ad
 config(['domains.adoption.enabled'=>false]);
 
 // Real database dispatch/reservation is needed: Bus::fake cannot prove unique-lock admission for two staff.
-$syncQueue=config('queue');$secondSyncStaff=staffUser($full);$reservedSync=null;$syncJob=null;
+$syncQueue=config('queue');$syncCache=config('cache.default');$secondSyncStaff=staffUser($full);$reservedSync=null;$syncJob=null;
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900,'queue.connections.database.queue'=>'domains-sync-r3']);
 $syncConnection=app('queue')->connection('database');
 try {
+    $localCacheSync=Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now');
+    same(0,$syncConnection->size(),'Local cache refuses Sync now before dispatch');
+    $localCacheSync->assertNotified('Sync now needs a shared cache to prevent duplicate reads. Ask your site admin to configure Redis, database or Memcached cache, then try again.');
+    \Illuminate\Support\Facades\Schema::create('cache',static function($t):void {$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');});
+    \Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void {$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
+    config(['cache.default'=>'database']);app()->forgetInstance('cache.store');
     Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors()->assertNotified('Sync queued');
     $reservedSync=$syncConnection->pop();expect($reservedSync!==null,'Staff A has a real reserved sync job');
     $syncJob=unserialize($reservedSync->payload()['data']['command']);
@@ -263,7 +269,7 @@ try {
 } finally {
     if ($reservedSync) { $reservedSync->delete(); }
     if ($syncJob) { app(\Illuminate\Bus\UniqueLock::class)->release($syncJob); }
-    config(['queue'=>$syncQueue]);
+    config(['queue'=>$syncQueue,'cache.default'=>$syncCache]);app()->forgetInstance('cache.store');
 }
 
 // Open alerts: every recorded kind shows on the row it concerns with its cause. A row is Missing only when its own value is absent.

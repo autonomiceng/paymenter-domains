@@ -104,7 +104,7 @@ final class ObservationProjection
                 $reads[]=['op'=>$op,'read'=>$read];
             }
         }
-        foreach ($d->observation['record_reads']??[] as $read) {
+        foreach ($overflow?[]:($d->observation['record_reads']??[]) as $read) {
             if (($read['identity']??null)===ObservationRecords::identity($d) && is_string($read['at']??null) && (!$inventory || ($read['at']>=$inventory['at'] && ($read['sequence']??0)>$inventory['sequence']))) { $reads[]=['op'=>(object)['action'=>$read['action'],'id'=>PHP_INT_MAX],'read'=>$read]; }
         }
         $reads=array_values(array_filter($reads,static fn($item)=>is_string($item['read']['at']??null)&&is_array($item['read']['facts']??null)&&is_string($item['read']['operation_key']??null)));
