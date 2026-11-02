@@ -151,16 +151,11 @@ final readonly class OwnedDomains
         foreach ($entries as $entry) {
             try {
                 if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
-                if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
+                $key=ManagementProgress::statusKey($entry,$d);
                 $label=self::CHANGES[$entry->action]??null;
-                if (!$label) { continue; }
-                // Request status labels; a result counts only once the registrar's readback confirms it.
-                $resolved=ManagementEvidence::resolved($entry,$d);
-                $state=match (true) {
-                    in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
-                    $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
-                    default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
-                };
+                if ($key===null || !$label) { continue; }
+                // The same word staff read on the domain's Activity rail.
+                $state=RequestStatus::SET[$key][0];
                 $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
                     'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null,'setting'=>ManagementProgress::setting($entry->action)];
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
