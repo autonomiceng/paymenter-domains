@@ -171,7 +171,7 @@
 .domains .domains-searchbar, .domains .domains-endings, .domains .domains-head--search { max-width: 42rem; }
 .domains .domains-searchbar { display: flex; align-items: stretch; gap: .25rem; padding: .25rem; border: 1px solid hsl(var(--color-control, var(--color-neutral))); border-radius: .5rem;
     transition: border-color .15s; }
-.domains .domains-searchbar:has(> input:focus) { border-color: var(--e-accent); }
+.domains .domains-searchbar:focus-within { border-color: var(--e-accent); }
 .domains .domains-searchbar > input { flex: 1 1 auto; min-width: 0; height: 2.5rem; border: 0; background: transparent; color: var(--e-fg); font-size: 1.0625rem; font-weight: 600; padding: 0 .75rem; }
 .domains .domains-searchbar > input::placeholder { color: var(--e-muted); font-weight: 400; }
 .domains .domains-searchbar > :is(input, select):is(:focus, :focus-visible) { outline: none; box-shadow: none; }
