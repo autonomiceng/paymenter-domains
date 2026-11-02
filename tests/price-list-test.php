@@ -112,20 +112,17 @@ $all->call('downloadCsv')->assertFileDownloaded('domain-prices-1-year.csv');
 $one=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',$t->server_id)->assertCountTableRecords(1)->assertActionEnabled('rule');
 expect(!$one->instance()->getTable()->getColumn('account_name')->isVisible(),'One account needs no Account column');
 // Past 1 year only saved totals show: Off when not sold that long, Missing with its step when sold and not saved.
-DB::beginTransaction();
 $sells=SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole();
 $binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
 $three=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',3)->assertSee('3-year cost')->assertSee('Saved prices in USD for 3 years')
     ->assertTableColumnStateSet('register_price','23.40',$sells)->assertTableColumnStateSet('renew_price','Off',$sells)->assertTableColumnStateSet('transfer_cost','Off',$sells);
-same(['Off','gray'],[$three->instance()->getTable()->getColumn('renew_cost')->record($sells)->getState(),$three->instance()->getTable()->getColumn('renew_cost')->record($sells)->getColor(null)],'Off is muted, not an alarm');
-$accepted=CatalogueAcceptances::load($binding)->endings['com']['register'];
-if(in_array(2,$accepted,true)){
-    $two=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',2)->assertTableColumnStateSet('register_price','Missing',$sells);
-    $missing=$two->instance()->getTable()->getColumn('register_price')->record($sells);
-    same(['danger','To add one, open the TLD page and use Edit prices.'],[$missing->getColor(null),$missing->getTooltip()],'Every Missing says what to do next');
-    $two->assertTableColumnStateSet('register_profit',null,$sells);
-}else{expect(false,'The fixture sells 2 years, so Missing is proved');}
-DB::rollBack();
+$off=$three->instance()->getTable()->getColumn('renew_cost')->record($three->instance()->getTableRecord((string)$sells->id));same(['Off','gray'],[$off->getState(),$off->getColor(null)],'Off is muted, not an alarm');
+$accepted=CatalogueAcceptances::load($binding);$longer=$accepted->endings;$longer['com']['register']=array_values(array_unique([...$longer['com']['register'],2]));sort($longer['com']['register']);CatalogueAcceptances::save($binding,$accepted->revision,$longer);
+$two=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',2)->assertTableColumnStateSet('register_price','Missing',$sells);
+$missing=$two->instance()->getTable()->getColumn('register_price')->record($two->instance()->getTableRecord((string)$sells->id));
+same(['danger','To add one, open the TLD page and use Edit prices.'],[$missing->getColor(null),$missing->getTooltip()],'Every Missing says what to do next');
+$two->assertTableColumnStateSet('register_profit',null,$sells);
+CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,$accepted->endings);
 $escaped=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();expect(str_contains($escaped->html(),'&lt;First &amp; account&gt;'),'Account names are escaped');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Page, filters and CSV leave all revisions and prices unchanged');same(0,$reads->calls,'No provider calls');
 // Fees are current read facts, even when a price was published under an older fee.
