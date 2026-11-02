@@ -10,6 +10,15 @@ final class OfferState
 {
     public static function json(mixed $value): string { return json_encode($value, JSON_THROW_ON_ERROR); }
     public static function decode(mixed $value): array { return UpgradeEvidence::json($value); }
+    public static function equivalent(array $a, array $b): bool
+    { return self::canonical($a) === self::canonical($b); }
+    private static function canonical(mixed $v): mixed
+    {
+        if (!is_array($v)) { return $v; }
+        foreach ($v as &$item) { $item = self::canonical($item); } unset($item);
+        if (!array_is_list($v)) { ksort($v); }
+        return $v;
+    }
     public static function cost(array $v): Cost
     {
         return new Cost($v['action'], $v['term'], $v['enabled'], $v['total'], CostUnit::TermTotal,

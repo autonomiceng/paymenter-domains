@@ -32,9 +32,17 @@ final class Writer implements Catalogue
         $seedQuery = Tld::where('tld', $name);
         if (!$seller) { $seedQuery->where('server_id', $binding->serverId); }
         $seeds = $seedQuery->orderBy('id')->get()->all();
+        if (!$seeds && ($command instanceof FeedObserved || $command instanceof FactsObserved)) {
+            if ($command instanceof FeedObserved && !$command->costs) { throw new \DomainException('Empty feed cannot discover an offer.'); }
+            $seeds = [new Tld(['server_id' => $binding->serverId, 'registrar_key' => $binding->registrarKey,
+                'account_fingerprint' => $binding->fingerprint, 'tld' => $name])];
+        }
         if (!$seeds || count($seeds) > 500) { throw new \DomainException('Missing or oversized offer group.'); }
         return DB::transaction(function () use ($command, $expectedRevision, $binding, $name, $seller, $defaultsEdit, $seeds): Revision {
             $native = $defaultsEdit ? null : $this->projection->lock($seeds);
+            if ($seller && Tld::where('tld', $name)->orderBy('id')->pluck('id')->all() !== array_map(static fn ($s) => $s->id, $seeds)) {
+                throw new \DomainException('Seller offer group changed; retry.');
+            }
             $ids = array_values(array_unique(array_map(static fn ($s) => (int) $s->server_id, $seeds))); sort($ids, SORT_NUMERIC);
             $servers = $accounts = [];
             foreach ($ids as $id) { $servers[$id] = Server::whereKey($id)->lockForUpdate()->firstOrFail(); }
@@ -42,14 +50,19 @@ final class Writer implements Catalogue
             if (!isset($accounts[$binding->serverId])) { throw new \DomainException('Seller offer missing.'); }
             $binding->requireMatch(CatalogueAcceptances::binding($accounts[$binding->serverId]));
             $policy = DB::table('domains_sales_policies')->where('tld', $name)->lockForUpdate()->first();
-            $offers = Tld::whereIn('id', array_map(static fn ($s) => $s->id, $seeds))->select('*')->selectRaw('CAST(catalogue_retained_annual_retail AS CHAR) AS catalogue_retained_annual_retail')->orderBy('id')->lockForUpdate()->get();
+            if (!$seeds[0]->exists && !Tld::where('server_id', $binding->serverId)->where('tld', $name)->exists()) {
+                DB::table('domains_tlds')->insert(['server_id' => $binding->serverId, 'registrar_key' => $binding->registrarKey,
+                    'account_fingerprint' => $binding->fingerprint, 'tld' => $name, 'catalogue_created' => true,
+                    'catalogue_converted' => true, 'catalogue_intent' => OfferState::json(new Intent)]);
+            }
+            $offers = Tld::where('tld', $name)->whereIn('server_id', $ids)->select('*')->selectRaw('CAST(catalogue_retained_annual_retail AS CHAR) AS catalogue_retained_annual_retail')->orderBy('id')->lockForUpdate()->get();
             $rows = UpgradeComparison::query('domains_prices')->whereIn('server_id', $ids)->where('tld', $name)->orderBy('id')->lockForUpdate()->get();
             $target = $offers->firstWhere('server_id', $binding->serverId) ?? throw new \DomainException('Offer disappeared.');
             $defaults = OfferState::decode($accounts[$binding->serverId]->catalogue_defaults);
             $revision = OfferState::revision($target, $defaults, $policy); $revision->requireMatch($expectedRevision);
             foreach ($offers as $offer) {
                 $account = $accounts[$offer->server_id]; $server = $servers[$offer->server_id];
-                if ($server->extension !== 'Domains' || !$offer->catalogue_converted || !$server->enabled
+                if ($server->extension !== 'Domains' || !$offer->catalogue_converted
                     || $offer->account_fingerprint !== $account->account_fingerprint || $offer->registrar_key !== $account->registrar_key) {
                     throw new \DomainException('Offer binding or conversion changed.');
                 }
@@ -90,7 +103,7 @@ final class Writer implements Catalogue
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 if (!$command instanceof Edit || $command->kind !== 'retail') { $this->publishPrices($offer, $d, $now); }
                 $prices = UpgradeComparison::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
-                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, ($this->ready)($b), true);
+                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b), true);
                 $this->projection->write($offer, $snapshot, $now, $native);
                 $offer->catalogue_published_revision = OfferState::json($snapshot->revision);
                 // Raw update: dormant staging does not invoke active legacy model observers.
@@ -123,7 +136,7 @@ final class Writer implements Catalogue
             if ($new->observedAt > $now) { throw new \DomainException('Future facts observation.'); }
             if ($old && $old->observedAt > $new->observedAt) { return false; }
             if ($old && $old->observedAt == $new->observedAt) {
-                if (OfferState::encodeFacts($old) !== OfferState::encodeFacts($new)) { throw new \DomainException('Conflicting facts observation.'); }
+                if (!OfferState::equivalent(OfferState::decode(OfferState::encodeFacts($old)), OfferState::decode(OfferState::encodeFacts($new)))) { throw new \DomainException('Conflicting facts observation.'); }
                 return false;
             }
             $target->catalogue_facts = OfferState::encodeFacts($new); return true;

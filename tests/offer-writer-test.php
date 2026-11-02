@@ -49,11 +49,19 @@ same('23.40', $read($b, Context::Public, 'register', 3)->retail, 'Existing exact
 same($products, Product::orderBy('id')->pluck('id')->all(), 'Native product IDs survive initial projection');
 same($plans, Plan::orderBy('id')->pluck('id')->all(), 'Native plan IDs survive initial projection');
 // Same prices on a new revision must cause no native row updates, including timestamps.
-$nativeUpdates = [];
-DB::listen(static function ($q) use (&$nativeUpdates): void {
+$nativeUpdates = []; $lockQueries = []; $captureLocks = false;
+DB::listen(static function ($q) use (&$nativeUpdates, &$lockQueries, &$captureLocks): void {
+    if ($captureLocks && DB::transactionLevel() > 0 && str_starts_with($q->sql, 'select')) { $lockQueries[] = $q->sql; }
     if (preg_match('/^update ["`](products|plans|prices)["`]/i', $q->sql)) { $nativeUpdates[] = $q->sql; }
 });
-$apply(Edit::republish($b, 'com'));
+$expected = $revision($b); $captureLocks = true;
+$writer->apply(Edit::republish($b, 'com'), $expected); $captureLocks = false;
+$positions = [];
+foreach (['categories', 'products', 'plans', 'prices', 'servers', 'domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices'] as $table) {
+    foreach ($lockQueries as $i => $sql) { if (str_contains($sql, 'from "'.$table.'"')) { $positions[] = $i; break; } }
+}
+same(9, count($positions), 'Every native/domain lock group is exercised');
+$sorted = $positions; sort($sorted); same($sorted, $positions, 'Native locks precede server, account, selection, offer and price locks');
 same([], $nativeUpdates, 'Unchanged native rows are not updated during republication');
 $stale = $revision($b); $apply(Edit::override($b, 'com', new Intent(sell: false)));
 commerceReject(static fn () => $writer->apply(Edit::override($b, 'com', new Intent(sell: true)), $stale));
@@ -107,9 +115,9 @@ same($oldFact, DB::table('domains_tlds')->where('id', $enom->id)->value('catalog
 same('26.01', $read($b, Context::Public, 'register', 3)->retail, 'Indivisible exact total uses rational annual rounding');
 same('7.80', $read($b)->retail, 'Partial feed retains omitted annual cost');
 $stable = $revision($b);
-same($stable, $writer->apply(new FeedObserved($b, 'com', []), $stable), 'Empty feed is a true no-op');
-same($stable, $writer->apply(new FactsObserved($b, 'com', $facts($now->modify('-1 hour'))), $stable), 'Older facts cannot overwrite newer evidence');
-same($stable, $writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '1.0000', $now)]), $stable), 'Older cost cannot replace current term');
+expect($stable->matches($writer->apply(new FeedObserved($b, 'com', []), $stable)), 'Empty feed is a true no-op');
+expect($stable->matches($writer->apply(new FactsObserved($b, 'com', $facts($now->modify('-1 hour'))), $stable)), 'Older facts cannot overwrite newer evidence');
+expect($stable->matches($writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '1.0000', $now)]), $stable)), 'Older cost cannot replace current term');
 commerceReject(static fn () => $writer->apply(new FeedObserved($b, 'com', [$cost('register', 3, '1.0000', $clock->time)]), $stable));
 $apply(new FeedObserved($b, 'com', [$cost('renew', 1, null, $clock->time)]));
 same(false, $read($b)->available, 'Positive disabled renewal observation withdraws new acquisitions');
@@ -143,7 +151,9 @@ $apply(new FactsObserved($n, 'com', $facts($clock->time, [1])));
 $apply(Edit::override($n, 'com', new Intent(sell: true, transfers: true)));
 $beforeSwitch = $revision($b);
 $otherCart = commerceCart($owner); commerceAdd($otherCart, $registration, 'example.com');
+Server::whereKey($b->serverId)->update(['enabled' => false]);
 $apply(Edit::seller($n, 'com', ['register', 'transfer']));
+same(true, $read($b, Context::Holder, 'renew')->available, 'Disabled deselected account still serves retained holder retail');
 same(false, $read($b)->available, 'Old seller becomes unavailable in the same commit');
 same(true, $read($n)->available, 'New selected account has its own verified retail');
 same(0, $otherCart->items()->count(), 'Seller change withdraws old-account carts after commit');
