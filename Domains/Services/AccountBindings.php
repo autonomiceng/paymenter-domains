@@ -263,6 +263,21 @@ final class AccountBindings
         return $this->registry->registrationPreflightReader($expected,$this->configuration($account,true));
     }
 
+    /** Explicit read-only composition. Acceptance belongs to deployment evidence, never to a config flag. */
+    public function nameSiloRuntimeReaderFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
+        #[\SensitiveParameter] ?\Closure $accepted = null): \Closure
+    {
+        return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ReadRuntime::factory($expected,$clock,
+            function(string $revision)use($expected):array {
+                OperationClaims::outside();$this->server($expected->serverId);
+                $account=Account::where('server_id',$expected->serverId)->sole();
+                $expected->requireMatch($this->binding($account));
+                $credentials=$this->configuration($account,true);
+                $this->requireCredentialRevision($expected,$revision);
+                return $credentials;
+            },fn():string=>$this->credentialRevision($expected),$accepted);
+    }
+
     /** Pure opt-in factory. Plaintext is loaded only inside the private protocol exchange. */
     public function enomRuntimeFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
         WriteFeatures $features, WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted,

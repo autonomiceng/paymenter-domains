@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 final class RegistrarRegistry
 {
     private array $entries = [];
+    private array $boundReaders = [];
 
     public function register(string $key, array $credentialKeys, AccountVerifier $verifier, \Closure $readerFactory, ?\Closure $balanceFactory = null, bool $accountReadsOnly = false,
         ?\Closure $registrationPreflightFactory = null, ?\Closure $adoptionReaderFactory = null, ?CredentialAuthenticator $authenticator = null): void
@@ -24,6 +25,14 @@ final class RegistrarRegistry
             $keys[$name] = true;
         }
         $this->entries[$key] = [array_keys($keys), $verifier, $readerFactory, $balanceFactory, $accountReadsOnly, $registrationPreflightFactory, $adoptionReaderFactory, $authenticator];
+    }
+
+    /** Deployment-owned read override for one exact account; refusal never falls back to another transport. */
+    public function registerBoundReader(AccountBinding $binding, \Closure $factory): void
+    {
+        $this->entry($binding->registrarKey);
+        if (isset($this->boundReaders[$binding->fingerprint])) { throw new \DomainException('Runtime reader already registered.'); }
+        $this->boundReaders[$binding->fingerprint] = $factory;
     }
 
     public function localEnrollment(string $key): bool { return $this->entry($key)[7] !== null; }
@@ -75,7 +84,8 @@ final class RegistrarRegistry
     public function reader(AccountBinding $binding, #[\SensitiveParameter] array $credentials, bool $balanceOnly = false): RegistrarDriver
     {
         try { $entry = $this->entry($binding->registrarKey);
-            $driver = ($balanceOnly ? ($entry[3] ?? $entry[2]) : $entry[2])($binding, $this->credentials($binding->registrarKey, $credentials)); }
+            $factory = $this->boundReaders[$binding->fingerprint] ?? ($balanceOnly ? ($entry[3] ?? $entry[2]) : $entry[2]);
+            $driver = $factory($binding, $this->credentials($binding->registrarKey, $credentials)); }
         catch (IdentityRefused $error) { throw new IdentityRefused($error->reason); }
         catch (\Throwable) { throw new \RuntimeException('Registrar reader could not be created.'); }
         if (!$driver instanceof RegistrarDriver || $driver instanceof \Paymenter\Extensions\Servers\Domains\Contracts\AdmittedRegistrarDriver) {
