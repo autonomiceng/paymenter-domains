@@ -159,7 +159,8 @@ final class DomainFacts
         $inputs=StaffDomainInputs::for([$d])[$d->id]; $status=self::status($d,$inputs);
         $notice=self::notice($d);
         $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:(in_array($status['alert'],['operation_review','held_obligation'],true)&&($notice===null||($notice['resume']??false))?$status['request']:null);
-        $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$a['request']===$named&&$named!==null));
+        // One link at a time: another held request stays in the rail, and the head names it once this one clears.
+        $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$named!==null&&($a['request']===$named||$named===$status['request'])));
         foreach (array_unique(array_column($rows,'code')) as $code) {
             // Late payment already has a status reason and says so in the head.
             if ($code==='acquisition_late_money') { continue; }

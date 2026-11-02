@@ -243,6 +243,8 @@ $stuck=$request('stuck-ui','held','management_unconfirmed'); $closed=$request('c
 ObligationAlerts::record($active->fresh(),'operation_review',time(),(int)$stuck->id);
 expect(str_contains($headOf(),'Check request #'.$stuck->id.'<')&&!str_contains($headOf(),'#'.$closed->id),'The head names the request that needs staff, not the newest');
 expect(!str_contains((string)$sub($active,'Registrar'),'Check'),'The head names it, so the row does not');
+$second=$request('second-ui','held','management_unconfirmed');ObligationAlerts::record($active->fresh(),'operation_review',time(),(int)$second->id);
+expect(str_contains($headOf(),'Check request #'.$stuck->id.'<')&&!str_contains((string)$sub($active,'Registrar'),'Check'),'With two held requests the head names one and the row names neither');
 same(1,substr_count($headOf(777),'Check request #777'),'The request holding changes comes first');
 ObligationAlerts::record($active->fresh(),'below_cost',time());
 expect(str_ends_with((string)$sub($active,'Registrar'),'Registrar request needs a check. Check request #'.$stuck->id.'.'),'A row the head leaves says the number: '.$sub($active,'Registrar'));

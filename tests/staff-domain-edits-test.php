@@ -107,7 +107,7 @@ $registrarDns();
 expect(!isset(DomainFacts::for($d->fresh())['DNS records']),'No DNS row while DNS tools are off');
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 expect(!isset(DomainEditActions::for($d->fresh())['rows']['DNS records']),'Unread records offer no replacement form');
-same(null,DomainFacts::for($d->fresh())['DNS records']['value'],'Unread records are Missing');
+same('Not read yet',DomainFacts::for($d->fresh())['DNS records']['value'],'Unread records are normal, not Missing');
 ObservationSchema::install();
 same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'Complete empty records');
 same('0 records',DomainFacts::for($d->fresh())['DNS records']['value'],'Registration card counts DNS records');
