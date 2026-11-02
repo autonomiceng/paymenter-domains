@@ -177,6 +177,9 @@ foreach ([172799=>true,172800=>false] as $age=>$allowed) {
     }
 }
 Livewire\Livewire::withQueryParams([]);$clock->instant=$now;
+// Products\Checkout registered the runtime above; wire its invoice hooks to this partial fixture's adapter and clock.
+$binder=new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($adapter,$native,$prices,$clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$binder);$binder->boot();
 // The real stock theme has no order-contact form: its no-argument button needs an account repair path.
 // Native rendering, notifications and invoice rollback cannot be proved with a service-only unit fixture.
 PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
@@ -198,6 +201,7 @@ foreach(['city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'United State
 Illuminate\Support\Once::flush();$stock=Livewire\Livewire::actingAs($stockUser)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits',false);
 Illuminate\Support\Once::flush();$stock->call('checkout');
 same([$before[0]+1,$before[1]+1,$before[2]+1],[Order::count(),Invoice::count(),Service::count()],'Stock checkout succeeds after account repair without a theme change');
+same('+1.2065550100',\Paymenter\Extensions\Servers\Domains\Models\Operation::latest('id')->firstOrFail()->payload['contacts']['registrant']['phone'],'Stock account repair freezes the corrected contact on the order');
 // One saved property must not suppress ordinary fixtures' generated whole order contact.
 $partialUser=commerceUser();$cart=commerceCart($partialUser);
 $partialUser->properties()->create(['key'=>'phone','value'=>'+1.2025550100']);
