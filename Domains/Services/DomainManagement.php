@@ -236,12 +236,17 @@ final class DomainManagement
                 catch(\Throwable $error){throw new StaffReviewRefused('The registrar did not return a usable status. Try Check status again in 15 minutes. Automatic checks continue.');}
             }),EntryDeadline::INTERACTIVE_SECONDS);
     }
+    /** Shared state/send eligibility for a staff offer and the locked reader; this grants no read or retry. */
+    public static function canReconcile(Operation $op, \DateTimeImmutable $now): bool
+    {
+        return !($op->state==='running'&&$op->lease_expires_at>$now)
+            &&in_array($op->state,['uncertain','running'],true)&&($op->attempt['seal']??null)==='sealed';
+    }
     private function reconcileEntered(int $id, ManagementProtocol $driver, \DateTimeImmutable $deadline, bool $reviewed=false): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$reviewed): ?array {
-            if ($op->state === 'running' && $op->lease_expires_at > $this->clock->now()) { return null; }
-            if (!in_array($op->state, ['uncertain', 'running'], true) || ($op->attempt['seal'] ?? null) !== 'sealed') { return null; }
+            if (!self::canReconcile($op,$this->clock->now())) { return null; }
             $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
             try{$this->bindings->requireReadableLocked($l['server'],$l['account']);}
             catch(\Throwable $error){if($reviewed){throw new StaffReviewRefused('The registrar account cannot be read. Check its connection settings and try Check status again.');}throw $error;}
