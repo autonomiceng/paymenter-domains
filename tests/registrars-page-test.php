@@ -392,6 +392,14 @@ DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires
 $expiredLate=$checklist()['Late renewal'];
 same('warning',$expiredLate['tone'],'An expired managed domain needs Late renewal attention');
 expect(str_contains($expiredLate['cause'],'1 managed domain needs attention'),'Late renewal counts the expired managed domain');
+DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$clock->now()->format('Y-m-d')]);
+foreach(['2026-10-18T12:00:00Z','2026-10-18T00:30:00Z'] as $expiryDay){
+    app()->instance(Clock::class,new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable($expiryDay)));
+    $todayLate=$checklist()['Late renewal'];
+    same('warning',$todayLate['tone'],'Expiry today needs Late renewal attention at '.$expiryDay);
+    expect(str_contains($todayLate['cause'],'1 managed domain needs attention'),'Late renewal counts expiry today at '.$expiryDay);
+}
+app()->instance(Clock::class,$clock);
 DB::table('domains_domains')->where('id',$domain->id)->update(['provider_expires_at'=>$savedExpiry]);
 require __DIR__.'/Support/reminder-upgrade.php';
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;

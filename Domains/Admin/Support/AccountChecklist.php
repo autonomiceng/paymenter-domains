@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldReso
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
     RenewalBillingSettings,RuntimePorts,WatchWork};
 /** Rows for a registrar account's Setup checklist, Renewal invoices and reminders, and System checks.
  * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value, so set it only when there is a problem.
@@ -112,8 +112,11 @@ final class AccountChecklist
     private static function paused(Account $a,array $row): array
     {
         if($row['value']!=='Off'||$row['label']==='Transfers'){return $row;}
-        $count=Domain::where('server_id',$a->server_id)->where('billing_managed',true)
-            ->when($row['label']==='Late renewal',fn($query)=>$query->whereDate('provider_expires_at','<',app(Clock::class)->now()->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('Y-m-d')))->count();
+        $domains=Domain::where('server_id',$a->server_id)->where('billing_managed',true);
+        if($row['label']==='Late renewal'){
+            $now=app(Clock::class)->now();
+            $count=$domains->select('provider_expires_at')->cursor()->filter(fn(Domain $domain)=>DomainBilling::expired($domain,$now))->count();
+        }else{$count=$domains->count();}
         if($count>0){$row['tone']='warning';$row['cause'].=' '.$count.' managed domain'.($count===1?' needs':'s need').' attention while this is off.';}
         return $row;
     }
