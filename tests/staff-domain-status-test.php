@@ -38,7 +38,7 @@ $d=$row('active','register','succeeded',null,730,['operation_review','renewal_un
 $cases['walk: active with a saved correction review']=[$d,'active','Active','Registrar request needs a check. Check the request.'];
 foreach (['walk: paid registration held for staff (1)','walk: paid registration held for staff (2)'] as $name) {
     $d=$row('registration_pending','register','held','staff_review_required',120,['operation_review']);
-    $cases[$name]=[$d,'pending_registration','On hold','Put on hold by staff. '.$req($d)];
+    $cases[$name]=[$d,'pending_registration','Pending registration','Put on hold by staff. '.$req($d)];
 }
 $d=$row('registration_pending','register','cancelled');
 $cases['walk: old cancelled request on a pending domain']=[$d,'pending_registration','Pending registration','Request cancelled, order still open. Cancel the order to release the name. '.$req($d)];
@@ -52,7 +52,7 @@ $cases['nameservers hold']=[$d,'action_required','Action required','Finish setup
 $d=$row('transfer_pending','transfer','held','transfer_needs_action');
 $cases['held transfer']=[$d,'under_review','On hold','Old registrar needs approval. '.$req($d)];
 $d=$row('registration_pending','register','uncertain');
-$cases['unconfirmed registration']=[$d,'pending_registration','Under review','Registrar has not confirmed the result. '.$req($d)];
+$cases['unconfirmed registration']=[$d,'pending_registration','Pending registration','Registrar has not confirmed the result. '.$req($d)];
 $cases['queued registration']=[$row('registration_pending','register','queued'),'pending_registration','Pending registration','Registration in progress. Nothing to do yet.'];
 $cases['running transfer']=[$row('transfer_pending','transfer','running'),'pending_transfer','Pending transfer','Transfer in progress. Nothing to do yet.'];
 $cases['queued with an alert']=[$row('registration_pending','register','queued',null,120,['unknown_cost']),'pending_registration','Pending registration',"Cost missing. Check the registrar account's price."];

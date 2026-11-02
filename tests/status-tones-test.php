@@ -20,10 +20,10 @@ same(['label'=>'Under review','tone'=>'info','reason'=>'Transfer on hold'],Statu
 same(['label'=>'Under review','tone'=>'info','reason'=>DomainStatus::ON_IT],StatusPill::of('future_state'),'A customer never reads Status missing, which has no step of their own');
 same(['label'=>'Action required','tone'=>'warn','reason'=>'Auth code needed'],StatusPill::of('awaiting_code'),'Amber stays on what a customer must do');
 same(['Under review','warning'],DomainStatus::SET['under_review'],'Staff keep the same words in amber');
-foreach (['registration_held'=>'On hold','registration_unconfirmed'=>'Under review'] as $state=>$label) {
-    same(['label'=>$label,'tone'=>'info','reason'=>DomainStatus::ON_IT],StatusPill::of($state),'A customer reads a stopped registration in blue, with no step of their own');
-    same([$label,'warning'],[DomainStatus::for($state)['label'],DomainStatus::for($state)['tone']],'Staff read the same words in amber');
-    same('pending_registration',DomainStatus::key($state),'A stopped registration stays in the Pending registration filter');
+foreach (['registration_held','registration_unconfirmed'] as $state) {
+    same(['label'=>'Pending registration','tone'=>'info','reason'=>DomainStatus::ON_IT],StatusPill::of($state),'A customer reads a stopped registration in blue, with no step of their own');
+    same(['Pending registration','warning'],[DomainStatus::for($state)['label'],DomainStatus::for($state)['tone']],'Staff read the same word in amber');
+    same('pending_registration',DomainStatus::key($state),'A stopped registration stays in the Pending registration filter, the word its rows show');
 }
 same(['success'=>'ok','gray'=>'off','info'=>'prog','warning'=>'warn','danger'=>'err'],StatusMark::TONES,'One mapping from status colours to staff marks');
 same(['data-beco-tone'=>null,'data-beco-record'=>'domain-1'],StatusMark::attributes('pink','domain-1'),'An unknown colour gets no mark, so it keeps stock styling');
