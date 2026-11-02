@@ -33,7 +33,7 @@ expect(strpos($detail->html(),'Put on hold')<strpos($detail->html(),'Hold releas
 $read=new StaffOperationReview($staff->id,$domain->id,$op->id,'recheck',$ticket($op->fresh(),'recheck'),'Read current evidence',$clock);
 $read->read(static function()use($page){
     $detail=$page()->assertSee('Hold released')->assertSee('Status check requested')->assertSee('Read current evidence');
-    expect(strpos($detail->html(),'Hold released')<strpos($detail->html(),'Status check requested'),'Release precedes the status check');
+    expect(strpos($detail->html(),'Status check requested')<strpos($detail->html(),'Hold released'),'Newest first: the status check comes before the release');
 });
 $rows=StaffReviewHistory::rows($op->fresh());
 same(['Put on hold','Hold released','Cannot check registrar'],array_column($rows,'event'),'A check shows as one row once it finishes');

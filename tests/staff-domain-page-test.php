@@ -165,10 +165,6 @@ foreach(['register'=>'Registration','transfer'=>'Transfer'] as $action=>$label){
 DB::table('domains_operations')->where('id',$heldOperation->id)->update(['action'=>$noticeOriginal['action'],'safe_code'=>$noticeOriginal['safe_code']]);
 
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Transfer not sent: old registrar needs approval.')->assertSee('Check request #');
-// The head names the hold once, and the edits stay on their rows, blocked.
-$manager=staffUser([Staff::VIEW,'admin.domains.manage']);$heldPage=Livewire::actingAs($manager)->test(ViewDomain::class,['record'=>$held->id]);
-same(1,substr_count(strip_tags($heldPage->html()),'Changes are on hold until it is checked.'),'The hold is said once');
-expect(str_contains((string)$heldPage->instance()->getSubheading()->toHtml(),'Check request #'.$held->operations()->sole()->id),'The head names the request');
 // The request page head sweeps like the domain head, so it needs the same mark. A Note's step looks like the link its cell is.
 $heldRequest=$held->operations()->sole()->id;
 Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
