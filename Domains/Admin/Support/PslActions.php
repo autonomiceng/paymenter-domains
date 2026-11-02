@@ -37,7 +37,11 @@ final class PslActions
             $value='Updated '.self::date((int)$s->validated_at);
             $subs[]='Out of date after '.self::date($list->expiresAt());
         }
-        if ((int)$status->consecutive_failures>0&&$status->last_attempt_at!==null&&$review===null) { $tone??='warning';$subs[]='Last download failed '.self::date((int)$status->last_attempt_at); }
+        if ((int)$status->consecutive_failures>0&&$status->last_attempt_at!==null&&$review===null) {
+            // The saved result says why and, where staff can fix it, how. The staff alert links here instead of repeating it.
+            $tone??='warning';$subs[]='Last download failed '.self::date((int)$status->last_attempt_at);
+            if (!in_array($status->last_result,[null,'checking'],true)) { $subs[]=self::result($status->last_result); }
+        }
         if ($review===null&&($at=self::limitedUntil($list))!==null) { $subs[]='Next download allowed '.self::date($at); }
         if($tone!==null){$subs[]=$review!==null?'Automatic update stopped because many rules disappeared. Review the removals before replacing the saved list.':'Updates retry automatically each week. Check the scheduler and site logs if downloads keep failing.';}
         return ['label'=>'Public suffix list','value'=>$value,'tone'=>$tone??'success','cause'=>$subs?implode(' · ',$subs):null,'action'=>null,'help'=>self::HELP,

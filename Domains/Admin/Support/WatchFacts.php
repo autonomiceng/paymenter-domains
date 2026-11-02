@@ -36,7 +36,9 @@ final class WatchFacts
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
         if($active){$checks['Next check']=self::nextCheck($w);}
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
-        $checks['Monitoring alerts']=self::fact($on?'On':'Off',$on?null:'Turned off by customer');
+        // A failed customer alert says why and what to do; the staff alert links here.
+        $failed=NoticeHealth::open('watch',(int)$w->id,$w->canonical_name);
+        $checks['Monitoring alerts']=self::fact($on?'On':'Off',implode(' · ',array_filter([$on?null:'Turned off by customer',$failed['text']??null]))?:null,$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
         return ['Domain'=>$shown($domain),'Checks'=>$shown($checks)];

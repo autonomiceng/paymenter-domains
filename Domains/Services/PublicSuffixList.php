@@ -49,7 +49,14 @@ final class PublicSuffixList
         // The list row, with its cause and next step, is under System checks on every registrar account,
         // or on the Public suffix list page before any account exists. Only list viewers see that row.
         $registrar=\App\Models\Server::where('extension','Domains')->orderBy('id')->value('id');
-        \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Public suffix list update failed','The saved list is still in use.',
+        $state=\Paymenter\Extensions\Servers\Domains\Admin\Support\PslFacts::state($this);
+        // What is true of the list now, in the row's words; the row shows the download result and next step.
+        $line=match(true){str_starts_with($result,'rules_lost_')=>'A new list removes many rules and needs review.',
+            $state==='Not downloaded yet'=>'No list has been downloaded yet.',
+            in_array($state,['Saved list damaged','Saved list needs review'],true)=>"The saved list can't be read.",
+            $state==='New discovery paused'=>'The saved list is out of date.',
+            default=>'The saved list is still in use.'};
+        \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Public suffix list update failed',$line,
             $registrar?'filament.admin.pages.registrar-account':'filament.admin.pages.public-suffix-list',
             \Paymenter\Extensions\Servers\Domains\Admin\Support\PslActions::VIEW,'psl:'.(string)$this->status()->last_attempt_at,$registrar?['account'=>$registrar]:[]);
     }
