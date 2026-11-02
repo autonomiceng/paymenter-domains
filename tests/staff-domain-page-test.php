@@ -10,8 +10,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, Pendin
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, Staff};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts, ObservationRecords, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
 config(['settings.company_name'=>'Example Hosting']);
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
@@ -25,7 +26,19 @@ $sub=static fn(Domain $d,string $label)=>DomainFacts::for($d->fresh())[$label]['
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
 same(['Expires','Registrar','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::REGISTRATION)),'Registration rows in order');
-expect(count(DomainFacts::REGISTRATION)<=10&&count(DomainFacts::BILLING)<=9,'At most ten Registration and nine Billing facts');
+expect(count(DomainFacts::REGISTRATION)<=11&&count(DomainFacts::BILLING)<=9,'At most eleven Registration and nine Billing facts, including optional glue');
+same(false,isset($f['Glue records']),'No staff glue row without records');
+$beforeGlue=$active->fresh()->observation;$glueHost='ns1.'.$active->domain;
+ObservationRecords::save($active->fresh(),['glue'=>['state'=>'partial','records'=>[$glueHost=>'8.8.8.8']]],new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+same([[$glueHost.' 8.8.8.8'],'As of 2026-10-20T15:05:00+00:00'],[$value($active,'Glue records'),$sub($active,'Glue records')],'Staff glue includes host, address and read time');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Glue records')->assertSee($glueHost)->assertSee('8.8.8.8')->assertSee('As of 2026-10-20T15:05:00+00:00');
+// One record projection serves DNS, glue rows, timestamps and drift; lock/privacy retain their own reads.
+$glueDnsSetting=App\Models\Server::findOrFail($active->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
+DB::flushQueryLog();DB::enableQueryLog();DomainFacts::for($active->fresh());$recordQueries=DB::getQueryLog();DB::disableQueryLog();
+$historyQueries=array_filter($recordQueries,fn($row)=>str_contains($row['query'],'domains_operations')&&str_contains($row['query'],'limit 101'));
+expect(count($historyQueries)<=3,'Staff record facts reuse one bounded history projection');
+$glueDnsSetting->delete();
+$active->fresh()->update(['observation'=>$beforeGlue]);
 same([null,'Ask the customer to add them on the domain page'],[$f['Contacts']['value'],$f['Contacts']['sub']],'Unknown contacts say what to do next');
 same(today()->addDays(120)->format('M j, Y'),$f['Expires']['value'],'Expires date');
 same(['Synthetic registrar','Enom · Test · orders paused'],[$f['Registrar']['value'],$f['Registrar']['sub']],'New accounts start with orders paused');
@@ -33,6 +46,37 @@ DB::table('domains_accounts')->where('server_id',$active->server_id)->update(['p
 same(['Synthetic registrar','Enom · Test'],[$f['Registrar']['value'],$f['Registrar']['sub']],'Registrar account name and registrar sub-line');
 same(['Yes','On','Off','Off'],[$f['In registrar account']['value'],$f['Transfer lock']['value'],$f['WHOIS privacy']['value'],$f['Registrar auto-renew']['value']],'Synced registrar facts');
 same([null,'Fills in by itself within a day'],[$f['Last sync']['value'],$f['Last sync']['sub']],'Never synced is Missing with its cause');
+// Core sync cannot populate on-demand DNS inventory; staff needs the record-read action in either state.
+$dnsSetting=App\Models\Server::findOrFail($active->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
+$beforeDns=$active->fresh()->observation;$dnsMissing=[[$value($active,'DNS records'),$sub($active,'DNS records')]];
+$coreObservation=$beforeDns;unset($coreObservation['followup']);$active->fresh()->update(['observation'=>$coreObservation]);
+$binding=CatalogueAcceptances::binding(Account::where('server_id',$active->server_id)->firstOrFail());
+ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active->domain,owned:true,
+    expiry:new DateEvidence($active->provider_expires_at->format('Y-m-d'),ExpiryPrecision::Date,'synthetic_read'),
+    providerAutoRenew:false,privacy:false,locked:true,active:true),TransferStatus::Unknown,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+$dnsMissing[]=[$value($active,'DNS records'),$sub($active,'DNS records')];
+same([[null,'Use Sync now to read DNS records.'],[null,'Use Sync now to read DNS records.']],$dnsMissing,'Unread on-demand DNS names Sync now before and after a good core sync');
+same([null,'Registrar did not return it. Check the domain at the registrar.'],[$value($active,'Nameservers'),$sub($active,'Nameservers')],'Unread core facts keep their own recovery guidance');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Use Sync now to read DNS records.');
+// Persistent record limits name the condition and a next step that changes it.
+foreach ([
+    'child_host_limit'=>"Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",
+    'history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.',
+] as $reason=>$next) {
+    ObservationRecords::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+    same([null,$next],[$value($active,'DNS records'),$sub($active,'DNS records')],'Missing DNS gives effective recovery for '.$reason);
+    same($next,DomainFacts::recordHold($active->fresh()),'Domain notice gives effective recovery for '.$reason);
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee($next);
+    $active->fresh()->update(['observation'=>$coreObservation]);
+}
+// A later core save without nameservers retains the last current snapshot.
+$snapshotAt=new DateTimeImmutable('2026-10-20T15:06:00+00:00');
+$snapshotNs=['ns-latest.example.net','ns-second.example.net'];
+ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active->domain,owned:true,providerAutoRenew:false,
+    nameservers:\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed($snapshotNs,'enom_getdns',$snapshotAt)),TransferStatus::Unknown,$snapshotAt);
+ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active->domain,owned:true,providerAutoRenew:false),TransferStatus::Unknown,$snapshotAt->modify('+1 minute'));
+same($snapshotNs,$value($active,'Nameservers'),'Later save preserves the latest snapshot nameservers');
+$active->fresh()->update(['observation'=>$beforeDns,'last_synced_at'=>null]);$dnsSetting->delete();
 // Registrar facts and ownership holds belong to the current assignment only.
 $factObservation=$active->fresh()->observation;
 $stable=DomainFacts::for($active->fresh());
@@ -146,7 +190,8 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped after a failed check.')->assertSee('Resume sync')->assertSee('Sync failed');
 DB::table('domains_observation_work')->where('id',$work)->delete();
-foreach(['history_limit'=>'Sync stopped: DNS record history is full.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+    'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$title){
     ObservationRecords::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     same($title,DomainFacts::notice($active->fresh())['title'],'Record hold notice '.$reason);
@@ -208,6 +253,36 @@ config(['domains.adoption.enabled'=>true]);
 foreach(array_slice($full,1) as $missing){Livewire::actingAs(staffUser(array_values(array_diff($full,[$missing]))))->test(ListDomains::class)->assertActionHidden('adopt');}
 Livewire::actingAs($importer)->test(ListDomains::class)->assertActionVisible('adopt')->assertActionHasLabel('adopt','Import domain');
 config(['domains.adoption.enabled'=>false]);
+
+// Real database dispatch/reservation is needed: Bus::fake cannot prove unique-lock admission for two staff.
+$syncQueue=config('queue');$syncCache=config('cache.default');$secondSyncStaff=staffUser($full);$reservedSync=null;$syncJob=null;
+config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>900,'queue.connections.database.queue'=>'domains-sync-r3']);
+$syncConnection=app('queue')->connection('database');
+try {
+    $localCacheSync=Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now');
+    same(0,$syncConnection->size(),'Local cache refuses Sync now before dispatch');
+    $localCacheSync->assertNotified('Sync now needs a shared cache to prevent duplicate reads. Ask your site admin to configure Redis, database or Memcached cache, then try again.');
+    \Illuminate\Support\Facades\Schema::create('cache',static function($t):void {$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');});
+    \Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void {$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
+    config(['cache.default'=>'database']);app()->forgetInstance('cache.store');
+    Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors()->assertNotified('Sync queued');
+    $reservedSync=$syncConnection->pop();expect($reservedSync!==null,'Staff A has a real reserved sync job');
+    $syncJob=unserialize($reservedSync->payload()['data']['command']);
+    same([$importer->id,$active->id,$active->authority_generation,$active->account_fingerprint],[$syncJob->actor,$syncJob->domain,$syncJob->generation,$syncJob->fingerprint],'Queued sync binds actor and current holding');
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors();
+    $syncNotices=new \Filament\Notifications\Livewire\Notifications;$syncNotices->mount();
+    $syncTitles=$syncNotices->notifications->map(fn($notice)=>$notice->getTitle())->values()->all();
+    expect(!in_array('Sync queued',$syncTitles,true),'Second staff is not promised a silently dropped sync');
+    same(["A sync was already requested. If nothing changes in 15 minutes, press Sync now again. If it still doesn't run, check the queue worker."],$syncTitles,'Second staff gets retry and worker guidance without a queued promise');
+    same(1,$syncConnection->size(),'Two staff clicks retain one holding read, including its reservation');
+    config(['queue.default'=>'sync','queue.connections.sync.driver'=>'sync']);
+    Livewire::actingAs($importer)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertNotified(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::WORKER);
+    same(1,$syncConnection->size(),'Sync queue refusal never falls back to inline reads');
+} finally {
+    if ($reservedSync) { $reservedSync->delete(); }
+    if ($syncJob) { app(\Illuminate\Bus\UniqueLock::class)->release($syncJob); }
+    config(['queue'=>$syncQueue,'cache.default'=>$syncCache]);app()->forgetInstance('cache.store');
+}
 
 // Open alerts: every recorded kind shows on the row it concerns with its cause. A row is Missing only when its own value is absent.
 $moneyAlerts=['refund_repair'=>'Service','funds_wait_review'=>'Registrar','renewal_funds'=>'Registrar'];

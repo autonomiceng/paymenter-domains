@@ -160,7 +160,7 @@ final readonly class OwnedDomains
         if ($caps) { $setup['maxNameservers']=$d->registrar_key==='enom'?12:13; }
         try { $contacts=$forms?self::contacts($d):[]; } catch (\Throwable) { $contacts=null; }
         if ($forms) {
-            $labels=['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
+            $labels=['glue'=>'Glue records','nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
             foreach ($labels as $cap=>$label) {
                 if ($policy!==null && ($cap!=='contacts'||$contacts!==null) && $d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
@@ -183,7 +183,7 @@ final readonly class OwnedDomains
             $recordCheckHeld=$forms&&$management&&ObservationRecords::stopped($d);
             foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
-                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; }
+                if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d):(ObservationProjection::sections($d)[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; $management[$kind]['warnings']=GlueDrift::warnings($d); } }
                 if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
             }
         }

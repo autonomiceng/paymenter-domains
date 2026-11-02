@@ -13,7 +13,7 @@ final class ObservationRecords
     }
     public static function save(Domain $d, array $families, \DateTimeImmutable $now): void
     {
-        $p=$d->observation??[]; unset($p['record_failure']); $clean=[];
+        $p=$d->observation??[]; $clean=[];
         foreach (['dns','srv','ds'] as $kind) {
             $f=$families[$kind]??[]; $rows=$f['records']??null; $clean[$kind]=['state'=>'unknown'];
             if (($f['state']??null)!=='complete'||!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }
@@ -22,13 +22,17 @@ final class ObservationRecords
                 $clean[$kind]=['state'=>'complete','records'=>$rows];
             } catch (\Throwable) {}
         }
-        if (count($families['glue']['records']??[])>50) { throw new \DomainException('Child-host history limit reached.'); }
+        if (count($families['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { throw new GlueDiscoveryLimit(); }
         $glue=[];
-        foreach (array_slice($families['glue']['records']??[],0,50,true) as $host=>$ip) {
+        foreach (array_slice($families['glue']['records']??[],0,GlueDiscoveryLimit::HOSTS,true) as $host=>$ip) {
             try { $v=ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$d->domain,$d->registrar_key); $glue[$v['host']]=$v['ip']; }
-            catch (\Throwable) {}
+            catch (\Throwable) { throw new \DomainException('Invalid child-host read.'); }
         }
-        $clean['glue']=['state'=>'partial','records'=>$glue];
+        $clean['glue']=['state'=>($families['glue']['state']??null)==='complete'?'complete':'partial','records'=>$glue];
+        $clean['glue']['candidates']=array_keys(GlueRecords::hosts($d->domain,[],$families['glue']['candidates']??[]));
+        $complete=$d->registrar_key==='namesilo'?$clean['glue']['state']==='complete':
+            !array_filter(['dns','srv','ds'],fn($kind)=>$clean[$kind]['state']!=='complete')&&in_array($families['glue']['state']??null,['partial','complete'],true);
+        if ($complete&&!($families['glue']['read_failed']??false)) { unset($p['record_failure'],$p['record_hold'],$p['record_reads']); }
         $p['records']=['identity'=>self::identity($d),'at'=>$now->format(DATE_ATOM),'sequence'=>$p['management_sequence']??0,'families'=>$clean];
         $d->update(['observation'=>$p]);
     }
@@ -45,6 +49,16 @@ final class ObservationRecords
     { return self::held($d) || ObservationWork::stopped($d); }
     public static function held(Domain $d): bool
     { return ($d->observation['record_hold']['identity']??null)===self::identity($d); }
+    /** Shared by the staff inbox, sync notice and Missing DNS row. */
+    public static function limitNotice(Domain $d): ?string
+    {
+        if (!self::held($d)) { return null; }
+        return match($d->observation['record_hold']['reason']??null) {
+            'child_host_limit'=>"Missing: more than ".GlueDiscoveryLimit::HOSTS." child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most ".GlueDiscoveryLimit::HOSTS." child hosts remain, then use Sync now.",
+            'history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.',
+            default=>null,
+        };
+    }
     public static function hold(Domain $d, string $reason, \DateTimeImmutable $now, ?string $code=null): void
     {
         $p=$d->observation??[];

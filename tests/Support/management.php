@@ -45,7 +45,12 @@ $exchange=static function(string $origin,string $command,array $p,int $timeout)u
     if($command==='GetHosts'){$body='<DomainServices><HostRecords>true</HostRecords></DomainServices>';foreach($state->dns as $row){$body.='<host><name>'.$row['name'].'</name><type>'.$row['type'].'</type><address>'.htmlspecialchars($row['address'],ENT_XML1).'</address><mxpref>'.$row['mx_pref'].'</mxpref></host>';}}
     if($command==='GetDomainSRVHosts'){$body='<srv-records>';foreach($state->srv as $row){$body.='<srv><hostname>_'.$row['service'].'</hostname><protocol>_'.$row['protocol'].'</protocol><priority>'.$row['priority'].'</priority><weight>'.$row['weight'].'</weight><port>'.$row['port'].'</port><address>'.$row['target'].'</address></srv>';}$body.='</srv-records>';}
     if($command==='GetDnsSec'){$body='<success>true</success><DnsSecDataCount>'.count($state->ds).'</DnsSecDataCount><DnsSecData><result><ResponseCode>200</ResponseCode></result>';foreach($state->ds as $row){$body.='<KeyData><algorithm>'.$row['algorithm'].'</algorithm><digest>'.$row['digest'].'</digest><digesttype>'.$row['digest_type'].'</digesttype><keytag>'.$row['key_tag'].'</keytag></KeyData>';}$body.='</DnsSecData>';}
-    if($command==='CheckNSStatus'){$host=$p['CheckNSName'];if(!isset($state->glue[$host])){return '<interface-response><Command>CheckNSStatus</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode><errors><Err1>Error 545 - Name server does not exist</Err1></errors></interface-response>';}$body='<NsCheckSuccess>1</NsCheckSuccess><CheckNsStatus><NsName>'.$host.'</NsName><IpAddress>'.$state->glue[$host].'</IpAddress></CheckNsStatus>';}
+    if($command==='CheckNSStatus') {
+        $host=$p['CheckNSName'];
+        if(!isset($state->glue[$host])) { return file_get_contents(__DIR__.'/../fixtures/enom-checkns-absent.xml'); }
+        // Keep the sanitized reply's structure; vary only the requested host and its fixture address.
+        return str_replace(['ns-glue.example.test','<ipaddress>192.0.2.1</ipaddress>'],[$host,'<ipaddress>'.$state->glue[$host].'</ipaddress>'],file_get_contents(__DIR__.'/../fixtures/enom-checkns-created.xml'));
+    }
     if(!$read&&$state->afterWrite){$hook=$state->afterWrite;$state->afterWrite=null;$hook($command);}
     if(!$read){$body.='<InfoSynched>true</InfoSynched><'.$command.'><NsSuccess>1</NsSuccess></'.$command.'><OrderID>7001</OrderID>';
         if($state->fault==='empty_ack'){$body='';}}

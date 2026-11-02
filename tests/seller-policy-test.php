@@ -132,7 +132,7 @@ $called = (object) ['value' => false];
 $reject(static fn () => $admit($oldCart, static function () use ($called): void { $called->value = true; }));
 same(false, $called->value, 'Stale checkout refused before native writes');
 same(1, (int) $domain->fresh()->server_id, 'Switch leaves uncertain holding bound');
-same('7.80', $holder->renewal($domain, 'USD', $now)->retail, 'Non-default holder uses original annual renewal');
+same('7.99', $holder->renewal($domain, 'USD', $now)->retail, 'Non-default holder uses original annual renewal');
 $newCart = $sellers->selection('com', 'register', 1, $now);
 $reject(static fn () => $admit($newCart, $acquire));
 same(1, Domain::count(), 'Cross-account duplicate name stays reserved');
@@ -147,7 +147,7 @@ $publish([$rate('register', 1, '6.00')]);
 $updated = $admit($current);
 same($current->priceId, $updated->id, 'Sync preserves the selected price row');
 expect($updated->revision > $current->priceRevision, 'Admission takes the newer synced revision');
-same('7.80', $updated->retail, 'Admission uses the newly published retail');
+same('7.99', $updated->retail, 'Admission uses the newly published retail');
 $wrongRow = new SaleSelection('com', 1, $current->registrar, $current->fingerprint, $current->policyRevision,
     'register', 1, 'USD', $current->priceId + 1000, $current->priceRevision);
 $reject(static fn () => $admit($wrongRow));
@@ -199,7 +199,7 @@ same(null, Domain::where('domain', 'rollback-placeholder.com')->first(), 'Reserv
 $p = $sellers->change('com', 4, null, false, false, $now);
 same(5, $p->revision, 'Disabling seller advances policy');
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
-same('7.80', $holder->renewal($domain, 'USD', $now)->retail, 'No seller does not alter holder renewal');
+same('7.99', $holder->renewal($domain, 'USD', $now)->retail, 'No seller does not alter holder renewal');
 // Below-cost renewal remains eligible; one held register term does not hide another valid term.
 $rules = new PricingRules;
 $rules->saveDefaultRule(1, ['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',

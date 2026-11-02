@@ -6,6 +6,18 @@ require __DIR__.'/Support/management.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{ManagementInput as I,ManagementRead};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand,ResponseParser};
+// Sanitized Enom TEST reply shapes; preserve the observed wire fields and their order.
+foreach (['created'=>'192.0.2.1','updated'=>'198.51.100.1','absent'=>null] as $capture=>$ip) {
+    $wire=file_get_contents(__DIR__.'/fixtures/enom-checkns-'.$capture.'.xml');
+    $reply=(new ResponseParser)->parse(ReadCommand::HostStatus,$wire);
+    same($ip,ManagementRead::glue($reply,'ns-glue.example.test'),'Sanitized Enom '.$capture.' child-host status');
+    if ($ip!==null) {
+        commerceReject(fn()=>ManagementRead::glue($reply,'ns-other.example.com'));
+        foreach ([str_replace('<name>','<nsname>',str_replace('</name>','</nsname>',$wire)),str_replace('<ipaddress>'.$ip.'</ipaddress>','<ipaddress>not-ip</ipaddress>',$wire)] as $bad) {
+            commerceReject(fn()=>ManagementRead::glue((new ResponseParser)->parse(ReadCommand::HostStatus,$bad),'ns-glue.example.test'));
+        }
+    }
+}
 [$d,$driver]=$holding(placeholderComFixtureName('manage-records-placeholder.com'));
 $ds=['algorithm'=>13,'digest_type'=>2,'key_tag'=>123,'digest'=>str_repeat('A',64)];
 commerceReject(fn()=>$submit($d,$driver,'ds_add',['ds'=>$ds]));same([],$state->calls,'DNS tools default off at request boundary');

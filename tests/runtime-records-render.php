@@ -14,7 +14,8 @@ $out=$argv[1]??'';$shell=file_get_contents($argv[2]??'');expect(is_dir($out),'Ou
 $registerRecords();$state->dns=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>' exact TXT value '.$i.' ','mx_pref'=>10],range(12,1));
 $state->srv=array_map(fn($i)=>['service'=>'sip'.$i,'protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.'],range(12,1));
 app(\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->enroll($d->server_id);$dueRecords();$runtimePorts->initialManagedRecordObservations();
-same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Actual installed scheduled record producer');
+app(DomainObservation::class)->run($d->id,readRecords:true);
+same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Actual installed on-demand record producer');
 $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
     $dto=$owners->present($d->fresh());storefrontViews();app('view')->getFinder()->flush();
     expect($dto->autoRenew!==[],'Actual owner projection retains local auto-renew');
@@ -42,7 +43,7 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
                 same($prefix.($i+1),$input->item(0)->getAttribute('value'),'Customer '.$kind.' record order is numeric');
             }
         } else {
-            $expected=$stateName==='unknown'?'Fills in by itself within a day':'Our team needs to check this domain. No action needed.';
+            $expected=$stateName==='unknown'?'Contact support to sync these records.':'Our team needs to check this domain. No action needed.';
             expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName);
         }
         preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;

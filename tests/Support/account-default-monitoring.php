@@ -251,6 +251,9 @@ $original=Operation::create([...$choiceBase,'action'=>'register','operation_key'
     'payload'=>['nameservers'=>$default->profile()->nameservers],'completed_at'=>gmdate('Y-m-d H:i:s',$now-60)]);
 $resolved=Operation::create([...$choiceBase,'operation_key'=>$read['operation_key'],'payload'=>$read['facts'],'attempt'=>['seal'=>'sealed','management_reads'=>[$read]]]);
 $unresolved=Operation::create([...$choiceBase,'operation_key'=>'newer-unresolved-choice','payload'=>['nameservers'=>$default->profile()->nameservers],'attempt'=>['seal'=>'sealed']]);
+// Retained unresolved history can push the real choice beyond the first bounded read page.
+$overflow=[];$retained=$unresolved->getRawOriginal();unset($retained['id']);
+for($i=0;$i<101;$i++){$overflow[]=DB::table('domains_operations')->insertGetId([...$retained,'operation_key'=>'unresolved-page-'.$i]);}
 $wrong=Operation::create([...$choiceBase,'operation_key'=>'wrong-generation-choice','payload'=>['nameservers'=>$default->profile()->nameservers],
     'attempt'=>['seal'=>'sealed','management_reads'=>[[...$read,'operation_key'=>'wrong-generation-choice','generation'=>$d->authority_generation+1,'facts'=>['nameservers'=>$default->profile()->nameservers]]]]]);
 DB::table('domains_operations')->where('id',$wrong->id)->update(['authority_generation'=>$d->authority_generation+1]);
@@ -268,7 +271,7 @@ foreach(['absent','stale','unreadable newer']as$evidence){
     $choiceResults[$evidence]=[$notice['expected'],array_values(array_intersect($summary->stateKeys,['watch.ns_pending','watch.ns_changed']))];
 }
 same(array_fill_keys(['absent','stale','unreadable newer'],[false,[]]),$choiceResults,'Newest resolved choice survives unresolved, unreadable and wrong-identity successors: '.json_encode($choiceResults));
-DB::table('domains_operations')->whereIn('id',[$original->id,$resolved->id,$unresolved->id,$wrong->id])->delete();
+DB::table('domains_operations')->whereIn('id',[$original->id,$resolved->id,$unresolved->id,$wrong->id,...$overflow])->delete();
 DB::table('domains_domains')->where('id',$id)->update(['observation'=>$authority['observation']]);
 DB::table('domains_managed_public_config')->where('domain_id',$id)->update($savedConfig);
 // Checkout inheritance follows a new account comparison; explicit and legacy customer choices keep theirs.

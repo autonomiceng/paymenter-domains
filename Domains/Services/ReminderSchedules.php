@@ -6,7 +6,7 @@ use App\Models\{Server,User};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-/** Explicit enrollment and audited optimistic edits; installation never overwrites customizations. */
+/** New connections enroll On; the upgrade pins existing accounts Off before this default applies. */
 final class ReminderSchedules
 {
     /** Null means unreadable saved data, not an empty schedule. */
@@ -35,7 +35,7 @@ final class ReminderSchedules
             $row=DB::table('domains_reminder_schedules')->where('server_id',$serverId)->lockForUpdate()->first();
             if($row){if($row->account_fingerprint!==$a->account_fingerprint){throw new \DomainException('Reminder account changed.');}return;}
             DB::table('domains_reminder_schedules')->insert(['server_id'=>$serverId,'account_fingerprint'=>$a->account_fingerprint,
-                'enabled'=>false,'before_days'=>'[1,7,30,60]','after_days'=>'[3]','audit'=>encrypt([])]);
+                'enabled'=>true,'before_days'=>'[1,7,30,60]','after_days'=>'[3]','audit'=>encrypt([])]);
         });
     }
     public static function save(User $actor,int $serverId,int $revision,bool $enabled,string $before,string $after,string $reason):void

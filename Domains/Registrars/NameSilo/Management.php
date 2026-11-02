@@ -17,8 +17,8 @@ final class Management extends ManagementProtocol
     }
     public function capabilities(): Capabilities
     {
-        return new Capabilities($this->binding, array_fill_keys(['nameservers','contacts','lock','privacy','auto_renew_off','auth_code_email'], new Capability(Support::Supported))
-            + array_fill_keys(['dns','ds','glue','auth_code_display'], new Capability(Support::Unsupported)), PrivacyMode::Free);
+        return new Capabilities($this->binding, array_fill_keys(['nameservers','contacts','lock','privacy','auto_renew_off','auth_code_email','glue'], new Capability(Support::Supported))
+            + array_fill_keys(['dns','ds','auth_code_display'], new Capability(Support::Unsupported)), PrivacyMode::Free);
     }
     public function validate(string $action, #[\SensitiveParameter] array $payload, string $name): array
     {
@@ -49,10 +49,10 @@ final class Management extends ManagementProtocol
     }
     protected function origin(RequestContext $context): string
     { return ($this->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live ? Environment::Live : Environment::Sandbox)->origin().($context->origin === RequestOrigin::Interactive ? '/api' : '/apibatch'); }
-    protected function readCommands(): array { return ['getDomainInfo','contactList']; }
+    protected function readCommands(): array { return ['getDomainInfo','contactList','listRegisteredNameServers']; }
     protected function validateRead(string $command, #[\SensitiveParameter] array $p): void
     {
-        if ($command === 'getDomainInfo' && array_keys($p) === ['domain'] && is_string($p['domain']) && CanonicalName::normalize($p['domain']) === $p['domain']) { return; }
+        if (in_array($command,['getDomainInfo','listRegisteredNameServers'],true) && array_keys($p) === ['domain'] && is_string($p['domain']) && CanonicalName::normalize($p['domain']) === $p['domain']) { return; }
         if ($command === 'contactList' && array_keys($p) === ['contact_id'] && self::id($p['contact_id'])) { return; }
         throw new \DomainException('Invalid named management read.');
     }
@@ -61,6 +61,7 @@ final class Management extends ManagementProtocol
         return match ($action) {
             'nameservers' => 'changeNameServers', 'contacts' => 'contactDomainAssociate', 'contact_profile' => 'contactAdd',
             'lock' => 'domainLock', 'privacy_enable' => 'addPrivacy', 'privacy_disable' => 'removePrivacy',
+            'glue_add'=>'addRegisteredNameServer', 'glue_update'=>'modifyRegisteredNameServer', 'glue_delete'=>'deleteRegisteredNameServer',
             'auto_renew_off' => 'removeAutoRenewal', 'auth_code_email' => 'retrieveAuthCode',
             default => throw new \DomainException('Unsupported NameSilo management action.'),
         };
@@ -102,6 +103,16 @@ final class Management extends ManagementProtocol
             if (($row[$field] ?? null) !== $wanted) { throw new \DomainException('Contact readback mismatch.'); }
         }
     }
+    private function glue(ManagementRequest $r, RequestContext $c): array
+    {
+        $body=$this->read($r,$c,'listRegisteredNameServers',['domain'=>$r->name]);
+        return Glue::records(self::reply(Glue::preserveAddresses($body),'listRegisteredNameServers'),$r->name);
+    }
+    public function discover(ManagementRequest $r, RequestContext $c, array $knownGlue=[]): array
+    {
+        $out=parent::discover($r,$c); $this->owned($r,$c);
+        $out['glue']=['state'=>'complete','records'=>$this->glue($r,$c)]; return $out;
+    }
     public function prepare(ManagementRequest $r, RequestContext $c): array
     {
         $this->writeCommand($r->action);
@@ -110,7 +121,13 @@ final class Management extends ManagementProtocol
         if ($r->action === 'contacts') {
             $profile = ManagementProfiles::resolve($r, $c->now()); $this->profile($r, $c, $profile->details['provider_id']);
         }
-        return $r->payload();
+        $p=$r->payload();
+        if (str_starts_with($r->action,'glue_')) {
+            $records=$this->glue($r,$c); $old=$records[$p['host']]??null;
+            $this->preparedRecords=['glue'=>['host'=>$p['host'],'ip'=>$old]];
+            if (($r->action==='glue_add')!==($old===null)) { throw new \DomainException('Glue precondition changed.'); }
+        }
+        return $p;
     }
     protected function apply(ManagementRequest $r, RequestContext $c): ManagementResult
     {
@@ -121,6 +138,11 @@ final class Management extends ManagementProtocol
             $profile = ManagementProfiles::resolve($r, $c->now());
             $roles = ['registrant'=>'registrant','admin'=>'administrative','tech'=>'technical','auxbilling'=>'billing'];
             foreach ($p['role'] === 'all' ? ContactDetails::ROLES : [$p['role']] as $role) { $args[$roles[$role]] = $profile->details['provider_id']; }
+        }
+        if (str_starts_with($r->action,'glue_')) {
+            $host=substr($p['host'],0,-strlen('.'.$r->name));
+            if ($r->action!=='glue_add') { $args['current_host']=$host; }
+            if ($r->action!=='glue_delete') { $args['new_host']=$host; foreach (Glue::addresses($p['ip']) as $i=>$ip) { $args['ip'.($i+1)]=$ip; } }
         }
         $cmd = $this->requestCommand($r);
         $body = $this->write($r, $c, $cmd, $args);
@@ -138,6 +160,10 @@ final class Management extends ManagementProtocol
     public function observe(ManagementRequest $r, RequestContext $c): ManagementResult
     {
         $facts = $this->owned($r, $c); $p = $r->payload(); $ok = false;
+        if (str_starts_with($r->action,'glue_')) {
+            $records=$this->glue($r,$c); $ip=$records[$p['host']]??null;
+            return new ManagementResult($r->action==='glue_delete'?$ip===null:$ip===$p['ip'],false,['host'=>$p['host'],'ip'=>$ip]);
+        }
         switch ($r->action) {
             case 'nameservers':
                 $rows = $facts['nameservers']; if (!is_array($rows) || !array_is_list($rows)) { break; }

@@ -76,11 +76,17 @@ final class DomainSummaries
         $servers=Server::with('settings')->whereIn('id',array_map(fn($d)=>$d->server_id,$c->domains))->get()->keyBy('id');
         $cycles=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->where('action','renew')->groupBy('domain_id'))->limit(250)->get()->groupBy('domain_id');
         $acquisitions=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->whereIn('action',['register','transfer'])->groupBy('domain_id'))->limit(250)->get()->keyBy('domain_id');
-        $dnsChoices=Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
+        $dnsChoices=collect();
+        Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
             ->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')
             ->whereColumn('d.service_id','domains_operations.service_id')->whereColumn('d.server_id','domains_operations.server_id')->whereColumn('d.registrar_key','domains_operations.registrar_key')
             ->where('domains_operations.state','succeeded')->whereIn('domains_operations.action',['register','transfer','nameservers'])
-            ->orderByDesc('domains_operations.id')->get()->groupBy('domain_id');
+            ->chunkByIdDesc(100,function($ops)use($c,$dnsChoices):void{
+                foreach($ops->groupBy('domain_id') as $id=>$batch){
+                    $choices=ManagedDnsSetup::choices($c->domains[$id],$dnsChoices->get($id,collect())->concat($batch));
+                    $dnsChoices->put($id,collect(array_filter($choices)));
+                }
+            },'domains_operations.id','id');
         $invoices=Invoice::where('user_id',$uid)->whereIn('id',$cycles->flatten()->pluck('invoice_id')->merge($acquisitions->pluck('invoice_id')))->get()->keyBy('id');
         $targets=[...$c->domains,...$c->watches];
         $scopes=array_map(fn($t)=>WatchNoticePreferences::scope((int)$t->user_id,$t instanceof WatchName?$t->canonical_name:$t->domain),$targets);
