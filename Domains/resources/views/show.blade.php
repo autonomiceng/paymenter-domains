@@ -31,5 +31,6 @@
 @include('domains::partials.owner-renew')
 </aside></div>
 @include('domains::partials.client-script')
+@include('domains::partials.management-poll')
 </div></div>
 @endcomponent

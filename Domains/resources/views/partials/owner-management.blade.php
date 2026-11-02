@@ -22,12 +22,21 @@
 @endphp
 @continue($section === null && !($cap === 'nameservers' && $domain->syncPaused))
 <li class="domains-row" id="{{ $cap }}">
-<span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif</span>
+<span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif
+@if (($section['progress'] ?? null) && !$section['progress']['pending'])<span class="domains-sub" role="status">{{ $section['progress']['text'] }}</span>@endif</span>
+@if ($section['progress']['pending'] ?? false)
+<span class="domains-row__v">
+@if (!$paused && $cap === 'nameservers' && ($section['current'] ?? []))
+<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach
+@endif
+<span @class(['domains-sub' => !$paused && $cap === 'nameservers' && ($section['current'] ?? [])]) role="status" data-management-pending="{{ $cap }}" data-operation="{{ $section['progress']['id'] }}">{{ $section['progress']['text'] }}</span>
+</span>
+@else
 @if ($paused)
 <span class="domains-row__v">@include('domains::partials.missing', ['cause' => $fills('when sync resumes'), 'fix' => null, 'stack' => true])</span>
 @elseif ($cap === 'nameservers')
 <span class="domains-row__v">@if (!($section['current'] ?? []))@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else<span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach @endif</span>
-@if ($section)
+@if ($section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
 @php $useDefault = $confirmStep === 'nameservers' && ($retry['values']['use_default'] ?? '') === '1'; @endphp
 @php $nsValue = $confirmStep === 'nameservers' ? ($useDefault ? implode("\n", $section['defaultServers'] ?? []) : $retry['values']['nameservers']) : implode("\n", $section['current'] ?? []); @endphp
@@ -48,7 +57,7 @@
 @endif
 @elseif (in_array($cap, ['dns', 'srv']))
 <span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of {{ $section['asOf'] }}</span>@endif@endif</span>
-@if ($records !== null)
+@if ($records !== null && $section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-dns')@endcomponent
 @endif
@@ -60,6 +69,7 @@
 @endif
 @elseif ($cap === 'lock')
 <span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ $state ? 'On' : 'Off' }}@endif</span>
+@if ($section['actions'])
 @if ($state === null)
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
 @php $lockOff = $confirmStep === 'lock' || ($failed === $section['url'] && old('locked') === '0'); @endphp
@@ -81,6 +91,7 @@
     'risk' => \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::lockRisk($domain->name)])@endif
 </form>
 @endif
+@endif
 @elseif ($cap === 'privacy')
 @php
     $labels = ['privacy_enable' => 'Turn on', 'privacy_disable' => 'Turn off', 'privacy_purchase' => $section['free'] ? 'Turn on' : 'Add · '.$section['price'].'/yr', 'privacy_renew' => 'Renew · '.$section['price'].'/yr'];
@@ -97,6 +108,7 @@
 @endif
 @elseif ($cap === 'contacts')
 <span class="domains-row__v">@if ($domain->owner){{ $domain->owner['name'] }} <span class="domains-sub">{{ $domain->owner['email'] }}</span>@else @include('domains::partials.missing', ['cause' => 'Add them with Edit contacts', 'fix' => null, 'stack' => true])@endif</span>
+@if ($section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit contacts</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
 @php
@@ -123,14 +135,18 @@
 @endif
 </form>
 @endcomponent
+@endif
 @elseif ($cap === 'auth_code_email')
 <span class="domains-row__v"><span class="domains-muted">We email it to the {{ $section['recipient'] }}</span></span>
+@if ($section['actions'])
 <span class="domains-row__a"><button type="submit" form="form-auth_code_email" class="domains-a domains-linkbtn">Email auth code</button></span>
 <form id="form-auth_code_email" method="POST" action="{{ $section['url'] }}" class="domains-owner-form" data-confirm>
 @include('domains::partials.form-key', ['action' => 'auth_code_email'])
 @include('domains::partials.owner-confirm', ['id' => 'auth_code_email', 'open' => $confirmStep === 'auth_code_email', 'cancel' => $show, 'title' => 'Email the auth code?', 'button' => 'Email auth code', 'tone' => 'primary',
     'risk' => 'We’ll email it to the '.$section['recipient'].'.'])
 </form>
+@endif
+@endif
 @endif
 </li>
 @endforeach

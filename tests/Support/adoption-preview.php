@@ -27,11 +27,12 @@ function adoptionFixture(Environment $environment = Environment::Test): array
     $registry = new RegistrarRegistry;
     $registry->register('enom', ['uid', 'token'], new class implements AccountVerifier {
         public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['uid']; }
-    }, fn (AccountBinding $b, array $c) => new Driver(new Client($b, $c['uid'], $c['token'], $wire), ['com']));
+    }, fn (AccountBinding $b, array $c) => new Driver(new Client($b, $c['uid'], $c['token'], $wire), ['com']),
+        adoptionReaderFactory: fn (AccountBinding $b, array $c, $clock) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader($b, $c['uid'], $c['token'], $wire, $clock, \Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter()));
     $bindings = new AccountBindings($registry);
     $binding = $bindings->configure($tld->server_id, 'enom', $environment, ['uid' => 'account-enom', 'token' => 'synthetic-secret']);
     if ($environment === Environment::Live) { $bindings->confirmLiveSite($tld->server_id, rtrim(config('app.url'), '/')); $bindings->setProcessing($tld->server_id, true, syntheticActivation()); }
-    $mapping = new AdoptionMapping($native, $prices, $clock); $reader = new AdoptionReader($bindings, $mapping, $clock, $wire);
+    $mapping = new AdoptionMapping($native, $prices, $clock, $bindings); $reader = new AdoptionReader($bindings, $mapping, $clock);
     $target = new Target('example.com', $service->id, $owner->id, $tld->server_id, $environment);
     $context = new StaffContext($staff->id, 'Reviewed synthetic import mapping');
     return compact('owner', 'other', 'staff', 'order', 'service', 'property', 'tld', 'product', 'plan', 'clock', 'wire', 'bindings', 'binding', 'mapping', 'reader', 'target', 'context', 'prices', 'native');

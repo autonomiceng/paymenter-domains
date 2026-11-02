@@ -39,6 +39,8 @@ foreach (['dns'=>[
     $recordManagement[$cap]=['label'=>strtoupper($cap).' records','records'=>$records,'digest'=>str_repeat('b',64),
         'recordCheckHeld'=>false,'actions'=>[$cap=>'/domains/1/manage/'.$cap]];
 }
+$pendingDomain=new OwnedDomain(...[...get_object_vars($domain),'management'=>['lock'=>['label'=>'Transfer lock','progress'=>['id'=>42,'pending'=>true,'slow'=>false,'text'=>'Turning off…']]]]);
+writeRenderArtifact($out.'/show-management-pending.html',view('domains::show',['domain'=>$pendingDomain,'keys'=>[]])->render());
 $recordDomain=new OwnedDomain(...[...get_object_vars($domain),'management'=>$recordManagement]);
 writeRenderArtifact($out.'/show-records.html',view('domains::show',['domain'=>$recordDomain,
     'keys'=>['dns'=>str_repeat('a',64),'srv'=>str_repeat('b',64)]])->render());

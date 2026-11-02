@@ -16,8 +16,8 @@ $pages=static function($d, ?array $expected, string $why, bool $formsExpected=tr
     expect($summary!==null,$why.' customer summary exists');
     same($expected,($summary->nameservers['state']??null)==='observed'?$summary->nameservers['nameservers']:null,$why.' customer summary');
     $forms=$owners->present($d->fresh())->management;
-    same($formsExpected,isset($forms['nameservers']),$why.' customer form availability');
-    if ($formsExpected) { same($expected,$forms['nameservers']['current'],$why.' customer form'); }
+    same($formsExpected,isset($forms['nameservers']['actions']['nameservers']),$why.' customer form availability');
+    if (isset($forms['nameservers'])) { same($expected,$forms['nameservers']['current'],$why.' customer control'); }
     same($expected,DomainFacts::for($d->fresh())['Nameservers']['value'],$why.' staff');
 };
 $pages($d,['ns1.example.net','ns2.example.net'],'Registration readback before any observation');
@@ -129,12 +129,12 @@ while ($d->operations()->count()<=100) {
 same('refreshed',$observer->run($d->id),'Observation still runs after history exceeds the reconstruction bound');
 same(['ns7.example.net','ns8.example.net'],DomainFacts::for($d->fresh())['Nameservers']['value'],'History overflow preserves confirmed staff nameservers');
 same(['ns7.example.net','ns8.example.net'],\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::storedNameservers($d->fresh()),'History overflow preserves shared registrar evidence');
-same([], $owners->present($d->fresh())->management,'History overflow keeps existing advisory form bound');
+same([],array_filter($owners->present($d->fresh())->management,fn($section)=>$section['actions']),'History overflow keeps every action blocked');
 $overflowFlag=static function($holding,string $section,string $fact,?bool $expected,string $why)use($owners):void {
     same($expected,\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::storedFlag($holding->fresh(),$section,$fact),$why.' shared customer flag');
     $label=$section==='lock'?'Transfer lock':'WHOIS privacy';
     same($expected===null?null:($expected?'On':'Off'),DomainFacts::for($holding->fresh())[$label]['value'],$why.' staff flag');
-    same([],$owners->present($holding->fresh())->management,$why.' retains advisory form bound');
+    same([],array_filter($owners->present($holding->fresh())->management,fn($section)=>$section['actions']),$why.' keeps every action blocked');
 };
 $lockOverflow=$d->fresh()->observation;
 foreach (['matched'=>null,'name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str_repeat('f',64),'legacy'=>null] as $field=>$value) {

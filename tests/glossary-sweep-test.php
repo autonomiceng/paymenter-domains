@@ -130,7 +130,7 @@ expect(str_contains($cutoff,'The time to enter or change this auth code has pass
 same('Auth code saved.',OwnerActionController::CODE_SAVED,'One saved string for page and flash');
 $owner=$source(OwnerActionController::class);
 expect(str_contains($owner,"'Enter a valid auth code.'")&&str_contains($owner,"'WHOIS privacy isn’t available for this domain.'"),'Owner action messages');
-same('Change requested. Check History for updates.',Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED,'One requested string for owners and staff');
+same('Saving…',Paymenter\Extensions\Servers\Domains\Services\ManagementForms::REQUESTED,'One requested string for owners and staff');
 $none($owner,['transfer code','Check Activity','Domain privacy','is not available',"get('confirmed')!=='1'"],'Owner action controller');
 $renewal=$source(OwnerRenewalController::class);
 expect(str_contains($renewal,"'You can’t renew online right now. Contact support to renew this domain.'")&&str_contains($renewal,"'Auto-renew is off for this domain. Contact support if you want to renew it.'"),'Renewal refusals');

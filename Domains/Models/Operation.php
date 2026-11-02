@@ -12,11 +12,12 @@ class Operation extends Model
 
     protected $table = 'domains_operations';
     protected $guarded = [];
-    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint'];
+    protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];
     protected $casts = ['retry_number'=>'integer', 'attempt' => 'encrypted:array', 'funding' => 'encrypted:array', 'authority_generation' => 'integer', 'payload' => 'encrypted:array', 'policy' => 'encrypted:array', 'cost' => 'encrypted:array', 'amount' => 'decimal:2', 'base_expires_at' => 'immutable_date', 'expected_expires_at' => 'immutable_date', 'confirmed_expires_at' => 'immutable_date', 'lease_expires_at' => 'immutable_datetime', 'started_at' => 'immutable_datetime', 'completed_at' => 'immutable_datetime'];
 
     protected static function booted(): void
     {
+        static::saving(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\ManagementProgressIndex::capture($operation));
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::guard($operation));
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::guardCreation($operation));
         static::updating(static function (self $operation): void {

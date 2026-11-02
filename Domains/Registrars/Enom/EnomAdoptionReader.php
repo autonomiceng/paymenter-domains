@@ -3,18 +3,21 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
+use Paymenter\Extensions\Servers\Domains\Contracts\{AdoptionSource, Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, ExpiryPrecision, Query, RequestBudget, RequestContext, RequestOrigin, SystemClock};
+use Paymenter\Extensions\Servers\Domains\Data\Adoption\AdoptionReadback;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{AdoptionReadCommand as Command, AdoptionTransport, Client, Transport};
 
 /** One name, one bounded readback, no general driver or caller-supplied context. */
-final class EnomAdoptionReader
+final class EnomAdoptionReader implements AdoptionSource
 {
     private readonly Client $client;
     public function __construct(public readonly AccountBinding $binding, #[\SensitiveParameter] string $uid,
         #[\SensitiveParameter] string $token, #[\SensitiveParameter] Transport $wire,
         private readonly Clock $clock = new SystemClock, private readonly ?ReadLimiter $limiter = null)
     { $this->client = new Client($binding, $uid, $token, new AdoptionTransport($wire)); }
+
+    public function binding(): AccountBinding { return $this->binding; }
 
     public function read(string $name, string $suffix): AdoptionReadback
     {
@@ -52,7 +55,7 @@ final class EnomAdoptionReader
             if ($this->clock->now() >= $context->deadline) { return $failure('read_failed'); }
             return AdoptionReadback::verified($this->binding, [ 'name' => $name,
                 'provider_id' => $identity->providerReference, 'expiry' => $expiry, 'auto_renew' => false,
-                'registrar_hold' => false, 'read_start' => $start->format(DATE_ATOM), 'read_end' => $this->clock->now()->format(DATE_ATOM), 'command_set_version' => 1]);
+                'ordinary' => true, 'registrar_hold' => false, 'redemption' => false, 'read_start' => $start->format(DATE_ATOM), 'read_end' => $this->clock->now()->format(DATE_ATOM), 'command_set_version' => 1]);
         } catch (\Throwable) { return $failure('read_failed'); }
     }
     public function __debugInfo(): array { return ['environment' => $this->binding->environment->value]; }
