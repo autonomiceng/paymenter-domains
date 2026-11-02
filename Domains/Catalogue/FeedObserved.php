@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName};
 
-/** Partial observations: the writer retains omitted costs and rejects older observations.
+/** Partial observations: empty is a no-op; the writer retains omissions and rejects older observations.
  * Costs never change fact timestamps. Disabled is positive provider evidence, not a failed read. */
 final readonly class FeedObserved implements Command
 {
@@ -20,7 +20,6 @@ final readonly class FeedObserved implements Command
             }
             $indexed[$cost->key()] = $cost;
         }
-        if ($indexed === []) { throw new \InvalidArgumentException('Explicit feed observation required.'); }
         $this->costs = $indexed;
     }
     public function binding(): AccountBinding { return $this->account; }
