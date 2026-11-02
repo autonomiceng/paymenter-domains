@@ -2,11 +2,15 @@
 <style>
 .domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
-.domains-name-cell{overflow-wrap:break-word;min-width:11rem;max-width:24rem}
 .domains-missing-mark{display:block;margin-top:.1875rem;color:var(--danger-500)}
 .domains-note{min-width:14rem;max-width:24rem;overflow-wrap:anywhere}
 .domains-narrow{max-width:12rem}
-.domains-cut{max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Staff rows are one line: long text ends in "..." and its tooltip has all of it. Keyboard focus shows it in place. */
+.domains-cut,.domains-cut>*,.domains-line,.domains-line>*,.domains-name-cell,.domains-name-cell>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.domains-cut{max-width:11rem}
+.domains-line,.domains-name-cell{max-width:24rem}
+a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell)>*{white-space:normal;overflow-wrap:anywhere}
+.domains-money{text-align:end;font-variant-numeric:tabular-nums}
 .domains-watch-header .fi-ac{flex-wrap:wrap}
 @media (min-width:40rem){.domains-watch-header{flex-wrap:wrap!important}.domains-watch-header>div:first-child{flex:1 1 100%;min-width:0}.domains-watch-header .fi-header-actions-ctn{flex:1 1 30rem;min-width:0}}
 .domains-small{font-size:.75rem;opacity:.75}

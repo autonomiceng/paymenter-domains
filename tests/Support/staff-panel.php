@@ -27,6 +27,16 @@ function staffUser(array $permissions): App\Models\User
     return App\Models\User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'staff-'.App\Models\User::count().'@example.test',
         'password'=>'synthetic-password','role_id'=>$role->id]);
 }
+/** The table standard: one pager of 25 (50 or 100), a search that says what it searches, one-line cells, money on the right. */
+function staffTableStandard(mixed $page, ?string $search, array $oneLine=[], array $money=[]): void
+{
+    $table=$page->instance()->getTable(); $name=$page->instance()::class;
+    same([25,50,100],array_values($table->getPaginationPageOptions()),$name.': paging 25, 50, 100');
+    same(25,(int)$table->getDefaultPaginationPageOption(),$name.': 25 per page');
+    if ($search!==null) { same($search,$table->getSearchPlaceholder(),$name.': search says what it searches'); }
+    foreach ($oneLine as $column) { expect(($c=$table->getColumn($column))!==null&&!$c->canWrap(),$name.': '.$column.' stays on one line'); }
+    foreach ($money as $column) { $a=$table->getColumn($column)?->getAlignment(); same('end',$a instanceof BackedEnum?$a->value:$a,$name.': '.$column.' is right aligned'); }
+}
 function staffData(bool $ordinaryCompleted = false): array
 {
     \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install();

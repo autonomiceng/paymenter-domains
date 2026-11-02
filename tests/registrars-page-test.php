@@ -68,6 +68,7 @@ Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(Regist
 Livewire::actingAs(staffUser([]))->test(RegistrarSetup::class)->assertForbidden();
 // List page.
 $list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertActionDoesNotExist('add_account')->assertSee('Accounts');
+staffTableStandard($list,'Search account',['name'],['balance','due']);
 foreach(['Account','Mode','Status','Balance','Due in 30 days','Enom test account','Enom, 1 domain','NameSilo, 0 domains','Test','Active','USD 7.99','Low balance','USD 8.00',
     'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();

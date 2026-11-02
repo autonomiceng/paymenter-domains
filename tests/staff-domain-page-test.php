@@ -219,7 +219,7 @@ same(1,substr_count((string)$heldPage->instance()->getSubheading(),'data-beco-to
 $heldRequest=$held->operations()->sole()->id;
 Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
 $note=DomainFacts::note(DomainFacts::status($held),null)['text'];
-same(e(substr($note,0,-strlen('Check request #'.$heldRequest.'.'))).'<span class="domains-link">Check request #'.$heldRequest.'</span>.',(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note step looks like a link');
+same('<span class="domains-link">Check request #'.$heldRequest.'</span>. '.e(rtrim(substr($note,0,-strlen('Check request #'.$heldRequest.'.')))),(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note leads with its step, which looks like a link');
 same('Sync failed. Use Resume sync on the domain.',DomainFacts::noteStep('Sync failed. Use Resume sync on the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
 
 // An old sweep failure must not conceal a definitely-unsent order's actual staff reason.

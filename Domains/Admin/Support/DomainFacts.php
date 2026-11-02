@@ -281,12 +281,13 @@ final class DomainFacts
     /** A link to a request, in the text around it. */
     public static function requestLink(string $url, string $label): string
     { return '<a class="fi-link domains-link" href="'.e($url).'">'.e($label).'</a>'; }
-    /** A Note cell is already the link, since a table row can't hold another one. Its step just has to look like one. */
+    /** A Note cell is already the link, since a table row can't hold another one. Its step leads, so a cut note still shows it,
+     * and just has to look like a link. */
     public static function noteStep(string $note, array $status): string|HtmlString
     {
         $label='Check request #'.$status['request']; $check=$label.'.';
         if (!self::requestUrl($status)||!str_ends_with($note,$check)) { return $note; }
-        return new HtmlString(e(substr($note,0,-strlen($check))).'<span class="domains-link">'.e($label).'</span>.');
+        return new HtmlString('<span class="domains-link">'.e($label).'</span>. '.e(rtrim(substr($note,0,-strlen($check)))));
     }
     /** The most urgent cause and its fix, said in the head line. */
     public static function notice(Domain $d): ?array

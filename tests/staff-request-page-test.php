@@ -44,13 +44,14 @@ same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay:
 same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync','hold'=>'Put on hold','release'=>'Release hold',
     'disposition'=>'Close request','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
 
-// List: Request, Domain, Type, Status with reason, Created, Registrar account; Status, Type and Registrar account filters.
+// List: Request, Domain, Type, Status, Note, Created, Registrar account; Status, Type and Registrar account filters. One-line rows.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
 $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()
     ->assertSee('Request #'.$heldOp->id)->assertSeeHtml('2026-10-20T15:05:00+00:00')->assertSee('Synthetic registrar')
-    ->assertSee('On hold')->assertSee('Old registrar needs approval')->assertSee('Registrar account')
+    ->assertSee('On hold')->assertSee('Old registrar needs approval')->assertSee('Registrar account')->assertSee('Note')->assertSeeHtml('placeholder="Search domain"')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
 same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
+staffTableStandard($list,'Search domain',['domain.domain','state','note']);
 $filter=static function(string $name,array $value){$p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable($name,$value);
     return $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters');};
 $filter('status',['on_hold'])->assertCanSeeTableRecords([$heldOp,$longOp])->assertCanNotSeeTableRecords([$doneOp]);

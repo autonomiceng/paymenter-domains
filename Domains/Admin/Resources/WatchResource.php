@@ -6,7 +6,7 @@ use Filament\Tables\{Table,Columns\TextColumn,Filters\Filter,Filters\SelectFilte
 use Filament\Forms\Components\TextInput;
 use Filament\Support\Enums\FontFamily;
 use Illuminate\Database\Eloquent\Builder;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,StatusMark,WatchReadResource,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,OneLine,StatusMark,WatchReadResource,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainName,Missing};
 use Filament\Pages\Enums\SubNavigationPosition;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,ListManagedDns,ListDnsFailures,MonitoringSettings,ViewWatch};
@@ -36,10 +36,10 @@ class WatchResource extends WatchReadResource
     public static function table(Table $table): Table
     {
         return $table->columns([
-            DemoTag::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
-                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['class'=>DomainName::CELL])),
-            TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])->extraAttributes(fn($record,$livewire)=>StatusMark::attributes($livewire->watchRow($record)['status']['tone'],'watch-'.$record->id))
-                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['status']['reason']),
+            DemoTag::apply(OneLine::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state)),OneLine::NAME)),
+            OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label']),OneLine::SHORT),
+            TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])->extraAttributes(fn($record,$livewire)=>StatusMark::attributes($livewire->watchRow($record)['status']['tone'],'watch-'.$record->id)),
+            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['reason'])),
             self::fact(TextColumn::make('registration')->label('Registrar')->visibleFrom('xl'),fn($record)=>['value'=>WatchFindings::who($record->registration),'cause'=>Missing::fills('after the next check')]),
             self::fact(TextColumn::make('delegation.dns')->label('Nameservers')->visibleFrom('lg'),fn($record)=>['value'=>WatchFindings::who($record->delegation?->dns),'cause'=>Missing::fills('after the next check')]),
             self::fact(TextColumn::make('last_check')->label('Last check')->visibleFrom('md'),fn($record,$livewire)=>WatchFacts::lastCheck($record,$livewire->watchRow($record)['summary'])),
@@ -51,7 +51,7 @@ class WatchResource extends WatchReadResource
                 ->indicateUsing(fn(array $data)=>trim((string)($data['customer']??''))!==''?'Customer: '.trim((string)$data['customer']):null),
             SelectFilter::make('expiry')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','90'=>'90 days'])->query(fn(Builder $query,array $data,$livewire)=>$livewire->expiryQuery($query,(int)($data['value']??0)))
                 ->indicateUsing(fn(array $data,$livewire)=>in_array($data['value']??null,['7','30','90'],true)?'Expires within '.$data['value'].' days'.($livewire->expiryScanCapped()?' (first 1,000 domains)':''):null),
-        ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No monitored domains')->emptyStateDescription('Turn on monitoring on a hosting product.');
+        ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain')->emptyStateHeading('No monitored domains')->emptyStateDescription('Turn on monitoring on a hosting product.');
     }
     public static function getPages(): array{return ['index'=>ListWatches::route('/'),'dns-failures'=>ListDnsFailures::route('/dns-failures'),'dns-setup'=>ListManagedDns::route('/dns-setup'),'settings'=>MonitoringSettings::route('/settings'),'view'=>ViewWatch::route('/{record}'),'history'=>WatchResource\Pages\WatchHistory::route('/{record}/history')];}
 }
