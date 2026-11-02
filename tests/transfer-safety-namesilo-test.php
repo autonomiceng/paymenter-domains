@@ -7,6 +7,11 @@ foreach (['Missing Authorization Code','Incorrect Authorization Code','Domain is
     $op=$prepare('held-'.$i); Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::save(new Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1')); $observe->status=$status; $observe->fault='reject'; $r=$reconcile->run($op->id);
     same($i===5?'uncertain':'held',$r->state,'Needs-action is distinct from unproved final rejection');
     same($i===5?'reconciliation_required':'transfer_needs_action',$r->safe_code,'Safe staff outcome retained'); expect($r->policy['reconciliation']['staff_alert'],'Staff alert retained');
+    if ($status==='Domain is Private') {
+        $notice=Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($r,$clock->now()->getTimestamp());
+        expect(str_contains($notice['body']??'','Turn off WHOIS privacy there.'),'Privacy-blocked NameSilo transfer tells the owner to turn off privacy at the old registrar');
+        expect(str_contains($notice['body']??'','at your old registrar.'),'Privacy recovery points to the old registrar');
+    }
     same(null,$r->attempt['transfer_terminal']??null,'A status alone never proves transfer finality');
     same(null,$refunds->creditRejected($r->id),'Unproved finality never grants credit');
     commerceReject(fn()=>Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($r->domain->domain));

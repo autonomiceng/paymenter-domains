@@ -31,7 +31,7 @@ final class TransferNotice
                 ?'Contact support. We keep trying to check the status.':'Contact support. We’ll check the transfer status.','tone'=>'warning'];
         }
         if(TransferPolling::expected($op)&&($r['transfer_status']??null)==='needs_action'){
-            return ['title'=>self::title('transfer_needs_action'),'body'=>'Check approval, the domain lock and auth code at your old registrar. We keep checking.','tone'=>'warning'];
+            return ['title'=>self::title('transfer_needs_action'),'body'=>'Check approval, the domain lock and auth code at your old registrar. Turn off WHOIS privacy there. We keep checking.','tone'=>'warning'];
         }
         if(($r['staff_alert']??false)===true&&!TransferPolling::expected($op)){
             return ['title'=>self::title($reason),'body'=>'Contact support to check this transfer. Don’t start another transfer.','tone'=>'warning'];
