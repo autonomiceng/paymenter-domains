@@ -24,8 +24,11 @@ final class UpgradeEvidence
             if (!empty($old['register'])) { $longest ??= max($old['register']); }
             if ($old !== null) { $transfers ??= !empty($old['transfer']); }
         }
+        // Only a retained master switch is staff intent; created candidates start disabled for staging.
+        $stops = $tld !== null && !($tld->catalogue_created ?? false) && !$tld->enabled
+            ? ['register', 'renew', 'transfer'] : [];
         return new Intent($defaultSell, $rule['years'] ?? 1, $rule['transfers'] ?? false,
-            $rule['max_cost'] ?? null, $sell, $longest, $transfers);
+            $rule['max_cost'] ?? null, $sell, $longest, $transfers, $stops);
     }
 
     public static function money(mixed $value, int $scale): ?string
