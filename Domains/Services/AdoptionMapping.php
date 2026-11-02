@@ -41,11 +41,11 @@ final class AdoptionMapping
         try { $account = $extension['account'] ?? Account::where('server_id', $target->serverId)->sole(); }
         catch (\Throwable) { throw new \DomainException('account_unconfirmed'); }
         $binding = CatalogueAcceptances::binding($account);
-        if ($binding->registrarKey !== 'enom' || $binding->environment !== $target->environment
+        if ($binding->registrarKey !== $tld->registrar_key || $binding->environment !== $target->environment
             || $binding->fingerprint !== $tld->account_fingerprint) { throw new \DomainException('account_unconfirmed'); }
         if ($domain && !$domain->adoptionPending()) { throw new \DomainException('competing_holding'); }
         if ($domain && ((int) $domain->service_id !== $target->serviceId || (int) $domain->user_id !== $target->customerId
-            || (int) $domain->server_id !== $target->serverId || $domain->registrar_key !== 'enom'
+            || (int) $domain->server_id !== $target->serverId || $domain->registrar_key !== $binding->registrarKey
             || $domain->account_fingerprint !== $binding->fingerprint)) { throw new \DomainException('mapping_unconfirmed'); }
         $sourceExpiry = $domain?->renewal_policy['conversion_source_expiry'] ?? $domain?->provider_expires_at?->format('Y-m-d');
         if ($domain) {

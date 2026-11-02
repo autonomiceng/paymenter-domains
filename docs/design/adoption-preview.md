@@ -3,6 +3,20 @@
 Adoption remains disabled. Preview evidence is never a holding, payment, dispatch
 permission or renewal anchor. NameSilo adoption remains unavailable.
 
+The shared preview depends on `Contracts/AdoptionSource`, selected through the registrar's
+explicit import factory. `AccountBindings` rechecks the binding, current credentials and
+site before construction and after the unlocked read. A general reader or balance-only
+composition cannot supply import authority. Only Enom has a production import factory.
+
+`Data/Adoption/AdoptionReadback` carries the exact name/account, nullable opaque reference,
+expiry with precision/provenance, explicit auto-renew/ordinary/hold/redemption facts
+and adapter command-set version. Unknown facts stay unknown. Preview requires positive
+ordinary-domain proof and renewal off; it does not infer these from a TLD price or a
+missing reference. Local timestamps without a proven zone refuse. Null references do
+not collide with other null references; present references still enforce identity checks.
+Mapping and confirmation retain the chosen registrar and the existing native lock order,
+replay checks and local-only commit. This interface does not enable NameSilo imports.
+
 Enom adoption v1 reads only GetDomainInfo, GetDomainExp, GetRenew and GetExtendInfo.
 A narrow enum and a transport check enforce that list independently of the general
 read vocabulary. One named reader owns a six-request/90-second context, with at

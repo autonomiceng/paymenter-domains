@@ -56,7 +56,7 @@ final class AdoptionCommit
                     || $d->domain !== $target->name) { throw new AdoptionRefused(RefusalCode::ResultReview); }
                 return $d;
             }
-            if (Domain::where('server_id', $target->serverId)->where('provider_domain_id', $e['provider_domain_id'])
+            if ($e['provider_domain_id'] !== null && Domain::where('server_id', $target->serverId)->where('provider_domain_id', $e['provider_domain_id'])
                 ->where('domain', '!=', $target->name)->lockForUpdate()->exists()) { throw new AdoptionRefused(RefusalCode::IdentityReview); }
             $capture = $this->mapping->capture($target, new StaffContext((int) $actor->id, $seed->reason, $e['requested_do_not_renew']), $lock);
             $a = Adoption::whereKey($seed->id)->lockForUpdate()->firstOrFail();
@@ -118,7 +118,7 @@ final class AdoptionCommit
         $lock->owners($target->customerId);
         // A narrowly scoped insert of our own pending table row. No native order/service/invoice is created.
         $row = new Domain([...$name, 'reservation_name' => $target->name, 'service_id' => $target->serviceId,
-            'user_id' => $target->customerId, 'server_id' => $target->serverId, 'registrar_key' => 'enom',
+            'user_id' => $target->customerId, 'server_id' => $target->serverId, 'registrar_key' => $capture['binding']->registrarKey,
             'account_fingerprint' => $capture['binding']->fingerprint, 'status' => 'adoption_pending', 'provenance' => 'adoption_pending',
             'authority_generation' => 0, 'confirmed_revision' => 0, 'billing_managed' => false]);
         $row->updateTimestamps();

@@ -216,19 +216,17 @@ final class AccountBindings
         } catch (\Throwable) { return 'configuration_unavailable'; }
     }
 
-    /** Named adoption factory: accepted credentials and exact site guard, independent of spending. */
-    public function adoptionReader(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $expected,
-        \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
-        \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport $wire): \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader
+    /** Named import factory: current credentials and exact site guard, independent of spending. */
+    public function adoptionReader(AccountBinding $expected,
+        \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock): \Paymenter\Extensions\Servers\Domains\Contracts\AdoptionSource
     {
-        if (DB::transactionLevel() !== 0 || $expected->registrarKey !== 'enom') { throw new \DomainException('Adoption read unavailable.'); }
+        if (DB::transactionLevel() !== 0) { throw new \DomainException('Adoption read unavailable.'); }
         $this->registry->requireDomainReads($expected->registrarKey);
         $this->server($expected->serverId);
         $account = Account::where('server_id', $expected->serverId)->sole();
         $expected->requireMatch($this->binding($account));
         $credentials = $this->configuration($account, true);
-        return new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader($expected,
-            $credentials['uid'], $credentials['token'], $wire, $clock, Runtime::limiter());
+        return $this->registry->adoptionReader($expected, $credentials, $clock);
     }
 
     /** Guard for later engine claim/dispatch; never grants admission by itself. */

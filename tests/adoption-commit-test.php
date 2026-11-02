@@ -175,5 +175,8 @@ same($pending->id,$converted->id,'Converted DNR preserves pending domain identit
 same(1,ServiceCancellation::where('service_id',$service->id)->count(),'Converted DNR retains exactly one cancellation');
 same($converted->id,$confirm($a2)->id,'Converted DNR replay returns original result');
 same(1,ServiceCancellation::where('service_id',$service->id)->count(),'Converted DNR replay retains one cancellation');
+// Offline alternate-provider contract. This is not a NameSilo API adapter.
+require __DIR__.'/Support/adoption-source.php';
+exerciseSharedImport($native, $mapping, $clock, $staff, $owner, $context, $converted, $binding, $wire);
 $nativeSuccessful = true;
 echo "Fresh adoption, stale evidence, locked identities, replay and whole-transaction rollback passed\n";
