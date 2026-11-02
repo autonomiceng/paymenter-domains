@@ -160,14 +160,14 @@ Server::findOrFail(1)->settings()->create(['key' => SellRule::KEY, 'type' => 'ar
     'value' => ['mode' => 'all', 'max_cost' => null, 'years' => 1, 'transfers' => false]]);
 $freshBinding = CatalogueAcceptances::binding(Account::where('server_id', 1)->sole());
 $rows = [];
-for ($i = 0; $i < 1007; $i++) { $rows[] = [...$freshKey, 'tld' => 'suffix'.str_pad((string) $i, 4, '0', STR_PAD_LEFT)]; }
+for ($i = 0; $i < 1007; $i++) { $rows[] = [...$freshKey, 'tld' => 'suffix'.chr(97 + intdiv($i, 676)).chr(97 + intdiv($i % 676, 26)).chr(97 + $i % 26).'.example']; }
 foreach (array_chunk($rows, 100) as $chunk) { DB::table(SellTableSchema::ROWS)->insert($chunk); }
-DB::table(SellTableSchema::ROWS)->where('tld', 'suffix0000')->update(['choice' => 'skip']);
+DB::table(SellTableSchema::ROWS)->where('tld', 'suffixaaa.example')->update(['choice' => 'skip']);
 $freshBefore = UpgradeComparison::capture(); $convertedCount = 0;
 do { $part = $converter->batch($freshBinding, 250); $convertedCount += $part['converted']; } while (!$part['complete']);
 same(1007, $convertedCount, 'Bounded prefixed conversion reaches every offer beyond one thousand');
 same(1007, DB::table('domains_tlds')->count(), 'Discovered offers get one permanent candidate each');
-$allIntent = json_decode(DB::table('domains_tlds')->where('tld', 'suffix0000')->value('catalogue_intent'), true);
+$allIntent = json_decode(DB::table('domains_tlds')->where('tld', 'suffixaaa.example')->value('catalogue_intent'), true);
 same([true, null], [$allIntent['defaultSell'], $allIntent['sell']], 'Legacy all mode continues to ignore old skip rows');
 same(0, DB::table('domains_tlds')->where('enabled', true)->count(), 'Discovered candidates do not activate old sales');
 same(true, $converter->report($freshBinding, $freshBefore)['compatible'], 'Prefixed fresh install preserves original rows through conversion');
