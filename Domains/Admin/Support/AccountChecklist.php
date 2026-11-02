@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldResource};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Price};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
     RenewalBillingSettings,RuntimePorts,WatchWork};
@@ -26,8 +26,8 @@ final class AccountChecklist
     private const NAMESILO='Not offered for NameSilo.';
     private const REGISTRATIONS='Lets customers buy domains on this account. The site sets this, so it has no switch here. Orders must be on too.';
     private const TRANSFERS='Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too. Experimental: it has never run against a real test transfer.';
-    private const RENEWALS='Sends paid renewals to the registrar, creates renewal invoices and sends reminder emails. Off: no new invoices. Issued invoices stay payable, and paid renewals wait until you turn it back on.';
-    private const BILLING='Creates renewal invoices and sends reminder emails. Off: no new invoices. Issued invoices stay payable, and paid renewals still go to the registrar.';
+    private const RENEWALS='Can issue renewal invoices, use customer credit, try saved Auto Pay and send paid renewals. Off: no new invoices. Issued invoices stay payable, and paid renewals wait.';
+    private const BILLING='Controls billing only, not sending renewals to NameSilo. Can issue invoices, use customer credit and try saved Auto Pay. Off: no new invoices. Issued invoices stay payable.';
     private const MANAGEMENT='Sends changes to DNS records, nameservers and contact details to the registrar. Off: those changes are not sent.';
     private static function row(string $label,?string $value,?string $tone=null,?string $cause=null,?string $action=null,?string $help=null): array
     { return compact('label','value','tone','cause','action','help'); }
@@ -58,7 +58,8 @@ final class AccountChecklist
         if ($binding !== null && $a->registrar_key === 'enom') {
             $on=\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::stored($binding);
             $ready=\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::available($binding);
-            $rows[]=self::row('Late renewal',$on?'On':'Off',$on?'success':null,$ready?null:(EnomTestRenewal::accepted($binding)?'Ask your site admin to record Enom’s late renewal evidence.':'Turn on Renewals first.'),$ready||$on?'late_renewal':null,\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP);
+            $cause=$ready?'Late renewal is paused until you approve it. Turn on to allow billing for expired domains.':(EnomTestRenewal::accepted($binding)?'Ask your site admin to record Enom’s late renewal evidence.':'Late renewal is paused. Turn on Renewals first.');
+            $rows[]=self::paused($a,self::row('Late renewal',$on?'On':'Off',$on?'success':null,$on?null:$cause,$ready||$on?'late_renewal':null,\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP));
         }
         return $rows;
     }
@@ -81,22 +82,38 @@ final class AccountChecklist
     private static function writeSwitch(Account $a,string $label,string $key,bool $on,string $help): array
     {
         $live=$a->environment==='live';$action=($live?'live_':'test_').$key;
-        return match(true){$on=>self::row($label,'On','success',null,$action,$help),
-            $live&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a))=>self::row($label,'Off',null,'Use Activate to see what is missing.',null,$help),
-            $key==='renewal'&&RenewalBillingSettings::read((int)$a->server_id)['issue_days']===null=>self::row($label,'Off',null,'Fix the invoice days first.',null,$help),
-            default=>self::row($label,'Off',null,null,$action,$help)};
+        if($key==='renewal'){$help=self::billingHelp((int)$a->server_id,$help);}
+        return self::paused($a,match(true){$on=>self::row($label,'On','success',null,$action,$help),
+            $live&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a))=>self::row($label,'Off',null,'Paused until setup is approved. Use Activate to see what is missing.',null,$help),
+            $key==='renewal'&&RenewalBillingSettings::read((int)$a->server_id)['issue_days']===null=>self::row($label,'Off',null,'Renewal billing is paused. Fix the invoice days first.',null,$help),
+            default=>self::row($label,'Off',null,match($key){'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
     }
     /** NameSilo has no send permission here, so Renewals is its two billing flags. A bad saved calendar can't be saved back, so it waits for Edit schedule. */
     private static function billingSwitch(int $server): array
     {
         $on=RenewalBillingSettings::anyOn($server);$bad=RenewalBillingSettings::read($server)['issue_days']===null;
-        return self::row('Renewals',$on?'On':'Off',$on?'success':null,$bad?'Fix the invoice days first.':null,$bad?null:'renewals',self::BILLING);
+        return self::paused(Account::where('server_id',$server)->sole(),self::row('Renewals',$on?'On':'Off',$on?'success':null,$bad?'Saved invoice days are invalid. Edit schedule to fix them.':($on?null:'Billing is paused. Ask your site admin to set up renewal sending for NameSilo, then turn on Renewals to allow billing.'),$bad?null:'renewals',self::billingHelp($server,self::BILLING)));
+    }
+    private static function billingHelp(int $server,string $help): string
+    {
+        $billing=RenewalBillingSettings::read($server);
+        return $help.(!$billing['scheduled']&&$billing['manual']?' Invoices are owner-requested only; scheduled billing is off.':'');
     }
     /** Orders stop or start every registrar request on this account. Saved credentials must match before they can start. */
     private static function orders(Account $a): array
     {
         $on=(bool)$a->processing_enabled;
-        return self::row('Orders',$on?'On':'Off',$on?'success':null,$on||app(AccountBindings::class)->configurationStatus((int)$a->server_id)==='matched'?null:'Fix the API connection first.','processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.');
+        $status=$on?'matched':app(AccountBindings::class)->configurationStatus((int)$a->server_id);
+        $cause=match($status){'matched'=>'Orders are paused. Check setup, then turn on Orders.','site_unbound'=>'Orders are paused. Use Activate to check setup and turn on Orders.',default=>'Orders are paused. Fix the API connection first.'};
+        return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:$cause,'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
+    }
+    /** An Off feature needs attention when this account already manages domains. No settings change here. */
+    private static function paused(Account $a,array $row): array
+    {
+        if($row['value']!=='Off'||$row['label']==='Transfers'){return $row;}
+        $count=Domain::where('server_id',$a->server_id)->where('billing_managed',true)->count();
+        if($count>0){$row['tone']='warning';$row['cause'].=' '.$count.' managed domain'.($count===1?' needs':'s need').' attention while this is off.';}
+        return $row;
     }
     /** A bad saved calendar can't be saved back, so this switch waits for Edit schedule. It only works while Renewals is on, so otherwise the row says so with no switch. On with a bad calendar keeps its switch: it shows what customers can still do. */
     private static function renewEarly(int $server): array

@@ -327,7 +327,7 @@ $site='https://billing.example.com';config(['app.url'=>$site,'domains.enom_live.
 same(['Not available yet',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['action']],'Live with no opt-in shows no switch');same(['Not available yet',null],[$checklist()['Transfers']['value'],$checklist()['Transfers']['action']],'Live transfers with no deployment approval or saved opt-in show no switch');$noKeys();
 config(['domains.enom_live.catalogue'=>true]);$noKeys();
 config(['domains.enom_live.accounts'=>[$enom->stable_identity=>['fingerprint'=>$liveBinding->fingerprint]]]);DB::table('domains_accounts')->where('id',$enom->id)->update(['live_site'=>$site]);
-same(['Off','Use Activate to see what is missing.',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['cause'],$checklist()['Renewals']['action']],'Live turn-on is not a switch');
+same(['Off','Paused until setup is approved. Use Activate to see what is missing.',null],[$checklist()['Renewals']['value'],explode(' 1 managed domain',$checklist()['Renewals']['cause'])[0],$checklist()['Renewals']['action']],'Live turn-on is not a switch');
 $page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to see what is missing.')->assertActionDoesNotExist(setupAction('live_renewal',(int)$enom->server_id));
 Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$enom->server_id,$page->instance()->reviewStamp,'live_renewal')->getActionFunction()([],$page->instance());
 same(0,App\Models\Server::findOrFail($enom->server_id)->settings()->where('key','domains_enom_live_renewal')->count(),'A Live switch with empty form data creates no acceptance');
@@ -337,4 +337,21 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_writes.renewal
 same('Not available yet',$checklist()['Transfers']['value'],'TEST site off shows no switch');
 config(['domains.enom_catalogue.enabled'=>true,'domains.enom_writes.transfer'=>true]);$noKeys();
 same(['Off','test_transfer'],[$checklist()['Transfers (experimental)']['value'],$checklist()['Transfers (experimental)']['action']],'TEST transfers get a real switch once the site allows them');
+// Ready Off shapes explain the pause and retain the existing turn-on actions.
+config(['domains.enom_writes.management'=>true]);
+$offRows=$checklist();
+foreach(['Renewals'=>'test_renewal','DNS, nameservers and contacts'=>'test_management','Orders'=>'processing'] as $label=>$action){
+    same(['Off',$action],[$offRows[$label]['value'],$offRows[$label]['action']],$label.' keeps its switch');
+    expect(str_contains(strtolower($offRows[$label]['cause']??''),'paused')&&str_contains(strtolower($offRows[$label]['cause']??''),'turn on'),$label.' explains the pause and next step');
+    same('warning',$offRows[$label]['tone'],$label.' warns about managed domains');
+}
+$billing=$siloRows()['Renewals'];
+expect(str_contains($billing['cause'],'Billing is paused')&&str_contains($billing['cause'],'site admin')&&str_contains($billing['help'],'billing only'), 'NameSilo explains billing and the sending setup');
+foreach(['invoices','customer credit','Auto Pay','paid renewals'] as $effect){expect(str_contains($offRows['Renewals']['help'],$effect),'Renewals explains '.$effect);}
+$testBinding=CatalogueAcceptances::binding(Account::findOrFail($enom->id));
+$review=new StaffSettingsReview($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::ticket($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::stamp((int)$enom->server_id,null)),'Approve test renewal setup');
+Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::review($review,['accept'=>true,'verified'=>true]);
+$late=$checklist()['Late renewal'];
+same(['Off','late_renewal'],[$late['value'],$late['action']],'Ready Test late renewal keeps its separate approval');
+expect(str_contains($late['cause'],'paused')&&str_contains($late['cause'],'expired domains')&&!str_contains($late['cause'],'evidence'),'Ready Test late renewal explains billing without asking for Live evidence');
 echo "Registrars list and account page passed\n";$nativeSuccessful=true;
