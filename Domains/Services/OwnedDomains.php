@@ -70,6 +70,13 @@ final readonly class OwnedDomains
         };
     }
     /** Why a History change failed, in owner words. A test call cap stops the change before it is sent. */
+    public const ASK_US=' Contact support to make this change.';
+    /** A failed change the customer can't redo asks them to contact us, not to try again. */
+    public static function askUs(?array $row, bool $canEdit): ?array
+    {
+        if ($row===null || $canEdit || !str_ends_with($row['text'],ManagementProgress::TRY_AGAIN)) { return $row; }
+        return ['text'=>substr($row['text'],0,-strlen(ManagementProgress::TRY_AGAIN)).self::ASK_US]+$row;
+    }
     private static function failure(Operation $entry): string
     {
         return ManagementEvidence::outcome($entry) ?? RequestStatus::NOT_MADE;
@@ -155,7 +162,7 @@ final readonly class OwnedDomains
                     default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
                 };
                 $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
-                    'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
+                    'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null,'setting'=>ManagementProgress::setting($entry->action)];
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
                 if ($label=self::CHANGES[$entry->action]??null) {
                     $progress[]=['label'=>$label,'state'=>'Unreadable','date'=>$entry->updated_at?->toIso8601String(),'note'=>ManagementProgress::UNREADABLE];
@@ -218,7 +225,10 @@ final readonly class OwnedDomains
             foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
-        foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; $section['progress']=($row['settled']??false)?null:$row; } unset($section);
+        foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; $section['progress']=($row['settled']??false)?null:self::askUs($row,(bool)$section['actions']); } unset($section);
+        // Try again only where the customer can make the change; otherwise they ask us.
+        $editable=[]; foreach ($management as $key=>$section) { $editable[ManagementProgress::setting($key)]=($editable[ManagementProgress::setting($key)]??false)||$section['actions']; }
+        foreach ($progress as &$row) { if (isset($row['setting'])) { $row['retry']=$editable[$row['setting']]??false; unset($row['setting']); } } unset($row);
         // Only the exact retained issued renewal invoice supplies a due date.
         $renewalDue=null; $earlyRenewal=false;
         $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();
