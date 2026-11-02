@@ -2,20 +2,152 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
+require __DIR__.'/Support/commerce.php';
+require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/accounts.php';
 
-use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeConversion;
+use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Server, Service};
+use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Support\Facades\{Artisan, DB, Schema};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{UpgradeComparison, UpgradeConversion};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation, OfferSchema, SellRule, SellTableSchema};
 
-// A real retained database is necessary: transaction boundaries, IDs and repeated upgrades
-// are the converter's public persistence behavior, not provider or arithmetic mocks.
+// A real retained/native database is necessary: atomic resume, permanent mappings and frozen
+// financial rows are the converter's persistence contract. Registrar fixtures are entirely fake.
+$migrator = app(Migrator::class);
+$files = $migrator->getMigrationFiles([dirname(__DIR__).'/Domains/database/migrations']);
+unset($files[OfferSchema::MIGRATION]);
+$migrator->runPending($files, ['force' => true]);
+extract(commerceFixture());
+[$enom, $namesilo] = $tlds;
+$binding = CatalogueAcceptances::binding(Account::where('server_id', $enom->server_id)->sole());
+$key = ['server_id' => $binding->serverId, 'account_fingerprint' => $binding->fingerprint];
+$server = Server::findOrFail($binding->serverId);
+$server->settings()->create(['key' => SellRule::KEY, 'type' => 'array', 'encrypted' => false,
+    'value' => ['mode' => 'only', 'max_cost' => '12.0000', 'years' => 3, 'transfers' => true]]);
+DB::table(SellTableSchema::ROWS)->insert([...$key, 'tld' => 'com', 'choice' => 'skip', 'longest' => 2,
+    'transfer' => false, 'register_cost' => '9.1250', 'renew_cost' => '9.5000', 'transfer_cost' => null,
+    'read_at' => $now->modify('+1 hour')->getTimestamp(), 'prices' => json_encode([1 => [], 2 => [], 5 => []])]);
+DB::table(SellTableSchema::ROWS)->insert([...$key, 'tld' => 'co.uk', 'choice' => 'sell']);
+DB::table(SellTableSchema::FILLS)->insert([...$key, 'run' => 7, 'tried_at' => 100,
+    'filled_at' => 90, 'failed_at' => 95, 'failure' => 'transport_failed']);
+$accepted = CatalogueAcceptances::load($binding);
+CatalogueAcceptances::save($binding, $accepted->revision, [...$accepted->endings,
+    'net' => ['register' => [1], 'renew' => [1], 'transfer' => [], 'registry' => true, 'renewal_safe' => true]]);
+$org = Tld::create([...$key, 'registrar_key' => 'enom', 'tld' => 'org']);
+$time = '2020-01-01 00:00:00'; $until = '2020-01-03 00:00:00';
+foreach ([['register', 1, '5.0000', 'term_total'], ['register', 2, '7.0000', 'annual'],
+    ['register', 4, '2.0000', 'mystery'], ['renew', 1, null, 'term_total'], ['transfer', 1, null, 'term_total']] as [$action, $term, $amount, $unit]) {
+    DB::table('domains_prices')->insert([...$key, 'registrar_key' => 'enom', 'tld' => 'org',
+        'action' => $action, 'term' => $term, 'currency' => 'USD', 'unit' => $unit,
+        'source' => 'synthetic', 'wholesale' => $amount, 'retail' => $action === 'renew' ? '19.95' : null,
+        'observed_at' => $time, 'fresh_until' => $action === 'renew' ? null : $until]);
+}
+DB::table(SellTableSchema::ROWS)->insert([...$key, 'tld' => 'org', 'register_cost' => '6.0000',
+    'read_at' => (new DateTimeImmutable($time, new DateTimeZone('UTC')))->getTimestamp()]);
+// The owned account is deliberately no longer selling, while native mappings and retail stay.
+$sellers->change('com', 2, $namesilo->server_id, true, true, $now);
+DB::table('domains_tlds')->where('id', $enom->id)->update(['enabled' => false, 'registry_fields' => '[]',
+    'cost_register_terms' => '{"1":"1.0000"}', 'costs_synced_at' => '2020-01-01 00:00:00']);
+$owner = commerceUser(); $product = $native->product($enom, 'register');
+$order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
+$service = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id,
+    'plan_id' => $product->plans()->where('billing_period', 1)->sole()->id, 'quantity' => 1,
+    'price' => '10.40', 'currency_code' => 'USD', 'status' => 'active']);
+$domain = DB::table('domains_domains')->insertGetId([...$key, 'registrar_key' => 'enom',
+    'service_id' => $service->id, 'user_id' => $owner->id, 'domain' => 'example.com', 'reservation_name' => 'example.com',
+    'sld' => 'example', 'tld' => 'com', 'status' => 'active', 'snapshot' => 'synthetic frozen snapshot']);
+foreach (['pending', 'paid', 'unknown'] as $i => $state) {
+    $invoice = Invoice::create(['user_id' => $owner->id, 'currency_code' => 'USD', 'status' => $state === 'pending' ? 'pending' : 'paid']);
+    $item = InvoiceItem::create(['invoice_id' => $invoice->id, 'reference_type' => $service->getMorphClass(),
+        'reference_id' => $service->id, 'description' => 'Retained annual obligation', 'quantity' => 1, 'price' => '10.40']);
+    if ($state !== 'pending') { InvoiceTransaction::create(['invoice_id' => $invoice->id, 'amount' => '10.40', 'fee' => '0.00', 'status' => 'succeeded']); }
+    DB::table('domains_operations')->insert([...$key, 'registrar_key' => 'enom', 'domain_id' => $domain,
+        'service_id' => $service->id, 'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id,
+        'operation_key' => 'synthetic-conversion-'.$i, 'action' => 'renew', 'state' => $state,
+        'amount' => '10.40', 'currency' => 'USD', 'cost' => 'synthetic frozen ceiling',
+        'attempt' => 'synthetic frozen attempt', 'funding' => 'synthetic frozen funding']);
+}
+$before = UpgradeComparison::capture();
 (new Installation)->install();
-$key = fixtureAccount(1, 'enom', 'synthetic-conversion');
-$tld = Tld::create([...$key, 'tld' => 'com', 'enabled' => false]);
-$binding = CatalogueAcceptances::binding(Account::where('server_id', 1)->sole());
-$result = (new UpgradeConversion)->batch($binding, 1);
+(new Installation)->install();
+same(true, UpgradeComparison::compare($before)['compatible'], 'Retained upgrade adds fields without changing IDs, mappings, intent or obligations');
+$converter = new UpgradeConversion;
+$result = $converter->batch($binding, 1);
 same(1, $result['converted'], 'Conversion stages the retained offer instead of silently skipping it');
+same(false, $result['complete'], 'A bounded first batch leaves a resume point');
+// Interrupt after the offer UPDATE but before its cursor commit. The transaction must roll back.
+$interrupt = true;
+DB::listen(static function ($query) use (&$interrupt): void {
+    if ($interrupt && str_starts_with($query->sql, 'update "domains_tlds"') && str_contains($query->sql, '"catalogue_converted"')) {
+        $interrupt = false; throw new RuntimeException('Synthetic conversion interruption');
+    }
+});
+try { $converter->batch($binding, 1); expect(false, 'Expected interrupted conversion'); }
+catch (RuntimeException $error) { same('Synthetic conversion interruption', $error->getMessage(), 'Intended interruption reached'); }
+same(0, (int) DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_converted'), 'Interrupted offer is not half converted');
+same('co.uk', DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->value('offer_conversion_cursor'), 'Interrupted cursor retains its last committed offer');
+same(1, $converter->batch($binding, 1)['converted'], 'Interrupted offer converts on resume');
+same(['converted' => 2, 'complete' => true], $converter->batch($binding, 100), 'A final bounded call includes acceptance-only and conflicting offers');
+$converted = UpgradeComparison::query('domains_tlds')->where('id', $enom->id)->sole();
+$intent = json_decode($converted->catalogue_intent, true);
+same([false, 2, false], [$intent['sell'], $intent['longest'], $intent['transfers']], 'Explicit choices survive the account default and accepted intent');
+same([false, 3, true, '12.0000'], [$intent['defaultSell'], $intent['defaultLongest'], $intent['defaultTransfers'], $intent['maxAnnualCost']], 'Typed saved account defaults survive');
+same(null, $converted->catalogue_facts, 'Old registry flags and cost timestamps never become dated facts');
+same('10.4', $converted->catalogue_retained_annual_retail, 'Deselected unsold holder keeps positive annual retail independently of newest costs');
+same(null, $converted->catalogue_published_revision, 'Conversion grants no publication authority');
+$readCost = static fn (string $action, int $term = 1): ?array => json_decode(DB::table('domains_prices')
+    ->where([...$key, 'tld' => 'com', 'action' => $action, 'term' => $term])->value('catalogue_observation') ?? 'null', true);
+same('9.1250', $readCost('register')['total'], 'Newest valid comparable annual source wins exactly');
+same('18.0000', $readCost('register', 3)['total'], 'Existing evidenced exact-term total is retained without bucket interpolation');
+same('2026-10-18T12:00:00+00:00', $readCost('register', 3)['observed_at'], 'Old observation time remains old');
+same(null, $readCost('register', 2), 'Ambiguous bucket never creates an exact-term observation');
+$report = $converter->report($binding, $before);
+same([true, true, true, false], [$report['compatible'], $report['complete'], $report['source_unchanged'], $report['activated']], 'Comparison preserves IDs, native mappings, sellers, annual retail and frozen financial evidence');
+same(1, $report['issues']['unproven_bucket_terms'], 'Comparison reports unproven mappings');
+same(4, $report['issues']['unknown_facts'], 'Comparison reports undiscovered and undated facts');
+$orgRows = DB::table('domains_prices')->where([...$key, 'tld' => 'org'])->get()->keyBy(static fn ($p) => $p->action.':'.$p->term);
+same(null, $orgRows['register:1']->catalogue_observation, 'Equal-time conflicting normalized costs remain unknown');
+same('14.0000', json_decode($orgRows['register:2']->catalogue_observation, true)['total'], 'An explicitly evidenced annual exact term normalizes without floats');
+same('2020-01-01T00:00:00+00:00', json_decode($orgRows['register:2']->catalogue_observation, true)['observed_at'], 'Stale evidence is not refreshed by conversion');
+same(null, $orgRows['register:4']->catalogue_observation, 'Unknown units do not acquire a guessed amount');
+same(false, json_decode($orgRows['transfer:1']->catalogue_observation, true)['enabled'], 'Explicit dated disabled evidence survives ambiguous fill omissions');
+same('19.95', UpgradeComparison::query('domains_tlds')->where('id', $org->id)->value('catalogue_retained_annual_retail'), 'Missing current cost does not erase last published annual retail');
+same(1, $report['issues']['conflicting_price:register:1'], 'Comparison flags conflicting exact-term sources');
+same(null, DB::table('domains_tlds')->where([...$key, 'tld' => 'net'])->value('catalogue_facts'), 'Acceptance-only candidates carry no invented facts');
+$stagedBefore = DB::table('domains_tlds')->orderBy('id')->get()->toJson();
+same(['converted' => 0, 'complete' => true], $converter->batch($binding), 'Completed conversion is idempotent');
+same($stagedBefore, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Rerun does not advance revisions or dates');
+expect(!array_key_exists('catalogue_defaults', Account::where('server_id', $binding->serverId)->sole()->toArray()), 'Staging defaults stay out of active model serialization');
+// Changed legacy data after an interruption/completion must never be silently synchronized.
+DB::table(SellTableSchema::ROWS)->where([...$key, 'tld' => 'com'])->update(['choice' => 'sell']);
+try { $converter->batch($binding); expect(false, 'Expected changed-source refusal'); }
+catch (DomainException $error) { expect(str_contains($error->getMessage(), 'sources changed'), 'Changed-source refusal is explicit'); }
+same(false, $converter->report($binding, $before)['compatible'], 'Comparison detects changed original intent');
+DB::table(SellTableSchema::ROWS)->where([...$key, 'tld' => 'com'])->update(['choice' => 'skip']);
+same(true, $converter->report($binding, $before)['compatible'], 'Restored source matches frozen comparison');
+// Without a saved default, accepted intent fills only missing overrides on the other registrar.
+$other = CatalogueAcceptances::binding(Account::where('server_id', $namesilo->server_id)->sole());
+same(true, $converter->batch($other)['complete'], 'Annual-only registrar uses the same conversion');
+$otherIntent = json_decode(DB::table('domains_tlds')->where('id', $namesilo->id)->value('catalogue_intent'), true);
+same([false, true, 1, true], [$otherIntent['defaultSell'], $otherIntent['sell'], $otherIntent['longest'], $otherIntent['transfers']], 'Legacy acceptance supplies missing intent without acting as facts');
+// Separate fresh, prefixed database; all native/extension queries must respect its prefix.
+config(['database.connections.offer_prefix' => ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => 'b2_', 'foreign_key_constraints' => true]]);
+DB::setDefaultConnection('offer_prefix'); Schema::swap(DB::connection()->getSchemaBuilder());
+Artisan::call('migrate', ['--force' => true]); (new Installation)->install();
+$freshKey = fixtureAccount(10, 'namesilo', 'synthetic-prefixed');
+$freshBinding = CatalogueAcceptances::binding(Account::where('server_id', 10)->sole());
+$rows = [];
+for ($i = 0; $i < 1007; $i++) { $rows[] = [...$freshKey, 'tld' => 'suffix'.str_pad((string) $i, 4, '0', STR_PAD_LEFT)]; }
+foreach (array_chunk($rows, 100) as $chunk) { DB::table(SellTableSchema::ROWS)->insert($chunk); }
+$freshBefore = UpgradeComparison::capture(); $convertedCount = 0;
+do { $part = $converter->batch($freshBinding, 250); $convertedCount += $part['converted']; } while (!$part['complete']);
+same(1007, $convertedCount, 'Bounded prefixed conversion reaches every offer beyond one thousand');
+same(1007, DB::table('domains_tlds')->count(), 'Discovered offers get one permanent candidate each');
+same(0, DB::table('domains_tlds')->where('enabled', true)->count(), 'Discovered candidates do not activate old sales');
+same(true, $converter->report($freshBinding, $freshBefore)['compatible'], 'Prefixed fresh install preserves original rows through conversion');
+same(['converted' => 0, 'complete' => true], $converter->batch($freshBinding), 'Large conversion rerun is idempotent');
+(new Installation)->install(); OfferSchema::verify();
 $nativeSuccessful = true;
 echo "Offer conversion checks passed.\n";
