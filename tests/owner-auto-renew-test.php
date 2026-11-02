@@ -173,7 +173,7 @@ $preference->set($user,$auditDomain->id,false);same(false,$auditDomain->fresh()-
 $raw=DB::table('domains_watch_audit')->where('event','owner_auto_renew')->first()->data;expect(!str_contains($raw,'enabled'),'Audit details encrypted');
 DB::table('domains_watch_audit')->where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->update(['data'=>'invalid ciphertext']);
 Auth::login($staffActor);
-same(['Off','Turned off by customer. They can still renew by hand or turn it back on. Stop renewal blocks both.'],[DomainFacts::for($d->fresh())['Renewal invoices']['value'],DomainFacts::for($d->fresh())['Renewal invoices']['sub']],'Unreadable audit preserves the staff explanation');
+same(['Off','Turned off by customer. They can still renew by hand or turn it back on. Stop renewal blocks both.'],[DomainFacts::for($d->fresh())['Renewal invoices']['value'],DomainFacts::for($d->fresh())['Renewal invoices']['sub']],'Unreadable audit does not break staff facts');
 $native=\Livewire\Livewire::actingAs($staffActor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
 $native->assertSuccessful()->assertSee('Billing');
 \Livewire\Livewire::actingAs($staffActor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])
