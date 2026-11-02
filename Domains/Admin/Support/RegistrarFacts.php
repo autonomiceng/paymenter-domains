@@ -51,7 +51,7 @@ final class RegistrarFacts
     }
     /** @return array{total:int,review:int} Requests on this account, and those paid but not confirmed by the registrar. */
     public static function requests(int $server): array
-    { return ['total'=>Operation::where('server_id',$server)->count(),'review'=>AccountSpendingHolds::query(Operation::where('server_id',$server))->where('state','uncertain')->count()]; }
+    { return ['open'=>Operation::where('server_id',$server)->whereNotIn('state',\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::FINISHED)->count(),'review'=>AccountSpendingHolds::query(Operation::where('server_id',$server))->where('state','uncertain')->count()]; }
     /** Add funds and balance checks apply once the account is set up and its server is on. */
     public static function connected(?Account $account, array $status): bool
     { return $account!==null&&$status['label']!==AccountStatus::SET['not_connected'][0]; }

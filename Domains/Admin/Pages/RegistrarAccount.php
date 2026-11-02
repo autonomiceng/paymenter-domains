@@ -72,7 +72,7 @@ class RegistrarAccount extends Page
     {
         $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
         if (!$this->record()) { return [$setup('configure'),$setup('enroll_sandbox')]; }
-        return [ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id),\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($id,$this->reviewStamp)])
+        return [ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id)])
             ->label('More')->button()->outlined()->color('gray')->size('sm')->icon('heroicon-m-chevron-down')->iconPosition('after')];
     }
     /** Rebuild the page after a System checks action changed what it shows. */
@@ -201,7 +201,7 @@ class RegistrarAccount extends Page
         $rows[]=[...self::fact('Domains',(string)Domain::where('server_id',$s->id)->count()),'buttons'=>[Sheet::link('view_domains','View domains',$domains)]];
         $requests=RegistrarFacts::requests((int)$s->id);
         try { $url=OperationResource::getUrl('index',['filters'=>['server_id'=>['values'=>[(string)$s->id]]]]); } catch (\Throwable) { $url=null; }
-        $rows[]=[...self::fact('Registrar requests',(string)$requests['total'],$requests['review']>0?$requests['review'].' '.($requests['review']===1?'needs':'need').' review':null),'buttons'=>[Sheet::link('view_requests','View requests',$url)]];
+        $rows[]=[...self::fact('Registrar requests',(string)$requests['open'],$requests['review']>0?$requests['review'].' '.($requests['review']===1?'needs':'need').' review':null),'buttons'=>[Sheet::link('view_requests','View requests',$url)]];
         if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact($a->environment==='live'?'API calls, today (UTC)':'API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
         return $rows;
     }
