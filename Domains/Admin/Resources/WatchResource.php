@@ -45,7 +45,7 @@ class WatchResource extends WatchReadResource
     {
         return $table->columns([
             DemoTag::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
-                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['style'=>DomainName::CELL])),
+                ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['class'=>DomainName::CELL])),
             TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])->extraAttributes(fn($record,$livewire)=>StatusMark::attributes($livewire->watchRow($record)['status']['tone'],'watch-'.$record->id))
                 ->description(fn($record,$livewire)=>$livewire->watchRow($record)['status']['reason']),
             self::fact(TextColumn::make('registration')->label('Registrar')->visibleFrom('xl'),fn($record)=>['value'=>WatchFindings::who($record->registration),'cause'=>Missing::fills('after the next check')]),
@@ -61,5 +61,5 @@ class WatchResource extends WatchReadResource
                 ->indicateUsing(fn(array $data,$livewire)=>in_array($data['value']??null,['7','30','90'],true)?'Expires within '.$data['value'].' days'.($livewire->expiryScanCapped()?' (first 1,000 domains)':''):null),
         ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('canonical_name')->paginated([25,50])->defaultPaginationPageOption(25)->emptyStateHeading('No monitored domains')->emptyStateDescription('Turn on monitoring on a hosting product.');
     }
-    public static function getPages(): array{return ['index'=>ListWatches::route('/'),'dns-failures'=>ListDnsFailures::route('/dns-failures'),'dns-setup'=>ListManagedDns::route('/dns-setup'),'settings'=>MonitoringSettings::route('/settings'),'view'=>ViewWatch::route('/{record}')];}
+    public static function getPages(): array{return ['index'=>ListWatches::route('/'),'dns-failures'=>ListDnsFailures::route('/dns-failures'),'dns-setup'=>ListManagedDns::route('/dns-setup'),'settings'=>MonitoringSettings::route('/settings'),'view'=>ViewWatch::route('/{record}'),'history'=>WatchResource\Pages\WatchHistory::route('/{record}/history')];}
 }

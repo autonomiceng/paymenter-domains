@@ -81,5 +81,5 @@ class TldResource extends Resource
         return $out;
     }
     public static function getPages(): array
-    {return ['index'=>ListTlds::route('/'),'price-list'=>PriceList::route('/price-list'),'view'=>ViewTld::route('/{record}')];}
+    {return ['index'=>ListTlds::route('/'),'price-list'=>PriceList::route('/price-list'),'view'=>ViewTld::route('/{record}'),'history'=>TldResource\Pages\TldHistory::route('/{record}/history')];}
 }

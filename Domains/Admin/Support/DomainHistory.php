@@ -50,9 +50,7 @@ final class DomainHistory
         $off=self::ordersOff($domain);
         return array_map(function(Operation|array $entry) use($domain,$off): array {
             $row=self::row($entry,$domain,$off);
-            $when=$row['time']?Sheet::moment($row['time']->getTimestamp())->toHtml():Missing::LABEL;
-            return ['label'=>$row['event'],'value'=>$row['status']['label']??null,'tone'=>$row['status']['tone']??'gray',
-                'detail'=>new HtmlString(($row['sub']?'<div>'.e(StaffDomainStatus::sentence($row['sub'])).'</div>':'').'<div class="domains-trace-when">'.$when.', '.e($row['by']).'</div>')];
+            return Sheet::event($row['event'],$row['sub']?StaffDomainStatus::sentence($row['sub']):null,$row['time']?->getTimestamp(),$row['by'],$row['status']['tone']??'gray',$row['status']['label']??null);
         },$entries);
     }
     /** A management request names who asked for it. Everything else runs on its own. */

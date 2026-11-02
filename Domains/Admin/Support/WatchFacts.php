@@ -94,7 +94,7 @@ final class WatchFacts
     public static function history(WatchName $w): ?array
     {
         self::gate();
-        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(20)->get()->map(fn($a)=>['time'=>self::date($a->created_at->getTimestamp()),'event'=>self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
+        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>self::date($a->created_at->getTimestamp()),'event'=>self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
         catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         return array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows);

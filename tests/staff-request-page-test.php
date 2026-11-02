@@ -62,8 +62,7 @@ $filter('server_id',[$active->server_id])->assertCanSeeTableRecords([$doneOp])->
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable','attempt'=>null]);
 $manager=staffUser([Staff::VIEW,'admin.domains.manage',...array_map(StaffOperationReview::permission(...),array_keys(StaffOperationReview::ACTIONS))]); Auth::setUser($manager);
 $page=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSuccessful();
-$heading=(string)$page->instance()->getHeading();
-expect(str_contains($heading,'Request #'.$heldOp->id)&&str_contains($heading,'On hold'),'Heading carries the request pill');
+expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp->id)&&str_contains($page->instance()->getSubheading()->toHtml(),'On hold'),'The line under the heading carries the request state');
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
 // Retained expiry and actual charge in this display fixture cannot prove an unsent acquisition.
 $page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('Details')->assertSee('History')

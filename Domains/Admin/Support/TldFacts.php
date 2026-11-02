@@ -118,11 +118,11 @@ final class TldFacts
     }
     private const DANGER='fi-color fi-color-danger fi-text-color-600 dark:fi-text-color-400';
     private static function missing(string $cause): string
-    { return '<span class="'.self::DANGER.'" style="font-weight:500">'.e(\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL).'</span><div style="font-size:.75rem;opacity:.75">'.e($cause).'</div>'; }
+    { return '<span class="domains-strong '.self::DANGER.'">'.e(\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL).'</span><div class="domains-small">'.e($cause).'</div>'; }
     private static function notOffered(): string
-    { return '<span style="opacity:.75">'.e(self::NOT_OFFERED).'</span>'; }
+    { return '<span class="domains-quiet">'.e(self::NOT_OFFERED).'</span>'; }
     private static function cell(string $html, bool $nowrap = true): string
-    { return '<td style="padding:8px 12px;vertical-align:top'.($nowrap?';white-space:nowrap':'').'">'.$html.'</td>'; }
+    { return '<td'.($nowrap?' class="domains-nowrap"':'').'>'.$html.'</td>'; }
     /** Prices by registrar account: one row per account that sells this TLD. */
     public static function accountsTable(Tld $t, StaffGrants $grants): HtmlString
     {
@@ -130,10 +130,10 @@ final class TldFacts
         if($rows->isEmpty()){return new HtmlString('No prices yet');}
         $facts=self::page($rows,$grants);
         $head=['Account','Pricing','Registration','Renewal','Transfer',...($grants->costs?['Cost']:[]),'Domains'];
-        $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
+        $html='<div class="domains-table-wrap"><table class="domains-table"><thead><tr>';
         foreach($head as $label){
             $cell=$label==='Cost'?HelpHint::beside(e($label),'Registrations and transfers below cost are held. Renewals are billed.','About cost')->toHtml():e($label);
-            $html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.$cell.'</th>';
+            $html.='<th scope="col">'.$cell.'</th>';
         }
         $html.='</tr></thead><tbody>';
         foreach($rows as $row){
@@ -150,36 +150,23 @@ final class TldFacts
             $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Off':$price($transfer);
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
-                .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
-            $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell($account,false).self::cell(e(self::pricing($row)))
+                .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
+            $html.='<tr>'.self::cell($account,false).self::cell(e(self::pricing($row)))
                 .self::cell($price($first('register'))).self::cell($price(self::renewal($prices))).self::cell($transfer);
             if($grants->costs){
                 $renew=self::renewal($prices);$note=self::costNote($renew);
                 $html.=self::cell(($renew['cost']??null)===null?(in_array('not_offered',$renew['flags']??[],true)?self::notOffered():self::missing('Use Sync prices on the TLD list.'))
-                    :($note?'<span class="'.self::DANGER.'">'.e($renew['cost']).'</span><div class="'.self::DANGER.'" style="font-size:.75rem">'.e($note).'</div>':e($renew['cost'])));
+                    :($note?'<span class="'.self::DANGER.'">'.e($renew['cost']).'</span><div class="domains-small '.self::DANGER.'">'.e($note).'</div>':e($renew['cost'])));
             }
             $html.=self::cell(e((string)$fact['holders'])).'</tr>';
         }
         return new HtmlString($html.'</tbody></table></div>');
     }
-    /** History as a table: time, change with its reason below, and who made it. */
-    public static function historyTable(?array $rows): HtmlString
-    {
-        if($rows===null){return new HtmlString(e(DomainFacts::UNREADABLE));}
-        if(!$rows){return new HtmlString('No changes yet');}
-        $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
-        foreach(['Time','Change','By'] as $label){$html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.e($label).'</th>';}
-        $html.='</tr></thead><tbody>';
-        foreach($rows as $r){
-            $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell(view('domains::partials.moment',['at'=>$r['time'],'fallback'=>$r['time']])->render()).self::cell(e($r['change']).($r['reason']!==''?'<div style="font-size:.75rem;opacity:.75;overflow-wrap:anywhere">'.e($r['reason']).'</div>':''),false).self::cell(e($r['by'])).'</tr>';
-        }
-        return new HtmlString($html.'</tbody></table></div>');
-    }
     public static function acceptance(Account $a): string
     {
-        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.' · '.$count.' '.($count===1?'TLD':'TLDs');
-            return self::ordersNeedSave($a,$accepted)?$text.' · Save What you sell to take orders':$text;}
-        catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.' · new sales held. Open What you sell and save it.';}
+        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.', '.$count.' '.($count===1?'TLD':'TLDs');
+            return self::ordersNeedSave($a,$accepted)?$text.'. Save What you sell to take orders':$text;}
+        catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.'. New sales held. Open What you sell and save it.';}
     }
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
     public static function ordersNeedSave(Account $a,\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted): bool

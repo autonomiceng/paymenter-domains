@@ -13,7 +13,6 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, Operat
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, EnomAnswerAction, HistoryRecovery, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Sheet, Staff, StaffReviewHistory, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers, StaffOperationReview, StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewOperation extends ViewRecord
@@ -123,9 +122,7 @@ class ViewOperation extends ViewRecord
     {
         if ($rows===null) { return Sheet::section('History',[TextEntry::make('history_unreadable')->hiddenLabel()->state(DomainFacts::UNREADABLE)->color('danger')]); }
         $status=Labels::requestStatus($op);
-        $steps=array_map(fn(array $row,int $i)=>['label'=>$row['event'],'value'=>null,'tone'=>$i===0?$status['tone']:'gray',
-            'detail'=>new HtmlString(($row['sub']===null?'':'<div>'.e($row['sub']).'</div>').'<div class="domains-trace-when">'.($row['time']===null?e(Missing::LABEL.'. '.RequestFacts::NO_TIME):Sheet::moment($row['time'])->toHtml()).', '.e($row['by']).'</div>')],
-            $list=array_reverse(StaffReviewHistory::timeline($op,$rows)),array_keys($list));
+        $steps=array_map(fn(array $row,int $i)=>Sheet::event($row['event'],$row['sub'],$row['time'],$row['by'],$i===0?$status['tone']:'gray',noTime:RequestFacts::NO_TIME),$list=array_reverse(StaffReviewHistory::timeline($op,$rows)),array_keys($list));
         return Sheet::section('History',[$steps===[]?Text::make('No history yet'):Sheet::trace($steps)]);
     }
     private function notice(array $notice): Callout

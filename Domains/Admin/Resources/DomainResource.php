@@ -53,7 +53,7 @@ class DomainResource extends Resource
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.invoice_id,domains_operations.payload,domains_operations.policy,domains_operations.attempt,domains_operations.funding,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
             DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->description(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
-                ->extraAttributes(['style'=>DomainName::CELL])),
+                ->extraAttributes(['class'=>DomainName::CELL])),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
                 ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::status($record,$livewire)['tone'],'domain-'.$record->id))
                 ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone']),
