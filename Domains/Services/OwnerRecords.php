@@ -39,9 +39,9 @@ final class OwnerRecords
             return strnatcmp($left[$field],$right[$field]) ?: strcmp(json_encode($left),json_encode($right));
         });return $rows;
     }
-    public static function forDomain(Domain $d): array
+    public static function forDomain(Domain $d, ?array $sections=null): array
     {
-        $facts=ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
+        $facts=$sections??ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
         // Retained complete lists are historical after a wholly failed primary observation.
         $primaryFailed=($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
         foreach (['dns','srv','ds'] as $kind) {
@@ -54,7 +54,7 @@ final class OwnerRecords
         }
         $out['glue']=[];
         foreach (array_slice($facts['known_glue']??[],0,50,true) as $host=>$ip) {
-            try { $out['glue'][]=ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$d->domain,'enom'); }
+            try { $out['glue'][]=ManagementPayload::normalize('glue_add',['host'=>$host,'ip'=>$ip],$d->domain,$d->registrar_key); }
             catch (\Throwable) {}
         }
         return $out;

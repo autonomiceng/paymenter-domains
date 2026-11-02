@@ -50,7 +50,7 @@ final class Management extends ManagementProtocol
     public function discover(ManagementRequest $r, RequestContext $c, array $knownGlue = []): array
     {
         $out=parent::discover($r,$c); $this->owned($r,$c);
-        $out['glue']['records']=array_slice($knownGlue,0,50,true);
+        $out['glue']['records']=array_filter($knownGlue,fn($ip)=>$ip!=='');
         foreach (['dns'=>R::Hosts,'srv'=>R::Srv,'ds'=>R::Ds] as $kind=>$command) {
             try {
                 $v=$this->get($r,$c,$command); $c->requireReadSuccess($v->status==='success');
@@ -65,6 +65,8 @@ final class Management extends ManagementProtocol
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
             catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); $out['glue']['read_failed']=true; break; } // Retain partial history, never infer absence.
         }
+        $candidates=array_keys($knownGlue);
+        $out['glue']['candidates']=[...array_slice($candidates,13),...array_slice($candidates,0,13)];
         $hosts=$out['glue']['records'];
         if (count($hosts)>13) { $out['glue']['records']=array_slice($hosts,13,null,true)+array_slice($hosts,0,13,true); }
         return $out;
@@ -75,12 +77,13 @@ final class Management extends ManagementProtocol
     {
         $this->owned($r,$c); $p=$r->payload(); $a=$r->action;
         if(in_array($a,['dns','srv'],true)) {
-            $v=$this->get($r,$c,$a==='dns'?R::Hosts:R::Srv); if($v->status!=='success'||ManagementInput::digest(ManagementRead::records($v,$a),$a)!==$p['preimage_digest']){throw new \DomainException('DNS preimage changed.');}
+            $v=$this->get($r,$c,$a==='dns'?R::Hosts:R::Srv); $this->preparedRecords=[$a=>['records'=>ManagementRead::records($v,$a)]]; if($v->status!=='success'||ManagementInput::digest(ManagementRead::records($v,$a),$a)!==$p['preimage_digest']){throw new \DomainException('DNS preimage changed.');}
         }
         if(str_starts_with($a,'glue_')) {
             $old=ManagementRead::glue($this->get($r,$c,R::HostStatus,['CheckNSName'=>$p['host']]),$p['host']);
             if(($a==='glue_add'&&$old!==null)||($a!=='glue_add'&&$old===null)||($a==='glue_update'&&inet_pton($old)===inet_pton($p['ip']))){throw new \DomainException('Glue precondition changed.');}
             if($a==='glue_update'){$p['old_ip']=$old;}
+            $this->preparedRecords=['glue'=>['host'=>$p['host'],'ip'=>$old]];
         }
         if(str_starts_with($a,'privacy_')) {
             $v=$this->get($r,$c,R::Privacy); if($v->status!=='success'){throw new \DomainException('Privacy unknown.');} $s=ManagementRead::privacy($v);

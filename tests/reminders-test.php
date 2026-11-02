@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\Price;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,ReminderSchema,ReminderSchedules,ReminderTemplates};
 [$d,$invoice,$op]=$make(placeholderComFixtureName('neutral-reminder-placeholder.com'),true,3);
-same(false,$reminders->remind((int)$d->id),'Enrollment defaults off');Mail::assertNothingOutgoing();
+same(false,$reminders->remind((int)$d->id),'A paused schedule sends no reminder');Mail::assertNothingOutgoing();
 $enable();expect($reminders->remind((int)$d->id),'Known multi-year invoice sends');
 Mail::assertQueued(DomainNotice::class,fn($mail)=>$mail->data['years']===3&&$mail->data['domain']===$d->domain&&$mail->data['invoice']===true);
 same(false,$reminders->remind((int)$d->id),'One notice per domain/generation/expiry/window');

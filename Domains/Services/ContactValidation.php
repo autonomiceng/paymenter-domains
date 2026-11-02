@@ -7,7 +7,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 final class ContactValidation extends \DomainException
 {
     public function missingMessage(): string
-    { return 'Missing: '.implode(', ',$this->labels()).'. Update the customer account details.'; }
+    { return 'Missing: '.implode(', ',$this->labels()).'. The customer can finish setup on the order page.'; }
     /** Plain field names, once each across contact roles. */
     public function labels(): array
     {

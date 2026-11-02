@@ -24,6 +24,33 @@ $registry->register('enom',['uid','token'],new class implements \Paymenter\Exten
 $fixtureBindings=$bindings;$bindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry);
 $permissions=[Staff::VIEW,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $action){$permissions[]=Review::permission($action);}
 $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($native,$sellers,$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
+// Settings rows share authorization reads within one request, but a later request reloads the role.
+$settingsQueries=static function()use($t):array{
+    \Illuminate\Support\Facades\DB::flushQueryLog();\Illuminate\Support\Facades\DB::enableQueryLog();
+    try{
+        $visible=[];
+        foreach(['card_fee','default_rule','renewal_billing','unpaid_hold'] as $name){
+            $visible[]=\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$t->server_id,'',$name)->isVisible();
+        }
+        $queries=\Illuminate\Support\Facades\DB::getQueryLog();
+        $counts=array_map(static fn($table)=>count(array_filter($queries,static fn($q)=>str_contains($q['query'],'from "'.$table.'"'))),['users','roles']);
+        return [$visible,$counts];
+    }finally{\Illuminate\Support\Facades\DB::disableQueryLog();\Illuminate\Support\Facades\DB::flushQueryLog();}
+};
+[$visible,$counts]=$settingsQueries();
+same([true,true,true,true],$visible,'All permitted settings rows remain visible');
+echo 'Settings row user/role queries: '.json_encode($counts)."\n";
+same([1,1],$counts,'Settings rows reuse one request permission snapshot');
+$savedRequest=app('request');
+try{
+    $u->role->update(['permissions'=>[Staff::VIEW]]);
+    app()->instance('request',\Illuminate\Http\Request::create('/registrar-account','GET'));
+    [$visible,$counts]=$settingsQueries();
+    same([false,false,false,false],$visible,'A new request observes revoked settings permissions');
+    same([1,1],$counts,'Denied rows also reuse one fresh request snapshot');
+    Auth::setUser(staffUser([Staff::POLICY,Review::permission('card_fee')]));
+    same([false,false,false,false],$settingsQueries()[0],'Another actor cannot inherit the request snapshot or omit View');
+}finally{$u->role->update(['permissions'=>$permissions]);Auth::setUser($u);app()->instance('request',$savedRequest);}
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20','fixed_renew'=>'21','fixed_transfer'=>'22'];
 // "Use the account default" is a choice in Edit prices; it saves as remove_override.
 $inputs=['card_fee'=>['fee_percent'=>'3.10','fee_fixed'=>'0.40'],'default_rule'=>$fixed,'override'=>['pricing'=>'custom',...$fixed],'remove_override'=>['pricing'=>'default'],

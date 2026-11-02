@@ -3,7 +3,7 @@
 @include('domains::partials.styles')
 <a class="domains-back" href="{{ $domain->actions['show'] }}">{{ $domain->name }}</a>{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}
 <h1 class="domains-title">Finish setup</h1>
-@include('domains::partials.notices', ['fieldKeys' => ['nameservers', 'privacy']])
+@include('domains::partials.notices', ['fieldKeys' => ['nameservers', 'privacy', 'contact']])
 <section class="domains-panel domains-section">@include('domains::partials.registration-setup')</section>
 @include('domains::partials.client-script')
 </div></div>

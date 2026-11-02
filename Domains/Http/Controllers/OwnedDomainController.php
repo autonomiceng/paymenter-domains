@@ -52,6 +52,9 @@ final readonly class OwnedDomainController
         foreach (['setup','recovery','code','renew','auto-renew',...OwnerActionController::ACTIONS] as $action) {
             $keys[$action]=\Paymenter\Extensions\Servers\Domains\Http\FormKeys::issue($request,'owner:'.$id.':'.$action);
         }
-        return view('domains::'.$page,compact('domain','summary','keys'));
+        $recoveryContact=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($request->user())['registrant'];
+        $recoveryLimits=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($holding->registrar_key);
+        $recoveryStateRequired=$holding->registrar_key==='namesilo';
+        return view('domains::'.$page,compact('domain','summary','keys','recoveryContact','recoveryLimits','recoveryStateRequired'));
     }
 }

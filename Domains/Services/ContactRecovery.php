@@ -43,6 +43,14 @@ final class ContactRecovery
     }
 
     public static function replace(User $actor, int $operationId, string $reason, ?StaffOperationReview $review = null, ?Clock $clock = null): Operation
+    { return self::replaceUsing($actor, $operationId, $reason, $review, $clock); }
+
+    /** Inline owner form enters only through the same paid-identity, permission and proven-unsent locks. */
+    public static function replaceDetails(User $actor, int $operationId, #[\SensitiveParameter] array $contact, bool $saveAccount = false): Operation
+    { return self::replaceUsing($actor, $operationId, 'owner_corrected_order_details', null, null, $contact, $saveAccount); }
+
+    private static function replaceUsing(User $actor, int $operationId, string $reason, ?StaffOperationReview $review = null,
+        ?Clock $clock = null, #[\SensitiveParameter] ?array $contact = null, bool $saveAccount = false): Operation
     {
         self::reason($reason);
         if ($review && ($review->action !== 'release' || $review->operationId !== $operationId || $review->actorId !== (int) $actor->id)) {
@@ -50,7 +58,7 @@ final class ContactRecovery
         }
         $hint = Operation::findOrFail($operationId); $ownerId = Domain::findOrFail($hint->domain_id)->user_id;
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Contact recovery owns its transaction.'); }
-        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock): Operation {
+        return DB::transaction(static function () use ($actor, $hint, $ownerId, $reason, $review, $clock, $contact, $saveAccount): Operation {
             $users = User::whereKey([$actor->id, $ownerId])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $currentActor = $users->get($actor->id); $owner = $users->get($ownerId);
             if (!$currentActor || !$owner || ((int) $actor->id !== (int) $ownerId && !$currentActor->hasPermission('admin.domains.manage'))) {
@@ -63,17 +71,19 @@ final class ContactRecovery
             $review?->check($locked);
             $op = $operations->firstWhere('id', $hint->id);
             $facts=$funding->initialFacts($domain)+['operations'=>$operations,'user'=>$owner];
-            $contacts=self::requireReplacement($op,$facts,ContactDetails::collect($owner),$clock?->now()??now()->toDateTimeImmutable());
+            $contacts=self::requireReplacement($op,$facts,$contact===null?ContactDetails::collect($owner):OrderContact::roles($contact),$clock?->now()??now()->toDateTimeImmutable());
             $payload=$op->payload??[];$policy=$op->policy??[];$history=$policy['contact_readmissions']??[];
             $payload['contacts'] = $contacts; $payload['setup_required'] = false; $payload['setup_fields'] = []; $payload['registry_supported'] = true;
             $history[] = ['actor_id' => (int) $actor->id, 'owner_id' => (int) $ownerId, 'reason' => $reason,
-                'at' => now()->toIso8601String(), 'previous_code' => $op->safe_code];
+                'at' => now()->toIso8601String(), 'previous_code' => $op->safe_code,
+                ...($contact===null?[]:['source'=>'order_form','saved_account'=>$saveAccount])];
             $policy['contact_readmissions'] = $history;
             // Contact readmission never reopens code entry or queues a transfer.
             ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => $payload, 'policy' => $policy,
                 'state' => $op->action === 'register' ? 'queued' : 'held',
                 'safe_code' => $op->action === 'register' ? null : 'transfer_setup_review_required']));
             $review?->record($locked);
+            if ($contact !== null && $saveAccount) { OrderContact::saveAccount($owner, $contacts['registrant']); }
             return $op;
         });
     }

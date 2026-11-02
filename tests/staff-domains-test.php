@@ -97,7 +97,8 @@ DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>
 // Current record holds are safe review alerts; stale identities and arbitrary reasons never leak.
 $recordService=\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::class;
 $requestId=$active->operations()->sole()->id;$requestUrl=\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl('view',['record'=>$requestId]);
-foreach (['history_limit'=>'Sync stopped: DNS record history is full.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+foreach (['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
+    'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$label) {
     $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
@@ -272,6 +273,7 @@ same(['alternate_reason','default_reason','fallback_reason','field_reason','held
 // These values have separate presenters or describe results, audit events, inputs or configuration.
 // Exclusions are per file and code: a new reason in any service still fails coverage.
 $excluded=[
+    'DomainObservation.php'=>['records_disabled'], // Manual result rendered by SyncDomainRecords; scheduled work passes readRecords:false.
     'AccountBindings.php'=>['matched','server_unavailable','server_disabled','not_configured','site_invalid','site_unbound','site_mismatch','configuration_unavailable'],
     'RegistrarBalances.php'=>['rate_limited','configuration_unavailable','read_failed','test_call_refused'], // Balance facts.
     'AdoptionReader.php'=>['identity_unconfirmed','expiry_disagrees','read_failed'], // Adoption RefusalCode messages.

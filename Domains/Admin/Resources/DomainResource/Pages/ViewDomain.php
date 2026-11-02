@@ -33,7 +33,25 @@ class ViewDomain extends ViewRecord
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...HoldingActions::make($d)];
+        return [$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),...HoldingActions::make($d)];
+    }
+    private function syncNow(): Action
+    {
+        // Record reads use registrar calls; Sync now lets staff request them only when needed.
+        return Action::make('sync_now')->label('Sync now')->color('gray')->visible(fn()=>Staff::can('admin.domains.manage')&&$this->getRecord()->status==='active')
+            ->action(function():void {
+                if (!Staff::can('admin.domains.manage')) { abort(403); }
+                try {
+                    $queued=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::enqueue((int)\Illuminate\Support\Facades\Auth::id(),$this->getRecord()->refresh());
+                    if (!$queued) {
+                        $minutes=(int)ceil(\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::UNIQUE_FOR/60);
+                        \Filament\Notifications\Notification::make()->info()->title("A sync was already requested. If nothing changes in {$minutes} minutes, press Sync now again. If it still doesn't run, check the queue worker.")->send();
+                        return;
+                    }
+                    \Filament\Notifications\Notification::make()->success()->title('Sync queued')->body('You will get a notification when it finishes. Refresh this page to see the records.')->send();
+                } catch (\DomainException $error) { \Filament\Notifications\Notification::make()->warning()->title($error->getMessage())->send(); }
+                catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't queue sync. Ask your site admin to check the queue worker, then try again.")->send(); }
+            });
     }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action

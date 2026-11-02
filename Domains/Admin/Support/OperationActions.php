@@ -9,7 +9,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRegistration,ManagementEvidence,ObservationRecords,OperationFailure,OperationTerminalProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,TransferInputs,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,OperationFailure,OperationTerminalProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,TransferInputs,UnpaidAcquisitionProof};
 final class OperationActions
 {
     /** Toast titles, named for the action. */
@@ -97,15 +97,17 @@ final class OperationActions
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             // Release needs what the customer still owes, so a hold here would have no way back.
-            'hold'=>in_array($op->state,['queued','awaiting_payment','awaiting_code'],true)&&self::customerOwes($op)===null,
+            'hold'=>StaffOperationWrites::canHold($op)&&self::customerOwes($op)===null,
             'release'=>StaffOperationWrites::canRelease($op,app(Clock::class)->now()),
-            'refund'=>$op->state==='held',
+            'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice',
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
             'credit'=>$op->state==='rejected'&&$op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE,
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
             'disposition'=>self::closable($op),
             'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true)&&self::readLimit($op),
-            'recheck'=>in_array($op->state,['running','pending','uncertain','held'],true)&&!(in_array($op->action,['register','transfer','renew'],true)&&self::readLimit($op)),
+            'recheck'=>in_array($op->action,['register','transfer','renew'],true)
+                ?in_array($op->state,['running','pending','uncertain','held'],true)&&!self::readLimit($op)
+                :DomainManagement::canReconcile($op,app(Clock::class)->now()),
             default=>false};
     }
     /** A failed request with proof it ended, no end date and no earlier close. Closing records the review and changes nothing else. */

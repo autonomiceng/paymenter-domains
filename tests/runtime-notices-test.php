@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Services\{AuditArchives,ReminderSchedules,Reminders,StaffSettingsReview as Review,StaffSettingsWrites,Runtime,RuntimeSchema,RuntimeWork,RuntimePorts};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 $staff=staffUser([...array_keys(Staff::permissions())]);$reminders=new Reminders($clock,$bindings);
-foreach($tlds as $t){ReminderSchedules::enroll($t->server_id);}
+foreach($tlds as $t){ReminderSchedules::enroll($t->server_id);DB::table('domains_reminder_schedules')->where('server_id',$t->server_id)->update(['enabled'=>false]);}
 foreach($tlds as $i=>$t){
     $clock->instant=$now;$op=$newTransfer(placeholderComFixtureName('mandatory-'.$i.'-placeholder.com'),$i,true,false);
     expect($reminders->remind($op->domain_id),'Paid notice sends with customer schedules off');

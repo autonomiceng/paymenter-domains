@@ -43,6 +43,7 @@ final class InvoiceBinding
             Event::listen($event, function ($e): void {
                 if ($e->connection === DB::connection() && $e->connection->transactionLevel() === 0) {
                     $this->prepared = $this->services = []; $this->creating = new \WeakMap;
+                    OrderContact::clear();
                 }
             });
         }
@@ -74,6 +75,8 @@ final class InvoiceBinding
         foreach ($lines as $line) {
             $s = $line['snapshot'];
             $tld = Tld::whereKey($line['mapping']['tld']->id)->lockForUpdate()->firstOrFail();
+            try { OrderContact::capture($order->user, $tld); }
+            catch (ContactValidation $error) { throw new \App\Exceptions\DisplayException('Check your domain contact details before payment: '.implode(', ', $error->labels()).'.'); }
             $renew = $this->prices->current($s->serverId, $s->fingerprint, $s->tld, 'renew', 1, 'USD', $this->clock->now(), true, $tld);
             $product = Product::findOrFail($line['product_id']); $annual = $this->native->annualPlan($product);
             $price = new \App\Classes\Price(['price' => $renew->retail, 'currency' => $order->currency],
@@ -82,6 +85,7 @@ final class InvoiceBinding
         }
         // Reentrant reservation checks may lock these rows later; never first acquire another
         // domain after operations for an earlier cart line. Global unique name arbitrates absence.
+        OrderContact::saveRequested($order->user, $this->prepared[$lines[0]['item_id']]['setup_tld']);
         $domains = Domain::whereIn('reservation_name', array_column($lines, 'name'))->orderBy('id')->lockForUpdate()->get();
         Operation::whereIn('domain_id', $domains->pluck('id'))->orderBy('id')->lockForUpdate()->get();
     }
@@ -121,7 +125,7 @@ final class InvoiceBinding
             'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => 'invoice-item:'.$item->id,
             'action' => $s->action, 'term' => $s->term, 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment',
             'amount' => $line['retail']['total'], 'currency' => 'USD', 'policy' => ['checkout' => $checkout, 'price' => self::price($s), 'seller_revision' => $line['selection']->policyRevision],
-            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => ContactSetup::capture($service->user()->firstOrFail(), $line['setup_tld'])]);
+            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => OrderContact::capture($service->user()->firstOrFail(), $line['setup_tld'])]);
         $service->forceFill(['plan_id' => $line['annual_plan_id'], 'price' => $line['annual_price'], 'label' => $line['name'], 'expires_at' => null]);
         NativeDomainGuard::initial($service, $domain);
         self::requireIdentity($operation, $domain, $service->fresh(), $invoice, $item);

@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\{FormKeys,RawPost};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, OwnerNameservers, OwnerFormValidation, TransferInputs};
-/** Dormant owner POST boundary. Never calls a driver write or queues a purchase. */
+/** Dormant owner POST boundary. Never calls a driver write. Contact correction wakes only the existing paid registration. */
 final readonly class OwnerActionController
 {
     // Shown on the auth code page once a code is saved, so the redirect carries no flash.
@@ -46,8 +46,15 @@ final readonly class OwnerActionController
     {
         return $this->submit($request,$domain,'recovery',function()use($request,$domain):void {
             $op=$this->owners->operation($this->owners->owned($request->user(),$domain));
-            ContactRecovery::replace($request->user(),$op?->id??0,'owner_updated_account_details');
-        },'Account details updated.');
+            $p=$request->request->all();
+            if (!is_array($p['contact']??null)) { throw new \Paymenter\Extensions\Servers\Domains\Services\ContactValidation(['contact']); }
+            if (!in_array($p['save_account']??'0',['0','1'],true)) { throw new \DomainException('Invalid account choice.'); }
+            $saved=ContactRecovery::replaceDetails($request->user(),$op?->id??0,$p['contact'],($p['save_account']??'0')==='1');
+            if ($saved->action==='register') {
+                try { app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class)->enqueue((int)$saved->id,true); }
+                catch (\Throwable) { \Illuminate\Support\Facades\Log::warning('Registration dispatch deferred after contact correction.'); }
+            }
+        },'Contact details saved.');
     }
     public function manage(Request $request,int $domain,string $action)
     {
@@ -85,6 +92,12 @@ final readonly class OwnerActionController
             return $this->failed($request,$domain,$action,array_intersect_key([
                 'nameservers'=>$owned->registrar_key==='enom'&&$this->owners->operation($owned)?->action==='transfer'?'Keep your current nameservers during this transfer. You can change them after the transfer finishes.':'These nameservers cannot be used for this order. Contact support.','privacy'=>'WHOIS privacy isn’t available for this domain.'],array_flip($error->fields)));
         } catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation $error) {
+            if ($action==='recovery') {
+                $view=(new OwnedDomainController($this->owners))->setup($request,$domain);
+                $messages=OwnerFormValidation::contact($error)->messages($owned->domain,registrar:$owned->registrar_key);
+                $errors=(new \Illuminate\Support\ViewErrorBag)->put('default',new \Illuminate\Support\MessageBag($messages));
+                return response($view->with(['recoveryContact'=>$request->request->all()['contact']??[], 'saveAccount'=>($request->request->all()['save_account']??'0')==='1', 'errors'=>$errors]),422)->header('Cache-Control','no-store, private');
+            }
             return $this->failed($request,$domain,$action,OwnerFormValidation::contact($error)->messages($owned->domain,registrar:$owned->registrar_key));
         } catch (\Throwable) { return $this->failed($request,$domain,$action,['owner_action'=>'We couldn’t save this change. Check the details and try again. If it keeps happening, contact support.']); }
     }

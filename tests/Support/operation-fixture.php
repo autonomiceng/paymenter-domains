@@ -30,7 +30,11 @@ foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA
 $product = $native->product($tlds[0], 'register');
 $new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers): Operation {
     Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
-    $cart = commerceCart($user); commerceAdd($cart, $action === 'register' ? $product : $native->product($tlds[0], $action), $name, $term); commerceCheckout($user, $cart);
+    $cart = commerceCart($user); commerceAdd($cart, $action === 'register' ? $product : $native->product($tlds[0], $action), $name, $term);
+    // Retained invalid-contact scenarios predate the new checkout gate.
+    try { \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('enom', \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user)); $legacyContacts=false; }
+    catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation) { $legacyContacts=true; }
+    $legacyContacts?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart);
     $op = Domain::where('domain', $name)->sole()->operations()->sole();
     if (!$setup) { \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => array_replace($op->payload, ['setup_required' => true])])); }
     if ($paid) {

@@ -87,7 +87,7 @@ final class ObservationWork
                     }
                 }
                 $job=$this->claim($queue); if (!$job) { $summary[$queue->server_id]='idle'; continue; }
-                try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint); }
+                try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:false); }
                 catch (ReadDeferred|EnomTestCallLimit) { $code='read_deferred'; }
                 catch (\Throwable $error) { $code=ReadFailure::code($error); }
                 $this->finish($job,$code); $summary[$queue->server_id]=$code;
