@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final class DomainFacts
 {
     /** The page's sections and their rows, in order. */
-    public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'],
+    public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','Auth code','WHOIS privacy','Registrar auto-renew','Last sync'],
         'Renewal'=>['Renewal invoices','Renewal price','Next invoice','Open invoice'],
         'Contacts and DNS'=>['Contacts','Nameservers','Glue records','DNS records'],
         'Billing'=>['Customer','Service']];
