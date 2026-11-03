@@ -39,9 +39,9 @@ final class SellAutomation
         return new CatalogueAcceptance($b,$accepted->revision,$endings,$accepted->registrationRoute,$accepted->registrationIntervalSeconds);
     }
     /** Independent reads and committed saves survive a refused rule refresh. Acceptance itself still rolls back. */
-    public static function refresh(Account|int $seed,\DateTimeImmutable $now): void
+    public static function refresh(Account|int $seed,\DateTimeImmutable $now,?int $generation=null): void
     {
-        try{self::accept(is_int($seed)?Account::where('server_id',$seed)->sole():$seed,$now);}
+        try{$generation=UpgradeGate::legacy($generation);self::accept(is_int($seed)?Account::where('server_id',$seed)->sole():$seed,$now,generation:$generation);}
         catch(\Throwable $error){Log::warning('Domains selling rule refresh failed.',['server_id'=>$seed instanceof Account?(int)$seed->server_id:$seed,'exception_class'=>$error::class]);}
     }
     /** Runs again each tick so a pause or failed publication does not lose a successful fill. Idempotent under the account mutex. */

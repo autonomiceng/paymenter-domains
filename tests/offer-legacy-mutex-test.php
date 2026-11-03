@@ -63,6 +63,34 @@ $boundary = '"catalogue_cursor"'; $lateWrites = [];
 try { $sync->daily($account); } catch (DomainException) {}
 if ($boundary !== null || $lateWrites !== []) { $failures[] = 'daily outcome writes after a committed window transition'; }
 
+// A stopped daily generation must not refresh acceptance before its later queue claim refuses.
+$server = App\Models\Server::findOrFail($binding->serverId);
+$server->settings()->updateOrCreate(['key' => SellRule::KEY], ['type' => 'array', 'encrypted' => false,
+    'value' => ['mode' => 'except', 'max_cost' => null, 'years' => 1, 'transfers' => false]]);
+\Paymenter\Extensions\Servers\Domains\Models\SellRow::updateOrCreate(
+    ['server_id' => $binding->serverId, 'account_fingerprint' => $binding->fingerprint, 'tld' => 'com'],
+    ['choice' => 'skip', 'register_cost' => '6.0000', 'renew_cost' => '8.0000', 'high_cost' => '8.0000',
+        'prices' => [1 => ['register' => '6.0000', 'renew' => '8.0000']], 'read_at' => $clock->now()->getTimestamp()]);
+$rotateEntry = false; $rotated = false;
+DB::listen(static function ($query) use (&$rotateEntry, &$rotated, $gate): void {
+    if ($rotateEntry && DB::transactionLevel() === 0 && in_array(UpgradeGate::KEY, $query->bindings, true)) {
+        $rotateEntry = false; $gate->pause(); $gate->resume(); $rotated = true;
+    }
+});
+foreach (['daily', 'run'] as $entry) {
+    $beforeAcceptance = CatalogueAcceptances::load($binding);
+    $beforeAudit = $server->settings()->where('key', \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY)->first()?->getRawOriginal();
+    $beforeQueue = (array) DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->sole();
+    $rotateEntry = true; $rotated = false;
+    try { $entry === 'daily' ? $sync->daily($account) : $sync->run($account, $clock, null); } catch (DomainException) {}
+    $rotateEntry = false;
+    same(true, $rotated, 'Pause/resume interrupts the starting '.$entry.' generation before refresh');
+    same($beforeAcceptance->revision, CatalogueAcceptances::load($binding)->revision, 'Stopped '.$entry.' generation cannot narrow acceptance before its queue guard');
+    same($beforeAcceptance->endings, CatalogueAcceptances::load($binding)->endings, 'Stopped '.$entry.' preserves accepted endings');
+    same($beforeAudit, $server->settings()->where('key', \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY)->first()?->getRawOriginal(), 'Stopped '.$entry.' adds no acceptance audit');
+    same($beforeQueue, (array) DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->sole(), 'Stopped '.$entry.' leaves its queue unchanged');
+}
+
 // SQLite does not implement row locks. Check the actual read order for the formerly mutex-free clear.
 $tracing = true;
 $policy = DB::table('domains_sales_policies')->where('tld', 'com')->sole(); $trace = [];

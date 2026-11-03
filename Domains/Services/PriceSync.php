@@ -99,7 +99,7 @@ final class PriceSync
         $generation=UpgradeGate::legacy($generation);
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
-        if ($review === null) { SellAutomation::refresh($account, $clock->now()); }
+        if ($review === null) { SellAutomation::refresh($account, $clock->now(), $generation); }
         $accepted = CatalogueAcceptances::load($binding);
         if ($review === null) { $accepted = SellAutomation::priceReads($account, $accepted, $clock->now()); }
         if ($ending !== null && !isset($accepted->endings[$ending])) { throw new \DomainException('Catalogue ending is not accepted.'); }
@@ -129,7 +129,7 @@ final class PriceSync
         $synced = [];
         if ($batch !== []) {
             $calls = self::calls(new CatalogueAcceptance($accepted->binding, $accepted->revision, array_intersect_key($accepted->endings, array_flip($batch)))) - 1;
-            $result = $this->catalogue->refresh($binding->serverId, $context($calls), new CatalogueFreshness, $batch, $review, $review === null);
+            $result = $this->catalogue->refresh($binding->serverId, $context($calls), new CatalogueFreshness, $batch, $review, $review === null, $generation);
             foreach ($batch as $e) {
                 if (in_array('.'.$e, $result['failed'], true) || in_array('.'.$e, $result['quarantined'] ?? [], true)) {
                     $failed[$e] = $result['failure_codes']['.'.$e] ?? 'catalogue_import_failed';
@@ -172,7 +172,7 @@ final class PriceSync
         $generation=UpgradeGate::legacy();
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }
-        SellAutomation::refresh($account, $this->clock->now());
+        SellAutomation::refresh($account, $this->clock->now(), $generation);
         $accepted = CatalogueAcceptances::load($binding);
         $accepted = SellAutomation::priceReads($account, $accepted, $this->clock->now());
         if ($accepted->endings === [] || ($claim = $this->claim($account,$generation)) === null) { return; }

@@ -11,10 +11,10 @@ use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFailure,
 final class CatalogueSync
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly PriceCatalogue $prices) {}
-    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null, bool $scheduled = false): array
+    public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null, bool $scheduled = false, ?int $generation = null): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue reads must finish outside locks.'); }
-        $generation = UpgradeGate::legacy();
+        $generation = UpgradeGate::legacy($generation);
         // Staff review, or the daily price sync, which checks our daily call cap for the account first.
         if (TestCatalogue::enabled($context->binding) && $review === null && !$scheduled) { throw new \DomainException('TEST catalogue import requires staff review.'); }
         $reader = $this->bindings->reader($serverId); // enabled, identity, credentials, site BEFORE any provider read
