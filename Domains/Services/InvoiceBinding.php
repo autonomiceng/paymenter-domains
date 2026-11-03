@@ -74,7 +74,7 @@ final class InvoiceBinding
         // All price/annual projections precede every domain lock, for the ENTIRE batch.
         foreach ($lines as $line) {
             $s = $line['snapshot'];
-            $tld = Tld::whereKey($line['mapping']['tld']->id)->lockForUpdate()->firstOrFail();
+            $tld = $line['contact_tld'] ?? Tld::whereKey($line['mapping']['tld']->id)->lockForUpdate()->firstOrFail();
             try { OrderContact::capture($order->user, $tld); }
             catch (ContactValidation $error) { throw new \App\Exceptions\DisplayException('Check your domain contact details before payment: '.implode(', ', $error->labels()).'.'); }
             $renew = $line['renewal_snapshot'] ?? $this->prices->current($s->serverId, $s->fingerprint, $s->tld, 'renew', 1, 'USD', $this->clock->now(), true, $tld);

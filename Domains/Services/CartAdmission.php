@@ -141,21 +141,21 @@ class CartAdmission
         $tlds = [];
         foreach (NativeCart::items() as $item) {
             $mapping = $this->native->mapping($item->product, $item->plan);
-            if ($mapping) { $tlds[$mapping['tld']->id] = $mapping['tld']; }
+            if ($mapping) { $tlds[$mapping['tld']->id] = $this->catalogue()?->contactTld($mapping['tld']) ?? $mapping['tld']; }
         }
         return array_values($tlds);
     }
 
     private function admit(Order $order): void
     {
-        $cart = NativeCart::get(); $lines = $selections = $names = [];
+        $cart = NativeCart::get(); $lines = $selections = $names = []; $legacy = $this->catalogue() === null;
         // Use the SAME cached native items which checkout just locked; never reload a different batch here.
         foreach ($cart->items as $item) {
             $product = Product::findOrFail($item->product_id);
             if (!$this->native->mapping($product)) { continue; }
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
             $binding = CatalogueAcceptances::binding($account);
-            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::sellable($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::accepted($binding))) {
+            if ($legacy && EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::sellable($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::accepted($binding))) {
                 throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test domains can’t be ordered. Remove them to check out.');
             }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
@@ -163,7 +163,7 @@ class CartAdmission
                 throw new \DomainException('Domain checkout requires its native transaction and owner.');
             }
             $mapping = $this->validate($item, $product);
-            if ($mapping['action'] !== 'register' && EnomTestRegistration::sellable($binding) && !EnomTestTransfer::accepted($binding)) {
+            if ($legacy && $mapping['action'] !== 'register' && EnomTestRegistration::sellable($binding) && !EnomTestTransfer::accepted($binding)) {
                 throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test transfers can’t be ordered yet. Remove them to check out.');
             }
             $name = $this->name($item, $mapping);
@@ -196,7 +196,10 @@ class CartAdmission
             }
             $this->requireCheck((string) $item->checkout_config['domains_check'], $line['name'], $this->identity($item), $line['mapping']['action'], true);
             $line['snapshot'] = $snapshot;
-            if ($batch !== null) { $line['renewal_snapshot'] = $batch[$index]['renewal']; }
+            if ($batch !== null) {
+                $line['renewal_snapshot'] = $batch[$index]['renewal'];
+                $line['contact_tld'] = $offers->contactTld($line['mapping']['tld']);
+            }
         } unset($line);
         $this->order = $order; $this->lines = $lines;
     }

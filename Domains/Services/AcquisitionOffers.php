@@ -85,7 +85,8 @@ final class AcquisitionOffers
             $fence = ['generation' => $generation, 'credential' => $this->bindings->offerCredentialRevision($bindings[$i]),
                 'revision' => get_object_vars($acquire->decision->revision), 'retail' => $price->retail,
                 'renewal' => $annual->retail];
-            if ($expected && ($s->catalogue !== $fence || $s->priceId !== $price->id || $s->priceRevision !== $price->revision)) {
+            if ($expected && ($s->catalogue !== $fence || $s->priceId !== $price->id || $s->priceRevision !== $price->revision
+                || $s->policyRevision !== $acquire->decision->revision->selection)) {
                 throw new \DomainException('Refresh the domain offer.');
             }
             $selected = new SaleSelection($s->tld, $s->serverId, $s->registrar, $s->fingerprint,
@@ -93,6 +94,18 @@ final class AcquisitionOffers
             $result[] = ['selection' => $selected, 'snapshot' => $price, 'renewal' => $annual];
         }
         return $result;
+    }
+
+    /** Contact validation consumes the independently observed registry schema, never old TLD facts.
+     * A transient copy keeps native contact/tax/owner validation intact without a legacy write. */
+    public function contactTld(Tld $tld): Tld
+    {
+        $facts = OfferState::facts($tld->catalogue_facts);
+        if (!$tld->catalogue_converted || !$facts || !RegistryInputs::supported($tld->registrar_key, $tld->tld, $facts->registryFields)) {
+            throw new \DomainException('Current registry details unavailable.');
+        }
+        $copy = clone $tld; $copy->registry_fields = $facts->registryFields;
+        return $copy;
     }
 
     /** Display caches are hints only. Include credential/activation and unpublished changes too. */
@@ -103,7 +116,7 @@ final class AcquisitionOffers
             $credentials[] = $this->bindings->offerCredentialRevision(CatalogueAcceptances::binding($account));
         }
         $rows = [];
-        foreach (['domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices'] as $table) {
+        foreach (['domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices', 'servers', 'settings'] as $table) {
             $rows[] = DB::table($table)->orderBy('id')->get()->map(static fn ($r) => (array)$r)->all();
         }
         return hash('sha256', OfferState::json([UpgradeGate::generation(), $credentials, $rows]));

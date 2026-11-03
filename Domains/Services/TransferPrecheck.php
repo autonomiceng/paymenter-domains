@@ -18,10 +18,12 @@ final readonly class TransferPrecheck
         $endings = $settings->get('domains_transfer_endings')?->value;
         // A saved list narrows transfers. Without one, What you sell decides.
         $open = is_string($endings) ? array_map('trim', explode(',', $endings)) : EnomTestTransfer::endings($s->serverId);
+        $schema = $s->catalogue === null ? $tld->registry_fields
+            : \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tld->catalogue_facts)?->registryFields;
         if (!in_array($s->registrar, ['enom', 'namesilo'], true) || $s->action !== 'transfer' || $s->term !== 1
             || !in_array($s->tld, $open, true)
             || in_array(substr($s->tld, (int) strrpos('.'.$s->tld, '.')), ['uk', 'ca', 'eu', 'ai', 'de'], true)
-            || !RegistryInputs::supported($s->registrar, $s->tld, $tld->registry_fields)) { throw new \DomainException('Transfer ending is not accepted.'); }
+            || !RegistryInputs::supported($s->registrar, $s->tld, $schema)) { throw new \DomainException('Transfer ending is not accepted.'); }
         $days = [];
         foreach (['domains_transfer_creation_lock_days', 'domains_transfer_previous_lock_days'] as $key) {
             $v = $settings->get($key)?->value ?? 60;

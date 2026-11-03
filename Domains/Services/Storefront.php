@@ -118,6 +118,7 @@ class Storefront
         $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
         $r = $driver->availability(new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1), $context);
         $driver->binding()->requireMatch($r->binding);
+        $this->catalogue()?->validate($selection);
         if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) { return [...$base, 'status' => 'error']; }
         if ($r->evidence()->premium === true) { return [...$base, 'status' => 'premium']; }
         if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return [...$base, 'status' => 'error']; }
