@@ -38,7 +38,7 @@ final readonly class Review implements \JsonSerializable
         return match (true) {
             ($details['test_only'] ?? false) => 'Test only. No invoice or charge is created.',
             ($details['do_not_renew'] ?? false) => 'Do not renew. The domain ends at its expiry date.',
-            ($details['renewal_eligibility']['eligible'] ?? true) !== true => 'Renewal is unavailable until eligibility and price are confirmed.',
+            ($details['renewal_eligibility']['eligible'] ?? false) !== true => 'Renewal not confirmed yet. Run Check to see if this domain can renew here.',
             default => 'Renewal stays on. Normal invoices apply. If the domain is already due, an invoice may go out right away.',
         };
     }
