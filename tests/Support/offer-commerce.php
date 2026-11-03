@@ -25,7 +25,9 @@ function offerCommerceFixture(): array
     $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true)), $rev());
     $ports->apply(Edit::seller($binding, 'com', ['register', 'transfer']), $rev());
     $offers = new AcquisitionOffers($ports, $bindings, $native);
-    $eligibility = new class($bindings, $clock) extends CheckoutEligibility { use OfferCommerceRoute; };
+    App\Models\Server::find($binding->serverId)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
+    $transfer = new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline lookup')));
+    $eligibility = new class($bindings, $clock, $transfer) extends CheckoutEligibility { use OfferCommerceRoute; };
     $eligibility->fixtureOffers = $offers;
     $admission = new class($native, $sellers, $eligibility, $clock) extends CartAdmission { use OfferCommerceRoute; };
     $admission->fixtureOffers = $offers; $admission->boot();
@@ -59,4 +61,17 @@ function offerCommerceSecond(array $fixture): array
     $ports->apply(Edit::override($b, 'net', new Intent(sell: true, transfers: true)), $rev());
     $ports->apply(Edit::seller($b, 'net', ['register', 'transfer']), $rev());
     return [$b, $offers->offer('net', 'register', 1)];
+}
+
+/** Synthetic authentication proves a same-identity credential rotation, without a provider. */
+function offerCommerceRotate($binding, string $token): void
+{
+    $registry = new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+    $registry->register('enom', ['token'], new class($binding->stableIdentity) implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
+        public function __construct(private string $identity) {}
+        public function verify($env, array $credentials): string { return $this->identity; }
+    }, static fn () => throw new RuntimeException('Rotation never resolves a reader'));
+    $bindings = new Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry);
+    $bindings->configure($binding->serverId, 'enom', $binding->environment, ['token' => $token]);
+    $bindings->setProcessing($binding->serverId, true, syntheticActivation());
 }

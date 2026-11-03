@@ -32,8 +32,8 @@ same($before, $reads->calls, 'Locked checkout and invoice binding never resolve 
 // Mutations happen after the last unlocked refresh and native locks, before our batch admission.
 [$secondBinding, $second] = offerCommerceSecond($fixture);
 foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generation', 'second_account'] as $change) {
-    $cart = commerceCart($user); commerceAdd($cart, $public['product'], 'race-'.$change.'-placeholder.com', 3);
-    commerceAdd($cart, $second['product'], 'race-'.$change.'-placeholder.net');
+    $cart = commerceCart($user); commerceAdd($cart, $public['product'], 'race-'.str_replace('_', '-', $change).'-placeholder.com', 3);
+    commerceAdd($cart, $second['product'], 'race-'.str_replace('_', '-', $change).'-placeholder.net');
     $counts = [Order::count(), Invoice::count(), Operation::count()]; $before = $reads->calls;
     $saved = [];
     $mutate = static function () use ($change, $binding, $secondBinding, &$saved): void {
