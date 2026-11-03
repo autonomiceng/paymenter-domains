@@ -226,6 +226,8 @@
     "tests/default-followers-preview-test.php",
     "tests/default-pricing-unreadable-test.php",
     "tests/offer-pricing-unreadable-test.php",
+    "tests/matrix-intent-unreadable-test.php",
+    "tests/sell-intent-unreadable-test.php",
     "tests/sell-stale-time-test.php",
     "tests/price-list-test.php",
     "tests/price-list-unreadable-test.php",
