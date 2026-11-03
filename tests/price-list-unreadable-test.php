@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB,View};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,WhatYouSell};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule,PricingRules};
 extract(commerceFixture());tldPanel();Carbon\Carbon::setTestNow($now);
@@ -100,18 +100,17 @@ $record=collect($page->instance()->getTableRecords()->items())->firstWhere('tld'
 same("Its pricing can't be read. See the alert above.",$page->instance()->getTable()->getColumn('register_price')->record($record)->getTooltip(),'Left-out cell points to the alert');
 $records=$csvRows($service->csv());same("Left out: custom pricing can't be read",$records[4][8],'CSV gives the custom repair cause');
 $watch=false;
-// This account has one saved TLD: its unreadable card fee is repaired on the account, not that TLD.
-$feeServer=App\Models\Server::findOrFail($healthy->server_id);
+// This account has one saved TLD; its unreadable global card fee has no account editor.
 // As above, let the page prepare this account before watching read-only rendering.
 Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id]);
-$feeServer->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>[]]);$watch=true;
-$feePage=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id]);
+$setting(CardFee::KEY,[],false);$watch=true;
+$feePage=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id])->assertSuccessful();
 $dom=new DOMDocument;@$dom->loadHTML($feePage->html());$xpath=new DOMXPath($dom);
 $links=$xpath->query('//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ")]//a');
-same(['tlds'=>['.com'],'links'=>[['Open registrar account',RegistrarAccount::getUrl(['account'=>$healthy->server_id])]]],
+same(['tlds'=>['.com'],'links'=>[]],
     ['tlds'=>array_map(static fn($node)=>$node->textContent,iterator_to_array($xpath->query('//*[@data-price-omission]//*[@data-omitted-tld]'))),
         'links'=>array_map(static fn($link)=>[$xpath->evaluate('normalize-space(.)',$link),$link->getAttribute('href')],iterator_to_array($links))],
-    'Single-TLD card-fee warning links only to its registrar account');
+    'Single-TLD card-fee warning uses global pricing without a registrar link');
 $watch=false;
 same([],$writes,'Service, page and export change no saved data');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'All saved prices and revision identities remain unchanged');
