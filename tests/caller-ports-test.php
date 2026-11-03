@@ -57,11 +57,20 @@ $feature = true;
 Account::where('server_id', $b->serverId)->update(['processing_enabled' => false]);
 same(false, $ports->readOffers($query, Context::Public)[0]->available, 'Local processing revocation closes acquisition');
 Account::where('server_id', $b->serverId)->update(['processing_enabled' => true]);
+$expected = $rev();
 $permission = false;
 commerceReject(fn () => $ports->readOffers($query, Context::Staff));
-commerceReject(fn () => $ports->loadBatch([$holder], Context::Holder, true));
-commerceReject(fn () => $ports->apply(Edit::republish($b, 'com'), $rev()));
+commerceReject(fn () => DB::transaction(fn () => $ports->loadBatch([$holder], Context::Holder, true)));
+commerceReject(fn () => $ports->apply(Edit::republish($b, 'com'), $expected));
 $permission = true;
+$admission = new Query($b, ['com'], 'register', 3, expected: ['com' => $expected]);
+same('27.30', DB::transaction(fn () => $ports->loadBatch([$admission], Context::Locked)[0][0]->price())->retail,
+    'Locked caller ports use current local account gates without a provider callback');
+$proof = Server::findOrFail($b->serverId)->settings()->where('key', 'domains_verified_credentials')->sole();
+$savedProof = $proof->value; $proof->update(['value' => 'synthetic revoked proof']);
+same(false, DB::transaction(fn () => $ports->readOffers($admission, Context::Locked)[0]->available),
+    'Locked admission reloads revoked local credential proof even when offer revisions match');
+$proof->update(['value' => $savedProof]);
 // Holder retail belongs to this frozen account despite EVERY public-sale predicate failing.
 DB::table('domains_sales_policies')->where('tld', 'com')->update(['server_id' => $n->serverId,
     'registrar_key' => $n->registrarKey, 'account_fingerprint' => $n->fingerprint, 'register_enabled' => false, 'transfer_enabled' => false]);
