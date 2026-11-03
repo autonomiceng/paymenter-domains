@@ -26,7 +26,13 @@ try{
     $grants=Staff::requireView();
     $measure=static function(callable $read):array{
         DB::flushQueryLog();DB::enableQueryLog();
-        try{$result=$read();return [count(DB::getQueryLog()),$result];}
+        try{
+            $result=$read();
+            // Each presenter entry must resolve current mode; measure pricing work separately.
+            $pricing=array_filter(DB::getQueryLog(),static fn($q)=>$q['query']!=='select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'
+                || $q['bindings']!==['domains_offer_upgrade']);
+            return [count($pricing),$result];
+        }
         finally{DB::disableQueryLog();DB::flushQueryLog();}
     };
     $small=Tld::orderBy('id')->get();

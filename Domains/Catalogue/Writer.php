@@ -23,7 +23,7 @@ final class Writer implements Catalogue
     }); }
 
     public function readOffers(Query $query, Context $context): array
-    { return (new OfferReader($this->clock, $this->authorize, $this->ready))->readOffers($query, $context); }
+    { return (new OfferReader($this->clock, $this->authorize, $this->ready, $this->current))->readOffers($query, $context); }
 
     public function apply(Command $command, Revision $expectedRevision): Revision
     {

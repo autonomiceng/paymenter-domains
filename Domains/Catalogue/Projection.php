@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{NativeActivationInformation, 
 /** One-way native projection. Caller owns native locks before server/account/policy/offer locks. */
 final class Projection
 {
-    public function __construct(private readonly NativeCatalogue $native) {}
+    public function __construct(private readonly NativeCatalogue $native, private readonly ?\Closure $feature = null) {}
 
     public function lock(array $seeds): array
     {
@@ -40,10 +40,11 @@ final class Projection
         $evaluator = new Evaluator;
         foreach (['register', 'transfer'] as $action) {
             $available = [];
+            $featureReady = !$this->feature || ($this->feature)($snapshot->feed->binding(),$action) && ($this->feature)($snapshot->feed->binding(),'renew');
             foreach ($action === 'register' ? range(1, 10) : [1] as $term) {
                 $q = new Query($snapshot->feed->binding(), [$tld->tld], $action, $term);
                 $decision = $evaluator->evaluate($snapshot, $q, Context::Public, $now);
-                if ($decision->available) { $available[$term] = $decision->retail; }
+                if ($featureReady && $decision->available) { $available[$term] = $decision->retail; }
             }
             $product = $byAction[$action] ?? null;
             if (!$product && !$available) { continue; }

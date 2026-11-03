@@ -13,6 +13,9 @@ final class PriceCatalogue
 {
     /** Daily sync plus one missed run. This is our sales policy, never a registrar price lock. */
     public const MAX_COST_AGE_SECONDS = 172800;
+    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts
+    { return CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::class); }
+
     public function __construct(private readonly PricingRules $rules, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null) {}
 
     /** Cost-only legacy import: deliberately drops publication proof on touched rows. Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.
@@ -220,6 +223,14 @@ final class PriceCatalogue
     public function current(int $serverId, string $fingerprint, string $tld, string $action, int $term,
         string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): PriceSnapshot
     {
+        if($ports=$this->catalogue()){
+            if($lock&&(DB::transactionLevel()===0||!$locked||(int)$locked->server_id!==$serverId||$locked->tld!==$tld||$locked->account_fingerprint!==$fingerprint)){throw new \LogicException('Locked price validation requires its caller-held TLD.');}
+            $b=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());
+            if($b->fingerprint!==$fingerprint){throw new \DomainException('Price account binding changed.');}
+            $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$tld],$action,$term,$currency);
+            return $ports->loadBatch([$q],\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Holder,$lock)[0][0]->costPrice($now);
+        }
+        UpgradeGate::legacy();
         return CallerRouting::legacy(fn () => $this->legacyCurrent($serverId, $fingerprint, $tld, $action, $term, $currency, $now, $lock, $locked));
     }
 

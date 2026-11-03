@@ -3,15 +3,17 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use App\Models\{Server, Setting};
-use Illuminate\Support\Facades\DB;
+use App\Models\{Server, Setting, User, Role};
+use Illuminate\Support\Facades\{DB, Auth, Schema};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Services\{OfferSchema, StaffSettingsReview, StorefrontCatalogueCache};
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 
 /** Explicit offline/maintenance seam, never called by installation or runtime bootstrap.
  * External maintenance must stop/drain old executables and financial writers before capture.
- * This first cut has no activation method: all callers and the worker must move together. */
+ * All callers and the worker move together through the checked activation method. */
 final class UpgradeGate
 {
     public const KEY = 'domains_offer_upgrade';
@@ -29,13 +31,24 @@ final class UpgradeGate
         }
         try { $state = json_decode($rows[0]->value, true, 8, JSON_THROW_ON_ERROR); }
         catch (\Throwable) { throw new \DomainException('Catalogue upgrade state is invalid; keep maintenance active.'); }
-        if (!is_array($state) || !in_array($state['state'] ?? null, ['legacy', 'paused'], true)
+        if (!is_array($state) || !in_array($state['state'] ?? null, ['legacy', 'paused', 'active'], true)
             || !is_int($state['generation'] ?? null) || $state['generation'] < 1) {
             throw new \DomainException('Catalogue upgrade state is invalid; keep maintenance active.');
         }
+        if ($state['state'] === 'active' && (!is_string($state['contract'] ?? null) || !is_string($state['digest'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $state['contract']) || !preg_match('/^[a-f0-9]{64}$/D', $state['digest']))) { throw new \DomainException('Invalid active catalogue contract.'); }
         return $state;
     }
 
+    /** Advisory mode selection never takes the gate ahead of a caller's native/account prefix. */
+    public static function routeState(): array { return self::state(self::query()->get()); }
+    /** Caller already owns its complete native/server/account prefix. */
+    public static function currentRouteState(): array
+    { if (DB::transactionLevel() === 0) { throw new \LogicException('Current routing requires the owned prefix.'); } return self::state(); }
+    public static function active(int $generation): void
+    {
+        $s = self::state();
+        if ($s['state'] !== 'active' || $s['generation'] !== $generation) { throw new \DomainException('Catalogue active generation changed.'); }
+    }
     public static function generation(): int { return self::state()['generation']; }
 
     /** Call before legacy reads, and again under their existing server/account mutex before saves.
@@ -112,11 +125,14 @@ final class UpgradeGate
     private function accounts(): array
     {
         $hash = hash_init('sha256'); $count = 0;
-        Account::orderBy('server_id')->chunk(250, static function ($accounts) use ($hash, &$count): void {
+        Account::orderBy('server_id')->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->chunk(250, static function ($accounts) use ($hash, &$count): void {
             foreach ($accounts as $account) {
-                $binding = CatalogueAcceptances::binding($account);
-                hash_update($hash, json_encode([$binding->serverId, $binding->registrarKey, $binding->environment->value,
-                    $binding->fingerprint], JSON_THROW_ON_ERROR)."\n"); $count++;
+                $value = $account->getRawOriginal();
+                foreach (OfferSchema::COLUMNS['domains_accounts'] ?? [] as $column => $_) { unset($value[$column]); }
+                $server = UpgradeComparison::read(DB::table((new Server)->getTable()))->where('id', $account->server_id)->firstOrFail();
+                $settings = UpgradeComparison::read(DB::table('settings'))->where('settingable_type', (new Server)->getMorphClass())
+                    ->where('settingable_id', $account->server_id)->orderBy('id')->get();
+                hash_update($hash, json_encode([$value, $server, $settings], JSON_THROW_ON_ERROR)."\n"); $count++;
             }
         });
         return ['count' => $count, 'sha256' => hash_final($hash)];
@@ -125,11 +141,11 @@ final class UpgradeGate
     /** Never clears a claim or assumes an expired lease proves a process has stopped. */
     private function drained(): void
     {
-        if (DB::table('domains_observation_queues')->whereNotNull('catalogue_claim')->orWhereNotNull('offer_claim')->exists()
-            || DB::table('domains_observation_work')->whereNotNull('claim')->exists()) {
+        if (UpgradeComparison::read(DB::table('domains_observation_queues'))->whereNotNull('catalogue_claim')->orWhereNotNull('offer_claim')->exists()
+            || UpgradeComparison::read(DB::table('domains_observation_work'))->whereNotNull('claim')->exists()) {
             throw new \DomainException('Catalogue upgrade requires drained catalogue and observation claims.');
         }
-        DB::table('domains_read_budgets')->orderBy('id')->chunk(250, static function ($rows): void {
+        UpgradeComparison::read(DB::table('domains_read_budgets'))->orderBy('id')->chunk(250, static function ($rows): void {
             foreach ($rows as $row) {
                 if (json_decode($row->leases, true, 32, JSON_THROW_ON_ERROR) !== []) {
                     throw new \DomainException('Catalogue upgrade requires released read reservations.');
@@ -159,16 +175,22 @@ final class UpgradeGate
     public function check(array $evidence): array
     {
         $this->window($evidence); $this->drained();
+        $result = $this->comparison($evidence);
+        $this->window($evidence); $this->drained(); return $result;
+    }
+
+    private function comparison(array $evidence): array
+    {
         if (!is_array($evidence['before'] ?? null) || $evidence['before'] === []) {
             throw new \DomainException('Catalogue upgrade capture is missing.');
         }
         $compatible = true; $complete = true; $offers = 0; $issues = []; $mismatches = [];
-        $unexpected = DB::table('domains_tlds')->where('catalogue_converted', true)->where(static function ($q): void {
+        $unexpected = UpgradeComparison::read(DB::table('domains_tlds'))->where('catalogue_converted', true)->where(static function ($q): void {
             $q->whereNotNull('catalogue_facts')->orWhereNotNull('catalogue_published_revision')->orWhere('catalogue_revision', '!=', 1);
         })->count();
         if ($unexpected > 0) { $compatible = false; $mismatches['staging_changed'] = $unexpected; }
 
-        Account::orderBy('server_id')->chunk(250, static function ($accounts) use (&$compatible, &$complete, &$offers, &$issues, &$mismatches): void {
+        Account::orderBy('server_id')->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->chunk(250, static function ($accounts) use (&$compatible, &$complete, &$offers, &$issues, &$mismatches): void {
             foreach ($accounts as $account) {
                 $report = (new UpgradeConversion)->stagingReport(CatalogueAcceptances::binding($account));
                 $complete = $complete && $report['complete'];
@@ -180,10 +202,59 @@ final class UpgradeGate
             }
         });
         $comparison = UpgradeComparison::compare($evidence['before']);
-        $this->window($evidence); $this->drained();
         return ['compatible' => $compatible && $complete && $comparison['compatible'], 'complete' => $complete,
             'changed' => $comparison['changed'], 'staging_mismatches' => $mismatches, 'issues' => $issues,
             'accounts' => $evidence['accounts']['count'], 'offers' => $offers, 'activated' => false,
             'activation_blocked' => 'caller_cutover_pending'];
     }
+    /** Offline maintenance only. An unlocked check/receipt is never transition authority. */
+    public function activate(array $evidence): array
+    {
+        self::outside();
+        $actor = (int) Auth::id();
+        if (PHP_SAPI !== 'cli' || $actor < 1) { throw new \DomainException('Authenticated maintenance CLI required.'); }
+        $result = DB::transaction(function () use ($actor, $evidence): array {
+            $user = User::whereKey($actor)->lockForUpdate()->firstOrFail();
+            $user->setRelation('role', $user->role_id ? Role::whereKey($user->role_id)->lockForUpdate()->first() : null);
+            foreach ([Staff::VIEW, Staff::POLICY, Staff::COSTS, StaffSettingsReview::permission('activate')] as $permission) {
+                if (!$user->hasPermission($permission)) { throw new \DomainException('Current cutover staff permissions required.'); }
+            }
+            // Whole native prefix, then servers/accounts and gate, before ANY comparison snapshot.
+            $native = ['users','credits','invoices','invoice_items','invoice_transactions','orders','services','categories','products','plans','prices','carts','cart_items'];
+            foreach ($native as $table) { DB::table($table)->orderBy('id')->lockForUpdate()->chunk(250, static function (): void {}); }
+            Server::where('extension','Domains')->orderBy('id')->lockForUpdate()->get();
+            Account::orderBy('server_id')->lockForUpdate()->get();
+            $rows = self::query()->lockForUpdate()->get(); $state = self::state($rows);
+            if ($state['state'] !== 'paused' || ($evidence['generation'] ?? null) !== $state['generation']) {
+                throw new \DomainException('Catalogue upgrade requires the same paused maintenance window.');
+            }
+            foreach (['domains_sales_policies','domains_tlds','domains_prices','settings',
+                ...array_diff(UpgradeComparison::TABLES, [...$native,'domains_accounts','domains_sales_policies','domains_tlds','domains_prices','settings']),
+                'domains_read_budgets'] as $table) {
+                if (!Schema::hasTable($table)) { continue; }
+                $columns = Schema::getColumnListing($table); $q = DB::table($table);
+                foreach (in_array('id',$columns,true) ? ['id'] : ['server_id','account_fingerprint'] as $column) { $q->orderBy($column); }
+                $q->lockForUpdate()->chunk(250, static function (): void {});
+            }
+            return UpgradeComparison::locked(function () use ($evidence, $state, $rows): array {
+                if (($evidence['accounts'] ?? null) !== $this->accounts()) { throw new \DomainException('Catalogue account or credential set changed.'); }
+                $this->drained(); $contract = CallerRouting::contract();
+                try { $report = $this->comparison($evidence); }
+                catch (\JsonException|\TypeError|\InvalidArgumentException) { throw new \DomainException('Malformed catalogue staging refuses activation.'); }
+                if (!$report['compatible'] || !$report['complete']) { throw new \DomainException('Catalogue conversion/source/financial comparison failed.'); }
+                $generation = $state['generation'] + 1;
+                $digest = hash('sha256', OfferState::json([$evidence,$contract,$report]));
+                $row = $rows->sole(); $row->value = OfferState::json(['state'=>'active','generation'=>$generation,'contract'=>$contract['id'],'digest'=>$digest]);
+                $row->save(); StorefrontCatalogueCache::invalidateAfterCommit();
+                return ['activated'=>true,'generation'=>$generation,'digest'=>$digest];
+            });
+        });
+        // Bounded, idempotent wake is after the committed switch; a failed account is independent.
+        CallerRouting::reset();
+        foreach (Account::orderBy('server_id')->limit(8)->get() as $account) {
+            try { OfferScheduler::routed()?->wake(CatalogueAcceptances::binding($account)); } catch (\Throwable) {}
+        }
+        return $result;
+    }
+
 }

@@ -22,6 +22,7 @@ final class PublicationEligibility
     /** Called under the seller's server/account/policy/TLD prefix for admission; no provider reads. */
     public static function require(Tld $tld, string $action, int $term, bool $lock = false): void
     {
+        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         $account = Account::where('server_id', $tld->server_id)->firstOrFail();
         $binding = CatalogueAcceptances::binding($account);
         $accepted = CatalogueAcceptances::load($binding, $lock); $prices = [];

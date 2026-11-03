@@ -12,9 +12,18 @@ final class UpgradeComparison
 {
     public const TABLES = ['domains_accounts', 'domains_tlds', 'domains_prices', 'domains_sales_policies',
         'domains_sell_rows', 'domains_sell_fills', 'domains_observation_queues', 'domains_observation_work',
-        'domains_domains', 'domains_operations', 'extensions', 'products', 'plans', 'prices', 'settings',
+        'domains_domains', 'domains_operations', 'extensions', 'categories', 'products', 'plans', 'prices', 'settings',
         'services', 'orders', 'invoices', 'invoice_items', 'invoice_transactions', 'credits',
         'jobs', 'failed_jobs', 'users', 'carts', 'cart_items'];
+    private static bool $locking = false;
+    public static function locking(): bool { return self::$locking; }
+    public static function locked(\Closure $body): mixed
+    {
+        if (DB::transactionLevel() !== 1 || self::$locking) { throw new \LogicException('Outer comparison locks required.'); }
+        self::$locking = true;
+        try { return $body(); } finally { self::$locking = false; }
+    }
+    public static function read(Builder $query): Builder { return self::$locking ? $query->lockForUpdate() : $query; }
     private const MONEY = [
         'domains_prices' => ['wholesale', 'retail'],
         'domains_tlds' => ['markup', 'fixed_register', 'fixed_renew', 'fixed_transfer', 'renew_price', 'cost_renew', 'cost_transfer', 'catalogue_retained_annual_retail'],
@@ -31,7 +40,7 @@ final class UpgradeComparison
             $name = $grammar->wrap($column);
             $query->selectRaw('CAST('.$name.' AS CHAR) AS '.$name);
         }
-        return $query;
+        return self::read($query);
     }
 
     public static function retained(string $table): Builder
@@ -41,7 +50,7 @@ final class UpgradeComparison
         if (isset(OfferSchema::COLUMNS[$table][$marker]) && Schema::hasColumn($table, $marker)) {
             $query->where($marker, false);
         }
-        return $query;
+        return self::read($query);
     }
 
     /** Stable bounded traversal; only counts/digests leave the database boundary. */

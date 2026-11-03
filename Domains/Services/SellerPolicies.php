@@ -11,6 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tl
 
 final class SellerPolicies
 {
+    protected function catalogue(): ?AcquisitionOffers
+    { return CallerRouting::resolve(AcquisitionOffers::class); }
+
     public function __construct(private readonly PriceCatalogue $prices, private readonly AccountBindings $bindings) {}
 
     public function initialize(string $tld, ?int $generation = null): SalesPolicy
@@ -70,6 +73,8 @@ final class SellerPolicies
     /** Unlocked display lookup only. Every line is rechecked in admit. */
     public function selection(string $tld, string $action, int $term, \DateTimeImmutable $now): SaleSelection
     {
+        if ($offers=$this->catalogue()) { return $offers->selection($tld,$action,$term); }
+        UpgradeGate::legacy();
         return CallerRouting::legacy(fn () => $this->legacySelection($tld, $action, $term, $now));
     }
 
@@ -91,6 +96,15 @@ final class SellerPolicies
     /** One display invocation only. Account validation is shared across its selected endings, never admission. */
     public function displayCatalogues(array $endings): array
     {
+        if ($offers=$this->catalogue()) {
+            $out=[];
+            foreach ($offers->display($endings) as $name=>$actions) {
+                $policy=SalesPolicy::where('tld',$name)->firstOrFail();$account=Account::where('server_id',$policy->server_id)->sole();
+                $out[$name]=[$policy,$account,Tld::where(['server_id'=>$account->server_id,'tld'=>$name])->firstOrFail()];
+            }
+            return $out;
+        }
+        UpgradeGate::legacy();
         return CallerRouting::legacy(fn () => $this->legacyDisplayCatalogues($endings));
     }
 
@@ -123,6 +137,7 @@ final class SellerPolicies
      */
     public function admit(array $lines, \DateTimeImmutable $now): array
     {
+        if ($offers=$this->catalogue()) { return array_column($offers->admit($lines),'snapshot'); }
         return CallerRouting::legacy(fn () => $this->legacyAdmit($lines, $now));
     }
 
@@ -135,6 +150,7 @@ final class SellerPolicies
         $servers = $accounts = [];
         foreach ($ids as $id) { $servers[$id] = Server::whereKey($id)->lockForUpdate()->firstOrFail(); }
         foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->firstOrFail(); }
+        UpgradeGate::legacy();
         foreach ($ids as $id) {
             $binding = CatalogueAcceptances::binding($accounts[$id]);
             foreach ($lines as $line) { if ($line->serverId === $id) { self::requireSale($binding, $line->action); } }

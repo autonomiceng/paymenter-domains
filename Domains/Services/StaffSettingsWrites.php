@@ -12,7 +12,7 @@ class StaffSettingsWrites
     public function __construct(private readonly NativeCatalogue $native,private readonly SellerPolicies $sellers,
         private readonly AccountBindings $bindings,private readonly bool $allowInjectedProbes=false) {}
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands
-    {return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn()=>null);}
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::class);}
     public function connectionAvailable(?string $registrar=null): bool
     {return $this->allowInjectedProbes&&($registrar===null||$this->bindings->hasRegistrar($registrar));}
     /** Returns the publish summary for a default pricing change, otherwise null. */

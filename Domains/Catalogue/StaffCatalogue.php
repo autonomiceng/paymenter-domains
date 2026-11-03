@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,
 /** Bounded Staff snapshots over converted identities; no shadow rows, legacy costs or render writes. */
 final class StaffCatalogue
 {
-    public static function routed(): ?self { return CallerRouting::legacy(static fn()=>null); }
+    public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     public function __construct(private readonly CallerPorts $ports,private readonly Clock $clock,private readonly ?OfferWork $work=null,private readonly ?\Closure $readable=null) {}
     public function readable(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $b): bool
     {Staff::requireView();return $this->readable!==null&&($this->readable)($b);}
@@ -130,7 +130,7 @@ final class StaffCatalogue
             $out[$t->id]=['prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
-                'own'=>Pricing::hasOwn($t),'offers'=>$all,'facts'=>$facts];
+                'own'=>Pricing::hasOwn($t),'pricing'=>!Pricing::hasOwn($t)?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
         }
         return $out;
     }

@@ -14,7 +14,7 @@ class CartAdmission
 {
     /** Fixed legacy route. No production composition selects the dormant adapter. */
     protected function catalogue(): ?AcquisitionOffers
-    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => null); }
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class); }
 
     private ?Order $order = null;
     private array $lines = [];

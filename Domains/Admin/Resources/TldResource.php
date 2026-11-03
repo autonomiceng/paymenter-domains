@@ -55,7 +55,7 @@ class TldResource extends Resource
             TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('account')->label('Registrar account')->state(fn(Tld $record)=>$record->server->name)
                 ->suffix(fn(Tld $record)=>$isDemo($record)?new \Illuminate\Support\HtmlString(' '.DemoData::tag(inline:true)->toHtml()):null)
-                ->description(fn(Tld $record,$livewire)=>TldFacts::registrar($record->registrar_key).', '.strtolower(TldFacts::pricing($record))
+                ->description(fn(Tld $record,$livewire)=>TldFacts::registrar($record->registrar_key) .', '.strtolower($row($record,$livewire)['pricing'])
                     .($row($record,$livewire)['seller']===(int)$record->server_id?', new orders':'')),
             TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['retail']??Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)

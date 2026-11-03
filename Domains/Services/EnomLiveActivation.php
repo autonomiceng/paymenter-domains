@@ -63,6 +63,8 @@ final class EnomLiveActivation
             if($failures!==null){$failures=$r['failures'];} elseif($r['missing']!==null){throw new \DomainException($r['missing']);}
             return $r['costs'];
         }
+        // Fence this legacy snapshot once; per-term evidence validation stays query-free.
+        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         try{
             $lock=DB::transactionLevel()>0;$accepted=CatalogueAcceptances::load($b,$lock);$rows=[];$counts=['registration'=>0,'transfer'=>0];$rules=new PricingRules;$prices=new PriceCatalogue($rules);
             // Display snapshot only. Activate still takes the original independent locking reads below.

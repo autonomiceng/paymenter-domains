@@ -26,7 +26,7 @@ final readonly class WriteAcceptance
             throw new WriteHeld('write_acceptance_required');
         }
         if ($this->protocolAcceptanceCheck && ($this->protocolAcceptanceCheck)($binding,$lock,$query)!==true) { throw new WriteHeld('write_acceptance_required'); }
-        if ($caps = $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
+        if ($caps = $this->catalogue ?? ($lock ? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class) : \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed())) {
             try {
                 $t = $lock ? ($op->catalogueTld ?? throw new \DomainException('Locked capability snapshot required.')) : null;
                 $name = $t?->tld ?? $op->domain->tld;

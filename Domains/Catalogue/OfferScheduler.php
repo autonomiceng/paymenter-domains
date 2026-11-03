@@ -7,20 +7,22 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, HoldingObservationWork, OperationClaims, ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, HoldingObservationWork, OperationClaims, ReadFailure, StaffOperationReview};
 
 /** One shared account rotation. No job or timer registration; composition owns its generation. */
 final class OfferScheduler
 {
     public function __construct(private readonly OfferWork $offers, private readonly HoldingObservationWork $holdings,
         private readonly Clock $clock, private readonly \Closure $current) {}
-    public static function routed(): ?self { return CallerRouting::legacy(static fn () => null); }
+    public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     public function enroll(int $server): void
     { $this->offers->wake(CatalogueAcceptances::binding(Account::where('server_id', $server)->sole())); }
     public function sync(AccountBinding $b, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void { $this->offers->sync($b, $origin, $expectedGeneration); }
     public function wake(AccountBinding $b): void { $this->offers->wake($b); }
     public function requestFacts(AccountBinding $b, string $tld): void { $this->offers->requestFacts($b, $tld); }
     public function status(AccountBinding $b, ?string $tld = null): array { return $this->offers->status($b, $tld); }
+    public function resume(int $id, string $reason, StaffOperationReview|\Paymenter\Extensions\Servers\Domains\Services\StaffSyncReview|null $review = null): void
+    { $this->holdings->resume($id, $reason, $review, $this->current); }
     public function tick(int $accounts = 8): array
     {
         OperationClaims::outside(); ($this->current)();
@@ -31,6 +33,8 @@ final class OfferScheduler
             try { $this->enroll((int)$account->server_id); } catch (\Throwable) { /* Independent account. */ }
         }
         $rows = DB::transaction(function () use ($accounts): array {
+            \App\Models\Server::where('extension', 'Domains')->orderBy('id')->lockForUpdate()->get();
+            Account::orderBy('server_id')->lockForUpdate()->get();
             ($this->current)(); $q = DB::table('domains_observation_queues');
             $rows = (clone $q)->orderBy('turn')->orderBy('server_id')->limit($accounts)->lockForUpdate()->get();
             $turn = (int)$q->max('turn');

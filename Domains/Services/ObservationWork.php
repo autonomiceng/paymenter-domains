@@ -60,17 +60,13 @@ final class ObservationWork
         }
         return $summary;
     }
-    /** Internal audited read-only resume. Fresh staff policy/permission belongs36. */
+    /** Internal audited read-only resume through the selected holding worker. */
     public function resume(int $id, string $reason, StaffOperationReview|StaffSyncReview|null $review = null): void
     {
-        OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
-        $seed=Domain::findOrFail(DB::table('domains_observation_work')->where('id',$id)->value('domain_id'));
-        DB::transaction(function () use ($id,$reason,$seed,$review): void {
-            $l=HoldingLocks::take($seed,$review?->actorId); UpgradeGate::legacy(); $review?->check($l); $d=$l['domain']; $q=DB::table('domains_observation_work')->where('id',$id); $job=(clone $q)->lockForUpdate()->firstOrFail();
-            if ($job->domain_id!=$d->id||$job->server_id!=$d->server_id||$job->phase!==self::phase($d)||(int)$job->generation!==$d->authority_generation||$job->account_fingerprint!==$d->account_fingerprint||$job->lease_until>$this->clock->now()->getTimestamp()||$job->resumes>=20) { throw new \DomainException('Read resume unavailable.'); }
-            $p=$d->observation??[]; unset($p['record_hold']); $p['resumptions']=[...($p['resumptions']??[]),['work_id'=>$id,'reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM)]];
-            $d->update(['observation'=>$p]); $q->update(['resumes'=>$job->resumes+1,'tries'=>0,'claim'=>null,'safe_code'=>null,'due_at'=>$this->clock->now()->getTimestamp()]); $review?->record($l);
-        });
+        if (($scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed())!==null) {
+            $scheduler->resume($id,$reason,$review); return;
+        }
+        (new HoldingObservationWork($this->observer,$this->clock))->resume($id,$reason,$review,static fn()=>UpgradeGate::legacy());
     }
     private static function phase(Domain $d): string { return HoldingObservationWork::phase($d); }
     /** Internal bounded catalogue failure resume; installed staff policy remains36. */

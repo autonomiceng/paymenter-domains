@@ -80,7 +80,11 @@ final class StaffSettingsReview
     public function check(bool $inFlight=false,?\Closure $catalogueStamp=null): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
-        if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{UpgradeGate::legacy();}}
+        if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{
+            $state=UpgradeGate::routeState();
+            if($state['state']==='active'&&!in_array($this->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){UpgradeGate::active($state['generation']);}
+            else{UpgradeGate::legacy();}
+        }}
         $this->catalogueStamp=$catalogueStamp;
         if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}
         elseif($catalogueStamp===null){$this->lockOne();}
