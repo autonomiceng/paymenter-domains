@@ -328,7 +328,7 @@ class WhatYouSell extends Page implements HasTable
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(SellRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])
                     ->description(fn(SellRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(SellRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
-                    ->url(fn(SellRow $record)=>isset($this->reads()->status($record)['open'])?TldResource::getUrl('index'):null),
+                    ->url(fn(SellRow $record)=>isset($this->reads()->status($record)['open'])&&($id=$this->reads()->tldId($record))!==null?TldResource::getUrl('view',['record'=>$id]):null),
             ])
             ->checkIfRecordIsSelectableUsing(fn(SellRow $record)=>$this->reads()->blocked($record)===null)
             ->toolbarActions([

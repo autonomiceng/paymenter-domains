@@ -108,7 +108,7 @@ final class SellTable
     {
         if($this->catalogue!==null){$facts=$this->facts()[self::key($row)]??[];
             if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
-            $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];return ['label'=>$s['label'],'tone'=>$s['tone'],...($s['reason']===null?[]:['next'=>$s['reason'].'. Open TLDs & pricing','open'=>true])];}
+            $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];return ['label'=>$s['label'],'tone'=>$s['tone'],...($s['reason']===null?[]:['next'=>$s['reason'].'. Open .'.$row->tld,'open'=>true])];}
         $row=$this->effective($row);
         if(!$row->listed){return ['label'=>'Not for sale','tone'=>'gray'];}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;$rule=$this->rule($server);
@@ -124,7 +124,7 @@ final class SellTable
             'limit'=>['label'=>$this->costs?'Over the cost limit':'Not for sale','tone'=>'gray'],
             'waiting'=>$waiting,
             default=>$sold===null?($row->high_cost===null?$waiting:['label'=>'Waiting for prices','tone'=>'warning','next'=>'The next price sync adds it. Check orders under Registrars'])
-                :(($sales=$this->sales($row))===null?$waiting:['label'=>$sales['label'],'tone'=>$sales['tone']??'gray',...(($sales['reason']??null)===null?[]:['next'=>$sales['reason'].'. Open TLDs & pricing','open'=>true])]),
+                :(($sales=$this->sales($row))===null?$waiting:['label'=>$sales['label'],'tone'=>$sales['tone']??'gray',...(($sales['reason']??null)===null?[]:['next'=>$sales['reason'].'. Open .'.$row->tld,'open'=>true])]),
         };
     }
     /** Sale state for the rows on screen, read once. Null when no prices are saved for it yet. */
