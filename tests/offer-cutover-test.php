@@ -36,10 +36,10 @@ $page=StaffCatalogue::routed()->page(collect([$tlds[0]->fresh()]));expect($page!
 $locked=DB::transaction(fn()=>$sellers->admit([$public['selection']],$now));same('23.40',$locked[0]->retail,'Installed locked admission uses current shared price');
 $user=commerceUser();$cart=commerceCart($user);$line=commerceAdd($cart,$public['product'],'cutover-placeholder.com',3);
 $admission->refresh();$before=$reads->calls;$checkout=commerceCheckout($user,$cart);
-same(1,Operation::count(),'Real installed checkout binds exactly one obligation');
-$op=Operation::firstOrFail();same('23.40',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
+same(4,Operation::count(),'Real installed checkout adds exactly one obligation beside three frozen historical operations');
+$op=Operation::where('operation_key','like','invoice-item:%')->sole();same('23.40',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
 same($before,$reads->calls,'Locked checkout creates no second provider read');
-$invoice=$op->invoice()->firstOrFail();same(null,app(PayCheck::class)->stop($invoice),'Installed payment check accepts current local offer evidence');
+$invoice=App\Models\Invoice::findOrFail($op->invoice_id);same(null,app(PayCheck::class)->stop($invoice),'Installed payment check accepts current local offer evidence');
 $financial=[$op->fresh()->getRawOriginal(),$invoice->fresh()->getRawOriginal()];
 auth()->login($staff);$native->publish($tlds[0]->id,$now);
 same($financial,[$op->fresh()->getRawOriginal(),$invoice->fresh()->getRawOriginal()],'Native publication preserves existing invoice and frozen operation');

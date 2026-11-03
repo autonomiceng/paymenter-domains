@@ -217,7 +217,8 @@ final class UpgradeGate
                 if (!$user->hasPermission($permission)) { throw new \DomainException('Current cutover staff permissions required.'); }
             }
             // Whole native prefix, then servers/accounts and gate, before ANY comparison snapshot.
-            foreach (['categories','products','plans','prices'] as $table) { DB::table($table)->orderBy('id')->lockForUpdate()->get(); }
+            $native = ['users','credits','invoices','invoice_items','invoice_transactions','orders','services','categories','products','plans','prices','carts','cart_items'];
+            foreach ($native as $table) { DB::table($table)->orderBy('id')->lockForUpdate()->chunk(250, static function (): void {}); }
             Server::where('extension','Domains')->orderBy('id')->lockForUpdate()->get();
             Account::orderBy('server_id')->lockForUpdate()->get();
             $rows = self::query()->lockForUpdate()->get(); $state = self::state($rows);
@@ -225,7 +226,7 @@ final class UpgradeGate
                 throw new \DomainException('Catalogue upgrade requires the same paused maintenance window.');
             }
             foreach (['domains_sales_policies','domains_tlds','domains_prices','settings',
-                ...array_diff(UpgradeComparison::TABLES, ['categories','products','plans','prices','domains_accounts','domains_sales_policies','domains_tlds','domains_prices','settings']),
+                ...array_diff(UpgradeComparison::TABLES, [...$native,'domains_accounts','domains_sales_policies','domains_tlds','domains_prices','settings']),
                 'domains_read_budgets'] as $table) {
                 if (!Schema::hasTable($table)) { continue; }
                 $columns = Schema::getColumnListing($table); $q = DB::table($table);
