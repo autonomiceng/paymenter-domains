@@ -210,7 +210,23 @@ request has definitely failed, an explicit retry may create a new operation.
 Both pages show stored progress on the control. Staff Livewire and the owner-only read endpoint
 poll every two seconds, then every ten seconds after thirty seconds. Polls never call a provider.
 Completion restores controls and reads confirmed facts; Saved does not mean DNS propagation.
-NameSilo retains profile approval followed by the separate association step.
+NameSilo uses one contact Save. The same transaction freezes a prerequisite profile operation
+and its association request. Each enters the existing engine with its own deadline, current
+authority checks, reservation and sealed one-write grant; only one operation runs per entry.
+The next worker entry continues the association after verified creation, without another owner
+or staff action. Untouched replacement retires both operations. A proven unconsumed prerequisite
+grant also permits a fresh ordinary save, closing the old pair while preserving its seal and
+evidence. Sent or possibly sent creation cannot be replaced or replayed. Existing correction/profile
+operations remain compatible. Shared owner/staff progress shows verified creation awaiting
+application, amber support guidance for a lost creation ID, and association readback separately.
+
+Profile readback reuses the registration verifier: exact returned ID, non-default profile,
+owner-bound retained proof, exact contact fields and documented US/CA phone equivalence.
+Association rechecks that isolated profile and the selected roles. Unknown creation with no
+original returned ID cannot continue. Known-ID recovery reads only; an unknown association
+also reconciles read-only. No contactUpdate or shared/default profile edit is permitted.
+The shared protocol prerequisite descriptor is optional; Enom still enters one operation.
+NameSilo production activation remains separately gated.
 
 Enom's accepted deployment protocol now includes SynchAuthInfo. Existing saved management
 acceptance deliberately stops matching: review and save management acceptance for the expanded

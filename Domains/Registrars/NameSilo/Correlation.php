@@ -55,6 +55,11 @@ final class Correlation
                         continue;
                     }
                     $date = $policy?->date($reply->value('order_date'));
+                    // Support binds an exact order and its otherwise unproven provider clock. Readback must agree.
+                    if($attempt->execution===\Paymenter\Extensions\Servers\Domains\Data\ExecutionRecord::StaffAnswer&&$attempt->supportedOrderDate!==null){
+                        if($reply->value('order_date')!==(new \DateTimeImmutable($attempt->supportedOrderDate->value))->format('Y-m-d H:i:s')){$complete=false;continue;}
+                        $date=$attempt->supportedOrderDate;
+                    }
                     try { $date ??= new DateEvidence($reply->value('order_date'), ExpiryPrecision::Date, 'namesilo_order'); }
                     catch (\InvalidArgumentException|\TypeError) {} // No invented timezone for a naive timestamp.
                     if ($date?->precision === ExpiryPrecision::Instant

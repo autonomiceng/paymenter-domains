@@ -10,6 +10,10 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DnsMapping, Ou
 final class Dns
 {
     public const STANDARD = ['A', 'AAAA', 'CNAME', 'MX', 'TXT'];
+    public const DEFAULT_NAMESERVERS = ['ns1.dnsowl.com', 'ns2.dnsowl.com', 'ns3.dnsowl.com'];
+
+    public static function defaultDns(array $rows): bool
+    { return $rows !== [] && !array_diff($rows, self::DEFAULT_NAMESERVERS); }
 
     /** Shared name/type/address/mx_pref shape, retaining provider record_id and ttl. Server-side only. */
     public static function inventory(#[\SensitiveParameter] string $body, string $domain): array
