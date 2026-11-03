@@ -5,8 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
-/** Production reader construction, opt-in only after accepting a positive provider identity verifier.
- * An absent NameSilo stable-ID verifier leaves configuration blocked; no label/key fallback.
+/** Explicit reader composition; local enrollment authenticates a key without claiming provider identity.
+ * Enom continues to require its positive provider identity verifier.
  * Factories construct read handles only. Registration wire mapping/installation belongs to21/39.
  */
 final class RegistrarFactories
@@ -14,7 +14,7 @@ final class RegistrarFactories
     /** Deployment opt-in. No default environment and no spending or scheduler port registration. */
     public static function bootstrap(RegistrarRegistry $registry): bool
     {
-        $sandbox=NameSiloSandbox::bootstrap($registry);
+        $sandbox=LocalAccountEnrollment::bootstrap($registry) || NameSiloSandbox::bootstrap($registry);
         $environment = \Paymenter\Extensions\Servers\Domains\Data\Environment::tryFrom((string)config('domains.enom_identity.environment', ''));
         if (!$environment) { return $sandbox; }
         $registry->register('enom', ['uid', 'token'], new Enom\AccountVerifier($environment),

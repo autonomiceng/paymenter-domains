@@ -18,6 +18,12 @@ final class NameSiloAccountGuard
         try {
             if($binding->registrarKey!=='namesilo'){throw new \DomainException;}
             $server=Server::whereKey($binding->serverId)->where('extension','Domains')->where('enabled',true)->firstOrFail();
+            $account = Account::where('server_id', $binding->serverId)->sole();
+            if (LocalAccountEnrollment::enrolled($account)) {
+                $binding->requireMatch(CatalogueAcceptances::binding($account));
+                if (!app(AccountBindings::class)->configurationAvailable($binding->serverId)) { throw new \DomainException; }
+                return; // Local enrollment grants no identity claim; owner-profile proofs remain in the operation.
+            }
             $expected=DefaultContact::email($server->settings()->where('key',self::EXPECTED)->first()?->value);
             $origin=($binding->environment===Environment::Live
                 ?\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Environment::Live
