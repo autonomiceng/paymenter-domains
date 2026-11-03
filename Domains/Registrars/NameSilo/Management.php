@@ -95,13 +95,7 @@ final class Management extends ManagementProtocol
     private function profile(ManagementRequest $r, RequestContext $c, #[\SensitiveParameter] string $id): void
     {
         $reply = self::reply($this->read($r, $c, 'contactList', ['contact_id' => $id]), 'contactList');
-        $rows = $reply['contact'] ?? null; if (is_array($rows) && !array_is_list($rows)) { $rows = [$rows]; }
-        $row = is_array($rows) && count($rows) === 1 ? $rows[0] : null;
-        if (!is_array($row) || (string) ($row['contact_id'] ?? '') !== $id || !in_array($row['default_profile'] ?? null, [0,'0'], true)) { throw new \DomainException('Non-default profile proof required.'); }
-        $map = ['first_name','last_name','company','address','address2','city','state','zip','country','email','phone'];
-        foreach (array_combine($map, array_values($r->payload()['contact'])) as $field => $wanted) {
-            if (($row[$field] ?? null) !== $wanted) { throw new \DomainException('Contact readback mismatch.'); }
-        }
+        RegistrationProfiles::requireReadback($reply, RegistrationProfiles::parameters($r->payload()['contact']), $id);
     }
     private function glue(ManagementRequest $r, RequestContext $c): array
     {
