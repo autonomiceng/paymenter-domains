@@ -443,7 +443,8 @@
     "tests/namesilo-profile-wire-test.php",
     "tests/namesilo-runtime-renewal-test.php",
     "tests/namesilo-runtime-management-test.php",
-    "tests/offer-global-pricing-test.php"
+    "tests/offer-global-pricing-test.php",
+    "tests/offer-upgrade-generation-test.php"
   ],
   "ui": [],
   "runner": [
