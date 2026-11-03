@@ -13,8 +13,12 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Disposition,Driver
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Live name check when a customer starts to pay, before any money moves. Scoped to the native invoice pay call.
  * Local Live acceptance always precedes reads. A read that fails lets payment go: the after-payment preflight still guards the send. */
-final class PayCheck
+class PayCheck
 {
+    /** Fixed legacy route. No production composition selects the dormant adapter. */
+    protected function catalogue(): ?AcquisitionOffers
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => null); }
+
     /** States of an order nobody has sent or set aside. */
     public const OPEN=['awaiting_payment','awaiting_code','queued'];
     private const CACHE_SECONDS=60;
