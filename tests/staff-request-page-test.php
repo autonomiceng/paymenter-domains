@@ -44,13 +44,14 @@ same(['Auto Pay: charged','Auto Pay skipped: no saved payment method','Auto Pay:
 same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observation'=>'Resume sync','hold'=>'Put on hold','release'=>'Release hold',
     'disposition'=>'Close request','refund'=>'Cancel and refund','credit'=>'Retry refund','replacement'=>'Reissue renewal invoice'],StaffOperationReview::ACTIONS,'Action names');
 
-// List: Request, Domain, Type, Status with reason, Created, Registrar account; Status, Type and Registrar account filters.
+// List: Request, Domain, Type, Status, Note, Created, Registrar account; Status, Type and Registrar account filters. One-line rows.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
 $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()
     ->assertSee('Request #'.$heldOp->id)->assertSeeHtml('2026-10-20T15:05:00+00:00')->assertSee('Synthetic registrar')
-    ->assertSee('On hold')->assertSee('Old registrar needs approval')->assertSee('Registrar account')
+    ->assertSee('On hold')->assertSee('Old registrar needs approval')->assertSee('Registrar account')->assertSee('Note')->assertSeeHtml('placeholder="Search domain"')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
 same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
+staffTableStandard($list,'Search domain',['domain.domain','state','note']);
 $filter=static function(string $name,array $value){$p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable($name,$value);
     return $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters');};
 $filter('status',['on_hold'])->assertCanSeeTableRecords([$heldOp,$longOp])->assertCanNotSeeTableRecords([$doneOp]);
@@ -74,6 +75,10 @@ same(['recheck'],array_values(array_filter(['recheck','resume_reads'],fn($a)=>Pa
 $links=[];
 same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$active->server_id]),Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::for($active)['Registrar']['url'],'Registrar row opens that account');
 same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl(),RegistrarFacts::accountUrl(0),'A missing account opens the list');
+same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$active->server_id,'switch'=>'orders']).'#switch-orders',RegistrarFacts::accountUrl($active->server_id,'orders'),'A switch link carries its anchor');
+same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl(),RegistrarFacts::accountUrl(0,'orders'),'A missing account has no switch to land on');
+same(['Go to Orders switch'=>'orders','Turn them on'=>'dns'],RequestFacts::SWITCH_LINKS,'Each link that promises a switch names it');
+same(['Orders','DNS, nameservers and contacts'],array_values(array_intersect_key(RegistrarFacts::SWITCHES,array_flip(RequestFacts::SWITCH_LINKS))),'Each named switch is a row on the account page');
 foreach(['configuration_unavailable','processing','balance','usd_balance_required','write_disabled','staff_review_required'] as $code){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);
     $n=RequestFacts::notice($heldOp->fresh()); $links[$code]=[$n['link']??null,$n['link_label']??null,$n['action']??null];

@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchRe
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, DomainHistory, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Sheet, Staff, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,StaffWatchWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,OwnedDomains,StaffWatchWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
@@ -27,12 +27,13 @@ class ViewDomain extends ViewRecord
     protected static string $resource = DomainResource::class;
     protected Width|string|null $maxContentWidth = Sheet::WIDTH;
     /** Rows that keep their button, blocked, while changes are on hold. */
-    private const BLOCKED = ['Transfer lock','Contacts','Nameservers','DNS records'];
+    private const BLOCKED = ['Transfer lock','Email auth code','Contacts','Nameservers','DNS records'];
     /** The section that says why, when the head doesn't. */
     private const HELD_SECTION = 'Contacts and DNS';
     /** One request's edits and facts: the head and the rows both read them. */
     private ?array $edits = null;
     private ?array $facts = null;
+    private ?array $domainStatus = null;
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
     public function getHeading(): HtmlString
     {
@@ -41,22 +42,24 @@ class ViewDomain extends ViewRecord
     }
     public function getSubheading(): string|Htmlable|null
     {
-        $d=$this->getRecord(); $status=DomainFacts::status($d);
+        $d=$this->getRecord(); $status=$this->status();
         $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']);
         return StatusMark::line($head['tone'],$status['label'],'domain-'.$d->id,$head['step']);
     }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
+    private function status(): array { return $this->domainStatus??=DomainFacts::status($this->getRecord()); }
     private function facts(): array
     {
         if ($this->facts!==null) { return $this->facts; }
         $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d)); $progress=$this->managementProgress();
-        if (isset($this->edits()['rows']['Auth code']) || isset($progress['auth_code_email'])) { $facts['Auth code']=['value'=>$d->registrar_key==='namesilo'?'Admin contact email':'Registrant email','sub'=>null,'url'=>null,'tone'=>null,'help'=>null,'demo'=>false]; }
-        return $this->facts=DomainFacts::withProgress($facts,$progress);
+        if ($this->edits()['authCode'] || isset($progress['auth_code_email'])) { $facts['Email auth code']=['value'=>'Goes to the '.OwnedDomains::authCodeRecipient($d),'sub'=>'Never shown here.','url'=>null,'tone'=>null,'help'=>'The code moves this domain to another registrar. We email it and never show it here.','demo'=>false]; }
+        if ($this->edits()['held']) { $facts=DomainFacts::whileHeld($facts,$this->edits()['first']??null); }
+        return $this->facts=DomainFacts::withProgress($facts,$progress,DomainFacts::headRequest($d,$this->status(),$this->edits()['request']));
     }
     protected function afterActionCalled(Action $action): void
     {
         parent::afterActionCalled($action);
-        $this->edits=$this->facts=null;
+        $this->edits=$this->facts=$this->domainStatus=null;
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     public function hasCombinedRelationManagerTabsWithContent(): bool { return true; }
@@ -177,13 +180,19 @@ class ViewDomain extends ViewRecord
         if ($fact['url']&&isset(DomainFacts::LINKS[$label])) { $side[]=Sheet::link('open_'.md5($label),DomainFacts::LINKS[$label],$fact['url']); }
         return $side;
     }
-    private static function blockedLabel(string $label, array $fact): string
-    { return $label==='Transfer lock'?($fact['value']==='On'?'Turn off':'Turn on'):'Edit'; }
+    /** A blocked button keeps the label the real one would have. */
+    public static function blockedLabel(string $label, array $fact): string
+    { return match ($label) { 'Transfer lock'=>DomainEditActions::lockLabel(['On'=>true,'Off'=>false][$fact['value']]??null),'Nameservers'=>'Change','Email auth code'=>'Email code',default=>'Edit' }; }
     /** The row's words, after when it was read when the row has a read time. */
     private static function below(array $fact): string|HtmlString|null
     {
         $words=self::words($fact);
         if ($words!==null&&isset($fact['request'])) { $words=DomainFacts::linkRequest($words,$fact['request']); }
+        if (isset($fact['progress'])) {
+            $line=$fact['progress']['request']===null?$fact['progress']['text']:DomainFacts::linkRequest($fact['progress']['text'],$fact['progress']['request']);
+            $html=fn(string|HtmlString $text)=>$text instanceof HtmlString?$text->toHtml():e($text);
+            $words=$words===null?$line:new HtmlString($html($words).'<br>'.$html($line));
+        }
         if (!isset($fact['asOf'])) { return $words; }
         $read=Sheet::moment($fact['asOf'],'As of')->toHtml();
         return new HtmlString($words===null?$read:$read.'. '.($words instanceof HtmlString?$words->toHtml():e($words)));
@@ -197,6 +206,8 @@ class ViewDomain extends ViewRecord
     }
     private function row(string $label, array $fact, array|Html $side): Flex
     {
+        $waiting=$fact['progress']['waiting']??false;
+        if ($label==='Transfer lock'&&in_array($fact['value'],['On','Off'],true)) { $fact=self::lockMark($fact,$waiting); }
         $entry=TextEntry::make('value_'.md5($label))->label($label)->state($fact['value'])
             ->belowContent(self::below($fact));
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
@@ -205,6 +216,14 @@ class ViewDomain extends ViewRecord
         if (isset($fact['at'])) { $entry->formatStateUsing(fn()=>Sheet::moment($fact['at'])); }
         if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
-        return Sheet::row(MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']),$side,key:'fact_'.md5($label));
+        $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']);
+        if (isset($fact['mark'])) { $entry=Sheet::state($entry,$fact['mark'],'lock-'.$this->getRecord()->id); }
+        return Sheet::row($entry,$side,pending:$waiting,key:'fact_'.md5($label));
+    }
+    /** The lock reads as a mark: On, a hollow Off, or the change on its way with what it was. */
+    public static function lockMark(array $fact, bool $waiting): array
+    {
+        if (!$waiting) { return [...$fact,'mark'=>$fact['value']==='On'?'success':'gray']; }
+        return [...$fact,'value'=>$fact['progress']['text'],'sub'=>'Was '.strtolower($fact['value']).'.','mark'=>'info','progress'=>null];
     }
 }

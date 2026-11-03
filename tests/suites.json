@@ -402,6 +402,7 @@
     "tests/namesilo-admitted-transport-test.php",
     "tests/offer-feed-budget-test.php",
     "tests/namesilo-runtime-read-test.php",
+    "tests/dialog-footer-test.php",
     "tests/namesilo-runtime-purchase-test.php",
     "tests/namesilo-profile-operations-test.php",
     "tests/namesilo-profile-wire-test.php",

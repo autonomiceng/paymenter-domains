@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\{Actions,Component,Flex,Group,Html,Section};
@@ -66,7 +67,9 @@ final class Sheet
     public static function moment(int|string $at,string $before=''): HtmlString
     {
         $iso=is_int($at)?gmdate('c',$at):$at;$fallback=is_int($at)?gmdate('M j, Y H:i \\U\\T\\C',$at):$at;
-        return new HtmlString(($before===''?'':e($before).' ').view('domains::partials.moment',['at'=>$iso,'fallback'=>$fallback])->render());
+        try { $utc=CarbonImmutable::parse($iso)->utc()->format('M j, Y, g:i A').' UTC'; } catch (\Throwable) { $utc=null; }
+        $time=view('domains::partials.moment',['at'=>$iso,'fallback'=>$fallback])->render();
+        return new HtmlString(($before===''?'':e($before).' ').($utc===null?$time:'<span title="'.e($utc).'">'.$time.'</span>'));
     }
     /** A trace step for something that happened: its reason, then when and who. A step with no time says Missing and why. */
     public static function event(string $label,?string $sub,int|string|null $at,string $by,string $tone='gray',?string $value=null,?string $noTime=null): array

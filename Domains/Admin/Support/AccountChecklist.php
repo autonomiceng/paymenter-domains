@@ -212,7 +212,7 @@ final class AccountChecklist
     {
         $hidden='Refunds stay on the balance, but the Credits page is hidden.';
         try { $url=Settings::canAccess()?Settings::getUrl():null; } catch (\Throwable) { $url=null; }
-        return $url?new HtmlString(e($hidden).' <a class="fi-link domains-link" href="'.e($url).'">Open Settings</a>'):$hidden.' Turn on Credits in Settings.';
+        return $url?new HtmlString(e($hidden).' <a class="fi-link domains-link" href="'.e($url).'">Turn on Credits in Settings</a>'):$hidden.' Turn on Credits in Settings.';
     }
     private static function supportContact(): array
     {

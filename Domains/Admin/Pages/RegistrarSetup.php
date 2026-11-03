@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,StatusMark,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Sheet,Staff,StatusMark,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
@@ -59,20 +59,20 @@ class RegistrarSetup extends Page implements HasTable
     {
         $row=fn(Server $s)=>$this->row($s);
         $missing=static fn(TextColumn $column)=>$column->color(fn($state,Server $record)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null);
-        return $table->query(self::accounts())->defaultSort('id')->paginated(false)->heading('Accounts')->searchPlaceholder('Search account')
+        return $table->query(self::accounts())->defaultSort('id')->paginated([25,50,100])->defaultPaginationPageOption(25)->heading('Accounts')->searchPlaceholder('Search account')
             ->emptyStateHeading('No registrar accounts')->emptyStateDescription('Add one to start selling domains.')
             ->recordUrl(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id]))
             ->columns([
-                TextColumn::make('name')->label('Account')->searchable()->weight('medium')->wrap()->description(fn(Server $record)=>$row($record)['summary'])
+                TextColumn::make('name')->label('Account')->searchable()->weight('medium')->description(fn(Server $record)=>$row($record)['summary'])
                     ->suffix(fn(Server $record)=>$row($record)['demo']?DemoData::tag(inline:true):null),
                 TextColumn::make('mode')->label('Mode')->state(fn(Server $record)=>$row($record)['connected']?RegistrarFacts::mode($row($record)['account']):null),
                 TextColumn::make('status')->label('Status')->badge()->state(fn(Server $record)=>$row($record)['status']['label'])
                     ->color(fn(Server $record)=>$row($record)['status']['tone'])->extraAttributes(fn(Server $record)=>StatusMark::attributes($row($record)['status']['tone'],'registrar-'.$record->id))->description(fn(Server $record)=>$row($record)['status']['reason']),
                 $missing(TextColumn::make('balance')->label('Balance')->state(fn(Server $record)=>$row($record)['balance']?($row($record)['balance']['value']??Missing::LABEL):null)
                     ->description(function(Server $record)use($row){$b=$row($record)['balance'];if(!$b){return null;}
-                        return $b['value']===null?$b['cause']:($b['low']?RegistrarFacts::warn('Low balance'):'Checked '.$b['checked']);})),
+                        return $b['value']===null?$b['cause']:($b['low']?RegistrarFacts::warn('Low balance'):Sheet::moment((string)$b['checked'],'Checked'));})->alignEnd()->extraAttributes(['class'=>'domains-money'])),
                 TextColumn::make('due')->label('Due in 30 days')->state(fn(Server $record)=>$row($record)['balance']['due']??null)
-                    ->description(fn(Server $record)=>($row($record)['balance']['without_cost']??0)>0?RegistrarFacts::warn($row($record)['balance']['without_cost'].' without a cost'):null),
+                    ->description(fn(Server $record)=>($row($record)['balance']['without_cost']??0)>0?RegistrarFacts::warn($row($record)['balance']['without_cost'].' without a cost'):null)->alignEnd()->extraAttributes(['class'=>'domains-money']),
             ])
             ->filters([
                 SelectFilter::make('registrar')->label('Registrar')->options(fn()=>Account::query()->distinct()->pluck('registrar_key')->mapWithKeys(fn(string $key)=>[$key=>TldFacts::registrar($key)])->all())

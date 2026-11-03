@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final class DomainFacts
 {
     /** The page's sections and their rows, in order. */
-    public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','Auth code','WHOIS privacy','Registrar auto-renew','Last sync','Open alerts'],
+    public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew','Last sync','Open alerts'],
         'Renewal'=>['Renewal invoices','Renewal price','Next invoice','Open invoice'],
         'Contacts and DNS'=>['Contacts','Nameservers','Glue records','DNS records'],
         'Billing'=>['Customer','Service']];
@@ -93,7 +93,7 @@ final class DomainFacts
             $facts=is_array($facts)&&ObservationProjection::matches($d,$facts)?$facts:[];
             $unread=self::unread($d,$sync);
             $f['In registrar account']=self::fact(ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
-            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?'Add them with Edit':'Ask the customer to add them on the domain page'); }
+            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page'); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);
@@ -109,7 +109,7 @@ final class DomainFacts
             if ($glue) {
                 $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
                 $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
-                $f['Glue records']=[...self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
+                $f['Glue records']=[...self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings?[self::differs(count($warnings),count(array_unique(array_column($glue,'host')))),...$warnings]:[]),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
@@ -250,13 +250,26 @@ final class DomainFacts
      * @return array{tone:string,step:string|HtmlString|null} */
     public static function head(Domain $d, array $status, array $facts, ?int $held=null): array
     {
-        $notice=self::notice($d); $request=$held??$status['request'];
+        $notice=self::notice($d); $request=self::headRequest($d,$status,$held,$notice);
         if (($notice['resume']??false)&&$request) { $notice['link']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
         $missing=array_filter($facts,fn(array $fact)=>$fact['value']===null&&!Missing::needsNothing($fact['sub']));
         $tone=$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])?'warning':$status['tone'];
         $mark=!in_array($tone,['warning','danger'],true);
         $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),default=>self::stepHtml($status,$mark) };
         return ['tone'=>$tone,'step'=>$step??($missing!==[]?'Some details are Missing. Each row says what to do.':null)];
+    }
+    public const ADD_CONTACTS='Add them with Edit';
+    /** While changes are on hold, Contacts' Missing says what comes before Edit, not just Edit. */
+    public static function whileHeld(array $facts, ?string $first): array
+    {
+        if (($facts['Contacts']['sub']??null)===self::ADD_CONTACTS) { $facts['Contacts']['sub']=($first??'Wait until changes are back on').', then add them with Edit.'; }
+        return $facts;
+    }
+    /** The one request the head names, or null. A notice names one only beside Resume sync. Rows name no other (withProgress). */
+    public static function headRequest(Domain $d, array $status, ?int $held=null, ?array $notice=null): ?int
+    {
+        $notice??=self::notice($d);
+        return $notice===null||($notice['resume']??false)?$held??$status['request']:null;
     }
     /** A notice in the head line: its words, then its links. */
     private static function noticeHtml(array $notice, bool $mark): HtmlString
@@ -268,12 +281,13 @@ final class DomainFacts
     /** A link to a request, in the text around it. */
     public static function requestLink(string $url, string $label): string
     { return '<a class="fi-link domains-link" href="'.e($url).'">'.e($label).'</a>'; }
-    /** A Note cell is already the link, since a table row can't hold another one. Its step just has to look like one. */
+    /** A Note cell is already the link, since a table row can't hold another one. Its step leads, so a cut note still shows it,
+     * and just has to look like a link. */
     public static function noteStep(string $note, array $status): string|HtmlString
     {
         $label='Check request #'.$status['request']; $check=$label.'.';
         if (!self::requestUrl($status)||!str_ends_with($note,$check)) { return $note; }
-        return new HtmlString(e(substr($note,0,-strlen($check))).'<span class="domains-link">'.e($label).'</span>.');
+        return new HtmlString('<span class="domains-link">'.e($label).'</span>. '.e(rtrim(substr($note,0,-strlen($check)))));
     }
     /** The most urgent cause and its fix, said in the head line. */
     public static function notice(Domain $d): ?array
@@ -382,16 +396,24 @@ final class DomainFacts
     /** Links to pages the current panel may not register resolve to no link. */
     private static function url(\Closure $make): ?string { try { return $make(); } catch (\Throwable) { return null; } }
     private static function flag(mixed $value, string $on='On', string $off='Off'): ?string { return is_bool($value)?($value?$on:$off):null; }
-    /** Progress sits under a row's own words, so Contacts keeps its email; a Missing cause gives way to it. A settled result is over and says nothing. */
-    public static function withProgress(array $facts, array $progress): array
+    /** Progress takes its own line under a row's words, so Contacts keeps its email; a Missing cause gives way to it. A settled or replaced result says nothing.
+     * A stopped change reads its request's line, never the sentence written for the customer. It names its request only when that is $named, the one the head names (headRequest),
+     * so the page sends staff to one request, and to none when none needs them. */
+    public static function withProgress(array $facts, array $progress, ?int $named=null): array
     {
-        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$setting) {
             $row=$progress[$setting]??null;
-            if (!isset($facts[$label])||$row===null||($row['settled']??false)) { continue; }
-            $facts[$label]['sub']=$facts[$label]['value']===null?$row['text']:trim(($facts[$label]['sub']??'').' '.$row['text']);
+            if (!isset($facts[$label])||$row===null||($row['settled']??false)||($row['replaced']??false)) { continue; }
+            $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
+            $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
+            if ($facts[$label]['value']===null) { $facts[$label]['sub']=$text; continue; }
+            $facts[$label]['progress']=['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false)];
         }
         return $facts;
     }
+    /** A count above the glue detail: "1 of 2 differs." */
+    public static function differs(int $count, int $of): string
+    { return $count.' of '.max($count,$of).' '.($count===1?'differs':'differ').'.'; }
     private static function fact(string|array|null $value, ?string $sub=null, ?string $url=null, ?string $tone=null, ?string $help=null, bool $demo=false): array
     { return ['value'=>$value===''?null:$value,'sub'=>$sub===''?null:$sub,'url'=>$url,'tone'=>$tone,'help'=>$help,'demo'=>$demo]; }
 }

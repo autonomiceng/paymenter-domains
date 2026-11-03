@@ -31,14 +31,15 @@ $filter=fn($page,string $name)=>$page->instance()->getTable()->getFilter($name);
 
 // Unchecked: Monitoring, with Last check Missing and its cause.
 $list=Livewire::actingAs($manager)->test(ListWatches::class)->assertCanSeeTableRecords([$watch]);$clean($list->html(),'monitoring list');
-assertDomainNameWraps($list->html(),$watch->canonical_name,'Monitoring list');
+assertDomainNameOneLine($list->html(),$watch->canonical_name,'Monitoring list');
 same('Domain monitoring',$list->instance()->getTitle(),'List title');same(null,$list->instance()->getSubheading(),'No list subheading');
 foreach(['canonical_name'=>'Domain','status'=>'Status','registration'=>'Registrar','delegation.dns'=>'Nameservers','last_check'=>'Last check','expiry'=>'Expires'] as $name=>$label){same($label,$column($list,$name)->getLabel(),'Column '.$name);}
 foreach(['findings','user_id','state','work_due'] as $gone){same(null,$column($list,$gone),'Old column '.$gone.' removed');}
 same('Monitoring',$column($list,'status')->record($watch)->getState(),'Unchecked domain is Monitoring');
 same('Missing',$column($list,'last_check')->record($watch)->getState(),'Last check Missing');same('Fills in by itself after the next check',$column($list,'last_check')->record($watch)->getDescriptionBelow(),'Missing says its cause');
+expect(str_contains($column($list,'last_check')->record($watch)->getExtraAttributes()['class']??'','domains-line')&&preg_match('/\.domains-line\.fi-ta-text-has-descriptions\{display:flex/',file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php'))===1,'Missing and its cause share one line');
 same('Missing',$column($list,'registration')->record($watch)->getState(),'Registrar Missing');same('Fills in by itself after the next check',$column($list,'registration')->record($watch)->getDescriptionBelow(),'Registrar Missing says its cause');
-same('Customer #'.$uid,$column($list,'canonical_name')->record($watch)->getDescriptionBelow(),'Customer is the domain secondary line');
+same('Customer #'.$uid,$column($list,'customer')->record($watch)->getState(),'Customer has its own column');same(null,$column($list,'canonical_name')->record($watch)->getDescriptionBelow(),'The name is one line');
 foreach(['status'=>'Status','customer'=>'Customer','expiry'=>'Expires within'] as $name=>$label){same($label,$filter($list,$name)->getLabel(),'Filter '.$name);}
 same(null,$filter($list,'attention'),'Attention filter merged into Status');same(null,$filter($list,'drift'),'Drift filter merged into Status');same(null,$filter($list,'state'),'State filter merged into Status');
 same(['monitoring'=>'Monitoring','problem'=>'Problem found','paused'=>'Paused','stopped'=>'Stopped'],$filter($list,'status')->getOptions(),'Status filter options');
@@ -51,7 +52,7 @@ DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points')->
 $expiry=gmdate('Y-m-d',$at+11*86400);$days=intdiv(strtotime($expiry.' 00:00:00 UTC')-strtotime(gmdate('Y-m-d').' 00:00:00 UTC'),86400);
 $list=Livewire::actingAs($manager)->test(ListWatches::class);$record=WatchName::find($id);
 same('Problem found',$column($list,'status')->record($record)->getState(),'Problem found pill');same('warning',$column($list,'status')->record($record)->getColor('Problem found'),'Problem found is warning');
-same('Expires in '.$days.' days',$column($list,'status')->record($record)->getDescriptionBelow(),'Reason under the pill');
+same('Expires in '.$days.' days',$column($list,'note')->record($record)->getState(),'Reason in the Note column');
 same('Other',$column($list,'delegation.dns')->record($record)->getState(),'Nameservers elsewhere read Other');
 expect($column($list,'last_check')->record($record)->getState()!=='Missing','Last check has a time');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','problem')->assertCanSeeTableRecords([$record]);

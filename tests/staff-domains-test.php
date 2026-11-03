@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, RefundCandidates, RequestFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, OneLine, RefundCandidates, RequestFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Policies\DomainPolicy;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 staffPanel(); [$held,$active,$long]=staffData();
@@ -32,7 +32,8 @@ foreach (range(0,15) as $mask) {
     expect(!$policy->update($user,$held)&&!$policy->create($user)&&!$policy->delete($user,$held),'No staff writes');
     $page=Livewire::actingAs($user)->test(ListDomains::class);
     if (!$view) { $page->assertForbidden(); continue; }
-    $page->assertCanSeeTableRecords([$held,$active,$long]);
+    $page->assertCanSeeTableRecords([$held,$active,$long])->assertSeeHtml('domains-name-cell');
+    staffTableStandard($page,'Search domain or customer',['domain','customer','note','server_id']);
     $page=Livewire::actingAs($user)->test(ViewDomain::class,['record'=>$held->id]);
     $page->assertSuccessful()->assertSee('Registration')->assertSee('Billing')->assertSet('data',[]);
     $activity=Livewire::actingAs($user)->test(RequestsRelationManager::class,['ownerRecord'=>$held,'pageClass'=>ViewDomain::class]);
@@ -402,6 +403,11 @@ $open=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])
 $role=$viewer->role; $role->update(['permissions'=>[]]);
 $open->call('$refresh')->assertForbidden();
 expect(!Staff::can()&&!DomainResource::canViewAny(),'Revocation reloads current role');
+// Staff rows are one line: the tooltip has the full text only when it may be cut.
+same(null,OneLine::tip('example.com',OneLine::NAME[1]),'A short name has no tooltip');
+same(str_repeat('a',40).'.com',OneLine::tip(str_repeat('a',40).'.com',OneLine::NAME[1]),'A long name shows in full on hover');
+expect(str_contains(Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment(1761000000)->toHtml(),'title="'.gmdate('M j, Y, g:i A',1761000000).' UTC"'),'Staff times show UTC on hover');
+same('Put on hold & checked',OneLine::tip(new Illuminate\Support\HtmlString('<span class="x">Put on hold &amp; checked</span>'),5),'The tooltip is plain text');
 expect(!DomainResource::canCreate()&&!DomainResource::canEdit($held)&&!DomainResource::canDelete($held),'No resource writes');
 expect(!class_exists('Paymenter\\Extensions\\Servers\\Domains\\Domains',false),'Dormant entry');
 echo "Staff domains: native Filament list/view/history, 16 permission combinations, filters, binding and secret/cost boundaries passed.\n";

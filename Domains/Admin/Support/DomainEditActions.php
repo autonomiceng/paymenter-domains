@@ -25,13 +25,13 @@ final class DomainEditActions
         'DNS tools disabled.'=>'DNS tools are off for this registrar account. Turn them on in Registrars, then try again.',
         'Management capability unsupported.'=>"This registrar doesn't support this change.",
     ];
-    /** @return array{rows:array<string,list<Action>>,held:?string,note:string|HtmlString|null,request:?int} Edits by Registration row, why none can run now as plain words and as the section note, and the request behind that when one is. */
+    /** @return array{rows:array<string,list<Action>>,authCode:bool,held:?string,note:string|HtmlString|null,request:?int} Edits by Registration row, why none can run now as plain words and as the section note, and the request behind that when one is. */
     public static function for(Domain $d): array
     {
-        if (!Staff::can('admin.domains.manage')) { return ['rows'=>[],'held'=>null,'note'=>null,'request'=>null]; }
+        if (!Staff::can('admin.domains.manage')) { return ['rows'=>[],'authCode'=>false,'held'=>null,'note'=>null,'request'=>null]; }
         try { $page=app(OwnedDomains::class)->present($d); }
         catch (\Throwable $error) { Log::warning('Domains staff edit forms failed.',['domain_id'=>$d->id,'exception_class'=>$error::class]);
-            $held="Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page."; return ['rows'=>[],'held'=>$held,'note'=>$held,'request'=>null]; }
+            $held="Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page."; return ['rows'=>[],'authCode'=>false,'held'=>$held,'note'=>$held,'request'=>null]; }
         $m=$page->management; $rows=[];
         if (!empty($m['contacts']['actions'])) { $rows['Contacts']=self::contacts($d,$m['contacts']); }
         if (isset($m['nameservers']['actions']['nameservers'])) { $rows['Nameservers']=[self::nameservers($d,$m['nameservers'])]; }
@@ -39,32 +39,34 @@ final class DomainEditActions
         foreach (['dns'=>'Edit','srv'=>'Edit SRV'] as $kind=>$label) {
             if (isset($m[$kind]['records'],$m[$kind]['actions'][$kind])) { $rows['DNS records'][]=self::records($d,$kind,$label,$m[$kind]); }
         }
-        if (isset($m['auth_code_email']) && $m['auth_code_email']['actions']) { $rows['Auth code']=[self::edit($d,'auth_code_email','Email auth code','Email the auth code?',[],fn(array $data)=>[],"We'll email it to the ".$m['auth_code_email']['recipient'].'.',submit:'Email auth code')]; }
+        if (isset($m['auth_code_email']) && $m['auth_code_email']['actions']) { $rows['Email auth code']=[self::edit($d,'auth_code_email','Email code','Email the auth code?',[],fn(array $data)=>[],"We'll email it to the ".$m['auth_code_email']['recipient'].'.',submit:'Email auth code')]; }
         $progress=ManagementProgress::for($d);
-        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$setting) {
             if (($progress[$setting]['pending']??false)) { unset($rows[$label]); }
         }
-        return ['rows'=>$rows,...($page->changesUnavailable?self::held($d,$page->changesRefused):['held'=>null,'note'=>null,'request'=>null])];
+        return ['rows'=>$rows,'authCode'=>app(OwnedDomains::class)->offersAuthCode($d),...($page->changesUnavailable?self::held($d,$page->changesRefused):['held'=>null,'note'=>null,'request'=>null])];
     }
-    /** @return array{held:string,note:string|HtmlString,request:?int} what is really in the way, from the engine's own refusal; a request is named only when one is */
+    /** @return array{held:string,note:string|HtmlString,request:?int,first:?string} what is really in the way, from the engine's own refusal; a request is named only when one is.
+     * first: the step that comes before any edit, for rows whose own words point at a blocked button. */
     public static function held(Domain $d, int|string|null $refused): array
     {
-        $plain=static fn(string $held,?int $request=null)=>['held'=>$held,'note'=>$held,'request'=>$request];
+        $plain=static fn(string $held,?int $request=null,?string $first=null)=>['held'=>$held,'note'=>$held,'request'=>$request,'first'=>$first];
         return match(true) {
             \Paymenter\Extensions\Servers\Domains\Services\RenewalStop::policy($d)===null=>$plain(DomainFacts::UNREADABLE_RENEWAL),
-            !Account::where('server_id',$d->server_id)->value('processing_enabled')=>$plain('Changes are on hold: Orders are off for this registrar account. Turn Orders on in Registrars, then reload this page.'),
+            !Account::where('server_id',$d->server_id)->value('processing_enabled')=>$plain('Changes are on hold: Orders are off for this registrar account. Turn Orders on in Registrars, then reload this page.',first:'Orders are off. Turn them on in Registrars'),
             (bool)($d->renewal_policy['automatic_spend_paused']??false)=>$plain('Changes are on hold: orders are paused for this domain. Check the alerts on this page.'),
             $refused===DomainManagement::SWITCH_OFF=>self::switchOff($d),
-            is_int($refused)=>$plain('On hold until request #'.$refused.' is checked.',$refused),
+            is_int($refused)=>$plain('On hold until request #'.$refused.' is checked.',$refused,'Wait until request #'.$refused.' is checked'),
             default=>$plain(self::FAILURES[$refused]??"Changes are on hold right now. Reload this page. If it keeps happening, check the alerts on this page."),
         };
     }
     private static function switchOff(Domain $d): array
     {
         $off='Changes are on hold: DNS, nameservers and contacts are Off for this registrar account.';
-        $url=RegistrarFacts::accountUrl((int)$d->server_id);
-        if ($url===null) { $held=$off.' Ask staff who can change registrar accounts.'; return ['held'=>$held,'note'=>$held,'request'=>null]; }
-        return ['held'=>$off.' Turn them on, then reload this page.','note'=>new HtmlString(e($off).' '.DomainFacts::requestLink($url,'Turn them on').', then reload this page.'),'request'=>null];
+        $url=RegistrarFacts::accountUrl((int)$d->server_id,'dns');
+        $first='DNS, nameservers and contacts are Off. '.($url===null?'Ask staff who can change registrar accounts to turn them on':'Turn them on');
+        if ($url===null) { $held=$off.' Ask staff who can change registrar accounts.'; return ['held'=>$held,'note'=>$held,'request'=>null,'first'=>$first]; }
+        return ['held'=>$off.' Turn them on, then reload this page.','note'=>new HtmlString(e($off).' '.DomainFacts::requestLink($url,'Turn them on').', then reload this page.'),'request'=>null,'first'=>$first];
     }
     private static function nameservers(Domain $d, array $m): Action
     {
@@ -75,10 +77,13 @@ final class DomainEditActions
             ManagementForms::NAMESERVERS_RISK,['nameservers'=>implode("\n",$m['current']??[])]);
     }
     /** An unknown state needs a choice; a known one has only one next step. */
+    /** The lock button names its one step; with the state unread it is Change. A blocked button reads the same. */
+    public static function lockLabel(?bool $state): string
+    { return $state===null?'Change':($state?'Turn off':'Turn on'); }
     private static function lock(Domain $d, ?bool $state): Action
     {
         $form=[$state===null?Select::make('locked')->label('Transfer lock')->options(['1'=>'On','0'=>'Off'])->required():Hidden::make('locked'),Hidden::make('opened')];
-        return self::edit($d,'lock',$state===null?'Change':($state?'Turn off':'Turn on'),$state===false?'Turn on transfer lock?':'Turn off transfer lock?',$form,
+        return self::edit($d,'lock',self::lockLabel($state),$state===false?'Turn on transfer lock?':'Turn off transfer lock?',$form,
             fn(array $data)=>['locked'=>(string)($data['locked']??'')],$state===false?null:ManagementForms::lockRisk($d->domain),$state===null?[]:['locked'=>$state?'0':'1'],bound:['opened'=>json_encode($state)]);
     }
     /** @return list<Action> Staged registrars take new details first, then use them once approved. */

@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Filament\Tables\{Columns\TextColumn, Filters\SelectFilter, Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,NavigationCount,OperationQueries,RequestFacts,Staff,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,NavigationCount,OneLine,OperationQueries,RequestFacts,Staff,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Missing,RequestStatus};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
@@ -49,14 +49,12 @@ class OperationResource extends Resource
         return $table->columns([
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
                 ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
-            TextColumn::make('domain.domain')->label('Domain')->searchable()->wrap()->fontFamily('mono')
-                ->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainName::html((string)$state))
-                ->extraAttributes(['class'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainName::CELL]),
+            OneLine::apply(TextColumn::make('domain.domain')->label('Domain')->searchable()->fontFamily('mono'),OneLine::NAME),
             TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['tone'])
                 ->extraAttributes(fn($record)=>StatusMark::attributes(RequestFacts::status($record,in_array($record->server_id,$off))['tone'],'request-'.$record->id))
-                ->formatStateUsing(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['label'])->wrap()
-                ->description(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off))),
+                ->formatStateUsing(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['label']),
+            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off)))),
             TextColumn::make('created_at')->label('Created')->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($state->getTimestamp()))->sortable()->visibleFrom('lg'),
             TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
                 ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.'),
@@ -68,7 +66,7 @@ class OperationResource extends Resource
             SelectFilter::make('server_id')->label('Registrar account')->multiple()
                 ->options(fn()=>\App\Models\Server::whereIn('id',Operation::query()->distinct()->pluck('server_id'))->pluck('name','id')->all()),
         ])->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->defaultSort('id','desc')
-            ->paginated([25,50,100])->defaultPaginationPageOption(25);
+            ->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain');
     }
     /** Demo requests keep the Demo tag; a row whose saved data can't be read still lists. */
     public static function demo(Operation $op): bool { try { return DemoData::is($op); } catch (\Throwable) { return false; } }

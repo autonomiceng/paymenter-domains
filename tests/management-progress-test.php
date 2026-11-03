@@ -63,6 +63,7 @@ $html=$controller->show($request,$d->id)->render();expect(!str_contains($html,'S
 // A local failed attempt may retry safely, while a lost reply may not send again.
 Cache::flush();$state->fault='refused';$op=$submit($d,$driver,'lock',['locked'=>true]);same('rejected',$management->run($op->id,$driver)->state,'A provider refusal finishes');
 expect(!ManagementProgress::for($d)['lock']['pending'],'Definite failure stops polling');
+same('The registrar did not take this change.',ManagementProgress::for($d)['lock']['outcome'],'Staff read what the registrar did');
 $state->fault='';Cache::flush();$retry=$submit($d,$driver,'lock',['locked'=>true]);expect($retry->id!==$op->id,'Definite failure permits an explicit retry');
 same('succeeded',$management->run($retry->id,$driver)->state,'Retry confirms');
 // Staff and customer controls share the same stored operation, including slow and finished states.

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Invoice, User};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{PrivacyMode, Support};
+use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, PrivacyMode, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, NativeIntent, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain, RequestStatus, StatusPill};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ManagementProfiles;
@@ -70,13 +70,25 @@ final readonly class OwnedDomains
         };
     }
     /** Why a History change failed, in owner words. A test call cap stops the change before it is sent. */
+    public const ASK_US=' Contact support to make this change.';
+    /** A failed change the customer can't redo asks them to contact us, not to try again. */
+    public static function askUs(?array $row, bool $canEdit): ?array
+    {
+        if ($row===null || $canEdit || !str_ends_with($row['text'],ManagementProgress::TRY_AGAIN)) { return $row; }
+        return ['text'=>substr($row['text'],0,-strlen(ManagementProgress::TRY_AGAIN)).self::ASK_US]+$row;
+    }
     private static function failure(Operation $entry): string
     {
-        return match ($entry->safe_code) {
-            'management_provider_refused' => RequestStatus::REFUSED,
-            default => ManagementEvidence::outcome($entry) ?? RequestStatus::NOT_MADE,
-        };
+        return ManagementEvidence::outcome($entry) ?? RequestStatus::NOT_MADE;
     }
+    /** Who gets the auth code email. */
+    public static function authCodeRecipient(Domain $d): string
+    { return $d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
+    /** The domain and registrar take this change at all, whatever a switch says right now. */
+    private static function supported(Domain $d, ?Capabilities $caps, string $cap): bool
+    { return $d->status==='active' && $d->service?->status==='active' && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported; }
+    public function offersAuthCode(Domain $d): bool
+    { try { return self::supported($d,$this->ports->forDomain($d)->capabilities(),'auth_code_email'); } catch (\Throwable) { return false; } }
     public function present(Domain $d, bool $forms = true): OwnedDomain
     {
         if ($d->adoptionPending()) {
@@ -150,7 +162,7 @@ final readonly class OwnedDomains
                     default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
                 };
                 $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
-                    'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null];
+                    'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null,'setting'=>ManagementProgress::setting($entry->action)];
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
                 if ($label=self::CHANGES[$entry->action]??null) {
                     $progress[]=['label'=>$label,'state'=>'Unreadable','date'=>$entry->updated_at?->toIso8601String(),'note'=>ManagementProgress::UNREADABLE];
@@ -168,7 +180,8 @@ final readonly class OwnedDomains
             $labels=['glue'=>'Glue records','nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
             foreach ($labels as $cap=>$label) {
-                if ($policy!==null && ($cap!=='contacts'||$contacts!==null) && $d->status==='active' && $service?->status==='active' && !RenewalStop::blocksExisting($renewalState) && !($policy['automatic_spend_paused']??false) && $caps?->get($cap==='srv'?'dns':$cap)->support===Support::Supported) { $management[$cap]=['label'=>$label]; }
+                $supported=self::supported($d,$caps,$cap);
+                if ($policy!==null && ($cap!=='contacts'||$contacts!==null) && $supported && !RenewalStop::blocksExisting($renewalState) && !($policy['automatic_spend_paused']??false)) { $management[$cap]=['label'=>$label]; }
             }
             if (isset($management['privacy'])) { $management['privacy']['free']=$caps->privacy===PrivacyMode::Free;
                 $retail=\App\Models\Server::find($d->server_id)?->settings()->where('key','domains_privacy_price')->value('value');
@@ -179,7 +192,7 @@ final readonly class OwnedDomains
                     // Only a confirmed readback supplies current nameservers; otherwise the form starts empty.
                     $management['nameservers']['current']=self::storedNameservers($d); }
                 if (isset($management['contacts'])) { $management['contacts']+=self::contactForm($d,$contacts)+['digest'=>hash('sha256',json_encode($contacts,JSON_THROW_ON_ERROR))]; }
-                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=$d->registrar_key==='namesilo'?'admin contact email':'registrant email'; }
+                if (isset($management['auth_code_email'])) { $management['auth_code_email']['recipient']=self::authCodeRecipient($d); }
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
@@ -212,7 +225,10 @@ final readonly class OwnedDomains
             foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
-        foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; $section['progress']=($row['settled']??false)?null:$row; } unset($section);
+        foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; $section['progress']=($row['settled']??false)?null:self::askUs($row,(bool)$section['actions']); } unset($section);
+        // Try again only where the customer can make the change; otherwise they ask us.
+        $editable=[]; foreach ($management as $key=>$section) { $editable[ManagementProgress::setting($key)]=($editable[ManagementProgress::setting($key)]??false)||$section['actions']; }
+        foreach ($progress as &$row) { if (isset($row['setting'])) { $row['retry']=$editable[$row['setting']]??false; unset($row['setting']); } } unset($row);
         // Only the exact retained issued renewal invoice supplies a due date.
         $renewalDue=null; $earlyRenewal=false;
         $debt=$d->operations()->where('action','renew')->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->whereIn('state',['awaiting_payment','queued','pending','uncertain'])->orderByDesc('id')->first();
