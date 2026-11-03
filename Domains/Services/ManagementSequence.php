@@ -121,6 +121,12 @@ final class ManagementSequence
             $l['server']->getRawOriginal(),$l['account']->getRawOriginal(),
             $l['settings']->map(fn($s)=>$s->getRawOriginal())->all()],JSON_THROW_ON_ERROR));
     }
+    public static function currentConfiguration(\Paymenter\Extensions\Servers\Domains\Models\Domain $d): string
+    {
+        return self::configuration(['domain'=>$d,'server'=>\App\Models\Server::findOrFail($d->server_id),
+            'account'=>\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole(),
+            'settings'=>\App\Models\Server::findOrFail($d->server_id)->settings()->orderBy('id')->get()]);
+    }
     private static function createPlan(array $data,array $plan): Operation
     {
         $steps=$plan['steps']??null;

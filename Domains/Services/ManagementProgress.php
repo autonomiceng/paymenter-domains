@@ -72,6 +72,10 @@ final class ManagementProgress
             $total=$members->count();
             if ($done===$total) { return [...$row,'text'=>'All '.$total.' changes verified.']; }
             $prefix=$done.' of '.$total.' changes verified. ';
+            if ($op->policy['management']['sequence']['configuration']!==ManagementSequence::currentConfiguration($d)
+                || (int)$d->service->user_id!==(int)$d->user_id) {
+                return [...$row,'text'=>$prefix.'The account or ownership changed. Contact support to finish the remaining changes.','tone'=>'warning'];
+            }
             if ($blocked && ($blocked->state==='uncertain' || $blocked->state==='held' || $blocked->state==='rejected'
                 || $blocked->state==='running' && $row['slow'])) {
                 $unsent=ManagementEvidence::idle($blocked);
