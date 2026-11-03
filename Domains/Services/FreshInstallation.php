@@ -150,7 +150,7 @@ final class FreshInstallation
             ...WatchSchema::tables(),'domains_adoptions','domains_history_links',...WatchDnsSchema::tables(),'domains_native_intents',
             BalanceSchema::TABLE,ManagedPublicWorkSchema::TABLE,...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables(),
             ...WatchNoticeSchema::tables(),'domains_watch_staff_claims',...StaffAuditSchema::tables(),UserDeletionSchema::TABLE,
-            EnomLiveCallSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,...EnomTestSendLimitSchema::tables(),...SellTableSchema::tables()];
+            EnomLiveCallSchema::TABLE,LiveReservationSchema::TABLE,ProfileContactSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,...EnomTestSendLimitSchema::tables(),...SellTableSchema::tables()];
         $expected = array_keys(self::files());
         $ran = DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all();
         $extra = array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains') && !in_array($name,$expected,true));
