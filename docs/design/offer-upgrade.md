@@ -68,10 +68,10 @@ Claims are never cleared by the gate, even if their deadlines have passed.
 This is a split before activation. `check()` always returns `activated: false` and
 `activation_blocked: caller_cutover_pending`. There is no activation API. Staff, public, cart,
 checkout and payment callers still use their existing paths. B6b must switch all of them, summaries
-and native publication together, and compose B5's admitted read ports with our headroom and call caps.
+and native publication together, and register the dormant B6b production ports with our headroom and call caps.
 The new worker must replace, never accompany, legacy `ObservationWork` on shared queue rows.
 
-## Parent demo procedure (after B6b, never on B6a alone)
+## Parent demo procedure (after the complete caller cutover)
 
 1. Record the exact deployed code/schema and recovery procedure. Enter maintenance for staff writes,
    public checkout/payment callbacks and financial jobs as well as catalogue jobs; otherwise the
@@ -95,8 +95,9 @@ The new worker must replace, never accompany, legacy `ObservationWork` on shared
    save the full result. Require `compatible` and `complete`, an empty `changed` list and empty
    `staging_mismatches`. Review reported unknown/current-offer availability against the approved
    policy; never turn acceptance or old flags into invented facts. Any other mismatch stops cutover.
-5. **B6b prerequisite:** its reviewed runbook must supply the single activation call and atomic caller
-   routing matrix. B6a supplies neither; do not bypass `activation_blocked` or edit state to invent an
+5. **Stop on this B6b split.** Production read ports exist but remain unregistered. There is no
+   activation API or atomic caller routing matrix. The subsequent caller-cutover change must supply
+   the exact reviewed activation call here; do not bypass `activation_blocked` or edit state to invent an
    active value. Before that call, prove staff/public/cart/locked-payment agreement, stale evidence
    rejection, account rotation and the real admitted-port composition offline. Confirm the old
    consumer cannot restart alongside B5. Our planned feed/facts call counts are our budgets, not
@@ -110,7 +111,7 @@ The new worker must replace, never accompany, legacy `ObservationWork` on shared
 7. Before activation, rollback with `$gate->resume()` under maintenance, then restore the recorded
    legacy services/code. Additive staging fields remain compatible. The new generation invalidates
    old captures and in-flight reads. If legacy sources then change, the completed converter refuses
-   reuse: review a forward correction instead of resetting markers. After activation, use B6b's
+   reuse: review a forward correction instead of resetting markers. After activation, use the completed cutover's
    reviewed forward-fix or coordinated recovery procedure; never restore financial data over new
    activity or run destructive schema rollback.
 
