@@ -32,7 +32,7 @@ final class AdoptionReadback implements \JsonSerializable
         }
         return new self($binding, null, array_intersect_key($facts, array_flip([
             'name', 'provider_id', 'expiry', 'auto_renew', 'ordinary', 'registrar_hold', 'redemption',
-            'read_start', 'read_end', 'command_set_version'])));
+            'read_start', 'read_end', 'command_set_version', 'settings'])));
     }
     public function facts(): array { return self::$store[$this]; }
     public function jsonSerialize(): array { return ['status' => $this->refusal === null ? 'verified' : 'refused', 'refusal' => $this->refusal]; }

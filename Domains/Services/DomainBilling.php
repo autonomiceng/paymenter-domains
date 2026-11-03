@@ -132,6 +132,7 @@ final class DomainBilling
     public static function requireAuthority(array $l,AccountBindings $bindings,bool $manual=false):void
     {
         $d=$l['domain'];$s=$l['service'];
+        AdoptionRenewalEligibility::requireBilling($d);
         $bindings->requireProcessingLocked($l['server'],$l['account'], $l['advisory'] ?? false);
         if($d->renewal_policy['automatic_spend_paused']??false){throw new RuntimeIneligible(RuntimeReason::SpendingPaused);}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
