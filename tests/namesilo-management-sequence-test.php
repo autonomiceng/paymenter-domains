@@ -28,7 +28,7 @@ same(['contactAdd'],array_column($writes(),0),'One automatic isolated profile cr
 Cache::flush();
 same('succeeded',$management->run($op->id,$driver)->state,'The same owner request automatically associates its verified profile');
 same(['contactAdd','contactDomainAssociate'],array_column($writes(),0),'Each command is sent once');
-$association=end($ms->calls);$sent=array_values(array_filter($ms->calls,fn($c)=>$c[0]==='contactDomainAssociate'))[0][1];
+$sent=array_values(array_filter($ms->calls,fn($c)=>$c[0]==='contactDomainAssociate'))[0][1];
 same(['domain','technical'],array_keys($sent),'Only the selected role is associated');
 same($op->id,$management->request($user,$d->id,'contacts',$input,$nonce,$driver)->id,'Request replay keeps the original sequence');
 $management->run($op->id,$driver);same(2,count($writes()),'Completed sequence cannot replay either mutation');
@@ -39,4 +39,38 @@ $second=$submit($d,$driver,'contacts',$other);
 same('rejected',$first->fresh()->state,'A newer unsent choice retires the old request');
 $stages=$d->operations()->where('action','contact_profile')->orderBy('id')->get();
 same('rejected',$stages->first()->state,'The replaced prerequisite cannot remain queued');
+// Reconstruction can recover a returned ID by reading only that ID. An unknown creation never replays.
+foreach(['default','mismatch','contactAdd','lost'] as $fault){
+    [$d,$driver,$original]=$holding('sequence-'.$fault);$input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];
+    $op=$submit($d,$driver,'contacts',$input);$ms->fault=$fault;$management->run($op->id,$driver);
+    same(['contactAdd'],array_column($writes(),0),'Unproven creation never associates');
+    $stage=$d->operations()->where('action','contact_profile')->sole();same('uncertain',$stage->state,'Unproven creation retains its sealed attempt');
+    $ms->fault='';$ms->route='apibatch';Cache::flush();$restarted=new Management($binding,$managementExchange);
+    $management->run($op->id,$restarted,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
+    if(in_array($fault,['default','mismatch'],true)){
+        same('succeeded',$op->fresh()->state,'A returned profile ID resumes automatically after exact readback');
+        same(['contactAdd','contactDomainAssociate'],array_column($writes(),0),'Known-ID recovery never creates another profile');
+        $sent=array_values(array_filter($ms->calls,fn($c)=>$c[0]==='contactDomainAssociate'))[0][1];
+        same(['domain','registrant','administrative','technical','billing'],array_keys($sent),'All selects exactly the four supported roles');
+    }else{
+        same('queued',$op->fresh()->state,'Missing original profile receipt cannot establish a prerequisite');
+        same(['contactAdd'],array_column($writes(),0),'Unknown-ID recovery sends neither creation nor association');
+    }
+}
+// A lost association acknowledgement is recoverable by role readback, never by another association.
+[$d,$driver,$original]=$holding('lost-association');$input=['role'=>'admin','contact'=>$original->payload['contacts']['admin']];
+$op=$submit($d,$driver,'contacts',$input);$management->run($op->id,$driver);Cache::flush();$ms->fault='lost';
+same('uncertain',$management->run($op->id,$driver)->state,'A lost association retains uncertainty');
+$management->run($op->id,$driver);same(2,count($writes()),'Unknown association cannot replay');
+$ms->fault='';$ms->route='apibatch';same('succeeded',$management->reconcile($op->id,$driver)->state,'Independent role readback proves a lost association');
+same(2,count($writes()),'Association recovery remains read-only');
+// Current native ownership and owner-bound profile identity are required after creation, too.
+foreach(['owner','profile'] as $drift){
+    [$d,$driver,$original]=$holding('drift-'.$drift);$input=['role'=>'registrant','contact'=>$original->payload['contacts']['registrant']];
+    $op=$submit($d,$driver,'contacts',$input);$management->run($op->id,$driver);Cache::flush();
+    $stage=$d->operations()->where('action','contact_profile')->sole();
+    if($drift==='owner'){\Illuminate\Support\Facades\DB::table('services')->where('id',$d->service_id)->update(['user_id'=>commerceUser()->id]);}
+    else{$id=$stage->attempt['management_reads'][0]['facts']['local_profile_id'];\Illuminate\Support\Facades\DB::table('domains_contact_profiles')->where('id',$id)->update(['user_id'=>commerceUser()->id]);}
+    $management->run($op->id,$driver);same(['contactAdd'],array_column($writes(),0),'Drift cannot associate a profile');
+}
 $nativeSuccessful=true;echo "NameSilo management normalization and automatic contact sequence passed.\n";

@@ -39,7 +39,7 @@ final class ManagementProgress
                     $pending && $op->action==='lock'=>($op->policy['management']['input']['locked']??false)?'Turning on…':'Turning off…',
                     $pending=>'Saving…',
                     $op->state==='succeeded' && $op->action==='auth_code_email'=>'Email request accepted. Check the '.($d->registrar_key==='namesilo'?'admin contact email':'registrant email').'.',
-                    $op->state==='succeeded' && $op->action==='contact_profile'=>'Details approved. Use the approved details to finish.',
+                    $op->state==='succeeded' && $op->action==='contact_profile'=>'Contact details verified.',
                     $op->state==='succeeded' && $op->action==='nameservers' && self::nameserversChanged($op,$d)=>'Nameservers changed after this request. Check them and change them if needed.',
                     $op->state==='succeeded'=>'Saved.',
                     $op->safe_code==='management_retired'=>'Replaced by your latest choice.',
