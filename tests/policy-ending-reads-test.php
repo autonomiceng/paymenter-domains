@@ -60,6 +60,8 @@ $stats = null;
 DB::listen(static function ($query) use (&$stats): void {
     if ($stats === null) { return; }
     $stats['queries']++;
+    if ($query->sql === 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'
+        && $query->bindings === ['domains_offer_upgrade']) { $stats['gateQueries']++; }
     foreach (['domains_sales_policies' => 'policy', 'domains_tlds' => 'tld'] as $table => $key) {
         if (!preg_match('/^select\b.*\bfrom\s+["`]?'.preg_quote($table, '/').'["`]?\b/is', $query->sql)) { continue; }
         // Replay only local SELECTs immediately in the same snapshot via raw PDO (no listener recursion).
@@ -71,7 +73,7 @@ DB::listen(static function ($query) use (&$stats): void {
     }
 });
 $measure = static function (Closure $read) use (&$stats): array {
-    $stats = ['queries' => 0, 'policyRows' => 0, 'policyQueries' => 0, 'tldRows' => 0, 'tldQueries' => 0];
+    $stats = ['queries' => 0, 'gateQueries' => 0, 'policyRows' => 0, 'policyQueries' => 0, 'tldRows' => 0, 'tldQueries' => 0];
     try { $result = $read(); return [$result, $stats]; } finally { $stats = null; }
 };
 $fill = static function (int $size): void {
@@ -121,7 +123,7 @@ foreach ([10, 1500] as $size) {
     expect($counts['policyRows'] <= 2 * $size + 30 && $counts['queries'] <= 3 * $size + 100, 'Cold display stays linear per ending, independent of term retries');
     echo $size.' cold-display '.json_encode($counts)."\n";
     [$warm, $counts] = $measure(fn () => $store->endings()); same($cold, $warm, 'Warm display parity');
-    same(0, $counts['queries'], 'Warm display is query-free');
+    same([1, 1], [$counts['queries'], $counts['gateQueries']], 'Warm display reads only the current catalogue gate');
 }
 foreach (['Name.Example.Test.' => ['domain' => 'name.example.test', 'sld' => 'name', 'tld' => 'example.test'], 'name.test' => ['domain' => 'name.test', 'sld' => 'name', 'tld' => 'test']] as $input => $expected) {
     same($expected, PolicyEndings::parse($input), 'Longest suffix and normalization parity');
