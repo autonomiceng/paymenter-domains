@@ -9,9 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 /** Local 60-wire/minute ceiling, shared across origins. Vendor limits are additional, never inferred. */
 final class AccountReadBudget implements ReadLimiter
 {
-    public function __construct(private readonly Clock $clock, private readonly int $backgroundLimit=60) {if($backgroundLimit<1||$backgroundLimit>60){throw new \InvalidArgumentException;}}
+    public function __construct(private readonly Clock $clock, private readonly int $backgroundLimit=60, private readonly int $interactiveLimit=60) {if($backgroundLimit<1||$backgroundLimit>60||$interactiveLimit<1||$interactiveLimit>60){throw new \InvalidArgumentException;}}
     /** A narrower background consumer shares usage and leases without double counting. */
-    public function restricted(int $limit): self { return new self($this->clock,min($limit,$this->backgroundLimit)); }
+    public function restricted(int $limit): self { return new self($this->clock,min($limit,$this->backgroundLimit),$this->interactiveLimit); }
     public function acquire(AccountBinding $binding, RequestOrigin $origin): string
     { return $this->reserve($binding,$origin,1); }
     /** Reserve all physical reads before sending. One lease spans the bounded feed deadline. */
@@ -33,7 +33,7 @@ final class AccountReadBudget implements ReadLimiter
             $cap=$binding->registrarKey==='namesilo'&&$origin===RequestOrigin::Background?2:1;
             $window=$row?(int)$row->window_at:$now; $used=$row?(int)$row->used:0;
             if ($now-$window>=60000000) { $window=$now; $used=0; }
-            if ($active>=$cap || $used+$calls>($origin===RequestOrigin::Background?$this->backgroundLimit:60)) {
+            if ($active>=$cap || $used+$calls>($origin===RequestOrigin::Background?$this->backgroundLimit:$this->interactiveLimit)) {
                 throw new ReadDeferred('Account read budget unavailable.');
             }
             if ($binding->registrarKey==='namesilo' && $origin===RequestOrigin::Interactive && $row && $now<(int)$row->next_api_at) {

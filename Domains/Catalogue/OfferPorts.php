@@ -16,7 +16,7 @@ final class OfferPorts
     public function revision(AccountBinding $binding): string { return $this->bindings->offerCredentialRevision($binding); }
     public function worker(Writer $writer): OfferWork
     {
-        return new OfferWork($writer, $this->clock, new AccountReadBudget($this->clock, 25), $this->feed(...),
+        return new OfferWork($writer, $this->clock, new AccountReadBudget($this->clock, 25, 25), $this->feed(...),
             $this->allowance(...), $this->revision(...));
     }
     public function feed(AccountBinding $binding): PricedFeed

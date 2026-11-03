@@ -5,10 +5,10 @@ require __DIR__.'/native-app.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferPorts, Projection, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomTestSendLimit, EnomTestSendLimitSchema, Installation, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomTestSendLimit, EnomTestSendLimitSchema, Installation, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\OfferTransport;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
 
@@ -52,5 +52,29 @@ DB::table(EnomTestSendLimitSchema::SENDS)->insert($rows);
 same(0, $ports->allowance($binding, RequestOrigin::Interactive), 'Our catalogue share counts other origins and leaves checkout headroom');
 config([EnomTestSendLimit::PER_DAY => 'bad']);
 same(0, $ports->allowance($binding, RequestOrigin::Background), 'Unreadable local allowance fails closed');
+// The factory's worker must reserve our cumulative minute cap for manual Sync as well as daily work.
+config([EnomTestSendLimit::PER_DAY => 1000, EnomTestSendLimit::PER_MINUTE => 60]);
+$normalMinute = new AccountReadBudget($clock);
+$lease = $normalMinute->reserve($binding, RequestOrigin::Interactive, 25);
+$normalMinute->release($binding, RequestOrigin::Interactive, $lease);
+DB::table(EnomTestSendLimitSchema::SENDS)->insert(array_fill(0, 25,
+    ['account' => EnomTestSendLimit::account('offer-fixture'), 'command' => 'Check', 'sent_at' => $clock->now()->getTimestamp() - 5]));
+$attempts = 0;
+config(['domains.provider_send_guard' => static function () use (&$attempts): never {
+    $attempts++; throw new RuntimeException('Synthetic no-send boundary');
+}]);
+$writer = new Writer(new Projection(new NativeCatalogue(new PriceCatalogue(new PricingRules))), $clock,
+    static function (): void {}, static fn () => false);
+$worker = $ports->worker($writer);
+foreach ([RequestOrigin::Background, RequestOrigin::Interactive] as $origin) {
+    $worker->sync($binding, $origin); $worker->tick(1);
+    same(25, (int) DB::table('domains_read_budgets')->where('server_id', $binding->serverId)->value('used'), 'Catalogue '.$origin->value.' cannot reserve beyond our 25-read account minute ceiling');
+    same(null, $worker->status($binding)['tried_at'], 'Exhausted catalogue minute defers before any feed attempt');
+}
+same(0, $attempts, 'Minute admission refuses both origins before reaching the no-send wire guard');
+$lease = $normalMinute->reserve($binding, RequestOrigin::Interactive, 1);
+$normalMinute->release($binding, RequestOrigin::Interactive, $lease);
+same(26, (int) DB::table('domains_read_budgets')->where('server_id', $binding->serverId)->value('used'), 'Ordinary interactive checkout retains its normal allowance above the catalogue ceiling');
+config(['domains.provider_send_guard' => null]);
 echo "offer ports: ok\n";
 $nativeSuccessful = true;
