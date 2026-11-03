@@ -49,6 +49,16 @@ final class UpgradeGate
         return $state['generation'];
     }
 
+    /** Caller owns the server/account mutex; every conversion transaction joins the same window. */
+    public static function paused(int $generation): void
+    {
+        if (DB::transactionLevel() === 0) { throw new \LogicException('Conversion window check requires its mutex.'); }
+        $state = self::state();
+        if ($state['state'] !== 'paused' || $state['generation'] !== $generation) {
+            throw new \DomainException('Catalogue upgrade requires the same paused maintenance window.');
+        }
+    }
+
     public function pause(): int { return $this->transition('legacy', 'paused'); }
     public function resume(): int { return $this->transition('paused', 'legacy'); }
 
@@ -128,7 +138,7 @@ final class UpgradeGate
     public function batch(AccountBinding $binding, array $evidence, int $limit = 100): array
     {
         $this->window($evidence); $this->drained();
-        $result = (new UpgradeConversion)->batch($binding, $limit);
+        $result = (new UpgradeConversion)->batch($binding, $limit, $evidence['generation']);
         $this->window($evidence);
         return $result;
     }

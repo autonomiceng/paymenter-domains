@@ -14,14 +14,14 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, SellRul
  * No caller switch, projection, audit rewrite or provider read is performed here. */
 final class UpgradeConversion
 {
-    public function batch(AccountBinding $binding, int $limit = 100): array
+    public function batch(AccountBinding $binding, int $limit = 100, ?int $pausedGeneration = null): array
     {
         if (DB::transactionLevel() !== 0 || $limit < 1 || $limit > 500) {
             throw new \InvalidArgumentException('Conversion requires an outer-free bounded batch.');
         }
         [$accepted, $rule, $source] = $this->source($binding);
-        $state = DB::transaction(function () use ($binding, $accepted, $rule, $source): object {
-            $this->lock($binding);
+        $state = DB::transaction(function () use ($binding, $accepted, $rule, $source, $pausedGeneration): object {
+            $this->lock($binding, $pausedGeneration);
             $queue = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->lockForUpdate()->first();
             if ($queue !== null && $queue->account_fingerprint !== $binding->fingerprint) { throw new \DomainException('Queue binding changed.'); }
             if ($queue === null) {
@@ -47,8 +47,8 @@ final class UpgradeConversion
         $names = $this->names($binding, $accepted, $state->offer_conversion_cursor, $limit);
         $converted = 0;
         foreach ($names as $name) {
-            $didConvert = DB::transaction(function () use ($binding, $accepted, $rule, $name, $source): bool {
-                $this->lock($binding);
+            $didConvert = DB::transaction(function () use ($binding, $accepted, $rule, $name, $source, $pausedGeneration): bool {
+                $this->lock($binding, $pausedGeneration);
                 DB::table('domains_sales_policies')->where('tld', $name)->orderBy('id')->lockForUpdate()->get();
                 $tld = $this->scoped('domains_tlds', $binding)->where('tld', $name)->lockForUpdate()->first();
                 if ($tld === null) {
@@ -94,8 +94,8 @@ final class UpgradeConversion
         }
         $complete = count($names) < $limit;
         if ($complete) {
-            DB::transaction(function () use ($binding, $source): void {
-                $this->lock($binding);
+            DB::transaction(function () use ($binding, $source, $pausedGeneration): void {
+                $this->lock($binding, $pausedGeneration);
                 $queue = $this->queue($binding)->lockForUpdate()->first();
                 if ($queue->offer_conversion_source !== $source) { throw new \DomainException('Conversion generation changed.'); }
                 $this->queue($binding)->update(['offer_conversion_complete' => true]);
@@ -104,11 +104,12 @@ final class UpgradeConversion
         return ['converted' => $converted, 'complete' => $complete];
     }
 
-    private function lock(AccountBinding $binding): void
+    private function lock(AccountBinding $binding, ?int $pausedGeneration): void
     {
         Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
         $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->sole();
         $binding->requireMatch(CatalogueAcceptances::binding($account));
+        if ($pausedGeneration !== null) { UpgradeGate::paused($pausedGeneration); }
     }
 
     private static function key(AccountBinding $binding): array
