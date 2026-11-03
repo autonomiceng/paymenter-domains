@@ -76,7 +76,7 @@ class DomainResource extends Resource
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null)),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' #'.$record->server_id:Missing::LABEL)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
-                ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found. Check Registrars.':(self::REGISTRARS[$record->registrar_key]??null))),
+                ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?DomainFacts::NO_ACCOUNT:(self::REGISTRARS[$record->registrar_key]??null))),
         ],['server_id'])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(self::statusOptions())
                 ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
@@ -115,12 +115,12 @@ class DomainResource extends Resource
         return DomainFacts::status($record,self::row($record,$livewire)['inputs']);
     }
     private static function tone(Domain $record, mixed $livewire): string
-    { return DomainFacts::listTone(self::status($record,$livewire),self::row($record,$livewire)['sync']); }
+    { return DomainFacts::listTone(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount']); }
     private static function note(Domain $record, mixed $livewire): array
-    { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync']); }
+    { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount']); }
     private static function registered(Domain $record): bool
     { return DomainFacts::registered($record); }
-    /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'sync': DomainFacts::sync(). */
+    /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'sync': DomainFacts::sync(). 'noAccount': no registrar account matches. */
     private static function row(Domain $record, mixed $livewire): array
     {
         $records=method_exists($livewire,'getTableRecords')?$livewire->getTableRecords():collect([$record]);
@@ -135,7 +135,7 @@ class DomainResource extends Resource
             foreach ($page as $d) {
                 $account=$accounts->first(fn(Account $a)=>(int)$a->server_id===(int)$d->server_id&&$a->registrar_key===$d->registrar_key
                     &&$a->account_fingerprint===$d->account_fingerprint);
-                $cached[$d->id]=['inputs'=>$inputs[$d->id],'off'=>$inputs[$d->id]['off'],'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true)];
+                $cached[$d->id]=['inputs'=>$inputs[$d->id],'off'=>$inputs[$d->id]['off'],'sync'=>DomainFacts::sync($d,$account,isset($stopped[$d->id]),accountLoaded:true),'noAccount'=>$account===null];
             }
             self::$rows[$records]=$cached;
         }

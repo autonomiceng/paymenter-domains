@@ -63,6 +63,7 @@ final class DomainFacts
         'missing_execution'=>['Next invoice','danger'],
     ];
     private const OWNER_OFF='Turned off by customer';
+    public const NO_ACCOUNT='Registrar account not found. Check Registrars.';
     public const UNREADABLE="Can't read saved data. Ask your site admin to check the encryption key.";
     public const UNREADABLE_RENEWAL="Can't read renewal settings. Ask your site admin to check the encryption key.";
     /** Statuses where the registration exists, so its dates and registrar settings apply. */
@@ -87,7 +88,7 @@ final class DomainFacts
             sub:implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
                 !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?'orders paused':null])),
             url:self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id)),
-            demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':'Registrar account not found. Check Registrars.');
+            demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':self::NO_ACCOUNT);
         if ($registered && $observation!==null) {
             $facts=$observation['facts']??null;
             $facts=is_array($facts)&&ObservationProjection::matches($d,$facts)?$facts:[];
@@ -203,16 +204,18 @@ final class DomainFacts
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
         return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting']);
     }
-    /** The list's status tone. A stopped sync is a job for staff, as in the domain's head. */
-    public static function listTone(array $status, ?string $sync): string
-    { return $status['tone']==='success'&&$sync==='failed'?'warning':$status['tone']; }
+    /** The list's status tone. A stopped sync or a missing registrar account is a job for staff, as in the domain's head. */
+    public static function listTone(array $status, ?string $sync, bool $noAccount=false): string
+    { return $status['tone']==='success'&&($sync==='failed'||$noAccount)?'warning':$status['tone']; }
     /** The status reason, then the staff step, as sentences. */
     public static function statusLine(array $status): ?string
     { return implode(' ',array_map(StaffDomainStatus::sentence(...),array_filter([$status['reason'],$status['step']])))?:null; }
     /** The Note in the Domains list: the status line, or what a sync problem needs. A stopped sync is amber (listTone), so the note always says it. $act: staff have a job here.
+     * The Registrar column is hidden by default, so a missing registrar account leads the note.
      * @return array{text:?string,act:bool} */
-    public static function note(array $status, ?string $sync): array
+    public static function note(array $status, ?string $sync, bool $noAccount=false): array
     {
+        if ($noAccount) { $note=self::note($status,$sync); return ['text'=>trim(self::NO_ACCOUNT.' '.$note['text']),'act'=>true]; }
         $line=self::statusLine($status);
         if ($line!==null) { return $sync==='failed'&&!str_contains($line,'Sync ')?['text'=>'Sync stopped. '.$line,'act'=>true]:['text'=>$line,'act'=>$status['act']]; }
         return match($sync) { 'failed'=>['text'=>'Sync failed. '.(self::canResume()?'Use Resume sync on the domain.':self::ASK_RESUME),'act'=>true],'paused'=>['text'=>'Sync paused.','act'=>false],default=>['text'=>null,'act'=>false] };
@@ -313,7 +316,7 @@ final class DomainFacts
             return ['title'=>'Imported after the invoice date. No renewal invoice was issued.','tone'=>'warning',
                 'action'=>['label'=>'Open service','url'=>self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$d->service_id]))]];
         }
-        if (!self::account($d)) { return ['title'=>'Registrar account not found. Check Registrars.','tone'=>'warning']; }
+        if (!self::account($d)) { return ['title'=>self::NO_ACCOUNT,'tone'=>'warning']; }
         $op=$d->latestAcquisition;
         if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)) {
             $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code)),'.');
