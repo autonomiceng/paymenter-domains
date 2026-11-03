@@ -26,7 +26,8 @@ lazy per-ending requests. Provider facts retain their independent source time/fr
 A price feed never refreshes metadata. Errors preserve both good observations and prior success age.
 Deferrals retry after 120 seconds without inventing a send; failures back off 120/600/3,600/21,600 seconds.
 Successful feeds are due daily; requested facts become due at their own expiry. No mandatory fact sweep
-or per-term price reads exist. NameSilo facts remain unknown without a wire request.
+or per-term price reads exist. Zero-reader adapters report unsupported facts with no retry deadline;
+NameSilo facts remain unknown without a wire request.
 
 Each turn rotates accounts fairly, scans at most 25 offers for local republication, applies at most 25
 buffered observations and reads at most one provider group. A pending feed may also service one facts

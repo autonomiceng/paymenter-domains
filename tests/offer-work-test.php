@@ -174,15 +174,22 @@ $allowance = 1; $worker->sync($n); $worker->tick(1);
 same(1, $nsWire->calls, 'Fair account rotation services the one-read NameSilo feed while Enom waits');
 $worker->requestFacts($n, 'com'); $worker->tick(2);
 same(1, $nsWire->calls, 'Unknown NameSilo facts never create a per-TLD price read');
-same('retrying', $worker->status($n, 'com')['state'], 'Unverified facts remain unavailable with a bounded retry');
+$unsupported = $worker->status($n, 'com');
+same('unsupported', $unsupported['state'], 'A zero-reader adapter reports unsupported facts instead of retrying');
+same(null, $unsupported['due_at'], 'Unsupported facts have no automatic retry deadline');
+expect(!isset($unsupported['tried_at']) && !isset($unsupported['succeeded_at']) && !isset($unsupported['failed_at']), 'Unsupported facts invent no attempt, success or failure');
+same(null, Tld::where('server_id', $n->serverId)->where('tld', 'com')->value('catalogue_facts'), 'Unsupported facts remain unknown on the offer');
+$worker->requestFacts($n, 'com');
 $allowance = 25; $clock->time = $clock->time->modify('+121 seconds'); $worker->tick(2); $worker->tick(2);
 same($before + 5, count($wire->calls), 'Deferred unsent work resumes with one feed, without a new staff action');
+same($unsupported, $worker->status($n, 'com'), 'Repeated hints and later turns do not retry unsupported facts');
 
 // Success age expires independently. Only lazily requested suffixes get cold reads.
 $clock->time = $clock->time->modify('+31 days');
 $costBytes = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'com')->orderBy('id')->get()->toJson();
 $before = count($wire->calls); $worker->tick(2);
 same(2, count($wire->calls) - $before, 'Expired requested facts use two reads before the next due account feed');
+same($unsupported, $worker->status($n, 'com'), 'Unsupported facts stay terminal beyond the maximum retry backoff');
 same($costBytes, DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'com')->orderBy('id')->get()->toJson(), 'Fact renewal cannot freshen costs');
 $worker->tick(2); $worker->tick(2); $worker->tick(2);
 $before = count($wire->calls); $worker->tick(2);

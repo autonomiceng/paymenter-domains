@@ -63,7 +63,7 @@ final class OfferWork
         if ($tld !== null) {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
-            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : (!$state ? 'unknown' : (!empty($state['failure']) ? 'retrying' : 'queued')),
+            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
                 'due_at' => $state['due_at'] ?? null];
         }
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }
@@ -175,7 +175,10 @@ final class OfferWork
         $state = $work['facts'][$tld];
         try {
             $feed = ($this->feed)($b); $calls = $feed->factsReads();
-            if ($calls === 0) { throw new \DomainException('Offer facts are unverified.'); }
+            if ($calls === 0) {
+                $work['facts'][$tld] = [...$state, 'unsupported' => true, 'due_at' => null];
+                return;
+            }
             $command = $this->read($b, RequestOrigin::Background, $calls, function ($context) use ($feed, $tld, &$state) {
                 $state['tried_at'] = $this->at(); return $feed->facts($tld, $context);
             });
@@ -196,6 +199,7 @@ final class OfferWork
     {
         $ending = null; $due = PHP_INT_MAX;
         foreach ($work['facts'] ?? [] as $tld => $state) {
+            if (!empty($state['unsupported'])) { continue; }
             if ($state['due_at'] <= $this->at() && ($state['due_at'] < $due || $state['due_at'] === $due && strcmp($tld, $ending ?? '') < 0)) {
                 $ending = $tld; $due = $state['due_at'];
             }
