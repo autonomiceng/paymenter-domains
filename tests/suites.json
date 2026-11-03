@@ -16,6 +16,7 @@
     "tests/transfer-status-test.php",
     "tests/psl-transport-test.php",
     "tests/adoption-enom-test.php",
+    "tests/adoption-namesilo-test.php",
     "tests/dns-reader-test.php",
     "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
@@ -47,6 +48,7 @@
     "tests/ote-collection-shapes-test.php"
   ],
   "native": [
+    "tests/adoption-namesilo-commit-test.php",
     "tests/test_enom_send_limit_concurrency.py",
     "tests/management-send-bound-test.php",
     "tests/management-send-reservations-test.php",
