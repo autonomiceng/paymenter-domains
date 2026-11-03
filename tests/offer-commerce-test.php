@@ -65,6 +65,37 @@ foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generatio
     same($before, $reads->calls, $change.': no provider read inside native locks');
     // Native outer rollback restores the synthetic mutation too; no simulated concurrent-DB claim.
 }
+// Both accounts can also succeed in one native batch with ordinary hosting and discounts.
+$cart = commerceCart($user); commerceAdd($cart, $public['product'], 'mixed-acquire-placeholder.com', 3);
+commerceAdd($cart, $second['product'], 'mixed-acquire-placeholder.net');
+$hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting');
+$coupon = App\Models\Coupon::create(['code' => 'OFFER-HALF', 'type' => 'percentage', 'value' => 50, 'applies_to' => 'price']);
+$cart->update(['coupon_id' => $coupon->id]); $before = $reads->calls; $count = Operation::count();
+commerceCheckout($user, $cart);
+same($count + 2, Operation::count(), 'Two accounts share one successful native order');
+same(9, $hosting->fresh()->stock, 'Native hosting stock is decremented once');
+same($before, $reads->calls, 'Mixed native checkout uses only the unlocked receipts');
+same('11.70', Operation::where('server_id', $binding->serverId)->latest('id')->first()->amount, 'Positive below-cost coupon remains a native retail decision');
+// The unchanged native validation body also protects the dormant catalogue path.
+foreach (['quantity', 'options', 'duplicate', 'owner', 'setup', 'cached_price'] as $bad) {
+    $cart = commerceCart($user); $line = commerceAdd($cart, $public['product'], 'invalid-'.str_replace('_', '-', $bad).'-placeholder.com', 3);
+    $counts = [Order::count(), Invoice::count(), Operation::count()]; $nativePrice = $line->plan->prices()->where('currency_code', 'USD')->sole();
+    if ($bad === 'quantity') { DB::table('cart_items')->where('id', $line->id)->update(['quantity' => 2]); }
+    if ($bad === 'options') { DB::table('cart_items')->where('id', $line->id)->update(['config_options' => json_encode([['option_id' => 1]])]); }
+    if ($bad === 'duplicate') { $copy = $line->replicate(); $copy->saveQuietly(); }
+    if ($bad === 'setup') { DB::table('prices')->where('id', $nativePrice->id)->update(['setup_fee' => '1.00']); }
+    if ($bad === 'cached_price') { $mutate = static fn () => App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
+    commerceCheckout($bad === 'owner' ? commerceUser() : $user, $cart); $mutate = null;
+    same($counts, [Order::count(), Invoice::count(), Operation::count()], $bad.': native validation refuses without partial obligations');
+    if ($bad === 'setup') { DB::table('prices')->where('id', $nativePrice->id)->update(['setup_fee' => '0.00']); }
+}
+// Use a real transfer product/receipt as well; public lookup remains synthetic and explicitly unverified.
+$transfer = $storefront->offer('com', 'transfer', 1);
+$cart = commerceCart($user); commerceAdd($cart, $transfer['product'], 'transfer-snapshot-placeholder.com');
+$count = Operation::count(); commerceCheckout($user, $cart);
+same($count + 1, Operation::count(), 'Transfer retains the existing native eligibility/contact/invoice fixture');
+same(['transfer', '9.10', '10.40'], [Operation::latest('id')->first()->action,
+    Operation::latest('id')->first()->policy['price']['retail'], Operation::latest('id')->first()->domain->renewal_policy['retail']], 'Transfer freezes its acquisition and same-account annual renewal');
 // Expired receipts refresh outside locks; changed total must be shown before another checkout click.
 $cart = commerceCart($user); $line = commerceAdd($cart, $public['product'], 'refresh-total-placeholder.com', 3);
 Illuminate\Support\Once::flush();
@@ -78,11 +109,13 @@ $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($b
         Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+1 day'))
 ]), $ports->readOffers($q, Context::Staff)[0]->revision);
 $counts = [Order::count(), Invoice::count(), Operation::count()];
+app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts, [Order::count(), Invoice::count(), Operation::count()], 'Changed total stops the first checkout click');
 $notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
 expect(str_contains($notice, 'Review the total'), 'Changed-total notice: '.$notice);
 same($before + 1, $reads->calls, 'Stale five-minute receipt costs one unlocked read');
+app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts[2] + 1, Operation::count(), 'Second click accepts the visible new total');
 same('27.30', Operation::latest('id')->first()->policy['price']['retail'], 'Only the new obligation freezes the new total');

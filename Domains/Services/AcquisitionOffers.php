@@ -111,13 +111,16 @@ final class AcquisitionOffers
     /** Display caches are hints only. Include credential/activation and unpublished changes too. */
     public function cacheFence(): string
     {
-        $credentials = [];
-        foreach (Account::whereIn('server_id', SalesPolicy::pluck('server_id'))->orderBy('server_id')->get() as $account) {
+        $credentials = []; $ids = SalesPolicy::pluck('server_id')->filter()->unique()->all();
+        foreach (Account::whereIn('server_id', $ids)->orderBy('server_id')->get() as $account) {
             $credentials[] = $this->bindings->offerCredentialRevision(CatalogueAcceptances::binding($account));
         }
         $rows = [];
         foreach (['domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices', 'servers', 'settings'] as $table) {
-            $rows[] = DB::table($table)->orderBy('id')->get()->map(static fn ($r) => (array)$r)->all();
+            $query = DB::table($table);
+            if ($table === 'settings') { $query->where('settingable_type', (new \App\Models\Server)->getMorphClass())->whereIn('settingable_id', $ids); }
+            elseif ($table !== 'domains_sales_policies') { $query->whereIn($table === 'servers' ? 'id' : 'server_id', $ids); }
+            $rows[] = $query->orderBy('id')->get()->map(static fn ($r) => (array)$r)->all();
         }
         return hash('sha256', OfferState::json([UpgradeGate::generation(), $credentials, $rows]));
     }
