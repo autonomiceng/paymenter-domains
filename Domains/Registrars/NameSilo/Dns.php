@@ -19,14 +19,19 @@ final class Dns
             $domain = CanonicalName::normalize($domain);
             $reply = self::reply($body, 'dnsListRecords');
             $rows = $reply['resource_record'] ?? null;
-            if (!is_array($rows)) { return $unknown; }
-            if ($rows && !array_is_list($rows)) { $rows = [$rows]; }
+            if ($rows instanceof \stdClass) {
+                $fields = (array) $rows;
+                if (!$fields) { return $unknown; }
+                foreach (array_keys($fields) as $field) { if (is_numeric((string) $field)) { return $unknown; } }
+                $rows = [$rows];
+            } elseif (!is_array($rows)) { return $unknown; }
             $complete = !array_diff(array_keys($reply), ['code', 'detail', 'resource_record']);
             if (count($rows) > 50) { $complete = false; }
             $records = []; $seen = [];
             foreach (array_slice($rows, 0, 50) as $row) {
                 try {
-                    if (!is_array($row)) { throw new \DomainException; }
+                    if (!$row instanceof \stdClass) { throw new \DomainException; }
+                    $row = (array) $row;
                     $record = self::readRecord($row, $domain);
                     if (isset($seen[$record['record_id']]) || array_diff(array_keys($row),
                         ['record_id', 'type', 'host', 'value', 'ttl', 'distance'])) { $complete = false; }
@@ -167,10 +172,10 @@ final class Dns
     {
         if (strlen($body) > 1048576) { throw new \DomainException; }
         self::uniqueKeys($body);
-        $data = json_decode($body, true, 24, JSON_THROW_ON_ERROR);
-        if (!is_array($data) || ($data['request']['operation'] ?? null) !== $operation
-            || !is_array($data['reply'] ?? null) || !in_array($data['reply']['code'] ?? null, [300, '300'], true)
-            || !is_string($data['reply']['detail'] ?? null)) { throw new \DomainException; }
-        return $data['reply'];
+        $data = json_decode($body, false, 24, JSON_THROW_ON_ERROR);
+        if (!is_object($data) || !is_object($data->request ?? null) || ($data->request->operation ?? null) !== $operation
+            || !is_object($data->reply ?? null) || !in_array($data->reply->code ?? null, [300, '300'], true)
+            || !is_string($data->reply->detail ?? null)) { throw new \DomainException; }
+        return (array) $data->reply;
     }
 }

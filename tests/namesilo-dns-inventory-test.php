@@ -40,6 +40,13 @@ same('sip.example.com.', $records['records'][5]['target'], 'Documented SRV targe
 same(false, $records['records'][5]['priority_proven'], 'SRV priority is explicitly unproven');
 expect(!isset($records['records'][5]['priority']), 'No invented SRV priority');
 same(['state' => 'complete', 'records' => []], Dns::inventory($body(['resource_record' => []]), 'example.com'), 'Explicit empty list is complete');
+// Literal JSON keeps malformed objects distinct from genuine arrays in the fixture itself.
+foreach (['{}', '{"0":'.json_encode($row).'}', '{"1":'.json_encode($row).'}',
+    '{"0":'.json_encode($row).',"1":'.json_encode(array_replace($row, ['record_id' => 'second'])).'}'] as $rawRows) {
+    $raw = '{"request":{"operation":"dnsListRecords"},"reply":{"code":300,"detail":"synthetic","resource_record":'.$rawRows.'}}';
+    same(['state' => 'unknown', 'records' => []], Dns::inventory($raw, 'example.com'),
+        'JSON objects cannot masquerade as empty or numeric-keyed record lists');
+}
 foreach ([[], ['resource_record' => null], ['resource_record' => ''], ['resource_record' => ['bad']],
     ['resource_record' => $row, 'code' => 280], ['resource_record' => $row, 'code' => 301]] as $reply) {
     same(['state' => 'unknown', 'records' => []], Dns::inventory($body($reply), 'example.com'), 'Missing, malformed or unsuccessful inventory is unknown');
