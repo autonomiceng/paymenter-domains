@@ -18,9 +18,9 @@ class RoutingProfileResource extends WatchReadResource
     protected static ?string $slug='dns-routing-profiles';
     public static function table(Table $table): Table
     {
-        // One line per template: two nameservers, then how many more. The full list is on hover and on the template.
-        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->limitList(2)
-                ->tooltip(fn($record)=>count((array)$record->nameservers)>2?implode(', ',(array)$record->nameservers):null)->extraAttributes(['class'=>'domains-line']),
+        // Long text: nameservers wrap to 2 lines (table standard). The full list is on hover and on the template.
+        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->wrap()->lineClamp(2)
+                ->tooltip(fn($record)=>implode(', ',(array)$record->nameservers)?:null),
             TextColumn::make('enabled')->label('Status')->state(fn($record)=>$record->enabled?'On':'Off')->formatStateUsing(fn(string $state)=>OnOffSwitch::html($state==='On'))])
             ->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->paginated([25,50,100])->defaultPaginationPageOption(25);
         return EmptyTable::apply($table,'No DNS templates','Add one with Add DNS template.','No DNS templates match');

@@ -80,7 +80,7 @@ same([null,null],[$cell('note',$empty->id)->getState(),$cell('note',$empty->id)-
 same(['Enom','1','NameSilo','0'],[$cell('registrar',$enom->server_id)->getState(),(string)$cell('domains',$enom->server_id)->getState(),$cell('registrar',$silo->server_id)->getState(),(string)$cell('domains',$silo->server_id)->getState()],'Registrar and domain count have columns');
 expect(str_contains((string)$cell('checked',$enom->server_id)->formatState($cell('checked',$enom->server_id)->getState()),'data-domains-time'),'Balance checked shows in the viewer time');
 // No accounts yet says how to add one; a search that hides every account says so.
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->searchTable('no-such-account')->assertSee('No accounts match')->assertDontSee('Add one to start selling domains.');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->searchTable('no-such-account')->assertSee('No accounts match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Add one to start selling domains.');
 foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Active','USD 7.99','Low balance','USD 8.00',
     'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
@@ -129,7 +129,8 @@ $history=Livewire::actingAs($admin)->test(RegistrarHistory::class,['account'=>$e
 foreach(['Time','Change','Detail','By','Sales settings changed','Reviewed &lt;strong&gt;catalogue&lt;/strong&gt;'] as $needle){
     expect(str_contains($history->html(),$needle),'History tab renders readable escaped rows: '.$needle);
 }
-$history->searchTable('no such change')->assertDontSee('Sales settings changed')->assertSee('No changes match')->assertDontSee('Changes show here');
+$history->searchTable('no such change')->assertDontSee('Sales settings changed')->assertSee('No changes match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Changes show here');
+$detail=$history->instance()->getTable()->getColumn('reason');same([true,2],[$detail->canWrap(),$detail->getLineClamp()],'History Detail wraps to 2 lines');
 same('Changes show here as they happen.',Livewire::actingAs($admin)->test(RegistrarHistory::class,['account'=>$silo->server_id])->assertSee('No changes yet')->instance()->getTable()->getEmptyStateDescription(),'An empty history says what fills it');
 // Dialog help is a button keyboard users can reach, and a click can't open another action over the dialog.
 $dialog=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->mountAction(setupAction('configure',(int)$enom->server_id));

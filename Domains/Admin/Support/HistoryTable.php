@@ -15,11 +15,9 @@ final class HistoryTable
     public static function apply(Table $table,\Closure $read,string $empty='No changes yet'): Table
     {
         $saved=false;$read=function()use(&$saved,$read):?array {return $saved===false?($saved=$read()):$saved;};
-        // Unreadable history says so. Otherwise an empty one says what fills it, and a search or filter that hid every row says that.
-        $hidden=fn($livewire)=>filled($livewire->getTableSearch())||$livewire->getTable()->isFiltered();
-        return $table->searchable()->searchPlaceholder('Search changes')->defaultSort('time','desc')
-            ->emptyStateHeading(fn($livewire)=>$read()===null?DomainFacts::UNREADABLE:($hidden($livewire)?'No changes match':$empty))
-            ->emptyStateDescription(fn($livewire)=>$read()===null||$hidden($livewire)?null:'Changes show here as they happen.')
+        // Unreadable history says so and nothing else.
+        return EmptyTable::apply($table,$empty,'Changes show here as they happen.','No changes match',fn()=>$read()===null?DomainFacts::UNREADABLE:null)
+            ->searchable()->searchPlaceholder('Search changes')->defaultSort('time','desc')
             ->records(function(?string $search,?string $sortDirection,array $filters,int $page,int $recordsPerPage)use($read): LengthAwarePaginator {
                 $rows=collect($read()??[])
                     ->filter(fn(array $r)=>blank($search)||Str::contains($r['change'].' '.$r['reason'].' '.$r['by'],$search,true))
@@ -34,7 +32,8 @@ final class HistoryTable
                     ->color(fn($state)=>$state===Missing::LABEL?Missing::color(RequestFacts::NO_TIME):'gray')->icon(fn($state)=>$state===Missing::LABEL?Missing::icon(RequestFacts::NO_TIME):null)
                     ->description(fn($state)=>$state===Missing::LABEL?RequestFacts::NO_TIME:null)),
                 OneLine::apply(TextColumn::make('change')->label('Change'),OneLine::SHORT),
-                OneLine::apply(TextColumn::make('reason')->label('Detail')->placeholder('None')),
+                // Long text: Detail wraps to 2 lines (table standard). Longer text is on hover, so a next step stays reachable.
+                TextColumn::make('reason')->label('Detail')->wrap()->lineClamp(2)->placeholder('None')->tooltip(fn($state)=>OneLine::tip($state,88)),
                 TextColumn::make('by')->label('By'),
             ])->recordUrl(fn(array $record)=>$record['url']??null)->paginated([25,50,100])->defaultPaginationPageOption(25);
     }
