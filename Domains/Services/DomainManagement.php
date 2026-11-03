@@ -131,9 +131,9 @@ final class DomainManagement
         $work=fn()=>$driver->withinReservation(Operation::findOrFail($id),fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
             $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds))));
         try {
-        if(!$this->testManagement){return $work();}
-        $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
-        return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
+            if(!$this->testManagement){return $work();}
+            $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
+            return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
         }catch(WriteHeld $e){if($e->reason!=='write_acceptance_required'){throw $e;}return Operation::findOrFail($id);}
     }
     private function runEntered(int $id, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $deadline): Operation

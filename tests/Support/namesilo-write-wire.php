@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\LiveReservations;
+Operation::updating(static function(Operation $op):void {
+    if((int)$op->id===($GLOBALS['nsOperation']??null)&&($op->getOriginal('attempt')['seal']??'absent')!=='sealed'&&($op->attempt['seal']??null)==='sealed'){
+        expect($GLOBALS['nsTransport']->reservation->unconsumed((int)$op->id),'Exact durable reservation must exist before engine seal is saved');
+    }
+});
 function curl_init(): object {return new \stdClass;}
 function curl_setopt_array($h,array $options): bool {$GLOBALS['nsOptions']=array_replace($GLOBALS['nsOptions']??[],$options);return true;}
 function curl_exec($h): bool {
