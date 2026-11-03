@@ -96,7 +96,7 @@ class ViewDomain extends ViewRecord
     public function infolist(Schema $schema): Schema
     {
         $this->cacheHoldingActions();
-        $d=$this->getRecord(); $facts=DomainFacts::for($d); $edits=DomainEditActions::for($d);
+        $d=$this->getRecord(); $facts=DomainFacts::withProgress(DomainFacts::for($d),$this->managementProgress()); $edits=DomainEditActions::for($d);
         // Reminder issues sit on Renewal invoices, then Open alerts, or alone when neither slot exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?$review->toHtml():null;
         $byRow=isset($facts['Renewal invoices']);

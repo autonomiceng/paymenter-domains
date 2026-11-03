@@ -320,6 +320,16 @@ final class DomainFacts
     /** Links to pages the current panel may not register resolve to no link. */
     private static function url(\Closure $make): ?string { try { return $make(); } catch (\Throwable) { return null; } }
     private static function flag(mixed $value, string $on='On', string $off='Off'): ?string { return is_bool($value)?($value?$on:$off):null; }
+    /** Progress sits under a row's own words, so Contacts keeps its email; a Missing cause gives way to it. A settled result is over and says nothing. */
+    public static function withProgress(array $facts, array $progress): array
+    {
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Auth code'=>'auth_code_email'] as $label=>$setting) {
+            $row=$progress[$setting]??null;
+            if (!isset($facts[$label])||$row===null||($row['settled']??false)) { continue; }
+            $facts[$label]['sub']=$facts[$label]['value']===null?$row['text']:trim(($facts[$label]['sub']??'').' '.$row['text']);
+        }
+        return $facts;
+    }
     private static function fact(string|array|null $value, ?string $sub=null, ?string $url=null, ?string $tone=null, ?string $help=null, bool $demo=false): array
     { return ['value'=>$value===''?null:$value,'sub'=>$sub===''?null:$sub,'url'=>$url,'tone'=>$tone,'help'=>$help,'demo'=>$demo]; }
 }
