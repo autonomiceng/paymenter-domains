@@ -128,7 +128,7 @@ final class ObligationAlerts
     {
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
-        try{return in_array($alert->code,self::REVIEW,true)&&$op->state==='succeeded'&&!self::flagged($op,$operations,$d);}
+        try{return in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
         catch(\Throwable){return false;}
     }
     /** A request that succeeds closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.
