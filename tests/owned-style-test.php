@@ -30,7 +30,7 @@ const ALLOWED=[
     'resources/views/staff/watch-header.blade.php'=>1,
 ];
 /** The customer stylesheet holds the tokens and email clients need inline styles, so neither is a page. */
-const SKIPPED='~/partials/styles\.blade\.php$|/emails?/|WatchNoticeTemplates\.php$~';
+const SKIPPED='~/partials/(staff-)?styles\.blade\.php$|/emails?/|WatchNoticeTemplates\.php$~';
 $root=dirname(__DIR__).'/Domains';$found=[];
 foreach (['Admin','resources/views'] as $area) {
     foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator("$root/$area",FilesystemIterator::SKIP_DOTS)) as $file) {
