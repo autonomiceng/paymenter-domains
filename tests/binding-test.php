@@ -342,6 +342,19 @@ catch (DomainException $error) { same('This key is already enrolled. Rotate it o
 same($before, count($wire->calls), 'Retained OTE duplicate refuses before authentication');
 expect(!Account::where('server_id', 21)->exists(), 'Retained OTE duplicate saves no new lineage');
 same($oteIdentity, $oteAccount->fresh()->stable_identity, 'Duplicate refusal preserves retained OTE identity');
+// Retained facts with a different identity must block even an unrelated new Test key before authentication.
+$oteSetting = Server::findOrFail(20)->settings()->where('key', NameSiloSandbox::KEY)->sole();
+$changedOteFacts = $oteFacts; $changedOteFacts['label'] = 'Mismatched retained OTE identity';
+$oteSetting->value = json_encode($changedOteFacts, JSON_THROW_ON_ERROR); $oteSetting->save();
+try {
+    $testLocal->configure(21, 'namesilo', Environment::Test, ['api_key' => 'placeholder-independent-test-key'], $review(21));
+    expect(false, 'Mismatched retained OTE identity must refuse local Test enrollment');
+} catch (DomainException $error) {
+    same('Existing sandbox enrollment unavailable.', $error->getMessage(), 'Retained identity mismatch has a safe fail-closed refusal');
+}
+same($before, count($wire->calls), 'Retained identity mismatch refuses before authentication');
+expect(!Account::where('server_id', 21)->exists(), 'Retained identity mismatch saves no new account');
+$oteSetting->value = json_encode($oteFacts, JSON_THROW_ON_ERROR); $oteSetting->save();
 $testLocal->configure(21, 'namesilo', Environment::Test, ['api_key' => 'placeholder-independent-test-key'], $review(21));
 same($before + 1, count($wire->calls), 'A different Test key still authenticates with the old OTE composition disabled');
 echo "Bindings: positive synthetic identity, immutable accounts/sites, encrypted settings and guarded rotation passed.\n";

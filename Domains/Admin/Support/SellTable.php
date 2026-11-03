@@ -15,8 +15,8 @@ final class SellTable
     private const COLUMNS=['id','server_id','account_fingerprint','tld','choice','longest','transfer','register_cost','renew_cost','transfer_cost','high_cost','prices','read_at'];
     private array $accepted=[];
     private array $rules=[];
-    private array $fees=[];
-    private array $defaultRules=[];
+    private ?array $fee=null;
+    private ?array $defaultRule=null;
     private ?array $saleFacts=null;
     private array $rowTlds=[];
     private array $rowNumbers=[];
@@ -144,12 +144,12 @@ final class SellTable
     /** @return array{0:?string,1:?string,2?:?string} estimated price, profit and why the price is a loss, from the saved rule. Only for a row with no saved price. */
     private function numbers(SellRow $row): array
     {
-        $key=self::key($row);$server=(int)$row->server_id;
+        $key=self::key($row);
         if(isset($this->rowNumbers[$key])){return $this->rowNumbers[$key];}
         try{
-            $this->facts();$fee=$this->fees[$server]??=CardFee::read($server);$cost=(string)$row->register_cost;
+            $fee=$this->fee??=CardFee::read();$cost=(string)$row->register_cost;
             $tld=$this->rowTlds[$key]??null;
-            $rule=$tld&&!$tld->use_default_rule?(new PricingRules)->rule($tld,false,$fee):($this->defaultRules[$server]??=(new PricingRules)->defaultRule($server,false,$fee));
+            $rule=$tld&&!$tld->use_default_rule?(new PricingRules)->rule($tld,false,$fee):($this->defaultRule??=(new PricingRules)->defaultRule(false,$fee));
             $retail=PricingRule::price($cost,$rule,'register');
             $profit=PriceList::profit(CardFee::profit($retail,$cost,$fee));
             return $this->rowNumbers[$key]=[$retail,$profit,self::loss(!PricingRule::covers($retail,$cost),str_starts_with($profit,'-'))];

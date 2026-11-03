@@ -24,8 +24,8 @@ final class RenewalBillingSettings
     {
         $v=self::read($serverId);
         return ['Scheduled renewal invoices'=>$v['scheduled']?'On':'Off','Owner renewal requests'=>$v['manual']?'On':'Off',
-            'Renewal invoice calendar'=>$v['issue_days']===null?'Saved calendar invalid · new renewal invoices refused'
-                :'Issued '.$v['issue_days'].' days before expiry · due '.$v['due_days'].' days before'.($v['calendar_saved']?'':' (defaults)')];
+            'Renewal invoice calendar'=>$v['issue_days']===null?'Saved calendar invalid, new renewal invoices refused'
+                :'Issued '.$v['issue_days'].' days before expiry, due '.$v['due_days'].' days before'.($v['calendar_saved']?'':' (defaults)')];
     }
     public static function save(StaffSettingsReview $r,#[\SensitiveParameter] array $data): void
     {

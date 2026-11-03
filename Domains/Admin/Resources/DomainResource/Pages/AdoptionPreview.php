@@ -87,7 +87,7 @@ class AdoptionPreview extends ViewRecord
         $entries = [TextEntry::make('environment')->label('Registrar account')->state(fn () => $this->environmentLabel())
             ->badge()->color(fn () => str_starts_with($this->environmentLabel(), 'Test') ? 'warning' : 'gray')];
         foreach (array_keys($this->facts()) as $label) {
-            $entries[] = TextEntry::make('fact_'.count($entries))->label($label)->state(fn () => $this->facts()[$label])->listWithLineBreaks()->extraAttributes(['style' => 'overflow-wrap:anywhere']);
+            $entries[] = TextEntry::make('fact_'.count($entries))->label($label)->state(fn () => $this->facts()[$label])->listWithLineBreaks()->extraAttributes(['class' => 'domains-wrap']);
         }
         $entries[] = TextEntry::make('unavailable')->label("Why you can't confirm")->hiddenLabel()->state(self::UNAVAILABLE)->columnSpanFull();
         return $schema->components([Section::make('Import is off on this site')->description(fn () => 'Preview only. Nothing is charged or imported, and past invoices stay the same.'.(str_starts_with($this->environmentLabel(), 'Test') ? ' This is a test account. It cannot confirm a live domain.' : ''))

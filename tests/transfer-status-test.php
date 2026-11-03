@@ -53,7 +53,9 @@ foreach ($official as $status) {
         'NameSilo mapping: '.$status);
     foreach ([$status, strtolower($status), ' '.$status, $status.' ', $status.' extra'] as $variant) {
         $state->status=$variant; $ctx=new RequestContext($b,RequestOrigin::Background,$now->modify('+250 seconds'),new RequestBudget(10),new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now));
-        same($variant===$status?$expected:TransferStatus::Unknown,$driver->reconcile($a,$ctx)->result()->evidence()->transfer,'Exact NameSilo vocabulary only');
+        $facts=$driver->reconcile($a,$ctx)->result()->evidence();
+        same($variant===$status?$expected:TransferStatus::Unknown,$facts->transfer,'Exact NameSilo vocabulary only');
+        same($variant==='Domain is Private',$facts->transferPrivacyBlocked,'Only the exact privacy blocker carries the privacy instruction');
     }
 }
 foreach (['Completed','Failed','Cancelled','Active','',null,0,[],false] as $status) {

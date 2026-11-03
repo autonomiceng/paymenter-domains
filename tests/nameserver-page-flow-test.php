@@ -100,7 +100,6 @@ $flags=static function(?bool $expected, string $why)use($d,$owners):void {
     same($expected,$owners->present($d->fresh())->management['lock']['state'],$why.' customer lock');
     same($expected===null?null:($expected?'On':'Off'),DomainFacts::for($d->fresh())['Transfer lock']['value'],$why.' staff lock');
     same($expected===null?null:false,$owners->present($d->fresh())->management['privacy']['state'],$why.' customer privacy');
-    same($expected===null?null:'Off',DomainFacts::for($d->fresh())['WHOIS privacy']['value'],$why.' staff privacy');
 };
 $flags(false,'Matching lock section takes precedence over snapshot');
 foreach (['name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str_repeat('f',64),'legacy'=>null] as $field=>$value) {
@@ -133,7 +132,7 @@ same([],array_filter($owners->present($d->fresh())->management,fn($section)=>$se
 $overflowFlag=static function($holding,string $section,string $fact,?bool $expected,string $why)use($owners):void {
     same($expected,\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::storedFlag($holding->fresh(),$section,$fact),$why.' shared customer flag');
     $label=$section==='lock'?'Transfer lock':'WHOIS privacy';
-    same($expected===null?null:($expected?'On':'Off'),DomainFacts::for($holding->fresh())[$label]['value'],$why.' staff flag');
+    same($expected===null||($label==='WHOIS privacy'&&!$expected)?null:($expected?'On':'Off'),DomainFacts::for($holding->fresh())[$label]['value']??null,$why.' staff flag');
     same([],array_filter($owners->present($holding->fresh())->management,fn($section)=>$section['actions']),$why.' keeps every action blocked');
 };
 $lockOverflow=$d->fresh()->observation;
@@ -178,7 +177,7 @@ foreach (['privacy_enable'=>true,'privacy_disable'=>false] as $action=>$enabled)
     Cache::flush(); $toggle=$submit($requested,$driver,$action);
     same('succeeded',$management->run($toggle->id,$driver)->state,'Enom privacy toggle has confirmed readback');
     same($enabled,$owners->present($requested->fresh())->management['privacy']['state'],'Customer reads confirmed Enom privacy');
-    same($enabled?'On':'Off',DomainFacts::for($requested->fresh())['WHOIS privacy']['value'],'Staff reads confirmed Enom privacy');
+    same($enabled?'On':null,DomainFacts::for($requested->fresh())['WHOIS privacy']['value']??null,'Staff sees Enom privacy only while it is on');
 }
 Cache::flush();$toggle=$submit($requested,$driver,'privacy_enable');
 same('succeeded',$management->run($toggle->id,$driver)->state,'Privacy overflow retains the latest real enable readback');

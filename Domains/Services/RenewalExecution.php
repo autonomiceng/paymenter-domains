@@ -58,8 +58,9 @@ final class RenewalExecution
             $until = min($deadline, $first->validUntil, $ready->validUntil);
             if (($frozen = LateRenewalQuote::deadline(Operation::findOrFail($id))) !== null) { $until = min($until, $frozen); }
             $reservedContext=new RequestContext($binding,RequestOrigin::Background,$until,new RequestBudget(1),$this->clock,Runtime::limiter());
-            return $reservedContext->withReservedWire(function()use($seed,$id,$binding,$name,$stamp,$ready,$until,$writer,$admissionClaim,$reservedContext,&$descriptor,&$context) {
+            return $writer->withinReservation(Operation::findOrFail($id),fn()=>$reservedContext->withReservedWire(function()use($seed,$id,$binding,$name,$stamp,$ready,$until,$writer,$admissionClaim,$reservedContext,&$descriptor,&$context) {
             EnomTestWriteReservation::reserve($binding,'renewal',$ready->cost);
+            $writer->reservePurchase($name,(int)Operation::findOrFail($id)->term,$ready->cost);
             [$descriptor, $context] = DB::transaction(function () use ($seed, $id, $binding, $name, $stamp, $ready, $until, $writer, $admissionClaim,$reservedContext) {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id); $d = $l['domain'];
                 if ($l['stamp'] !== $stamp || !$op || ($op->policy['renewal_admission']['key'] ?? null) !== $admissionClaim
@@ -88,7 +89,7 @@ final class RenewalExecution
                 return [$descriptor, $context];
             });
             return $descriptor?$this->dispatch($seed,$id,$descriptor,$context,$writer):Operation::findOrFail($id);
-            });
+            }));
         } catch (\Throwable $error) {
             DB::transaction(function () use ($seed, $id, $admissionClaim, $error, $refusals, $first, $ready) { $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($op && RenewalCycles::registrarVirgin($op) && ($op->policy['renewal_admission']['key'] ?? null) === $admissionClaim) {

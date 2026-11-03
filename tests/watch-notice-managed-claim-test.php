@@ -15,7 +15,7 @@ $f=managedFixture(skipA3:true,beforeConfirm:function(array $f)use(&$prior,&$app,
     $ids=$planner->plan('watch',$watch->id,$uid,$old+902);$prior=WatchNotice::findOrFail($ids[0]);
     $app=$delivery->reserve($prior->id,'app',$old+902);$mail=$delivery->reserve($prior->id,'mail',$old+902);expect($app!==null && $mail!==null,'Unhanded predecessor claims');
 });extract($f);$uid=(int)$owner->id;
-expect($signals->enqueue($d->id,$uid,$time->now),'Relink successor');$fake->answers['example.com|NS']=managedNs('ns.external.test');
+expect($signals->enqueue($d->id,$uid,$time->now),'Relink successor');managedPlatformChoice($f);$fake->answers['example.com|NS']=managedNs('ns.external.test');
 $signals->observe($d->id,$uid,'delegation');$planner->plan('managed',$d->id,$uid,$time->now+1);
 $time->now+=900;managedDue($d->id,$time->now);$signals->observe($d->id,$uid,'delegation');$ids=$planner->plan('managed',$d->id,$uid,$time->now+1);$n=WatchNotice::findOrFail($ids[0]);
 // Force the precise interleaving: the old worker has read its notice when template preparation rebinds the claim.

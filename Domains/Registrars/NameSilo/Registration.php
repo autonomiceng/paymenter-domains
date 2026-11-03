@@ -3,9 +3,10 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\RegistrationProtocol;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, DateEvidence, Discrepancy, Disposition, DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AdmittedOperation, DispatchReadiness, Query, DateEvidence, Discrepancy, Disposition, DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, RegistrationEvidence, RequestContext, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Outcome, PurchaseMapping, RegistrarRequest, ResponseParser};
-use Paymenter\Extensions\Servers\Domains\Services\RegistrationProfiles;
+use Paymenter\Extensions\Servers\Domains\Services\{OperationClaims, RegistrationProfiles};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class Registration extends RegistrationProtocol
 {
     public function __construct(AccountBinding $binding, private readonly RegistrationProfiles $profiles, #[\SensitiveParameter] \Closure $exchange)
@@ -14,16 +15,23 @@ final class Registration extends RegistrationProtocol
         parent::__construct($binding, $exchange);
     }
     public function usesProfiles(RegistrationProfiles $profiles): bool { return $this->profiles === $profiles; }
-    protected function sendRegistration(AdmittedOperation $op, RequestContext $ctx, #[\SensitiveParameter] array $payload, string $origin, int $timeoutMs): DriverResult
+    protected function purchaseReservation(Operation $op,DispatchReadiness $ready): array
+    { $m=$this->mapping($ready->query,$op->payload,$op->operation_key,OperationClaims::payloadDigest($op));return [$m->command,$m->parameters()]; }
+    private function mapping(Query $query,#[\SensitiveParameter] array $payload,string $key,string $digest): PurchaseMapping
     {
-        $this->requireInFlight($op, $ctx, $payload, $origin, $timeoutMs);
-        $roles = $this->profiles->wireRoles($op->operationKey, $op->desiredStateDigest);
+        $roles = $this->profiles->wireRoles($key, $digest);
         if (count(array_unique($roles)) !== 1) { throw new \DomainException('Registration requires one proven four-role profile.'); }
         $privacy = $payload['privacy'] ?? false;
         if (!is_bool($privacy)) { throw new \DomainException('Invalid privacy policy.'); }
-        $parts = explode('.', $op->query->name);
+        $parts = explode('.', $query->name);
         $nexus = \Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::nameSiloNexus(end($parts), $payload['registry'] ?? null);
-        $mapping = PurchaseMapping::register($op->query->name, $op->query->years, $privacy, $roles['registrant'], $payload['nameservers'] ?? [], $nexus);
+        return PurchaseMapping::register($query->name, $query->years, $privacy, $roles['registrant'], $payload['nameservers'] ?? [], $nexus);
+    }
+    protected function sendRegistration(AdmittedOperation $op, RequestContext $ctx, #[\SensitiveParameter] array $payload, string $origin, int $timeoutMs): DriverResult
+    {
+        $this->requireInFlight($op, $ctx, $payload, $origin, $timeoutMs);
+        $mapping=$this->mapping($op->query,$payload,$op->operationKey,$op->desiredStateDigest);
+        $roles=$this->profiles->wireRoles($op->operationKey,$op->desiredStateDigest);$privacy=$payload['privacy']??false;
         $parser = new ResponseParser;
         $submittedAt = $ctx->now();
         $purchase = $parser->parse($this->request($op, $ctx, $origin, $mapping->command, $mapping->parameters()), $mapping, '');
@@ -38,7 +46,7 @@ final class Registration extends RegistrationProtocol
             $info = $parser->parse($this->request($op, $ctx, $origin, 'getDomainInfo', $infoRequest->parameters()), $infoRequest, '');
             if ($info->outcome === Outcome::Success) {
                 $nameservers = self::readNameservers($info->value('nameservers'), $ctx);
-                if ($info->value('auto_renew') !== 'No') {
+                if (!$this->reserved() && $info->value('auto_renew') !== 'No') {
                     // Fixed ancillary removal; never resubmit registerDomain.
                     $this->request($op, $ctx, $origin, 'removeAutoRenewal', ['domain' => $op->query->name]);
                     $correctedInfo = $parser->parse($this->request($op, $ctx, $origin, 'getDomainInfo', $infoRequest->parameters()), $infoRequest, '');
