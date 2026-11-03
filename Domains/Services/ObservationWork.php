@@ -102,7 +102,7 @@ final class ObservationWork
         if (!$claim) { return; } $cursor=$claim->catalogue_cursor%count($keys); $deferred=false; $ok=false; $code='catalogue_evidence_missing';
         try {
             $ctx=new RequestContext($b,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true);
-            $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]]);
+            $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]],generation:$queue->upgradeGeneration);
             $ok=$summary['failed']===[]&&$summary['synced']+count($summary['quarantined']??[])===1;
             $codes=$summary['failure_codes']??[]; $code=reset($codes)?:$code;
         } catch (ReadDeferred|EnomTestCallLimit) { $deferred=true; } catch (\Throwable $error) { $code=ReadFailure::code($error); }
