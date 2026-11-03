@@ -16,6 +16,7 @@
                     const row = rows[setting];
                     if (!row || !row.pending || row.id !== Number(control.dataset.operation)) { window.location.reload(); return; }
                     control.textContent = row.text;
+                    control.classList.toggle('domains-tone-text-warn', row.tone === 'warning');
                     slow ||= row.slow;
                 }
             }

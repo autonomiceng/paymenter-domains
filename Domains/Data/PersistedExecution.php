@@ -25,7 +25,7 @@ final readonly class PersistedExecution
         $this->binding->requireMatch($attempt->binding);
         if (($this->query->action === Action::Renew && !in_array($this->renewalMode, ['ordinary', 'grace'], true)) || !$this->query->matches($attempt->query) || $this->operationKey !== $attempt->operationKey
             || $this->orderReference !== $attempt->providerReference || !in_array($attempt->execution,[ExecutionRecord::Recorded,ExecutionRecord::StaffAnswer],true)
-            || ($attempt->execution===ExecutionRecord::StaffAnswer&&$attempt->binding->registrarKey!=='enom')
+            || ($attempt->execution===ExecutionRecord::StaffAnswer&&!in_array($attempt->binding->registrarKey,['enom','namesilo'],true))
             || $this->sendState !== SendState::Sent
             || (!in_array($this->disposition, [Disposition::Accepted, Disposition::AcceptedWithDiscrepancy], true)
                 && !($this->capturedUnknown() && $attempt->execution === ExecutionRecord::Recorded && $attempt->seal === DispatchSeal::Sealed && $attempt->sendState === SendState::Sent))) {

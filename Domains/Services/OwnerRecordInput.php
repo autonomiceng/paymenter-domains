@@ -2,6 +2,7 @@
 // Enom 444f31c DomainController record inputs; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 /** Browser adaptation only. The existing driver and engine revalidate and authorize the request. */
 final class OwnerRecordInput
 {
@@ -27,7 +28,8 @@ final class OwnerRecordInput
                 $row=array_diff_key($row,['_delete'=>true,'_source'=>true,'host_id'=>true]);
                 $base=$action==='dns'?['name'=>'@','type'=>'A','address'=>'8.8.8.8','mx_pref'=>10]
                     :['service'=>'sip','protocol'=>'tcp','target'=>'sip.example.com.','priority'=>0,'weight'=>0,'port'=>443];
-                $before=count($errors);
+                $before=count($errors);$fixedTypes=$action==='dns'&&$registrar==='namesilo';
+                if ($fixedTypes&&!in_array($row['type']??null,Dns::STANDARD,true)) { $errors[]='dns.records.'.$i.'.type'; }
                 foreach (array_keys($base) as $field) {
                     $test=$base; $test[$field]=$row[$field]??null;
                     if ($action==='dns'&&$field==='address') { $test['type']=$row['type']??''; }
@@ -40,11 +42,12 @@ final class OwnerRecordInput
                 if (count($errors)===$before) { $check($action.'.records.'.$i,static fn()=> $action==='dns'?ManagementPayload::host($row):ManagementPayload::srv($row)); }
                 $clean[]=$row; $sources[]=$source;
             }
-            if (!$clean||count($clean)>50) { $errors[]=$action.'.records.count'; }
+            // NameSilo replaces the editable rows only; read-only rows stay, so an empty list is a real request.
+            if ((!$clean&&!($action==='dns'&&$registrar==='namesilo'))||count($clean)>50) { $errors[]=$action.'.records.count'; }
             $digest=$p['preimage_digest']??null;
             if (!is_string($digest)||!preg_match('/^[a-f0-9]{64}$/D',$digest)) { $errors[]=$action.'.records.preimage'; }
             $result=['records'=>$clean,'preimage_digest'=>$digest];
-            if ($action==='srv') { $result['record_sources']=$sources; }
+            if ($action==='srv'||$registrar==='namesilo') { $result['record_sources']=$sources; }
         } elseif (str_starts_with($action,'ds_')) {
             $ds=is_array($p['ds']??null)?$p['ds']:[];
             foreach (['key_tag','algorithm','digest_type'] as $f) {

@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, ManagementPay
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment, Outcome, RegistrarRequest, ResponseParser};
 /** Baseline management only. No default sender, purchases, profile updates or advanced tools. */
-final class Management extends ManagementProtocol
+class Management extends ManagementProtocol
 {
     public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange)
     {
@@ -38,6 +38,11 @@ final class Management extends ManagementProtocol
     {
         if (in_array($action, ['contacts','contact_profile'], true)) { $this->contactsAllowed($name, $domainId); }
         if ($action === 'contacts') { $payload['profile_operation'] = ManagementProfiles::select($this->binding, $name, $payload, $key, $domainId); } return $payload;
+    }
+    public function prerequisite(string $action, #[\SensitiveParameter] array $payload): ?array
+    {
+        return $action === 'contacts' ? ['key'=>$payload['profile_operation'], 'action'=>'contact_profile',
+            'input'=>array_diff_key($payload, ['profile_operation'=>true])] : null;
     }
     private function contactsAllowed(string $name, ?int $domainId): void
     {
@@ -82,7 +87,7 @@ final class Management extends ManagementProtocol
         foreach (['order_amount','order_number','order_id'] as $key) { if (array_key_exists($key, $p)) { throw new \DomainException('Contradictory management reply.'); } }
         return $p;
     }
-    private function owned(ManagementRequest $r, RequestContext $c): array
+    protected function owned(ManagementRequest $r, RequestContext $c): array
     {
         if ($r->providerId !== null || CanonicalName::normalize($r->name) !== $r->name) { throw new \DomainException('Domain identity unavailable.'); }
         $request = RegistrarRequest::domainInfo($r->name);
@@ -95,13 +100,7 @@ final class Management extends ManagementProtocol
     private function profile(ManagementRequest $r, RequestContext $c, #[\SensitiveParameter] string $id): void
     {
         $reply = self::reply($this->read($r, $c, 'contactList', ['contact_id' => $id]), 'contactList');
-        $rows = $reply['contact'] ?? null; if (is_array($rows) && !array_is_list($rows)) { $rows = [$rows]; }
-        $row = is_array($rows) && count($rows) === 1 ? $rows[0] : null;
-        if (!is_array($row) || (string) ($row['contact_id'] ?? '') !== $id || !in_array($row['default_profile'] ?? null, [0,'0'], true)) { throw new \DomainException('Non-default profile proof required.'); }
-        $map = ['first_name','last_name','company','address','address2','city','state','zip','country','email','phone'];
-        foreach (array_combine($map, array_values($r->payload()['contact'])) as $field => $wanted) {
-            if (($row[$field] ?? null) !== $wanted) { throw new \DomainException('Contact readback mismatch.'); }
-        }
+        RegistrationProfiles::requireReadback($reply, RegistrationProfiles::parameters($r->payload()['contact']), $id);
     }
     private function glue(ManagementRequest $r, RequestContext $c): array
     {
