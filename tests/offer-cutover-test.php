@@ -109,7 +109,7 @@ DB::table('domains_observation_work')->where('id',$readJob)->update(['lease_unti
 commerceReject(fn()=>$resume($staff,$ticket($staff)));
 same(20,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Active recovery preserves the resume cap');
 // The installed global form ticket must match the routed Writer's all-account stamp.
-\Illuminate\Support\Facades\Auth::setUser($staff);
+\Illuminate\Support\Facades\Auth::setUser($staff);$clock->instant=$now=$now->modify('+1 second');
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$revision());
 $review=new StaffSettingsReview($staff->id,StaffSettingsReview::ALL_ACCOUNTS,null,'default_pricing',StaffSettingsReview::ticket($staff->id,StaffSettingsReview::ALL_ACCOUNTS,null,'default_pricing',StaffSettingsReview::stamp(StaffSettingsReview::ALL_ACCOUNTS,null)),'Synthetic installed global review');
 $result=app(StaffSettingsWrites::class)->run($review,['mode'=>'fixed','fixed_register'=>'40.00','fixed_renew'=>'41.00','fixed_transfer'=>'42.00','fee_percent'=>'3.00','fee_fixed'=>'0.30'],$now);
