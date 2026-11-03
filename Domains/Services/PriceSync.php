@@ -94,9 +94,9 @@ final class PriceSync
      * the daily run has none. One run reads at most one batch, oldest-synced TLDs first, so it stays under our
      * per-minute read limit and its request budget; the TLDs past the batch are returned as deferred for the next run.
      * @return array{synced:list<string>,failed:array<string,string>,deferred:list<string>} */
-    public function run(Account $account, Clock $clock, ?StaffSettingsReview $review, ?string $ending = null, ?array $only = null): array
+    public function run(Account $account, Clock $clock, ?StaffSettingsReview $review, ?string $ending = null, ?array $only = null, ?int $generation = null): array
     {
-        UpgradeGate::legacy();
+        $generation=UpgradeGate::legacy($generation);
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
         if ($review === null) { SellAutomation::refresh($account, $clock->now()); }
@@ -142,7 +142,7 @@ final class PriceSync
             TestCatalogue::withdrawCarts($binding, $e, true);
         }
         // Manual batches resolve a retained failure once every accepted term has current cost evidence.
-        if ($review !== null && $ending === null && $only === null && $failed === [] && ($deferred === [] || $this->currentCosts($accepted, $clock))) { $this->outcome($account, null); }
+        if ($review !== null && $ending === null && $only === null && $failed === [] && ($deferred === [] || $this->currentCosts($accepted, $clock))) { $this->outcome($account, null,$generation); }
         $review?->input([...($ending === null ? [] : ['ending' => $ending]), 'endings' => $synced]);
         if ($synced === []) { throw new CatalogueImportFailure(reset($failed) ?: 'catalogue_import_failed'); }
         if ($ending !== null && $failed !== []) { throw new CatalogueImportFailure($failed[$ending]); }
@@ -169,13 +169,13 @@ final class PriceSync
     public function daily(Account $account): void
     {
         OperationClaims::outside();
-        UpgradeGate::legacy();
+        $generation=UpgradeGate::legacy();
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }
         SellAutomation::refresh($account, $this->clock->now());
         $accepted = CatalogueAcceptances::load($binding);
         $accepted = SellAutomation::priceReads($account, $accepted, $this->clock->now());
-        if ($accepted->endings === [] || ($claim = $this->claim($account)) === null) { return; }
+        if ($accepted->endings === [] || ($claim = $this->claim($account,$generation)) === null) { return; }
         [$since, $resume] = $claim;
         $endings = array_keys($accepted->endings);
         if ($resume) {
@@ -196,33 +196,34 @@ final class PriceSync
                 if ($kept !== [] && ($fits = self::batchedCalls($accepted, $kept, $this->batchCalls)) <= $left) { $skipped = array_values(array_diff($endings, $kept)); $endings = $kept; $needed = $fits; }
             }
             if ($left === null || $left < $needed) {
-                $this->outcome($account, 'catalogue_call_capacity');
+                $this->outcome($account, 'catalogue_call_capacity',$generation);
                 Log::info('Domains daily price sync skipped.', [...$context, 'reason' => 'call_cap', 'needed' => $needed, 'left' => $left]);
                 return;
             }
         }
         try {
-            $result = $this->run($account, $this->clock, null, null, $endings);
+            $result = $this->run($account, $this->clock, null, null, $endings,$generation);
             if ($result['failed'] !== [] || $skipped !== []) {
-                $this->outcome($account, $skipped !== [] ? 'catalogue_call_capacity' : reset($result['failed']));
-            } elseif ($result['deferred'] === []) { $this->outcome($account, null); }
-            if ($result['deferred'] !== []) { $this->resumeSoon($account); }
+                $this->outcome($account, $skipped !== [] ? 'catalogue_call_capacity' : reset($result['failed']),$generation);
+            } elseif ($result['deferred'] === []) { $this->outcome($account, null,$generation); }
+            if ($result['deferred'] !== []) { $this->resumeSoon($account,$generation); }
             Log::info('Domains daily price sync finished.', [...$context, 'synced' => count($result['synced']), 'failed' => array_keys($result['failed']), 'deferred' => $result['deferred']]);
         } catch (ReadDeferred $error) {
-            $this->outcome($account, 'catalogue_call_capacity');
-            $this->resumeSoon($account);
+            $this->outcome($account, 'catalogue_call_capacity',$generation);
+            $this->resumeSoon($account,$generation);
             Log::info('Domains daily price sync deferred.', [...$context, 'code' => ReadFailure::code($error)]);
         } catch (\Throwable $error) {
-            $this->outcome($account, $error instanceof EnomTestCallLimit ? 'catalogue_call_capacity' : ReadFailure::code($error));
+            $this->outcome($account, $error instanceof EnomTestCallLimit ? 'catalogue_call_capacity' : ReadFailure::code($error),$generation);
             Log::warning('Domains daily price sync failed.', [...$context, 'code' => ReadFailure::code($error)]);
         }
     }
 
     /** Claims a run under the account's queue row lock: [run start, resuming]. Scheduled catalogue refresh never runs
      * for these accounts, so its due time marks the next run and its cursor the start of the current day's run. */
-    private function claim(Account $account): ?array
+    private function claim(Account $account,int $generation): ?array
     {
-        return DB::transaction(function () use ($account): ?array {
+        return DB::transaction(function () use ($account,$generation): ?array {
+            UpgradeGate::lockLegacy($generation,(int)$account->server_id);
             $q = DB::table('domains_observation_queues')->where('server_id', $account->server_id)->where('account_fingerprint', $account->account_fingerprint);
             $row = (clone $q)->lockForUpdate()->first(); $now = $this->clock->now()->getTimestamp();
             if (!$row || (int) $row->catalogue_due > $now) { return null; }
@@ -234,17 +235,21 @@ final class PriceSync
     }
 
     /** A throttled run picks up its remaining TLDs shortly, inside the same day. */
-    private function resumeSoon(Account $account): void
+    private function resumeSoon(Account $account,int $generation): void
     {
-        DB::table('domains_observation_queues')->where('server_id', $account->server_id)->where('account_fingerprint', $account->account_fingerprint)
-            ->update(['catalogue_due' => $this->clock->now()->getTimestamp() + self::RESUME_SECONDS]);
+        DB::transaction(function()use($account,$generation):void {
+            UpgradeGate::lockLegacy($generation,(int)$account->server_id);
+            DB::table('domains_observation_queues')->where('server_id', $account->server_id)->where('account_fingerprint', $account->account_fingerprint)
+                ->update(['catalogue_due' => $this->clock->now()->getTimestamp() + self::RESUME_SECONDS]);
+        });
     }
 
     /** Retain one account episode, including failures before a TLD can be read. No new hold stops automatic recovery. */
-    private function outcome(Account $account, ?string $code): void
+    private function outcome(Account $account, ?string $code,int $generation): void
     {
         try {
-            $event = DB::transaction(function () use ($account, $code): ?array {
+            $event = DB::transaction(function () use ($account, $code,$generation): ?array {
+                UpgradeGate::lockLegacy($generation,(int)$account->server_id);
                 $q = DB::table('domains_observation_queues')->where('server_id', $account->server_id)->where('account_fingerprint', $account->account_fingerprint);
                 $row = (clone $q)->lockForUpdate()->first(); if (!$row) { return null; }
                 try { $audit = json_decode($row->catalogue_audit ?? '[]', true, 8, JSON_THROW_ON_ERROR); }

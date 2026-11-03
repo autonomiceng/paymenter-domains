@@ -16,9 +16,10 @@ final class SellerPolicies
     public function initialize(string $tld): SalesPolicy
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Initialization owns its policy lock order.'); }
-        UpgradeGate::legacy();
+        $generation=UpgradeGate::legacy();
         CanonicalName::parse('example.'.$tld, [$tld]);
-        return DB::transaction(static function () use ($tld): SalesPolicy {
+        return DB::transaction(static function () use ($tld,$generation): SalesPolicy {
+            UpgradeGate::lockLegacy($generation);
             $existing = SalesPolicy::where('tld', $tld)->lockForUpdate()->first();
             // A concurrent first insert must abort on the unique key, never catch-and-continue.
             return $existing ?? SalesPolicy::withPolicyWrite(static fn () => SalesPolicy::create(['tld' => $tld, 'revision' => 1]));
@@ -30,9 +31,11 @@ final class SellerPolicies
         \DateTimeImmutable $now, ?StaffSettingsReview $review = null): SalesPolicy
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Seller change owns its lock order.'); }
-        return DB::transaction(function () use ($tld, $expectedRevision, $serverId, $register, $transfer, $now, $review): SalesPolicy {
+        $generation=UpgradeGate::legacy();
+        return DB::transaction(function () use ($tld, $expectedRevision, $serverId, $register, $transfer, $now, $review,$generation): SalesPolicy {
             $review?->lockActor(); $review?->lockAccounts(); $review?->check();
             if ($review && ($review->action !== 'seller' || Tld::findOrFail($review->tldId)->tld !== $tld)) { throw new \DomainException('Seller review mismatch.'); }
+            UpgradeGate::lockLegacy($generation);
             $account = $serverId === null ? null : $this->account($serverId, true);
             UpgradeGate::legacy();
             $policy = SalesPolicy::where('tld', $tld)->lockForUpdate()->firstOrFail();

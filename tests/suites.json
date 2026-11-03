@@ -414,7 +414,8 @@
     "tests/sell-automation-test.php",
     "tests/management-glue-namesilo-test.php",
     "tests/menu-registrars-quiet-test.php",
-    "tests/offer-window-interruption-test.php"
+    "tests/offer-window-interruption-test.php",
+    "tests/offer-legacy-mutex-test.php"
   ],
   "ui": [],
   "runner": [

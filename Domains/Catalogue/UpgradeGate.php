@@ -59,6 +59,17 @@ final class UpgradeGate
         }
     }
 
+    /** Shared prefix for writers that did not already own a native/server/account mutex. */
+    public static function lockLegacy(?int $generation = null, ?int $serverId = null): int
+    {
+        if (DB::transactionLevel() === 0) { throw new \LogicException('Legacy write mutex requires a transaction.'); }
+        $servers = Server::where('extension', 'Domains'); $accounts = Account::query();
+        if ($serverId !== null) { $servers->whereKey($serverId); $accounts->where('server_id', $serverId); }
+        $servers->orderBy('id')->lockForUpdate()->get();
+        $accounts->orderBy('server_id')->lockForUpdate()->get();
+        return self::legacy($generation);
+    }
+
     public function pause(): int { return $this->transition('legacy', 'paused'); }
     public function resume(): int { return $this->transition('paused', 'legacy'); }
 

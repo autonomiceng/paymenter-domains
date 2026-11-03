@@ -46,16 +46,20 @@ final class SellRule
     /** Every accepted TLD has a row. Until a rule is saved, rows copy what the account already sells. */
     public static function ensure(AccountBinding $binding,?CatalogueAcceptance $accepted): void
     {
-        UpgradeGate::legacy();
-        if($accepted===null||$accepted->endings===[]){return;}
-        $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
-        DB::table(SellTableSchema::ROWS)->insertOrIgnore(array_map(static fn(string $tld)=>[...$key,'tld'=>$tld],array_keys($accepted->endings)));
-        if(self::saved($binding)!==null){return;}
-        $rows=self::rows($binding)->whereNull('choice')->whereIn('tld',array_keys(array_filter($accepted->endings,static fn(array $row)=>$row['register']!==[])))->get();
-        foreach($rows as $row){
-            $sold=$accepted->endings[$row->tld];
-            $row->fill(['choice'=>'sell','longest'=>max($sold['register']),'transfer'=>$sold['transfer']!==[]])->save();
-        }
+        $generation=UpgradeGate::legacy();
+        DB::transaction(static function()use($binding,$accepted,$generation):void {
+            UpgradeGate::lockLegacy($generation,$binding->serverId);
+            $binding->requireMatch(CatalogueAcceptances::binding(Account::where('server_id',$binding->serverId)->sole()));
+            if($accepted===null||$accepted->endings===[]){return;}
+            $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
+            DB::table(SellTableSchema::ROWS)->insertOrIgnore(array_map(static fn(string $tld)=>[...$key,'tld'=>$tld],array_keys($accepted->endings)));
+            if(self::saved($binding)!==null){return;}
+            $rows=self::rows($binding)->whereNull('choice')->whereIn('tld',array_keys(array_filter($accepted->endings,static fn(array $row)=>$row['register']!==[])))->get();
+            foreach($rows as $row){
+                $sold=$accepted->endings[$row->tld];
+                $row->fill(['choice'=>'sell','longest'=>max($sold['register']),'transfer'=>$sold['transfer']!==[]])->save();
+            }
+        });
     }
     /** What the rule says for one row: sell, skipped, limit, or waiting (no cost read yet). */
     public static function decide(SellRow $row,array $rule): string
