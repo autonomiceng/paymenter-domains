@@ -43,16 +43,16 @@ final class EnomAnswerAction
                     ->helperText('The final charge for this transfer, including zero.'),
                 TextInput::make('registrar_refund')->label('Registrar refund (USD)')->required()->visible(fn($get)=>$get('outcome')==='transfer_rejected')
                     ->helperText('The settled refund, including zero. The customer gets their full payment back; we cover one failed fee.'),
-                Checkbox::make('final_confirmed')->label('Enom confirmed the transfer cannot complete later and these charge and refund amounts are final')
+                Checkbox::make('final_confirmed')->label($registrar.' confirmed the transfer cannot complete later and these charge and refund amounts are final')
                     ->accepted()->required()->visible(fn($get)=>$get('outcome')==='transfer_rejected'),
-                TextInput::make('case_reference')->label('Enom support case')->required()->maxLength(128),
-                Textarea::make('evidence')->label('Enom’s answer')->required()->maxLength(2000)->helperText('Include the account, domain, request time and final result. Do not include credentials.'),
-                Checkbox::make('confirmed')->label('Enom confirmed this exact account and attempt, including whether it created an order or charged the account')->accepted()->required(),
-            ])->action(function(array $data)use($server):void{
+                TextInput::make('case_reference')->label($registrar.' support case')->required()->maxLength(128),
+                Textarea::make('evidence')->label($registrar.'’s answer')->required()->maxLength(2000)->helperText('Include the account, domain, request time and final result. Do not include credentials.'),
+                Checkbox::make('confirmed')->label($registrar.' confirmed this exact account and attempt, including whether it created an order or charged the account')->accepted()->required(),
+            ])->action(function(array $data)use($server,$registrar):void{
                 try{
-                    $r=new Review((int)Auth::id(),$server,null,'enom_answer',(string)($data['review_key']??''),'Recorded Enom support answer');
+                    $r=new Review((int)Auth::id(),$server,null,'enom_answer',(string)($data['review_key']??''),'Recorded '.$registrar.' support answer');
                     app(StaffSettingsWrites::class)->run($r,$data);
-                    Notification::make()->success()->title('Enom answer recorded')->body('Processed orders are checked again. Failed orders use the existing payment return.')->send();
+                    Notification::make()->success()->title($registrar.' answer recorded')->body('Processed orders are checked again. Failed orders use the existing payment return.')->send();
                 }catch(\Throwable $e){
                     Notification::make()->danger()->title('Could not finish recording the answer')->body($e instanceof \DomainException?$e->getMessage():'Reload the page. If the answer was saved, payment recovery will continue automatically.')->send();
                 }

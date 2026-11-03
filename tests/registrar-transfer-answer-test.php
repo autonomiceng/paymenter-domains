@@ -24,6 +24,9 @@ expect($action->isVisible(),'Request answer action is available for NameSilo');
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op);
 expect(str_contains($notice['body']??'','Use '.$action->getLabel().'.'),'Request notice and account action use the same label');
 same('Enter NameSilo’s answer',$action->getLabel(),'Request action names the registrar and follows main’s answer wording');
+$fields=[];
+foreach($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true) as $field){$fields[$field->getName()]=$field;}
+foreach(['final_confirmed','case_reference','evidence','confirmed'] as $name){expect(str_contains($fields[$name]->getLabel(),'NameSilo'),'NameSilo support fields name the request registrar: '.$name);}
 foreach(['evidence','case','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
     $input=$answer($op);
     if($fault==='evidence'){$input['evidence']='';}
