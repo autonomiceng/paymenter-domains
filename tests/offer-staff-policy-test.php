@@ -28,7 +28,9 @@ same(true,OfferState::decode(Tld::find($id)->catalogue_intent)['sell'],'Restore 
 $run('acceptance',['sell'=>['choices'=>['com'=>null]]]);commerceReject(fn()=>$storefront->offer('com','register',1));
 $writes->run($review('tld_settings',$id),$restore,$now);same(true,OfferState::decode(Tld::find($id)->catalogue_intent)['sell'],'Restore opts in when the inherited account default is closed');
 same(false,OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults)['defaultSell'],'Restore does not open the account default');
-$run('acceptance',['sell'=>['rule'=>['mode'=>'except','max_cost'=>null,'years'=>3,'transfers'=>true]]]);$routed->publish($id,$now);
+$run('acceptance',['sell'=>['rule'=>['mode'=>'except','max_cost'=>null,'years'=>3,'transfers'=>true]]]);
+expect($source->progress($binding->serverId)['state']!=='idle','Staff progress comes from the shared offer queue');
+$routed->publish($id,$now);
 $run('acceptance',['sell'=>['choices'=>['com'=>'skip']]]);$writes->run($review('tld_settings',$id),$restore,$now);
 same(null,OfferState::decode(Tld::find($id)->catalogue_intent)['sell'],'Restore follows open defaults instead of inventing an explicit choice');expect($storefront->offer('com','register',1)!==null,'Open-default restore reaches the public decision');
 $run('acceptance',['sell'=>['rule'=>['mode'=>'only','max_cost'=>null,'years'=>1,'transfers'=>false]]]);$routed->publish($id,$now);$writes->run($review('tld_settings',$id),$restore,$now);$wake=0;
