@@ -405,14 +405,18 @@ final class OperationClaims
 
     /** Authorizes nonmonetary fresh profile creation for this live, funded, unsealed claim only. */
     public function profileAuthority(Operation $claimed): array
+    { return $this->withProfileAuthority($claimed,static fn($binding,$owner)=>[$binding,$owner]); }
+
+    /** Ledger locks follow the same funded parent locks; the callback must perform no I/O. */
+    public function withProfileAuthority(Operation $claimed,\Closure $work): mixed
     {
-        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed): array {
+        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed,$work): mixed {
             [$binding] = $this->validate($op, $domain, $all, $funding, $server, $account);
             if (!self::sameEvidence($op, $claimed)) { throw new ProfileAuthorityMismatch('Operation evidence changed.'); }
             ContactSetup::requireReady($op);
             if (!self::sameClaim($op, $claimed) || !self::unsealed($op) || $op->lease_expires_at <= $this->clock->now()
                 || self::payloadDigest($op) !== self::payloadDigest($claimed)) { throw new ProfileAuthorityMismatch('Profile claim unavailable.'); }
-            return [$binding, (int) $domain->user_id];
+            return $work($binding, (int) $domain->user_id);
         });
     }
 
