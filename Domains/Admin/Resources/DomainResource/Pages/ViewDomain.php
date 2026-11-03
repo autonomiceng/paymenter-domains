@@ -84,7 +84,7 @@ class ViewDomain extends ViewRecord
                     \Filament\Notifications\Notification::make()->success()->title('Sync queued')->body('You will get a notification when it finishes. Refresh this page to see the records.')->send();
                 } catch (\DomainException $error) { \Filament\Notifications\Notification::make()->warning()->title($error->getMessage())->send(); }
                 catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't queue sync. Ask your site admin to check the queue worker, then try again.")->send(); }
-            }
+            });
     }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action

@@ -21,7 +21,7 @@ final class ReminderFacts
             $r===null=>'Reminder schedule is missing. Restart the queue worker, then reload this page.',
             !$on=>'Reminder emails are paused until you turn them on. Turn on to email customers on these days.',default=>null};
         if($mailOff){$cause=trim(($cause??'').' Mail is not set up. Set up and enable email in Settings → Mail.');}
-                return ['label'=>'Reminder emails','value'=>$on?'On':'Off','tone'=>$changed||$mailOff?'warning':($on?'success':null),
+        return ['label'=>'Reminder emails','value'=>$on?'On':'Off','tone'=>$changed||$mailOff?'warning':($on?'success':null),
             'cause'=>$cause!==''?$cause:null,'action'=>null,'help'=>self::HELP,'buttons'=>$changed?[]:[ReminderAction::toggle($server)]];
     }
 
