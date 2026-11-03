@@ -74,8 +74,10 @@ final class Writer implements Catalogue
             $review->lockActor();
             $native = $all ? $this->projection->lock(array_values($all)) : null;
             // Legacy reviewed publication takes this same native -> all servers/accounts prefix.
-            $review->lockAccounts(); UpgradeGate::generation();
-            $names = array_values(array_unique(array_map(static fn ($e) => $e[0]->tld(), $entries))); sort($names, SORT_STRING);
+            $review->lockAccounts();
+            if ($this->current) { ($this->current)(); } else { UpgradeGate::legacy(); }
+            $names = Tld::where('server_id', $review->serverId)->when($review->tldId !== null, fn ($q) => $q->whereKey($review->tldId))->pluck('tld')->all();
+            $names = array_values(array_unique([...$names, ...array_map(static fn ($e) => $e[0]->tld(), $entries)])); sort($names, SORT_STRING);
             DB::table('domains_sales_policies')->whereIn('tld', $names)->orderBy('tld')->lockForUpdate()->get();
             Tld::whereIn('tld', $names)->orderBy('id')->lockForUpdate()->get();
             DB::table('domains_prices')->whereIn('tld', $names)->orderBy('id')->lockForUpdate()->get();
@@ -87,6 +89,7 @@ final class Writer implements Catalogue
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
                 $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
                 OfferState::revision($t, $d, DB::table('domains_sales_policies')->where('tld', $t->tld)->first())->requireMatch($expected);
+                $this->validateIntent($command, $t, $d);
                 if ($command->kind === 'override' && in_array('renew', $command->intent->stops, true)
                     && \Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id', $t->server_id)->where('tld', $t->tld)
                         ->where('account_fingerprint', $t->account_fingerprint)->whereNotNull('reservation_name')->lockForUpdate()->exists()) {
@@ -103,6 +106,27 @@ final class Writer implements Catalogue
             $review->record('completed', ['rows' => array_keys($results)]);
             return $results;
         });
+    }
+
+    /** Intent may narrow unknown facts. Widening needs fresh, independent provider/registry evidence. */
+    private function validateIntent(Edit $edit, Tld $t, array $defaults): void
+    {
+        if ($edit->kind !== 'override') { return; }
+        $old = OfferState::decode($t->catalogue_intent); $new = $edit->intent;
+        $sell = $new->sell ?? ($defaults['defaultSell'] ?? true);
+        $longest = $new->longest ?? ($defaults['defaultLongest'] ?? 1);
+        $transfer = $new->transfers ?? ($defaults['defaultTransfers'] ?? false);
+        $widen = $sell && !($old['sell'] ?? $defaults['defaultSell'] ?? true)
+            || $longest > ($old['longest'] ?? $defaults['defaultLongest'] ?? 1)
+            || $transfer && !($old['transfers'] ?? $defaults['defaultTransfers'] ?? false)
+            || array_diff($old['stops'] ?? [], $new->stops) !== [];
+        if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { throw new \DomainException('This TLD is hidden.'); }
+        if (!$widen) { return; }
+        $facts = OfferState::facts($t->catalogue_facts);
+        if (!$facts || !$facts->fresh($this->clock->now()) || $facts->registryFields !== [] || $facts->renewalSafe !== true
+            || !in_array(1, $facts->terms['renew'] ?? [], true)
+            || $sell && !in_array($longest, $facts->terms['register'] ?? [], true)
+            || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { throw new \DomainException('Explicit verified widening required.'); }
     }
 
     private function write(Command $command, Revision $expectedRevision, array $seeds, ?array $native, bool $reviewed = false): Revision

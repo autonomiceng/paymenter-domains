@@ -19,16 +19,17 @@ final class StaffCommands
     public static function stamp(int $server,?int $tld=null): string
     {
         $ending=$tld?Tld::whereKey($tld)->where('server_id',$server)->value('tld'):null;
-        $raw=static fn($q)=>$q->get()->map(static fn($r)=>(array)$r)->all();
+        $raw=static fn($q)=>(DB::transactionLevel()>0?$q->lockForUpdate():$q)->get()->map(static fn($r)=>(array)$r)->all();
+        $names=Tld::where('server_id',$server)->when($tld,fn($q)=>$q->whereKey($tld))->pluck('tld');
         $ids=Server::where('extension','Domains')->orderBy('id')->pluck('id');
         return 'offer:'.hash('sha256',OfferState::json([UpgradeGate::generation(),
             $raw(DB::table((new Server)->getTable())->whereIn('id',$ids)->orderBy('id')),
             $raw(DB::table('domains_accounts')->whereIn('server_id',$ids)->orderBy('server_id')),
             $raw(DB::table('settings')->where('settingable_type',(new Server)->getMorphClass())->whereIn('settingable_id',$ids)
-                ->where('key','not like',Review::KEY.'%')->orderBy('id')),
+                ->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',Review::KEY).'%'])->orderBy('id')),
             $raw(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->where('server_id',$server))->orderBy('id')),
             $raw(DB::table('domains_prices')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->where('server_id',$server))->orderBy('id')),
-            $raw(DB::table('domains_sales_policies')->when($ending,fn($q)=>$q->where('tld',$ending))->orderBy('tld')),$server,$tld]));
+            $raw(DB::table('domains_sales_policies')->whereIn('tld',$names)->orderBy('tld')),$server,$tld]));
     }
     public function publish(int $id,?Review $review=null): void
     {
@@ -73,7 +74,7 @@ final class StaffCommands
                     'override','remove_override'=>Edit::override($binding,$t->tld,$intent,$review->action==='override'?$this->rule($data,$d,$review->serverId):null),
                     'seller'=>$this->seller($t,$data),
                     'acceptance'=>$this->row($binding,$t,$raw,$sell,$rule),
-                    'tld_settings'=>$this->settings($binding,$t,$raw,$data,$rule),
+                    'tld_settings'=>isset($data['retained_annual_retail'])?Edit::retainRenewal($binding,$t->tld,$data['retained_annual_retail']):$this->settings($binding,$t,$raw,$data,$rule),
                     default=>throw new \DomainException('Unsupported catalogue action.')};
                 $target=$command->binding()->serverId===$t->server_id?$t:Tld::where('server_id',$command->binding()->serverId)->where('tld',$t->tld)->sole();
                 $targetDefaults=OfferState::decode(Account::where('server_id',$target->server_id)->sole()->catalogue_defaults);
@@ -82,7 +83,7 @@ final class StaffCommands
         }}
         if(count($entries)>25||$entries===[]){throw new \DomainException('Review 1 to 25 valid commands.');}
         if($review->action==='import'&&$this->sync===null){throw new \LogicException('Offer sync composition required.');}
-        $review->input($data);
+        $review->input([...$data,...($sell===[]?[]:['changes'=>array_fill_keys($names,null),'rule'=>$sell['rule']??null,'rows'=>array_map(static fn($name)=>['new'=>['choice'=>$sell['choices'][$name]??null,'longest'=>$sell['terms'][$name]['longest']??null,'transfer'=>$sell['terms'][$name]['transfer']??null]],array_combine($names,$names))])]);
         $result=$this->writer->reviewed($review,$entries,static fn()=>self::stamp($review->serverId,$review->tldId));
         if($defaults){($this->wake)($binding);}
         if($review->action==='import'){if($this->sync===null){throw new \LogicException('Offer sync composition required.');}($this->sync)($binding);}

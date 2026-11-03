@@ -67,7 +67,7 @@ final class StaffCatalogue
                 if($decision->reason!==null){$flags[]=$decision->reason;}
                 if(!$cost||$cost->total===null){$flags[]='cost_missing';}
                 if(!$cost?->fresh($this->clock->now())){$flags[]='cost_old';}
-                $retail=$decision->retail;
+                $retail=$offer->staffRetail();
                 if($decision->action==='renew'&&$decision->term===1){$retail=UpgradeEvidence::money($t->catalogue_retained_annual_retail,2);}
                 $prices[]=['action'=>$decision->action,'term'=>$decision->term,'retail'=>$retail===null?null:TldFacts::money($retail),
                     'flags'=>$flags,'synced'=>$cost!==null,'observed'=>$cost?->observedAt,
@@ -76,10 +76,11 @@ final class StaffCatalogue
             $chosen=collect($all)->first(fn($o)=>$o->decision->action==='register'&&$o->decision->available);
             $reason=$all['register:1']->decision->reason??'unknown_facts';
             $label=match($reason){'staff_stopped','staff_term_stopped'=>'Stopped by staff','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing',default=>TldFacts::NEEDS_SYNC};
+            try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}
             $out[$t->id]=['prices'=>$prices,'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
-                'own'=>isset($raw['pricing_rule']),'offers'=>$grants->costs?$all:[],'facts'=>OfferState::facts($t->catalogue_facts)];
+                'own'=>isset($raw['pricing_rule']),'offers'=>$grants->costs?$all:[],'facts'=>$facts];
         }
         return $out;
     }
@@ -97,7 +98,7 @@ final class StaffCatalogue
                 $rule=$raw['pricing_rule']??$d['pricing_rule']??PricingRule::DEFAULT;$fee=$d['card_fee']??CardFee::DEFAULT;
                 $row=['id'=>(int)$t->id,'tld'=>'.'.$t->tld,'server_id'=>$id,'account'=>$name,'years'=>$years,'pricing'=>$own?'Custom':'Default','currency'=>'USD','prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
-                foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$cost=$offer?->observation()?->total;$price=$offer?->decision->retail;
+                foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$cost=$offer?->observation()?->total;$price=$offer?->staffRetail();
                     if($action==='renew'&&$years===1){$price=UpgradeEvidence::money($t->catalogue_retained_annual_retail,2);}
                     $profit=$price!==null&&$cost!==null?CardFee::profit($price,$cost,$fee):null;$under=$price!==null&&$cost!==null&&!PricingRule::covers($price,$cost);$loses=$profit!==null&&str_starts_with($profit,'-');$below|=$under;$loss|=$loses;
                     $row['prices'][$action]=['price'=>$price,'cost'=>$cost,'profit'=>$profit,'revision'=>$offer?->decision->revision->offer,'below_cost'=>$under,'loses_money'=>$loses,

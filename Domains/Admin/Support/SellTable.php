@@ -77,7 +77,7 @@ final class SellTable
     /** A row as SellRule::ensure would save it: before any rule is saved, a TLD the account sells reads as Sell with its accepted terms. */
     private function effective(SellRow $row): SellRow
     {
-        if(!$this->projected||$row->choice!==null){return $row;}
+        if($this->catalogue!==null||!$this->projected||$row->choice!==null){return $row;}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;
         if($sold===null||$sold['register']===[]||($this->ruleSaved[$server]??=SellRule::saved($this->bindings[$server])!==null)){return $row;}
         return $this->legacy[self::key($row)]??=(clone $row)->forceFill(['choice'=>'sell','longest'=>max($sold['register']),'transfer'=>$sold['transfer']!==[]]);

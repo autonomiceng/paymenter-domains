@@ -24,7 +24,7 @@ final class StaffSettingsReview
     public function input(array $data): void
     { $this->input=array_intersect_key($data,array_flip(['dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
-        public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
+        public readonly string $action,private readonly string $ticket,public readonly string $reason,private readonly ?\Closure $current=null) {}
     /** Syncing prices and saving what you sell ask no reason; the audit still records who, when and what. */
     public const NO_REASON=['import','acceptance','new_domain_dns'];
     /** Saving these publishes prices, so they also need the publish permission. */
@@ -33,6 +33,7 @@ final class StaffSettingsReview
     {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return $action==='call_limits'?'admin.domains.settings.configure':'admin.domains.settings.'.$action;}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
     {
+        if(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()!==null){return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($serverId,$tldId);}
         $read=static fn($q)=>($lock?$q->lockForUpdate():$q)->get();
         $s=$read(Server::whereKey($serverId))->firstOrFail();
         $accounts=$read(Account::where('server_id',$serverId));$a=$accounts->first();
@@ -67,9 +68,10 @@ final class StaffSettingsReview
     public function check(bool $inFlight=false,?\Closure $catalogueStamp=null): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
-        if($catalogueStamp===null){UpgradeGate::legacy();}
+        if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{UpgradeGate::legacy();}}
         $this->catalogueStamp=$catalogueStamp;
         $server=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();if($server->extension!=='Domains'||!$server->enabled){throw new \DomainException('Registrar unavailable.');}
+        if($catalogueStamp===null){
         $endings=Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->pluck('tld');
         SalesPolicy::whereIn('tld',$endings)->orderBy('tld')->lockForUpdate()->get();
         Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->get();
@@ -77,6 +79,7 @@ final class StaffSettingsReview
         DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$this->serverId)
             ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id')->lockForUpdate()->get();
         if($this->tldId&&!Tld::where(['id'=>$this->tldId,'server_id'=>$this->serverId])->lockForUpdate()->first()){throw new \DomainException('TLD account changed.');}
+        }
         try{$t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key.');}
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
             ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
