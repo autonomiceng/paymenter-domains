@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DnsMapping, Outcome, RegistrarResult};
 
 /** Pure, dormant DNS mapping. No discovery caller, transport, grant or edit capability. */
 final class Dns
@@ -36,6 +37,30 @@ final class Dns
             if ($rows && !$records) { return $unknown; }
             return ['state' => $complete ? 'complete' : 'partial', 'records' => $records];
         } catch (\Throwable) { return $unknown; }
+    }
+
+    /** Original response acknowledgement only. It is never confirmation of current DNS state. */
+    public static function acknowledgement(#[\SensitiveParameter] string $body, DnsMapping $mapping): RegistrarResult
+    {
+        try {
+            if (!in_array($mapping->command, ['dnsAddRecord', 'dnsUpdateRecord', 'dnsDeleteRecord'], true)) {
+                return new RegistrarResult(Outcome::Unknown);
+            }
+            $reply = self::reply($body, $mapping->command);
+            $delete = $mapping->command === 'dnsDeleteRecord';
+            if (array_diff(array_keys($reply), $delete ? ['code', 'detail'] : ['code', 'detail', 'record_id'])) {
+                return new RegistrarResult(Outcome::Unknown, 300);
+            }
+            $facts = [];
+            if (!$delete) {
+                $id = self::id($reply['record_id'] ?? null);
+                if ($mapping->command === 'dnsUpdateRecord' && $id === $mapping->parameters()['rrid']) {
+                    return new RegistrarResult(Outcome::Unknown, 300);
+                }
+                $facts['record_id'] = $id;
+            }
+            return new RegistrarResult(Outcome::Success, 300, $facts);
+        } catch (\Throwable) { return new RegistrarResult(Outcome::Unknown); }
     }
 
     private static function readRecord(#[\SensitiveParameter] array $row, string $domain): array
