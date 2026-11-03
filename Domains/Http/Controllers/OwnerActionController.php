@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Http\Controllers;
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\{FormKeys,RawPost};
+use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactRecovery, DomainManagement, OwnedDomains, OwnerPorts, OwnerSetup, OwnerNameservers, OwnerFormValidation, TransferInputs};
 /** Dormant owner POST boundary. Never calls a driver write. Contact correction wakes only the existing paid registration. */
 final readonly class OwnerActionController
@@ -37,11 +38,13 @@ final readonly class OwnerActionController
     {
         return $this->submit($request,$domain,'setup',function()use($request,$domain):void {
             $d=$this->owners->owned($request->user(),$domain);
+            $privacy=$request->request->get('privacy','0');
+            if (!PrivacyVisibility::SHOWN && $privacy==='1') { throw new OwnerFormValidation(['privacy']); }
+            if (!in_array($privacy,['0','1'],true)) { throw new \Paymenter\Extensions\Servers\Domains\Services\SetupValidation(['privacy']); }
             $op=$this->owners->operation($d);
             $defaults=$d->registrar_key==='enom'||($op&&\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::forOperation($op)!==[]);
             $servers=OwnerNameservers::parse(($request->request->all()['nameservers']??null),$defaults,$d->registrar_key,$d->domain);
-            if (!in_array($request->request->get('privacy','0'),['0','1'],true)) { throw new \Paymenter\Extensions\Servers\Domains\Services\SetupValidation(['privacy']); }
-            $this->setup->save($request->user(),$domain,['nameservers'=>$servers,'privacy'=>$request->request->get('privacy')==='1']);
+            $this->setup->save($request->user(),$domain,['nameservers'=>$servers,'privacy'=>$privacy==='1']);
         },'Setup saved.');
     }
     public function contacts(Request $request,int $domain)

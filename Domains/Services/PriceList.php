@@ -21,19 +21,18 @@ final class PriceList
         $tlds=$serverId===null?$all:$all->where('server_id',$serverId);
         $saved=Price::whereIn('server_id',$tlds->pluck('server_id')->unique())->whereIn('tld',$tlds->pluck('tld')->unique())
             ->where('term',$years)->where('currency','USD')->get()->keyBy(fn(Price $p)=>$p->server_id.':'.$p->tld.':'.$p->action);
-        $rules=new PricingRules;$fees=[];$defaults=[];$rows=[];$skipped=[];
+        $rules=new PricingRules;$fee=null;$default=null;$feeRead=false;$defaultRead=false;$rows=[];$skipped=[];
         foreach($tlds as $tld){
             // Rule-source filters are known without reading settings; value filters cannot classify omissions.
             if(($filter==='default'&&!$tld->use_default_rule)||($filter==='own'&&$tld->use_default_rule)){continue;}
             $id=(int)$tld->server_id;
             $identity=['id'=>(int)$tld->id,'tld'=>'.'.$tld->tld,'server_id'=>$id,'account'=>(string)$tld->server->name,'years'=>$years,
                 'pricing'=>$tld->use_default_rule?'Default':'Custom','currency'=>'USD'];
-            if(!array_key_exists($id,$fees)){$fees[$id]=self::readSetting(fn()=>CardFee::read($id));}
-            $fee=$fees[$id];
+            if(!$feeRead){$fee=self::readSetting(fn()=>CardFee::read());$feeRead=true;}
             if($fee===null){$skipped[]=[...$identity,'cause'=>'card_fee'];continue;}
             if($tld->use_default_rule){
-                if(!array_key_exists($id,$defaults)){$defaults[$id]=self::readSetting(fn()=>$rules->defaultRule($id,false,$fee));}
-                $rule=$defaults[$id];
+                if(!$defaultRead){$default=self::readSetting(fn()=>$rules->defaultRule(false,$fee));$defaultRead=true;}
+                $rule=$default;
             }else{$rule=self::readSetting(fn()=>$rules->rule($tld,false,$fee));}
             if($rule===null){$skipped[]=[...$identity,'cause'=>$tld->use_default_rule?'default_rule':'custom_rule'];continue;}
             $row=[...$identity,'prices'=>[],
@@ -60,11 +59,12 @@ final class PriceList
         }
         $warnings=[];
         foreach($skipped as $row){
-            $key=$row['server_id'].':'.$row['cause'].($row['cause']==='custom_rule'?':'.$row['id']:'');
-            $warnings[$key]??=['server_id'=>$row['server_id'],'account'=>$row['account'],'cause'=>$row['cause'],'tlds'=>[]];
+            // Default pricing and the card fee are one setting, so one warning; custom pricing belongs to its TLD.
+            $custom=$row['cause']==='custom_rule';$key=$custom?$row['server_id'].':'.$row['id']:$row['cause'];
+            $warnings[$key]??=['server_id'=>$custom?$row['server_id']:null,'account'=>$custom?$row['account']:null,'cause'=>$row['cause'],'tlds'=>[]];
             $warnings[$key]['tlds'][]=$row['tld'];
         }
-        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_values($warnings),'accounts'=>$accounts,'years'=>$years,'explanations'=>self::explain($rows)];
+        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_map(static fn($w)=>[...$w,'tlds'=>array_values(array_unique($w['tlds']))],array_values($warnings)),'accounts'=>$accounts,'years'=>$years,'explanations'=>self::explain($rows)];
     }
     /** One formula per account and pricing type, with the TLDs it prices. Grouped by account id, since two accounts can share a name. */
     public static function explain(array $rows): array
@@ -76,6 +76,7 @@ final class PriceList
             $explanations[$key]['tlds'][]=$row['tld'];
         }
         return array_values($explanations);
+
     }
     /** Only saved-setting validation failures are recoverable here; database and programmer errors propagate. */
     private static function readSetting(\Closure $read): ?array

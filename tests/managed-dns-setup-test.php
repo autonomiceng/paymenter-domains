@@ -36,7 +36,12 @@ Auth::setUser($manager);
 require __DIR__.'/Support/account-default-monitoring.php';
 $m=new WatchMaintenance();expect(!$m->health($now)['outage'],'Unconfigured retained work never becomes a resolver outage');
 same(1,ManagedDnsSetup::affected($now)->count(),'Eligible missing template counted');
+$setupTabs=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::monitoring('DNS monitoring setup'),fn($tab)=>$tab->getLabel()==='DNS monitoring setup'));
+same(1,count($setupTabs),'Affected domains retain their DNS monitoring setup tab');
+same(WatchResource::getUrl('dns-setup'),$setupTabs[0]->getUrl(),'Setup tab retains its destination');
+expect($setupTabs[0]->isActive(),'Setup tab is active on the setup page');
 DB::table('services')->where('id',$service->id)->update(['status'=>'cancelled']);same(0,ManagedDnsSetup::affected($now)->count(),'Cancelled service omitted from setup count');
+expect(!in_array('DNS monitoring setup',array_map(fn($tab)=>$tab->getLabel(),\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::monitoring('Monitored domains')),true),'No setup tab when no domains need setup');
 DB::table('services')->where('id',$service->id)->update(['status'=>'active']);
 $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$summary->stateKeys,true),'Customer sees comparison setup state');same($d->provider_expires_at->format('Y-m-d'),$summary->expiry,'Expiry retained without DNS checks');
@@ -56,7 +61,7 @@ foreach([['active',null,true],['grace',null,true],['cancelled',null,false],['exp
 }
 DB::table('domains_domains')->where('id',$id)->update(['status'=>$d->status,'provenance'=>$d->provenance]);
 Livewire::actingAs($owner)->test(ListManagedDns::class)->assertForbidden();
-Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d);
+staffTableStandard($setup=Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d),'Search domain',['domain','user.email']);staffRowsStandard($setup);
 app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),true,fn()=>$time->now));
 $dnsPermission=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('new_domain_dns');
 foreach([[] , [Staff::POLICY], [$dnsPermission], [Staff::POLICY,$dnsPermission]]as$extra){

@@ -62,13 +62,13 @@ class AdoptDomain extends Page
         if ($id === null && !$details) { return []; }
         $like = '%'.addcslashes($search, '%_\\').'%';
         return User::where(fn ($q) => $id !== null ? $q->whereKey($id) : $q->where('first_name', 'like', $like)->orWhere('last_name', 'like', $like)->orWhere('email', 'like', $like))
-            ->orderBy('id')->limit(25)->get()->mapWithKeys(fn ($u) => [$u->id => $details ? $u->name.' · '.$u->email : 'Customer #'.$u->id])->all();
+            ->orderBy('id')->limit(25)->get()->mapWithKeys(fn ($u) => [$u->id => $details ? $u->name.', '.$u->email : 'Customer #'.$u->id])->all();
     }
     /** Enom accounts by name, with their mode. */
     public static function accountOptions(): array
     {
         $accounts = Account::where('registrar_key', 'enom')->orderBy('server_id')->get(); $names = Server::whereIn('id', $accounts->pluck('server_id'))->pluck('name', 'id');
-        return $accounts->mapWithKeys(fn ($a) => [$a->server_id => ($names[$a->server_id] ?? 'Account #'.$a->server_id).' · '.($a->environment === 'test' ? 'Test' : 'Live')])->all();
+        return $accounts->mapWithKeys(fn ($a) => [$a->server_id => ($names[$a->server_id] ?? 'Account #'.$a->server_id).', '.($a->environment === 'test' ? 'Test' : 'Live')])->all();
     }
     /** The import target for this service and account, or the sentence that says why it can't be one. */
     private static function targetFor(Service $s, Account $a): array|string
@@ -105,7 +105,7 @@ class AdoptDomain extends Page
             ->disabled(fn () => !$this->confirmable())->modalHeading(fn () => 'Import '.($this->target['name'] ?? 'domain').' for '.$this->customerLabel())->modalSubmitActionLabel('Confirm import')
             ->modalDescription(function (): string {
                 $facts = $this->review['details'] ?? [];
-                return 'Customer #'.$this->target['customer'].' · Service #'.$this->target['service'].' · Account #'.$this->target['account']
+                return 'Customer #'.$this->target['customer'].', Service #'.$this->target['service'].', Account #'.$this->target['account']
                     .'. Expiry: '.self::when($facts['expiry'] ?? null).'. Annual charge: '.($facts['annual_charge'] ?? 'Unconfirmed').' USD including tax. '
                     .Review::renewalNotice($facts).' '
                     .'Nothing is charged now. Reason: '.$this->reason;
@@ -173,8 +173,8 @@ class AdoptDomain extends Page
         if (!$enabled) { $readiness->icon('heroicon-o-exclamation-triangle')->iconColor('warning'); }
         $sections[] = $readiness;
         $sections[] = Section::make('1. Customer, service and account')->columns(2)->schema([
-            TextEntry::make('selection')->label('Selected domain')->state($this->target ? $this->target['name'].' · '.$this->customerLabel().' · Service #'.$this->target['service'] : 'Choose a domain service.'),
-            TextEntry::make('environment')->label('Registrar account')->state($this->target ? (Server::find($this->target['account'])?->name ?? 'Account #'.$this->target['account']).' · '.($this->target['environment'] === 'test' ? 'Test account. It cannot confirm a live domain.' : 'Live') : 'Not selected'),
+            TextEntry::make('selection')->label('Selected domain')->state($this->target ? $this->target['name'].', '.$this->customerLabel().', Service #'.$this->target['service'] : 'Choose a domain service.'),
+            TextEntry::make('environment')->label('Registrar account')->state($this->target ? (Server::find($this->target['account'])?->name ?? 'Account #'.$this->target['account']).', '.($this->target['environment'] === 'test' ? 'Test account. It cannot confirm a live domain.' : 'Live') : 'Not selected'),
             Actions::make([$this->chooseAction()])->columnSpanFull()]);
         if ($this->target && $this->adoptedId === null) { $sections[] = Section::make('2. Check at the registrar')->description('The result lasts 2 minutes.')->schema([Actions::make([$this->readbackAction()])]); }
         if ($this->refusal) { $sections[] = Section::make('Import not finished')->description($this->refusal)->schema([]); }
@@ -194,7 +194,7 @@ class AdoptDomain extends Page
         if ($this->adoptedId !== null) {
             $d = Domain::findOrFail($this->adoptedId); $a = Adoption::findOrFail($d->adoption_id);
             $sections[] = Section::make('Imported')->description($a->do_not_renew ? 'Renewal off. No renewal invoices or reminders are scheduled.' : 'Domain imported. Renewals follow the normal rules.')
-                ->schema([TextEntry::make('adopted')->label('Domain')->state($d->domain.' · Service #'.$d->service_id.' · Expires '.$d->provider_expires_at->format('M j, Y')),
+                ->schema([TextEntry::make('adopted')->label('Domain')->state($d->domain.', Service #'.$d->service_id.', Expires '.$d->provider_expires_at->format('M j, Y')),
                     Actions::make([Action::make('holding')->label('View imported domain')->url(DomainResource::getUrl('view', ['record' => $d->id]))])]);
         }
         return $schema->components($sections);

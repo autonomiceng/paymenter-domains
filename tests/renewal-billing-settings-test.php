@@ -20,7 +20,7 @@ $valid=['scheduled'=>true,'manual'=>true,'issue_days'=>30,'due_days'=>10,'confir
 
 // Absent rows display the calendar defaults and keep both switches off.
 same([],$rows(),'Fixture starts without renewal billing rows');
-same(['Scheduled renewal invoices'=>'Off','Owner renewal requests'=>'Off','Renewal invoice calendar'=>'Issued 21 days before expiry · due 7 days before (defaults)'],Billing::facts($t->server_id),'Absent rows show effective defaults');
+same(['Scheduled renewal invoices'=>'Off','Owner renewal requests'=>'Off','Renewal invoice calendar'=>'Issued 21 days before expiry, due 7 days before (defaults)'],Billing::facts($t->server_id),'Absent rows show effective defaults');
 Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Customer can renew early')->assertSee('21 days before expiry')->assertSee('7 days before expiry')->assertDontSee('(defaults)')->assertActionVisible($name);
 $page=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($name)->assertActionMounted($name);$defaults=$page->get('mountedActions.0.data');$ticket=$defaults['review_key'];
 same([21,7],[(int)$defaults['issue_days'],(int)$defaults['due_days']],'Modal prefills effective defaults');
@@ -32,7 +32,7 @@ $page->setActionData(['issue_days'=>'30','due_days'=>'10','reason'=>'Move the re
 same([Billing::SCHEDULED=>['0','boolean',0],Billing::MANUAL=>['0','boolean',0],Billing::ISSUE=>['30','integer',0],Billing::DUE=>['10','integer',0]],
     collect($rows())->mapWithKeys(fn($r)=>[$r['key']=>[$r['value'],$r['type'],(int)$r['encrypted']]])->all(),'One plain row per renewal billing setting');
 same(['issue'=>30,'due'=>10],BillingCalendar::timing($server->settings()->get()),'Billing calendar reads the saved timing');
-same(['Scheduled renewal invoices'=>'Off','Owner renewal requests'=>'Off','Renewal invoice calendar'=>'Issued 30 days before expiry · due 10 days before'],Billing::facts($t->server_id),'Saved values replace defaults');
+same(['Scheduled renewal invoices'=>'Off','Owner renewal requests'=>'Off','Renewal invoice calendar'=>'Issued 30 days before expiry, due 10 days before'],Billing::facts($t->server_id),'Saved values replace defaults');
 $audit=array_values(array_filter(Review::historyRows($server->fresh()),fn($r)=>$r['action']==='Edit renewal schedule'));
 same(1,count($audit),'One audit row per change');$entry=$audit[0];
 same([$u->id,'completed','Move the renewal calendar after review'],[$entry['actor_id'],$entry['phase'],$entry['reason']],'Audit names actor, phase and reason');
@@ -87,7 +87,7 @@ same([$saved,$history],[$rows(),count(Review::historyRows($server->fresh()))],'R
 
 // An invalid saved calendar is reported, never silently repaired.
 DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$t->server_id)->where('key',Billing::DUE)->update(['value'=>'2']);
-same('Saved calendar invalid · new renewal invoices refused',Billing::facts($t->server_id)['Renewal invoice calendar'],'Invalid saved calendar shown as invalid');
+same('Saved calendar invalid, new renewal invoices refused',Billing::facts($t->server_id)['Renewal invoice calendar'],'Invalid saved calendar shown as invalid');
 same([null,null],[Billing::read($t->server_id)['issue_days'],Billing::read($t->server_id)['due_days']],'Invalid saved calendar has no effective days');
 DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$t->server_id)->where('key',Billing::DUE)->update(['value'=>'1']);same($saved,$rows(),'Calendar restored');
 
