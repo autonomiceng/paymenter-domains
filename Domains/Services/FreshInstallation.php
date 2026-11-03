@@ -99,6 +99,12 @@ final class FreshInstallation
 
     private static function empty(bool $new = false): void
     {
+        // Native plans/services route through these products even without extension storage.
+        DB::table('products')->orderBy('id')->lockForUpdate()->chunk(250, static function ($rows): void {
+            if (NativeIdentity::productRows($rows->map(static fn ($row) => (array) $row)->all())) {
+                throw new \DomainException('Retained native Domains identity refuses fresh initialization.');
+            }
+        });
         if (DB::table('extensions')->where('extension','Domains')->lockForUpdate()->exists()
             || Setting::where('key','like','domains%')->where(static fn ($q) => $q->where('key','!=',UpgradeGate::KEY)
                 ->orWhereNotNull('settingable_type')->orWhereNotNull('settingable_id'))->exists()

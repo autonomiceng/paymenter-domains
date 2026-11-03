@@ -11,7 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{Runtime};
 // A new Domains install may share Paymenter with unrelated customers and financial history.
 $user = User::create(['first_name'=>'Synthetic','last_name'=>'Owner','email'=>'fresh-owner@example.com','password'=>'test-password']);
 $invoice = Invoice::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'paid']);
-$before = serialize([$user->fresh()->getAttributes(), $invoice->fresh()->getAttributes()]);
+$categoryId = DB::table('categories')->insertGetId(['name'=>'Synthetic hosting','slug'=>'synthetic-hosting']);
+$productId = DB::table('products')->insertGetId(['category_id'=>$categoryId,'name'=>'Unrelated hosting','slug'=>'hosting','stock'=>5]);
+$before = serialize([$user->fresh()->getAttributes(), $invoice->fresh()->getAttributes(), (array) DB::table('products')->where('id',$productId)->sole()]);
 $payload = json_encode(['displayName'=>'App\\Jobs\\SyntheticHosting']);
 $job = DB::table('jobs')->insertGetId(['queue'=>'default','payload'=>$payload,'attempts'=>0,'available_at'=>1,'created_at'=>1]);
 $entry = new Domains;
@@ -28,7 +30,7 @@ expect(CallerRouting::resolve(CallerPorts::class) instanceof CallerPorts, 'Insta
 same(0, DB::table('domains_accounts')->count(), 'Initialization creates no account or enabled processing');
 same(0, DB::table('domains_tlds')->count(), 'Initialization creates no catalogue');
 same(0, DB::table('domains_operations')->count(), 'Initialization sends no operation');
-same($before, serialize([$user->fresh()->getAttributes(), $invoice->fresh()->getAttributes()]), 'Unrelated ownership and money are unchanged');
+same($before, serialize([$user->fresh()->getAttributes(), $invoice->fresh()->getAttributes(), (array) DB::table('products')->where('id',$productId)->sole()]), 'Unrelated ownership, money and hosting stock are unchanged');
 same($payload, DB::table('jobs')->where('id',$job)->value('payload'), 'Unrelated hosting work is unchanged');
 $receipt = UpgradeGate::routeState();
 $entry->installed(); $entry->upgraded('0.1.0');

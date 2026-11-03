@@ -14,6 +14,18 @@ $legacy = static function (string $why): void {
     same('legacy', UpgradeGate::routeState()['state'], $why.' cannot take the fresh shortcut');
     same(0, Setting::where('key',UpgradeGate::KEY)->whereNull('settingable_type')->count(), $why.' cannot create an initialization intent');
 };
+// A native route is retained evidence even after its extension/ledger/settings were lost.
+$categoryId = DB::table('categories')->insertGetId(['name'=>'Synthetic retained','slug'=>'synthetic-retained']);
+$productId = DB::table('products')->insertGetId(['category_id'=>$categoryId,'name'=>'Retained domain',
+    'slug'=>'domains-enom-s999-invalid-registration','server_id'=>null,'stock'=>5]);
+$product = (array) DB::table('products')->where('id',$productId)->sole();
+$refused = false;
+try { $entry->installed(); } catch (DomainException) { $refused = true; }
+expect($refused, 'Retained native Domains product refuses fresh initialization');
+$legacy('Retained native product');
+same($product, (array) DB::table('products')->where('id',$productId)->sole(), 'Native retained stock and identity are unchanged');
+expect(!Schema::hasTable('domains_accounts'), 'Native retained evidence refuses before Domains DDL');
+DB::table('products')->where('id',$productId)->delete();
 // Soft-deleted server identity is still durable installation history.
 $extensionId = DB::table('extensions')->insertGetId(['name'=>'Retained deleted Domains','type'=>'server',
     'extension'=>'Domains','enabled'=>false,'deleted_at'=>'2026-01-01 00:00:00']);
