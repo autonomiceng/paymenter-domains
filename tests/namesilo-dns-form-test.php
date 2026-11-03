@@ -14,7 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,OwnerActionController};
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsManagement;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,OwnedDomains,OwnerPorts,OwnerSetup,Refunds,TransferInputs};
+use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,ObservationProjection,OwnedDomains,OwnerPorts,OwnerSetup,Refunds,TransferInputs};
 staffPanel();storefrontViews();
 $wire=(object)['records'=>[],'writes'=>[],'fault'=>'','next'=>0];
 $dnsExchange=static function($origin,$cmd,$p,$timeout)use($wire,$managementExchange):string {
@@ -53,8 +54,9 @@ $post=function(array $rows)use(&$d,$user,$session,$controller,$section) {
     nativeNormalizeInput($r);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);$r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':dns'));
     return $controller->manage($r,$d->id,'dns');
 };
-$setup=function(string $label,array $rows,bool $on=true)use($holding,&$binding,$wire,$dnsExchange,&$driver,&$d,&$ordinary) {
+$setup=function(string $label,array $rows,bool $on=true,array $nameservers=['NS1.DNSOWL.COM.','ns2.dnsowl.com','ns3.dnsowl.com'])use($holding,&$binding,$wire,$dnsExchange,&$driver,&$d,&$ordinary,$ms,$clock) {
     [$d,$ordinary]=$holding($label);\App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>true]);
+    $ms->ns=$nameservers;$d->observation=ObservationProjection::recordNameservers($d,NameserverEvidence::observed($nameservers,'namesilo_domain_info',$clock->now()));$d->save();
     $wire->records=$rows;$wire->writes=[];$wire->fault='';$driver=$on?new DnsManagement($binding,$dnsExchange):$ordinary;
 };
 $staffPage=function()use(&$d,$staff){return Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);};
@@ -75,6 +77,16 @@ expect(str_contains($text($row),'Not available You can’t change DNS records he
 same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form while the capability is off');
 $off='You can’t change DNS records here yet. Contact support for a change.';
 expect(str_contains(html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5),$off),'Staff sees the same reason and next step');
+// The opt-in editor needs observed default delegation, even with a complete saved inventory.
+$setup('dns-form-external',[],true,['ns1.provider.example.net','ns2.provider.example.net']);
+$seed=$submit($d,$driver,'dns',['records'=>[array_diff_key($a,['record_id'=>true])]]);Cache::flush();same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic external-delegation inventory is saved');
+same(null,$section(),'External nameservers hide the NameSilo DNS editor');
+same(0,$page()->query('//li[@id="dns"]//form')->length,'External nameservers offer no DNS form');
+foreach(['mixed'=>NameserverEvidence::observed(['ns1.dnsowl.com','ns2.provider.example.net'],'namesilo_domain_info',$clock->now()),
+    'unconfirmed'=>NameserverEvidence::requested(['ns1.dnsowl.com','ns2.dnsowl.com','ns3.dnsowl.com'],'registration_request',$clock->now())] as $delegation=>$proof){
+    $d->observation=ObservationProjection::recordNameservers($d,$proof);$d->save();
+    same(null,$section(),'NameSilo DNS stays hidden on '.$delegation.' delegation');
+}
 // The opt-in adapter edits standard rows in the shared editor; CAA and SRV stay read-only.
 $setup('dns-form',[$a,$txt,$caa,$srv]);
 $seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic seed save completes');$wire->writes=[];
