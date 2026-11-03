@@ -26,6 +26,7 @@ final class OfferFeed implements PricedFeed
             if (count($years) !== count(array_unique($years))) { throw new \InvalidArgumentException('Duplicate bucket term.'); }
         }
     }
+    public function factsReads(): int { return 2; }
     public function priceReads(): int { return count(self::BUCKETS) + 1; }
     private function read(ReadResult $read, RequestContext $context): array
     {

@@ -30,6 +30,7 @@ final class OfferSchema
         foreach (self::COLUMNS[$name] as $column => $type) {
             if (Schema::hasColumn($name, $column)) { self::column($table, $column, $type); }
         }
+        OfferWorkSchema::retained($table, $name);
     }
 
     private static function column(Blueprint $t, string $name, string $type): void
