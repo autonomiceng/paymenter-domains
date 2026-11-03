@@ -7,6 +7,7 @@
     "tests/enom-money-test.php",
     "tests/enom-read-test.php",
     "tests/namesilo-read-test.php",
+    "tests/namesilo-dns-inventory-test.php",
     "tests/reconciliation-provider-test.php",
     "tests/reconciliation-enom-history-test.php",
     "tests/transfer-rdap-test.php",
