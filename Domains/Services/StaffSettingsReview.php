@@ -20,6 +20,7 @@ final class StaffSettingsReview
     private array $input=[];
     /** Snapshot after this review's last synced TLD; null until one is written. */
     private ?string $synced=null;
+    private ?\Closure $catalogueStamp=null;
     public function input(array $data): void
     { $this->input=array_intersect_key($data,array_flip(['dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
@@ -63,13 +64,14 @@ final class StaffSettingsReview
         Server::whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get();
         Account::whereIn('server_id',$ids)->orderBy('server_id')->lockForUpdate()->get();
     }
-    public function check(bool $inFlight=false): void
+    public function check(bool $inFlight=false,?\Closure $catalogueStamp=null): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
-        UpgradeGate::legacy();
+        if($catalogueStamp===null){UpgradeGate::legacy();}
+        $this->catalogueStamp=$catalogueStamp;
         $server=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();if($server->extension!=='Domains'||!$server->enabled){throw new \DomainException('Registrar unavailable.');}
-        $endings=Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->pluck('tld');
-        SalesPolicy::whereIn('tld',$endings)->orderBy('id')->lockForUpdate()->get();
+        $endings=Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->pluck('tld');
+        SalesPolicy::whereIn('tld',$endings)->orderBy('tld')->lockForUpdate()->get();
         Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->get();
         Price::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereIn('tld',$endings))->orderBy('id')->lockForUpdate()->get();
         DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$this->serverId)
@@ -79,14 +81,14 @@ final class StaffSettingsReview
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
             ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
             ||($this->action==='activate'&&EnomLiveActivation::enabling(Account::where('server_id',$this->serverId)->sole(),$this->input)&&($t['ready']??null)!==EnomLiveActivation::stamp(Account::where('server_id',$this->serverId)->sole(),true))
-            ||!hash_equals($this->synced??$t['stamp'],($this->action==='acceptance'&&str_starts_with($t['stamp'],'sell:')?SellRule::stamp($this->serverId):self::stamp($this->serverId,$this->tldId,true)))){throw new \DomainException('Settings changed. Reload this page.');}
+            ||!hash_equals($this->synced??$t['stamp'],($catalogueStamp!==null?$catalogueStamp():($this->action==='acceptance'&&str_starts_with($t['stamp'],'sell:')?SellRule::stamp($this->serverId):self::stamp($this->serverId,$this->tldId,true))))){throw new \DomainException('Settings changed. Reload this page.');}
         // The account mutex serializes checks; the primary key also prevents duplicate claims.
         $keys=DB::table(self::KEYS)->where('server_id',$this->serverId)->where('review_key',$t['key']);
         $used=(clone $keys)->lockForUpdate()->exists();
         if($inFlight&&(!$used||$this->verified!==$t)){throw new \DomainException('Verified in-flight review required.');}
         if($used&&!$inFlight){throw new \DomainException('Review key used.');}
         if(!$used){DB::table(self::KEYS)->insert(['server_id'=>$this->serverId,'review_key'=>$t['key'],'expires_at'=>$t['until']]);}
-        $this->verified=$t;$this->before=$this->state($this->serverId,$this->tldId);
+        $this->verified=$t;$this->before=$catalogueStamp!==null?['snapshot'=>$catalogueStamp()]:$this->state($this->serverId,$this->tldId);
     }
     /** Recent display only: current batch and one archive, at most 50 entries. Never replay authority. */
     public static function historyRows(Server $s,bool $lock=false): array
@@ -114,7 +116,7 @@ final class StaffSettingsReview
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();
         self::append($s,['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>in_array($this->action,['default_rule','card_fee'],true)?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
+            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>in_array($this->action,['default_rule','card_fee'],true)?null:$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)]);
         // One sync writes TLD after TLD under one review: the next TLD checks against this run's own last write.
         if($phase==='catalogue_imported'){$this->synced=self::stamp($this->serverId,$this->tldId,true);}
     }

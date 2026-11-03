@@ -12,15 +12,15 @@ final readonly class Edit implements Command
 {
     private function __construct(private AccountBinding $account, private string $ending,
         public string $kind, public ?Intent $intent = null, public ?array $rule = null,
-        public ?string $retail = null, public array $actions = [])
+        public ?string $retail = null, public array $actions = [], public ?array $fee = null)
     { CanonicalName::parse('example.'.$ending, [$ending]); }
 
-    public static function defaults(AccountBinding $b, string $tld, Intent $intent, array $rule): self
+    public static function defaults(AccountBinding $b, string $tld, Intent $intent, array $rule, ?array $fee = null): self
     {
         if ($intent->sell !== null || $intent->longest !== null || $intent->transfers !== null || $intent->stops !== []) {
             throw new \InvalidArgumentException('Defaults cannot contain offer overrides.');
         }
-        return new self($b, $tld, 'defaults', $intent, PricingRule::validate($rule));
+        return new self($b, $tld, 'defaults', $intent, PricingRule::validate($rule), fee: $fee === null ? null : \Paymenter\Extensions\Servers\Domains\Services\CardFee::validate($fee));
     }
     /** Null pricing rule removes the offer rule and inherits the account rule. */
     public static function override(AccountBinding $b, string $tld, Intent $intent, ?array $rule = null): self
@@ -38,6 +38,7 @@ final readonly class Edit implements Command
         if (PricingRule::units($retail, 2) < 1) { throw new \InvalidArgumentException('Positive renewal retail required.'); }
         return new self($b, $tld, 'retail', retail: PricingRule::decimal(PricingRule::units($retail, 2)));
     }
+    public static function requestSync(AccountBinding $b, string $tld): self { return new self($b, $tld, 'sync'); }
     public static function republish(AccountBinding $b, string $tld): self { return new self($b, $tld, 'republish'); }
     public function binding(): AccountBinding { return $this->account; }
     public function tld(): string { return $this->ending; }
