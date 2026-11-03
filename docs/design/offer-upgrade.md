@@ -65,11 +65,16 @@ intent/cost/retail and untouched facts/publication fields, then compares global 
 Account changes, incomplete conversion, source drift or changed frozen evidence refuse compatibility.
 Claims are never cleared by the gate, even if their deadlines have passed.
 
-This is a split before activation. `check()` always returns `activated: false` and
-`activation_blocked: caller_cutover_pending`. There is no activation API. Staff, public, cart,
-checkout and payment callers still use their existing paths. B6b must switch all of them, summaries
-and native publication together, and register the dormant B6b production ports with our headroom and call caps.
-The new worker must replace, never accompany, legacy `ObservationWork` on shared queue rows.
+The installed `Catalogue\CallerRouting` contract inspects the actual staff, public, cart, locked
+invoice, payment, holder, status, native and runtime adapters and their shared Writer/consumer.
+`check()` is report-only. `activate($evidence)` is the sole switch: an authenticated CLI staff actor
+needs Domains view, policy, costs and Activate permission. It locks current native/financial rows,
+all accounts, the same paused gate and source/staging rows, then repeats the complete comparison.
+Changed account/credential/enrollment state, malformed staging, incomplete routing or any unreleased
+claim/reservation (including expired leases) refuses. It never clears claims or constructs a transport.
+A successful commit returns `activated: true`, the incremented `generation` and a digest. All callers
+then select that generation; old queued payloads and legacy catalogue writers refuse. Cache invalidation
+and a bounded local wake happen after commit. There is still one minute consumer.
 
 ## Parent demo procedure (after the complete caller cutover)
 
@@ -95,14 +100,16 @@ The new worker must replace, never accompany, legacy `ObservationWork` on shared
    save the full result. Require `compatible` and `complete`, an empty `changed` list and empty
    `staging_mismatches`. Review reported unknown/current-offer availability against the approved
    policy; never turn acceptance or old flags into invented facts. Any other mismatch stops cutover.
-5. **Stop on this B6b split.** Production read ports exist but remain unregistered. There is no
-   activation API or atomic caller routing matrix. The subsequent caller-cutover change must supply
-   the exact reviewed activation call here; do not bypass `activation_blocked` or edit state to invent an
-   active value. Before that call, prove staff/public/cart/locked-payment agreement, stale evidence
-   rejection, account rotation and the real admitted-port composition offline. Confirm the old
-   consumer cannot restart alongside B5. Our planned feed/facts call counts are our budgets, not
-   registrar limits. No connected reads are authorized by this runbook.
-6. After the future checked switch, compare original IDs and frozen obligations again. Prove a paid
+5. Require the reviewed complete caller-cutover head and its passing installed route/package tests.
+   Still under maintenance, call `$result = $gate->activate($evidence)` in the authenticated CLI.
+   Require `activated: true`, exactly one generation increment and a digest-only receipt; save it
+   beside the earlier check. This method performs the authoritative locked recheck, including the
+   compiled installed routing contract; an earlier compatible report supplies no authority. Any
+   refusal keeps maintenance active for investigation. Do not edit the encrypted setting, seed active
+   state, clear claims, reset conversion markers or activate a subset. Mere deployment never switches
+   callers. Our feed/facts call ceilings are budgets, not registrar limits; this procedure grants no
+   connected reads or paid proof.
+6. After the checked switch, compare original IDs and frozen obligations again. Prove a paid
    pending request can continue without a duplicate attempt, an uncertain request cannot resend,
    retained holder renewal prices survive, and stale carts/payment evidence refuse new spending.
    Check the public theme interface, filters, staff permissions and summaries before reopening.
@@ -111,8 +118,8 @@ The new worker must replace, never accompany, legacy `ObservationWork` on shared
 7. Before activation, rollback with `$gate->resume()` under maintenance, then restore the recorded
    legacy services/code. Additive staging fields remain compatible. The new generation invalidates
    old captures and in-flight reads. If legacy sources then change, the completed converter refuses
-   reuse: review a forward correction instead of resetting markers. After activation, use the completed cutover's
-   reviewed forward-fix or coordinated recovery procedure; never restore financial data over new
+   reuse: review a forward correction instead of resetting markers. After activation, `resume()` and any legacy downgrade refuse. Use a reviewed forward fix or a
+   coordinated full database/code restore accounting for intervening financial changes; never restore financial data over new
    activity or run destructive schema rollback.
 
 Offline B6a evidence is `tests/offer-upgrade-gate-test.php`: two accounts, 1,009 offers, pending/paid/

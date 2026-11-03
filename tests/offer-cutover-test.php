@@ -41,12 +41,22 @@ $op=Operation::where('operation_key','like','invoice-item:%')->sole();same('23.4
 same($before,$reads->calls,'Locked checkout creates no second provider read');
 $invoice=App\Models\Invoice::findOrFail($op->invoice_id);same(null,app(PayCheck::class)->stop($invoice),'Installed payment check accepts current local offer evidence');
 $financial=[$op->fresh()->getRawOriginal(),$invoice->fresh()->getRawOriginal()];
-auth()->login($staff);$native->publish($tlds[0]->id,$now);
+auth()->login($staff);
+$review=new StaffSettingsReview((int)$staff->id,$binding->serverId,(int)$tlds[0]->id,'publish',StaffSettingsReview::ticket((int)$staff->id,$binding->serverId,(int)$tlds[0]->id,'publish',StaffCommands::stamp($binding->serverId,(int)$tlds[0]->id)),'Synthetic cutover review');
+app(StaffSettingsWrites::class)->run($review,[],$now);
+expect(str_contains(app(Paymenter\Extensions\Servers\Domains\Services\PriceList::class)->csv(3),'23.40'),'Installed staff CSV uses the same term total');
+$native->publish($tlds[0]->id,$now);
 same($financial,[$op->fresh()->getRawOriginal(),$invoice->fresh()->getRawOriginal()],'Native publication preserves existing invoice and frozen operation');
 // A formerly valid payment/cart selection cannot survive withdrawn fresh facts or warm display caches.
+app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->instant=$now=$now->modify('+1 second');
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$revision());
 commerceReject(fn()=>DB::transaction(fn()=>$sellers->admit([$public['selection']],$now)));
 same('unavailable',app(PayCheck::class)->stop($invoice)['why'],'Payment refuses a stale saved offer');
 same('10.40',$prices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$now)->retail,'Withdrawal retains holder retail');
 same([Runtime::class,'initialManagedRecordObservations'],app(RuntimePorts::class)->initialManagedRecordProducer(),'Only the installed named initial-record producer is registered');
+// Old jobs and the actual manual/callback routes cannot restart legacy catalogue reads.
+$job=new Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices((int)$staff->id,$binding->serverId,$binding->fingerprint);$job->upgradeGeneration=0;$before=$reads->calls;$job->handle();same($before,$reads->calls,'Old queued generation cannot read');
+$manual=new Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices((int)$staff->id,$binding->serverId,$binding->fingerprint);$manual->handle();
+expect(is_array($scheduler->status($binding,'com')),'Actual status entry reads the shared consumer');
+$frozen=DB::table('domains_operations')->orderBy('id')->get()->toJson();Runtime::initialManagedRecordObservations();same($frozen,DB::table('domains_operations')->orderBy('id')->get()->toJson(),'Initial-record callback preserves paid/pending/uncertain attempts');same($before,$reads->calls,'Sole active callback never invokes the legacy account reader');
 $nativeSuccessful=true;echo "Installed checked cutover caller matrix passed.\n";

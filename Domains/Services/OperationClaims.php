@@ -533,9 +533,10 @@ final class OperationClaims
             $funding = InvoiceFunding::lock((int) $route->invoice_id);
             $server = Server::whereKey($route->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $route->server_id)->lockForUpdate()->firstOrFail();
+            $catalogue = \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class);
             // Lock credentials before domain/operation rows (same server mutex as rotation).
             $server->settings()->orderBy('id')->lockForUpdate()->get();
-            $catalogueTld = \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed() === null ? null
+            $catalogueTld = $catalogue === null ? null
                 : \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $route->server_id)->where('tld', $holding->tld)->lockForUpdate()->first();
             $domain = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $domain->id)->orderBy('id')->lockForUpdate()->get();

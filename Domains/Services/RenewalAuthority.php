@@ -26,7 +26,7 @@ final readonly class RenewalAuthority
                 try {
                     $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding);
                     // HoldingLocks already locked all server settings before catalogue/domain rows.
-                    if ($caps = $this->offers ?? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
+                    if ($caps = $this->offers ?? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class)) {
                         $capabilityUntil = $caps->requireRenewal($binding, $domain->tld, $l['tld'])->freshUntil;
                     } else {
                     $catalogue = CatalogueAcceptances::load($binding, true);
