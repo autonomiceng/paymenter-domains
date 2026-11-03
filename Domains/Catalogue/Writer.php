@@ -64,7 +64,8 @@ final class Writer implements Catalogue
                 $a=$accounts[$t->server_id]??null;
                 if($a===null||$t->account_fingerprint!==$a->account_fingerprint||$t->registrar_key!==$a->registrar_key){continue;}
                 // Read the saved rule independently of the new fee; unreadable rules keep their TLD warning.
-                try{$own=Pricing::own($t,\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE);}
+                try{$own=Pricing::own($t,\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE);
+                    if($own!==null){PricingRule::validate([...$own,'card_fee'=>\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE]);}}
                 catch(\DomainException|\InvalidArgumentException){continue;}
                 if($own!==null&&$own['mode']!=='markup_fee_percent'){continue;}
                 if($own!==null){PricingRule::validate([...$own,'card_fee'=>$fee]);}
