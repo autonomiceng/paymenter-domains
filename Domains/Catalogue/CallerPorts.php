@@ -43,4 +43,7 @@ final class CallerPorts implements Catalogue
     /** Server-only adapter evidence, not an input DTO or receipt constructor. */
     public function loadBatch(array $queries, Context $context, bool $lock = false): array
     { return $this->reader->loadBatch($queries, $context, $lock); }
+
+    public function displayBatch(array $queries): array
+    { return $this->reader->displayBatch($queries); }
 }

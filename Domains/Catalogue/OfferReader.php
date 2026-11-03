@@ -30,7 +30,15 @@ final class OfferReader
      * Lock mode is independent of Holder business context; it never turns it into public admission.
      * @param non-empty-list<Query> $queries @return list<list<ReadOffer>> */
     public function loadBatch(array $queries, Context $context, bool $lock = false): array
+    { return $this->load($queries, $context, $lock); }
+
+    /** One bounded public display invocation; never receipt reuse or locked admission. */
+    public function displayBatch(array $queries): array
+    { return $this->load($queries, Context::Public, false, true); }
+
+    private function load(array $queries, Context $context, bool $lock, bool $display = false): array
     {
+        if ($display && DB::transactionLevel() !== 0) { throw new \LogicException('Display requires unlocked reads.'); }
         $lock = $lock || $context === Context::Locked;
         if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Locked reads require caller native locks and transaction.'); }
         if ($queries === [] || !array_is_list($queries) || count($queries) > 500) { throw new \InvalidArgumentException('Invalid offer batch.'); }
@@ -57,7 +65,7 @@ final class OfferReader
             foreach ($queries as $i => $query) {
                 if ($query->binding->serverId !== $id) { continue; }
                 ($this->authorize)($query, $context);
-                $readiness[$i] = $server->enabled && $server->extension === 'Domains'
+                $readiness[$i] = !$display && $server->enabled && $server->extension === 'Domains'
                     && ($this->ready)($binding, $server, $account, $query, $context);
             }
         }
@@ -70,6 +78,7 @@ final class OfferReader
         };
         $tlds = $fetch(UpgradeComparison::query('domains_tlds')->where($scope)->orderBy('id'))->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
         $prices = $fetch(UpgradeComparison::query('domains_prices')->where($scope)->orderBy('id'))->get()->groupBy(static fn ($p) => $p->server_id.':'.$p->tld);
+        if ($display) { return $this->displayRows($queries, $servers, $accounts, $defaults, $policies, $tlds, $prices); }
         $result = []; $evaluator = new Evaluator; $now = $this->clock->now();
         foreach ($queries as $i => $query) {
             $binding = $query->binding; $d = $defaults[$binding->serverId]; $batch = [];
@@ -91,6 +100,39 @@ final class OfferReader
                 }
                 $price = $rows->first(static fn ($p) => $p->action === $query->action && (int) $p->term === $query->term && $p->currency === $query->currency);
                 $batch[] = new ReadOffer($decision, $binding, $price, $context);
+            }
+            $result[] = $batch;
+        }
+        return $result;
+    }
+
+    private function displayRows(array $queries, $servers, $accounts, array $defaults, $policies, $tlds, $prices): array
+    {
+        $result = []; $ready = []; $evaluator = new Evaluator; $now = $this->clock->now();
+        foreach ($queries as $query) {
+            $b = $query->binding; $id = $b->serverId; $batch = [];
+            foreach ($query->tlds as $name) {
+                $batch[$name] = [];
+                try {
+                    $tld = $tlds[$id.':'.$name] ?? null; $rows = $prices[$id.':'.$name] ?? collect();
+                    if (!$tld || !$tld->catalogue_converted) { continue; }
+                    foreach ([$tld, ...$rows] as $row) {
+                        if ($row->account_fingerprint !== $b->fingerprint || $row->registrar_key !== $b->registrarKey) { throw new \DomainException('Offer binding changed.'); }
+                    }
+                    foreach (['register', 'renew', 'transfer'] as $action) {
+                        $seed = new Query($b, [$name], $action);
+                        $key = $id.':'.$action;
+                        $ready[$key] ??= $servers[$id]->enabled && $servers[$id]->extension === 'Domains'
+                            && ($this->ready)($b, $servers[$id], $accounts[$id], $seed, Context::Public);
+                        $snapshot = OfferState::snapshot($b, $tld, $defaults[$id], $policies[$name] ?? null, $rows, $ready[$key]);
+                        foreach ($action === 'register' ? range(1, 10) : [1] as $term) {
+                            $q = new Query($b, [$name], $action, $term); ($this->authorize)($q, Context::Public);
+                            $d = $evaluator->evaluate($snapshot, $q, Context::Public, $now);
+                            $row = $rows->first(static fn ($p) => $p->action === $action && (int)$p->term === $term && $p->currency === 'USD');
+                            $batch[$name][$action.':'.$term] = new ReadOffer($d, $b, $row, Context::Public);
+                        }
+                    }
+                } catch (\Throwable) { $batch[$name] = []; } // One malformed ending cannot poison its siblings.
             }
             $result[] = $batch;
         }

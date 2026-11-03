@@ -18,8 +18,8 @@ class Storefront
         private readonly NativeCatalogue $native, private readonly AccountBindings $bindings,
         private readonly CheckoutEligibility $eligibility, private readonly Clock $clock) {}
 
-    private function reader(?array $endings = null): StorefrontCatalogueRead|AcquisitionOffers
-    { return $this->catalogue() ?? new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings); }
+    private function reader(?array $endings = null): StorefrontCatalogueRead
+    { return new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings, $this->catalogue()); }
 
     private function cache(): StorefrontCatalogueCache
     { $offers = $this->catalogue(); return new StorefrontCatalogueCache($this->clock, $offers ? $offers->cacheFence(...) : null); }

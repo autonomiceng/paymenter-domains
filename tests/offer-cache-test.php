@@ -29,12 +29,17 @@ expect($before !== $offers->cacheFence(), 'Same binding with new credentials has
 same([['render' => 4]], $cache->remember($render), 'Credential rotation cannot reuse old public rows');
 $gate = new UpgradeGate; $gate->pause(); $gate->resume();
 same([['render' => 5]], $cache->remember($render), 'Generation advance fences an otherwise identical catalogue');
-// Facts can invalidate eligibility without changing retail. Never reuse the former display rows.
-$facts = DB::table('domains_tlds')->where('id', $tlds[0]->id)->value('catalogue_facts');
-DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_facts' => null]);
-same([['render' => 6]], $cache->remember($render), 'Facts loss fences cached public rows');
+// Real Writer fact commits advance the shared namespace without scanning every offer on cache hits.
+$clock->instant = $now->modify('+1 second');
+$ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com',
+    new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1, 3], 'renew' => [1], 'transfer' => [1]],
+        null, true, false, false, 'synthetic', $clock->now(), $now->modify('+1 day'))), $ports->readOffers($q, Context::Staff)[0]->revision);
+same([['render' => 6]], $cache->remember($render), 'Unknown registry facts fence cached public rows');
 commerceReject(static fn () => $storefront->offer('com', 'register', 1));
-DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_facts' => $facts]);
+$clock->instant = $now->modify('+2 seconds');
+$ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com',
+    new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1, 3], 'renew' => [1], 'transfer' => [1]],
+        [], true, false, false, 'synthetic', $clock->now(), $now->modify('+1 day'))), $ports->readOffers($q, Context::Staff)[0]->revision);
 $clock->instant = $now->modify('+31 seconds');
 same([['render' => 7]], $cache->remember($render), 'Display TTL still bounds the freshness lag');
 // A generation change during rendering must not poison the next request's namespace.

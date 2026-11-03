@@ -17,9 +17,11 @@ final class StorefrontCatalogueRead
     private array $priceRows = [];
     private array $defaultRules = [];
     private array $fees = [];
+    private ?array $offers = null;
 
     public function __construct(private readonly SellerPolicies $sellers, private readonly NativeCatalogue $native,
-        private readonly \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock, private readonly ?array $wanted = null) {}
+        private readonly \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock, private readonly ?array $wanted = null,
+        private readonly ?AcquisitionOffers $catalogue = null) {}
 
     private function prepare(string $ending): void
     {
@@ -61,10 +63,17 @@ final class StorefrontCatalogueRead
 
     /** Keep the saved-price fallback behind the same Live acceptance as a priced transfer. */
     public function transfersOn(string $ending): bool
-    { return $this->ending($ending)['transfersOn']; }
+    {
+        if ($this->catalogue) { try { $this->offer($ending, 'transfer', 1); return true; } catch (\DomainException) { return false; } }
+        return $this->ending($ending)['transfersOn'];
+    }
 
     public function offer(string $ending, string $action, int $term): array
     {
+        if ($this->catalogue) {
+            $this->offers ??= $this->catalogue->display($this->wanted ?? [$ending]);
+            return $this->offers[$ending][$action.':'.$term] ?? throw new \DomainException('Offer unavailable.');
+        }
         extract($this->ending($ending));
         $key = $policy->server_id.':'.$policy->account_fingerprint.':'.$ending.':'.$action;
         if (!array_key_exists($key, $this->actions)) {

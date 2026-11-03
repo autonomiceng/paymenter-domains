@@ -63,6 +63,49 @@ final class AcquisitionOffers
     public function validate(SaleSelection $selection, bool $locked = false): void
     { $this->load([$selection], $locked, true); }
 
+    /** Per-invocation display only. Shared evaluator and batched native mapping, never cart authority. */
+    public function display(array $endings): array
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Display requires unlocked reads.'); }
+        $policies = SalesPolicy::whereIn('tld', $endings)->get();
+        $ids = $policies->pluck('server_id')->filter()->unique();
+        $accounts = Account::whereIn('server_id', $ids)->get()->keyBy('server_id');
+        $tlds = Tld::whereIn('server_id', $ids)->whereIn('tld', $endings)->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
+        $native = $this->native->displayBatch($tlds->all()); $generation = UpgradeGate::generation();
+        $result = [];
+        foreach ($policies->groupBy('server_id') as $id => $group) {
+            try {
+                $b = CatalogueAcceptances::binding($accounts[$id]);
+                $credential = $this->bindings->offerCredentialRevision($b);
+                foreach (array_chunk($group->pluck('tld')->all(), 500) as $names) {
+                    foreach ($this->ports->displayBatch([new Query($b, $names, 'register')])[0] as $name => $rows) {
+                        $tld = $tlds[$id.':'.$name] ?? null;
+                        foreach ($rows as $key => $row) {
+                            if ($key === 'renew:1') { continue; }
+                            try {
+                                $price = $row->price(); $annual = $rows['renew:1']->price();
+                                $action = $price->action; $term = $price->term;
+                                $product = $native[$tld->id][$action]['product'] ?? null;
+                                $plan = $native[$tld->id][$action]['plans'][$term] ?? null;
+                                if (!$product || !$plan || $product->stock !== null) { continue; }
+                                $usd = $plan->prices->where('currency_code', 'USD')->sole();
+                                if (RetailLine::decimal($usd->price) !== $price->retail || RetailLine::decimal($usd->setup_fee) !== '0.00') { continue; }
+                                $revision = $row->decision->revision;
+                                $s = new SaleSelection($name, $b->serverId, $b->registrarKey, $b->fingerprint,
+                                    $revision->selection, $action, $term, 'USD', $price->id, $price->revision,
+                                    ['generation' => $generation, 'credential' => $credential, 'revision' => get_object_vars($revision),
+                                        'retail' => $price->retail, 'renewal' => $annual->retail]);
+                                $result[$name][$key] = ['selection' => $s, 'product' => $product, 'plan' => $plan,
+                                    'price' => Storefront::money($price->retail), 'renew' => Storefront::money($annual->retail)];
+                            } catch (\Throwable) { /* This ending/term is unavailable; keep healthy siblings. */ }
+                        }
+                    }
+                }
+            } catch (\Throwable) { /* Missing/disabled/invalid account withdraws only its own endings. */ }
+        }
+        return $result;
+    }
+
     private function load(array $selections, bool $locked, bool $expected): array
     {
         if (!$selections || count($selections) > 250) { throw new \DomainException('Invalid acquisition batch.'); }
@@ -108,21 +151,19 @@ final class AcquisitionOffers
         return $copy;
     }
 
-    /** Display caches are hints only. Include credential/activation and unpublished changes too. */
+    /** Writer commits advance the shared display revision (including pending publication/facts).
+     * Hits read account state only; raw unrevisioned offer maintenance retains the display TTL bound.
+     * Encrypted credential/enrollment/settings bytes fence rotation even when the account is unavailable. */
     public function cacheFence(): string
     {
-        $credentials = []; $ids = SalesPolicy::pluck('server_id')->filter()->unique()->all();
-        foreach (Account::whereIn('server_id', $ids)->orderBy('server_id')->get() as $account) {
-            try { $credentials[] = $this->bindings->offerCredentialRevision(CatalogueAcceptances::binding($account)); }
-            catch (\Throwable) { $credentials[] = 'unavailable:'.$account->server_id; }
-        }
+        $ids = SalesPolicy::distinct()->pluck('server_id')->filter()->all();
         $rows = []; $servers = (new \App\Models\Server)->getTable();
-        foreach (['domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices', $servers, 'settings'] as $table) {
+        foreach (['domains_accounts', $servers, 'settings'] as $table) {
             $query = DB::table($table);
             if ($table === 'settings') { $query->where('settingable_type', (new \App\Models\Server)->getMorphClass())->whereIn('settingable_id', $ids); }
-            elseif ($table !== 'domains_sales_policies') { $query->whereIn($table === $servers ? 'id' : 'server_id', $ids); }
+            else { $query->whereIn($table === $servers ? 'id' : 'server_id', $ids); }
             $rows[] = $query->orderBy('id')->get()->map(static fn ($r) => (array)$r)->all();
         }
-        return hash('sha256', OfferState::json([UpgradeGate::generation(), $credentials, $rows]));
+        return hash('sha256', OfferState::json([UpgradeGate::generation(), $rows]));
     }
 }
