@@ -68,7 +68,7 @@ final class FreshInstallation
     private static function tables(): array
     {
         $prefix = DB::connection()->getTablePrefix(); $tables = [];
-        foreach (Schema::getTableListing() as $table) {
+        foreach (Schema::getTableListing(null, false) as $table) {
             if (str_starts_with($table, $prefix.'domains_')) { $tables[] = substr($table, strlen($prefix)); }
         }
         sort($tables); return $tables;
@@ -77,7 +77,8 @@ final class FreshInstallation
     private static function empty(bool $new = false): void
     {
         if (Server::where('extension','Domains')->exists()
-            || Setting::where('key','like','domains%')->where('key','!=',UpgradeGate::KEY)->exists()
+            || Setting::where('key','like','domains%')->where(static fn ($q) => $q->where('key','!=',UpgradeGate::KEY)
+                ->orWhereNotNull('settingable_type')->orWhereNotNull('settingable_id'))->exists()
             || $new && NotificationTemplate::where('key','like','domains%')->exists()) {
             throw new \DomainException('Retained Domains settings or identity refuse fresh initialization. Restore and verify installation history.');
         }
