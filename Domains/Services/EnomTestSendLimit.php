@@ -22,10 +22,8 @@ final class EnomTestSendLimit
     public const PER_DAY='domains.enom_test_sends_per_day';
     public const PER_MINUTE='domains.enom_test_sends_per_minute';
     /** @return array{day:?int,minute:?int} null when the setting is invalid */
-    public static function limits(): array
-    { return ['day'=>self::setting(self::PER_DAY,1000),'minute'=>self::setting(self::PER_MINUTE,60)]; }
-    private static function setting(string $key,int $default): ?int
-    { $value=config($key,$default);return is_int($value)&&$value>=0&&$value<=100000?$value:null; }
+    public static function limits(string $uid=''): array
+    { return ApiCallLimits::read(Environment::Test,$uid); }
     /** The saved login, or null when it is missing or cannot be decrypted. */
     public static function login(Account $account): ?string
     { try{$uid=$account->stable_identity;return is_string($uid)&&$uid!==''?$uid:null;}catch(\Throwable){return null;} }
@@ -37,7 +35,7 @@ final class EnomTestSendLimit
         try {
             // Inside an outer transaction a rollback could refund the attempt.
             OperationClaims::outside();
-            ['day'=>$perDay,'minute'=>$perMinute]=self::limits();
+            ['day'=>$perDay,'minute'=>$perMinute]=self::limits($uid);
             if($perDay===null||$perMinute===null){throw new EnomTestCallLimit('bad_setting');}
             if(!$perDay||!$perMinute||$uid===''||!preg_match('/^[A-Za-z_]{1,32}$/D',$command)){throw new EnomTestCallLimit;}
             $account=self::account($uid);
@@ -62,7 +60,7 @@ final class EnomTestSendLimit
     /** @return array{day:?int,day_limit:?int,minute:?int,minute_limit:?int} counts are null when unreadable */
     public static function usage(string $uid): array
     {
-        ['day'=>$perDay,'minute'=>$perMinute]=self::limits();
+        ['day'=>$perDay,'minute'=>$perMinute]=self::limits($uid);
         try {
             $now=self::now();$sends=fn(int $seconds)=>DB::table(EnomTestSendLimitSchema::SENDS)->where('account',self::account($uid))->where('sent_at','>',$now-$seconds)->count();
             [$day,$minute]=[$sends(86400),$sends(60)];

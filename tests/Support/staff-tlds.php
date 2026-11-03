@@ -38,7 +38,7 @@ function staffSetupActions(): array
 /** No TLD/settings button: request answers belong to requests; price publication/defaults are choices in Edit prices. */
 function staffNoButtonActions(): array
 {
-    return ['activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review'];
+    return ['call_limits','activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review'];
 }
 
 /** Pin the engine clock, as staff actions read it for cost freshness. */

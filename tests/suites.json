@@ -378,9 +378,11 @@
     "tests/storefront-transfer-offers-test.php",
     "tests/namesilo-fingerprint-reset-test.php",
     "tests/staff-alert-visibility-test.php",
+    "tests/staff-navigation-badges-test.php",
     "tests/storefront-cart-handoff-test.php",
     "tests/storefront-cart-replace-test.php",
     "tests/enom-test-send-limit-test.php",
+    "tests/api-call-limit-form-test.php",
     "tests/live-reservations-test.php",
     "tests/enom-send-limit-upgrade-test.php",
     "tests/enom-send-limit-unsent-writes-test.php",
@@ -394,7 +396,8 @@
     "tests/transfer-watch-daily-test.php",
     "tests/transfer-watch-recovery-test.php",
     "tests/sell-automation-test.php",
-    "tests/management-glue-namesilo-test.php"
+    "tests/management-glue-namesilo-test.php",
+    "tests/menu-registrars-quiet-test.php"
   ],
   "ui": [],
   "runner": [
