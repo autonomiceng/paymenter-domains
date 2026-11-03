@@ -47,7 +47,8 @@ final class Writer implements Catalogue
         });
     }
 
-    /** One reviewed batch, with the complete shared prefix locked before any row mutation. */
+    /** One reviewed batch, with the complete shared prefix locked before any row mutation.
+     * @return array{rows:array<string,Revision>,failures:array<string,string>} */
     public function reviewed(StaffSettingsReview $review, array $entries, \Closure $stamp): array
     {
         if (DB::transactionLevel() !== 0 || count($entries) < 1 || count($entries) > 25) { throw new \LogicException('Reviewed batches require 1 to 25 commands and an outer transaction.'); }
@@ -84,34 +85,38 @@ final class Writer implements Catalogue
             DB::table('settings')->where('settingable_type', (new Server)->getMorphClass())
                 ->whereIn('settingable_id', Server::where('extension', 'Domains')->pluck('id'))->orderBy('id')->lockForUpdate()->get();
             $review->check(false, $stamp);
-            // Check every supplied revision before this batch changes a shared default or selection.
-            foreach ($entries as [$command, $expected]) {
+            // Every revision must match, even on rows whose business intent is refused.
+            $accepted = $refused = [];
+            foreach ($entries as $i => [$command, $expected]) {
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
                 $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
                 OfferState::revision($t, $d, DB::table('domains_sales_policies')->where('tld', $t->tld)->first())->requireMatch($expected);
-                $this->validateIntent($command, $t, $d);
+                $reason = $this->intentRefusal($command, $t, $d);
                 if ($command->kind === 'override' && in_array('renew', $command->intent->stops, true)
                     && \Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id', $t->server_id)->where('tld', $t->tld)
                         ->where('account_fingerprint', $t->account_fingerprint)->whereNotNull('reservation_name')->lockForUpdate()->exists()) {
-                    throw new \DomainException('Retained holders require annual renewal support.');
+                    $reason = 'Retained holders require annual renewal support.';
                 }
+                if ($reason !== null) { $refused[$command->tld()] = $reason; } else { $accepted[$i] = true; }
             }
+            if (!$accepted) { throw new \DomainException(reset($refused)); }
             $results = [];
             foreach ($entries as $i => [$command, $expected]) {
+                if (!isset($accepted[$i])) { continue; }
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
                 $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
                 $current = OfferState::revision($t, $d, DB::table('domains_sales_policies')->where('tld', $t->tld)->first());
                 $results[$command->tld()] = $this->write($command, $current, $groups[$i], $native, true);
             }
-            $review->record('completed', ['rows' => array_keys($results)]);
-            return $results;
+            $review->record('completed', ['rows' => array_keys($results), 'failures' => $refused]);
+            return ['rows' => $results, 'failures' => $refused];
         });
     }
 
     /** Intent may narrow unknown facts. Widening needs fresh, independent provider/registry evidence. */
-    private function validateIntent(Edit $edit, Tld $t, array $defaults): void
+    private function intentRefusal(Edit $edit, Tld $t, array $defaults): ?string
     {
-        if ($edit->kind !== 'override') { return; }
+        if ($edit->kind !== 'override') { return null; }
         $old = OfferState::decode($t->catalogue_intent); $new = $edit->intent;
         $sell = $new->sell ?? ($defaults['defaultSell'] ?? true);
         $longest = $new->longest ?? ($defaults['defaultLongest'] ?? 1);
@@ -120,14 +125,15 @@ final class Writer implements Catalogue
             || $longest > ($old['longest'] ?? $defaults['defaultLongest'] ?? 1)
             || $transfer && !($old['transfers'] ?? $defaults['defaultTransfers'] ?? false)
             || array_diff($old['stops'] ?? [], $new->stops) !== [];
-        if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { throw new \DomainException('This TLD is hidden.'); }
-        if (!$widen) { return; }
+        if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
+        if (!$widen) { return null; }
         $facts = OfferState::facts($t->catalogue_facts);
         if (!$facts || !$facts->fresh($this->clock->now()) || !\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($edit->binding()->registrarKey,$t->tld,$facts->registryFields) || $facts->renewalSafe !== true
             || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false
             || !in_array(1, $facts->terms['renew'] ?? [], true)
             || $sell && !in_array($longest, $facts->terms['register'] ?? [], true)
-            || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { throw new \DomainException('Explicit verified widening required.'); }
+            || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'Explicit verified widening required.'; }
+        return null;
     }
 
     private function write(Command $command, Revision $expectedRevision, array $seeds, ?array $native, bool $reviewed = false): Revision

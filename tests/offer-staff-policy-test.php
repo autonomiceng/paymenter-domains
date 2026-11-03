@@ -76,7 +76,20 @@ $run('import');same(1,$sync,'Reviewed import only schedules the future worker');
 $copy=Tld::find($id)->getRawOriginal();unset($copy['id']);DB::table('domains_tlds')->insert([...$copy,'tld'=>'org']);
 $audits=count(Review::historyRows(Server::find($binding->serverId)));$batch=$run('acceptance',['sell'=>['choices'=>['com'=>'skip','org'=>'skip']]]);
 same(2,count($batch['rows']),'One batch applies both valid identities');same($audits+1,count(Review::historyRows(Server::find($binding->serverId))),'Batch consumes one review/audit');
-$org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();$d=OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
+$org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();
+// Existing rows: fresh .com can widen while expired .org is returned as a business refusal.
+$run('seller',['seller'=>(string)$binding->serverId,'register'=>true,'transfer'=>true],$id);
+$f=OfferState::facts($org->catalogue_facts);$expired=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($f->terms,$f->registryFields,$f->renewalSafe,$f->requiresNameservers,$f->autoRenewOnly,$f->source,$now->modify('-2 days'),$now->modify('-1 day'));
+DB::table('domains_tlds')->where('id',$org->id)->update(['catalogue_facts'=>OfferState::encodeFacts($expired)]);
+$audits=count(Review::historyRows(Server::find($binding->serverId)));$batch=$run('acceptance',['sell'=>['choices'=>['com'=>'sell','org'=>'sell']]]);
+same(['com'],array_keys($batch['rows']),'Valid existing sibling still applies');same(['.org'],$batch['failed'],'Refused existing ending is returned');same('Explicit verified widening required.',$batch['failures']['org'],'Business refusal includes its reason');
+same(false,OfferState::decode($org->fresh()->catalogue_intent)['sell'],'Refused existing row keeps its saved choice');expect($storefront->offer('com','register',1)!==null,'Fresh sibling reaches the public offer');same($audits+1,count(Review::historyRows(Server::find($binding->serverId))),'Partial business result consumes one reviewed audit');
+// A corrupt later row is an integrity failure: even the earlier valid projection must roll back.
+$bad=\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$binding->serverId)->where('tld','com')->first()->getRawOriginal();unset($bad['id']);$badId=DB::table('domains_prices')->insertGetId([...$bad,'tld'=>'org','account_fingerprint'=>str_repeat('0',64)]);
+$state=static fn()=>[StaffCommands::stamp($binding->serverId),count(Review::historyRows(Server::find($binding->serverId))),DB::table(Review::KEYS)->count(),json_encode($native->display(Tld::find($id)),JSON_THROW_ON_ERROR)];$before=$state();
+try{$run('acceptance',['sell'=>['choices'=>['com'=>'skip','org'=>'skip']]]);expect(false,'Corrupt projection batch refused');}catch(DomainException $e){same('Price binding changed.',$e->getMessage(),'Later row fails the publication integrity check');}
+same($before,$state(),'Later integrity failure rolls back both intents, native projection, audit and consumed ticket');DB::table('domains_prices')->where('id',$badId)->delete();
+$d=OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
 $entries=[];foreach([Tld::find($id),$org] as $t){$entries[]=[\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:false)),OfferState::revision($t,$d,DB::table('domains_sales_policies')->where('tld',$t->tld)->first())];}
 DB::table('domains_tlds')->where('id',$org->id)->increment('catalogue_revision');$r=$review('acceptance');$before=StaffCommands::stamp($binding->serverId);$audits=count(Review::historyRows(Server::find($binding->serverId)));
 commerceReject(fn()=>$writer->reviewed($r,$entries,static fn()=>StaffCommands::stamp($binding->serverId)));same($before,StaffCommands::stamp($binding->serverId),'Second stale expected revision refuses before either batch write');same($audits,count(Review::historyRows(Server::find($binding->serverId))),'Stale batch has no audit');
