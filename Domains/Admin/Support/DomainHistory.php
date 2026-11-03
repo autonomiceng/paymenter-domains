@@ -7,7 +7,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
-/** One domain's history: registrar requests, staff renewal changes and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
+/** One domain's history: registrar requests, staff releases and renewal changes, and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
 final class DomainHistory
 {
     private const HOLDINGS = ['stop' => 'Renewal stopped', 'resume' => 'Renewal resumed', 'reprice' => 'Renewal price updated', 'resume_observation' => 'Sync resumed'];
@@ -15,6 +15,15 @@ final class DomainHistory
     public static function entries(Domain $domain): array
     {
         $rows=DomainQueries::operations($domain)->orderByDesc('id')->get()->all();
+        foreach ($rows as $op) {
+            try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }
+            if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
+            foreach ($history as $i=>$action) {
+                if (!is_array($action)||($action['action']??null)!=='release'||($action['phase']??null)!=='completed') { continue; }
+                $rows[]=['__key'=>'release-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>'Hold released',
+                    'sub'=>null,'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
+            }
+        }
         $holdings=[]; $audits=[];
         try { $holdings=$domain->renewal_policy['staff_holdings']??[]; } catch (\Throwable) {}
         $holdings=is_array($holdings)&&array_is_list($holdings)?array_filter($holdings,'is_array'):[];
