@@ -54,7 +54,7 @@ final class StaffCommands
         $d=OfferState::decode($account->catalogue_defaults);$entries=[];$failed=[];
         foreach($names as $name){if(!$rows->contains('tld',$name)){$failed[$name]='Converted TLD required.';}}
         if($defaults){
-            $fee=$d['card_fee']??CardFee::read($review->serverId);$intent=$this->intent($d);$rule=$d['pricing_rule']??PricingRule::DEFAULT;
+            $fee=$d['card_fee']??CardFee::DEFAULT;$intent=$this->intent($d);$rule=$d['pricing_rule']??PricingRule::DEFAULT;
             if(isset($sell['rule'])){
                 $v=\Paymenter\Extensions\Servers\Domains\Services\SellRule::validate($sell['rule']);
                 $intent=new Intent($v['mode']!=='only',$v['years'],$v['transfers'],$v['max_cost']);
@@ -87,7 +87,7 @@ final class StaffCommands
         $result=$this->writer->reviewed($review,$entries,static fn()=>self::stamp($review->serverId,$review->tldId));
         if($defaults){($this->wake)($binding);}
         if($review->action==='import'){if($this->sync===null){throw new \LogicException('Offer sync composition required.');}($this->sync)($binding);}
-        return ['published'=>$defaults?0:count($result),'failed'=>array_map(static fn($name)=>'.'.$name,array_keys($failed)),'rows'=>$result,'failures'=>$failed];
+        return ['pending'=>$defaults,'published'=>$defaults?0:count($result),'failed'=>array_map(static fn($name)=>'.'.$name,array_keys($failed)),'rows'=>$result,'failures'=>$failed];
     }
     private function revision(Tld $t,array $d): Revision
     {return OfferState::revision($t,$d,DB::table('domains_sales_policies')->where('tld',$t->tld)->first());}
@@ -96,7 +96,7 @@ final class StaffCommands
     private function rule(array $data,array $defaults,int $server): array
     {return PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
         'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null],
-        ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>$defaults['card_fee']??CardFee::read($server)]:[])]);}
+        ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>$defaults['card_fee']??CardFee::DEFAULT]:[])]);}
     private function row($binding,Tld $t,array $raw,array $sell,?array $rule): Edit
     {
         $name=$t->tld;$choice=$sell['choices'][$name]??null;

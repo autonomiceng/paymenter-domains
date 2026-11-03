@@ -23,12 +23,12 @@ $nativeIds=Product::orderBy('id')->pluck('id')->all();$calls=$reads->calls;
 $before=count(Review::historyRows(Server::find($binding->serverId)));
 $writes->run($review('default_rule'),['mode'=>'fixed','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00'],$now);
 same($before+1,count(Review::historyRows(Server::find($binding->serverId))),'Defaults use one reviewed audit');same(1,$wake,'One bounded local wake');
-same(null,$storefront->offer('com','register',1),'Old publication immediately pending');
+commerceReject(fn()=>$storefront->offer('com','register',1));
 $routed->publish($id,$now);same('$20.00',$storefront->offer('com','register',1)['price'],'Native entry delegates to Writer before a transaction');
-$run('card_fee',['fee_percent'=>'3.00','fee_fixed'=>'0.30']);same(2,$wake,'Fee wakes local publication');same(null,$storefront->offer('com','register',1),'Fee revision invalidates publication even for a fixed rule');
+$run('card_fee',['fee_percent'=>'3.00','fee_fixed'=>'0.30']);same(2,$wake,'Fee wakes local publication');commerceReject(fn()=>$storefront->offer('com','register',1));
 $routed->publish($id,$now);same($nativeIds,Product::orderBy('id')->pluck('id')->all(),'Repeated native publication preserves product identities');same($calls,$reads->calls,'Defaults, fees and republish never resolve provider');
 $run('acceptance',['sell'=>['choices'=>['com'=>'skip','missing'=>'sell']]]);
-same(null,$storefront->offer('com','register',1),'Skip stops public sales');
+commerceReject(fn()=>$storefront->offer('com','register',1));
 same('20.00',$source->matrix(collect([Tld::find($id)]),1)['rows'][0]['prices']['register']['price'],'Stopped prices remain visible to staff');
 $result=$run('acceptance',['sell'=>['choices'=>['com'=>null,'missing'=>'sell'],'terms'=>['com'=>['longest'=>3,'transfer'=>false]]]]);
 same(['.missing'],$result['failed'],'Bulk keeps explicit missing-row failures');same('$20.00',$storefront->offer('com','register',1)['price'],'Use default restores intent');
@@ -38,7 +38,11 @@ config(['domains.hidden_endings'=>['com']]);commerceReject(fn()=>$run('acceptanc
 $holding=Domain::create(['server_id'=>$binding->serverId,'registrar_key'=>$binding->registrarKey,'account_fingerprint'=>$binding->fingerprint,'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $retained=Tld::find($id)->catalogue_retained_annual_retail;
 commerceReject(fn()=>$run('tld_settings',['enabled'=>false,'max_years'=>1],$id));same($retained,Tld::find($id)->catalogue_retained_annual_retail,'Holder stop refusal preserves annual retail');
-$run('seller',['seller'=>'','register'=>false,'transfer'=>false],$id);same(null,$storefront->offer('com','register',1),'Seller deselection stops new orders');same($binding->serverId,$holding->fresh()->server_id,'Seller edits preserve holder account');
+$run('tld_settings',['retained_annual_retail'=>'23.00'],$id);same('23.00',Tld::find($id)->catalogue_retained_annual_retail,'Typed retained annual retail edit');
+$run('seller',['seller'=>'','register'=>false,'transfer'=>false],$id);commerceReject(fn()=>$storefront->offer('com','register',1));same($binding->serverId,$holding->fresh()->server_id,'Seller edits preserve holder account');
 $run('import');same(1,$sync,'Reviewed import only schedules the future worker');same($calls,$reads->calls,'Import authorization never reads provider');
+// A non-catalogue setting can compose a trusted current-mode guard without being forced through legacy().
+$r=new Review($actor->id,$binding->serverId,null,'unpaid_hold',Review::ticket($actor->id,$binding->serverId,null,'unpaid_hold',Review::stamp($binding->serverId,null)),'Synthetic non-catalogue review',static function(){same(1,DB::transactionLevel(),'Non-catalogue guard under review locks');});
+$writes->run($r,['confirmed'=>true,'minutes'=>90],$now);same(90,\Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::minutes($binding->serverId),'Normal settings retain reviewed flow');
 $gate=new UpgradeGate;$gate->pause();$before=StaffCommands::stamp($binding->serverId);commerceReject(fn()=>$run('publish',[],$id));same($before,StaffCommands::stamp($binding->serverId),'Paused reviewed publication writes nothing');$gate->resume();
 $nativeSuccessful=true;echo "Offer staff reverse policy: ok\n";

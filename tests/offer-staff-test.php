@@ -25,6 +25,11 @@ $rule=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'12.00
 $before=count(Review::historyRows(Server::find($binding->serverId)));$readsBefore=$reads->calls;
 $r=$review('override',$id);$staff->run($r,$rule);
 same($before+1,count(Review::historyRows(Server::find($binding->serverId))),'One reviewed edit records one audit');
+$source=new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock);
+$tableRows=[];$table=new \Paymenter\Extensions\Servers\Domains\Admin\Support\SellTable([$binding->serverId=>$binding],1,true,static function()use(&$tableRows){return $tableRows;},false,$source);
+$tableRows=$table->rows('com')->get()->all();same('12.00',$table->cell($tableRows[0],'register','price')['text'],'Actual reviewed edit reaches Staff table before public checkout');
+$list=new class extends \Paymenter\Extensions\Servers\Domains\Services\PriceList {public $source;protected function catalogue():?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue{return $this->source;}};$list->source=$source;
+expect(str_contains($list->csv(),'12.00'),'Same reviewed edit reaches CSV');
 same('$12.00',$storefront->offer('com','register',1)['price'],'Reviewed edit reaches the real public offer');
 same($readsBefore,$reads->calls,'Reviewed pricing and projection resolve no provider');
 $user=commerceUser();$cart=commerceCart($user);$offer=$storefront->offer('com','register',1);

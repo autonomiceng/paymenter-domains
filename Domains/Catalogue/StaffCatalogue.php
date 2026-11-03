@@ -15,7 +15,38 @@ use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,
 final class StaffCatalogue
 {
     public static function routed(): ?self { return CallerRouting::legacy(static fn()=>null); }
-    public function __construct(private readonly CallerPorts $ports,private readonly Clock $clock) {}
+    public function __construct(private readonly CallerPorts $ports,private readonly Clock $clock,private readonly ?OfferWork $work=null,private readonly ?\Closure $readable=null) {}
+    public function readable(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $b): bool
+    {Staff::requireView();return $this->readable!==null&&($this->readable)($b);}
+    public function progress(int $server): array
+    {
+        Staff::requireView();
+        return $this->work?->status(CatalogueAcceptances::binding(Account::where('server_id',$server)->sole()))??['state'=>'idle'];
+    }
+    /** Same sale decisions as the page; bounded chunks, no legacy acceptance/price-fill reads. */
+    public function summary(int $server,int $years): array
+    {
+        $costs=Staff::requireView()->costs;$count=0;$highest=null;
+        Tld::where('server_id',$server)->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use(&$count,&$highest,$years,$costs):void {
+            foreach($this->page($rows) as $s){$offer=$s['offers']['register:'.$years]??null;
+                $sold=$costs?$offer?->decision->available:collect($s['prices'])->contains(fn($p)=>$p['action']==='register'&&$p['term']===$years&&$p['flags']===[]);
+                if(!$sold){continue;}$count++;
+                if($costs){$annual=bcdiv($offer->observation()->total,(string)$years,4);if($highest===null||bccomp($annual,$highest,4)>0){$highest=$annual;}}
+            }
+        });
+        return ['count'=>$count,'highest'=>$highest,'filled'=>$this->progress($server)['succeeded_at']??null];
+    }
+    /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
+    public function preview(Tld $t,array $rule): array
+    {
+        $out=[];
+        foreach($this->snapshots(collect([$t]))[$t->id]['offers'] as $offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
+            $new=Retail::quote($cost,$rule);$under=$new!==null&&$cost->total!==null&&!PricingRule::covers($new,$cost->total);
+            $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$cost->total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($this->clock->now()),
+                'hold'=>$d->action==='renew'?null:($under?'below_cost':$d->reason),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
+        }
+        return $out;
+    }
     public function rows(array $bindings,?string $focus): \Illuminate\Database\Eloquent\Builder
     {
         $costs=Staff::requireView()->costs;
@@ -28,10 +59,20 @@ final class StaffCatalogue
         $extract="json_extract(p.catalogue_observation, '$.total')";
         if(DB::getDriverName()!=='sqlite'){$extract='json_unquote('.$extract.')';}
         $q->select('domains_tlds.id','domains_tlds.server_id','domains_tlds.account_fingerprint','domains_tlds.tld')
-            ->selectRaw('null as choice,null as longest,null as transfer,null as renew_cost,null as transfer_cost,null as high_cost,null as prices,null as read_at,1 as listed')
+            ->selectRaw('null as renew_cost,null as transfer_cost,null as high_cost,null as prices,null as read_at,1 as listed')
+            ->selectRaw("case json_extract(domains_tlds.catalogue_intent, '$.sell') when true then 'sell' when false then 'skip' else null end as choice")
+            ->selectRaw("json_extract(domains_tlds.catalogue_intent, '$.longest') as longest,json_extract(domains_tlds.catalogue_intent, '$.transfers') as transfer")
             ->selectRaw(($costs?'cast('.$extract.' as decimal(18,4))':'null').' as register_cost');
         return SellRow::query()->fromSub($q,'domains_sell_rows')->when($focus!==null,fn($q)=>$q->where('tld',$focus));
     }
+    public function setting(Tld $t,string $key): bool|int
+    {
+        Staff::requireView();$raw=OfferState::decode($t->catalogue_intent);$d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
+        return match($key){'min_years'=>1,'max_years'=>(int)($raw['longest']??$d['defaultLongest']??1),
+            'enabled'=>($raw['sell']??$d['defaultSell']??true)&&($raw['stops']??[])!==['register','renew','transfer'],
+            default=>!in_array($key,$raw['stops']??[],true)&&($key!=='transfer'||($raw['transfers']??$d['defaultTransfers']??false))};
+    }
+    public function own(Tld $t): bool {Staff::requireView();return isset(OfferState::decode($t->catalogue_intent)['pricing_rule']);}
     public function rule(int $server): array
     {
         $grants=Staff::requireView();$d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);
@@ -50,6 +91,12 @@ final class StaffCatalogue
     {Staff::requireView();$d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);return CardFee::validate($d['card_fee']??CardFee::DEFAULT);}
     /** Each call is at most one table page. Same evaluator and observation evidence as the public adapter. */
     public function page(Collection $tlds): array
+    {
+        $out=$this->snapshots($tlds);
+        if(!Staff::requireView()->costs){foreach($out as &$row){$row['offers']=[];}}
+        return $out;
+    }
+    private function snapshots(Collection $tlds): array
     {
         $grants=Staff::requireView();if($tlds->count()>100){throw new \DomainException('Staff page exceeds 100 rows.');}
         if($tlds->isEmpty()){return [];}
@@ -80,7 +127,7 @@ final class StaffCatalogue
             $out[$t->id]=['prices'=>$prices,'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
-                'own'=>isset($raw['pricing_rule']),'offers'=>$grants->costs?$all:[],'facts'=>$facts];
+                'own'=>isset($raw['pricing_rule']),'offers'=>$all,'facts'=>$facts];
         }
         return $out;
     }

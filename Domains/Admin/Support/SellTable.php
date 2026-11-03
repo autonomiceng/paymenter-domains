@@ -162,6 +162,7 @@ final class SellTable
     /** The saved prices for this view. Staff without costs never read them. */
     public function saved(): array
     {
+        if($this->catalogue!==null&&!Staff::requireView()->costs){return ['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];}
         if($this->savedRead!==null){return $this->savedRead;}
         if($this->catalogue!==null){$this->facts();return $this->savedRead=$this->costs?$this->catalogue->matrix(collect($this->rowTlds),$this->years):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];}
         return $this->savedRead=$this->costs&&$this->bindings!==[]?app(PriceList::class)->read($this->years,'all',$this->scope()):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];

@@ -38,10 +38,21 @@ $count=count(DB::getQueryLog());DB::disableQueryLog();
 same(599,$pager->total(),'Converted identities paginate without shadow sales rows');expect($count<100,'Bounded 25-row Staff page, got '.$count.' queries');
 same($before,SellRow::count(),'Staff reads never create SellRows');same(0,$writes,'Staff table/price reads have no writes');
 same(1,$table->rows('com')->count(),'Focused ending remains a query filter');same(598,$table->rows(null)->where('tld','like','scale%')->count(),'Search remains a query filter');
+// Render the real Filament table against the converted query, including search, filters and paging.
+$GLOBALS['staffSource']=$source;
+class OfferStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell
+{protected function catalogue():?StaffCatalogue{return $GLOBALS['staffSource'];}}
+\Livewire\Livewire::component('offer-staff-page',OfferStaffPage::class);
+$component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('What you sell')->assertSee('12.00');
+same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');
+$component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
+$component->searchTable('')->filterTable('no_cost');same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');
+$component->removeTableFilter('no_cost')->filterTable('country');same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);$redacted=$source->page(collect([$t->fresh()]));
 foreach($redacted[$t->id]['prices'] as $price){expect(!array_key_exists('cost',$price),'Revoked cost permission redacts snapshot');}
 $plain=new SellTable([$binding->serverId=>$binding],1,false,static fn()=>[],false,$source);
 same(null,$plain->rows('com')->first()->register_cost,'SQL presentation rows omit costs without permission');
+\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertDontSee('USD 6.00')->assertActionHidden('csv');
 try{$list->csv();expect(false,'CSV requires current costs permission');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'CSV permission is fresh');}
 echo 'Staff page queries: '.$count."\n";
 $nativeSuccessful=true;echo "Offer staff reads: ok\n";

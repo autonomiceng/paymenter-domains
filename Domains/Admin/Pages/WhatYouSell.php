@@ -100,6 +100,7 @@ class WhatYouSell extends Page implements HasTable
     /** Only checks the account's saved setup. It never contacts the registrar. */
     private function hasReader(AccountBinding $binding): bool
     {
+        if(($catalogue=$this->catalogue())!==null){return $catalogue->readable($binding);}
         if(isset($this->readers[$binding->serverId])){return $this->readers[$binding->serverId];}
         try{return $this->readers[$binding->serverId]=app(PriceFill::class)->reader($binding)!==null;}catch(\Throwable){return $this->readers[$binding->serverId]=false;}
     }
@@ -163,7 +164,9 @@ class WhatYouSell extends Page implements HasTable
     public function syncNow(): void
     {
         if(!$this->canSync()||!$this->readable()){return;}
-        try{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),(int)$this->account);}
+        try{if($this->catalogue()!==null){$actor=(int)Auth::id();$server=(int)$this->account;
+            app(StaffSettingsWrites::class)->run(new Review($actor,$server,null,'import',Review::ticket($actor,$server,null,'import',$this->reviewStamp),''),[]);
+        }else{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),(int)$this->account);}}
         catch(\Throwable $error){
             Notification::make()->danger()->title("Couldn't start sync")->body(\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::isQueueRefusal($error)?$error->getMessage():'Check the registrar account under Registrars, then try again.')->send();return;
         }
@@ -204,13 +207,15 @@ class WhatYouSell extends Page implements HasTable
     {
         if($this->account===self::ALL){return $this->mayEdit()||$this->canSync()?'Choose one account to sync or edit.':null;}
         if(($binding=$this->binding())===null){return null;}
-        if($this->catalogue()!==null){return null;}
+        if(($catalogue=$this->catalogue())!==null){$snapshot=$catalogue->summary($binding->serverId,$this->years());}
         // For sale means the rule picks it and the account has accepted a registration this long. Renewals or transfers alone are not a sale.
-        $accepted=$this->reads()->accepted($binding->serverId);$years=$this->years();
+        if(!isset($snapshot)){$accepted=$this->reads()->accepted($binding->serverId);$years=$this->years();
         $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow $row)=>SellRule::decide($row,$this->rule())==='sell'&&in_array($years,$accepted[$row->tld]['register']??[],true));
-        $summary=$wanted->count().' '.($wanted->count()===1?'TLD':'TLDs').' for sale.';
-        if($this->canSeeCosts()&&($highest=$wanted->max('high_cost'))!==null){$summary.=' Highest cost USD '.number_format((float)$highest,2).' a year.';}
-        $filled=PriceFill::last($binding)?->filled_at;
+        }
+        $count=$snapshot['count']??$wanted->count();$highest=$snapshot['highest']??(isset($wanted)?$wanted->max('high_cost'):null);
+        $summary=$count.' '.($count===1?'TLD':'TLDs').' for sale.';
+        if($this->canSeeCosts()&&$highest!==null){$summary.=' Highest cost USD '.number_format((float)$highest,2).' a year.';}
+        $filled=isset($snapshot)?$snapshot['filled']:PriceFill::last($binding)?->filled_at;
         return new HtmlString(HelpHint::beside(e($summary),'Prices are checked before a TLD goes on sale. Orders must be on under Registrars. On Live, use Activate after reviewing setup and spending. Missing prices, unsupported registry details and prices below cost keep a TLD off.')
             .($filled===null?'':' Prices from '.view('domains::partials.moment',['at'=>CarbonImmutable::createFromTimestamp((int)$filled)])->render().'.'));
     }
@@ -241,12 +246,13 @@ class WhatYouSell extends Page implements HasTable
         // All accounts warns for each account that needs it, by name, with a way to that account.
         foreach($all?$this->bindings():array_filter([(int)$this->account=>$this->binding()]) as $server=>$binding){
             $name=$this->accounts()[$server]??'Registrar account #'.$server;
-            $state=$this->catalogue()!==null?null:PriceFill::last($binding);$readerFailed=$this->readerNeedsAttention($binding);
+            $progress=$this->catalogue()?->progress($binding->serverId);
+            $state=$progress===null?PriceFill::last($binding):(object)['filled_at'=>$progress['succeeded_at']??null,'failed_at'=>$progress['failed_at']??null];$readerFailed=$this->readerNeedsAttention($binding);
             if($readerFailed){
                 $components[]=Callout::make($all?'Check '.$name.' to sync prices':'Check the registrar account to sync prices')->warning()->columnSpanFull()
                     ->footer($button('Open registrar account',RegistrarAccount::getUrl(['account'=>$server])));
             }
-            if($this->catalogue()===null&&PriceFill::stale($state,app(Clock::class)->now()->getTimestamp())){
+            if($progress===null?PriceFill::stale($state,app(Clock::class)->now()->getTimestamp()):in_array($progress['state'],['retrying'],true)){
                 $components[]=Callout::make($all?'Prices for '.$name.' are out of date':'Prices are out of date')->warning()->columnSpanFull()
                     ->description(($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.SellTable::time((int)$state->filled_at).'. Those prices are still shown.').' We try again once a day. '
                         .($readerFailed?'Check the registrar account.':($all?'Show this account and use Sync prices to see what stopped the read.':'Use Sync prices to see what stopped the read.')))
