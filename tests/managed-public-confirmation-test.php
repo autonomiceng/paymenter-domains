@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Dns\{DnsQuery,DnsAnswer};
 use Paymenter\Extensions\Servers\Domains\Models\ManagedPublicObservation;
 use Paymenter\Extensions\Servers\Domains\Services\ManagedPublicWorkSchema;
-extract(managedFixture());$id=(int)$d->id;$uid=(int)$owner->id;$start=$time->now;
+$f=managedFixture();extract($f);expect($signals->enqueue($d->id,$owner->id),'Confirmation fixture enrolled');managedPlatformChoice($f);$id=(int)$d->id;$uid=(int)$owner->id;$start=$time->now;
 foreach(['example.com','www.example.com']as$hostName){foreach(['CNAME','A','AAAA']as$type){$q=new DnsQuery($hostName,$type);$fake->answers[$q->key()]=DnsAnswer::negative($q);}}
 $q=new DnsQuery('example.com','MX');$fake->answers[$q->key()]=DnsAnswer::negative($q);
 expect($signals->observe($id,$uid,'points'),'Both routing axes known external');

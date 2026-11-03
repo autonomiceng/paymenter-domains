@@ -38,7 +38,7 @@ expect(!$openAlert(),'Repeated reminder checks do not reopen the old warning');
 same($oldRow,$old->fresh()->getAttributes(),'Old request and its retirement audit stay in history');
 same($invoiceRow,$oldInvoice->fresh()->getAttributes(),'Old cancelled invoice stays in history');
 Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>ViewDomain::class])
-    ->assertSee('History')->assertSee('Request #'.$old->id)->assertSee('Renewal cancelled: not paid');
+    ->assertSee('Search changes')->assertSee('Request #'.$old->id)->assertSee('Renewal cancelled: not paid');
 
 // If the replacement is itself cancelled, it becomes the latest unpaid renewal again.
 $cycles->retireUnpaid($replacementOp->id);

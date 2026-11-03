@@ -1,7 +1,7 @@
 @if($explanations !== [])
     <x-filament::section heading="How prices are worked out" collapsible collapsed>
         <div class="domains-price-help">
-            <p>Each TLD uses its account's Default pricing, or Custom pricing set just for that TLD. Yearly prices are rounded first, then multiplied by the years.</p>
+            <p>Each TLD uses Default pricing, or Custom pricing set just for that TLD. Yearly prices are rounded first, then multiplied by the years.@if($this->getAction('default_pricing')?->isVisible()) <x-filament::link tag="button" wire:click="mountAction('default_pricing')">Edit Default pricing</x-filament::link>@endif</p>
             @foreach(collect($explanations)->groupBy('account') as $account => $rules)
                 <div>
                     <h3>{{ $account }}</h3>

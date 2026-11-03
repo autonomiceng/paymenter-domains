@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
+use Paymenter\Extensions\Servers\Domains\Services\DomainManagement;
 /** The client domain page: its one notice and the Renewal card rows, from the page DTOs alone. */
 final class DomainPage
 {
@@ -11,7 +12,8 @@ final class DomainPage
     public const TEAM_CHECK = 'Our team needs to check this domain. '.Missing::NO_ACTION;
     public static function checkHeld(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['recordCheckHeld'] ?? false); }
-    /** The one notice at the top of the page: text, tone and its one action, or null when nothing needs doing. */
+    /** The one notice at the top of the page: text, tone and its one action, or null when nothing needs doing.
+     * Amber (warn) means the customer has a step. Work that is ours reads blue (ours()), as Under review does. */
     public static function notice(OwnedDomain $d, ?string $support = null, ?DomainSummary $s = null): ?array
     {
         $setup = $d->actions['setup'] ?? null; $phase = $d->transfer['phase'] ?? null;
@@ -19,8 +21,8 @@ final class DomainPage
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
         $order = $d->order['state'] ?? null; $word = ($d->order['kind'] ?? null) === 'transfer' ? 'transfer' : 'registration';
         return match (true) {
-            $d->syncPaused => ['tone' => 'warn', 'text' => 'Sync paused: the demo registrar is off. Nameservers show when it resumes.', 'action' => $contact],
-            $d->setupPending => ['tone' => 'info', 'text' => 'We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', 'action' => $contact],
+            $d->syncPaused => self::ours('Sync paused: the demo registrar is off. Nameservers show when it resumes.', $contact),
+            $d->setupPending => self::ours('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', $contact),
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
             $order === 'cancelled' && isset($d->order['return']) => ['tone' => 'warn', 'text' => 'This order was cancelled. '.$d->order['return'], 'action' => $contact],
             $order === 'cancelled' && isset($d->order['credit']) => ['tone' => 'warn', 'text' => 'This order was cancelled. We added what you paid to account credit. You can apply it on an invoice.', 'action' => null],
@@ -34,14 +36,20 @@ final class DomainPage
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
             $order === 'paid' && isset($d->order['check']) => ['tone' => 'warn', 'text' => $d->order['check']['title'].'. '.$d->order['check']['body'], 'action' => $contact],
-            $order === 'paid' && !isset($d->order['next']) => ['tone' => 'info', 'text' => 'Paid. We’re finishing the '.$word.'. There’s nothing you need to do.', 'action' => $contact],
-            self::checkHeld($d) => ['tone' => 'warn', 'text' => 'We can’t read this domain’s details right now. Our team needs to check it.', 'action' => $contact],
+            $order === 'paid' && !isset($d->order['next']) => self::ours('Paid. We’re finishing the '.$word.'. There’s nothing you need to do.', $contact),
+            // An Off switch is why changes stop, so its own notice below wins over a stopped read, which the rows already say.
+            self::checkHeld($d) && !($d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF) => self::ours('We can’t read this domain’s details right now. '.DomainStatus::ON_IT.'.', $contact),
             $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],
             $d->dnsCorrection => ['tone'=>'info','text'=>'Your domain is registered, but the registrar could not confirm your chosen nameservers. '.(isset($d->management['nameservers'])?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>isset($d->management['nameservers'])?['label'=>'Change nameservers','url'=>$d->actions['show'].'?edit=nameservers#edit-nameservers']:$contact],
+            $d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF => ['tone' => 'info', 'text' => 'Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.', 'action' => $contact],
+            $d->changesUnavailable && is_int($d->changesRefused) => ['tone' => 'info', 'text' => 'Changes are on hold until we finish checking an earlier request. There’s nothing you need to do.', 'action' => $contact],
             $d->changesUnavailable => ['tone' => 'info', 'text' => 'Changes to this domain are on hold right now. Try again later.', 'action' => $contact],
             default => null,
         };
     }
+    /** A notice for work that is ours: blue, with the way to reach us. */
+    private static function ours(string $text, ?array $contact): array
+    { return ['tone' => 'info', 'text' => $text, 'action' => $contact]; }
     /** Expires: the date with its tone and one sub line, or Missing with its cause or fix. */
     public static function expires(OwnedDomain $d, ?DomainSummary $s, ?string $support): array
     {
@@ -61,7 +69,7 @@ final class DomainPage
         };
         return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
-    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
+    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
         $state = $d->renewNow['status'] ?? (isset($d->renewNow['invoice']) ? 'pending' : null) ?? $d->renewalInvoice['state'] ?? null;
@@ -72,7 +80,7 @@ final class DomainPage
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => 'Paid'],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
-            $state !== null => ['missing' => true, 'cause' => 'Renewal being checked', 'fix' => $contact],
+            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked. '.Missing::NO_ACTION],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
             $s?->renewalIssueAt !== null => ['value' => self::date($s->renewalIssueAt)],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
@@ -89,6 +97,17 @@ final class DomainPage
         if ($open) { return null; }
         $setup = $d->actions['setup'] ?? null;
         return ['missing' => true, 'fix' => $setup && ($d->transfer['phase'] ?? null) === 'cutoff' && ($d->setup['contacts'] ?? false) ? ['label' => 'Update details', 'url' => $setup] : Missing::support($support)];
+    }
+    /** The tone of a word in History: what ended well, what broke, what is the customer's to do, and what is still ours. */
+    public static function stepTone(string $word): string
+    {
+        return match ($word) {
+            'Completed', 'Paid' => 'ok',
+            'Failed' => 'bad',
+            'Unpaid', 'Action required' => 'warn',
+            'Cancelled' => 'muted',
+            default => 'info',
+        };
     }
     public static function date(string $date): string
     {

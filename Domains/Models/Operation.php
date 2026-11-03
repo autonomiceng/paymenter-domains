@@ -20,6 +20,9 @@ class Operation extends Model
         static::saving(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\ManagementProgressIndex::capture($operation));
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::guard($operation));
         static::creating(static fn(self $operation)=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::guardCreation($operation));
+        static::creating(static function(self $operation):void {
+            if(array_key_exists('management_unsent',$operation->attempt??[])){throw new \DomainException('Unsent management proof requires a live dispatched operation.');}
+        });
         static::updating(static function (self $operation): void {
             if ($operation->isDirty(['id', 'domain_id', 'service_id', 'server_id', 'registrar_key', 'account_fingerprint', 'authority_generation', 'action', 'term', 'currency', 'amount', 'invoice_id', 'invoice_item_id', 'operation_key', 'funding_basis', 'authorized_by', 'funding_reason', 'retry_number'])) {
                 throw new \DomainException('Operation binding and action are immutable.');

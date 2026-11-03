@@ -10,55 +10,37 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 
 final class PricingRules
 {
-    /** New connections count card fees, add 8%, then round up to .99. The upgrade pins older implicit rules. */
+    public const KEY = 'domains_pricing_default_rule';
+    /** Until staff save Default pricing: count card fees, add 8%, then round up to .99. */
     private const NEW_ACCOUNT_DEFAULT = [...PricingRule::DEFAULT, 'mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'ending_99'];
-    /** Account-scoped fee snapshot for list reads; locked writers omit it. */
+    /** Fee snapshot for list reads; locked writers omit it. */
     public function rule(Tld $tld, bool $lock = false, ?array $fee = null): array
     {
-        if ($tld->use_default_rule) { return $this->defaultRule((int) $tld->server_id, $lock, $fee); }
+        // Locks keep their order: the TLD's account first, then the business-wide rows.
+        if ($tld->use_default_rule || $lock) { $this->server((int) $tld->server_id, $lock, false); }
+        if ($tld->use_default_rule) { return $this->defaultRule($lock, $fee); }
         return PricingRule::validate(['mode' => $tld->pricing_mode, 'markup' => $tld->markup ?? '0', 'round_up' => $tld->round_up,
             'fixed' => ['register' => $tld->fixed_register, 'renew' => $tld->fixed_renew, 'transfer' => $tld->fixed_transfer],
-            ...($tld->pricing_mode === 'markup_fee_percent' ? ['card_fee' => $fee ?? CardFee::read((int)$tld->server_id, $lock)] : [])]);
+            ...($tld->pricing_mode === 'markup_fee_percent' ? ['card_fee' => $fee ?? CardFee::read($lock)] : [])]);
     }
 
-    /** One shared default across an account's TLDs; another account has its own retail table/rule. */
-    public function defaultRule(int $serverId, bool $lock = false, ?array $fee = null): array
+    /** One default for the whole business. Each account still publishes its own retail table from it. */
+    public function defaultRule(bool $lock = false, ?array $fee = null): array
     {
         if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Rule locks require an outer transaction.'); }
-        $server = $this->server($serverId, $lock, false);
-        $query = $server->settings()->where('key', 'domains_pricing_default_rule');
-        if ($lock) { $query->lockForUpdate(); }
-        $setting = $query->first();
+        $setting = BusinessSetting::row(self::KEY, $lock);
         $rule = $setting ? $setting->value : self::NEW_ACCOUNT_DEFAULT;
         if (!is_array($rule)) { throw new \DomainException('Invalid default pricing rule.'); }
-        if (($rule['mode'] ?? null) === 'markup_fee_percent') { $rule['card_fee'] = $fee ?? CardFee::read($serverId, $lock); }
+        if (($rule['mode'] ?? null) === 'markup_fee_percent') { $rule['card_fee'] = $fee ?? CardFee::read($lock); }
         return PricingRule::validate($rule);
     }
 
-    /** Callback republishes each ending independently; a failure must not hide later endings. */
-    public function saveDefaultRule(int $serverId, array $rule, \Closure $republish): array
-    {
-        if (DB::transactionLevel() !== 0) { throw new \LogicException('Default republication requires independent transactions.'); }
-        $rule = PricingRule::validate($rule);
-        DB::transaction(function () use ($serverId, $rule): void {
-            $this->saveDefaultRuleLocked($serverId, $rule);
-        });
-        $summary = ['published' => 0, 'failed' => [], 'failure_types' => []];
-        foreach (Tld::where('server_id', $serverId)->where('use_default_rule', true)->orderBy('id')->get() as $tld) {
-            try { $republish($tld); $summary['published']++; }
-            catch (\Throwable $error) { $summary['failed'][] = '.'.$tld->tld; $summary['failure_types']['.'.$tld->tld] = $error::class; }
-        }
-        return $summary;
-    }
-
     /** Staff review owns the outer transaction and publishes each TLD separately. */
-    public function saveDefaultRuleLocked(int $serverId, array $rule): void
+    public function saveDefaultRuleLocked(array $rule): void
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer rule transaction required.'); }
-        $server = $this->server($serverId, true);
         UpgradeGate::legacy();
-        $server->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'],
-            ['type' => 'array', 'encrypted' => false, 'value' => PricingRule::validate($rule)]);
+        BusinessSetting::saveLocked(self::KEY, PricingRule::validate($rule));
         StorefrontCatalogueCache::invalidateAfterCommit();
     }
 

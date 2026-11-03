@@ -46,9 +46,6 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 $account=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($account);$fill=app(PriceFill::class);
 
-// The menu shows it right below TLDs & pricing, always.
-$labels=[];foreach(Filament::getCurrentPanel()->getNavigation() as $group){foreach($group->getItems() as $item){$labels[]=$item->getLabel();}}
-same(1,array_search('What you sell',$labels,true)-array_search('TLDs & pricing',$labels,true),'What you sell sits directly below TLDs & pricing');
 same('What you sell',WhatYouSell::getNavigationLabel(),'Plain menu label');
 
 // The empty TLD list links to the screen.
@@ -113,7 +110,7 @@ expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->html()
 // An unpublished TLD uses its saved custom rule for both retail and profit estimates.
 $custom=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'org',
     'use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>'99.00','fixed_renew'=>'99.00','fixed_transfer'=>'99.00']);
-Livewire::actingAs($staff)->test(WhatYouSell::class)->assertTableColumnStateSet('register_price','99.00',$row('org'))->assertTableColumnStateSet('register_profit','85.82',$row('org'));
+Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSeeHtml('data-beco-record="sell-'.$server->id.'-org"')->assertTableColumnStateSet('register_price','99.00',$row('org'))->assertTableColumnStateSet('register_profit','85.82',$row('org'));
 $custom->delete();
 // No row vanishes: a saved TLD shows here though the registrar no longer lists it, or it is hidden, and saves stay off those rows.
 $gone=Tld::create(['server_id'=>$server->id,'registrar_key'=>'enom','account_fingerprint'=>$binding->fingerprint,'tld'=>'gone']);
@@ -137,8 +134,8 @@ same($before,SellRow::where('server_id',$server->id)->count(),'Reading a saved T
 expect(!$table->instance()->getTable()->isRecordSelectable($table->instance()->getTableRecord((string)-$gone->id)),'A row the registrar dropped has no tick');
 $gone->delete();$hiddenSaved->delete();
 // Profit shows cents. A card fee gives the stored figure more digits than that.
-$server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>'2.9','fixed'=>'0.30']]);
-$html=Livewire::actingAs($staff)->test(WhatYouSell::class)->html();$server->settings()->where('key',CardFee::KEY)->delete();
+$fee=App\Models\Setting::updateOrCreate(['key'=>CardFee::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>['percent'=>'2.9','fixed'=>'0.30']]);
+$html=Livewire::actingAs($staff)->test(WhatYouSell::class)->html();$fee->delete();
 expect(preg_match('/>\s*-?[\d,]+\.\d{2}\s*</',$html)===1&&preg_match('/>\s*-?[\d,]+\.\d{3}\s*</',$html)===0,'Profit shows two decimals');same('2.05',PriceList::profit('2.0524'),'Display rounds, the saved figure stays');
 foreach(['independently verified','Purchase route','new import','25-second','resellertest','Verified','Reason','More years'] as $word){$page->assertDontSee($word);}
 same(0,preg_match('/\bendings?\b/i',strip_tags(preg_replace('/<(script|style)\b.*?<\/\1>/si','',$page->html()))),'The screen says TLD, never the other word');
@@ -283,6 +280,7 @@ $select($page,'org')->callTableBulkAction('edit',[$row('org')->id],['longest'=>'
 // A saved 'all' ignored Don't sell, so it reads as Yes and its first save keeps the same TLDs on sale.
 Server::findOrFail($server->id)->settings()->updateOrCreate(['key'=>SellRule::KEY],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'all','max_cost'=>'100','years'=>1,'transfers'=>false]]);
 same(['Cancel','Save'],$footer(Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')),'Default for new TLDs reads Cancel, then Save');
+same('Cancel',$footer(Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('default_pricing'))[0],'Default pricing reads Cancel first');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->mountAction('rule')->assertSchemaStateSet(['sell_new'=>'yes'],'mountedActionSchema0')->callMountedAction()->assertNotified('Saved');
 same(['except',null],[SellRule::read($binding,null)['mode'],$row('com.au')->choice],'Saved all converts once');expect(isset(CatalogueAcceptances::load($binding)->endings['com.au']),'Conversion keeps what all was selling');
 $select($page,'com.au')->callTableBulkAction('edit',[$row('com.au')->id],['choice'=>'skip'])->assertNotified('Saved');

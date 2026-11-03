@@ -332,7 +332,7 @@ foreach(['.scaleaa','.xyz: Below cost','.scaleab register (1 year)','.scaleab re
     expect(str_contains($mixedHtml,$text),'Mixed cost review renders '.$text);
 }
 foreach(['Prices needing attention','Price exceptions'] as $label){
-    expect(str_contains($mixedHtml,'<div tabindex="0" role="region" aria-label="'.$label.'" style="max-height:8rem;overflow:auto'),'Cost review list has a labeled keyboard-scrollable region: '.$label);
+    expect(str_contains($mixedHtml,'<div tabindex="0" role="region" aria-label="'.$label.'" class="domains-scroll domains-scroll-short'),'Cost review list has a labeled keyboard-scrollable region: '.$label);
 }
 expect($priceMissing(DB::transaction(fn()=>$activationClass::problems($la->fresh(),$mixedFeatures))),'Activate independently refuses the missing cost after a partial display');
 

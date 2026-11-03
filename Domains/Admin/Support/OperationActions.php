@@ -9,7 +9,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,OperationFailure,OperationTerminalProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,TransferInputs,UnpaidAcquisitionProof};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement,EnomTestRegistration,ManagementEvidence,ObservationRecords,ObservationWork,OperationFailure,OperationTerminalProof,StaffOperationReview,StaffOperations,StaffOperationWrites,StaffReviewRefused,StaffSyncReview,TransferInputs,UnpaidAcquisitionProof};
 final class OperationActions
 {
     /** Toast titles, named for the action. */
@@ -77,23 +77,38 @@ final class OperationActions
         if($op->invoice_id!==null&&\App\Models\Invoice::whereKey($op->invoice_id)->value('status')!=='paid'){return 'payment';}
         return $op->action==='transfer'&&!TransferInputs::validCode($op->payload['epp']??null)?'code':null;
     }
-    /** Domain recovery reuses the current request's bound, audited review ticket. */
+    /** Domain recovery reuses the current request's bound, audited review ticket. Any domain can stop syncing, so one with no request is reviewed on the domain. */
     public static function scheduledReads(Domain $d): array
     {
-        $op=DomainQueries::operations($d)->orderByDesc('id')->first(); if(!$op){return [];}
+        $op=DomainQueries::operations($d)->orderByDesc('id')->first(); if(!$op){return [self::resumeOnDomain($d)];}
         foreach(self::make($op,StaffOperationReview::stamp($op,$d)) as $action){
             if($action->getName()==='resume_observation'){
                 return [$action->visible(fn()=>Staff::can(StaffOperationReview::permission('resume_observation'))
-                    &&!StaffOperationReview::liveLease($op,app(Clock::class))&&ObservationRecords::stopped($d))];
+                    &&!StaffOperationReview::liveLease($op,app(Clock::class))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)];
             }
         }
         return [];
+    }
+    /** The same writer as a request's Resume sync, audited in the domain's own history. */
+    private static function resumeOnDomain(Domain $d): Action
+    {
+        $name='resume_observation';
+        return Action::make($name)->label(StaffOperationReview::ACTIONS[$name])->color('gray')
+            ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)
+            ->action(function()use($d,$name):void {
+                try { $actor=Auth::user(); $id=ObservationWork::currentId($d); if(!$actor instanceof \App\Models\User||$id===null){throw new \DomainException('Staff required.');}
+                    app(ObservationWork::class)->resume($id,'staff_review',new StaffSyncReview((int)$actor->id,(int)$d->id,StaffSyncReview::stamp($d->fresh()),StaffOperationReview::ACTIONS[$name],app(Clock::class)));
+                    Notification::make()->success()->title(self::DONE[$name])->send();
+                }catch(\Throwable $error){
+                    Log::warning('Domains sync resume refused.',['reason'=>OperationFailure::code($error),'domain_id'=>(int)$d->id]);
+                    Notification::make()->danger()->title("Couldn't resume sync")->body($error instanceof StaffReviewRefused?$error->getMessage():'Reload the page and try again.')->send();}
+            });
     }
     public static function relevant(string $action,Operation $op): bool
     {
         if(StaffOperationReview::liveLease($op,app(Clock::class))){return false;}
         if($op->state==='succeeded'){return false;}
-        if($action==='resume_observation'){return ObservationRecords::stopped($op->domain);}
+        if($action==='resume_observation'){return !DomainFacts::ended($op->domain)&&ObservationRecords::stopped($op->domain);}
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             // Release needs what the customer still owes, so a hold here would have no way back.

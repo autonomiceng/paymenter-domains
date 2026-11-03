@@ -179,7 +179,7 @@ final class Writer implements Catalogue
             ($this->authorize)($command, null); $now = $this->clock->now();
             if ($this->current) { ($this->current)(); }
             if ($defaultsEdit) {
-                $fee = $command->fee ?? $command->rule['card_fee'] ?? $defaults['card_fee'] ?? \Paymenter\Extensions\Servers\Domains\Services\CardFee::read($binding->serverId);
+                $fee = $command->rule['card_fee'] ?? $defaults['card_fee'] ?? \Paymenter\Extensions\Servers\Domains\Services\CardFee::read();
                 $defaults = [...get_object_vars($command->intent), '_revision' => $revision->defaults + 1,
                     'pricing_rule' => $command->rule, 'card_fee' => $fee];
                 DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['catalogue_defaults' => OfferState::json($defaults)]);
@@ -280,7 +280,7 @@ final class Writer implements Catalogue
         $intent = OfferState::decode($tld->catalogue_intent);
         $rules = new PricingRules;
         $rule = array_key_exists('pricing_rule', $intent)
-            ? ($intent['pricing_rule'] ?? $defaults['pricing_rule'] ?? $rules->defaultRule((int) $tld->server_id))
+            ? ($intent['pricing_rule'] ?? $defaults['pricing_rule'] ?? $rules->defaultRule())
             : ($tld->use_default_rule ? ($defaults['pricing_rule'] ?? $rules->rule($tld)) : $rules->rule($tld));
         if ($rule['mode'] === 'markup_fee_percent' && isset($defaults['card_fee'])) { $rule['card_fee'] = $defaults['card_fee']; }
         $prices = UpgradeComparison::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();

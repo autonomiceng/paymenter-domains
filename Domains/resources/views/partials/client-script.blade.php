@@ -15,7 +15,14 @@
         const country = group.querySelector('[name$="[country]"]');
         const state = group.querySelector('[name$="[state_province]"]');
         if (!country || !state) return;
-        const update = () => { state.required = group.dataset.stateRequired === '1' || ['US', 'CA', 'AU'].includes(country.value); };
+        const codes = group.querySelector('datalist[data-state-codes]');
+        const suggestions = codes ? JSON.parse(codes.dataset.stateCodes) : {};
+        const update = () => {
+            state.required = group.dataset.stateRequired === '1' || ['US', 'CA', 'AU'].includes(country.value);
+            if (codes) codes.replaceChildren(...(suggestions[country.value] || []).map(code => {
+                const option = document.createElement('option'); option.value = code; return option;
+            }));
+        };
         country.addEventListener('change', update); update();
     });
     document.querySelectorAll('.domains form').forEach(form => {
