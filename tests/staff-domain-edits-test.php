@@ -19,6 +19,7 @@ $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$m
 app()->instance(OwnerPorts::class,$ports);app()->instance(OwnedDomains::class,$owners);app()->instance(DomainManagement::class,$management);
 $staff=staffUser([Staff::VIEW,'admin.domains.manage']);$staff->update(['first_name'=>'Sam','last_name'=>'Support']);$actor=$staff->fresh();Auth::setUser($actor);
 $view=static fn()=>Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
+$view()->assertSee('Email auth code');
 $open=static fn(string $row,string $action)=>$view()->mountAction(TestAction::make('edit_'.$action)->schemaComponent('fact_'.md5($row),'infolist'));
 $edit=static fn(string $row,string $action,array $data=[])=>$open($row,$action)->setActionData($data)->callMountedAction();
 $last=static fn(string $action)=>$d->operations()->where('action',$action)->orderByDesc('id')->first();

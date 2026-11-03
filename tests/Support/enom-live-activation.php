@@ -40,7 +40,7 @@ expect(!$server->settings()->where('key',EnomLiveActivation::KEY)->exists(),'Aud
 $audit->encrypted=true;$audit->save();
 $historyBefore=count(Review::historyRows($server->fresh()));
 // Exercise the actual one-click + confirm native staff action, not an acceptance-row seed.
-$activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('live_sales','content');
+$activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
 $page=Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->mountAction($activateAction)->assertActionMounted($activateAction);
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Live features activated');
 expect(EnomLiveActivation::current($binding)&&Account::where('server_id',$server->id)->sole()->processing_enabled,'Supported staff action enables processing');

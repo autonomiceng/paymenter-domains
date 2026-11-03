@@ -81,7 +81,7 @@ foreach(['configuration_unavailable','processing','balance','usd_balance_require
 }
 same(['configuration_unavailable'=>['registrars','Open account',null],'processing'=>['registrars','Go to Orders switch',null],
     'balance'=>['registrars','Go to balance',null],'usd_balance_required'=>[null,null,null],
-    'write_disabled'=>['registrars','Go to Setup checklist',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
+    'write_disabled'=>['registrars','Go to System checks',null],'staff_review_required'=>[null,null,null]],$links,'Notice link per cause');
 // Repair links depend on retained safe codes even if display copy changes.
 $accountCodes=[
     'authority'=>'Open account','renewal_authority_invalid'=>'Open account','renewal_binding_changed'=>'Open account',
@@ -90,7 +90,7 @@ $accountCodes=[
     'processing'=>'Go to Orders switch','balance'=>'Go to balance','funding'=>'Go to balance',
     'registrar_balance_insufficient_or_unknown'=>'Go to balance','registrar_balance_insufficient'=>'Go to balance',
     'usd_balance_required'=>null,'enom_test_transfer_usd_balance_required'=>null,
-    'awaiting_acceptance'=>'Go to Setup checklist','write_disabled'=>'Go to Setup checklist','write_acceptance_required'=>'Go to Setup checklist','renewal_acceptance_required'=>'Go to Setup checklist','grace_capability_unaccepted'=>null];
+    'awaiting_acceptance'=>'Go to System checks','write_disabled'=>'Go to System checks','write_acceptance_required'=>'Go to System checks','renewal_acceptance_required'=>'Go to System checks','grace_capability_unaccepted'=>null];
 foreach([...$accountCodes,'staff_review_required'=>null,'enom_test_call_cap'=>null,'nameservers_required'=>null,
     'name_unavailable'=>null,'premium_name'=>null,'order_not_supported'=>null,'registrar_price_missing'=>null,'registrar_read_failed'=>null] as $code=>$label){
     DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>$code]);

@@ -116,7 +116,7 @@ foreach([$first,$second] as $server){
     $balanceState=(array)DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
     try{Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->call('checkBalance')
         ->assertNotified(\Filament\Notifications\Notification::make()->title("Couldn't check balance")
-            ->body('Check the account settings in the Setup checklist.')->danger());}
+            ->body('Check the account settings in the System checks.')->danger());}
     finally{DB::table(BalanceSchema::TABLE)->where('id',$balanceState['id'])->update($balanceState);}
     Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Connection failed')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
     // A positively verified different account still cannot repurpose the retained binding.
@@ -146,7 +146,7 @@ foreach([$first,$second] as $server){
     same($retained,DB::table('settings')->where('settingable_id',$server->id)->orderBy('id')->get()->toJson(),'Handled refusal retains encrypted settings');
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Handled refusal retains the account binding');
     serverSettingsReject(fn()=>$a->fresh()->delete());
-    $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('Setup')->assertSee('Balance');
+    $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('System checks')->assertSee('Balance');
     foreach([$secret,'PRIVATE-ROTATED-'.$a->registrar_key,$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($owned->html(),$private),'Owned setup excludes saved credentials, HMAC and fingerprints');}
     $audit=Review::historyRows($server->fresh());expect(count($audit)>=2,'Configuration and rotation retain audited review outcomes');
     foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG','domains_credentials',$savedDigest] as $private){expect(!str_contains(json_encode($audit),$private),'Retained owned audit excludes credentials and verification digest');}

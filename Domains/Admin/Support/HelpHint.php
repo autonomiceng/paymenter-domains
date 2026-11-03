@@ -14,11 +14,11 @@ JS;
     public static function make(string $text, string $label = 'More help'): Action
     {
         // No click handler: a click must not mount a nested action over an open dialog.
-        // Filament pushes hints to the far end of the label row; the auto margin keeps this one beside the label.
+        // Filament pushes hints to the far end of the label row; a skin keeps domains-help beside the label.
         return Action::make('help')->label($label)->icon('heroicon-m-question-mark-circle')->iconButton()->color('primary')->tooltip($text)->livewireClickHandlerEnabled(false)
-            ->extraAttributes(['style' => 'margin-inline-end:auto','x-on:focus.capture' => self::PASS_DIALOG_FOCUS]);
+            ->extraAttributes(['class' => 'domains-help','x-on:focus.capture' => self::PASS_DIALOG_FOCUS]);
     }
     /** Text with the same "?" beside it, for page HTML outside a field or entry. */
     public static function beside(string $html, string $text, string $label = 'More help'): HtmlString
-    { return new HtmlString('<span style="display:inline-flex;align-items:center;gap:.75rem">'.$html.self::make($text, $label)->toHtml().'</span>'); }
+    { return new HtmlString('<span class="domains-help-beside">'.$html.self::make($text, $label)->toHtml().'</span>'); }
 }

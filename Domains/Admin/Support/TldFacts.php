@@ -275,7 +275,7 @@ final class TldFacts
                 $phase=(string)$r['phase'];
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->toIso8601String();}catch(\Throwable){$at=(string)$r['at'];}
-                return ['time'=>$at,'change'=>$change,'reason'=>implode(' · ',[...$detail,...($r['reason']===''?[]:[(string)$r['reason']])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
+                return ['time'=>$at,'change'=>$change,'reason'=>implode('. ',[...$detail,...($r['reason']===''?[]:[(string)$r['reason']])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
             },array_reverse(array_values($rows)));
         }catch(\Throwable){return null;}
     }

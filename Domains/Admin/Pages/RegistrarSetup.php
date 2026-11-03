@@ -74,7 +74,6 @@ class RegistrarSetup extends Page implements HasTable
                     ->url(fn(Server $record)=>RegistrarAccount::getUrl(['account'=>$record->id])),
             ]);
     }
-    public function getHeading(): HtmlString { return new HtmlString(e(static::$title).RegistrarFacts::STYLE); }
     /** @return array{account:?Account,status:array,connected:bool,summary:string,demo:bool,balance:?array} */
     private function row(Server $s): array
     {

@@ -60,5 +60,5 @@ function staffData(bool $ordinaryCompleted = false): array
 function setupAction(string $action,int $server): string|\Filament\Actions\Testing\TestAction
 {
     return in_array($action,['configure','enroll_sandbox'],true)?$action.'_'.$server
-        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent(($action==='new_domain_dns'?'domain_settings_':'account_').$server,'content');
+        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
 }

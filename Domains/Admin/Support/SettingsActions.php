@@ -21,7 +21,6 @@ final class SettingsActions
     /** Each switch clicks straight through; the audit keeps who, when, before and after. Popups: spends money or stops sales. */
     private const SWITCHES=['late_renewal','processing','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','renew_early'];
     private const POPUPS=['late_renewal'=>'late renewal','processing'=>'orders','renewals'=>'renewals','test_renewal'=>'renewals','live_renewal'=>'renewals','test_transfer'=>'transfers','live_transfer'=>'transfers'];
-    private const SWITCH_REASON='Changed with the on/off switch.';
     /** Switch names saved by a writer action with a name of its own. */
     private const SHARED=['renew_early'=>'renewal_billing','renewals'=>'renewal_billing'];
     /** Keep one snapshot per form, including empty arrays and absent rows. */
@@ -201,7 +200,7 @@ final class SettingsActions
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
                     try{$data=[...$data,...self::saved($id,$server)];
-                        if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp),'reason'=>self::SWITCH_REASON];}
+                        if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp),'reason'=>self::switchOn($id,$server)?'Turned off':'Turned on'];}
                         $default=$name==='override'&&($data['pricing']??null)==='default';
                         $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??($name==='new_domain_dns'?'New domain DNS template changed.':''))));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
@@ -239,7 +238,7 @@ final class SettingsActions
             }
             if(!\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::canAccess()){return $text;}
             $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$server]);
-            return new \Illuminate\Support\HtmlString(str_replace('What you sell','<a class="fi-link" style="text-decoration:underline" href="'.e($url).'">What you sell</a>',e($text)));
+            return new \Illuminate\Support\HtmlString(str_replace('What you sell','<a class="fi-link domains-link" href="'.e($url).'">What you sell</a>',e($text)));
         }catch(\Throwable){return $text;}
     }
     /** One short line for a notification: only what staff must act on is named. The prices are on the page. */
@@ -288,20 +287,20 @@ final class SettingsActions
         try{$rows=PriceCatalogue::preview($t,$rule,$now);}catch(\Throwable){$rows=[];}
         if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No costs yet. Use Sync prices on the TLD list first. Saving now changes nothing.</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
-        $cell=static fn(string $html)=>'<td style="padding:6px 10px;vertical-align:top;white-space:nowrap">'.$html.'</td>';
-        $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
-        foreach(['Price',...($costs?['Cost']:[]),'Now','After saving'] as $label){$html.='<th scope="col" style="padding:6px 10px;text-align:left;white-space:nowrap;font-weight:500">'.e($label).'</th>';}
+        $cell=static fn(string $html)=>'<td>'.$html.'</td>';
+        $html='<div class="domains-preview"><table cellpadding="6"><thead><tr>';
+        foreach(['Price',...($costs?['Cost']:[]),'Now','After saving'] as $label){$html.='<th scope="col">'.e($label).'</th>';}
         $html.='</tr></thead><tbody>';$missing=false;
         foreach($rows as $row){
             $missing=$missing||!$row['synced'];
             $note=match(true){!$row['synced']=>'Cost missing',$row['cost']===null=>TldFacts::NOT_OFFERED,$row['hold']==='below_cost'=>'Below cost: not sold',
                 $row['alert']==='below_cost'=>'Below cost: still billed',$row['hold']!==null=>'Not sold',default=>null};
-            $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
+            $html.='<tr>'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
-                .$cell(e(in_array($row['hold'],[null,'below_cost'],true)?$money($row['new']):'Not sold').($note===null?'':'<div style="font-size:.75rem;color:rgb(217 119 6)">'.e($note).'</div>')).'</tr>';
+                .$cell(e(in_array($row['hold'],[null,'below_cost'],true)?$money($row['new']):'Not sold').($note===null?'':'<div class="domains-warn">'.e($note).'</div>')).'</tr>';
         }
         $html.='</tbody></table></div>';
-        if($missing){$html.='<p style="margin-top:.5rem;color:rgb(220 38 38)">Some costs are missing. Use Sync prices on the TLD list first. Saving now changes nothing.</p>';}
+        if($missing){$html.='<p class="domains-err">Some costs are missing. Use Sync prices on the TLD list first. Saving now changes nothing.</p>';}
         return new \Illuminate\Support\HtmlString($html);
     }
     /** Link only when the current panel registers the TLD list. */

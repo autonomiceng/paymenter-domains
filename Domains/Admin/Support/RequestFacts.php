@@ -247,7 +247,7 @@ final class RequestFacts
             $fix=match($op->safe_code){
                 'processing'=>self::ORDERS_SWITCH,
                 'funding','balance','registrar_balance_insufficient_or_unknown','registrar_balance_insufficient'=>'Go to balance',
-                'awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required'=>'Go to Setup checklist',
+                'awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required'=>'Go to System checks',
                 'authority','renewal_authority_invalid','renewal_binding_changed','claim_authority_invalid','seal_authority_invalid','registration_authority_changed',
                 'configuration_unavailable','transfer_setup_review_required','enom_test_transfer_setup_required','enom_test_setup_required'=>'Open account',
                 default=>null};

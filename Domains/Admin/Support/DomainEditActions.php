@@ -51,6 +51,7 @@ final class DomainEditActions
             \Paymenter\Extensions\Servers\Domains\Services\RenewalStop::policy($d)===null=>DomainFacts::UNREADABLE_RENEWAL,
             !Account::where('server_id',$d->server_id)->value('processing_enabled')=>'Changes are on hold: Orders are off for this registrar account. Turn Orders on in Registrars, then reload this page.',
             (bool)($d->renewal_policy['automatic_spend_paused']??false)=>'Changes are on hold: orders are paused for this domain. Check the alerts on this page.',
+            ($request=DomainFacts::status($d)['request'])!==null=>'On hold until request #'.$request.' is checked.',
             default=>'Changes are on hold until the last request finishes. Check History, then reload this page.',
         };
     }

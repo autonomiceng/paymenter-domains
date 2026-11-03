@@ -135,7 +135,7 @@ foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-
     elseif($day>='2027-10-11'){same(range(1,9),$owners->present($calendar->fresh())->renewNow['terms']??null,'After due the same multi-year terms are offered');}
 }
 staffPanel();Auth::login(staffUser([Staff::VIEW]));$save($d,false);
-$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['Invoice #'.$next->id,'Awaiting payment']],[[$facts['Auto-renew']['value'],$facts['Auto-renew']['sub']],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
+$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['Invoice #'.$next->id,'Awaiting payment']],[[$facts['Renewal invoices']['value'],$facts['Renewal invoices']['sub']],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
 Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])
     ->assertSee('Auto-renew turned off')->assertSee(trim($user->first_name.' '.$user->last_name)?:'Customer');
 // Staff can add a hard stop while the owner's reversible switch is Off.
@@ -173,7 +173,7 @@ $preference->set($user,$auditDomain->id,false);same(false,$auditDomain->fresh()-
 $raw=DB::table('domains_watch_audit')->where('event','owner_auto_renew')->first()->data;expect(!str_contains($raw,'enabled'),'Audit details encrypted');
 DB::table('domains_watch_audit')->where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->update(['data'=>'invalid ciphertext']);
 Auth::login($staffActor);
-same(['Off','Turned off by customer'],[DomainFacts::for($d->fresh())['Auto-renew']['value'],DomainFacts::for($d->fresh())['Auto-renew']['sub']],'Unreadable audit does not break staff facts');
+same(['Off','Turned off by customer'],[DomainFacts::for($d->fresh())['Renewal invoices']['value'],DomainFacts::for($d->fresh())['Renewal invoices']['sub']],'Unreadable audit does not break staff facts');
 $native=\Livewire\Livewire::actingAs($staffActor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
 $native->assertSuccessful()->assertSee('Billing');
 \Livewire\Livewire::actingAs($staffActor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])

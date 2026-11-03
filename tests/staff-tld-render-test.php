@@ -60,7 +60,7 @@ $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountActi
     ->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half'])->call('$refresh');
 $sees($page,['Customer pays: cost + $1.20, rounded up to the next $0.50','After saving','$7.50','$22.50']);$render($page,'modal-override-preview');
 $page->setActionData(['pricing'=>'custom','mode'=>'fixed','fixed_register'=>'5','fixed_renew'=>'7','fixed_transfer'=>'9'])->call('$refresh');
-$sees($page,['$5.00<div style="font-size:.75rem;color:rgb(217 119 6)">Below cost: not sold','Below cost: still billed']);$render($page,'modal-override-below-cost');
+$sees($page,['$5.00<div class="domains-warn">Below cost: not sold','Below cost: still billed']);$render($page,'modal-override-below-cost');
 $page->setActionData(['pricing'=>'default'])->call('$refresh');$sees($page,['Customer pays: $1.00 a year to register']);$render($page,'modal-override-default');
 $page->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half','reason'=>'Publish reviewed prices'])->callMountedAction()
     ->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Prices published'));
@@ -69,10 +69,10 @@ $render(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]),'tld-pub
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override');
 \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->increment('revision');
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
-// Default pricing on the account page names the TLDs that follow it.
-$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Default pricing','Customer pays','No TLDs use it yet.'],false);
+// Customer pays counts followers; its dialog names the affected TLDs.
+$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Customer pays','No TLDs use it yet.'],false);
 $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ticket($u->id,$t->server_id,$t->id,'remove_override',Review::stamp($t->server_id,$t->id)),'Follow the account default again'),[],$now);
-$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Used by 1 TLD: .com'],false);$render($account,'account-default-pricing');
+$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Used by 1 TLD'],false);$render($account,'account-default-pricing');
 $account->mountAction(setupAction('default_rule',$t->server_id))->call('$refresh');$sees($account,['1 TLD uses the account default: .com. Saving publishes its new prices.']);$render($account,'modal-default_rule-followers');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 same(10,count($strings),'Ten settings modals rendered');

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Filament\Actions\Action;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldResource};
@@ -11,8 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
     RenewalBillingSettings,RuntimePorts,WatchWork};
-/** Rows for a registrar account's Setup checklist, Renewal invoices and reminders, and System checks.
- * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value, so set it only when there is a problem.
+/** Rows for a registrar account's sections and System checks.
+ * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value.
  * action names a SettingsActions setup action. A value of On or Off shows as a switch. Every row says what it is in help. */
 final class AccountChecklist
 {
@@ -29,7 +30,7 @@ final class AccountChecklist
     private const RENEWALS='Can issue renewal invoices, use customer credit, try saved Auto Pay and send paid renewals. Off: no new invoices. Issued invoices stay payable, and paid renewals wait.';
     private const BILLING='Controls billing only, not sending renewals to NameSilo. Can issue invoices, use customer credit and try saved Auto Pay. Off: no new invoices. Issued invoices stay payable.';
     private const MANAGEMENT='Sends changes to DNS records, nameservers and contact details to the registrar. Off: those changes are not sent.';
-    private static function row(string $label,?string $value,?string $tone=null,?string $cause=null,?string $action=null,?string $help=null): array
+    private static function row(string $label,?string $value,?string $tone=null,string|Htmlable|null $cause=null,?string $action=null,?string $help=null): array
     { return compact('label','value','tone','cause','action','help'); }
     private static function date(int $at): string { return gmdate('M j, Y H:i \U\T\C',$at); }
     private static function unavailable(string $label,string $why): array { return self::row($label,self::NOT_YET,null,null,null,$why); }
@@ -42,12 +43,12 @@ final class AccountChecklist
         $check='Checks this site can log in to the registrar with the saved API details.';
         $connection=match($status['label']){AccountStatus::SET['connection_failed'][0]=>self::row('API connection','Connection failed','danger',$status['reason'],'probe',$check),
             AccountStatus::SET['not_connected'][0]=>self::row('API connection','Not connected','gray',$status['reason'],'configure',$check),
-            default=>self::row('API connection','Connected','success',null,'probe',$check)};
+            default=>self::row('API connection','OK','success',null,'probe',$check)};
         try { $binding=CatalogueAcceptances::binding($a); } catch (\Throwable) { $binding=null; }
         $rows=[$connection,self::tlds($a,$binding),self::prices($a),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
         $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',$a->registrar_key!=='enom'=>self::NAMESILO,default=>self::siteOff($a)};
-        $rows[]=$gates['register']===true?self::row('Registrations','On','success',null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
+        $rows[]=$gates['register']===true?self::row('Registrations','On, follows Orders',null,null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
         $rows[]=self::transfers($a,$binding,$gates['transfer'],$off);
         foreach(['renewal'=>['Renewals',EnomTestRenewal::class,self::RENEWALS],'management'=>['DNS, nameservers and contacts',EnomTestManagement::class,self::MANAGEMENT]] as $key=>[$label,$feature,$help]){
             $rows[]=match(true){$a->registrar_key!=='enom'=>$key==='renewal'?self::billingSwitch((int)$a->server_id):self::unavailable($label,self::NAMESILO),
@@ -55,6 +56,8 @@ final class AccountChecklist
                 !$feature::enabled($binding)&&!$feature::stored($binding)&&!($key==='renewal'&&RenewalBillingSettings::anyOn((int)$a->server_id))=>self::unavailable($label,self::siteOff($a)),
                 default=>self::writeSwitch($a,$label,$key,$key==='renewal'?EnomTestRenewal::on($binding):$feature::stored($binding),$help)};
         }
+        foreach($rows as &$row){if($row['label']==='DNS, nameservers and contacts'&&$row['value']==='On'){$row['cause']='Staff and customers can change these.';}}
+        unset($row);
         if ($binding !== null && $a->registrar_key === 'enom') {
             $on=\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::stored($binding);
             $ready=\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::available($binding);
@@ -135,8 +138,16 @@ final class AccountChecklist
         try { $endings=array_keys(CatalogueAcceptances::load($binding)->endings); } catch (\Throwable) { $endings=[]; }
         sort($endings);
         try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
-        return [...self::row('What you sell',$endings?\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($endings):null,null,$endings?null:'Choose the TLDs you sell.',null,'The TLDs customers can buy from this account.'),
+        $count=count($endings);
+        return [...self::row('What you sell',$endings?self::sample($endings):null,null,$endings?$count.' '.($count===1?'TLD':'TLDs').' for sale':'Choose the TLDs you sell.',null,'The TLDs customers can buy from this account.'),
             'buttons'=>[Action::make('what_you_sell_'.$a->server_id)->label($endings?'Change':'Choose what you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
+    }
+    /** The TLDs people know first, then a count. The full list is on What you sell. */
+    private static function sample(array $endings): string
+    {
+        $first=array_values(array_unique([...array_intersect(['com','net','org'],$endings),...$endings]));
+        $shown=implode(', ',array_map(fn($e)=>'.'.$e,array_slice($first,0,3)));
+        return count($first)>3?$shown.' and '.(count($first)-3).' more':$shown;
     }
     private static function prices(Account $a): array
     {
@@ -146,14 +157,14 @@ final class AccountChecklist
             $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Fix the connection or our call limit, then use Sync prices. Daily retries continue.',null,self::PRICES);
             return [...$row,'buttons'=>self::priceButtons($a)];
         }
-        $synced=Price::where('server_id',$a->server_id)->max('observed_at');
-        return [...self::row('TLD prices',$synced?'Synced '.gmdate('M j, Y H:i \U\T\C',strtotime((string)$synced.' UTC')):null,null,$synced?null:'Not synced yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
+        $synced=RegistrarFacts::lastSync((int)$a->server_id);
+        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'Not synced yet. Use Sync prices.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
     }
     /** Sync covers every TLD of the account at once. Staff who can't sync can still open the TLD list. */
     private static function priceButtons(Account $a): array
     {
         try { $url=TldResource::getUrl('index'); } catch (\Throwable) { $url=null; }
-        $sync=SettingsActions::syncAll((int)$a->server_id)->link()->size('sm');
+        $sync=Sheet::button(SettingsActions::syncAll((int)$a->server_id));
         return [$sync,Action::make('open_tlds_'.$a->server_id)->label('Open TLDs')->link()->size('sm')->url($url)->visible(fn()=>$url!==null&&!$sync->isVisible())];
     }
     /** @return list<array> */
@@ -164,9 +175,16 @@ final class AccountChecklist
             $rows[]=$billing[$key]===null?self::row($label,null,null,'Saved invoice days are invalid. New renewal invoices wait.','renewal_billing',$help):self::row($label,$billing[$key].' days before expiry',null,null,'renewal_billing',$help);
         }
         $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,null,'unpaid_hold',SettingsActions::details('unpaid_hold'));
-        $rows[]=ReminderFacts::emails($server);
         $rows[]=self::renewEarly($server);
+        $rows[]=ReminderFacts::emails($server);
+        if(($schedule=ReminderFacts::scheduleRow($server))!==null){$rows[]=$schedule;}
         return $rows;
+    }
+    /** Only Enom charges for this, and only the registrar account can say so. */
+    public static function whois(Account $a): ?array
+    {
+        if($a->registrar_key!=='enom'){return null;}
+        return self::row('WHOIS privacy','Not offered. '.TldFacts::registrar($a->registrar_key).' charges for it and '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company().' does not sell it yet.');
     }
     /** Failing checks first. @return array{failing:list<array>,passing:list<array>} */
     public static function system(): array
@@ -175,10 +193,10 @@ final class AccountChecklist
         $checks=[self::worker(),match(true){
             $paid['Paymenter payment events']!=='Available'=>self::row('Payment events',null,'danger','Service listeners are missing. Restart the queue worker.',null,self::PAYMENTS),
             $paid['Start after payment']!=='Available'=>self::row('Payment events','Delayed','warning',null,null,'Paid orders start on the next scheduled run. Restart the queue worker to fix it.'),
-            default=>self::row('Payment events','Working',null,null,null,self::PAYMENTS)}];
-        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Disabled','warning','Refunded domain payments stay on the customer’s credit balance, but the Credits page is hidden. Turn on Credits in Settings.',null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
+            default=>self::row('Payment events','OK',null,'Paid orders start right away.',null,self::PAYMENTS)}];
+        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning','Refunds stay on the balance, but the Credits page is hidden. Turn on Credits in Settings.',null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
         $editor=NativeEditorNotice::missing();
-        $checks[]=$editor===null?self::row('Domain editor','Working',null,null,null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
+        $checks[]=$editor===null?self::row('Domain editor','OK',null,'Domain editing is ready.',null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
         if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Update Paymenter or Domains. Until then, check each TLD is still for sale after a price change.',null,'Paymenter is missing '.$missing.'.'); }
         if (($missing=NativeServerGuard::deletionNoticeMissing())!==null) { $checks[]=self::row('Account delete warning',null,'danger','Update Paymenter or Domains. Deleting a registrar account is still refused.',null,'Paymenter is missing '.$missing.'.'); }
         if (($missing=NativeServiceRefusal::missing())!==null) { $checks[]=self::row('Service change warning',null,'danger','Update Paymenter or Domains. Unsafe service changes are still refused.',null,'Paymenter is missing '.$missing.'.'); }
@@ -189,7 +207,7 @@ final class AccountChecklist
     }
     private static function supportContact(): array
     {
-        if(Missing::supportUrl()!==null){return self::row('Support contact','Set',null,null,null,'Where customers go when they need help: the ticket form, or a link your site admin sets.');}
+        if(Missing::supportUrl()!==null){return self::row('Support contact','OK',null,'Customers can reach you.',null,'Where customers go when they need help: the ticket form, or a link your site admin sets.');}
         $cause=config('settings.tickets_disabled',false)?"Tickets are off and no working contact is set, so customers can't reach you. Turn tickets on, or ask your site admin to set a support link."
             :"The ticket form is missing on this site and no working contact is set, so customers can't reach you. Ask your site admin to set a support link.";
         return self::row('Support contact',null,'danger',$cause,null,'It takes an http:, https:, mailto: or tel: link.');
@@ -198,7 +216,7 @@ final class AccountChecklist
     public static function runtime(Account $a): array
     {
         $help='Checks this site has what it needs to work with this registrar account. If it fails, ask your site admin.';
-        return app(RuntimePorts::class)->registered($a)?self::row('Site setup','Working',null,null,null,$help)
+        return app(RuntimePorts::class)->registered($a)?self::row('Site setup','OK',null,'Ready for this registrar.',null,$help)
             :self::row('Site setup',null,'danger','Not set up on this site. Registrations, transfers, renewals and DNS changes stay off. Ask your site admin.',null,$help);
     }
     /** Domains on this account with an open alert, linked to the filtered list. */
@@ -207,9 +225,9 @@ final class AccountChecklist
         $count=Schema::hasTable('domains_obligation_alerts')?DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')
             ->where('d.server_id',$a->server_id)->whereNull('a.resolved_at')->distinct()->count('a.domain_id'):0;
         $help='Domains on this account with a problem that needs a person.';
-        if ($count===0) { return self::row('Domain alerts','None','success',null,null,$help); }
+        if ($count===0) { return self::row('Domain alerts','OK','success',null,null,$help); }
         try { $url=DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$a->server_id],'alerts'=>['isActive'=>true]]]); } catch (\Throwable) { $url=null; }
-        return [...self::row('Domain alerts',$count.' domain'.($count===1?'':'s'),'warning',null,null,$help),
+        return [...self::row('Domain alerts',(string)$count,'warning',null,null,$help),
             'buttons'=>[Action::make('domain_alerts')->label('View domains')->link()->size('sm')->url($url)->visible($url!==null)]];
     }
     /** Domain monitoring is on only when the runtime composes it; then its checks need the queue WatchWork::queueReady() accepts. */
@@ -225,6 +243,6 @@ final class AccountChecklist
         $last=Schema::hasTable('domains_runtime_turns')?DB::table('domains_runtime_turns')->max('finished_at'):null;
         if (!$last) { return self::row('Background worker','Not running','danger','No run recorded yet. Start the scheduler and the queue worker.',null,self::WORKER); }
         $stale=app(Clock::class)->now()->getTimestamp()-(int)$last>self::WORKER_STALE_SECONDS;
-        return $stale?self::row('Background worker','Not running','danger','Last run '.self::date((int)$last).'. Check the scheduler and the queue worker.',null,self::WORKER):self::row('Background worker','Last run '.self::date((int)$last),null,null,null,self::WORKER);
+        return $stale?self::row('Background worker','Not running','danger','Last run '.self::date((int)$last).'. Check the scheduler and the queue worker.',null,self::WORKER):self::row('Background worker','OK',null,Sheet::moment((int)$last,'Last run'),null,self::WORKER);
     }
 }

@@ -22,7 +22,7 @@ foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permiss
     $u=staffUser($permissions);Auth::setUser($u);$can=in_array(Staff::VIEW,$permissions,true);$cost=$can&&in_array(Staff::COSTS,$permissions,true);
     $list=Livewire::actingAs($u)->test(ListTlds::class);$setup=Livewire::actingAs($u)->test(RegistrarSetup::class);$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]);
     if(!$can){$list->assertForbidden();$setup->assertForbidden();$account->assertForbidden();continue;}
-    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('Setup checklist')->assertSee('What you sell')->assertDontSee('Catalogue acceptance');
+    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('System checks')->assertSee('What you sell')->assertDontSee('Catalogue acceptance');
     $detail=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSuccessful()->assertSet('data',[])
         ->assertSee('History')->assertSee('Sync failed')->assertSee('Registrar read failed')->assertSee('Existing domains stay with their registrar');
     $body=$detail->html().$setup->html().$account->html().json_encode($detail->snapshot).json_encode($setup->snapshot).json_encode($account->snapshot);
