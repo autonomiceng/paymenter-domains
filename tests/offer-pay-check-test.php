@@ -84,8 +84,9 @@ same(['cancelled', 'rejected', null], [$invoice->fresh()->status, $op->fresh()->
 InvoiceTransaction::withoutEvents(static fn () => InvoiceTransaction::create(['invoice_id' => $invoice->id, 'amount' => '1.00', 'fee' => '0.00', 'status' => 'succeeded']));
 $returns = new Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
 $account = Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $binding->serverId)->sole();
-$returns->creditRetired($account); $returns->creditRetired($account);
-same('1.00', App\Models\Credit::where('user_id', $user->id)->sole()->amount, 'Late payment is credited exactly once');
+$credited = $returns->creditRetired($account); $returns->creditRetired($account);
+$credit = App\Models\Credit::where('user_id', $user->id)->sole()->amount;
+same('1.00', (string)$credit, 'Late payment is credited exactly once: '.json_encode([$credit, $credited, $op->fresh()->funding]));
 // Existing money, attempted and uncertain work bypass current offer changes without repricing.
 $live->available = true;
 foreach (['paid', 'processing', 'pending', 'uncertain'] as $case) {

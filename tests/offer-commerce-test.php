@@ -35,8 +35,9 @@ foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generatio
     $cart = commerceCart($user); commerceAdd($cart, $public['product'], 'race-'.str_replace('_', '-', $change).'-placeholder.com', 3);
     commerceAdd($cart, $second['product'], 'race-'.str_replace('_', '-', $change).'-placeholder.net');
     $counts = [Order::count(), Invoice::count(), Operation::count()]; $before = $reads->calls;
-    $saved = [];
-    $mutate = static function () use ($change, $binding, $secondBinding, &$saved): void {
+    $reached = false; $saved = [];
+    $mutate = static function () use ($change, $binding, $secondBinding, &$saved, &$reached): void {
+        $reached = true;
         if ($change === 'generation') {
             $row = new App\Models\Setting(['key' => Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::KEY,
                 'settingable_type' => null, 'settingable_id' => null, 'type' => 'string', 'encrypted' => true]);
@@ -58,6 +59,7 @@ foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generatio
         DB::table($table)->where('id', $row->id)->update($update);
     };
     commerceCheckout($user, $cart); $mutate = null;
+    expect($reached, $change.': native admission boundary was reached');
     same($counts, [Order::count(), Invoice::count(), Operation::count()], $change.': entire mixed-account checkout rolls back before obligations');
     same($before, $reads->calls, $change.': no provider read inside native locks');
     // Native outer rollback restores the synthetic mutation too; no simulated concurrent-DB claim.
@@ -66,6 +68,8 @@ foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generatio
 $cart = commerceCart($user); $line = commerceAdd($cart, $public['product'], 'refresh-total-placeholder.com', 3);
 Illuminate\Support\Once::flush();
 $page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
+expect($cart->items()->count() === 1, 'Refresh fixture retains one real cart item');
+expect($page->get('total') !== null, 'Mounted refresh fixture has a visible total');
 $clock->instant = $now->modify('+6 minutes'); $before = $reads->calls;
 $q = new Query($binding, ['com'], 'register', 3);
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
