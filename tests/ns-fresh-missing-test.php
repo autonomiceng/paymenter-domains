@@ -17,7 +17,6 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,UpgradeGate};
 // inspect the real schemas and render only the notice, avoiding unrelated full-page compilation.
 (new Domains)->installed();
 same('active',UpgradeGate::routeState()['state'],'A fresh install selects the new catalogue');
-fixtureAccount(1,'namesilo','synthetic-namesilo');
 tldPanel();$staff=staffUser([Staff::VIEW]);Auth::setUser($staff);
 $pages=[RegistrarSetup::class,RegistrarAccount::class,WhatYouSell::class,ListTlds::class];
 $heading='Missing: an account that can sell domains.';
@@ -37,6 +36,19 @@ $check=static function(bool $visible,string $scenario)use($pages,$heading,$step)
         }
     }
 };
+// With no accounts, the notice keeps the one-click path to connect the first registrar.
+$empty=app(WhatYouSell::class);
+$notices=$empty->content(Schema::make($empty))->getComponents();
+same(1,count($notices),'Zero accounts shows one notice');
+same($heading,$notices[0]->getHeading(),'Zero accounts shows the Missing sales account notice');
+$html=$notices[0]->toHtml();
+expect(str_contains(html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5,'UTF-8'),$step),'Zero accounts names the next step');
+$dom=new DOMDocument;@$dom->loadHTML('<?xml encoding="utf-8" ?>'.$html);
+$links=(new DOMXPath($dom))->query('//a[normalize-space(.)="Open Registrars"]');
+same(1,$links->length,'Zero accounts keeps the Open Registrars button');
+same(RegistrarSetup::getUrl(),$links->item(0)->getAttribute('href'),'Open Registrars points to account setup');
+
+fixtureAccount(1,'namesilo','synthetic-namesilo');
 $check(true,'NameSilo-only fresh install');
 // A connected Enom account supplies the protocol; prices and Orders have their own setup guidance.
 fixtureAccount(2,'enom','synthetic-enom');

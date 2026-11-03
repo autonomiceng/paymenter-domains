@@ -235,8 +235,7 @@ class WhatYouSell extends Page implements HasTable
     {
         Staff::requireView();$components=CatalogueSalesNotice::components();
         if($this->bindings()===[]){
-            if($components!==[]){return $schema->components($components);}
-            return $schema->components([Callout::make('Connect a registrar account first')->warning()->columnSpanFull()
+            return $schema->components([($components[0]??Callout::make('Connect a registrar account first')->warning()->columnSpanFull())
                 ->footer(new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open Registrars</x-filament::button>',['url'=>RegistrarSetup::getUrl()])))]);
         }
         $all=$this->account===self::ALL;$button=static fn(string $label,string $url)=>new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">{{ $label }}</x-filament::button>',['url'=>$url,'label'=>$label]));
