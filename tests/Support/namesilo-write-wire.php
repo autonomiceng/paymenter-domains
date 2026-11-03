@@ -25,7 +25,7 @@ function curl_close($h): void {}
 function nsWriteTransport($binding,$clock): AdmittedTransport {
     app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     $a=Account::where('server_id',$binding->serverId)->sole();$GLOBALS['nsAccountKey']='domains.namesilo_live.accounts.'.$a->stable_identity;
-    config(['domains.namesilo_live.site'=>'https://billing.example.com',$GLOBALS['nsAccountKey']=>[
+    config(['domains.namesilo_live.site'=>rtrim((string)config('app.url'),'/'),$GLOBALS['nsAccountKey']=>[
         'fingerprint'=>$binding->fingerprint,'daily_call_cap'=>1000,'daily_spend_limit_usd'=>'1000.00','currency'=>'USD','balance_funding'=>true],
         'domains.namesilo_live.catalogue'=>true,'domains.namesilo_live.renewal'=>true,'domains.namesilo_live.management'=>true,'domains.provider_send_guard'=>null]);
     $GLOBALS['nsPhysical']=[];

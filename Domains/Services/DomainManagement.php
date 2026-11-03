@@ -128,11 +128,13 @@ final class DomainManagement
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
     {
-        $work=fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
-            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds)));
+        $work=fn()=>$driver->withinReservation(Operation::findOrFail($id),fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
+            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds))));
+        try {
         if(!$this->testManagement){return $work();}
         $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
         return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
+        }catch(WriteHeld $e){if($e->reason!=='write_acceptance_required'){throw $e;}return Operation::findOrFail($id);}
     }
     private function runEntered(int $id, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $deadline): Operation
     {
@@ -189,10 +191,13 @@ final class DomainManagement
             finally { $this->grant = null; $this->receiptGrant = null; }
             return $this->finish($seed, $id, $driver, $result);
         } catch (\Throwable $error) {
-            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals): Operation {
+            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals, $driver): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($claimed && $op && ($op->attempt['management_claim']??null)===$claim && $op->state === 'running') {
                     $b=CatalogueAcceptances::binding($l['account']);
+                    if(($op->attempt['seal']??null)==='sealed'&&$op->funding_basis==='non_billable_management'&&$b->registrarKey==='namesilo'&&$driver->bindsTo($b)&&$driver->unconsumed($id)){
+                        ManagementEvidence::retainUnsent($op,$driver);return $op;
+                    }
                     $cap=$this->testManagement&&(($op->attempt['seal']??null)==='absent'&&EnomTestCalls::refusedSince($refusals)
                         ||$error instanceof EnomTestCallLimit&&EnomTestWriteReservation::unconsumed($b,'management',$id));
                     if($cap){$op->update(['state'=>'held','safe_code'=>'enom_test_management_call_cap','lease_expires_at'=>null,

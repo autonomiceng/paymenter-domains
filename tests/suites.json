@@ -404,7 +404,8 @@
     "tests/sell-automation-test.php",
     "tests/management-glue-namesilo-test.php",
     "tests/menu-registrars-quiet-test.php",
-    "tests/namesilo-runtime-renewal-test.php"
+    "tests/namesilo-runtime-renewal-test.php",
+    "tests/namesilo-runtime-management-test.php"
   ],
   "ui": [],
   "runner": [
