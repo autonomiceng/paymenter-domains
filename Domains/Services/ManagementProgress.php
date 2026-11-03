@@ -95,9 +95,10 @@ final class ManagementProgress
                 if ($child->state==='succeeded' && ManagementEvidence::resolved($child,$d)) { $done++; }
                 elseif ($blocked===null) { $blocked=$child; }
             }
-            $total=$members->count();
-            if ($done===$total) { return [...$row,'text'=>'All '.$total.' changes verified.']; }
-            $prefix=$done.' of '.$total.' changes verified. ';
+            // Owner and staff read the same request number and counts.
+            $total=$members->count();$request='Request #'.$op->id.': ';
+            if ($done===$total) { return [...$row,'text'=>$request.($total===1?'1 change verified.':'all '.$total.' changes verified.')]; }
+            $prefix=$request.$done.' of '.$total.($total===1?' change':' changes').' verified. ';
             if ($op->policy['management']['sequence']['configuration']!==ManagementSequence::currentConfiguration($d)
                 || (int)$d->service->user_id!==(int)$d->user_id) {
                 return [...$row,'text'=>$prefix.'The account or ownership changed. Contact support to finish the remaining changes.','tone'=>'warning'];

@@ -106,6 +106,13 @@ final class DomainFacts
                 $f['DNS records']=self::fact($count===null?(ObservationRecords::limitNotice($d)===null?'Not read yet':null):$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??(Staff::can('admin.domains.manage')?'Use Sync now to read them.':null)):(empty($records['srv'])?null:count($records['srv']).' SRV '.(count($records['srv'])===1?'record':'records').'.'));
                 if ($count!==null) { $f['DNS records']['asOf']=$sections['dns']['at']??null; }
             }
+            if ($d->registrar_key==='namesilo') {
+                try { $off=app(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class)->forDomain($d)->capabilities()->get('dns')->support!==\Paymenter\Extensions\Servers\Domains\Data\Support::Supported; } catch (\Throwable) { $off=false; }
+                $count=isset($records['dns'])?count($records['dns'])+count($records['dns_fixed']):null;
+                // Closed DNS keeps any saved count and always says why and what to do, in the owner's words.
+                if ($count!==null || $off) { $f['DNS records']=self::fact($count===null?'Not available':$count.' '.($count===1?'record':'records'),
+                    sub:implode(' · ',array_filter([$count!==null?'As of '.($sections['dns']['at']??''):null,$off?OwnedDomains::DNS_OFF:null]))); }
+            }
             $glue=$records['glue']??[];
             if ($glue) {
                 $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);

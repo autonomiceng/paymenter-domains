@@ -17,12 +17,14 @@ final class DnsManagement extends Management
     public function validate(string $action,array $payload,string $name): array
     {
         if ($action!=='dns') { return parent::validate($action,$payload,$name); }
-        if (array_keys($payload)!==['records'] || !is_array($payload['records']) || !array_is_list($payload['records']) || count($payload['records'])>50) { throw new \DomainException('Invalid DNS records.'); }
-        return $payload; // The complete, freshly read inventory validates observed IDs and opaque rows in plan().
+        $keys=array_keys($payload);$list=fn($v)=>is_array($v) && array_is_list($v) && count($v)<=50;
+        if (($keys!==['records'] && $keys!==['records','preimage']) || !$list($payload['records']) || (isset($payload['preimage']) && !$list($payload['preimage']))) { throw new \DomainException('Invalid DNS records.'); }
+        return $payload; // The complete, freshly read inventory validates observed IDs and opaque rows in plan(); a form's preimage must still match it.
     }
     public function plan(ManagementRequest $r,RequestContext $c): array
     {
-        $this->owned($r,$c);$inventory=$this->inventory($r,$c);
+        $this->owned($r,$c);$inventory=$this->inventory($r,$c);$seen=$r->payload()['preimage']??null;
+        if ($seen!==null && DnsSequence::records(['state'=>'complete','records'=>$seen])!==DnsSequence::records($inventory)) { throw new \DomainException('DNS records changed.'); }
         return ['preimage'=>$inventory,'steps'=>array_map(fn($delta)=>['action'=>'dns','input'=>['delta'=>$delta]],DnsSequence::plan($r->name,$inventory,$r->payload()['records']))];
     }
     protected function readCommands(): array { return [...parent::readCommands(),'dnsListRecords']; }

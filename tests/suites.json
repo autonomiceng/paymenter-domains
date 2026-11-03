@@ -152,6 +152,7 @@
     "tests/namesilo-management-sequence-test.php",
     "tests/management-durable-sequence-test.php",
     "tests/namesilo-dns-durable-test.php",
+    "tests/namesilo-dns-form-test.php",
     "tests/management-namesilo-boundary-test.php",
     "tests/management-preparation-test.php",
     "tests/observation-budget-test.php",
