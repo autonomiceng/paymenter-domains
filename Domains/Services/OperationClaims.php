@@ -545,7 +545,7 @@ final class OperationClaims
                 throw new \DomainException('Claim route changed.');
             }
             if ($domain->adoptionPending()) { throw new \DomainException('Registration verification required.'); }
-            $op->setRelation('catalogue_tld', $catalogueTld);
+            $op->catalogueTld = $catalogueTld;
             return $callback($op, $domain, $all, $funding, $server, $account, $staff);
         });
     }

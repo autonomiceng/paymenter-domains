@@ -28,7 +28,7 @@ final readonly class WriteAcceptance
         if ($this->protocolAcceptanceCheck && ($this->protocolAcceptanceCheck)($binding,$lock,$query)!==true) { throw new WriteHeld('write_acceptance_required'); }
         if ($caps = $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
             try {
-                $t = $lock ? ($op->relationLoaded('catalogue_tld') ? $op->getRelation('catalogue_tld') : throw new \DomainException('Locked capability snapshot required.')) : null;
+                $t = $lock ? ($op->catalogueTld ?? throw new \DomainException('Locked capability snapshot required.')) : null;
                 $name = $t?->tld ?? $op->domain->tld;
                 CanonicalName::parse($query->name, [$name]);
                 $terms = $caps->requireOrder($binding, $name, $query->action->value, $query->years, $t);

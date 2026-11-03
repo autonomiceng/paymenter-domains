@@ -10,6 +10,9 @@ class Operation extends Model
 {
     use HasAccountBinding;
 
+    /** Transaction-local capability evidence; never an attribute, relationship or persisted authority. */
+    public ?Tld $catalogueTld = null;
+
     protected $table = 'domains_operations';
     protected $guarded = [];
     protected $hidden = ['account_fingerprint', 'payload', 'policy', 'cost', 'attempt', 'funding', 'funding_reason', 'authorized_by', 'request_fingerprint', 'management_pending'];

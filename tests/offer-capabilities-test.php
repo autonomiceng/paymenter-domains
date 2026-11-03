@@ -38,7 +38,7 @@ $op->setRelation('domain', new Paymenter\Extensions\Servers\Domains\Models\Domai
 $accept = new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,null,null,$caps);
 $order = new Paymenter\Extensions\Servers\Domains\Data\Query('capability-placeholder.com',Paymenter\Extensions\Servers\Domains\Data\Action::Register,1);
 same([1,3],$accept->requireCurrent($binding,$order,$op)->terms,'Execution uses independent provider terms while unsold');
-$op->setRelation('catalogue_tld',Tld::findOrFail($t->id));
+$op->catalogueTld=Tld::findOrFail($t->id);
 DB::transaction(fn()=>$accept->requireCurrent($binding,$order,$op,true));
 $clock->instant = $now->modify('+2 days');
 commerceReject(fn()=>$accept->requireCurrent($binding,$order,$op));
