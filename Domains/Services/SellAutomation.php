@@ -45,12 +45,12 @@ final class SellAutomation
         catch(\Throwable $error){Log::warning('Domains selling rule refresh failed.',['server_id'=>$seed instanceof Account?(int)$seed->server_id:$seed,'exception_class'=>$error::class]);}
     }
     /** Runs again each tick so a pause or failed publication does not lose a successful fill. Idempotent under the account mutex. */
-    public static function accept(Account $seed,\DateTimeImmutable $now,?CatalogueEntry $read=null,?int $expectedRevision=null): void
+    public static function accept(Account $seed,\DateTimeImmutable $now,?CatalogueEntry $read=null,?int $expectedRevision=null,?int $generation=null): void
     {
-        DB::transaction(static function()use($seed,$now,$read,$expectedRevision):void {
+        DB::transaction(static function()use($seed,$now,$read,$expectedRevision,$generation):void {
             $s=Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
             $a=Account::where('server_id',$seed->server_id)->lockForUpdate()->sole();
-            UpgradeGate::legacy();
+            UpgradeGate::legacy($generation);
             $b=CatalogueAcceptances::binding($a);if($b->fingerprint!==$seed->account_fingerprint){throw new \DomainException('Catalogue binding mismatch.');}
             $active=self::enabled($a);if(SellRule::saved($b)===null){return;}
             app(AccountBindings::class)->requireReadableLocked($s,$a);

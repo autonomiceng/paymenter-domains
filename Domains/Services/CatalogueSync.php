@@ -62,7 +62,7 @@ final class CatalogueSync
                 }
                 UpgradeGate::legacy($generation);
                 if ($automatic && $entry instanceof CatalogueEntry) {
-                    SellAutomation::accept($account, $context->now(), $entry, $accepted->revision);
+                    SellAutomation::accept($account, $context->now(), $entry, $accepted->revision, $generation);
                     $accepted = CatalogueAcceptances::load($reader->binding());
                 }
                 $recheck = function ($server, $account) use ($accepted, $generation): void {
