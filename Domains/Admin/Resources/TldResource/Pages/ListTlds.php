@@ -16,6 +16,8 @@ class ListTlds extends ListRecords
     protected static string $resource=TldResource::class;
     public function getTitle(): string{return 'TLDs & pricing';}
     public function getBreadcrumbs(): array{return [];}
+    /** The head line says the page's job. TLDs are added in What you sell; this page is for each one's prices. */
+    public function getSubheading(): ?string{return 'TLDs you added in What you sell. Open one to see or change its prices.';}
     protected function getHeaderActions(): array
     {
         $servers=[];

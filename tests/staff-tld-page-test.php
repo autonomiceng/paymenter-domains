@@ -27,6 +27,7 @@ $renew=static fn($t)=>'USD '.PriceCatalogue::retail(Price::where(['server_id'=>$
 
 // Prices synced: one row per registrar account, the account that takes new orders is marked.
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds);same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
+same('TLDs you added in What you sell. Open one to see or change its prices.',$list->instance()->getSubheading(),'The TLDs page says its job in one head line.');$list->assertSee('TLDs you added in What you sell.');
 foreach(['Registrar account','Renewal price','Cost','Domains','Status','Enom TEST identity check','OFFLINE DEMO NameSilo (synthetic)',
     'Enom · default pricing · new orders','NameSilo · default pricing','For sale','USD 8.00',$renew($enom)] as $see){$list->assertSee($see);}
 $plain=$text($list->html());
@@ -173,5 +174,6 @@ $clean($page->html(),'TLD page below cost');
 // Without the costs permission no cost is shown.
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $list=Livewire::actingAs($viewer)->test(ListTlds::class)->assertSuccessful()->assertDontSee('USD 8.00');
+same('TLDs you added in What you sell. Open one to see or change its prices.',$list->instance()->getSubheading(),'Staff without costs get the same head line.');
 $page=Livewire::actingAs($viewer)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('USD 8.00')->assertDontSee('Restore fee');
 echo "Native TLDs & pricing list and TLD page passed.\n";$nativeSuccessful=true;
