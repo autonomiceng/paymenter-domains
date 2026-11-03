@@ -41,6 +41,12 @@ abstract class ManagementProtocol
     abstract public function capabilities(): Capabilities;
     abstract public function validate(string $action, #[\SensitiveParameter] array $payload, string $name): array;
     public function freeze(string $key, string $name, string $action, #[\SensitiveParameter] array $payload, int $domainId): array { return $payload; }
+    /** Optional frozen prerequisite. Each step remains an ordinary one-write management operation. */
+    public function prerequisite(string $action, #[\SensitiveParameter] array $payload): ?array { return null; }
+    /** Opt-in only: read a complete preimage outside locks, then freeze bounded deltas on one save. */
+    public function sequences(string $action): bool { return false; }
+    public function plan(ManagementRequest $request, RequestContext $context): array
+    { throw new \DomainException('Management sequence unsupported.'); }
     abstract public function prepare(ManagementRequest $request, RequestContext $context): array;
     abstract public function observe(ManagementRequest $request, RequestContext $context): ManagementResult;
     abstract protected function apply(ManagementRequest $request, RequestContext $context): ManagementResult;

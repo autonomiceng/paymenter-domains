@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, ManagementRequest};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{ContactProfiles, ManagementEvidence, ManagementReadRecovery};
+use Paymenter\Extensions\Servers\Domains\Services\{ContactProfiles, ManagementEvidence, ManagementReadRecovery, ManagementSequence};
 /** Durable creation and association are separate management operations, each with one grant. */
 final class ManagementProfiles
 {
@@ -18,7 +18,7 @@ final class ManagementProfiles
             if ($op->action !== 'contact_profile' || ($op->policy['management']['input'] ?? null) !== $input) { continue; }
             if (self::open($op, $ops, $d, $key)) { return $op->operation_key; }
         }
-        throw new \DomainException('Fresh contact profile staging required.');
+        return ManagementSequence::key($key);
     }
     /** The newest approved, unused stage's role and contact. The owner's second step must send exactly these. */
     public static function approved(Domain $d): ?array

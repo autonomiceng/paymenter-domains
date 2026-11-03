@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DnsForm,DnsSequence};
 /** Whitelist proven records; DNS/SRV/DS unknown stays absent. Glue is explicitly partial history. No I/O. */
 final class OwnerRecords
 {
@@ -39,6 +40,14 @@ final class OwnerRecords
             return strnatcmp($left[$field],$right[$field]) ?: strcmp(json_encode($left),json_encode($right));
         });return $rows;
     }
+    /** NameSilo's last complete read, from a confirmed save or a complete stored list; IDs and TTLs never leave the server. */
+    public static function nameSilo(Domain $d, ?array $sections=null): ?array
+    {
+        if (($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d)) { return null; }
+        $facts=($sections??ObservationProjection::sections($d))['dns']['facts']??[];
+        $inventory=$facts['sequence_preimage']??(isset($facts['records'])?['state'=>'complete','records'=>$facts['records']]:null);
+        try { DnsSequence::records($inventory??[]); return $inventory; } catch (\Throwable) { return null; }
+    }
     public static function forDomain(Domain $d, ?array $sections=null): array
     {
         $facts=$sections??ObservationProjection::sections($d); $out=[]; $inventory=ObservationRecords::current($d);
@@ -46,6 +55,7 @@ final class OwnerRecords
         $primaryFailed=($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
         foreach (['dns','srv','ds'] as $kind) {
             try {
+                if ($kind==='dns' && $d->registrar_key==='namesilo') { $view=self::nameSilo($d,$facts); if ($view) { ['records'=>$out['dns'],'fixed'=>$out['dns_fixed'],'digest'=>$out['dns_digest']]=DnsForm::view($view); } continue; }
                 if (in_array($kind,['dns','srv'],true)&&($primaryFailed||!$inventory||($inventory['families'][$kind]['state']??null)!=='complete')) { continue; }
                 $rows=$facts[$kind]['facts']['records']??null;
                 if (!is_array($rows)||!array_is_list($rows)||count($rows)>50) { continue; }

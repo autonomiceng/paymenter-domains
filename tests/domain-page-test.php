@@ -97,13 +97,11 @@ same(1,$dom->query('//li[@id="auth_code_email"]//dialog//button[@name="confirmed
 same(0,$dom->query('//li[@id="contacts"]//select[@name="role"]')->length,'One contact form, no role to pick');
 same(['Jane','US'],[$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//select[@name="contact[country]"]/option[@selected]')->item(0)->getAttribute('value')],'Dialog opens on the owner details');
 $forms=static fn(DOMXPath $x)=>array_map(static fn($f)=>[$f->getAttribute('action'),$norm($x->query('.//button[@type="submit"]',$f)->item(0))],iterator_to_array($x->query('//li[@id="contacts"]//form')));
-$staged=['staged'=>true,'actions'=>['contact_profile'=>'/domains/1/manage/contact_profile','contacts'=>'/domains/1/manage/contacts']];
-$d=$domain(['management'=>$management(['contacts'=>$staged])]);$dom=storefrontDom($render($d,$summary($d)));
-same([['/domains/1/manage/contact_profile','Send for approval']],$forms($dom),'Staged registrar, step 1: one form');
-$d=$domain(['management'=>$management(['contacts'=>$staged+['approved'=>['role'=>'tech','contact'=>['first_name'=>'Ann','last_name'=>'Lee','email_address'=>'ann@example.com']]]])]);$dom=storefrontDom($render($d,$summary($d)));
-same([['/domains/1/manage/contacts','Use the approved details']],$forms($dom),'Staged registrar, step 2: one form');
-same(['tech','Ann','hidden'],[$dom->query('//li[@id="contacts"]//input[@name="role"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('value'),$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('type')],'Step 2 sends the approved details unchanged');
-same(1,$dom->query('//li[@id="contacts"]//a[contains(@href,"edit=contacts&new=1")]')->length,'Step 2 can start over');
+$isolated=['staged'=>true,'actions'=>['contacts'=>'/domains/1/manage/contacts']];
+$d=$domain(['management'=>$management(['contacts'=>$isolated])]);$dom=storefrontDom($render($d,$summary($d)));
+same([['/domains/1/manage/contacts','Save']],$forms($dom),'Isolated-profile registrar uses one ordinary save form');
+same('text',$dom->query('//li[@id="contacts"]//input[@name="contact[first_name]"]')->item(0)->getAttribute('type'),'Contact details remain editable');
+same(0,$dom->query('//li[@id="contacts"]//a[contains(@href,"new=1")]')->length,'No manual profile start-over action');
 // One term for the owner: no visible text on the page says registrant.
 $visible=implode(' ',array_map(static fn($n)=>$n->nodeValue,iterator_to_array($dom->query('//body//text()[not(ancestor::style) and not(ancestor::script)]'))));
 expect(stripos($visible,'registrant')===false,'Page text says owner, never registrant');

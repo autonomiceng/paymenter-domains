@@ -5,6 +5,7 @@
     $fields = $isDns ? ['name'=>'Host','type'=>'Type','address'=>'Value','mx_pref'=>'MX priority'] : ['service'=>'Service','protocol'=>'Protocol','priority'=>'Priority','weight'=>'Weight','port'=>'Port','target'=>'Target'];
     $describe = static fn (array $r): string => trim($isDns ? ($r['name'] ?? '').' '.($r['type'] ?? '').' '.($r['address'] ?? '') : '_'.($r['service'] ?? '').'._'.($r['protocol'] ?? '').' '.($r['target'] ?? '').' port '.($r['port'] ?? ''));
     $types = [''=>'Type','A'=>'A (IPv4)','AAAA'=>'AAAA (IPv6)','CNAME'=>'CNAME (alias)','MX'=>'MX (mail)','MXE'=>'MXE (mail IP)','TXT'=>'TXT (text)','URL'=>'URL (redirect)','FRAME'=>'FRAME (masked redirect)'];
+    if (isset($section['types'])) { $types = array_intersect_key($types, array_flip(['', ...$section['types']])); }
 @endphp
 <p class="domains-hint">{{ $isDns ? 'Use @ for the domain itself. Alias and mail targets end with a dot.' : 'Enter the service without the leading underscore, such as sip. The target ends with a dot.' }}</p>
 <form method="POST" action="{{ $section['actions'][$cap] }}" class="domains-owner-form domains-record-form" data-confirm data-confirm-when="records-removed" data-current="{{ count($section['records']) }}">
@@ -27,11 +28,24 @@
 </td>
 @endforeach
 <td>
-@if (!$isDns && (($draft !== null && ($record['_source'] ?? '') !== '') || ($draft === null && $index < count($section['records']))))<input type="hidden" name="records[{{ $index }}][_source]" value="{{ $draft !== null ? $record['_source'] : $index }}">@endif
+@if ((!$isDns || ($section['sources'] ?? false)) && (($draft !== null && ($record['_source'] ?? '') !== '') || ($draft === null && $index < count($section['records']))))<input type="hidden" name="records[{{ $index }}][_source]" value="{{ $draft !== null ? $record['_source'] : $index }}">@endif
 @if (($record['_delete'] ?? '') === '1' && isset($section['records'][$index]))<input type="hidden" name="records[{{ $index }}][_delete]" value="1">@elseif (isset($section['records'][$index]))<button type="submit" name="records[{{ $index }}][_delete]" value="1" formnovalidate class="domains-a domains-linkbtn" data-delete-record>Delete<span class="domains-sr"> record {{ $index + 1 }}</span></button>@endif</td>
 </tr>
 @endforeach
 </tbody></table></div>
+@if ($section['fixed'] ?? [])
+<div data-fixed-records>
+@foreach (\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm::notes($section['fixed']) as $note)<p class="domains-hint">{{ $note }}</p>@endforeach
+<div class="domains-tablewrap" tabindex="0" role="region" aria-label="Records you can’t change here">
+<table class="domains-tbl domains-records"><caption class="domains-sr">Records you can’t change here</caption>
+<thead><tr><th scope="col">Host</th><th scope="col">Type</th><th scope="col">Value</th></tr></thead>
+<tbody>@foreach ($section['fixed'] as $record)
+<tr><td class="domains-mono">{{ $record['name'] }}</td>
+<td>{{ $record['type'] }}</td>
+<td class="domains-mono">{{ $record['address'] }}</td></tr>
+@endforeach</tbody></table></div>
+</div>
+@endif
 <p class="domains-hint">{{ count($draft['records'] ?? $section['records']) === 50 ? 'Up to 50 records. Saving replaces the list. To add one, edit or delete a record first.' : 'Up to 50 records. Saving replaces the list. Fill a blank row to add one.' }}</p>
 <button type="submit" class="domains-btn domains-btn--primary">Save</button>
 @php($confirmOpen = ($section['retry']['confirm'] ?? false) && $section['retry']['action'] === $cap)
