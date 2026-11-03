@@ -88,13 +88,13 @@ final class AccountBindings
             }
             $binding = new AccountBinding($registrar, $serverId, $environment, $identity);
             $facts = LocalAccountEnrollment::facts($binding, $identity, $credentials);
-            $this->uniqueLocalKey($facts, $serverId, $registrar, $environment);
+            $this->uniqueLocalKey($credentials, $serverId, $registrar, $environment);
             $this->registry->authenticate($registrar, $environment, $credentials);
             $enroll = false;
             try {
                 DB::transaction(function () use ($review, $serverId, $binding, $identity, $credentials, $facts, &$enroll): void {
                     $review->lockActor(); $review->lockAccounts(); $review->check(true);
-                    $this->uniqueLocalKey($facts, $serverId, $binding->registrarKey, $binding->environment, true);
+                    $this->uniqueLocalKey($credentials, $serverId, $binding->registrarKey, $binding->environment, true);
                     $account = Account::where('server_id', $serverId)->lockForUpdate()->first();
                     if ($account) { $binding->requireMatch($this->binding($account)); }
                     else {
@@ -116,7 +116,7 @@ final class AccountBindings
         } finally { $review->finish($phase); }
     }
 
-    private function uniqueLocalKey(#[\SensitiveParameter] array $facts, int $serverId, string $registrar, Environment $environment, bool $lock = false): void
+    private function uniqueLocalKey(#[\SensitiveParameter] array $credentials, int $serverId, string $registrar, Environment $environment, bool $lock = false): void
     {
         $query = Account::where('registrar_key', $registrar)->where('environment', $environment->value)->where('server_id', '!=', $serverId)->orderBy('server_id');
         if ($lock) { $query->lockForUpdate(); }
@@ -125,9 +125,23 @@ final class AccountBindings
             if ($lock) { $servers->lockForUpdate(); }
             $server = $servers->firstOrFail();
             $marked = $server->settings()->where('key', LocalAccountEnrollment::KEY)->exists();
-            if (!LocalAccountEnrollment::enrolled($account) && !$marked) { continue; }
-            $credentials = $this->configuration($account, false, $server);
-            if ($facts['key_fingerprint'] === LocalAccountEnrollment::keyFingerprint($credentials)) {
+            $sandbox = $registrar === 'namesilo' && (NameSiloSandbox::enrolled($account) || $server->settings()->where('key', NameSiloSandbox::KEY)->exists());
+            if ($sandbox) {
+                // Retained OTE facts still reserve their key when the old deployment opt-in is off.
+                $retained = json_decode($this->secret((int) $account->server_id, NameSiloSandbox::KEY, $server), true, 8, JSON_THROW_ON_ERROR);
+                if (!NameSiloSandbox::enrolled($account) || $account->environment !== Environment::Test->value
+                    || ($retained['contract'] ?? null) !== 'namesilo_ote_enrollment_v1'
+                    || !hash_equals($account->stable_identity, NameSiloSandbox::identity($retained))
+                    || !is_string($retained['key_fingerprint'] ?? null)) {
+                    throw new \DomainException('Existing sandbox enrollment unavailable.');
+                }
+                $duplicate = hash_equals($retained['key_fingerprint'], hash('sha256', $credentials['api_key']));
+            } else {
+                if (!LocalAccountEnrollment::enrolled($account) && !$marked) { continue; }
+                $existing = $this->configuration($account, false, $server);
+                $duplicate = LocalAccountEnrollment::keyFingerprint($credentials) === LocalAccountEnrollment::keyFingerprint($existing);
+            }
+            if ($duplicate) {
                 throw new \DomainException('This key is already enrolled. Rotate it on its existing local account.');
             }
         }
@@ -263,6 +277,21 @@ final class AccountBindings
         return $this->registry->registrationPreflightReader($expected,$this->configuration($account,true));
     }
 
+    /** Explicit read-only composition. Acceptance belongs to deployment evidence, never to a config flag. */
+    public function nameSiloRuntimeReaderFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
+        #[\SensitiveParameter] ?\Closure $accepted = null): \Closure
+    {
+        return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ReadRuntime::factory($expected,$clock,
+            function(string $revision)use($expected):array {
+                OperationClaims::outside();$this->server($expected->serverId);
+                $account=Account::where('server_id',$expected->serverId)->sole();
+                $expected->requireMatch($this->binding($account));
+                $credentials=$this->configuration($account,true);
+                $this->requireCredentialRevision($expected,$revision);
+                return $credentials;
+            },fn():string=>$this->credentialRevision($expected),$accepted);
+    }
+
     /** Pure opt-in factory. Plaintext is loaded only inside the private protocol exchange. */
     public function enomRuntimeFactory(AccountBinding $expected, \Paymenter\Extensions\Servers\Domains\Contracts\Clock $clock,
         WriteFeatures $features, WriteAcceptance $accepted, RenewalAcceptance $renewalAccepted,
@@ -382,6 +411,9 @@ final class AccountBindings
             }
             $localMarker = ($lockedServer ?? $this->server((int) $account->server_id))->settings()->where('key', LocalAccountEnrollment::KEY)->exists();
             if (LocalAccountEnrollment::enrolled($account) || $localMarker) {
+                if (!$this->registry->localEnrollment($binding->registrarKey)) {
+                    throw new \DomainException('Local enrollment requires its original composition.');
+                }
                 $facts = json_decode($this->secret((int) $account->server_id, LocalAccountEnrollment::KEY, $lockedServer, $advisory), true, 8, JSON_THROW_ON_ERROR);
                 LocalAccountEnrollment::validate($account, $facts, $credentials);
             }
