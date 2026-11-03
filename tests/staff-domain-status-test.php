@@ -81,7 +81,8 @@ $cases['order: paid, nothing left for the customer']=[$invoiced($row('registrati
 $cases['order: paid, auth code missing']=[$invoiced($row('transfer_pending','transfer','awaiting_payment'),'paid'),'action_required','Action required','Auth code needed. Customer has not added the auth code. Not sent yet.'];
 $d=$invoiced($row('registration_pending','register','awaiting_payment'),'paid');
 DB::table('domains_domains')->where('id',$d->id)->update(['registrar_key'=>'namesilo']); DB::table('domains_operations')->where('domain_id',$d->id)->update(['registrar_key'=>'namesilo']);
-$cases['order: paid, setup not finished']=[$d->fresh(),'action_required','Action required','Finish setup. Customer has not finished setup. Not sent yet.'];
+// No NameSilo account here, so the list note leads with that, as the domain's head does.
+$cases['order: paid, setup not finished']=[$d->fresh(),'action_required','Action required','Finish setup. Customer has not finished setup. Not sent yet.',DomainFacts::NO_ACCOUNT];
 $d=$invoiced($row('registration_pending','register','awaiting_payment'),'pending'); DB::table('services')->where('id',$d->service_id)->update(['status'=>'cancelled']);
 $cases['order: closed with an open invoice']=[$d,'under_review','Under review','Order cancelled. Check the domain and its requests.'];
 // The live demo rows from the round 2 click test. An alert left by an old request must not outrank the open one.
@@ -148,10 +149,11 @@ $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-cas
 $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()->getTableRecords()->keyBy('id');
 $ids=static fn(string $key)=>DomainQueries::status(Domain::query()->where('domain','like','w2-case-%'),[$key])->orderBy('id')->pluck('id')->all();
 $members=[]; $wrong=[];
-foreach ($cases as $name=>[$d,$key,$label,$step]) {
+foreach ($cases as $name=>$case) {
+    [$d,$key,$label,$step]=$case; $note=isset($case[4])?$case[4].' '.$step:$step;
     $cell=$columns['status']->record($records[$d->id]); $status=DomainFacts::status($d->fresh());
     $list=[$cell->getState(),$columns['note']->record($records[$d->id])->getState()];
-    if ($list!==[$label,$step]) { $wrong[]=$name.': list shows "'.implode(' / ',array_filter($list)).'", want "'.implode(' / ',array_filter([$label,$step])).'"'; }
+    if ($list!==[$label,$note]) { $wrong[]=$name.': list shows "'.implode(' / ',array_filter($list)).'", want "'.implode(' / ',array_filter([$label,$note])).'"'; }
     $line=DomainFacts::statusLine($status);
     if ([$status['label'],$line]!==[$label,$step]) { $wrong[]=$name.': domain page shows "'.implode(' / ',array_filter([$status['label'],$line])).'", want the same as the list'; }
     $members[$key][]=$d->id;
@@ -283,6 +285,11 @@ $job=['reason'=>null,'step'=>'Registrar request needs a check. Check request #9.
 same(['text'=>'Sync stopped. Registrar request needs a check. Check request #9.','act'=>true],DomainFacts::note($job,'failed'),'A stopped sync is in the note');
 same(['text'=>'Registrar request needs a check. Check request #9.','act'=>true],DomainFacts::note($job,null),'No stopped sync, no mention');
 same('Sync stopped after a failed check. Use Resume sync below.',DomainFacts::note(['reason'=>null,'step'=>'Sync stopped after a failed check. Use Resume sync below.','act'=>true,'request'=>null],'failed')['text'],'A step about the sync does not say it twice');
+// The Registrar column is hidden by default, so a missing registrar account shows in the Note, amber like the domain's head.
+$orphan=$row('active','transfer','succeeded'); DB::table('domains_domains')->where('id',$orphan->id)->update(['account_fingerprint'=>str_repeat('0',64)]);
+$page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
+$columns=$page->instance()->getTable()->getColumns(); $record=$page->instance()->getTableRecords()->keyBy('id')[$orphan->id];
+same(['Registrar account not found. Check Registrars.','warning'],[$columns['note']->record($record)->getState(),$columns['status']->record($record)->getColor($columns['status']->record($record)->getState())],'The list says the registrar account is missing');
 // An ended domain places no orders, so a saved pause on it says nothing. A live one still says it.
 $pausedPolicy=['automatic_spend_paused'=>true];
 $ended=$row('cancelled','register','disposed'); $ended->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();

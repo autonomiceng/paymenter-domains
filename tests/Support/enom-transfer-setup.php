@@ -37,6 +37,8 @@ $write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid
 if(isset($transferConfigured)){$transferConfigured();}
 $write('probe');
 $write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>true]]]);
+// Default pricing is a business-wide setting, so Paymenter reloads its settings after the next request; keep the shop currency in the table as a real install does.
+App\Models\Setting::create(['key'=>'default_currency','value'=>'USD']);
 saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);$write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);$write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>true],$tld->id);
 if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);}$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
