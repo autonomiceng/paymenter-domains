@@ -93,9 +93,9 @@ function assertInstalledUpgradePages(): void
         expect($rows!==null,'Retained audit normalizes for staff history');
         same(['time'=>'2026-10-22T12:00:00+00:00','change'=>'Default pricing changed','reason'=>'Synthetic retained archive review','by'=>'Staff #'.$actor->id],
             $rows[1],'Retained archive normalizes time, action and actor');
-        Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-            ->assertSuccessful()->mountAction('price_history')->assertActionMounted('price_history')
-            ->assertMountedActionModalSee('Synthetic retained archive review');
+        // Price history is the registrar account's History tab.
+        Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class,['account'=>$server->id])
+            ->assertSuccessful()->assertSee('Synthetic retained archive review');
         $tld=Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$server->id)->firstOrFail();
         Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$tld->id])
             ->assertSuccessful()->assertSee('Synthetic retained archive review');

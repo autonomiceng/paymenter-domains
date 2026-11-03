@@ -53,7 +53,7 @@ final class RenewalReplacements
     /** Read-only warning; changed old debt never blocks reconciliation of an admitted replacement. */
     public static function activity(Domain $d): array
     {
-        return array_map(fn($id)=>'Request #'.$id.' · Late financial or billing activity on refunded debt; review the ledger.',self::activityIds($d));
+        return array_map(fn($id)=>'Request #'.$id.': Late financial or billing activity on refunded debt; review the ledger.',self::activityIds($d));
     }
     /** Requests whose refunded debt needs a read-only ledger review. @return list<int> */
     public static function activityIds(Domain $d): array

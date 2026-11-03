@@ -16,6 +16,7 @@ foreach([
     $text=html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5,'UTF-8');
     expect(str_contains(strtolower($text),$words),'Customer receives the actual transfer reason and next step: '.$reason);
     expect(str_contains($text,$staffNotice['title'])&&str_contains($text,$staffNotice['body']),'Customer and staff use the same transfer message: '.$reason);
+    if($status==='needs_action'){expect(!str_contains($text,'WHOIS privacy'),'A legacy needs-action outcome without a specific cause keeps the general checklist');}
     if($reason==='transfer_deadline_passed'){expect(!str_contains($text,'don’t need to do anything')&&!str_contains($text,'nothing you need to do'),'Expired transfer never tells its owner no action is needed');}
 }
 $op->update(['state'=>'uncertain','safe_code'=>'reconciliation_required','policy'=>[...$op->policy,'reconciliation'=>['reason'=>'transfer_rejection_unreconciled','transfer_status'=>'rejected','staff_alert'=>true]]]);

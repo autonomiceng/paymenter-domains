@@ -13,7 +13,7 @@ fresh review and a reason:
 2. **Read balance** makes one independent GetBalance.
 3. **What you sell** lists the account's TLDs (one GetTLDList). Saving `com`, term 1, reads that TLD's
    terms and prices and records safe annual holder renewal. Leave Transfers off for this baseline.
-4. Set the account default pricing on the registrar account page, then **Import accepted ending** for `com`: GetTLDList,
+4. Set Default pricing on What you sell, then **Import accepted ending** for `com`: GetTLDList,
    GetTLDDetails, GetExtAttributes and two PE_GetProductPrice reads (register/renew).
    It imports costs and initializes an unselected seller policy. A new TLD stays
    disabled; re-import preserves withdrawn registration, transfer and renewal support, and publication.

@@ -64,7 +64,7 @@ same('staff_stopped', $read($b, Context::Staff)->reason, 'Facts cannot release t
 $clock->time = $now->modify('+1 minute');
 $apply(new FeedObserved($b, 'com', [new Cost('register', 1, true, '6.0000', CostUnit::TermTotal,
     'synthetic_feed', $clock->time, $clock->time->modify('+1 day'))]));
-$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3, defaultTransfers: true), PricingRule::DEFAULT));
+$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3, defaultTransfers: true)));
 $apply(Edit::republish($b, 'com'));
 $writer->apply(Edit::republish($b, 'org'), $orgRead()->revision);
 $apply(Edit::seller($b, 'com', ['register', 'transfer']));
@@ -172,13 +172,14 @@ $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: t
 same('10.40', $read($b, Context::Holder, 'renew')->retail, 'Below-cost renewal preserves contractual retail');
 $apply(Edit::retainRenewal($b, 'com', '19.95'));
 same('19.95', $read($b, Context::Holder, 'renew')->retail, 'Explicit retained renewal command is independent of current costs');
-// Defaults/fees invalidate every offer immediately, without an unbounded write or provider read.
+// Selling defaults fence each account; fixture pricing uses the shared F51 store.
 $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)));
 $oldDefaults = $revision($b); $freshFacts = $facts($clock->time);
 $apply(new FactsObserved($b, 'com', $freshFacts));
 $rule = ['mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'ending_99',
     'fixed' => ['register' => null, 'renew' => null, 'transfer' => null], 'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']];
-$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3), $rule));
+DB::transaction(static function()use($rule):void{\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY,$rule);\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\CardFee::KEY,$rule['card_fee']);});
+$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3)));
 same(false, $read($b)->available, 'Changed account defaults leave old publications pending');
 same(false, $orgRead()->available, 'One defaults revision fences every offer on the account');
 same(0, $unaffectedCart->items()->count(), 'Defaults withdraw carts across the affected account');
@@ -191,7 +192,8 @@ $writer->apply(Edit::republish($b, 'org'), $orgRead()->revision);
 same(true, $orgRead()->available, 'Independent local fan-out republishes the other offer');
 $feePrice = $read($b)->retail;
 $rule['card_fee']['fixed'] = '5.00';
-$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3), $rule));
+DB::transaction(static function()use($rule):void{\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\PricingRules::KEY,$rule);\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\CardFee::KEY,$rule['card_fee']);});
+$apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3)));
 same(false, $read($b)->available, 'Fee-only change also fences old publications');
 $apply(Edit::republish($b, 'com'));
 expect(PricingRule::units($read($b)->retail, 2) > PricingRule::units($feePrice, 2), 'Local fee fan-out changes retail without provider reads');
@@ -250,7 +252,7 @@ same($plans, Plan::orderBy('id')->pluck('id')->all(), 'Hidden-ending publication
 same($obligations, $frozen(), 'Hidden ending preserves existing service, financial and operation snapshots');
 config(['domains.hidden_endings' => $hiddenConfig]);
 // Missing offers still participate in the real defaults and cross-account selection fences.
-$defaultsRevision = $apply(Edit::defaults($b, 'com', new Intent(defaultSell: true), PricingRule::DEFAULT));
+$defaultsRevision = $apply(Edit::defaults($b, 'com', new Intent(defaultSell: true)));
 $orgSelection = $orgRead()->revision->selection;
 expect($defaultsRevision->defaults > 0 && $orgSelection > 0, 'Discovery fixtures have advanced defaults and seller selection');
 $missingDefault = $writer->readOffers(new Query($b, ['net'], 'register'), Context::Staff)[0];

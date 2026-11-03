@@ -120,7 +120,7 @@ same([1], $display->remember($render), 'Transaction-local projection was never c
 
 // Standalone writers must invalidate even when no owned model event fires.
 $rules = new Paymenter\Extensions\Servers\Domains\Services\PricingRules;
-DB::transaction(fn () => $rules->saveDefaultRuleLocked($tld->server_id, $rules->defaultRule($tld->server_id)));
+DB::transaction(fn () => $rules->saveDefaultRuleLocked($rules->defaultRule()));
 same([3], $display->remember($render), 'Standalone default-rule save forgets warm display');
 $binding = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tld->server_id)->sole());
 $accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);

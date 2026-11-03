@@ -30,11 +30,14 @@ same([],array_diff(array_unique(OwnerHelp::SECTIONS),array_keys(OwnerHelp::SUMMA
 
 // Every anchor is rendered with its id, and the contents list links to each one.
 $dom=storefrontDom((new OwnerHelpController)->show()->render());
-foreach (OwnerHelp::ANCHORS as $id => $title) {
+foreach (OwnerHelp::anchors() as $id => $title) {
     same([$title],array_map(fn($n)=>$n->textContent,iterator_to_array($dom->query('//h2[@id="'.$id.'"]'))),'Help page renders anchor '.$id);
     same(1,$dom->query('//nav//a[@href="#'.$id.'"]')->length,'Contents links to '.$id);
 }
 same(0,$dom->query('//article//h1')->length,'The page has one title');
+same(0,$dom->query('//h2[@id="privacy"] | //a[@href="#privacy"]')->length,'Privacy is hidden from help and its contents');
+expect(!str_contains($dom->document->textContent,'WHOIS privacy'),'Help does not advertise privacy');
+foreach(['Turning renewal invoices off stops scheduled renewal invoices.','You can still use Renew now when your domain is eligible.','An invoice already issued stays payable.','Paying it can still renew your domain.'] as $line){expect(str_contains($dom->document->textContent,$line),'Help explains the effect on existing invoices');}
 
 // Markdown HTML is escaped and unsafe links are dropped.
 $html=OwnerHelp::html("## Nameservers\n\n<script>alert(1)</script>\n\nText <b>bold</b> [x](javascript:alert(1))\n");
@@ -51,7 +54,7 @@ $domain=new OwnedDomain('example.com','Active','ok','2027-01-15','On','$14.00',[
 $dom=storefrontDom(view('domains::show',['domain'=>$domain])->render());
 same(0,$dom->query('//a[normalize-space()="Domain help"]')->length,'Help is said once, in each row popover, not again in the header');
 $buttons=$dom->query('//*[@data-help]/button');
-same(count($management)+1,$buttons->length,'Each section and auto-renew have one help button');
+same(count($management),$buttons->length,'Each visible section and renewal invoices have one help button');
 foreach ($buttons as $button) {
     same(['button','false'],[$button->getAttribute('type'),$button->getAttribute('aria-expanded')],'Help trigger is a collapsed button');
     expect(str_starts_with($button->getAttribute('aria-label'),'About '),'Help trigger has an accessible name');
@@ -62,5 +65,5 @@ foreach ($buttons as $button) {
     same(route('domains.help'),$path,'Learn more opens the help page');
     expect(array_key_exists($anchor,OwnerHelp::ANCHORS),'Learn more points to an existing anchor: '.$anchor);
 }
-foreach (array_keys($management) as $cap) { same(1,$dom->query('//li[@id="'.$cap.'"]/span[@class="domains-row__l"]//*[@data-help]/button[@aria-controls="help-'.$cap.'"]')->length,'Help button next to the title: '.$cap); }
+foreach (array_diff(array_keys($management),['privacy']) as $cap) { same(1,$dom->query('//li[@id="'.$cap.'"]/span[@class="domains-row__l"]//*[@data-help]/button[@aria-controls="help-'.$cap.'"]')->length,'Help button next to the title: '.$cap); }
 $nativeSuccessful=true;echo "Owner help checks passed.\n";

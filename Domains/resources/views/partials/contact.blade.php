@@ -10,6 +10,8 @@
     if ($stateRequired ?? false) { $requiredFields[] = 'state_province'; }
     $limits = $limits ?? \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits('enom');
     $countries = config('app.countries', []);
+    $stateCodes = ['US' => \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::stateCodes('US'),
+        'CA' => \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::stateCodes('CA')];
     $value = function (string $field) use ($useOld, $values, $errorPrefix) {
         $v = !empty($useOld) ? old($errorPrefix.'.'.$field, '') : ($values[$field] ?? '');
         return is_string($v) ? $v : '';
@@ -37,7 +39,7 @@
         <div class="{{ $span }}" data-field>
             <label for="{{ $id }}" class="domains-label">{{ $label }}@if (!$isRequired && $field !== 'state_province') <span class="domains-opt">(optional)</span>@endif</label>
             @include('domains::partials.input', ['list'=>$field==='state_province'?$id.'-codes':null, 'model'=>isset($modelPrefix)?$modelPrefix.'.'.$field:null, 'name'=>$prefix.'['.$field.']', 'current'=>$type==='select'?strtoupper($current):$current, 'limit'=>$limits[$field], 'required'=>$isRequired, 'auto'=>($section ? $section.' ' : '').$auto, 'description'=>$described, 'invalid'=>(bool)$error, 'placeholder'=>$field==='phone'?'+1 206 555 0100':null, 'machine'=>false, 'options'=>$type==='select'?[''=>'Choose a country']+array_filter($countries, fn($key)=>$key!=='', ARRAY_FILTER_USE_KEY):null])
-            @if ($field === 'state_province')<datalist id="{{ $id }}-codes">@foreach (array_unique([...\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::stateCodes('US'), ...\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::stateCodes('CA')]) as $code)<option value="{{ $code }}"></option>@endforeach</datalist>@endif
+            @if ($field === 'state_province')<datalist id="{{ $id }}-codes" data-state-codes="{{ json_encode($stateCodes) }}">@foreach ($stateCodes[strtoupper($value('country'))] ?? [] as $code)<option value="{{ $code }}"></option>@endforeach</datalist>@endif
             @if ($field === 'phone')<p id="{{ $id }}-hint" class="domains-hint">Start with + and your country code.</p>@endif
             @if ($field === 'state_province')<p id="{{ $id }}-hint" class="domains-hint">{{ ($stateRequired ?? false) ? 'Required. For the United States and Canada, use the two-letter code.' : 'Required for the United States, Canada and Australia.' }}</p>@endif
             @if ($error)<p id="{{ $id }}-error" class="domains-error">{{ $error }}</p>@endif

@@ -7,16 +7,16 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 use Paymenter\Extensions\Servers\Domains\Models\{Price,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue;
 extract(commerceFixture(true));Carbon\Carbon::setTestNow($now);$t=$tlds[0];
-$t->update(['use_default_rule'=>true]);
+$t->update(['use_default_rule'=>true]);$tlds[1]->update(['use_default_rule'=>false]);
 $selects=[];$evaluating=false;
 DB::listen(static function($query)use(&$selects,&$evaluating):void{
     if($evaluating&&preg_match('/^select\b.*\bfrom\s+["`]domains_prices["`]/i',$query->sql)){$selects[]=$query->sql;}
 });
-$followers=new ReflectionMethod(SettingsActions::class,'followers');
-$preview=static function()use($followers,$t,&$selects,&$evaluating):string{
-    $selects=[];$evaluating=true;try{return $followers->invoke(null,(int)$t->server_id);}finally{$evaluating=false;}
+$reach=new ReflectionMethod(SettingsActions::class,'reach');$words=new ReflectionMethod(SettingsActions::class,'reachDefault');
+$preview=static function()use($reach,$words,&$selects,&$evaluating):string{
+    $selects=[];$evaluating=true;try{return $words->invoke(null,$reach->invoke(null));}finally{$evaluating=false;}
 };
-same('1 TLD uses the account default: .com. Saving publishes its new prices.',$preview(),'One fresh follower preview');
+same('1 TLD uses Default pricing.',$preview(),'One fresh follower preview');
 same(1,count($selects),'One follower uses one Price SELECT');
 $base=Price::where('server_id',$t->server_id)->where('tld','com')->orderBy('id')->get();
 $seed=static function(string $ending,?callable $change=null)use($t,$base):Tld{
@@ -28,9 +28,9 @@ $seed=static function(string $ending,?callable $change=null)use($t,$base):Tld{
 };
 $seed('fresh');
 $seed('stale',static function(Price $p)use($now):bool{$p->fresh_until=$now;return true;});
-expect(str_contains($preview(),': .com, .fresh, .stale.'),'Three TLD names remain visible');
+same('3 TLDs use Default pricing.',$preview(),'Stale prices still count as saved costs');
 $seed('missing',static fn(Price $p):bool=>false);
-expect(str_contains($preview(),': .com, .fresh, .missing and 1 more.'),'Four TLDs use a bounded name sample');
+expect(str_ends_with($preview(),'Costs are missing for .missing. Its prices stay the same until you sync prices.'),'One waiting TLD is named');
 $seed('norenew',static fn(Price $p):bool=>$p->action!=='renew');
 $seed('future',static function(Price $p)use($now):bool{$p->observed_at=$now->modify('+1 second');return true;});
 $seed('nocost',static function(Price $p):bool{if($p->action==='renew'){$p->wholesale=null;}return true;});
@@ -41,18 +41,18 @@ $excluded=$seed('excluded',static function(Price $p)use($now):bool{
     return true;
 });$excluded->update(['max_years'=>1]);
 $seed('foreign');DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld','foreign')->update(['account_fingerprint'=>'synthetic-other-binding']);
-// Other currency and account rows cannot make a current USD follower stale or fill a missing cost.
+// Other currency rows cannot make a current USD follower stale or fill a missing cost. A follower on another account counts: the rule is shared.
 $eur=$base->first()->replicate();$eur->currency='EUR';$eur->fresh_until=$now;$eur->save();
 DB::table('domains_prices')->where('server_id',$tlds[1]->server_id)->update(['fresh_until'=>$now]);
 $outside=$tlds[1]->replicate();$outside->tld='outside';$outside->use_default_rule=true;$outside->save();
-$expected='9 TLDs use the account default: .com, .excluded, .foreign and 6 more. Saving publishes their new prices. Costs are missing for .foreign, .future, .missing and 2 more. Their prices stay the same until you sync prices.';
-$actual=$preview();echo 'Follower Price SELECTs (nine followers): '.count($selects)."\n";
-same(1,count($selects),'Nine followers still use one Price SELECT');
+$expected='10 TLDs use Default pricing. Costs are missing for .foreign, .future, .missing and 3 more. Their prices stay the same until you sync prices.';
+$actual=$preview();echo 'Follower Price SELECTs (ten followers): '.count($selects)."\n";
+same(1,count($selects),'Ten followers still use one Price SELECT');
 same($expected,$actual,'Batched preview retains ordering, exclusions, renewal requirements and saved costs');
 foreach(['growing','more','largest'] as $ending){$seed($ending);}
-$text=$preview();same(1,count($selects),'Twelve followers still use one Price SELECT');
-expect(str_starts_with($text,'12 TLDs use the account default:'),'Follower count grows');
-expect(str_ends_with($text,' Costs are missing for .foreign, .future, .missing and 2 more. Their prices stay the same until you sync prices.'),'Growing the preview preserves the waiting list');
+$text=$preview();same(1,count($selects),'Thirteen followers still use one Price SELECT');
+expect(str_starts_with($text,'13 TLDs use Default pricing.'),'Follower count grows');
+expect(str_ends_with($text,' Costs are missing for .foreign, .future, .missing and 3 more. Their prices stay the same until you sync prices.'),'Growing the preview preserves the waiting list');
 // Null means query normally; an explicitly empty preload must stay empty and never fall back to SQL.
 $selects=[];$evaluating=true;
 try{tldRefusal(fn()=>PriceCatalogue::requireCosts($t,$now,collect()),'Costs required before publication.');}

@@ -13,14 +13,14 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require __DIR__.'/enom-test-registration-fixture.php';
 config(['domains.enom_writes.registration'=>false]);$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
 $routeFact=Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh());expect(str_starts_with($routeFact,'Revision ')&&!str_contains($routeFact,'take orders'),'No unaccepted TEST route warning without the deployment opt-in');
-config(['domains.enom_writes.registration'=>true]);same($routeFact.' · Save What you sell to take orders',Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'Opted-in deployment warns about unaccepted TEST route');
+config(['domains.enom_writes.registration'=>true]);same($routeFact.'. Save What you sell to take orders',Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'Opted-in deployment warns about unaccepted TEST route');
 config(['domains.enom_catalogue.enabled'=>false]);same($routeFact,Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'No unaccepted TEST route warning while the TEST catalogue is off');config(['domains.enom_catalogue.enabled'=>true]);
 config(['domains.enom_identity.environment'=>'live']);same($routeFact,Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'No unaccepted TEST route warning for a live identity');config(['domains.enom_identity.environment'=>'test']);
 $write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
 $accepted=CatalogueAcceptances::load($binding);
 same('https://resellertest.enom.com/interface.asp',$accepted->registrationRoute,'Existing staff catalogue acceptance records the TEST Purchase route');
 same(25,$accepted->registrationIntervalSeconds,'Existing staff catalogue acceptance records the worker request interval');
-$write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
+saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
@@ -44,9 +44,25 @@ $historyAttempt=new AttemptEvidence($binding,new Query('history-only-placeholder
     $historyNow->modify('-60 seconds'),$historyNow->modify('-1 second'),seal:DispatchSeal::Sealed,historyAcceptance:$history);
 expect($history->covers($historyAttempt,$historyNow),'Regression fixture carries valid pre-existing Enom history acceptance');$beforeHistory=count($GLOBALS['enomWire']['forms']);
 $historyContext=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(20),$clock,Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter());
-try{$generalReader->reconcile($historyAttempt,$historyContext);throw new LogicException('TEST reconciliation cannot query history without a captured OrderID.');}
-catch(DomainException $error){same('Captured TEST Purchase OrderID is required.',$error->getMessage(),'History acceptance cannot satisfy captured-ID reconciliation');}
-same($beforeHistory,count($GLOBALS['enomWire']['forms']),'History acceptance cannot open the TEST reconciliation history path');
+// Accepted registration history opens read-only recovery; an empty XML list cannot establish a purchase.
+$GLOBALS['enomWire']['reply']=static fn(array $p):string=>$p['Command']==='GetOrderList'
+    ?'<interface-response><Command>GetOrderList</Command><ErrCount>0</ErrCount><Done>true</Done><OrderCount>0</OrderCount><OrderList></OrderList></interface-response>'
+    :$reply($p);
+try{$historyResult=$generalReader->reconcile($historyAttempt,$historyContext);}
+finally{$GLOBALS['enomWire']['reply']=$reply;}
+same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp','GetOrderList'],
+    array_column(array_slice($GLOBALS['enomWire']['forms'],$beforeHistory),'Command'),'Covering acceptance opens only bounded read-only reconciliation');
+$historyFacts=$historyResult->result()->evidence();
+same([false,[],Paymenter\Extensions\Servers\Domains\Data\Disposition::Unknown],
+    [$historyFacts->historyComplete,$historyFacts->candidates,$historyResult->disposition],'Empty XML history remains incomplete and never invents a successful purchase');
+foreach([null,new HistoryAcceptance($binding,'America/Los_Angeles',120,86400,'enom_registration_v1')]as$uncovered){
+    $attempt=new AttemptEvidence($binding,$historyAttempt->query,'history-uncovered',1,ExecutionRecord::RecordedNull,SendState::PossiblySent,
+        $historyAttempt->windowStart,$historyAttempt->windowEnd,seal:DispatchSeal::Sealed,historyAcceptance:$uncovered);
+    expect(!($uncovered?->covers($attempt,$historyNow)??false),'Negative has no covering history acceptance');$beforeHistory=count($GLOBALS['enomWire']['forms']);
+    try{$generalReader->reconcile($attempt,$historyContext);throw new LogicException('Missing or lagging history acceptance must refuse before reads.');}
+    catch(DomainException $error){same('Captured TEST Purchase OrderID is required.',$error->getMessage(),'Uncovered history cannot substitute for a captured order');}
+    same($beforeHistory,count($GLOBALS['enomWire']['forms']),'Uncovered history sends no registrar request');
+}
 $closedQuery=new Paymenter\Extensions\Servers\Domains\Data\Query('closed-poll.example',Action::Register,1);$beforeClosed=count($GLOBALS['enomWire']['forms']);
 foreach([fn()=>$generalReader->quote($closedQuery,$readContext),fn()=>$generalReader->readDomain('closed-poll.example',$readContext),
     fn()=>$generalReader->renewalAssessment($closedQuery,$readContext)] as $closedRead){try{$closedRead();throw new LogicException('General TEST reader exposed a reconciliation-only method.');}catch(DomainException){}}
@@ -99,9 +115,9 @@ config(['cache.default'=>'database','session.driver'=>'database','queue.default'
 $user=commerceUser();$user->update(['email'=>'registration-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 $product=app(NativeCatalogue::class)->product($tld,'register');$front=app(Storefront::class);
-$before=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSee('API calls, last 24 hours')->assertSee(EnomTestSendLimit::usage('test-uid')['day'].' of '.EnomTestSendLimit::usage('test-uid')['day_limit'])->assertSeeInOrder(['Setup checklist','Registrations','On','Transfers'])->assertDontSee('TEST-SECRET-TOKEN');$front->endings();same($before,count($GLOBALS['enomWire']['forms']),'Page views make zero calls');same($beforeUsed,enomTestSendCount(),'Page views record no TEST sends');
+$before=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSee('API calls, last 24 hours')->assertSee(number_format(EnomTestSendLimit::usage('test-uid')['day']).' of '.number_format(EnomTestSendLimit::usage('test-uid')['day_limit']))->assertSeeInOrder(['Sales','Registrations','On','Transfers'])->assertDontSee('TEST-SECRET-TOKEN');$front->endings();same($before,count($GLOBALS['enomWire']['forms']),'Page views make zero calls');same($beforeUsed,enomTestSendCount(),'Page views record no TEST sends');
 $before=count($GLOBALS['enomWire']['forms']);Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-    ->callAction('check_balance')->assertNotified('Balance updated');
+    ->callAction('checkBalance')->assertNotified('Balance updated');
 same($before+1,count($GLOBALS['enomWire']['forms']),'Staff Refresh now makes one counted balance read');
 same('GetBalance',$GLOBALS['enomWire']['forms'][array_key_last($GLOBALS['enomWire']['forms'])]['Command'],'Existing staff Refresh now reads the opted-in TEST balance');
 $manualBalance=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
@@ -269,7 +285,7 @@ same($beforeUsed,enomTestSendCount(),'Zero cap does not increment');same($before
 $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $beforeCalls=count($GLOBALS['enomWire']['forms']);$evidenceBefore=array_intersect_key((array)$balanceBeforeRefusal,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code']));
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body('Our test send limit is 0, so no Enom test requests are sent.'));
+    ->callAction('checkBalance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body('Our test send limit is 0, so no Enom test requests are sent.'));
 same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Staff Refresh now honors the exhausted cap before transport');
 $evidenceAfter=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 same($evidenceBefore,array_intersect_key((array)$evidenceAfter,array_flip(['amount','currency','source','attempted_at','read_at','last_error_code'])),'Staff cap refusal preserves the prior successful USD evidence');
@@ -282,7 +298,7 @@ $clock->at=$clock->at->modify('+61 seconds');Carbon\Carbon::setTestNow($clock->n
 $beforeCalls=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();$faultFacts=EnomTestSendLimit::facts('test-uid');$counterFault=true;
 DB::listen(static function($query)use(&$counterFault):void{if($counterFault&&str_starts_with(strtolower($query->sql),'insert')&&str_contains($query->sql,EnomTestSendLimitSchema::SENDS)){$counterFault=false;throw new RuntimeException('Synthetic counter error');}});
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
-    ->callAction('check_balance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body($faultFacts));
+    ->callAction('checkBalance')->assertNotified(\Filament\Notifications\Notification::make()->danger()->title("Couldn't check balance")->body($faultFacts));
 expect(!$counterFault,'Synthetic counter error reached the send limit');same($beforeUsed,enomTestSendCount(),'Counter error refusal rolls back its attempt');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Counter error refuses before transport');
 $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$reconcileCapOp=$new(placeholderComFixtureName('reconcile-cap-placeholder.com'));$worker->operation($reconcileCapOp->id);same('pending',$reconcileCapOp->fresh()->state,'Second Purchase ACK remains Processing');
 $GLOBALS['testRegisteredName']=$reconcileCapOp->domain->domain;$used=enomTestSendCount();config(['domains.enom_test_sends_per_day'=>$used+3]);
