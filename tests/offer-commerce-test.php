@@ -58,8 +58,9 @@ foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generatio
         };
         DB::table($table)->where('id', $row->id)->update($update);
     };
-    commerceCheckout($user, $cart); $mutate = null;
-    expect($reached, $change.': native admission boundary was reached');
+    $attempt = commerceCheckout($user, $cart); $mutate = null;
+    $failure = collect($attempt->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
+    expect($reached, $change.': native admission boundary was reached: '.$failure);
     same($counts, [Order::count(), Invoice::count(), Operation::count()], $change.': entire mixed-account checkout rolls back before obligations');
     same($before, $reads->calls, $change.': no provider read inside native locks');
     // Native outer rollback restores the synthetic mutation too; no simulated concurrent-DB claim.

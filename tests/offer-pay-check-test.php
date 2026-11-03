@@ -86,7 +86,8 @@ $returns = new Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
 $account = Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $binding->serverId)->sole();
 $credited = $returns->creditRetired($account); $returns->creditRetired($account);
 $credit = App\Models\Credit::where('user_id', $user->id)->sole()->amount;
-same('1.00', (string)$credit, 'Late payment is credited exactly once: '.json_encode([$credit, $credited, $op->fresh()->funding]));
+same('1.00', Paymenter\Extensions\Servers\Domains\Services\RetailLine::decimal($credit), 'Late payment is credited exactly once');
+same(1, count($op->fresh()->funding['late_credits']), 'Repeated inspection retains one credit ledger entry');
 // Existing money, attempted and uncertain work bypass current offer changes without repricing.
 $live->available = true;
 foreach (['paid', 'processing', 'pending', 'uncertain'] as $case) {
