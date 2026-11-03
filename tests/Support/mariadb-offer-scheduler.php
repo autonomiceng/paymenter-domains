@@ -3,6 +3,7 @@
 declare(strict_types=1);
 $deferDomainsBootstrap = true;
 require __DIR__.'/mariadb-bootstrap.php';
+require __DIR__.'/FakeRegistrar.php';
 use App\Models\{Role, Server, User};
 use Illuminate\Support\Facades\{Artisan, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeConversion, UpgradeGate, Writer};
