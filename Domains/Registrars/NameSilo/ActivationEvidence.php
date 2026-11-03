@@ -41,8 +41,12 @@ final class ActivationEvidence implements LiveActivationEvidence
         try{$this->account($binding);return true;}catch(\Throwable){return false;}
     }
     public function label(): string {return 'NameSilo';}
-    public function configuration(): array
-    {return [config('domains.namesilo_live'),config('domains.namesilo_account.environment')];}
+    public function configuration(Account $account): array
+    {
+        try{$revision=app(AccountBindings::class)->credentialRevision(CatalogueAcceptances::binding($account));}
+        catch(\Throwable){$revision=null;} // A broken key must still permit local review/withdrawal.
+        return [config('domains.namesilo_live'),config('domains.namesilo_account.environment'),$revision];
+    }
     public function requireControls(array $evidence): void
     {
         foreach(['reject_invalid_contacts','restore_disabled','auto_replenishment_disabled'] as $control){
@@ -59,6 +63,6 @@ final class ActivationEvidence implements LiveActivationEvidence
             throw new \DomainException('NameSilo runtime revision Missing. Ask your site admin to install the admitted runtime.');
         }
         return ['credential_revision'=>app(AccountBindings::class)->credentialRevision($binding),
-            'deployment'=>hash('sha256',json_encode($this->configuration(),JSON_THROW_ON_ERROR))];
+            'deployment'=>hash('sha256',json_encode($this->configuration(Account::where('server_id',$binding->serverId)->sole()),JSON_THROW_ON_ERROR))];
     }
 }

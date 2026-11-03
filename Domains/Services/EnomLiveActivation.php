@@ -2,17 +2,16 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use App\Models\{Currency,Server,User};
-use Illuminate\Support\Facades\{DB,Schema};
+use App\Models\{Server,User};
+use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,HistoryAcceptance,PriceSnapshot};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 /** Local activation only. Provider evidence comes from reviewed deployment input, never a staff checkbox or TEST defaults. */
 final class EnomLiveActivation
 {
-    public const KEY='domains_live_activation';
-    public const FEATURES=['registration','renewal','management','transfer'];
+    public const KEY=LiveActivation::KEY;
+    public const FEATURES=LiveActivation::FEATURES;
     private const PRICE_MISSING='Costs and prices Missing. Choose what you sell, Sync prices, then check the enabled TLDs and registrar on the TLD list.';
     public static function defaults(Account $a): array
     {
@@ -144,7 +143,7 @@ final class EnomLiveActivation
             $enabling=self::enabling($a,$features);$receipt=self::receipt($a);
             if($enabling){
                 self::requireReady($a,$enabling);$e=self::evidence($b);
-                $receipt=['fingerprint'=>$b->fingerprint,'site'=>EnomLive::site(),'evidence'=>hash('sha256',json_encode($e,JSON_THROW_ON_ERROR))];
+                $receipt=self::engine()->receiptFor($b);
                 if($enabling['registration']??false){HistoryAcceptances::saveLocked(self::history($b,$e,'registration'));}
             }
             foreach(['renewal'=>EnomTestRenewal::class,'management'=>EnomTestManagement::class,'transfer'=>EnomTestTransfer::class] as $feature=>$class){

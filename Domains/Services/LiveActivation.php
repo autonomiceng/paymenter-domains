@@ -17,14 +17,14 @@ final class LiveActivation
     /** Configuration outside server settings must also make a displayed review stale. No secrets enter the ticket or audit. */
     public function stamp(Account $a,bool $balance=false): string
     {
-        return hash('sha256',json_encode([...$this->provider->configuration(),config('app.url'),Missing::supportUrl(),
+        return hash('sha256',json_encode([...$this->provider->configuration($a),config('app.url'),Missing::supportUrl(),
             config('cache.default'),config('cache.stores.'.config('cache.default').'.driver'),config('session.driver'),config('queue.default'),
             config('queue.connections.'.config('queue.default')),Currency::where('code','USD')->pluck('code')->all(),
             $balance?$this->balance($a):null,$balance?$this->workerReady():null],JSON_THROW_ON_ERROR));
     }
     public function balance(Account $a): ?object
     {return Schema::hasTable(BalanceSchema::TABLE)?DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->select(['amount','currency','read_at','last_error_code'])->first():null;}
-    public function workerReady(): bool
+    private function workerReady(): bool
     {
         if(!Schema::hasTable('domains_runtime_turns')){return false;}
         $last=DB::table('domains_runtime_turns')->max('finished_at');$now=app(Clock::class)->now()->getTimestamp();
@@ -41,7 +41,7 @@ final class LiveActivation
         $this->provider->requireControls($e);
         return $e;
     }
-    public function dated(array $e): bool
+    private function dated(array $e): bool
     {
         $date=$e['confirmed_on']??null;$d=is_string($date)?\DateTimeImmutable::createFromFormat('!Y-m-d',$date):false;
         return $d&&$d->format('Y-m-d')===$date&&$date<=app(Clock::class)->now()->format('Y-m-d')
