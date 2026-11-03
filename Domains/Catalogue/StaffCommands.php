@@ -111,6 +111,10 @@ final class StaffCommands
     private function settings($binding,Tld $t,array $raw,array $data,?array $rule): Edit
     {
         if(($data['min_years']??1)!=1){throw new \DomainException('Offer terms start at one year.');}
+        if(($data['enabled']??false)&&(($data['register']??false)||($data['transfer']??false))&&($raw['sell']??null)!==true){
+            $defaults=OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
+            $raw['sell']=($defaults['defaultSell']??true)?null:true;
+        }
         $raw['longest']=(int)($data['max_years']??1);$raw['transfers']=(bool)($data['transfer']??false);$raw['stops']=[];
         foreach(['register','renew','transfer'] as $action){if(!($data['enabled']??false)||!($data[$action]??false)){$raw['stops'][]=$action;}}
         if(in_array('renew',$raw['stops'],true)&&Domain::where(['server_id'=>$binding->serverId,'tld'=>$t->tld,'account_fingerprint'=>$binding->fingerprint])->whereNotNull('reservation_name')->exists()){

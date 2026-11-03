@@ -21,6 +21,17 @@ $review=static fn(string $action,?int $tld=null)=>new Review($actor->id,$binding
 $run=static fn(string $action,array $data=[],?int $tld=null)=>$commands->run($review($action,$tld),$data);
 $routed=new class($prices) extends NativeCatalogue {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$routed->commands=$commands;
 $writes=new class($native,$sellers,$bindings) extends StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$writes->commands=$commands;
+// Restore uses the routed settings path and keeps row choice distinct from account defaults.
+$restore=['enabled'=>true,'register'=>true,'renew'=>true,'transfer'=>true,'min_years'=>1,'max_years'=>3,'verified'=>true];
+$run('acceptance',['sell'=>['choices'=>['com'=>'skip']]]);$writes->run($review('tld_settings',$id),$restore,$now);
+same(true,OfferState::decode(Tld::find($id)->catalogue_intent)['sell'],'Restore clears an explicit skip under closed defaults');expect($storefront->offer('com','register',1)!==null,'Restored registration is publicly available');
+$run('acceptance',['sell'=>['choices'=>['com'=>null]]]);commerceReject(fn()=>$storefront->offer('com','register',1));
+$writes->run($review('tld_settings',$id),$restore,$now);same(true,OfferState::decode(Tld::find($id)->catalogue_intent)['sell'],'Restore opts in when the inherited account default is closed');
+same(false,OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults)['defaultSell'],'Restore does not open the account default');
+$run('acceptance',['sell'=>['rule'=>['mode'=>'except','max_cost'=>null,'years'=>3,'transfers'=>true]]]);$routed->publish($id,$now);
+$run('acceptance',['sell'=>['choices'=>['com'=>'skip']]]);$writes->run($review('tld_settings',$id),$restore,$now);
+same(null,OfferState::decode(Tld::find($id)->catalogue_intent)['sell'],'Restore follows open defaults instead of inventing an explicit choice');expect($storefront->offer('com','register',1)!==null,'Open-default restore reaches the public decision');
+$run('acceptance',['sell'=>['rule'=>['mode'=>'only','max_cost'=>null,'years'=>1,'transfers'=>false]]]);$routed->publish($id,$now);$writes->run($review('tld_settings',$id),$restore,$now);$wake=0;
 $nativeIds=Product::orderBy('id')->pluck('id')->all();$calls=$reads->calls;
 $before=count(Review::historyRows(Server::find($binding->serverId)));
 $writes->run($review('default_rule'),['mode'=>'fixed','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00'],$now);
