@@ -52,6 +52,8 @@ foreach ([['timeout',28,200,false],['connect',7,200,false],['tls',60,200,false],
     $GLOBALS['failureErrno']=$errno;
     resetWire(['execFail'=>!$parse&&$status===200,'status'=>$status,'chunks'=>['<invalid private="SENTINEL">']]);
     $result=$runRegistration($op)->fresh();
+    Illuminate\Support\Facades\Auth::setUser($staff);
+    same(25,$GLOBALS['enomWire']['options'][CURLOPT_LOW_SPEED_TIME],'A quiet Purchase is allowed its full call limit');
     same(['category'=>$category,'timeout_ms'=>25000],$result->attempt['send_failure']??null,'The original attempt keeps the fixed reason and actual call limit');
     same('uncertain',$result->state,'Failure never authorizes another Purchase');
     same(null,$result->attempt['execution'],'Lost reply keeps recorded-null execution');
