@@ -15,19 +15,20 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 final class StorefrontCatalogueCache
 {
     public const TTL = 30;
-    public function __construct(private readonly Clock $clock) {}
+    public function __construct(private readonly Clock $clock, private readonly ?\Closure $fence = null) {}
 
     public function remember(\Closure $render): array
     {
         // Never publish an uncommitted projection, or reuse display rows inside a writer.
         if (DB::transactionLevel() !== 0) { return $render(); }
-        $scope = self::scope(); $revision = self::revision($scope); $key = self::key($scope, $revision);
+        $scope = self::scope(); $revision = self::revision($scope); $stamp = $this->fence ? ($this->fence)() : null;
+        $key = self::key($scope, $revision).($stamp === null ? '' : ':'.$stamp);
         $now = $this->clock->now(); $until = $now->modify('+'.self::TTL.' seconds');
         $cached = $this->readRows($key, $now);
         if ($cached !== null) { return $cached; }
         $rows = $render();
         // Publication changes the namespace, including a commit racing the following put.
-        if ($revision !== self::revision($scope) || $this->clock->now() >= $until) { return $rows; }
+        if ($revision !== self::revision($scope) || ($this->fence && $stamp !== ($this->fence)()) || $this->clock->now() >= $until) { return $rows; }
         Cache::put($key, ['rows' => $rows, 'from' => $now->format('Y-m-d\TH:i:s.uP'), 'until' => $until->format('Y-m-d\TH:i:s.uP')], self::TTL);
         return $rows;
     }
@@ -37,7 +38,7 @@ final class StorefrontCatalogueCache
     {
         if (DB::transactionLevel() !== 0) { return null; }
         $scope = self::scope();
-        return $this->readRows(self::key($scope, self::revision($scope)), $this->clock->now());
+        return $this->readRows(self::key($scope, self::revision($scope)).($this->fence ? ':'.($this->fence)() : ''), $this->clock->now());
     }
 
     private function readRows(string $key, \DateTimeImmutable $now): ?array

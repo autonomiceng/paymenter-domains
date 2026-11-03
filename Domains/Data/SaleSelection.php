@@ -8,7 +8,7 @@ final readonly class SaleSelection implements \JsonSerializable
 {
     public function __construct(public string $tld, public int $serverId, public string $registrar,
         public string $fingerprint, public int $policyRevision, public string $action, public int $term,
-        public string $currency, public int $priceId, public int $priceRevision) {}
+        public string $currency, public int $priceId, public int $priceRevision, public ?array $catalogue = null) {}
     public function jsonSerialize(): array { return ['tld' => $this->tld, 'action' => $this->action, 'term' => $this->term]; }
     public function __debugInfo(): array { return $this->jsonSerialize(); }
     public function __serialize(): array { throw new \LogicException('Persist selection through an explicit server-side cart adapter.'); }

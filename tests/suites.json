@@ -81,6 +81,7 @@
     "tests/catalogue-sync-test.php",
     "tests/native-catalogue-test.php",
     "tests/cart-admission-test.php",
+    "tests/offer-commerce-test.php",
     "tests/checkout-refresh-test.php",
     "tests/invoice-binding-test.php",
     "tests/contact-setup-test.php",
