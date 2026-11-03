@@ -233,7 +233,9 @@ final class UpgradeGate
             }
             return UpgradeComparison::locked(function () use ($evidence, $state, $rows): array {
                 if (($evidence['accounts'] ?? null) !== $this->accounts()) { throw new \DomainException('Catalogue account or credential set changed.'); }
-                $this->drained(); $contract = CallerRouting::contract(); $report = $this->comparison($evidence);
+                $this->drained(); $contract = CallerRouting::contract();
+                try { $report = $this->comparison($evidence); }
+                catch (\JsonException|\TypeError|\InvalidArgumentException) { throw new \DomainException('Malformed catalogue staging refuses activation.'); }
                 if (!$report['compatible'] || !$report['complete']) { throw new \DomainException('Catalogue conversion/source/financial comparison failed.'); }
                 $generation = $state['generation'] + 1;
                 $digest = hash('sha256', OfferState::json([$evidence,$contract,$report]));
