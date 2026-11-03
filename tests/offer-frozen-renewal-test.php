@@ -39,7 +39,7 @@ same($writes,$state->writes,'Renewal completion is read only');
 [$virgin,,$binding]=$makeRenewal(placeholderComFixtureName('offer-expiring-renewal-placeholder.com'));
 $factsUntil=$clock->now()->modify('+26 seconds');
 DB::table('domains_tlds')->where('server_id',$binding->serverId)->where('tld','com')->update([
-    'catalogue_facts'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+    'catalogue_facts'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
         ['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$clock->now(),$factsUntil))]);
 $authority=new \Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority($renewBindings,$clock,$caps);
 $accepted=new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding,true,true,25,true);

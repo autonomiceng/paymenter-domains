@@ -51,7 +51,7 @@ expect(method_exists($caps, 'identities'), 'Retained Enom reads need identities 
 same(['com'], $caps->identities($binding), 'Unknown facts preserve the bound converted suffix used to parse historical reads');
 // The checklist describes acquisition decisions, while execution support survives a sales stop.
 $clock->instant=$now;
-DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::encodeFacts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
     ['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))]);
 $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['net'],'register');
 $revision=fn()=>$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;

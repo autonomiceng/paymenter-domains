@@ -28,12 +28,23 @@ $d=$paid->domain->fresh();
 $holder=new HolderPricing($prices,$caps);
 $other=Tld::create(['server_id'=>$binding->serverId,'registrar_key'=>$binding->registrarKey,
     'account_fingerprint'=>$binding->fingerprint,'tld'=>'net','catalogue_converted'=>true,'catalogue_retained_annual_retail'=>'22.00']);
-commerceReject(fn()=>DB::transaction(fn()=>$holder->renewal($d,'USD',$clock->now(),true,$other)));
-$stale=clone $d; $stale->account_fingerprint=str_repeat('f',64);
-commerceReject(fn()=>$holder->renewal($stale,'USD',$clock->now()));
-$stale=clone $d; $stale->registrar_key='namesilo';
-commerceReject(fn()=>$holder->renewal($stale,'USD',$clock->now()));
-commerceReject(fn()=>$holder->renewal($d,'USD',$clock->now(),true,Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()));
+$staleFingerprint=clone $d; $staleFingerprint->account_fingerprint=str_repeat('f',64);
+$staleRegistrar=clone $d; $staleRegistrar->registrar_key='namesilo';
+$locked=Tld::where('server_id',$binding->serverId)->where('tld','com')->sole();
+$refused=[];
+foreach([
+    'ending'=>fn()=>DB::transaction(fn()=>$holder->renewal($d,'USD',$clock->now(),true,$other)),
+    'fingerprint'=>fn()=>$holder->renewal($staleFingerprint,'USD',$clock->now()),
+    'registrar'=>fn()=>$holder->renewal($staleRegistrar,'USD',$clock->now()),
+    'transaction'=>fn()=>$holder->renewal($d,'USD',$clock->now(),true,$locked),
+] as $case=>$call){
+    try{$call();$refused[$case]=false;}catch(DomainException|LogicException $error){$refused[$case]=true;}
+}
+same(['ending'=>true,'fingerprint'=>true,'registrar'=>true,'transaction'=>true],$refused,'Holder preserves requested ending, fingerprint, registrar and locked transaction');
+$preparedPrices=new PaymenterExtensionsServersDomainsServicesPriceCatalogue(new PaymenterExtensionsServersDomainsServicesPricingRules,$caps);
+commerceReject(fn()=>DB::transaction(fn()=>$preparedPrices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$clock->now(),true,$other)));
+commerceReject(fn()=>$preparedPrices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$clock->now(),true,$locked));
+same('10.40',$preparedPrices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$clock->now())->retail,'Prepared direct catalogue keeps retained holder retail');
 
 DB::transaction(function () use ($caps,$d,$clock,$prices): void {
     $l=HoldingLocks::take($d,catalogue:$caps);

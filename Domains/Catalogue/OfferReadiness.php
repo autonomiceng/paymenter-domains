@@ -28,16 +28,26 @@ final class OfferReadiness
             ->orderBy('id')->chunkById(25,function($tlds)use($b,$features,$lock,$defaults,&$costs,&$failures,&$counts):void {
                 $names=$tlds->pluck('tld')->all();$queries=[];
                 foreach(['register','renew','transfer'] as $action){foreach($action==='register'?range(1,10):[1] as $term){$queries[]=new Query($b,$names,$action,$term);}}
+                $loaded=null;
+                if($lock){
+                    // Lock the complete ordered page prefix before decoding any individual snapshot.
+                    try{$loaded=$this->reader->loadBatch($queries,Context::Staff,true);}catch(\Throwable){}
+                }
                 $display=$lock?null:$this->reader->displayBatch([new Query($b,$names,'register')],Context::Staff)[0];
                 if($lock){$tlds=Tld::whereKey($tlds->pluck('id'))->orderBy('id')->lockForUpdate()->get();}
                 foreach($tlds as $i=>$t){
                     try {
+                        $local=$loaded;
+                        if($lock&&$local===null){
+                            $rowQueries=array_map(fn($q)=>new Query($b,[$t->tld],$q->action,$q->term),$queries);
+                            $local=$this->reader->loadBatch($rowQueries,Context::Staff,true);
+                        }
                         $intent=OfferState::decode($t->catalogue_intent);
                         new Intent(...array_intersect_key($intent,array_flip(['sell','longest','transfers','stops'])));
                         $rows=[];
-                        foreach($queries as $q){
+                        foreach($queries as $j=>$q){
                             $rows[$q->action.':'.$q->term]=$lock
-                                ? $this->reader->loadBatch([new Query($b,[$t->tld],$q->action,$q->term)],Context::Staff,true)[0][0]
+                                ? $local[$j][$loaded===null?0:$i]
                                 : ($display[$t->tld][$q->action.':'.$q->term]??null);
                         }
                     } catch (\Throwable) {
