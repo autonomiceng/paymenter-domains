@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Models;
 use Illuminate\Database\Eloquent\Model;
-/** Internal append-only authority/evidence. No customer IDs, raw responses or contact payload in cleartext. */
+/** Internal retained authority. Provider identity is encrypted; no raw responses or contact payload. */
 final class ProfileContactOperation extends Model
 {
     protected $table='domains_profile_operations';

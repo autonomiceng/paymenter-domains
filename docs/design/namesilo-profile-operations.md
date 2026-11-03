@@ -14,6 +14,8 @@ separate. Contact creation never borrows the parent's purchase seal or grant.
 
 A returned ID is retained before readback. A reconstructed worker can read only that ID, prove
 all normalized fields and non-default status, then retain the local owner-bound profile handle.
+Reconstruction requires the unchanged, still-live funded parent claim; this service neither
+reclaims a held acquisition nor installs a recovery runner.
 Proof expires after 120 seconds and is refreshed by readback alone. Fixed creation-proof bytes
 make recording idempotent across a crash before linking the local handle.
 
