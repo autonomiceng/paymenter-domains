@@ -29,6 +29,9 @@ final class Registration extends RegistrationProtocol
         $parser = new ResponseParser;
         $submittedAt = $ctx->now();
         $purchase = $parser->parse(RegistrationCommand::Purchase, $this->request($op, $ctx, $origin, 'Purchase', $parameters));
+        if (in_array($purchase->code,['invalid_response','invalid_envelope'],true)) {
+            throw new \Paymenter\Extensions\Servers\Domains\Data\SendFailure('parse',$this->lastRequestTimeout());
+        }
         if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved); }
         $reference = $purchase->value('orderid');
         $reference = is_string($reference) && preg_match('/^[1-9][0-9]{0,19}$/D', $reference) ? $reference : null;

@@ -33,7 +33,11 @@ final class OperationReconciliation
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
                 $attempt = ReconciliationEvidence::attempt($op, $domain, $binding);
-                if ($op->action !== 'transfer' && $attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
+                if ($op->action !== 'transfer' && $attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
+                    $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
+                    $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
+                    return null;
+                }
                 if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) { return null; }
                 if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
                 $requestedNameservers = null;

@@ -203,10 +203,10 @@ final class OperationClaims
     }
 
     /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */
-    public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null, ?Money $holdCost = null, bool $locallyUnsent = false): Operation
+    public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null, ?Money $holdCost = null, bool $locallyUnsent = false, ?\Paymenter\Extensions\Servers\Domains\Data\SendFailure $failure = null): Operation
     {
         self::outside();
-        return DB::transaction(function () use ($claimed, $result, $holdReason, $holdCost, $locallyUnsent): Operation {
+        return DB::transaction(function () use ($claimed, $result, $holdReason, $holdCost, $locallyUnsent, $failure): Operation {
             $domain = Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $claimed->domain_id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $claimed->id);
@@ -222,6 +222,7 @@ final class OperationClaims
             if ($sealed && !array_key_exists('execution', $attempt)) {
                 // Recorded null is intentional and distinct from absent pre-send execution.
                 $attempt['execution'] = $result?->jsonSerialize();
+                if ($failure && !$result && !$unsent) { $attempt['send_failure'] = $failure->facts(); }
                 if ($result&&!$unsent) {
                     // Evidence is the bounded neutral fact graph, never a provider response or contact payload.
                     $attempt['evidence'] = json_decode(json_encode($result->evidence(), JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);

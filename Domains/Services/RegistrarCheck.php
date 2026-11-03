@@ -11,6 +11,8 @@ final class RegistrarCheck
 {
     public ?RequestContext $context = null;
     public ?string $deferred = null;
+    public ?string $awaitingAnswer = null;
+    public ?int $answerAfter = null;
     public function __construct(private readonly Clock $clock) {}
     public function finish(Operation $result): Operation
     {
@@ -18,7 +20,7 @@ final class RegistrarCheck
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
             $now = $this->clock->now()->getTimestamp();
-            $outcome = $this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable');
+            $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
             $next = null;
             $watch = TransferPolling::applies($op);
             $stopped = $op->action === 'renew' ? ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
@@ -32,7 +34,7 @@ final class RegistrarCheck
                     DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next]);
                 }
             }
-            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred]]]);
+            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
             return $op;
         });
     }
@@ -49,6 +51,7 @@ final class RegistrarCheck
     {
         $next = isset($check['next_at']) ? gmdate('M j, Y H:i', (int) $check['next_at']).' UTC' : null;
         return match ($check['outcome'] ?? null) {
+            'awaiting_answer' => self::answerWords($check),
             'checked' => ['title' => 'Registrar checked', 'body' => $completed ? 'The request is complete. Open the domain for its details.'
                 : 'The result is still unconfirmed. '.($next ? 'The next check is at '.$next.'.' : 'Contact support to review the original order.')],
             'deferred' => ['title' => 'Check delayed', 'body' => (($check['reason'] ?? null) === 'scheduled' ? 'The next status check is not due yet.' : (($check['reason'] ?? null) === 'send_guard' ? 'Our sending settings paused this check.' : 'Our check limit was reached.'))
@@ -56,6 +59,12 @@ final class RegistrarCheck
             'scheduled' => ['title' => 'Status checks restarted', 'body' => 'The system will check again on its next turn.'],
             default => ['title' => 'Cannot check registrar', 'body' => 'We could not get an answer from the registrar. Support can check the original order.'],
         };
+    }
+    private static function answerWords(array $check): array
+    {
+        $registrar = ($check['registrar'] ?? null) === 'Enom' ? 'Enom' : 'NameSilo';
+        $after = (new \DateTimeImmutable('@'.(int)($check['answer_after'] ?? 0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT';
+        return ['title'=>$registrar.' has not answered yet','body'=>'Ask '.$registrar.' to check this attempt. You can record '.$registrar.'’s answer after '.$after.'.'];
     }
     public static function for(Operation $op): array { return self::words($op->policy['status_check'] ?? null, $op->state === 'succeeded'); }
 }

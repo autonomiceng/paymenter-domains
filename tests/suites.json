@@ -461,7 +461,10 @@
     "tests/namesilo-runtime-renewal-test.php",
     "tests/namesilo-runtime-management-test.php",
     "tests/offer-global-pricing-test.php",
-    "tests/offer-upgrade-generation-test.php"
+    "tests/offer-upgrade-generation-test.php",
+    "tests/enom-purchase-failure-test.php",
+    "tests/registration-send-deadline-test.php",
+    "tests/lost-reply-status-test.php"
   ],
   "ui": [],
   "runner": [
