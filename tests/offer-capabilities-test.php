@@ -62,7 +62,7 @@ $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved(
     ['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$revision());
 $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'net',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true)),$revision());
 $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,'net',['register']),$revision());
-require __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/staff-tlds.php';tldPanel();
 $actor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]);
 \Illuminate\Support\Facades\Auth::setUser($actor);
 $staff=new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock);
