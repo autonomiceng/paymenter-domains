@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, RegistrarDriver};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CostUnit, DateEvidence, Disposition,
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CatalogueAcceptance, CostUnit, DateEvidence, Disposition,
     DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult,
     RejectionBasis, RenewalStatus, RequestContext, ResultReason, SendState, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};
@@ -16,8 +16,10 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     private readonly array $annualActions;
     /** Annual catalogue units/currency require independent account acceptance, default none. */
     public function __construct(private readonly Client $client, array $acceptedAnnualActions = [],
-        private readonly Clock $clock = new SystemClock, private readonly int $freshSeconds = 300)
+        private readonly Clock $clock = new SystemClock, private readonly int $freshSeconds = 300,
+        private readonly ?CatalogueAcceptance $acceptedCatalogue = null)
     {
+        if ($acceptedCatalogue !== null) { $this->binding()->requireMatch($acceptedCatalogue->binding); }
         foreach ($acceptedAnnualActions as $action) {
             if (!in_array($action, ['register', 'renew', 'transfer'], true)) { throw new \InvalidArgumentException('Invalid annual price acceptance.'); }
         }
@@ -127,6 +129,13 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $this->binding()->requireMatch($context->binding);
         if ($query->years !== 1) { return $this->unsent(ResultReason::Unsupported); }
         if (!in_array($query->action->value, $this->annualActions, true)) { return $this->unsent(ResultReason::Unverified); }
+        if ($this->acceptedCatalogue !== null) {
+            try { $parts = DomainName::parse($query->name, array_keys($this->acceptedCatalogue->endings)); }
+            catch (\InvalidArgumentException) { return $this->unsent(ResultReason::Unverified); }
+            if (!in_array($query->years, $this->acceptedCatalogue->endings[$parts['tld']][$query->action->value], true)) {
+                return $this->unsent(ResultReason::Unverified);
+            }
+        }
         $reply = $this->read(Request::prices(), $context);
         if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
         $rows = $reply->catalogueRows();

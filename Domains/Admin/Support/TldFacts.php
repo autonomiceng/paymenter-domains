@@ -310,8 +310,14 @@ final class TldFacts
             $last=$lastPrices??self::lastPrices($serverId);
             if($at===null||($last!==null&&$last>=$at)){return null;}
         }
-        $cause=self::syncCause($facts['code']);
-        if($facts['code']==='catalogue_call_capacity'){
+        return ['cause'=>self::currentCause($serverId,$facts['code']),'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
+    }
+    /** The plain cause for a failure code. A call-capacity failure names the calls needed and left when we know them.
+     * The TLD list and the staff alert use the same words; the alert keeps the numbers from when it fired. */
+    public static function currentCause(int $serverId, ?string $code): string
+    {
+        $cause=self::syncCause($code);
+        if($code==='catalogue_call_capacity'){
             // Retain the failed sync, but show capacity under today's saved cap without a provider read.
             try{
                 $binding=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
@@ -329,7 +335,7 @@ final class TldFacts
                 }
             }catch(\Throwable){} // Missing acceptance or usage keeps the original failure and its next step.
         }
-        return ['cause'=>$cause,'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
+        return $cause;
     }
     private static function queue(int $serverId): ?object
     {
