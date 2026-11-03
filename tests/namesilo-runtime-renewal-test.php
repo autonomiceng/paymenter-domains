@@ -56,8 +56,9 @@ for($cycle=0;$cycle<2;$cycle++){
     }
 }
 config(['domains.provider_send_guard'=>null]);$mode='lost';$clock->instant=$clock->now()->modify('+901 seconds');Cache::flush();
-$retry=RenewalRetries::recover($result->id,$clock);expect($retry instanceof Operation,'Existing unsent policy creates a separately sealed replacement');
-$GLOBALS['nsOperation']=$retry->id;$money=$nativeMoney();same('uncertain',$engine->run($retry->id,$writer)->state,'Consumed lost reply remains uncertain');
+app()->instance(AccountBindings::class,$rb);
+$retry=RenewalRetries::recover($result->id,$clock);expect($retry->id!==$result->id,'Existing unsent policy creates a separately sealed replacement');
+$GLOBALS['nsOperation']=$retry->id;$money=$nativeMoney();$lost=$engine->run($retry->id,$writer);same('uncertain',$lost->state,'Consumed lost reply remains uncertain: '.$lost->state.':'.$lost->safe_code);
 commerceReject(fn()=>RefundProof::requireUnsent($retry->fresh(),$holding->fresh()));
 $sent=$GLOBALS['nsPhysical'];$engine->run($retry->id,$writer);same($sent,$GLOBALS['nsPhysical'],'Lost response has no replay');same($money,$nativeMoney(),'Lost response does not refund or alter invoices');
 echo "Dormant admitted renewal reservation, strict unsent replacement and lost-response retention passed.\n";$nativeSuccessful=true;
