@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,7 @@ final class CatalogueAcceptances
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer acceptance transaction required.'); }
         $binding = $next->binding;
+        UpgradeGate::legacy();
         $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
         $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
         $binding->requireMatch(self::binding($account));
@@ -73,6 +75,7 @@ final class CatalogueAcceptances
     public static function changeLocked(Account $a, ?CatalogueAcceptance $old, array $changes): CatalogueAcceptance
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer acceptance transaction required.'); }
+        UpgradeGate::legacy();
         $binding = self::binding($a);
         $old?->binding->requireMatch($binding);
         $names=Tld::where('server_id',$binding->serverId)->pluck('tld');

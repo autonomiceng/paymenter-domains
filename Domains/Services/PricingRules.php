@@ -2,6 +2,7 @@
 // Adapted from Enom 444f31c Services/Catalogue{,Runtime}.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -55,6 +56,7 @@ final class PricingRules
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer rule transaction required.'); }
         $server = $this->server($serverId, true);
+        UpgradeGate::legacy();
         $server->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'],
             ['type' => 'array', 'encrypted' => false, 'value' => PricingRule::validate($rule)]);
         StorefrontCatalogueCache::invalidateAfterCommit();

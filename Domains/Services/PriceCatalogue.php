@@ -2,6 +2,7 @@
 // Cost refresh/publication adapted from Enom 444f31c Services/Catalogue.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +21,7 @@ final class PriceCatalogue
     public function sync(int $serverId, \Closure $read): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Provider reads cannot hold database locks.'); }
+        $generation = UpgradeGate::legacy();
         $server = Server::findOrFail($serverId);
         if (!$server->enabled || $server->extension !== 'Domains' || !Account::where('server_id', $serverId)->exists()) {
             return ['synced' => 0, 'failed' => Tld::where('server_id', $serverId)->orderBy('id')->get()->map(static fn (Tld $tld): string => '.'.$tld->tld)->all()];
@@ -36,7 +38,8 @@ final class PriceCatalogue
                     }
                     $seen[$rate->action.':'.$rate->term] = true;
                 }
-                $this->locked($tld, function (Tld $locked) use ($rates): void {
+                $this->locked($tld, function (Tld $locked) use ($rates, $generation): void {
+                    UpgradeGate::legacy($generation);
                     $rule = $this->rules->rule($locked, true); $hash = self::ruleHash($rule);
                     foreach ($rates as $rate) { $this->write($locked, $rate, $rule, $hash); }
                 });
@@ -127,6 +130,7 @@ final class PriceCatalogue
     public function republishLocked(Tld $locked): void
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Locked republication requires the outer writer.'); }
+        UpgradeGate::legacy();
         $rule = $hash = null;
         foreach (Price::where('server_id', $locked->server_id)->where('tld', $locked->tld)->orderBy('id')->lockForUpdate()->get() as $price) {
             if ($price->eligibility['price_unavailable'] ?? false) { continue; }
@@ -238,6 +242,7 @@ final class PriceCatalogue
         DB::transaction(function () use ($tld, $write): void {
             $server = Server::whereKey($tld->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
+            UpgradeGate::legacy();
             if (!$server->enabled || $server->extension !== 'Domains' || $account->account_fingerprint !== $tld->account_fingerprint) {
                 throw new \DomainException('Catalogue binding mismatch.');
             }

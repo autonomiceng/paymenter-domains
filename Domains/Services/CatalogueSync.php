@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
@@ -13,6 +14,7 @@ final class CatalogueSync
     public function refresh(int $serverId, RequestContext $context, CatalogueFreshness $freshness = new CatalogueFreshness, ?array $suffixes = null, ?StaffSettingsReview $review = null, bool $scheduled = false): array
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Catalogue reads must finish outside locks.'); }
+        $generation = UpgradeGate::legacy();
         // Staff review, or the daily price sync, which checks our daily call cap for the account first.
         if (TestCatalogue::enabled($context->binding) && $review === null && !$scheduled) { throw new \DomainException('TEST catalogue import requires staff review.'); }
         $reader = $this->bindings->reader($serverId); // enabled, identity, credentials, site BEFORE any provider read
@@ -58,11 +60,13 @@ final class CatalogueSync
                         throw new \DomainException('Unaccepted catalogue evidence.');
                     }
                 }
+                UpgradeGate::legacy($generation);
                 if ($automatic && $entry instanceof CatalogueEntry) {
                     SellAutomation::accept($account, $context->now(), $entry, $accepted->revision);
                     $accepted = CatalogueAcceptances::load($reader->binding());
                 }
-                $recheck = function ($server, $account) use ($accepted): void {
+                $recheck = function ($server, $account) use ($accepted, $generation): void {
+                    UpgradeGate::legacy($generation);
                     $this->bindings->requireReadableLocked($server, $account);
                     if (CatalogueAcceptances::load($accepted->binding, true)->revision !== $accepted->revision) {
                         throw new \DomainException('Acceptance changed during refresh.');

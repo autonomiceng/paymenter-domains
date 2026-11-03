@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,7 @@ final class SellerPolicies
     public function initialize(string $tld): SalesPolicy
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Initialization owns its policy lock order.'); }
+        UpgradeGate::legacy();
         CanonicalName::parse('example.'.$tld, [$tld]);
         return DB::transaction(static function () use ($tld): SalesPolicy {
             $existing = SalesPolicy::where('tld', $tld)->lockForUpdate()->first();
@@ -32,6 +34,7 @@ final class SellerPolicies
             $review?->lockActor(); $review?->lockAccounts(); $review?->check();
             if ($review && ($review->action !== 'seller' || Tld::findOrFail($review->tldId)->tld !== $tld)) { throw new \DomainException('Seller review mismatch.'); }
             $account = $serverId === null ? null : $this->account($serverId, true);
+            UpgradeGate::legacy();
             $policy = SalesPolicy::where('tld', $tld)->lockForUpdate()->firstOrFail();
             if ($policy->revision !== $expectedRevision) { throw new \DomainException('Stale seller policy.'); }
             if (!$account && ($register || $transfer)) { throw new \DomainException('Enabled sale requires a seller.'); }

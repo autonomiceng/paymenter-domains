@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use App\Models\{Role,Server,User};
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SalesPolicy,Tld};
@@ -65,6 +66,7 @@ final class StaffSettingsReview
     public function check(bool $inFlight=false): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
+        UpgradeGate::legacy();
         $server=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();if($server->extension!=='Domains'||!$server->enabled){throw new \DomainException('Registrar unavailable.');}
         $endings=Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->pluck('tld');
         SalesPolicy::whereIn('tld',$endings)->orderBy('id')->lockForUpdate()->get();

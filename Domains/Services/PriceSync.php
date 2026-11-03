@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 
 use Illuminate\Support\Facades\{DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -95,6 +96,7 @@ final class PriceSync
      * @return array{synced:list<string>,failed:array<string,string>,deferred:list<string>} */
     public function run(Account $account, Clock $clock, ?StaffSettingsReview $review, ?string $ending = null, ?array $only = null): array
     {
+        UpgradeGate::legacy();
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
         if ($review === null) { SellAutomation::refresh($account, $clock->now()); }
@@ -167,6 +169,7 @@ final class PriceSync
     public function daily(Account $account): void
     {
         OperationClaims::outside();
+        UpgradeGate::legacy();
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }
         SellAutomation::refresh($account, $this->clock->now());

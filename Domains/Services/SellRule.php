@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use App\Models\Server;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -45,6 +46,7 @@ final class SellRule
     /** Every accepted TLD has a row. Until a rule is saved, rows copy what the account already sells. */
     public static function ensure(AccountBinding $binding,?CatalogueAcceptance $accepted): void
     {
+        UpgradeGate::legacy();
         if($accepted===null||$accepted->endings===[]){return;}
         $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
         DB::table(SellTableSchema::ROWS)->insertOrIgnore(array_map(static fn(string $tld)=>[...$key,'tld'=>$tld],array_keys($accepted->endings)));

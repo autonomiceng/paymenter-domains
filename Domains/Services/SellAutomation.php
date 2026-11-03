@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use App\Models\Server;
 use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CatalogueAcceptance,CatalogueEntry,Environment};
@@ -49,6 +50,7 @@ final class SellAutomation
         DB::transaction(static function()use($seed,$now,$read,$expectedRevision):void {
             $s=Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
             $a=Account::where('server_id',$seed->server_id)->lockForUpdate()->sole();
+            UpgradeGate::legacy();
             $b=CatalogueAcceptances::binding($a);if($b->fingerprint!==$seed->account_fingerprint){throw new \DomainException('Catalogue binding mismatch.');}
             $active=self::enabled($a);if(SellRule::saved($b)===null){return;}
             app(AccountBindings::class)->requireReadableLocked($s,$a);
