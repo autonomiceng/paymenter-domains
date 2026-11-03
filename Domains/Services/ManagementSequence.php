@@ -40,7 +40,7 @@ final class ManagementSequence
             'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','management_terminal'=>['actor_id'=>$actor,'at'=>$at->format(DATE_ATOM)]]]);
     }
     /** Enter the predecessor through the same engine. Unknown sealed work is only read, never sent again. */
-    public static function prepare(int $id, DomainManagement $engine, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $now): bool
+    public static function prepare(int $id, DomainManagement $engine, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $now, int $interactiveSeconds): bool
     {
         $parent=Operation::findOrFail($id);$key=$parent->policy['management']['prerequisite']['key']??null;
         if (!is_string($key) || !in_array($parent->state,['queued','held'],true)) { return true; }
@@ -49,7 +49,8 @@ final class ManagementSequence
             if (isset($parent->attempt['management_terminal'])) { return false; }
             if ($step->state!=='succeeded') {
                 $step=DomainManagement::canReconcile($step,$now)
-                    ? $engine->reconcile((int)$step->id,$driver) : $engine->run((int)$step->id,$driver,$origin);
+                    ? $engine->reconcile((int)$step->id,$driver) : $engine->run((int)$step->id,$driver,$origin,$interactiveSeconds);
+                return false;
             }
             return $step->state==='succeeded' && ManagementEvidence::resolved($step,$parent->domain);
         } catch (\Throwable) { return false; }

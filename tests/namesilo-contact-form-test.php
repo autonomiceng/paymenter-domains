@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnerActionController
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{OwnedDomains,OwnerPorts,OwnerSetup,TransferInputs,Refunds};
 [$d,$driver,$original]=$holding('single-form');
+storefrontViews();
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);
 $dto=$owners->present($d);same(['contacts'],array_keys($dto->management['contacts']['actions']),'The owner gets one contact-save action');
 $get=Request::create('/domains/'.$d->id);$get->setUserResolver(fn()=>$user);$get->setLaravelSession(app('request')->session());

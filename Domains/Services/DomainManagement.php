@@ -130,7 +130,7 @@ final class DomainManagement
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
     {
-        if (!ManagementSequence::prepare($id, $this, $driver, $origin, $this->clock->now())) { return Operation::findOrFail($id); }
+        if (!ManagementSequence::prepare($id, $this, $driver, $origin, $this->clock->now(), $interactiveSeconds)) { return Operation::findOrFail($id); }
         $work=fn()=>$driver->withinReservation(Operation::findOrFail($id),fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
             $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds))));
         try {

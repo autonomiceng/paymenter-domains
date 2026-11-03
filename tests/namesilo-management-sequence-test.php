@@ -48,6 +48,8 @@ foreach(['default','mismatch','contactAdd','lost'] as $fault){
     $ms->fault='';$ms->route='apibatch';Cache::flush();$restarted=new Management($binding,$managementExchange);
     $management->run($op->id,$restarted,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
     if(in_array($fault,['default','mismatch'],true)){
+        same(['contactAdd'],array_column($writes(),0),'Recovery finishes only its prerequisite in this execution');
+        $management->run($op->id,$restarted,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
         same('succeeded',$op->fresh()->state,'A returned profile ID resumes automatically after exact readback');
         same(['contactAdd','contactDomainAssociate'],array_column($writes(),0),'Known-ID recovery never creates another profile');
         $sent=array_values(array_filter($ms->calls,fn($c)=>$c[0]==='contactDomainAssociate'))[0][1];
@@ -71,6 +73,7 @@ foreach(['owner','profile'] as $drift){
     $stage=$d->operations()->where('action','contact_profile')->sole();
     if($drift==='owner'){\Illuminate\Support\Facades\DB::table('services')->where('id',$d->service_id)->update(['user_id'=>commerceUser()->id]);}
     else{$id=$stage->attempt['management_reads'][0]['facts']['local_profile_id'];\Illuminate\Support\Facades\DB::table('domains_contact_profiles')->where('id',$id)->update(['user_id'=>commerceUser()->id]);}
-    $management->run($op->id,$driver);same(['contactAdd'],array_column($writes(),0),'Drift cannot associate a profile');
+    try{$management->run($op->id,$driver);}catch(DomainException){}
+    same(['contactAdd'],array_column($writes(),0),'Drift cannot associate a profile');
 }
 $nativeSuccessful=true;echo "NameSilo management normalization and automatic contact sequence passed.\n";
