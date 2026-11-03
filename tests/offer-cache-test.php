@@ -18,8 +18,7 @@ $render = static function () use (&$renders): array { return [['render' => ++$re
 same([['render' => 1]], $cache->remember($render), 'New cache cannot reuse an old caller namespace');
 same([['render' => 1]], $cache->remember($render), 'Current evidence reuses a warm public cache');
 $q = new Query($binding, ['com'], 'register');
-$ports->apply(Edit::defaults($binding, 'com', new Intent(defaultLongest: 3, defaultTransfers: true),
-    Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT), $ports->readOffers($q, Context::Staff)[0]->revision);
+$ports->apply(Edit::defaults($binding, 'com', new Intent(defaultLongest: 3, defaultTransfers: true)), $ports->readOffers($q, Context::Staff)[0]->revision);
 same([['render' => 2]], $cache->remember($render), 'Default revision fences public display even before republication');
 commerceReject(static fn () => $storefront->offer('com', 'register', 1));
 $ports->apply(Edit::republish($binding, 'com'), $ports->readOffers($q, Context::Staff)[0]->revision);

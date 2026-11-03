@@ -42,12 +42,11 @@ same('Renewals and transfers only',$transferTable->status($transferPage[0])['lab
 $writes->run($review('tld_settings',$id),$restore,$now);
 $nativeIds=Product::orderBy('id')->pluck('id')->all();$calls=$reads->calls;
 $before=count(Review::historyRows(Server::find($binding->serverId)));
-$writes->run($review('default_rule'),['mode'=>'fixed','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00'],$now);
-same($before+1,count(Review::historyRows(Server::find($binding->serverId))),'Defaults use one reviewed audit');same(1,$wake,'One bounded local wake');expect($source->progress($binding->serverId)['state']!=='idle','Staff progress comes from the shared offer queue');
-commerceReject(fn()=>$storefront->offer('com','register',1));
-$routed->publish($id,$now);same('$20.00',$storefront->offer('com','register',1)['price'],'Native entry delegates to Writer before a transaction');
-$run('card_fee',['fee_percent'=>'3.00','fee_fixed'=>'0.30']);same(2,$wake,'Fee wakes local publication');commerceReject(fn()=>$storefront->offer('com','register',1));
-$routed->publish($id,$now);same($nativeIds,Product::orderBy('id')->pluck('id')->all(),'Repeated native publication preserves product identities');same($calls,$reads->calls,'Defaults, fees and republish never resolve provider');
+$global=new Review($actor->id,Review::ALL_ACCOUNTS,null,'default_pricing',Review::ticket($actor->id,Review::ALL_ACCOUNTS,null,'default_pricing',StaffCommands::stamp(Review::ALL_ACCOUNTS)),'Synthetic global review');
+$writes->run($global,['mode'=>'fixed','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00','fee_percent'=>'3.00','fee_fixed'=>'0.30'],$now);
+same($before+2,count(Review::historyRows(Server::find($binding->serverId))),'Global save and publication outcome use main audit phases');same(0,$wake,'Global pricing publishes directly without scheduling account defaults');
+same('$20.00',$storefront->offer('com','register',1)['price'],'Global form delegates to the converted Writer');
+same($nativeIds,Product::orderBy('id')->pluck('id')->all(),'Repeated native publication preserves product identities');same($calls,$reads->calls,'Global save never resolves provider');
 $run('acceptance',['sell'=>['choices'=>['com'=>'skip','missing'=>'sell']]]);
 commerceReject(fn()=>$storefront->offer('com','register',1));
 same('20.00',$source->matrix(collect([Tld::find($id)]),1)['rows'][0]['prices']['register']['price'],'Stopped prices remain visible to staff');

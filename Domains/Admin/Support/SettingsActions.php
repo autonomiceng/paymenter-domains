@@ -96,7 +96,7 @@ final class SettingsActions
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)))];
             if(in_array($name,['default_pricing','override'],true)){
                 // Saving writes rule and fee together. The form shows only the rule's own fields, so no fee may swap them for the built-in rule.
-                $rule=self::cached(static function()use($tld,$name){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
+                $rule=self::cached(static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(StaffCatalogue::routed()?->pricing($server,Tld::findOrFail($tld))??(new PricingRules)->rule(Tld::findOrFail($tld))):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
                 $default=self::cached(static function(){try{return (new PricingRules)->defaultRule();}catch(\Throwable){return null;}});
                 $own=static fn($get)=>$name!=='override'||$get('pricing')!=='default';
                 if($name==='override'){
@@ -319,8 +319,11 @@ final class SettingsActions
     private static function reach(): array
     {
         $off=\App\Models\Server::where('extension','Domains')->where('enabled',false)->whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id');
-        $tlds=TldFacts::bound(Tld::query())->whereNotIn('server_id',$off->keys())->where(fn($q)=>$q->where('use_default_rule',true)->orWhere('pricing_mode','markup_fee_percent'))->orderBy('tld')->get();
-        $followers=$tlds->where('use_default_rule',true);
+        $converted=StaffCatalogue::routed()!==null;
+        $tlds=TldFacts::bound(Tld::query())->whereNotIn('server_id',$off->keys())->orderBy('tld')->get();
+        $own=static fn(Tld $t)=>$converted?\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::own($t):($t->use_default_rule?null:(new PricingRules)->rule($t));
+        $tlds=$tlds->filter(fn($t)=>($rule=$own($t))===null||$rule['mode']==='markup_fee_percent');
+        $followers=$tlds->filter(fn($t)=>$own($t)===null);
         $prices=\Paymenter\Extensions\Servers\Domains\Models\Price::whereIn('server_id',$followers->pluck('server_id')->unique())->whereIn('tld',$followers->pluck('tld')->unique())->where('currency','USD')->orderBy('id')->get()
             ->groupBy(fn($p)=>$p->server_id.':'.$p->registrar_key.':'.$p->account_fingerprint.':'.$p->tld);
         $now=now()->toDateTimeImmutable();

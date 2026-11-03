@@ -433,7 +433,8 @@
     "tests/namesilo-profile-operations-test.php",
     "tests/namesilo-profile-wire-test.php",
     "tests/namesilo-runtime-renewal-test.php",
-    "tests/namesilo-runtime-management-test.php"
+    "tests/namesilo-runtime-management-test.php",
+    "tests/offer-global-pricing-test.php"
   ],
   "ui": [],
   "runner": [

@@ -43,8 +43,8 @@ final class StaffSettingsReview
     {return Server::where('extension','Domains')->orderBy('id')->pluck('id');}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
     {
-        if($serverId===self::ALL_ACCOUNTS){return hash('sha256',json_encode([BusinessSetting::stamp($lock),self::domainServers()->map(fn($id)=>self::stamp($id,null,$lock))->all()],JSON_THROW_ON_ERROR));}
         if(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()!==null){return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($serverId,$tldId);}
+        if($serverId===self::ALL_ACCOUNTS){return hash('sha256',json_encode([BusinessSetting::stamp($lock),self::domainServers()->map(fn($id)=>self::stamp($id,null,$lock))->all()],JSON_THROW_ON_ERROR));}
         $read=static fn($q)=>($lock?$q->lockForUpdate():$q)->get();
         $s=$read(Server::whereKey($serverId))->firstOrFail();
         $accounts=$read(Account::where('server_id',$serverId));$a=$accounts->first();
@@ -137,7 +137,7 @@ final class StaffSettingsReview
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $entry=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>in_array($this->action,['default_rule','card_fee'],true)?null:$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)];
+            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)];
         // History is read per account, so a business-wide change is written to each one, disabled accounts too.
         foreach($this->serverId===self::ALL_ACCOUNTS?self::domainServers():[$this->serverId] as $id){self::append(Server::whereKey($id)->lockForUpdate()->firstOrFail(),$entry);}
         // One sync writes TLD after TLD under one review: the next TLD checks against this run's own last write.
