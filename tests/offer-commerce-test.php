@@ -75,7 +75,8 @@ $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($b
 $counts = [Order::count(), Invoice::count(), Operation::count()];
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts, [Order::count(), Invoice::count(), Operation::count()], 'Changed total stops the first checkout click');
-$page->assertDispatched('notify', static fn ($event, $params) => str_contains($params[0]['message'], 'Review the total'));
+$notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
+expect(str_contains($notice, 'Review the total'), 'Changed-total notice: '.$notice);
 same($before + 1, $reads->calls, 'Stale five-minute receipt costs one unlocked read');
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts[2] + 1, Operation::count(), 'Second click accepts the visible new total');

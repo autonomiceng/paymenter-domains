@@ -67,7 +67,7 @@ function offerCommerceSecond(array $fixture): array
 function offerCommerceRotate($binding, string $token): void
 {
     $registry = new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
-    $registry->register('enom', ['token'], new class($binding->stableIdentity) implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
+    $registry->register('enom', ['token'], new class(Account::where('server_id', $binding->serverId)->sole()->stable_identity) implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
         public function __construct(private string $identity) {}
         public function verify($env, array $credentials): string { return $this->identity; }
     }, static fn () => throw new RuntimeException('Rotation never resolves a reader'));
