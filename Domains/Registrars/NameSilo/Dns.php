@@ -75,9 +75,7 @@ final class Dns
         $distance = self::integer($row['distance'] ?? null, 65535);
         $host = $row['host'] ?? null;
         if (!is_string($host)) { throw new \DomainException; }
-        $absolute = strtolower(self::withoutRootDot($host));
-        if ($absolute !== $domain && !str_ends_with($absolute, '.'.$domain)) { throw new \DomainException; }
-        $name = self::host($domain, $host);
+        $name = self::providerHost($domain, $host);
         $type = $row['type'] ?? null;
         if (!is_string($type) || !in_array($type, [...self::STANDARD, 'CAA', 'SRV'], true)) { throw new \DomainException; }
         $address = self::address($type, $row['value'] ?? null);
@@ -93,16 +91,27 @@ final class Dns
         return $record;
     }
 
-    /** Shared relative owners and in-zone absolute owners map to provider-relative rrhost; apex is empty. */
+    /** Provider owners are absolute, whether or not their wire spelling includes a root dot. */
+    private static function providerHost(string $domain, #[\SensitiveParameter] string $host): string
+    {
+        $absolute = strtolower(self::withoutRootDot($host));
+        if ($absolute === $domain) { return ''; }
+        if (!str_ends_with($absolute, '.'.$domain)) { throw new \DomainException; }
+        return self::host($domain, substr($absolute, 0, -strlen('.'.$domain)));
+    }
+
+    /** Shared unrooted owners are relative; only a root dot selects an absolute owner. Apex is empty. */
     public static function host(string $domain, #[\SensitiveParameter] string $name): string
     {
         $domain = CanonicalName::normalize($domain);
         if ($name === '@' || $name === '') { return ''; }
         $rooted = str_ends_with($name, '.');
         $name = strtolower(self::withoutRootDot($name));
-        if ($name === $domain) { return ''; }
-        if (str_ends_with($name, '.'.$domain)) { $name = substr($name, 0, -strlen('.'.$domain)); }
-        elseif ($rooted) { throw new \DomainException('DNS owner is outside the domain.'); }
+        if ($rooted) {
+            if ($name === $domain) { return ''; }
+            if (!str_ends_with($name, '.'.$domain)) { throw new \DomainException('DNS owner is outside the domain.'); }
+            $name = substr($name, 0, -strlen('.'.$domain));
+        }
         if (strlen($name.'.'.$domain) > 253) { throw new \DomainException('DNS owner is too long.'); }
         foreach (explode('.', $name) as $i => $label) {
             if ($i === 0 && $label === '*') { continue; }

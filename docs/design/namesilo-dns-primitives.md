@@ -22,8 +22,10 @@ complete inventory. These server-side facts are not public DTOs or log content.
 
 `DnsMapping::listRecords/add/update/delete` build documented per-record commands.
 Standard builders accept A/AAAA/CNAME/MX/TXT, require explicit TTL, and send distance
-only for MX. Shared relative and in-zone absolute owners map to relative `rrhost`;
-provider inventory owners must be in-zone absolute names. Apex maps to empty
+only for MX. Shared unrooted owners are always relative, including names ending
+in the zone name. A root dot explicitly marks in-zone absolute builder input.
+Provider inventory owners are absolute with or without a root dot and have the
+zone suffix removed exactly once. Apex maps to empty
 `rrhost`. Updates require an observed ID, preserve type and omit undocumented
 `rrtype`. A type change needs separate sequence deltas. IDs are opaque alphanumeric
 strings, TTL is an unsigned 31-bit value, and MX preference is unsigned 16-bit.
