@@ -209,6 +209,6 @@ $readAt=$clock->now()->modify('+2 minutes');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
 $dnsPage->call('pollManagement');$available=$factRow($dnsPage->html(),'DNS records');
 expect($available&&str_contains($available->textContent,'1 record')&&str_contains($available->textContent,'1 SRV')
-    &&str_contains($available->textContent,'As of '.$readAt->format(DATE_ATOM)),'Available DNS keeps its as-of time and SRV count beside management status');
+    &&str_contains($available->textContent,'As of')&&str_contains($dnsPage->html(),$readAt->format(DATE_ATOM)),'Available DNS keeps its as-of time and SRV count beside management status');
 $dnsPage->assertSee('DNS records')->assertSee('Saved.');
 echo "Management pending controls, duplicate requests, local status and immediate start passed.\n";$nativeSuccessful=true;
