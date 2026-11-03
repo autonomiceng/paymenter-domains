@@ -115,11 +115,11 @@ final class AcquisitionOffers
         foreach (Account::whereIn('server_id', $ids)->orderBy('server_id')->get() as $account) {
             $credentials[] = $this->bindings->offerCredentialRevision(CatalogueAcceptances::binding($account));
         }
-        $rows = [];
-        foreach (['domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices', 'servers', 'settings'] as $table) {
+        $rows = []; $servers = (new \App\Models\Server)->getTable();
+        foreach (['domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices', $servers, 'settings'] as $table) {
             $query = DB::table($table);
             if ($table === 'settings') { $query->where('settingable_type', (new \App\Models\Server)->getMorphClass())->whereIn('settingable_id', $ids); }
-            elseif ($table !== 'domains_sales_policies') { $query->whereIn($table === 'servers' ? 'id' : 'server_id', $ids); }
+            elseif ($table !== 'domains_sales_policies') { $query->whereIn($table === $servers ? 'id' : 'server_id', $ids); }
             $rows[] = $query->orderBy('id')->get()->map(static fn ($r) => (array)$r)->all();
         }
         return hash('sha256', OfferState::json([UpgradeGate::generation(), $credentials, $rows]));
