@@ -66,7 +66,7 @@ final class ObservationWork
         if (($scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed())!==null) {
             $scheduler->resume($id,$reason,$review); return;
         }
-        app(HoldingObservationWork::class)->resume($id,$reason,$review,static fn()=>UpgradeGate::legacy());
+        (new HoldingObservationWork($this->observer,$this->clock))->resume($id,$reason,$review,static fn()=>UpgradeGate::legacy());
     }
     private static function phase(Domain $d): string { return HoldingObservationWork::phase($d); }
     /** Internal bounded catalogue failure resume; installed staff policy remains36. */
