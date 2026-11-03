@@ -134,6 +134,10 @@ DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' =>
 $corrupt = $converter->report($binding, $before);
 same(false, $corrupt['compatible'], 'Comparison detects incorrect staged intent even when original rows are unchanged');
 same(1, $corrupt['staging_mismatches']['intent'], 'Comparison names the staged intent mismatch');
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => '{']);
+$malformed = $converter->report($binding, $before);
+same(false, $malformed['compatible'], 'Malformed staged intent rejects comparison without throwing');
+same(1, $malformed['staging_mismatches']['intent'], 'Malformed JSON is reported as a staged intent mismatch');
 DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => $originalIntent]);
 // Compare membership as well as values: each mutation leaves retained source digests untouched.
 $coverage = [];

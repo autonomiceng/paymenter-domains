@@ -196,7 +196,9 @@ final class UpgradeConversion
                     }
                 }
                 ksort($actual);
-                $checks = ['intent' => self::canonical(UpgradeEvidence::json($tld->catalogue_intent)) === self::canonical(json_decode(self::json($intent), true)),
+                try { $stagedIntent = UpgradeEvidence::json($tld->catalogue_intent); }
+                catch (\JsonException|\TypeError) { $stagedIntent = null; }
+                $checks = ['intent' => self::canonical($stagedIntent) === self::canonical(json_decode(self::json($intent), true)),
                     'costs' => self::canonical($actual) === self::canonical($evidence['costs']),
                     'retained_retail' => UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2) === $evidence['retained']];
                 foreach ($checks as $check => $matches) {
