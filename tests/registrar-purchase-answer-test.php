@@ -36,7 +36,7 @@ $reads=new AccountBindings($readRegistry);$reconcile=new OperationReconciliation
 foreach(['accepted','not_processed'] as $outcome){
     $clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');$makeEngine($binding,$exchange);
     $registration->mode=$outcome==='accepted'?'300':'unknown';
-    $op=$runRegistration($nsNew(placeholderComFixtureName('support-'.$outcome.'-placeholder.com')));$attempt=$op->attempt;$calls=$registration->calls;
+    $op=$runRegistration($nsNew(placeholderComFixtureName('support-'.str_replace('_','-',$outcome).'-placeholder.com')));$attempt=$op->attempt;$calls=$registration->calls;
     $wireState->name=$op->domain->domain;$wireState->calls=[];
     commerceReject(fn()=>$settings->run($review($op),$input($op,$outcome),$clock->now()));
     $clock->instant=$clock->now()->modify('+25 hours');

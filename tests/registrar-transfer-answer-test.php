@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,RefundProof,StaffSettingsReview as Review,StaffSettingsWrites,TransferRejections};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomAnswers,PricingRule,RefundProof,StaffSettingsReview as Review,StaffSettingsWrites,TransferRejections};
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);
 $staff=commerceUser();$permissions=['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.domains.manage','admin.invoices.update'];
 $role=App\Models\Role::create(['name'=>'Registrar answers','permissions'=>$permissions]);$staff->update(['role_id'=>$role->id]);
@@ -18,6 +18,10 @@ $rejected=static function($label,$charged=false)use($prepare,$observe,$reconcile
 };
 $op=$rejected('support');$attempt=$op->attempt;$writes=$state->calls;
 expect(EnomAnswers::eligible($op,$clock->now()),'A rejected NameSilo transfer without an invented transfer ID can receive an audited answer');
+Illuminate\Support\Facades\Auth::setUser($staff);
+$action=\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->server_id,Review::stamp($op->server_id,null));
+expect($action->isVisible(),'Existing registrar answer action is available on the NameSilo account');
+same('Record registrar answer',$action->getLabel(),'One provider-neutral action, with the existing permission');
 foreach(['evidence','case','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
     $input=$answer($op);
     if($fault==='evidence'){$input['evidence']='';}
@@ -47,7 +51,7 @@ same(['amount'=>'5.95','currency'=>'USD'],$op->cost['actual'],'Only the net fail
 same(['99.00','93.05','Transfer Rejected','9001'],array_map(fn($k)=>$op->policy['enom_answer'][$k],['charge','registrar_refund','transfer_status','order_reference']),'Exact final amounts, status and order retained');
 same($staff->id,$op->policy['enom_answer']['actor_id'],'Accountable staff identity retained');
 same($op->amount,$op->funding['refund']['amount'],'Customer receives the full original payment');
-same((int)round((float)$before*100)+(int)round((float)$op->amount*100),(int)round((float)App\Models\Credit::where('user_id',$user->id)->sum('amount')*100),'Customer credit is exact and occurs once');
+same(PricingRule::units((string)$before,2)+PricingRule::units($op->amount,2),PricingRule::units((string)App\Models\Credit::where('user_id',$user->id)->sum('amount'),2),'Customer credit is exact and occurs once');
 expect(TransferRejections::proved($op,$op->domain),'Saved finality reconstructs independently');
 commerceReject(fn()=>$settings->run($review($op),$answer($op),$clock->now()));
 same(null,$refunds->creditRejected($op->id),'Recovery never returns a second payment');
