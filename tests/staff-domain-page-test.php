@@ -158,7 +158,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 // An inactive domain's renewal timing is not Missing: the rows do not apply.
 $pending=DomainFacts::for($held);
 expect(!isset($pending['Next invoice'])&&!isset($pending['Expires']),'Pending transfer hides expiry and next invoice');
-same(['On hold','Not sent: old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
+same(['On hold','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
 same([null,'Customer account not found. Check the Users page.'],[$value($held,'Customer'),$sub($held,'Customer')],'Deleted customer is Missing with its cause');
 
 // Renewal settings.

@@ -201,8 +201,8 @@ same('succeeded',$management->run($dnsOp->id,$dnsDriver)->state,'DNS change comp
 $dnsPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$dnsDomain->id]);
 $factRow=static fn($html,$label)=>storefrontDom($html)->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0);
 $missing=$factRow($dnsPage->html(),'DNS records');
-expect($missing&&str_contains($missing->textContent,'Missing')&&str_contains($missing->textContent,'Use Sync now to read DNS records.'),'Failed sync keeps the current DNS recovery instruction after a saved change');
-expect(!str_contains($missing->textContent,'Saved.'),'An older saved request is not the cause of Missing DNS');
+expect($missing&&str_contains($missing->textContent,'Not read yet')&&str_contains($missing->textContent,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
+expect(!str_contains($missing->textContent,'Saved.'),'An older saved request does not replace unread DNS');
 same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Failed sync does not rewrite the completed request');
 $dnsPage->assertSee('DNS records request')->assertSee('Saved.');
 $readAt=$clock->now()->modify('+2 minutes');
