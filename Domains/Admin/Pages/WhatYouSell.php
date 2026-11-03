@@ -260,9 +260,7 @@ class WhatYouSell extends Page implements HasTable
             $one=$warning['cause']==='custom_rule'&&count($warning['tlds'])===1?collect($saved['skipped'])->first(fn($row)=>$row['server_id']===$warning['server_id']&&$row['tld']===$warning['tlds'][0]):null;
             $components[]=Callout::make('Prices left out')->warning()->columnSpanFull()
                 ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
-                ->footer($warning['cause']==='custom_rule'
-                    ?($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])))
-                    :$button('Open registrar account',RegistrarAccount::getUrl(['account'=>$warning['server_id']])));
+                ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
         }
         return $schema->components([...$components,EmbeddedTable::make()]);
     }
