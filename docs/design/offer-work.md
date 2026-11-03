@@ -47,3 +47,37 @@ The additive migration changes only retained queue columns. Existing B2 prefligh
 installation verifies recorded B5 storage and refuses lost/drifted columns. The focused SQLite regression
 uses real queue/writer/native transactions and synthetic wire replies. It proves sequential recovery and
 fencing, not concurrent MariaDB locking, installed cutover or provider acceptance.
+
+## Production ports, still dormant (B6b split)
+
+`OfferPorts(AccountBindings, Clock)::worker(Writer)` composes the existing admitted Enom transport,
+B3 feeds and B5 account budget. It is deliberately absent from Runtime and scheduler registration.
+The caller cutover and checked activation remain unfinished; constructing this factory grants neither.
+
+NameSilo composition requires #386's `AdmittedTransport`, `NameSiloLiveReservationPolicy` and their
+reservation dependencies, plus #387's `AccountBindings::credentialRevision()` and
+`LocalAccountEnrollment` validation/storage contract. They are read dependencies, not merged here.
+Missing dependencies refuse reads. The NameSilo credential callback accepts only reads, reloads
+verified encrypted credentials and requires the captured opaque revision before each physical send.
+Enom's wrapper likewise checks current verified credentials before delegating to its admitted wire.
+The Enom revision is a local keyed digest; NameSilo uses #387's persisted opaque revision. Neither is
+an account identity or provider confirmation. Transactional checks use current locking credential rows.
+
+Both interactive and background catalogue requests share **our** 30% daily call allowance and the
+25-read account minute budget, reserved atomically for either origin. Checkout keeps its normal
+interactive allowance. The factory narrows the existing admitted transport scope to 30% of our daily
+cap: each physical admission checks that threshold atomically against all origins' usage. A prior
+allowance snapshot grants no send authority. Nested scopes keep the stricter share and restore it
+after refusal; other background callers keep their default half-day share. Feed iteration completes
+inside that scope. These are our configured limits and headroom, never registrar limits. No provider
+I/O runs while database locks are held.
+
+Production workers capture the credential revision on each turn and recheck it after reads and under
+Writer's locks. Durable feed buffers carry that revision. Rotation discards an older buffer and queues
+a fresh feed; it cannot publish or acknowledge an in-flight response from older credentials. A refused
+stale claim can expire normally before recovery. The optional worker port keeps existing dormant B5
+fixtures compatible; a production worker must be constructed through the credential-fenced factory.
+
+Focused offline tests cover Enom factory composition without sending, explicit fake-wire fencing,
+shared local headroom, buffered rotation and rotation during a feed. NameSilo dependency integration,
+concurrent installed locking, caller agreement and exclusive-consumer activation remain unproven.

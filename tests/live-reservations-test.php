@@ -74,6 +74,30 @@ DB::table(EnomLiveCallSchema::TABLE)->insert(['account'=>hash('sha256',"namesilo
 $restored=$account('namesilo','restored-local-account');$restoredCalls=new LiveReservations($policy);
 same(['used'=>3,'spend_micros'=>900000],$restoredCalls->usage($restored),'A new local binding retains prior usage by stable identity');
 $restoredCalls->reserve($restored,new Money('0.10','USD'));$refuses(fn()=>$restoredCalls->reserve($restored));
+// The catalogue's narrower daily share is enforced by the same atomic reservation for either provider.
+$cataloguePolicy=new class implements LiveReservationPolicy {
+    public function limits(AccountBinding $binding):array {return ['daily_call_cap'=>100,'daily_spend_limit_usd'=>'1.00'];}
+};
+foreach(['enom','namesilo'] as $provider){
+    $identity='synthetic-catalogue-'.$provider;$catalogueBinding=$account($provider,$identity);
+    $catalogueCalls=new LiveReservations($cataloguePolicy);
+    for($i=0;$i<25;$i++){$catalogueCalls->reserve($catalogueBinding);}
+    same(25,$catalogueCalls->usage($catalogueBinding)['used'],'A catalogue group starts with five calls of our daily share available');
+    $catalogueCalls->reserve($catalogueBinding); // a holding consumes capacity after the advisory snapshot
+    $sent=0;
+    $refuses(static function()use($provider,$identity,$catalogueCalls,$catalogueBinding,&$sent):void {
+        LiveReservations::withCheckoutHeadroom($provider,$identity,static function()use($provider,$identity,$catalogueCalls,$catalogueBinding,&$sent):void {
+            for($i=0;$i<5;$i++){
+                LiveReservations::withCheckoutHeadroom($provider,$identity,fn()=>$catalogueCalls->reserve($catalogueBinding));
+                same(0,DB::transactionLevel(),'Synthetic Live physical send is outside database locks');$sent++;
+            }
+        },30);
+    });
+    same(4,$sent,'Our atomic catalogue daily threshold refuses the extra '.$provider.' send');
+    same(30,$catalogueCalls->usage($catalogueBinding)['used'],'Refused catalogue admission consumes no extra reservation');
+    $catalogueCalls->reserve($catalogueBinding);
+    same(31,$catalogueCalls->usage($catalogueBinding)['used'],'Ordinary '.$provider.' checkout keeps its full allowance after catalogue refusal');
+}
 // A day change after the conditional update must refuse while retaining that reservation.
 DB::listen(static function($query)use($clock):void {
     if(str_starts_with($query->sql,'update')&&str_contains($query->sql,EnomLiveCallSchema::TABLE)){$clock->instant=$clock->instant->modify('+1 day');}

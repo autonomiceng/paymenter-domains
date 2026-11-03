@@ -49,3 +49,73 @@ snapshot for recovery; digests alone are not a backup. Re-run conversion to prov
 Offline evidence is `tests/offer-conversion-test.php`: retained and fresh installs, prefix handling,
 atomic interruption/rerun, conflicting/ambiguous/stale/disabled costs, preserved holder retail and
 native obligations, plus 1,007 discovered offers across bounded batches. No provider or demo calls.
+
+## Checked quiet window (B6a)
+
+`Catalogue\UpgradeGate` adds an explicit maintenance seam. Nothing calls it during install or normal
+bootstrap. Missing state means legacy operation. `pause()` persists a new generation; retained
+catalogue writers refuse work while paused. Price reads also recheck their starting generation under
+the server/account mutex, so a read cannot save after pause followed by rollback. These checks do
+not stop an already running old executable. External maintenance and draining remain required.
+
+`capture()` requires paused state and no catalogue/offer/observation claims or read reservations.
+It binds the retained/native digest to the entire account set and this generation. `batch(binding,
+evidence, limit)` wraps B2's bounded conversion. `check(evidence)` checks every account, staged
+intent/cost/retail and untouched facts/publication fields, then compares global obligations once.
+Account changes, incomplete conversion, source drift or changed frozen evidence refuse compatibility.
+Claims are never cleared by the gate, even if their deadlines have passed.
+
+This is a split before activation. `check()` always returns `activated: false` and
+`activation_blocked: caller_cutover_pending`. There is no activation API. Staff, public, cart,
+checkout and payment callers still use their existing paths. B6b must switch all of them, summaries
+and native publication together, and register the dormant B6b production ports with our headroom and call caps.
+The new worker must replace, never accompany, legacy `ObservationWork` on shared queue rows.
+
+## Parent demo procedure (after the complete caller cutover)
+
+1. Record the exact deployed code/schema and recovery procedure. Enter maintenance for staff writes,
+   public checkout/payment callbacks and financial jobs as well as catalogue jobs; otherwise the
+   retained/native comparison cannot be stable. Stop `beco-demo-prices.timer`, the Domains scheduler,
+   queue workers and manual Sync/import entry points. Record which services were running for restart.
+   Let in-flight work finish; inspect both queue claim columns, observation-work claims and read-budget
+   leases. A timeout does not prove that a process stopped. Do not clear claims or seed/reset tables.
+2. Take a recoverable database and deployment snapshot while paused. Retain IDs and raw persisted
+   evidence for accounts/fingerprints, seller choices/revisions, TLDs, products/slugs/mappings,
+   plans/prices/settings, services/domains, invoices/items/payments/credits and operations. Include
+   paid pending work and uncertain attempts with their frozen funding/cost ceilings. Record retained
+   annual renewal retail for held and unsold endings. Keep customer data in the private backup only.
+3. Deploy the reviewed additive schema/code while maintenance stays active. In an authenticated
+   application maintenance console, instantiate
+   `new \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate`, call `pause()`, then
+   `capture()`. Save its digest-only array beside the snapshot. Do not construct or register transports.
+   This procedure needs an operator because an old process cannot honor a newly deployed code fence.
+4. Enumerate **all** `Models\Account` rows in server-ID order. Derive each binding with
+   `\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account)`. Call `$gate->batch($binding, $evidence, 500)`
+   until `complete`, then repeat to prove zero new conversions. Call `$gate->check($evidence)` and
+   save the full result. Require `compatible` and `complete`, an empty `changed` list and empty
+   `staging_mismatches`. Review reported unknown/current-offer availability against the approved
+   policy; never turn acceptance or old flags into invented facts. Any other mismatch stops cutover.
+5. **Stop on this B6b split.** Production read ports exist but remain unregistered. There is no
+   activation API or atomic caller routing matrix. The subsequent caller-cutover change must supply
+   the exact reviewed activation call here; do not bypass `activation_blocked` or edit state to invent an
+   active value. Before that call, prove staff/public/cart/locked-payment agreement, stale evidence
+   rejection, account rotation and the real admitted-port composition offline. Confirm the old
+   consumer cannot restart alongside B5. Our planned feed/facts call counts are our budgets, not
+   registrar limits. No connected reads are authorized by this runbook.
+6. After the future checked switch, compare original IDs and frozen obligations again. Prove a paid
+   pending request can continue without a duplicate attempt, an uncertain request cannot resend,
+   retained holder renewal prices survive, and stale carts/payment evidence refuse new spending.
+   Check the public theme interface, filters, staff permissions and summaries before reopening.
+   Restart only the selected new catalogue consumer and the previously enabled financial services.
+   Keep the old daily price refresher stopped once it has been replaced.
+7. Before activation, rollback with `$gate->resume()` under maintenance, then restore the recorded
+   legacy services/code. Additive staging fields remain compatible. The new generation invalidates
+   old captures and in-flight reads. If legacy sources then change, the completed converter refuses
+   reuse: review a forward correction instead of resetting markers. After activation, use the completed cutover's
+   reviewed forward-fix or coordinated recovery procedure; never restore financial data over new
+   activity or run destructive schema rollback.
+
+Offline B6a evidence is `tests/offer-upgrade-gate-test.php`: two accounts, 1,009 offers, pending/paid/
+uncertain obligations, writer refusal, superseded price reads, generation/binding checks, claims,
+tampered staging and frozen costs, one global obligation comparison and usable legacy rollback.
+SQLite fixture results do not establish installed MySQL concurrency or provider acceptance.

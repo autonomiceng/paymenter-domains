@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use App\Models\Server;
 use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CatalogueAcceptance,CatalogueEntry,Environment};
@@ -38,17 +39,18 @@ final class SellAutomation
         return new CatalogueAcceptance($b,$accepted->revision,$endings,$accepted->registrationRoute,$accepted->registrationIntervalSeconds);
     }
     /** Independent reads and committed saves survive a refused rule refresh. Acceptance itself still rolls back. */
-    public static function refresh(Account|int $seed,\DateTimeImmutable $now): void
+    public static function refresh(Account|int $seed,\DateTimeImmutable $now,?int $generation=null): void
     {
-        try{self::accept(is_int($seed)?Account::where('server_id',$seed)->sole():$seed,$now);}
+        try{$generation=UpgradeGate::legacy($generation);self::accept(is_int($seed)?Account::where('server_id',$seed)->sole():$seed,$now,generation:$generation);}
         catch(\Throwable $error){Log::warning('Domains selling rule refresh failed.',['server_id'=>$seed instanceof Account?(int)$seed->server_id:$seed,'exception_class'=>$error::class]);}
     }
     /** Runs again each tick so a pause or failed publication does not lose a successful fill. Idempotent under the account mutex. */
-    public static function accept(Account $seed,\DateTimeImmutable $now,?CatalogueEntry $read=null,?int $expectedRevision=null): void
+    public static function accept(Account $seed,\DateTimeImmutable $now,?CatalogueEntry $read=null,?int $expectedRevision=null,?int $generation=null): void
     {
-        DB::transaction(static function()use($seed,$now,$read,$expectedRevision):void {
+        DB::transaction(static function()use($seed,$now,$read,$expectedRevision,$generation):void {
             $s=Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
             $a=Account::where('server_id',$seed->server_id)->lockForUpdate()->sole();
+            UpgradeGate::legacy($generation);
             $b=CatalogueAcceptances::binding($a);if($b->fingerprint!==$seed->account_fingerprint){throw new \DomainException('Catalogue binding mismatch.');}
             $active=self::enabled($a);if(SellRule::saved($b)===null){return;}
             app(AccountBindings::class)->requireReadableLocked($s,$a);

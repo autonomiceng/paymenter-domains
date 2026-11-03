@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use App\Models\{Role,Server,User};
 use Illuminate\Support\Facades\{Crypt,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SalesPolicy,Tld};
@@ -77,6 +78,7 @@ final class StaffSettingsReview
     public function check(bool $inFlight=false): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
+        UpgradeGate::legacy();
         // Disabled accounts read the same rule, so a business-wide review is not refused for one of them. The stamp locks every account.
         if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}
         else{$this->lockOne();}

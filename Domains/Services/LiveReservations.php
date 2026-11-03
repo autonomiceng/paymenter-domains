@@ -26,11 +26,13 @@ final class LiveReservations
         $binding->requireMatch(CatalogueAcceptances::binding($account));
         return self::key($binding->registrarKey,$account->stable_identity);
     }
-    /** Background work reserves at most half the day's calls for this provider/account. */
-    public static function withCheckoutHeadroom(string $provider,#[\SensitiveParameter] string $identity,\Closure $read): mixed
+    /** Narrow this consumer's atomic daily share; default background work keeps half for checkout. */
+    public static function withCheckoutHeadroom(string $provider,#[\SensitiveParameter] string $identity,\Closure $read,int $dailyPercent=50): mixed
     {
-        $account=self::key($provider,$identity);$nested=isset(self::$checkoutHeadroom[$account]);self::$checkoutHeadroom[$account]=true;
-        try{return $read();}finally{if(!$nested){unset(self::$checkoutHeadroom[$account]);}}
+        if($dailyPercent<1||$dailyPercent>50){throw new \InvalidArgumentException('Invalid daily read share.');}
+        $account=self::key($provider,$identity);$prior=self::$checkoutHeadroom[$account]??null;
+        self::$checkoutHeadroom[$account]=min($prior??100,$dailyPercent);
+        try{return $read();}finally{if($prior===null){unset(self::$checkoutHeadroom[$account]);}else{self::$checkoutHeadroom[$account]=$prior;}}
     }
     public static function day(): string
     {return app(Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');}
@@ -48,7 +50,7 @@ final class LiveReservations
             $ceiling=self::micros($spend);$amount=$cost?self::micros($cost->amount):0;
             if($amount>$ceiling){throw new LiveReservationLimit;}
             $day=self::day();$key=self::account($binding);
-            if(isset(self::$checkoutHeadroom[$key])){$limit=intdiv($limit,2);}
+            if(isset(self::$checkoutHeadroom[$key])){$share=self::$checkoutHeadroom[$key];$limit=intdiv($limit,100)*$share+intdiv(($limit%100)*$share,100);}
             DB::table(LiveReservationSchema::TABLE)->insertOrIgnore(['account'=>$key,'day'=>$day,'used'=>0,'spend_micros'=>0]);
             if(DB::table(LiveReservationSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
                 ->where('spend_micros','<=',$ceiling-$amount)->update(['used'=>DB::raw('used + 1'),'spend_micros'=>DB::raw('spend_micros + '.$amount)])!==1){throw new LiveReservationLimit;}

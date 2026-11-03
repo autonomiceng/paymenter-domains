@@ -18,7 +18,8 @@ final class OfferWork
     public const BATCH = 25;
     private const LEASE = 300;
     public function __construct(private readonly Writer $writer, private readonly Clock $clock,
-        private readonly AccountReadBudget $minute, private readonly \Closure $feed, private readonly \Closure $allowance) {}
+        private readonly AccountReadBudget $minute, private readonly \Closure $feed, private readonly \Closure $allowance,
+        private readonly ?\Closure $credentials = null) {}
 
     /** Manual and automatic triggers enqueue the same account job. No provider I/O. */
     public function sync(AccountBinding $binding, RequestOrigin $origin = RequestOrigin::Interactive): void
@@ -96,6 +97,7 @@ final class OfferWork
     private function run(int $server): string
     {
         $account = Account::where('server_id', $server)->sole(); $b = CatalogueAcceptances::binding($account);
+        $credential = $this->credentials ? ($this->credentials)($b) : null;
         $job = null;
         $this->editQueue($b, function ($q, $row) use (&$job): void {
             if ((int) $row->offer_lease > $this->at()) { return; }
@@ -103,9 +105,15 @@ final class OfferWork
             $q->update(['offer_claim' => $job->offer_claim, 'offer_lease' => $this->at() + self::LEASE, 'offer_feed_run' => $job->offer_feed_run]);
         });
         if (!$job) { return 'busy'; }
+        $job->credentialRevision = $credential;
         $guard = function () use ($b, $job): void { $this->current($b, $job); };
         $writer = $this->writer->withGuard($guard); $work = OfferState::decode($job->offer_work);
         try {
+            if ($this->credentials && ($work['credential_revision'] ?? null) !== $credential) {
+                // A durable buffer belongs to the credentials that fetched it, even after restart.
+                $work['pending'] = []; $work['feed_due'] = $this->at(); $work['tries'] = 0;
+                $work['credential_revision'] = $credential;
+            }
             $this->republish($writer, $b, $work);
             $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
@@ -274,6 +282,9 @@ final class OfferWork
     private function current(AccountBinding $b, object $job): void
     {
         $this->account($b);
+        if ($this->credentials && !hash_equals($job->credentialRevision, ($this->credentials)($b))) {
+            throw new \DomainException('Offer work credentials changed.');
+        }
         $row = DB::table('domains_observation_queues')->where('server_id', $b->serverId)->lockForUpdate()->firstOrFail();
         if ($row->account_fingerprint !== $b->fingerprint || $row->offer_claim !== $job->offer_claim
             || (int) $row->offer_feed_run !== (int) $job->offer_feed_run || (int) $row->offer_lease <= $this->at()) {

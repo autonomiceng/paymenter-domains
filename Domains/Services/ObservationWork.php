@@ -2,6 +2,7 @@
 // Enom444f31c bounded refresh/follow-up; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, RequestBudget, RequestContext, RequestOrigin};
@@ -54,16 +55,18 @@ final class ObservationWork
         private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
     public function enroll(int $server): void
     {
-        OperationClaims::outside();
-        DB::transaction(function () use ($server): void {
+        OperationClaims::outside(); $generation=UpgradeGate::legacy();
+        DB::transaction(function () use ($server,$generation): void {
+            UpgradeGate::lockLegacy($generation,$server);
             $a=Account::where('server_id',$server)->lockForUpdate()->firstOrFail();
             DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$server,'account_fingerprint'=>$a->account_fingerprint]);
         });
     }
     public function tick(int $accounts=8): array
     {
-        OperationClaims::outside(); if ($accounts<1||$accounts>32) { throw new \InvalidArgumentException('Invalid account batch.'); }
-        $queues=DB::transaction(function () use ($accounts): array {
+        OperationClaims::outside(); $generation=UpgradeGate::legacy(); if ($accounts<1||$accounts>32) { throw new \InvalidArgumentException('Invalid account batch.'); }
+        $queues=DB::transaction(function () use ($accounts,$generation): array {
+            UpgradeGate::lockLegacy($generation);
             $q=DB::table('domains_observation_queues'); $rows=(clone $q)->orderBy('turn')->orderBy('server_id')->limit($accounts)->lockForUpdate()->get();
             $turn=(int)$q->max('turn');
             foreach ($rows as $row) { (clone $q)->where('id',$row->id)->update(['turn'=>++$turn]); }
@@ -71,6 +74,7 @@ final class ObservationWork
         });
         $summary=[];
         foreach ($queues as $queue) {
+            $queue->upgradeGeneration=$generation;
             try {
                 $account=Account::where('server_id',$queue->server_id)->first();
                 if($account&&$account->account_fingerprint===$queue->account_fingerprint
@@ -102,6 +106,7 @@ final class ObservationWork
     private function discover(object $queue): void
     {
         DB::transaction(function () use ($queue): void {
+            UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id);
             $a=Account::where('server_id',$queue->server_id)->lockForUpdate()->firstOrFail();
             if ($a->account_fingerprint!==$queue->account_fingerprint) { throw new \DomainException('Observation queue binding changed.'); }
             $q=DB::table('domains_observation_queues')->where('id',$queue->id); $current=(clone $q)->lockForUpdate()->firstOrFail();
@@ -122,6 +127,7 @@ final class ObservationWork
     private function claim(object $queue): ?object
     {
         return DB::transaction(function () use ($queue): ?object {
+            UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id);
             $now=$this->clock->now()->getTimestamp(); $q=DB::table('domains_observation_work')->where('server_id',$queue->server_id)
                 ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',self::STOPPED);});
@@ -131,12 +137,25 @@ final class ObservationWork
             if ($d && ($d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
                 DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
             }
+            $job->upgradeGeneration=$queue->upgradeGeneration;
             $job->claim=bin2hex(random_bytes(16));
             DB::table('domains_observation_work')->where('id',$job->id)->update(['claim'=>$job->claim,'lease_until'=>$now+300,'tries'=>$job->tries+1]);
             return $job;
         });
     }
     private function finish(object $job, string $code): void
+    {
+        DB::transaction(function()use($job,$code):void {
+            try { UpgradeGate::lockLegacy($job->upgradeGeneration,(int)$job->server_id); }
+            catch (\DomainException) {
+                // Draining a stopped generation may release only its own lease, never reschedule it.
+                DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)
+                    ->update(['claim'=>null,'lease_until'=>0]); return;
+            }
+            $this->finishCurrent($job,$code);
+        });
+    }
+    private function finishCurrent(object $job, string $code): void
     {
         $now=$this->clock->now()->getTimestamp();
         if ($code==='read_deferred') {
@@ -160,7 +179,7 @@ final class ObservationWork
         OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
         $seed=Domain::findOrFail(DB::table('domains_observation_work')->where('id',$id)->value('domain_id'));
         DB::transaction(function () use ($id,$reason,$seed,$review): void {
-            $l=HoldingLocks::take($seed,$review?->actorId); $review?->check($l); $d=$l['domain']; $q=DB::table('domains_observation_work')->where('id',$id); $job=(clone $q)->lockForUpdate()->firstOrFail();
+            $l=HoldingLocks::take($seed,$review?->actorId); UpgradeGate::legacy(); $review?->check($l); $d=$l['domain']; $q=DB::table('domains_observation_work')->where('id',$id); $job=(clone $q)->lockForUpdate()->firstOrFail();
             if ($job->domain_id!=$d->id||$job->server_id!=$d->server_id||$job->phase!==self::phase($d)||(int)$job->generation!==$d->authority_generation||$job->account_fingerprint!==$d->account_fingerprint||$job->lease_until>$this->clock->now()->getTimestamp()||$job->resumes>=20) { throw new \DomainException('Read resume unavailable.'); }
             $p=$d->observation??[]; unset($p['record_hold']); $p['resumptions']=[...($p['resumptions']??[]),['work_id'=>$id,'reason'=>$reason,'at'=>$this->clock->now()->format(DATE_ATOM)]];
             $d->update(['observation'=>$p]); $q->update(['resumes'=>$job->resumes+1,'tries'=>0,'claim'=>null,'safe_code'=>null,'due_at'=>$this->clock->now()->getTimestamp()]); $review?->record($l);
@@ -173,6 +192,7 @@ final class ObservationWork
     {
         OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
         DB::transaction(function () use ($server,$reason): void {
+            UpgradeGate::lockLegacy(null,$server);
             $q=DB::table('domains_observation_queues')->where('server_id',$server); $row=(clone $q)->lockForUpdate()->firstOrFail();
             if ($row->catalogue_lease>$this->clock->now()->getTimestamp()||$row->catalogue_resumes>=20) { throw new \DomainException('Catalogue resume unavailable.'); }
             $audit=json_decode($row->catalogue_audit??'[]',true,8,JSON_THROW_ON_ERROR);
@@ -190,6 +210,7 @@ final class ObservationWork
         $b=CatalogueAcceptances::binding($a); if (TestCatalogue::testDeployment($b)||EnomLive::deployment($b)) { return; } $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
         if (!$keys) { return; } $fresh=new CatalogueFreshness; $now=$this->clock->now()->getTimestamp();
         $claim=DB::transaction(function () use ($queue,$now): ?object {
+            UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id);
             $q=DB::table('domains_observation_queues')->where('id',$queue->id); $row=(clone $q)->lockForUpdate()->firstOrFail();
             if ($row->catalogue_due>$now||$row->catalogue_hold!==null||$row->catalogue_lease>$now) { return null; }
             // Crash after sending holds until explicit resume; an expired lease never automatically replays failure.
@@ -199,7 +220,7 @@ final class ObservationWork
         if (!$claim) { return; } $cursor=$claim->catalogue_cursor%count($keys); $deferred=false; $ok=false; $code='catalogue_evidence_missing';
         try {
             $ctx=new RequestContext($b,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true);
-            $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]]);
+            $summary=$this->catalogue->refresh($b->serverId,$ctx,$fresh,[$keys[$cursor]],generation:$queue->upgradeGeneration);
             $ok=$summary['failed']===[]&&$summary['synced']+count($summary['quarantined']??[])===1;
             $codes=$summary['failure_codes']??[]; $code=reset($codes)?:$code;
         } catch (ReadDeferred|EnomTestCallLimit) { $deferred=true; } catch (\Throwable $error) { $code=ReadFailure::code($error); }
@@ -207,14 +228,22 @@ final class ObservationWork
             try { $this->catalogueFailure($queue,$code,$claim->catalogue_claim); }
             catch (\Throwable) { /* Claim completion cannot depend on diagnostic persistence. */ }
         }
-        DB::table('domains_observation_queues')->where('id',$queue->id)->where('catalogue_claim',$claim->catalogue_claim)->update([
-            'catalogue_claim'=>null,'catalogue_lease'=>0,'catalogue_hold'=>$ok||$deferred?null:$code,
-            'catalogue_cursor'=>$cursor+($ok?1:0),'catalogue_due'=>$now+($deferred?60:max(1,intdiv($fresh->intervalSeconds,count($keys))))]);
+        DB::transaction(function()use($queue,$claim,$ok,$deferred,$code,$cursor,$now,$fresh,$keys):void {
+            try { UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id); }
+            catch (\DomainException) {
+                DB::table('domains_observation_queues')->where('id',$queue->id)->where('catalogue_claim',$claim->catalogue_claim)
+                    ->update(['catalogue_claim'=>null,'catalogue_lease'=>0]); return;
+            }
+            DB::table('domains_observation_queues')->where('id',$queue->id)->where('catalogue_claim',$claim->catalogue_claim)->update([
+                'catalogue_claim'=>null,'catalogue_lease'=>0,'catalogue_hold'=>$ok||$deferred?null:$code,
+                'catalogue_cursor'=>$cursor+($ok?1:0),'catalogue_due'=>$now+($deferred?60:max(1,intdiv($fresh->intervalSeconds,count($keys))))]);
+        });
     }
     private function catalogueFailure(object $queue, string $code, ?string $claim=null): void
     {
         $code=ReadFailure::safe($code);
         DB::transaction(function () use ($queue,$code,$claim): void {
+            UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id);
             $q=DB::table('domains_observation_queues')->where('id',$queue->id)->where('account_fingerprint',$queue->account_fingerprint);
             if ($claim!==null) { $q->where('catalogue_claim',$claim); }
             $row=(clone $q)->lockForUpdate()->first(); if (!$row) { return; }

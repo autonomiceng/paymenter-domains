@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffAlert};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -39,29 +40,38 @@ final class PriceFill
     /** A deferred or failed run waits for the next day too: retrying each tick could spend our send limit. */
     public function daily(Account $account): void
     {
-        OperationClaims::outside();$binding=CatalogueAcceptances::binding($account);
+        OperationClaims::outside();$generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
         $now=$this->clock->now()->getTimestamp();$due=$now-self::EVERY_SECONDS;
         $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
-        DB::table(SellTableSchema::FILLS)->insertOrIgnore($key);
+        DB::transaction(static function()use($binding,$key,$generation):void {
+            self::lock($binding,$generation);
+            DB::table(SellTableSchema::FILLS)->insertOrIgnore($key);
+        });
         $tried=self::last($binding)->tried_at;if($tried!==null&&(int)$tried>$due){return;}
         try{
             if($binding->registrarKey==='enom'&&!TestCatalogue::enabled($binding)){return;}
-            if(self::state($binding)->where(fn($q)=>$q->whereNull('tried_at')->orWhere('tried_at','<=',$due))->update(['tried_at'=>$now])!==1){return;}
+            if(!DB::transaction(static function()use($binding,$generation,$due,$now):bool {
+                self::lock($binding,$generation);
+                return self::state($binding)->where(fn($q)=>$q->whereNull('tried_at')->orWhere('tried_at','<=',$due))->update(['tried_at'=>$now])===1;
+            })){return;}
             $reader=$this->reader($binding)??throw new \DomainException('Price reader unavailable.');
             $this->fill($binding,$reader,RequestOrigin::Background);
-        }catch(\Throwable $error){$this->failed($account,$binding,$error,$now);}
+        }catch(\Throwable $error){$this->failed($account,$binding,$error,$now,$generation);}
     }
     /** Sync prices. Returns the saved TLD count, including retained rows without prices; 0 when a newer read took over. */
     public function run(Account $account): int
     {
-        OperationClaims::outside();$binding=CatalogueAcceptances::binding($account);
+        OperationClaims::outside();$generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
         $reader=$this->reader($binding)??throw new \DomainException('TEST catalogue reads are unavailable.');
         return $this->fill($binding,$reader,RequestOrigin::Interactive);
     }
-    private function failed(Account $account,AccountBinding $binding,\Throwable $error,int $now): void
+    private function failed(Account $account,AccountBinding $binding,\Throwable $error,int $now,int $generation): void
     {
         $state=self::last($binding);$code=ReadFailure::code($error);$since=(int)($state->filled_at??$state->failed_at??$now);
-        self::state($binding)->update(['failed_at'=>$state->failed_at??$now,'failure'=>$code]);
+        DB::transaction(static function()use($binding,$generation,$state,$now,$code):void {
+            self::lock($binding,$generation);
+            self::state($binding)->update(['failed_at'=>$state->failed_at??$now,'failure'=>$code]);
+        });
         Log::warning('Domains price fill failed.',['server_id'=>$binding->serverId,'code'=>$code]);
         if(!self::stale(self::last($binding),$now)){return;}
         $name=(string)(\App\Models\Server::whereKey($binding->serverId)->value('name')??'A registrar account');
@@ -71,7 +81,7 @@ final class PriceFill
     }
     private function fill(AccountBinding $binding,EnomDriver|NameSiloDriver $reader,RequestOrigin $origin): int
     {
-        $run=self::start($binding);
+        $generation=UpgradeGate::legacy();$run=self::start($binding,$generation);
         // Our reads for this run: every bucket, plus the list once so TLDs without a price row still show.
         $context=new RequestContext($binding,$origin,$this->clock->now()->modify('+60 seconds'),new RequestBudget(count(self::YEARS)+1),$this->clock,$origin===RequestOrigin::Background&&$binding->registrarKey==='enom'&&SellRule::saved($binding)!==null?new PriceReadBudget($this->clock):Runtime::limiter(),stopOnReadFailure:true);
         $rows=$reader instanceof NameSiloDriver?self::nameSilo($reader,$context):self::enom($reader,$context);
@@ -83,7 +93,8 @@ final class PriceFill
             $records[]=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint,'tld'=>(string)$tld,'register_cost'=>$register,'renew_cost'=>$renew,
                 'transfer_cost'=>$one['transfer']??null,'high_cost'=>$high,'prices'=>$buckets===[]?null:json_encode($buckets,JSON_THROW_ON_ERROR),'read_at'=>$now];
         }
-        $count=DB::transaction(static function()use($binding,$records,$now,$run):int {
+        $count=DB::transaction(static function()use($binding,$records,$now,$run,$generation):int {
+            self::lock($binding,$generation);
             // Runs can overlap across their reads. The last one started wins, so older prices never land on newer ones.
             if((int)self::state($binding)->lockForUpdate()->value('run')!==$run){return 0;}
             // Staff choices stay. A TLD missing from this read keeps its last prices and their read time.
@@ -94,10 +105,20 @@ final class PriceFill
         if($count>0){SellAutomation::refresh($binding->serverId,$this->clock->now());}
         return $count;
     }
-    private static function start(AccountBinding $binding): int
+    private static function lock(AccountBinding $binding,int $generation): void
     {
-        DB::table(SellTableSchema::FILLS)->insertOrIgnore(['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint]);
-        return DB::transaction(static function()use($binding):int {self::state($binding)->increment('run');return (int)self::last($binding)->run;});
+        \App\Models\Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
+        $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->sole();
+        $binding->requireMatch(CatalogueAcceptances::binding($a));
+        UpgradeGate::legacy($generation);
+    }
+    private static function start(AccountBinding $binding,int $generation): int
+    {
+        return DB::transaction(static function()use($binding,$generation):int {
+            self::lock($binding,$generation);
+            DB::table(SellTableSchema::FILLS)->insertOrIgnore(['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint]);
+            self::state($binding)->increment('run');return (int)self::last($binding)->run;
+        });
     }
     /** @return array<string,array<int,array>> */
     private static function enom(EnomDriver $reader,RequestContext $context): array

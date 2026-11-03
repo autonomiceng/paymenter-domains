@@ -285,5 +285,30 @@ $clock->at = $clock->at->modify('+2 hours');
 $later = $prices->renewal(2, $bound[2]->fingerprint, 'com', 'USD', $clock->now());
 same(false, $later->retained, 'Saved cost stays current past the former failure margin');
 same([$saved->id, $saved->revision, $saved->retail], [$later->id, $later->revision, $later->retail], 'Age never changes the holder price or its identity');
+// A read must not narrow acceptance if pause/resume happens just before its independent acceptance transaction.
+\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install();
+$server = Server::findOrFail(1);
+$server->settings()->updateOrCreate(['key' => \Paymenter\Extensions\Servers\Domains\Services\SellRule::KEY],
+    ['type' => 'array', 'encrypted' => false, 'value' => ['mode' => 'except', 'max_cost' => '10.0000', 'years' => 1, 'transfers' => false]]);
+\Paymenter\Extensions\Servers\Domains\Models\SellRow::updateOrCreate(['server_id' => 1, 'account_fingerprint' => $bound[1]->fingerprint, 'tld' => 'com'],
+    ['register_cost' => '6.0000', 'renew_cost' => '8.0000', 'high_cost' => '8.0000', 'prices' => [1 => ['register' => '6.0000', 'renew' => '8.0000']], 'read_at' => $clock->now()->getTimestamp()]);
+config(['domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true, 'domains.enom_writes.registration' => true]);
+app()->instance(AccountBindings::class, $bindings);
+$enom->pricePayload = '<ProductPrice><ProductEnabled>true</ProductEnabled><Price>99.0000</Price></ProductPrice>';
+$beforeAcceptance = CatalogueAcceptances::load($bound[1]);
+$beforePrices = Price::where('server_id', 1)->orderBy('id')->get()->map(fn ($p) => $p->getRawOriginal())->all();
+$beforeAudit = $server->settings()->where('key', \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY)->first()?->getRawOriginal();
+$armed = true; $interrupted = false;
+DB::connection()->beforeStartingTransaction(static function () use (&$armed, &$interrupted): void {
+    if (!$armed || DB::transactionLevel() !== 0) { return; }
+    $armed = false; $gate = new \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+    $gate->pause(); $gate->resume(); $interrupted = true;
+});
+$result = $sync->refresh(1, $context(1), new CatalogueFreshness, ['com'], scheduled: true);
+same(true, $interrupted, 'Pause/resume happens immediately before the acceptance writer acquires its mutex');
+same(0, $result['synced'], 'The old read cannot import prices after resume');
+same($beforeAcceptance->revision, CatalogueAcceptances::load($bound[1])->revision, 'The rejected read cannot commit acceptance narrowing first');
+same($beforePrices, Price::where('server_id', 1)->orderBy('id')->get()->map(fn ($p) => $p->getRawOriginal())->all(), 'Rejected read preserves all retained prices');
+same($beforeAudit, $server->settings()->where('key', \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY)->first()?->getRawOriginal(), 'Rejected read adds no acceptance audit');
 $nativeSuccessful = true;
 echo "Shared dual-driver catalogue, acceptance revisions, publication and retained-holder checks passed.\n";
