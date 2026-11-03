@@ -39,8 +39,9 @@
         .domains-sell-table .fi-ta-row.fi-selected>.fi-ta-selection-cell,.domains-sell-table .fi-ta-row.fi-selected>.domains-sell-pin{background:var(--gray-50)}
         .dark .domains-sell-table .fi-ta-row.fi-selected>.fi-ta-selection-cell,.dark .domains-sell-table .fi-ta-row.fi-selected>.domains-sell-pin{background:linear-gradient(#ffffff0d,#ffffff0d),var(--beco-card,var(--gray-900))}
         .domains-sell-table .fi-ta-selection-cell{width:3rem;min-width:3rem}.domains-sell-table .fi-ta-selection-cell + .domains-sell-pin{left:3rem}
-        /* A pinned cell paints its tint short of its own row line, so the line there sits on the bare card and is lost. A hidden border hands that pixel row to the cell, and an inset shadow draws the line on its tint. */
-        .dark .domains-sell-table .fi-ta-row.fi-selected:not(:last-child)>:is(.fi-ta-selection-cell,.domains-sell-pin){border-bottom-style:hidden;box-shadow:inset 0 -1px 0 #ffffff0d}
+        /* Ticked rows: the pinned cells paint their tint short of their own row line, and Chrome lays the price cells' tint under the line or not by sub-pixel position, so lines stepped. Every cell draws the line solid: the line over the tint between two ticked rows, the plain row line where a ticked run starts or ends. */
+        .dark .domains-sell-table .fi-ta-row.fi-selected:has(+.fi-ta-row.fi-selected)>td{border-bottom:1px solid color-mix(in srgb,white 5%,color-mix(in srgb,white 5%,var(--beco-card,var(--gray-900))))}
+        .dark .domains-sell-table .fi-ta-row:is(.fi-selected:has(+.fi-ta-row:not(.fi-selected)),:not(.fi-selected):has(+.fi-ta-row.fi-selected))>td{border-bottom:1px solid color-mix(in srgb,white 5%,var(--beco-card,var(--gray-900)))}
         @media(max-width:40rem){
             .domains-sell-note{padding-inline:12px}.domains-price-help dl{grid-template-columns:minmax(0,1fr)}
             /* The account and year choices share a row, and search and the buttons wrap below, so nothing is cut. */
