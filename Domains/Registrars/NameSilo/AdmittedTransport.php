@@ -2,6 +2,7 @@
 // Transport options adapted from NameSilo Api/CurlTransport; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport,DeadlineTransport,Environment,RegistrarRequest,RequestContext,TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,OperationClaims,ProviderSendGuard};
@@ -84,7 +85,10 @@ final class AdmittedTransport implements DeadlineTransport
             $day=$write?null:(new LiveReservations($this->policy))->reserve($this->binding);
             ProviderSendGuard::beforeSend('namesilo','live',$command);
             $this->policy->requireFeature($this->binding,$feature);
-            $remaining=intdiv($deadline-hrtime(true),1000000);if($remaining<1){throw new LiveReservationLimit;}
+            $now=app(Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'));
+            $midnight=$now->modify('+1 day')->setTime(0,0);
+            $dayMs=intdiv(($midnight->getTimestamp()-$now->getTimestamp())*1000000-(int)$now->format('u'),1000);
+            $remaining=min($dayMs,intdiv($deadline-hrtime(true),1000000));if($remaining<1){throw new LiveReservationLimit;}
             if(!curl_setopt_array($handle,[CURLOPT_CONNECTTIMEOUT_MS=>min(8000,$remaining),CURLOPT_TIMEOUT_MS=>$remaining])){throw new \RuntimeException;}
             if($write){$this->reservation->consume($command,$parameters);}elseif($day!==LiveReservations::day()){throw new LiveReservationLimit;}
             if(hrtime(true)>=$deadline){throw new LiveReservationLimit;}

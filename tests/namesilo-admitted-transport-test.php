@@ -149,5 +149,22 @@ $grant->run('management',48,function()use($grant,$glue,$sendGlue,$deny):void {
 });
 same(['used'=>$before['used']+1,'spend_micros'=>$before['spend_micros']],$used(),'Glue mutation counts its reservation once without spend');
 same(1,$GLOBALS['wire']['sends'],'Glue mutation sends once and refuses replay');
+// UTC reservation days also bound physical timeouts, including fractional milliseconds and shorter caller deadlines.
+$clock->instant=new \DateTimeImmutable('2026-11-02T15:59:59.123456-08:00');resetWire();
+$read();same(876,$GLOBALS['wire']['options'][CURLOPT_TIMEOUT_MS],'Read timeout stops before the reserved UTC day ends');
+same(876,$GLOBALS['wire']['options'][CURLOPT_CONNECTTIMEOUT_MS],'Connect timeout also fits the remaining UTC day');
+$transport->sendWithin(Api\Environment::Live,Api\RequestContext::Background,Api\RegistrarRequest::balance(),$key,100);
+same(100,$GLOBALS['wire']['options'][CURLOPT_TIMEOUT_MS],'Shorter caller timeout is preserved');
+$grant->run('management',49,function()use($grant,$exchange,$origin):void {
+    $grant->reserve('domainLock',['domain'=>'example.com']);$exchange($origin,'domainLock',['domain'=>'example.com'],20000);
+    same(876,$GLOBALS['wire']['options'][CURLOPT_TIMEOUT_MS],'Mutation timeout stays within its reserved UTC day');
+    expect(!$grant->unconsumed(49),'Day-bounded physical mutation consumes the original grant');
+});
+$clock->instant=new \DateTimeImmutable('2026-11-02T23:59:59.999500Z');$before=$used();$deny($read);
+same($before['used']+1,$used()['used'],'Submillisecond refusal retains its original counted call');
+$grant->run('management',50,function()use($grant,$exchange,$origin,$deny):void {
+    $grant->reserve('domainLock',['domain'=>'example.com']);$deny(fn()=>$exchange($origin,'domainLock',['domain'=>'example.com'],20000));
+    expect($grant->unconsumed(50),'No remaining whole millisecond refuses before consuming a mutation grant');
+});
 echo "NameSilo admitted transport enforces reservations, fixed routes, one send and redacted uncertain outcomes.\n";
 $nativeSuccessful=true;

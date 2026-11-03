@@ -46,3 +46,5 @@ Do not install writers by merely injecting AdmittedTransport::exchange into Runt
 Offline tests exercise encrypted installed account rows, synthetic cURL, the real daily balance worker,
 shared transfer polling, key rotation, revocation, off/site/server guards, exact call accounting and lost
 replies. They do not establish A11, provider history completeness or any real OTE/Live acceptance.
+
+Admitted Live sends cap connect/total timeouts at the whole milliseconds left in the UTC reservation day, preserving shorter caller deadlines. Submillisecond windows refuse before physical handoff; counted reservations remain retained. This bounds the local transport window, not the provider's processing or receipt time. A timed-out mutation remains consumed and unresolved, never replayable merely because the day changed.
