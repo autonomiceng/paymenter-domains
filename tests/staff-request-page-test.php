@@ -210,6 +210,30 @@ same([],$words,'A request reads the same word as its domain for the same state, 
 same(['Under review','warning','Not sent. Orders are off for this account.'],array_values(RequestFacts::status($queued)),'Queued with Orders off reads Under review, amber, with the hold');
 same('Under review',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($queued,$heldOp->domain,true)['status']['label'],'The rail reads the same');
 same('In progress',RequestFacts::status($queued,false)['label'],'A list that knows Orders are on skips the check');
+// The Status filter reads the same map: a queued request on an account with Orders off is in Under review, not In progress.
+DB::table('domains_operations')->where('id',$queued->id)->update(['state'=>'queued','safe_code'=>null]);
+$filter('status',['under_review'])->assertCanSeeTableRecords([$queued]);
+$filter('status',['in_progress'])->assertCanNotSeeTableRecords([$queued]);
+$orders->update(['processing_enabled'=>true]);
+$filter('status',['in_progress'])->assertCanSeeTableRecords([$queued]);
+$filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
+// Held for setup reads Action required, as its domain does, with the next step it already shows.
+$setup=[]; $next=[];
+foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_purchase','dns'] as $kind){
+    foreach(['contact_details_required','nameservers_required'] as $code){
+        $op=$heldOp->fresh()->forceFill(['action'=>$kind,'state'=>'held','safe_code'=>$code]);
+        $page=RequestFacts::status($op,true,$heldOp->domain);
+        foreach(['page'=>$page['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
+            if($word!==$domainWord('setup_required')){$setup[]="$kind $code ($where): request \"$word\", domain \"{$domainWord('setup_required')}\"";}
+        }
+        if(!is_string($page['reason'])||$page['reason']===''||$page['reason']==='Status missing'){$next[]="$kind $code";}
+    }
+}
+same([],$setup,'A request held for setup reads Action required, as its domain does, for every kind');
+same([],$next,'A request held for setup keeps its next step');
+DB::table('domains_operations')->where('id',$queued->id)->update(['state'=>'held','safe_code'=>'contact_details_required']);
+$filter('status',['action_required'])->assertCanSeeTableRecords([$queued]);
+$filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');

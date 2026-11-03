@@ -143,16 +143,16 @@ final class RequestFacts
         try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
     }
-    /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request that waits on them is held for
-     * staff: it reads as held (Under review), the same word as its domain, with the hold in its reason. With its domain (passed, or loaded with the row) a change reads as
+    /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
+     * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
      * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
     {
         $d??=$op->relationLoaded('domain')?$op->domain:null;
-        $status=[...Labels::requestStatus($op),'reason'=>self::reason($op,$ordersOff)];
-        try { $key=$d?ManagementProgress::statusKey($op,$d):null; } catch (\Throwable) { $key=null; }
+        $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op);
+        $status=[...Labels::requestStatus($op,$off),'reason'=>self::reason($op,$ordersOff)];
+        try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
-        if ($op->state==='queued'&&$ordersOff&&str_ends_with((string)$status['reason'],self::ORDERS_OFF)) { [$status['label'],$status['tone']]=RequestStatus::SET[RequestStatus::STATES['held'][0]]; }
         return $status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */

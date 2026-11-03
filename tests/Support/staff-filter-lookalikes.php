@@ -110,14 +110,14 @@ function staffOperationFilterLookalikes($viewer, Domain $seed): void
             ->assertCanSeeTableRecords(array_column($rows, 'operation'))->assertCountTableRecords(count($rows));
         $failed = ['provider_rejected', 'timeout', 'registration_rejected', 'renewal_rejected', 'complimentary_timeout', 'contacts_rejected', 'reasonless', 'credited_timeout'];
         foreach ([
-            [['under_review'], ['held', 'contact_hold', 'uncertain']],
+            [['under_review'], ['held', 'uncertain']],
             [['in_progress'], ['pending', 'running', 'queued']],
             [['awaiting_payment'], ['awaiting_payment']],
-            [['action_required'], []],
+            [['action_required'], ['contact_hold']],
             [['completed'], ['succeeded']],
             [['failed'], $failed],
             [['cancelled'], []],
-            [['under_review', 'completed'], ['held', 'contact_hold', 'uncertain', 'succeeded']],
+            [['under_review', 'completed'], ['held', 'uncertain', 'succeeded']],
         ] as [$value, $keys]) {
             staffAssertLookalikeFilter($viewer, ListOperations::class, 'status', $value, $rows, 'operation', $keys);
         }

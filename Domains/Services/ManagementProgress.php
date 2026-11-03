@@ -21,7 +21,7 @@ final class ManagementProgress
         'glue_add','glue_update','glue_delete'=>'glue',default=>$action }; }
     /** A change's status key on its domain. Customer History and the staff Activity rail read this one word:
      * a result counts only once the registrar's readback confirms it. Null when the request is not a change. */
-    public static function statusKey(Operation $op, Domain $d): ?string
+    public static function statusKey(Operation $op, Domain $d, bool $ordersOff = false): ?string
     {
         $p=$op->policy['management']??null;
         if ($p===null || isset($p['correction'])) { return null; }
@@ -29,7 +29,7 @@ final class ManagementProgress
         return match (true) {
             in_array($op->state,['succeeded','rejected'],true) && !$resolved => 'under_review',
             $op->state==='held' && $op->safe_code==='enom_test_management_call_cap' && $resolved => 'failed',
-            default => RequestStatus::STATES[RequestStatus::closed($op->state,$op->safe_code)?'disposed':$op->state][0] ?? 'under_review',
+            default => RequestStatus::key(RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)),
         };
     }
     public static function pending(Operation $op, Domain $d): bool

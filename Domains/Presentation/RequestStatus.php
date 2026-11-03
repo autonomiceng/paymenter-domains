@@ -28,6 +28,27 @@ final class RequestStatus
         'held' => [DomainStatus::STATES['held'][0], 'Not sent'], 'uncertain' => [DomainStatus::STATES['uncertain'][0], self::UNCONFIRMED],
         'succeeded' => ['completed', null], 'rejected' => ['failed', null], 'disposed' => ['cancelled', null], 'cancelled' => [DomainStatus::STATES['cancelled'][0], null],
     ];
+    /** Held until the customer finishes setup. Its domain reads setup_required (DomainStates::managed). */
+    public const SETUP_CODES = ['contact_details_required', 'nameservers_required'];
+    /** Requests that read another state's word, and when: word state => [request state, safe codes (null: any), only while Orders are off].
+     * Held for setup reads Action required, as its domain does. A queued request that Orders off stop is held for staff. A rejection
+     * closed on purpose reads Cancelled. The request word (Labels::requestStatus) and the Status filter (OperationQueries::status) both read this. */
+    public const READS_AS = [
+        'setup_required' => ['held', self::SETUP_CODES, false],
+        'held' => ['queued', null, true],
+        'disposed' => ['rejected', self::CLOSED_CODES, false],
+    ];
+    /** The state whose word a request reads. $ordersOff: Orders are off for the request's own account (OperationQueries::ordersOff). */
+    public static function readsAs(?string $state, ?string $code, bool $ordersOff = false): ?string
+    {
+        foreach (self::READS_AS as $as => [$from, $codes, $off]) {
+            if ($state === $from && ($codes === null || in_array($code, $codes, true)) && (!$off || $ordersOff)) { return $as; }
+        }
+        return $state;
+    }
+    /** The SET key for a state, from this map or, for a state only a domain has, from DomainStatus. Unknown states read Under review. */
+    public static function key(?string $state): string
+    { return (self::STATES[$state] ?? DomainStatus::STATES[$state] ?? ['under_review'])[0]; }
     /** A request in any other state is still open. */
     public const FINISHED = ['succeeded', 'rejected', 'disposed', 'cancelled'];
     /** Rejected requests that ended on purpose: closed unpaid, cancelled by staff, or cancelled with account credit. They read Cancelled, not Failed. */
@@ -43,7 +64,7 @@ final class RequestStatus
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $cause = null): array
     {
-        [$key, $default] = self::STATES[$state] ?? ['under_review', 'Status missing'];
+        [$key, $default] = self::STATES[$state] ?? (isset(DomainStatus::STATES[$state]) ? [DomainStatus::STATES[$state][0], null] : ['under_review', 'Status missing']);
         [$label, $tone] = self::SET[$key];
         $reason = $cause === null ? $default : ($state === 'held' ? 'Not sent: '.$cause : $cause);
         return ['label' => $label, 'tone' => $tone, 'reason' => $reason];
