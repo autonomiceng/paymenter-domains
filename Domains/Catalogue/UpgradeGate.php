@@ -44,7 +44,13 @@ final class UpgradeGate
     /** Internal lifecycle inspection grants no executable routing. */
     public static function initializationState(): array { return self::state(); }
     private static function executable(array $state): array
-    { if ($state['state'] === 'initializing') { throw new \DomainException('Domains initialization is incomplete. Retry installation before processing.'); } return $state; }
+    {
+        if ($state['state'] === 'initializing' || $state['state'] === 'legacy' && $state['generation'] === 0
+            && !Schema::hasTable('domains_accounts') && FreshInstallation::uninstalled()) {
+            throw new \DomainException('Domains initialization is incomplete. Retry installation before processing.');
+        }
+        return $state;
+    }
 
     /** Advisory mode selection never takes the gate ahead of a caller's native/account prefix. */
     public static function routeState(): array { return self::executable(self::state(self::query()->get())); }

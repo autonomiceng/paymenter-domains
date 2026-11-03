@@ -13,6 +13,9 @@ $user = User::create(['first_name'=>'Synthetic','last_name'=>'Owner','email'=>'f
 $invoice = Invoice::create(['user_id'=>$user->id,'currency_code'=>'USD','status'=>'paid']);
 $before = serialize([$user->fresh()->getAttributes(), $invoice->fresh()->getAttributes()]);
 $entry = new Domains;
+Runtime::register(); $uninstalledRefused = false;
+try { Runtime::observations(); } catch (DomainException) { $uninstalledRefused = true; }
+expect($uninstalledRefused, 'A completely uninstalled database refuses executable routing before the intent exists');
 $entry->installed();
 same('active', UpgradeGate::routeState()['state'], 'Proven-new installed extension selects active catalogue immediately');
 same(2, UpgradeGate::generation(), 'Fresh intent and activation each own a generation');

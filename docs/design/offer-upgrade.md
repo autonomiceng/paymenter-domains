@@ -136,7 +136,8 @@ An old empty installation, holding-only storage, orphan settings or partial hist
 Retained installations keep the maintenance procedure above, including authenticated operator activation.
 
 Before creating tables, installation commits an encrypted initialization intent. While that intent is pending,
-executable routing and legacy work refuse; there is no fallback. Retry the same package's installation after an
+executable routing and legacy work refuse; there is no fallback. A completely uninstalled database also refuses
+executable routing before its intent is created. Retry the same package's installation after an
 interruption. The owned intent permits missing tables/indexes to be completed only while all Domains business
 storage remains empty. Unexpected data or schema drift refuses; preserve the evidence and investigate.
 Verification, empty-state recheck and the installed caller contract precede one atomic active receipt.

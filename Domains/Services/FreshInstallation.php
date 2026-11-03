@@ -29,6 +29,13 @@ final class FreshInstallation
         ksort($files); return hash('sha256', OfferState::json($files));
     }
 
+    /** Advisory bootstrap check; only the locked lifecycle proof may create initialization authority. */
+    public static function uninstalled(): bool
+    {
+        if (self::tables() !== [] || array_intersect(app(Migrator::class)->getRepository()->getRan(), array_keys(self::files()))) { return false; }
+        try { self::empty(true); return true; } catch (\DomainException) { return false; }
+    }
+
     public static function install(): void
     {
         OperationClaims::outside(); Installation::legacy();
