@@ -33,7 +33,11 @@ final class RegistrationDns
     public static function registrarDns(Domain $d): bool
     {
         $actual=ObservationProjection::nameservers($d);
-        return $d->registrar_key==='enom' && $actual?->state==='observed'
-            && \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ManagementRead::defaultDns($actual->nameservers);
+        if($actual?->state!=='observed'){return false;}
+        return match($d->registrar_key){
+            'enom'=>\Paymenter\Extensions\Servers\Domains\Registrars\Enom\ManagementRead::defaultDns($actual->nameservers),
+            'namesilo'=>\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns::defaultDns($actual->nameservers),
+            default=>false,
+        };
     }
 }

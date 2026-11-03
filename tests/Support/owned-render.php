@@ -19,10 +19,10 @@ $make=static function(bool $free=false,bool $setup=false,bool $held=false):Owned
     foreach(['nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'Domain privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Transfer code']as$cap=>$label){
         $management[$cap]=['label'=>$label,'url'=>'/domains/1/manage/'.$cap,'actions'=>[]];
     }
-    $management['nameservers']['max']=$free?13:12; $management['nameservers']['defaults']=!$free; $management['contacts']+=['staged'=>$free,'saved'=>[],'approved'=>null];$management['contacts']['limits']=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($free?'namesilo':'enom');
+    $management['nameservers']['max']=$free?13:12; $management['nameservers']['defaults']=!$free; $management['contacts']+=['staged'=>$free,'saved'=>[]];$management['contacts']['limits']=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($free?'namesilo':'enom');
     $management['privacy']+=['free'=>$free,'price'=>$free?null:'$8.00'];
     $management['auth_code_email']['recipient']=$free?'domain’s administrative contact':'domain owner';
-    foreach($free?['contact_profile','contacts']:['contacts']as$a){$management['contacts']['actions'][$a]='/domains/1/manage/'.$a;}
+    foreach(['contacts']as$a){$management['contacts']['actions'][$a]='/domains/1/manage/'.$a;}
     foreach(['privacy_enable','privacy_disable',...($free?[]:['privacy_purchase','privacy_renew'])]as$a){$management['privacy']['actions'][$a]='/domains/1/manage/'.$a;}
     return new OwnedDomain(placeholderComFixtureName((str_repeat('a',51).'-placeholder').'.com'),$setup?'Action required':'Active',$setup?'warn':'ok','2027-10-18','On','$14.00',$actions,
         [['label'=>'Contacts','state'=>'Under review'],['label'=>'Nameservers','state'=>'Under review']],
@@ -43,7 +43,7 @@ app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $pages['held-setup']=view('domains::setup',['domain'=>$held])->render();
 $pages['held-transfer']=view('domains::code',['domain'=>$held])->render();
 app('view')->share('errors',(new Illuminate\Support\ViewErrorBag)->put('default',new Illuminate\Support\MessageBag(['contact.phone'=>'Check this contact detail.'])));
-session()->flash('domains_failed_form','/domains/1/manage/contact_profile');
+session()->flash('domains_failed_form','/domains/1/manage/contacts');
 session()->flashInput(['role'=>'tech','contact'=>['first_name'=>'Example','last_name'=>'Customer','phone'=>'bad phone']]);
 $pages['show-contact-errors']=view('domains::show',['domain'=>$ns])->render();
 session()->forget(['domains_failed_form','_old_input']);

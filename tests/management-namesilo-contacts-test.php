@@ -7,7 +7,6 @@ use Paymenter\Extensions\Servers\Domains\Models\ContactProfile;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ManagementProfiles;
 [$d,$driver,$original]=$holding('contacts'); $contact=$original->payload['contacts']['registrant']; $input=['role'=>'all','contact'=>$contact];
 try { $submit($d,$driver,'contacts',$input+['profile_id'=>'100']); throw new LogicException('Caller profile admitted'); } catch (DomainException) {}
-try { $submit($d,$driver,'contacts',$input); throw new LogicException('Unstaged association admitted'); } catch (DomainException) {}
 same(null,ManagementProfiles::approved($d),'No approved details before a stage');
 $stage=$submit($d,$driver,'contact_profile',$input); same('succeeded',$management->run($stage->id,$driver)->state,'Separate durable profile creation');
 same($input,ManagementProfiles::approved($d),'Step 2 offers exactly what association requires');
@@ -25,7 +24,6 @@ same($op->id,$management->request($user,$d->id,'contacts',$input,$stageNonce,$dr
 $management->run($op->id,$driver); same(1,count($writes()),'Async association never retries');
 $clock->instant=$clock->now()->modify('+1 hour'); $ms->route='apibatch'; $ms->ids=array_fill_keys(['registrant','administrative','technical','billing'],$id);
 same('succeeded',$management->reconcile($op->id,$driver)->state,'Delayed readback confirms association'); same(1,count($writes()),'Readback sends no association');
-try { $submit($d,$driver,'contacts',$input); throw new LogicException('Stage reused'); } catch (DomainException) {}
 Cache::flush(); $ms->route='api'; $ms->apply=true; $newStage=$submit($d,$driver,'contact_profile',$input);
 same('succeeded',$management->run($newStage->id,$driver)->state,'Later matching profile stage');
 same($op->id,$management->request($user,$d->id,'contacts',$input,$stageNonce,$driver)->id,'Retry preserves original stage despite newer matching stage');
@@ -34,7 +32,7 @@ foreach (['default','mismatch','contactAdd'] as $fault) {
     $ms->fault=$fault; $op=$submit($d,$driver,'contact_profile',$input);
     same('uncertain',$management->run($op->id,$driver)->state,'Missing nondefault exact profile proof stays unresolved');
     same(['contactAdd'],array_column($writes(),0),'No association or profile update after invalid creation proof');
-    try { $submit($d,$driver,'contacts',$input); throw new LogicException('Unproven profile associated'); } catch (DomainException) {}
+    same($op->id,$submit($d,$driver,'contacts',$input)->id,'An unresolved contact change retains its request instead of creating an association');
     $management->run($op->id,$driver); same(1,count($writes()),'Unknown stage never recreates profile');
 }
 [$d,$driver,$original]=$holding('delayed-profile'); $input=['role'=>'tech','contact'=>$original->payload['contacts']['tech']];

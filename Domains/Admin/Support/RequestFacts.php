@@ -235,7 +235,7 @@ final class RequestFacts
         if($op->action==='transfer'&&($op->state==='rejected'&&$op->safe_code==='transfer_provider_rejected'||($op->policy['reconciliation']['reason']??null)==='transfer_rejection_unreconciled')){
             $registrar=$op->registrar_key==='enom'?'Enom':'NameSilo';
             return ['title'=>'Registrar rejected the transfer.','body'=>'Final result and fee need a check. Ask '.$registrar.' to confirm the final result and charge or refund.'
-                .(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::eligible($op)?' Use '.EnomAnswerAction::LABEL.'.':' Don’t start another transfer.'),'tone'=>'warning','link'=>'registrars'];
+                .(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::eligible($op)?' Use '.EnomAnswerAction::label($op).'.':' Don’t start another transfer.'),'tone'=>'warning','link'=>'registrars'];
         }
         if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::applies($op)&&$notice=\Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($op,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())){
             if(($op->policy['reconciliation']['staff_alert']??false)&&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){
