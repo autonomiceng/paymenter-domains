@@ -47,6 +47,19 @@ catch (DomainException) {}
 try { $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000); throw new LogicException('Old transport sent'); }
 catch (DomainException) {}
 same(1, $wire->calls, 'Same-identity rotation refuses the old transport before another physical read');
+$currentGeneration = 4;
+$capturedGeneration = $currentGeneration;
+$generationGuard = static function () use (&$currentGeneration, $capturedGeneration): void {
+    if ($currentGeneration !== $capturedGeneration) { throw new DomainException('Synthetic generation changed.'); }
+};
+$transport = new OfferTransport($bindings, $binding, $ports->revision($binding), $wire, $generationGuard);
+$transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-second', 1000);
+$currentGeneration++;
+$refusedGeneration = false;
+try { $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-second', 1000); }
+catch (DomainException) { $refusedGeneration = true; }
+same(true, $refusedGeneration, 'Generation fence is rechecked for every physical read in a group');
+same(2, $wire->calls, 'A changed generation refuses before a second physical wire send');
 $rows = array_fill(0, 29, ['account' => EnomTestSendLimit::account('offer-fixture'), 'command' => 'Check', 'sent_at' => $clock->now()->getTimestamp() - 120]);
 DB::table(EnomTestSendLimitSchema::SENDS)->insert($rows);
 same(0, $ports->allowance($binding, RequestOrigin::Interactive), 'Our catalogue share counts other origins and leaves checkout headroom');

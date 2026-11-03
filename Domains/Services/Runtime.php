@@ -35,7 +35,7 @@ final class Runtime
                     return $a->make(RuntimePorts::class)->recordDiscoveryAccepted($l['account']);
                 } catch (\Throwable) { return false; }
             }));
-        $app->make(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>$app->make(ObservationWork::class)->tick(1));
+        $app->make(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>self::observations()->tick(1));
         if (RegistrarFactories::bootstrap($app->make(RegistrarRegistry::class))) {
             $app->singleton(StaffSettingsWrites::class, fn($a)=>new StaffSettingsWrites($a->make(NativeCatalogue::class),
                 $a->make(SellerPolicies::class), $a->make(AccountBindings::class), true));
@@ -44,6 +44,8 @@ final class Runtime
         app(NativeServerGuard::class)->boot();
         $app->singleton(DomainManagement::class,fn($a)=>new DomainManagement($a->make(AccountBindings::class),$a->make(Clock::class)));
     }
+    public static function observations(): ObservationWork|\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed() ?? app(ObservationWork::class); }
     public static function limiter(): ?ReadLimiter {return app()->bound(self::class)?app(ReadLimiter::class):null;}
     public static function management(\Paymenter\Extensions\Servers\Domains\Models\Domain $d,?DomainManagement $fallback): ?DomainManagement
     {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}

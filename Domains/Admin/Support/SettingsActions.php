@@ -256,6 +256,7 @@ final class SettingsActions
     /** One short line for a notification: only what staff must act on is named. The prices are on the page. */
     public static function syncSummary(array $result): string
     {
+        if(($result['queued']??false)===true){return 'Price sync queued. Check sync progress on What you sell.';}
         $list=static function(array $endings):string{
             $names=implode(', ',array_map(fn($e)=>'.'.$e,array_slice($endings,0,3)));
             return $names.(count($endings)>3?' and '.(count($endings)-3).' more':'');

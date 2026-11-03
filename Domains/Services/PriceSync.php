@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
 
 use Illuminate\Support\Facades\{DB,Log,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -96,6 +96,11 @@ final class PriceSync
      * @return array{synced:list<string>,failed:array<string,string>,deferred:list<string>} */
     public function run(Account $account, Clock $clock, ?StaffSettingsReview $review, ?string $ending = null, ?array $only = null, ?int $generation = null): array
     {
+        if(($scheduler=OfferScheduler::routed())!==null){
+            if($generation!==null&&$generation!==UpgradeGate::generation()){throw new \DomainException('Settings changed. Reload this page.');}
+            $scheduler->sync(CatalogueAcceptances::binding($account),$review?RequestOrigin::Interactive:RequestOrigin::Background);
+            return ['synced'=>[],'failed'=>[],'deferred'=>[],'queued'=>true];
+        }
         $generation=UpgradeGate::legacy($generation);
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
@@ -169,6 +174,7 @@ final class PriceSync
     public function daily(Account $account): void
     {
         OperationClaims::outside();
+        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
         $generation=UpgradeGate::legacy();
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }

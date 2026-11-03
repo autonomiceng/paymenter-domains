@@ -12,12 +12,14 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadB
 /** Production composition, deliberately unregistered until the complete caller cutover. No I/O at construction. */
 final class OfferPorts
 {
-    public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock) {}
-    public function revision(AccountBinding $binding): string { return $this->bindings->offerCredentialRevision($binding); }
+    public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock,
+        private readonly ?int $generation = null, private readonly ?\Closure $current = null) {}
+    public function revision(AccountBinding $binding): string
+    { if ($this->current) { ($this->current)($binding->serverId); } return $this->bindings->offerCredentialRevision($binding); }
     public function worker(Writer $writer): OfferWork
     {
         return new OfferWork($writer, $this->clock, new AccountReadBudget($this->clock, 25, 25), $this->feed(...),
-            $this->allowance(...), $this->revision(...));
+            $this->allowance(...), $this->revision(...), $this->generation, $this->current);
     }
     public function feed(AccountBinding $binding): PricedFeed
     {
@@ -33,7 +35,7 @@ final class OfferPorts
             if ($binding->environment === Environment::Live && !EnomLive::enabled($binding, 'catalogue')) {
                 throw new \DomainException('Live offer reads unavailable.');
             }
-            $transport = new Enom\OfferTransport($this->bindings, $binding, $revision);
+            $transport = new Enom\OfferTransport($this->bindings, $binding, $revision, current: $current);
             $feed = new Enom\OfferFeed(new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token'], $transport), []));
         } else {
             // #386 is an explicit dependency; never silently fall back to the unadmitted cURL transport.
@@ -41,8 +43,9 @@ final class OfferPorts
                 || !class_exists(NameSilo\AdmittedTransport::class)) {
                 throw new \DomainException('Admitted NameSilo offer transport unavailable.');
             }
-            $transport = new NameSilo\AdmittedTransport($binding, function (bool $write) use ($binding, $revision): array {
+            $transport = new NameSilo\AdmittedTransport($binding, function (bool $write) use ($binding, $revision, $current): array {
                 if ($write) { throw new \DomainException('Offer transport is read only.'); }
+                $current();
                 return $this->bindings->offerCredentials($binding, $revision);
             });
             $feed = new NameSilo\OfferFeed(new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key'], $transport), clock: $this->clock));

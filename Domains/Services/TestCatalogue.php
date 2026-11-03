@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 
@@ -29,6 +30,7 @@ final class TestCatalogue
         $phase = 'catalogue_refused';
         try {
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $review->serverId)->sole();
+            if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account));$phase='catalogue_queued';return ['synced'=>[],'failed'=>[],'deferred'=>[],'queued'=>true];}
             $ending = strtolower(ltrim(trim((string)($data['ending'] ?? '')), '.'));
             $result = app(PriceSync::class)->run($account, $clock, $review, $ending === '' ? null : $ending, isset($data['only']) ? array_values(array_map('strval', (array)$data['only'])) : null);
             $phase = 'catalogue_finished';

@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
 use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffAlert};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -40,7 +40,9 @@ final class PriceFill
     /** A deferred or failed run waits for the next day too: retrying each tick could spend our send limit. */
     public function daily(Account $account): void
     {
-        OperationClaims::outside();$generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
+        OperationClaims::outside();
+        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
+        $generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
         $now=$this->clock->now()->getTimestamp();$due=$now-self::EVERY_SECONDS;
         $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
         DB::transaction(static function()use($binding,$key,$generation):void {
@@ -55,15 +57,17 @@ final class PriceFill
                 return self::state($binding)->where(fn($q)=>$q->whereNull('tried_at')->orWhere('tried_at','<=',$due))->update(['tried_at'=>$now])===1;
             })){return;}
             $reader=$this->reader($binding)??throw new \DomainException('Price reader unavailable.');
-            $this->fill($binding,$reader,RequestOrigin::Background);
+            $this->fill($binding,$reader,RequestOrigin::Background,$generation);
         }catch(\Throwable $error){$this->failed($account,$binding,$error,$now,$generation);}
     }
     /** Sync prices. Returns the saved TLD count, including retained rows without prices; 0 when a newer read took over. */
-    public function run(Account $account): int
+    public function run(Account $account,?int $expectedGeneration=null): int
     {
-        OperationClaims::outside();$generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
+        OperationClaims::outside(); $generation=$expectedGeneration??UpgradeGate::generation();
+        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),expectedGeneration:$generation);return 0;}
+        $generation=UpgradeGate::legacy($generation);$binding=CatalogueAcceptances::binding($account);
         $reader=$this->reader($binding)??throw new \DomainException('TEST catalogue reads are unavailable.');
-        return $this->fill($binding,$reader,RequestOrigin::Interactive);
+        return $this->fill($binding,$reader,RequestOrigin::Interactive,$generation);
     }
     private function failed(Account $account,AccountBinding $binding,\Throwable $error,int $now,int $generation): void
     {
@@ -79,11 +83,11 @@ final class PriceFill
         StaffAlert::send('Prices are out of date',$name.' has not sent new prices for 3 days.',
             'filament.admin.pages.what-you-sell',Staff::POLICY,'sell_fill:'.$binding->serverId.':'.$binding->fingerprint.':'.$since,['account'=>$binding->serverId]);
     }
-    private function fill(AccountBinding $binding,EnomDriver|NameSiloDriver $reader,RequestOrigin $origin): int
+    private function fill(AccountBinding $binding,EnomDriver|NameSiloDriver $reader,RequestOrigin $origin,int $generation): int
     {
-        $generation=UpgradeGate::legacy();$run=self::start($binding,$generation);
+        UpgradeGate::legacy($generation);$run=self::start($binding,$generation);
         // Our reads for this run: every bucket, plus the list once so TLDs without a price row still show.
-        $context=new RequestContext($binding,$origin,$this->clock->now()->modify('+60 seconds'),new RequestBudget(count(self::YEARS)+1),$this->clock,$origin===RequestOrigin::Background&&$binding->registrarKey==='enom'&&SellRule::saved($binding)!==null?new PriceReadBudget($this->clock):Runtime::limiter(),stopOnReadFailure:true);
+        $context=new RequestContext($binding,$origin,$this->clock->now()->modify('+60 seconds'),new RequestBudget(count(self::YEARS)+1),$this->clock,$origin===RequestOrigin::Background&&$binding->registrarKey==='enom'&&SellRule::saved($binding)!==null?new PriceReadBudget($this->clock):Runtime::limiter(),stopOnReadFailure:true,current:static fn()=>UpgradeGate::legacy($generation));
         $rows=$reader instanceof NameSiloDriver?self::nameSilo($reader,$context):self::enom($reader,$context);
         if($rows===[]){throw new \DomainException('Price read failed.');}
         $now=$this->clock->now()->getTimestamp();$records=[];

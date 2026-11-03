@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Jobs;
 use App\Models\{Notification,User};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\{ShouldQueue,ShouldBeUnique};
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -16,6 +17,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
 {
     use Dispatchable,InteractsWithQueue,Queueable,SerializesModels;
     public int $uniqueFor=900;
+    public int $upgradeGeneration=0;
     // The bulk read has a 60-second deadline. Leave time to save before Paymenter's 90-second reservation expires.
     public const TIMEOUT=75;
     // Accepted prices allow a 25-second list read, a full batch deadline, and 30 seconds to save.
@@ -25,7 +27,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
     public bool $failOnTimeout=true;
     public const WORKER='Price sync needs a database or Redis queue with retry_after above %d seconds. Configure it and start the scheduler and queue worker, then try Sync again.';
     public function __construct(public int $actor,public int $server,public string $fingerprint,public ?string $reviewKey=null)
-    {$this->timeout=$reviewKey===null?self::TIMEOUT:self::ACCEPTED_TIMEOUT;}
+    {$this->upgradeGeneration=UpgradeGate::generation();$this->timeout=$reviewKey===null?self::TIMEOUT:self::ACCEPTED_TIMEOUT;}
     public function uniqueId(): string {return 'domains-price-sync:'.$this->server.':'.$this->actor.':'.($this->reviewKey===null?'list':'prices');}
     public static function isQueueRefusal(\Throwable $error): bool
     {return $error instanceof \DomainException&&in_array($error->getMessage(),[sprintf(self::WORKER,self::TIMEOUT),sprintf(self::WORKER,self::ACCEPTED_TIMEOUT)],true);}
@@ -43,10 +45,18 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
         $user=User::find($this->actor);
         if(!Staff::allows($user,Staff::POLICY)||!Staff::allows($user,Review::permission('import'))){return;}
         try{
+            if($this->upgradeGeneration!==UpgradeGate::generation()){throw new \DomainException('Settings changed. Reload this page.');}
             $account=Account::where('server_id',$this->server)->sole();
             if(!hash_equals($this->fingerprint,CatalogueAcceptances::binding($account)->fingerprint)){throw new \DomainException('Settings changed. Reload this page.');}
+            if(($scheduler=OfferScheduler::routed())!==null){
+                // Reviewed imports continue through StaffSettingsWrites, preserving their current ticket.
+                if($this->reviewKey!==null){app(StaffSettingsWrites::class)->run(new Review($this->actor,$this->server,null,'import',$this->reviewKey,''),[]);}
+                else{$scheduler->sync(CatalogueAcceptances::binding($account), expectedGeneration:$this->upgradeGeneration);}
+                $this->notice('Price sync queued','The account worker will refresh prices. Check sync progress on What you sell.');return;
+            }
+            UpgradeGate::legacy($this->upgradeGeneration);
             if($this->reviewKey===null){
-                $count=app(PriceFill::class)->run($account);
+                $count=app(PriceFill::class)->run($account,$this->upgradeGeneration);
                 $this->notice($count===0?'Another price read is running':'Prices updated',$count===0?'Its prices will appear when it finishes. Refresh What you sell.':'Saved '.$count.' TLDs, including retained rows without new prices. Refresh What you sell to see the prices.');
             }else{
                 $result=app(StaffSettingsWrites::class)->run(new Review($this->actor,$this->server,null,'import',$this->reviewKey,''),[]);

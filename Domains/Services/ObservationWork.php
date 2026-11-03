@@ -10,47 +10,11 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 /** No installed schedule or writer. One turn/account, bounded discovery and one read job/turn. */
 final class ObservationWork
 {
-    private const STOPPED=['read_unavailable','budget_exhausted','superseded',...ReadFailure::CODES];
-    /** Only the current binding, generation and follow-up phase can stop this holding. */
-    public static function stopped(Domain $d): bool
-    {
-        if (!Schema::hasTable('domains_observation_work')) { return false; }
-        return self::current($d,true)->whereIn('safe_code',self::STOPPED)->exists() && ObservationEligibility::allows($d);
-    }
-    /** Batched stopped() for a page of domains: the ids, as keys, of those whose current work stopped. */
-    public static function stoppedIds(\Illuminate\Support\Collection $domains): array
-    {
-        if ($domains->isEmpty()||!Schema::hasTable('domains_observation_work')) { return []; }
-        $rows=DB::table('domains_observation_work')->whereIn('domain_id',$domains->pluck('id'))->whereIn('safe_code',self::STOPPED)
-            ->get(['domain_id','server_id','account_fingerprint','generation','phase']);
-        $stopped=$domains->filter(fn(Domain $d)=>$rows->contains(fn($r)=>(int)$r->domain_id===(int)$d->id&&(int)$r->server_id===(int)$d->server_id
-            &&$r->account_fingerprint===$d->account_fingerprint&&(int)$r->generation===(int)$d->authority_generation&&$r->phase===self::readPhase($d)))
-            ->values();
-        $pending=$stopped->whereIn('status',['registration_pending','transfer_pending']);
-        $operations=$pending->isEmpty()?collect():Operation::whereIn('domain_id',$pending->pluck('id'))->whereIn('action',['register','transfer'])->get()->groupBy('domain_id');
-        return $stopped->filter(fn(Domain $d)=>ObservationEligibility::allows($d,$operations->get($d->id,collect())))->pluck('id')->flip()->all();
-    }
-    /** Advisory selection only; resume revalidates the locked holding and job. */
-    public static function currentId(Domain $d): ?int
-    {
-        $id=self::current($d,true)->orderByDesc('id')->value('id');
-        return $id===null?null:(int)$id;
-    }
-    private static function readPhase(Domain $d): ?string
-    {try{return self::phase($d);}catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}}
-    private static function current(Domain $d,bool $advisory=false): \Illuminate\Database\Query\Builder
-    {
-        return DB::table('domains_observation_work')->where('domain_id',$d->id)->where('server_id',$d->server_id)
-            ->where('account_fingerprint',$d->account_fingerprint)->where('generation',$d->authority_generation)
-            ->where('phase',$advisory?self::readPhase($d):self::phase($d));
-    }
-    /** Under the account lock, retire obsolete idle work before unsent proof can be lost. Returns true if unsent. */
+    public static function stopped(Domain $d): bool { return HoldingObservationWork::stopped($d); }
+    public static function stoppedIds(\Illuminate\Support\Collection $domains): array { return HoldingObservationWork::stoppedIds($domains); }
+    public static function currentId(Domain $d): ?int { return HoldingObservationWork::currentId($d); }
     public static function discardUnsent(Domain $d, \DateTimeImmutable $now, ?\Illuminate\Support\Collection $operations=null): bool
-    {
-        if (ObservationEligibility::allows($d,$operations)) { return false; }
-        if (Schema::hasTable('domains_observation_work')) { self::current($d)->where('lease_until','<=',$now->getTimestamp())->delete(); }
-        return true;
-    }
+    { return HoldingObservationWork::discardUnsent($d,$now,$operations); }
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock,
         private readonly ReadLimiter $budget, private readonly ?CatalogueSync $catalogue=null) {}
     public function enroll(int $server): void
@@ -76,25 +40,18 @@ final class ObservationWork
         foreach ($queues as $queue) {
             $queue->upgradeGeneration=$generation;
             try {
-                $account=Account::where('server_id',$queue->server_id)->first();
-                if($account&&$account->account_fingerprint===$queue->account_fingerprint
-                    &&!EnomTestManagement::accepted(CatalogueAcceptances::binding($account))
-                    &&(EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)))){$summary[$queue->server_id]='read_deferred';continue;}
-                $this->discover($queue); if ($this->catalogue) {
-                    try { $this->catalogue($queue); }
-                    catch (ReadDeferred|EnomTestCallLimit) { /* Local refusal does not invalidate saved evidence. */ }
-                    catch (\Throwable $e) {
-                        try { $this->catalogueFailure($queue,ReadFailure::code($e)); }
-                        catch (\Throwable) { /* Diagnostic persistence cannot prevent independent domain reads. */ }
-                        try { logger()->warning('Domains catalogue check failed.', ['server_id'=>(int)$queue->server_id,'account_fingerprint'=>$queue->account_fingerprint,'safe_code'=>ReadFailure::code($e)]); }
-                        catch (\Throwable) { /* Logging cannot prevent this account's observation work. */ }
+                $guard=static function(?int $server=null)use($generation):void {
+                    if(DB::transactionLevel()>0){UpgradeGate::lockLegacy($generation,$server);}else{UpgradeGate::legacy($generation);}
+                };
+                $catalogue=$this->catalogue?function()use($queue):void {
+                    try{$this->catalogue($queue);}
+                    catch(ReadDeferred|EnomTestCallLimit){}
+                    catch(\Throwable $e){
+                        try{$this->catalogueFailure($queue,ReadFailure::code($e));}catch(\Throwable){}
+                        try{logger()->warning('Domains catalogue check failed.',['server_id'=>(int)$queue->server_id,'account_fingerprint'=>$queue->account_fingerprint,'safe_code'=>ReadFailure::code($e)]);}catch(\Throwable){}
                     }
-                }
-                $job=$this->claim($queue); if (!$job) { $summary[$queue->server_id]='idle'; continue; }
-                try { $code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:false); }
-                catch (ReadDeferred|EnomTestCallLimit) { $code='read_deferred'; }
-                catch (\Throwable $error) { $code=ReadFailure::code($error); }
-                $this->finish($job,$code); $summary[$queue->server_id]=$code;
+                }:null;
+                $summary[$queue->server_id]=(new HoldingObservationWork($this->observer,$this->clock))->turn($queue,$guard,$catalogue);
             } catch (\Throwable $e) {
                 try { logger()->warning('Domains observation account failed.', ['server_id'=>(int)$queue->server_id,'account_fingerprint'=>$queue->account_fingerprint,'safe_code'=>ReadFailure::code($e)]); }
                 catch (\Throwable) { /* Logging cannot interrupt other account turns. */ }
@@ -102,76 +59,6 @@ final class ObservationWork
             }
         }
         return $summary;
-    }
-    private function discover(object $queue): void
-    {
-        DB::transaction(function () use ($queue): void {
-            UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id);
-            $a=Account::where('server_id',$queue->server_id)->lockForUpdate()->firstOrFail();
-            if ($a->account_fingerprint!==$queue->account_fingerprint) { throw new \DomainException('Observation queue binding changed.'); }
-            $q=DB::table('domains_observation_queues')->where('id',$queue->id); $current=(clone $q)->lockForUpdate()->firstOrFail();
-            $rows=Domain::where('server_id',$a->server_id)->where('id','>',$current->cursor)->orderBy('id')->limit(25)->get();
-            foreach ($rows as $d) {
-                if ($d->adoptionPending() || !in_array($d->status,['active','registration_pending','transfer_pending'],true)||$d->account_fingerprint!==$a->account_fingerprint) { continue; }
-                // Financial transfer reconciliation already reads status, history and ownership. Avoid a second automatic poller.
-                if(TransferPolling::ownsObservation($d)){
-                    self::current($d)->where('lease_until','<=',$this->clock->now()->getTimestamp())->delete();continue;
-                }
-                if (self::discardUnsent($d,$this->clock->now())) { continue; }
-                DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
-                    'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
-            }
-            $q->update(['cursor'=>$rows->count()===25?$rows->last()->id:0]);
-        });
-    }
-    private function claim(object $queue): ?object
-    {
-        return DB::transaction(function () use ($queue): ?object {
-            UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id);
-            $now=$this->clock->now()->getTimestamp(); $q=DB::table('domains_observation_work')->where('server_id',$queue->server_id)
-                ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
-                ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',self::STOPPED);});
-            $job=$q->orderBy('due_at')->orderBy('id')->lockForUpdate()->first(); if (!$job) { return null; }
-            $d=Domain::find($job->domain_id);
-            if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
-            if ($d && ($d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
-                DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
-            }
-            $job->upgradeGeneration=$queue->upgradeGeneration;
-            $job->claim=bin2hex(random_bytes(16));
-            DB::table('domains_observation_work')->where('id',$job->id)->update(['claim'=>$job->claim,'lease_until'=>$now+300,'tries'=>$job->tries+1]);
-            return $job;
-        });
-    }
-    private function finish(object $job, string $code): void
-    {
-        DB::transaction(function()use($job,$code):void {
-            try { UpgradeGate::lockLegacy($job->upgradeGeneration,(int)$job->server_id); }
-            catch (\DomainException) {
-                // Draining a stopped generation may release only its own lease, never reschedule it.
-                DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)
-                    ->update(['claim'=>null,'lease_until'=>0]); return;
-            }
-            $this->finishCurrent($job,$code);
-        });
-    }
-    private function finishCurrent(object $job, string $code): void
-    {
-        $now=$this->clock->now()->getTimestamp();
-        if ($code==='read_deferred') {
-            DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
-                'claim'=>null,'lease_until'=>0,'tries'=>$job->tries,'safe_code'=>$job->safe_code,'due_at'=>$now+60]); return;
-        }
-        $d=Domain::findOrFail($job->domain_id); $tries=$job->tries+1;
-        $pending=$code==='healthy_pending'; $start=$d->operations()->where('action','transfer')->where('authority_generation',$d->authority_generation)->orderBy('id')->get()->first(fn($o)=>($o->attempt['seal']??null)==='sealed'&&in_array($o->state,['pending','uncertain','held'],true))?->started_at;
-        $startAt=$start instanceof \DateTimeInterface?$start->getTimestamp():($start===null?null:(new \DateTimeImmutable($start))->getTimestamp());
-        $within=$pending&&$startAt!==null&&$now<$startAt+7*86400;
-        $exhausted=$pending?(!$within||$tries>=28):($code!=='refreshed'&&$tries>=5);
-        $follow=($d->observation['followup']['state']??null)==='pending';
-        DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
-            'claim'=>null,'lease_until'=>0,'tries'=>$code==='refreshed'?0:$tries,
-            'due_at'=>$now+($pending?21600:($code==='refreshed'?($follow?300:86400):900)),
-            'safe_code'=>in_array($code,ReadFailure::CODES,true)?$code:($exhausted?'budget_exhausted':$code)]);
     }
     /** Internal audited read-only resume. Fresh staff policy/permission belongs36. */
     public function resume(int $id, string $reason, StaffOperationReview|StaffSyncReview|null $review = null): void
@@ -185,8 +72,7 @@ final class ObservationWork
             $d->update(['observation'=>$p]); $q->update(['resumes'=>$job->resumes+1,'tries'=>0,'claim'=>null,'safe_code'=>null,'due_at'=>$this->clock->now()->getTimestamp()]); $review?->record($l);
         });
     }
-    private static function phase(Domain $d): string
-    { $follow=$d->observation['followup']??[]; return isset($follow['operation_key'])&&($follow['generation']??null)===$d->authority_generation?hash('sha256',$follow['operation_key']):'holding'; }
+    private static function phase(Domain $d): string { return HoldingObservationWork::phase($d); }
     /** Internal bounded catalogue failure resume; installed staff policy remains36. */
     public function resumeCatalogue(int $server, string $reason): void
     {

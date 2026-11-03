@@ -19,12 +19,16 @@ final class OfferWork
     private const LEASE = 300;
     public function __construct(private readonly Writer $writer, private readonly Clock $clock,
         private readonly AccountReadBudget $minute, private readonly \Closure $feed, private readonly \Closure $allowance,
-        private readonly ?\Closure $credentials = null) {}
+        private readonly ?\Closure $credentials = null, private readonly ?int $generation = null,
+        private readonly ?\Closure $guard = null) {
+        if (($generation === null) !== ($guard === null)) { throw new \LogicException('Generation and guard must be composed together.'); }
+    }
 
     /** Manual and automatic triggers enqueue the same account job. No provider I/O. */
-    public function sync(AccountBinding $binding, RequestOrigin $origin = RequestOrigin::Interactive): void
+    public function sync(AccountBinding $binding, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void
     {
-        $this->editQueue($binding, function ($q, $row) use ($origin): void {
+        $this->editQueue($binding, function ($q, $row) use ($origin, $expectedGeneration): void {
+            if ($expectedGeneration !== null && $expectedGeneration !== UpgradeGate::generation()) { throw new \DomainException('Queued offer generation changed.'); }
             $work = OfferState::decode($row->offer_work);
             $claimed = (int) $row->offer_lease > $this->at();
             if ($claimed && ($work['feed_claim'] ?? null) === $row->offer_claim) { return; }
@@ -58,9 +62,10 @@ final class OfferWork
     /** Safe local status; no cost, credentials, raw error or acceptance-list copies. */
     public function status(AccountBinding $binding, ?string $tld = null): array
     {
-        $this->account($binding);
+        $this->fence($binding); $this->account($binding);
         $row = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->where('account_fingerprint', $binding->fingerprint)->first();
         $work = OfferState::decode($row?->offer_work);
+        if ($this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation) { return ['state' => 'queued']; }
         if ($tld !== null) {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
@@ -78,6 +83,7 @@ final class OfferWork
     public function tick(int $accounts = 8): array
     {
         $this->outside();
+        if ($this->generation !== null) { throw new \LogicException('Composed work requires the shared scheduler.'); }
         if ($accounts < 1 || $accounts > 32) { throw new \InvalidArgumentException('Invalid account batch.'); }
         $ids = DB::transaction(function () use ($accounts): array {
             $q = DB::table('domains_observation_queues')->whereNotNull('offer_work');
@@ -94,6 +100,8 @@ final class OfferWork
         return $out;
     }
 
+    public function accountTurn(int $server): string { $this->outside(); return $this->run($server); }
+
     private function run(int $server): string
     {
         $account = Account::where('server_id', $server)->sole(); $b = CatalogueAcceptances::binding($account);
@@ -109,20 +117,21 @@ final class OfferWork
         $guard = function () use ($b, $job): void { $this->current($b, $job); };
         $writer = $this->writer->withGuard($guard); $work = OfferState::decode($job->offer_work);
         try {
-            if ($this->credentials && ($work['credential_revision'] ?? null) !== $credential) {
+            if ($this->credentials && ($work['credential_revision'] ?? null) !== $credential
+                || $this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation) {
                 // A durable buffer belongs to the credentials that fetched it, even after restart.
                 $work['pending'] = []; $work['feed_due'] = $this->at(); $work['tries'] = 0;
-                $work['credential_revision'] = $credential;
+                $work['credential_revision'] = $credential; $work['upgrade_generation'] = $this->generation;
             }
             $this->republish($writer, $b, $work);
             $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
-                if ($t) { $this->facts($writer, $b, $t, $work); }
+                if ($t) { $this->facts($writer, $b, $t, $work, $guard); }
                 $this->drain($writer, $b, $work);
             } else {
                 $due = ($work['feed_due'] ?? PHP_INT_MAX) <= $this->at();
                 if ($t && (!$due || ($work['last'] ?? '') === 'feed')) {
-                    $work['last'] = 'facts'; $this->facts($writer, $b, $t, $work);
+                    $work['last'] = 'facts'; $this->facts($writer, $b, $t, $work, $guard);
                 } elseif ($due) {
                     $this->beginFeed($b, $job, $work);
                     $work['last'] = 'feed'; $this->prices($b, $job, $work, $guard);
@@ -135,7 +144,14 @@ final class OfferWork
             return 'worked';
         } catch (\Throwable $error) {
             // Keep a durable pending buffer on local writer failure; never repeat its provider feed.
-            $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_claim' => null, 'offer_lease' => 0]);
+            try {
+                $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_claim' => null, 'offer_lease' => 0]);
+            } catch (\Throwable) {
+                // Superseded work releases only the claim/run it owns; no buffer or success changes.
+                DB::table('domains_observation_queues')->where('server_id', $b->serverId)->where('account_fingerprint', $b->fingerprint)
+                    ->where('offer_claim', $job->offer_claim)->where('offer_feed_run', $job->offer_feed_run)
+                    ->update(['offer_claim' => null, 'offer_lease' => 0]);
+            }
             throw $error;
         }
     }
@@ -160,7 +176,7 @@ final class OfferWork
             $rows = $this->read($b, $origin, $calls, function ($context) use ($feed, $guard, $b, $job): array {
                 $this->save($b, $job, ['offer_feed_tried_at' => $this->at()]);
                 return FeedRun::prices($feed, $context, $guard);
-            });
+            }, $guard);
             if (count($rows) > 5000) { throw new \DomainException('Oversized offer feed.'); }
             $pending = [];
             foreach ($rows as $r) { $pending[] = ['tld' => $r->tld(), 'costs' => array_values(array_map(OfferState::encodeCost(...), $r->costs))]; }
@@ -178,9 +194,9 @@ final class OfferWork
         }
     }
 
-    private function facts(Writer $writer, AccountBinding $b, string $tld, array &$work): void
+    private function facts(Writer $writer, AccountBinding $b, string $tld, array &$work, \Closure $guard): void
     {
-        $state = $work['facts'][$tld];
+        $guard(); $state = $work['facts'][$tld];
         try {
             $feed = ($this->feed)($b); $calls = $feed->factsReads();
             if ($calls === 0) {
@@ -189,15 +205,15 @@ final class OfferWork
             }
             $command = $this->read($b, RequestOrigin::Background, $calls, function ($context) use ($feed, $tld, &$state) {
                 $state['tried_at'] = $this->at(); return $feed->facts($tld, $context);
-            });
-            $b->requireMatch($command->binding());
+            }, $guard);
+            $guard(); $b->requireMatch($command->binding());
             if ($command->tld() !== $tld) { throw new \DomainException('Facts ending changed.'); }
             $writer->apply($command, $this->revision($b, $tld));
             $state['succeeded_at'] = $this->at(); $state['failure'] = null; $state['tries'] = 0;
             $due = max($this->at() + 120, $command->facts->freshUntil->getTimestamp());
         } catch (ReadDeferred|EnomTestCallLimit) { $due = $this->at() + 120; }
         catch (\Throwable $error) {
-            $state['tries'] = ($state['tries'] ?? 0) + 1; $state['failed_at'] = $this->at(); $state['failure'] = ReadFailure::code($error);
+            $guard(); $state['tries'] = ($state['tries'] ?? 0) + 1; $state['failed_at'] = $this->at(); $state['failure'] = ReadFailure::code($error);
             $due = $this->at() + $this->backoff($state['tries']);
         }
         $work['facts'][$tld] = [...$state, 'due_at' => $due];
@@ -215,7 +231,7 @@ final class OfferWork
         return $ending;
     }
 
-    private function read(AccountBinding $b, RequestOrigin $origin, int $calls, \Closure $read): mixed
+    private function read(AccountBinding $b, RequestOrigin $origin, int $calls, \Closure $read, ?\Closure $current = null): mixed
     {
         $this->outside();
         if ($calls < 1 || $calls > 10) { throw new \DomainException('Invalid feed read count.'); }
@@ -223,7 +239,7 @@ final class OfferWork
         $budget = new FeedReadBudget($this->minute, $b, $origin, $calls);
         try {
             return $read(new RequestContext($b, $origin, $this->clock->now()->modify('+'.($calls * 25 + 5).' seconds'),
-                new RequestBudget($calls), $this->clock, $budget, stopOnReadFailure: true));
+                new RequestBudget($calls), $this->clock, $budget, stopOnReadFailure: true, current: $current));
         } finally { $budget->finish(); }
     }
 
@@ -269,7 +285,7 @@ final class OfferWork
         $this->outside();
         DB::transaction(function () use ($b, $edit): void {
             Server::whereKey($b->serverId)->lockForUpdate()->firstOrFail();
-            Account::where('server_id', $b->serverId)->lockForUpdate()->sole(); $this->account($b);
+            Account::where('server_id', $b->serverId)->lockForUpdate()->sole(); $this->fence($b); $this->account($b);
             DB::table('domains_observation_queues')->insertOrIgnore(['server_id' => $b->serverId, 'account_fingerprint' => $b->fingerprint,
                 'offer_queue_created' => true]);
             $q = DB::table('domains_observation_queues')->where('server_id', $b->serverId);
@@ -281,7 +297,7 @@ final class OfferWork
     }
     private function current(AccountBinding $b, object $job): void
     {
-        $this->account($b);
+        $this->fence($b); $this->account($b);
         if ($this->credentials && !hash_equals($job->credentialRevision, ($this->credentials)($b))) {
             throw new \DomainException('Offer work credentials changed.');
         }
@@ -308,6 +324,7 @@ final class OfferWork
             $q->update($values);
         });
     }
+    private function fence(AccountBinding $b): void { if ($this->guard) { ($this->guard)($b->serverId); } }
     private function backoff(int $tries): int { return [120, 600, 3600, 21600][min(3, $tries - 1)]; }
     private function at(): int { return $this->clock->now()->getTimestamp(); }
     private function outside(): void

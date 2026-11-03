@@ -28,4 +28,14 @@ same('awaiting_code',$missing->fresh()->state,'Selection does not timeout or cre
 $bindings->setProcessing($ns, true, syntheticActivation());[$active,$unused,$acquired]=$holding('followup');same('pending',$active->observation['followup']['state'],'Transfer completion seeds durable follow-up');
 $bindings->setProcessing($ns,false);$clock->instant=$clock->now()->modify('+1 minute');same('refreshed',$observer->run($active->id),'Paused old account refreshes');
 same(1,$active->fresh()->observation['followup']['reads'],'Follow-up advances facts only');
+// Explicit verifier enrollment predates the local offer-enrollment marker.
+same(false,App\Models\Server::findOrFail($ns)->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::KEY)->exists(),'Legacy NameSilo fixture has no local offer marker');
+$offerRefused=false;
+try{$readBindings->offerCredentialRevision(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns)->sole()));}catch(DomainException){$offerRefused=true;}
+same(true,$offerRefused,'Offer feeds still require local NameSilo enrollment');
+$scheduled=new ObservationWork($observer,$clock,$budget);
+DB::table('domains_observation_work')->where('server_id',$ns)->delete();
+$calls=count($observe->calls);
+same('refreshed',$scheduled->tick(2)[$ns],'Scheduled legacy NameSilo holding reads accept explicit verified enrollment');
+expect(count($observe->calls)>$calls,'Scheduled NameSilo holding reaches its established synthetic reader');
 $nativeSuccessful=true;echo "NameSilo fair pending window and durable follow-up passed\n";

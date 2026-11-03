@@ -10,12 +10,12 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class DomainObservation
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock, private readonly ReadLimiter $budget, private readonly ?OwnerPorts $records=null, private readonly ?\Closure $recordGate=null) {}
-    public function run(int $id, ?int $generation=null, ?string $fingerprint=null, bool $readRecords=true): string
+    public function run(int $id, ?int $generation=null, ?string $fingerprint=null, bool $readRecords=true, ?\Closure $current=null, ?\Closure $completion=null): string
     {
-        OperationClaims::outside(); $seed=Domain::findOrFail($id);
+        OperationClaims::outside(); if($current){$current();} $seed=Domain::findOrFail($id);
         if (($generation!==null&&$seed->authority_generation!==$generation)||($fingerprint!==null&&$seed->account_fingerprint!==$fingerprint)) { throw new ReadDeferred('Stale observation work.'); }
-        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$readRecords): array {
-            $l=HoldingLocks::take($seed); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
+        [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$readRecords,$current): array {
+            $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             if (ObservationRecords::identity($seed)!==ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
             $binding=CatalogueAcceptances::binding($l['account']); $attempt=null;
             if ($l['domain']->status==='transfer_pending') {
@@ -28,10 +28,16 @@ final class DomainObservation
             $recordOverflow=count($knownGlue)>GlueDiscoveryLimit::HOSTS;
             return [$binding,$l['stamp'],$attempt,$l['domain'],$knownGlue,$recordOverflow,$recordEnabled,$recordProtected];
         });
-        $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true);
+        $credential=$current?$this->bindings->holdingCredentialRevision($binding):null;
+        $wireGuard=$current?function()use($current,$binding,$credential):void {
+            $current();
+            if(!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
+        }:null;
+        $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true,current:$wireGuard);
         $snapshot=null; $transfer=TransferStatus::Unknown; $records=null; $failed=false; $recordFailed=false; $deferred=false; $failureCode=null;
         $recordHeld=ObservationRecords::held($seed) && !$readRecords;
         try {
+            if($current){$current();}
             $reader=$this->bindings->reader($binding->serverId);
             if ($attempt) {
                 $result=$reader->reconcile($attempt,$ctx); $result->requireAttempt($attempt); $facts=$result->result()->evidence();
@@ -50,6 +56,7 @@ final class DomainObservation
             $records=['glue'=>['state'=>'partial','records'=>$knownGlue]];
             if ($snapshot?->owned===true) {
                 try {
+                    if($current){$current();}
                     $port=$this->records->forDomain($seed);
                     if ($binding->registrarKey==='enom') { $knownGlue=GlueRecords::known($seed,$knownGlue,$snapshot?->nameservers?->nameservers??[]); }
                     $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id,domainId:(int)$seed->id);
@@ -61,9 +68,10 @@ final class DomainObservation
                 catch (\Throwable $error) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; $failureCode=ReadFailure::code($error); }
             }
         }
-        return DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode): string {
-            $l=HoldingLocks::take($seed); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
+        $code=DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential): string {
+            $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             $binding->requireMatch(CatalogueAcceptances::binding($l['account']));
+            if($current&&!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
             if ($stamp!==$l['stamp']) { throw new ReadDeferred('Observation authority changed.'); }
             if ($recordEnabled && $this->recordGate && !($this->recordGate)($l)) { throw new ReadDeferred('Record processing authority changed.'); }
             if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
@@ -79,6 +87,7 @@ final class DomainObservation
             if ($readRecords && $this->records!==null && !$recordEnabled) { return 'records_disabled'; }
             return $l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
         });
+        return $completion ? $completion($code,$wireGuard) : $code;
     }
     /** Observation must yield before it can invalidate a live management/financial grant. */
     private function available(array $locked): void
