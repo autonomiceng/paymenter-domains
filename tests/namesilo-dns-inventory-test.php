@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 
 expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/Dns.php'), 'NameSilo DNS inventory adapter exists');
 $body = static fn (array $reply, string $operation = 'dnsListRecords'): string => json_encode([
-    'request' => ['operation' => $operation], 'reply' => ['code' => 300, 'detail' => 'synthetic'] + $reply,
+    'request' => ['operation' => $operation], 'reply' => array_replace(['code' => 300, 'detail' => 'synthetic'], $reply),
 ], JSON_THROW_ON_ERROR);
 $row = ['record_id' => 'a1b2c3', 'type' => 'A', 'host' => 'EXAMPLE.COM.',
     'value' => '192.0.2.1', 'ttl' => '7207', 'distance' => '0'];

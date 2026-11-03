@@ -1,0 +1,127 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
+
+use Paymenter\Extensions\Servers\Domains\Data\CanonicalName;
+
+/** Pure, dormant DNS mapping. No discovery caller, transport, grant or edit capability. */
+final class Dns
+{
+    public const STANDARD = ['A', 'AAAA', 'CNAME', 'MX', 'TXT'];
+
+    /** Shared name/type/address/mx_pref shape, retaining provider record_id and ttl. Server-side only. */
+    public static function inventory(#[\SensitiveParameter] string $body, string $domain): array
+    {
+        $unknown = ['state' => 'unknown', 'records' => []];
+        try {
+            $domain = CanonicalName::normalize($domain);
+            $reply = self::reply($body, 'dnsListRecords');
+            $rows = $reply['resource_record'] ?? null;
+            if (!is_array($rows)) { return $unknown; }
+            if ($rows && !array_is_list($rows)) { $rows = [$rows]; }
+            $complete = !array_diff(array_keys($reply), ['code', 'detail', 'resource_record']);
+            if (count($rows) > 50) { $complete = false; }
+            $records = []; $seen = [];
+            foreach (array_slice($rows, 0, 50) as $row) {
+                try {
+                    if (!is_array($row)) { throw new \DomainException; }
+                    $record = self::readRecord($row, $domain);
+                    if (isset($seen[$record['record_id']]) || array_diff(array_keys($row),
+                        ['record_id', 'type', 'host', 'value', 'ttl', 'distance'])) { $complete = false; }
+                    $seen[$record['record_id']] = true;
+                    $records[] = $record;
+                } catch (\DomainException|\TypeError) { $complete = false; }
+            }
+            if ($rows && !$records) { return $unknown; }
+            return ['state' => $complete ? 'complete' : 'partial', 'records' => $records];
+        } catch (\Throwable) { return $unknown; }
+    }
+
+    private static function readRecord(#[\SensitiveParameter] array $row, string $domain): array
+    {
+        $id = self::id($row['record_id'] ?? null);
+        $ttl = self::integer($row['ttl'] ?? null, 2147483647);
+        $distance = self::integer($row['distance'] ?? null, 65535);
+        $host = $row['host'] ?? null;
+        if (!is_string($host)) { throw new \DomainException; }
+        $absolute = strtolower(self::withoutRootDot($host));
+        if ($absolute !== $domain && !str_ends_with($absolute, '.'.$domain)) { throw new \DomainException; }
+        $name = self::host($domain, $host);
+        $type = $row['type'] ?? null;
+        if (!is_string($type) || !in_array($type, [...self::STANDARD, 'CAA', 'SRV'], true)) { throw new \DomainException; }
+        $address = self::address($type, $row['value'] ?? null);
+        $record = ['name' => $name === '' ? '@' : $name, 'type' => $type, 'address' => $address,
+            'mx_pref' => $type === 'MX' ? $distance : 10, 'record_id' => $id, 'ttl' => $ttl];
+        if ($type === 'SRV') { $record += ['distance' => $distance, 'priority_proven' => false]; }
+        return $record;
+    }
+
+    /** Shared relative owners and in-zone absolute owners map to provider-relative rrhost; apex is empty. */
+    public static function host(string $domain, #[\SensitiveParameter] string $name): string
+    {
+        $domain = CanonicalName::normalize($domain);
+        if ($name === '@' || $name === '') { return ''; }
+        $rooted = str_ends_with($name, '.');
+        $name = strtolower(self::withoutRootDot($name));
+        if ($name === $domain) { return ''; }
+        if (str_ends_with($name, '.'.$domain)) { $name = substr($name, 0, -strlen('.'.$domain)); }
+        elseif ($rooted) { throw new \DomainException('DNS owner is outside the domain.'); }
+        if (strlen($name.'.'.$domain) > 253) { throw new \DomainException('DNS owner is too long.'); }
+        foreach (explode('.', $name) as $i => $label) {
+            if ($i === 0 && $label === '*') { continue; }
+            if (!preg_match('/^[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?$/D', $label)) {
+                throw new \DomainException('Invalid DNS owner.');
+            }
+        }
+        return $name;
+    }
+
+    public static function id(#[\SensitiveParameter] mixed $id): string
+    {
+        if (!is_string($id) || !preg_match('/^[a-zA-Z0-9]{1,128}$/D', $id)) { throw new \DomainException('Invalid DNS record ID.'); }
+        return $id;
+    }
+
+    public static function integer(mixed $value, int $max): int
+    {
+        if ((!is_int($value) && !is_string($value)) || !preg_match('/^(?:0|[1-9][0-9]{0,9})$/D', (string) $value)
+            || (int) $value > $max) { throw new \DomainException('Invalid DNS integer.'); }
+        return (int) $value;
+    }
+
+    public static function address(string $type, #[\SensitiveParameter] mixed $value): string
+    {
+        if (!is_string($value) || strlen($value) > 2048 || preg_match('/[\x00-\x1f\x7f]/', $value)) {
+            throw new \DomainException('Invalid DNS value.');
+        }
+        if ($type === 'TXT') { return $value; }
+        if (in_array($type, ['A', 'AAAA'], true)) {
+            $flag = $type === 'A' ? FILTER_FLAG_IPV4 : FILTER_FLAG_IPV6;
+            if (!filter_var($value, FILTER_VALIDATE_IP, $flag)) { throw new \DomainException('Invalid DNS address.'); }
+            return inet_ntop(inet_pton($value));
+        }
+        if (in_array($type, ['CNAME', 'MX'], true)) {
+            $target = strtolower(self::withoutRootDot($value));
+            if (strlen($target) > 253 || !str_contains($target, '.') || !filter_var($target, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+                throw new \DomainException('Invalid DNS target.');
+            }
+            return $target.'.';
+        }
+        if ($value === '') { throw new \DomainException('Missing DNS value.'); }
+        return $value; // Preserve CAA/SRV wire text without inventing an edit mapping.
+    }
+
+    private static function withoutRootDot(string $name): string
+    { return str_ends_with($name, '.') ? substr($name, 0, -1) : $name; }
+
+    private static function reply(#[\SensitiveParameter] string $body, string $operation): array
+    {
+        if (strlen($body) > 1048576) { throw new \DomainException; }
+        $data = json_decode($body, true, 24, JSON_THROW_ON_ERROR);
+        if (!is_array($data) || ($data['request']['operation'] ?? null) !== $operation
+            || !is_array($data['reply'] ?? null) || !in_array($data['reply']['code'] ?? null, [300, '300'], true)
+            || !is_string($data['reply']['detail'] ?? null)) { throw new \DomainException; }
+        return $data['reply'];
+    }
+}
