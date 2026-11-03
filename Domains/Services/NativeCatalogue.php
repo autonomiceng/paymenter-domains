@@ -174,7 +174,8 @@ class NativeCatalogue
         if ($catalogue && !$this->products($tld)->exists()) { return; }
         $behind = $this->prices->behindRule($tld, $now);
         if (!$behind && $catalogue) { return; }
-        $this->publish((int) $tld->id, $now, null, $behind ? static function (Tld $locked) use ($now): void {
+        $this->publish((int) $tld->id, $now, null, $behind ? function (Tld $locked) use ($now): void {
+            if (!$this->prices->behindRule($locked, $now)) { return; }
             StaffSettingsReview::append(Server::findOrFail($locked->server_id), ['key' => bin2hex(random_bytes(16)), 'actor_id' => null, 'at' => $now->format(DATE_ATOM),
                 'action' => StaffSettingsReview::ACTIONS['publish'], 'reason' => 'Saved prices brought up to date.', 'phase' => 'completed', 'input' => [], 'tld_id' => (int) $locked->id, 'before' => [], 'after' => []]);
         } : null);
