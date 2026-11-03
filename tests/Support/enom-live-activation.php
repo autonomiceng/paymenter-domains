@@ -17,6 +17,8 @@ same($beforeActivation,$unchanged(),'Missing evidence grants no authority or bil
 $syntheticEvidence=['fingerprint'=>$binding->fingerprint,'site'=>'https://billing.example.com','confirmed_on'=>'2026-10-20','reference'=>'OFFLINE synthetic Enom answer',
     'sha256'=>hash('sha256','OFFLINE synthetic Enom answer'),'currency'=>'USD','complete_history'=>true,
     'history'=>['registration'=>['timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400],'renewal'=>['timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400]]];
+// A row as well as config: a global setting save reloads config('settings') when the next request ends.
+App\Models\Setting::updateOrCreate(['key'=>'tickets_disabled','settingable_type'=>null,'settingable_id'=>null],['value'=>true,'type'=>'boolean']);
 $accountConfig['evidence']=$syntheticEvidence;config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig],'settings.tickets_disabled'=>true,'domains.support_url'=>null]);
 DB::table('domains_runtime_turns')->insert(['server_id'=>$server->id,'account_fingerprint'=>$binding->fingerprint,'finished_at'=>$clock->now()->getTimestamp()]);
 $deny(fn()=>$write('activate',$activation));same($beforeActivation,$unchanged(),'Missing support rolls back everything');
@@ -40,7 +42,7 @@ expect(!$server->settings()->where('key',EnomLiveActivation::KEY)->exists(),'Aud
 $audit->encrypted=true;$audit->save();
 $historyBefore=count(Review::historyRows($server->fresh()));
 // Exercise the actual one-click + confirm native staff action, not an acceptance-row seed.
-$activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('live_sales','content');
+$activateAction=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
 $page=Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->mountAction($activateAction)->assertActionMounted($activateAction);
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Live features activated');
 expect(EnomLiveActivation::current($binding)&&Account::where('server_id',$server->id)->sole()->processing_enabled,'Supported staff action enables processing');

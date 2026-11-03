@@ -26,6 +26,7 @@ same(['day'=>2000,'minute'=>61],EnomTestSendLimit::limits($uid),'The physical gu
 $history=Review::historyRows(Server::findOrFail($server));$saved=end($history);
 same(['day'=>1000,'minute'=>60],$saved['before']['call_limits'],'Form save audits the prior limits');
 same(['day'=>2000,'minute'=>61],$saved['after']['call_limits'],'Form save audits whole-number limits');
+Paymenter\Extensions\Servers\Domains\Admin\Support\DialogFooter::boot();
 $page=$edit()->assertActionDataSet(['day'=>2000,'minute'=>61]);
 same(['Cancel','Save'],array_values(array_map(fn($action)=>$action->getLabel(),$page->instance()->getMountedAction()->getModalFooterActions())),
     'Cancel precedes Save in the real modal footer');

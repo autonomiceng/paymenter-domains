@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\DB;
 final class CardFee
 {
     public const DEFAULT=['percent'=>'2.90','fixed'=>'0.30'];
+    /** Reads a saved rule's own fields: no valid markup is refused with this fee. */
+    public const NONE=['percent'=>'0.00','fixed'=>'0.00'];
     public const KEY='domains_card_fee';
     public static function validate(array $fee): array
     {
@@ -24,20 +26,18 @@ final class CardFee
         $fee=self::validate($fee);
         return rtrim(rtrim($fee['percent'],'0'),'.').'% + $'.$fee['fixed'];
     }
-    public static function read(int $serverId,bool $lock=false): array
+    public static function read(bool $lock=false): array
     {
         if($lock&&DB::transactionLevel()===0){throw new \LogicException('Card fee locks require an outer transaction.');}
-        $q=Server::whereKey($serverId);if($lock){$q->lockForUpdate();}$s=$q->firstOrFail();
-        $q=$s->settings()->where('key',self::KEY);if($lock){$q->lockForUpdate();}$setting=$q->first();
+        $setting=BusinessSetting::row(self::KEY,$lock);
         $fee=$setting?$setting->value:self::DEFAULT;
         if(!is_array($fee)){throw new \DomainException('Invalid card fee setting.');}
         return self::validate($fee);
     }
-    public static function saveLocked(int $serverId,array $fee): void
+    public static function saveLocked(array $fee): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer card fee transaction required.');}
-        $s=Server::whereKey($serverId)->lockForUpdate()->firstOrFail();
-        $s->settings()->updateOrCreate(['key'=>self::KEY],['type'=>'array','encrypted'=>false,'value'=>self::validate($fee)]);
+        BusinessSetting::saveLocked(self::KEY,self::validate($fee));
         StorefrontCatalogueCache::invalidateAfterCommit();
     }
     /** Smallest cent price covering cost and the fee on that price, with markup on both. */

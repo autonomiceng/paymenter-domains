@@ -155,7 +155,7 @@ final class ObservationWork
             'safe_code'=>in_array($code,ReadFailure::CODES,true)?$code:($exhausted?'budget_exhausted':$code)]);
     }
     /** Internal audited read-only resume. Fresh staff policy/permission belongs36. */
-    public function resume(int $id, string $reason, ?StaffOperationReview $review = null): void
+    public function resume(int $id, string $reason, StaffOperationReview|StaffSyncReview|null $review = null): void
     {
         OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
         $seed=Domain::findOrFail(DB::table('domains_observation_work')->where('id',$id)->value('domain_id'));

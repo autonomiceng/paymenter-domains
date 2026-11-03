@@ -25,16 +25,16 @@ $support=route('tickets.create');
 
 // Registered domains, driven through the controller. case => [domain columns, acquisition columns, Expires, Renewal first line, Renewal sub line, Expires tone]
 $cases=[
-    'transfer'=>[[],['state'=>'queued'],'Missing Fills in by itself when the transfer finishes','Auto-renew on',null,null],
-    'transfer-held'=>[[],['state'=>'held','safe_code'=>'transfer_setup_review_required'],'Missing Fills in by itself when the transfer finishes','Auto-renew on',null,null],
-    'register-pending'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'queued'],'Missing Fills in by itself when the registration finishes','Auto-renew on',null,null],
-    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Missing Fills in by itself when the registration finishes','Auto-renew on',null,null],
-    'active'=>[['status'=>'active','provider_expires_at'=>$day(200)],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'Auto-renew on',null,null],
-    'expiring'=>[['status'=>'active','provider_expires_at'=>$day(10)],['state'=>'succeeded'],$calendar(10)->format('M j, Y').' In 10 days','Auto-renew on','Next invoice: Missing Not issued yet Contact support','warn'],
-    'renewal-off'=>[['status'=>'active','provider_expires_at'=>$day(200),'renewal_policy'=>$off],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'Auto-renew off','Cancels '.$calendar(200)->format('M j, Y'),null],
-    'no-expiry'=>[['status'=>'active','provider_expires_at'=>null],['state'=>'succeeded'],'Missing Contact support','Auto-renew on',null,null],
-    'past-expiry'=>[['status'=>'active','provider_expires_at'=>$day(-1)],['state'=>'succeeded'],$calendar(-1)->format('M j, Y'),'Auto-renew on',null,'bad'],
-    'adoption'=>[['status'=>'adoption_pending'],['state'=>'succeeded'],'Missing Fills in by itself when the import is confirmed','Auto-renew on',null,null],
+    'transfer'=>[[],['state'=>'queued'],'Missing Fills in by itself when the transfer finishes','On',null,null],
+    'transfer-held'=>[[],['state'=>'held','safe_code'=>'transfer_setup_review_required'],'Missing Fills in by itself when the transfer finishes','On',null,null],
+    'register-pending'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'queued'],'Missing Fills in by itself when the registration finishes','On',null,null],
+    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Missing Fills in by itself when the registration finishes','On',null,null],
+    'active'=>[['status'=>'active','provider_expires_at'=>$day(200)],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'On',null,null],
+    'expiring'=>[['status'=>'active','provider_expires_at'=>$day(10)],['state'=>'succeeded'],$calendar(10)->format('M j, Y').' In 10 days','On','Next invoice: Missing Not issued yet Contact support','warn'],
+    'renewal-off'=>[['status'=>'active','provider_expires_at'=>$day(200),'renewal_policy'=>$off],['state'=>'succeeded'],$calendar(200)->format('M j, Y'),'Off','Cancels '.$calendar(200)->format('M j, Y'),null],
+    'no-expiry'=>[['status'=>'active','provider_expires_at'=>null],['state'=>'succeeded'],'Missing Contact support','On',null,null],
+    'past-expiry'=>[['status'=>'active','provider_expires_at'=>$day(-1)],['state'=>'succeeded'],$calendar(-1)->format('M j, Y'),'On',null,'bad'],
+    'adoption'=>[['status'=>'adoption_pending'],['state'=>'succeeded'],'Missing Fills in by itself when the import is confirmed','On',null,null],
 ];
 $base=['status'=>'transfer_pending','provider_expires_at'=>null,'renewal_policy'=>null];
 foreach ($cases as $case=>[$domain,$acquisition,$expires,$renewal,$sub,$expiresTone]) {
@@ -47,9 +47,9 @@ foreach ($cases as $case=>[$domain,$acquisition,$expires,$renewal,$sub,$expiresT
     if(str_starts_with($case,'register-')){
         same(1,$list->query('td[@data-label="Expires"]//*[contains(@class,"domains-missing--calm")]',$row)->length,'Pending registration needs nothing, so its Missing is calm');
     }
-    same($renewal,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal value: '.$case);
-    if ($sub!==null) { same($sub,$norm($list->query('td[@data-label="Renewal"]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)),'Renewal sub line: '.$case); }
-    else { expect(!str_contains((string)$cell($list,$row,'Renewal'),'Next invoice') && !str_contains((string)$cell($list,$row,'Renewal'),'Cancels'),'No invoice or cancel line: '.$case); }
+    same($renewal,$norm($list->query('td[@data-label="Renewal invoices"]/*[contains(@class,"domains-cell-main")]',$row)->item(0)),'Renewal value: '.$case);
+    if ($sub!==null) { same($sub,$norm($list->query('td[@data-label="Renewal invoices"]/*[contains(@class,"domains-cell-sub")]',$row)->item(0)),'Renewal sub line: '.$case); }
+    else { expect(!str_contains((string)$cell($list,$row,'Renewal invoices'),'Next invoice') && !str_contains((string)$cell($list,$row,'Renewal invoices'),'Cancels'),'No invoice or cancel line: '.$case); }
     if (str_contains($expires,'Contact support')) { same($support,$list->query('td[@data-label="Expires"]//a',$row)->item(0)?->getAttribute('href'),'Contact support links the ticket form: '.$case); }
     $page=$norm($list->query('//div[@class="domains"]')->item(0));
     foreach (['Expiry unknown','See details','Pending verification','Planned due','Renewal off','Manage','Apply','in your account','Related to your hosting'] as $old) { expect(!str_contains($page,$old),'Old list copy removed: '.$old.' ('.$case.')'); }
@@ -63,19 +63,18 @@ $dto=static fn(string $name,string $kind,array $more)=>new DomainSummary($name,n
     'expiry'=>null,'expiryPrecision'=>null,'expirySource'=>null,'freshness'=>[],'renewalDueAt'=>null,'renewalPrice'=>null,'relatedServices'=>[],'hostnames'=>[],
     'urls'=>['detail'=>'/domains/'.$name,'support'=>'/tickets/create'],...$more]);
 $rows=[
-    'real.example'=>[$dto('real.example','managed',['expiry'=>'2027-03-01','daysLeft'=>129,'renewalPrice'=>'$14.99','statusState'=>'active']),'Mar 1, 2027','Auto-renew on $14.99/yr',null],
-    'demo-held.example'=>[$dto('demo-held.example','managed',['demo'=>true,'expiryWaits'=>'transfer','renewalPrice'=>'$15.99','statusState'=>'held','statusReason'=>'Transfer on hold']),'Missing Fills in by itself when the transfer finishes','Auto-renew on $15.99/yr','Demo'],
-    'test-expiring.example'=>[$dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>1,'renewalInvoiceMissing'=>true,'statusState'=>'active']),'Nov 2, 2026 In 1 day','Auto-renew on Next invoice: Missing Not issued yet Contact support','Test'],
+    'real.example'=>[$dto('real.example','managed',['expiry'=>'2027-03-01','daysLeft'=>129,'renewalPrice'=>'$14.99','statusState'=>'active']),'Mar 1, 2027','On $14.99/yr',null],
+    'demo-held.example'=>[$dto('demo-held.example','managed',['demo'=>true,'expiryWaits'=>'transfer','renewalPrice'=>'$15.99','statusState'=>'held','statusReason'=>'Transfer on hold']),'Missing Fills in by itself when the transfer finishes','On $15.99/yr','Demo'],
+    'test-expiring.example'=>[$dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>1,'renewalInvoiceMissing'=>true,'statusState'=>'active']),'Nov 2, 2026 In 1 day','On Next invoice: Missing Not issued yet Contact support','Test'],
     'watch-expired.example'=>[$dto('watch-expired.example','watch',['demo'=>true,'expiry'=>'2026-10-21','daysLeft'=>-2,'relatedServices'=>$hosting,'relatedOverflow'=>1,'statusState'=>'watch.expired','statusReason'=>'Renew at your registrar']),'Oct 21, 2026','At your registrar','Demo'],
     'watch-unknown.example'=>[$dto('watch-unknown.example','watch',['relatedServices'=>array_slice($hosting,0,1)]),'Missing Check at your registrar','At your registrar',null],
 ];
 $page=new LengthAwarePaginator(array_column($rows,0),count($rows),25);
 $html=view('domains::index',['domains'=>$page,'filterCounts'=>[''=>count($rows),'active'=>2,'under_review'=>1,'expired'=>1]])->render(); $dom=storefrontDom($html);
-same(['Domain','Status','Expires','Renewal'],array_map($norm,iterator_to_array($dom->query('//thead/tr/th'))),'Four columns, no Actions column');
-same(0,$dom->query('//*[contains(@class,"domains-lede")]')->length,'No lede: the All chip shows the count');
-same(0,$dom->query('//form[contains(@class,"domains-filter")]//button')->length,'No Apply button: the filters apply on change');
-same(['Expires, soonest first','Expires, latest first','Name, A to Z','Name, Z to A'],array_map($norm,iterator_to_array($dom->query('//select[@name="sort"]/option'))),'Sort options say Expires');
-same('auto',$dom->query('//form[contains(@class,"domains-filter")]/@data-domains-autosubmit')->item(0)?->value,'Filter form submits on change');
+same(['Domain','Status','Expires','Renewal invoices'],array_map($norm,iterator_to_array($dom->query('//thead/tr/th'))),'Four columns, no Actions column');
+same(0,$dom->query('//*[contains(@class,"domains-lede")]')->length,'No lede: the All tab shows the count');
+same(0,$dom->query('//form[contains(@class,"domains-filter")]//button')->length,'No Apply button: search runs on Enter');
+same(['none','ascending'],array_map(fn($th)=>$th->value,iterator_to_array($dom->query('//thead/tr/th/@aria-sort'))),'Soonest expiry first is not the name order, and the head says so') ;
 same(0,$dom->query('//section[contains(@class,"domains-related")]')->length,'No separate hosting section');
 foreach (array_keys($rows) as $i=>$name) {
     [,$expires,$renewal,$tag]=$rows[$name]; $row=$dom->query('//tbody/tr')->item($i);
@@ -84,7 +83,7 @@ foreach (array_keys($rows) as $i=>$name) {
     same($name,$norm($dom->query('.//a[contains(@class,"domains-row-link")]',$row)->item(0)),'Row link text is the name: '.$name);
     same($tag===null?[]:[$tag],array_map(fn($n)=>trim($n->firstChild->textContent),iterator_to_array($dom->query('td[1]/span[contains(@class,"domains-demo-tag")]',$row))),'Demo or Test tag after the name: '.$name);
     same($expires,$cell($dom,$row,'Expires'),'Expires cell: '.$name);
-    same($renewal,$cell($dom,$row,'Renewal'),'Renewal cell: '.$name);
+    same($renewal,$cell($dom,$row,'Renewal invoices'),'Renewal cell: '.$name);
 }
 same('Hosting: Starter hosting and 2 more',$norm($dom->query('//tbody/tr[4]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line counts every other service');
 same('Hosting: Starter hosting',$norm($dom->query('//tbody/tr[5]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line names one service');

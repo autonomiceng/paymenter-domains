@@ -7,11 +7,21 @@ require __DIR__.'/Support/lifecycle-scenarios.php';
 use App\Models\{Invoice, InvoiceItem, Order, Service, ServiceCancellation};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation, Price};
-use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, HoldingAdoptionSchema, NativeDomainGuard, HolderPricing};
+use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, HoldingAdoptionSchema, NativeDomainGuard, HolderPricing, RegistrarFactories, RegistrarRegistry};
 config(['app.url' => 'https://domains-tests.invalid']);
 extract(adoptionFixture(Environment::Live)); HoldingAdoptionSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
+// Installed composition exposes the dedicated import reader without making a provider call.
+$installedRegistry = new RegistrarRegistry;
+RegistrarFactories::install($installedRegistry, new class implements AccountVerifier {
+    public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['uid']; }
+});
+$installedReader = $installedRegistry->adoptionReader($binding, ['uid' => 'account-enom', 'token' => 'synthetic-secret'], $clock);
+expect($installedReader instanceof EnomAdoptionReader, 'Installed Enom registry provides its dedicated import reader');
+same($binding, $installedReader->binding(), 'Installed import reader retains the requested account binding');
 $permissions = [Staff::VIEW, Staff::ADOPT_PREVIEW, Staff::ADOPT, 'admin.domains.manage', 'admin.services.update'];
 DB::table('roles')->where('id', $staff->role_id)->update(['permissions' => json_encode($permissions)]);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();

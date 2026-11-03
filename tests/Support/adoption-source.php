@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AdoptionCommi
 function exerciseSharedImport($native,$prices,$clock,$staff,$owner,$context,$converted,$enomBinding): void
 {
     $state=(object)['binding'=>null,'resultBinding'=>null,'calls'=>0,'factories'=>0,'facts'=>[
-        'name'=>'example-import.com','provider_id'=>null,
+        'name'=>'import-placeholder.com','provider_id'=>null,
         'expiry'=>new DateEvidence('2027-10-20',ExpiryPrecision::Date,'synthetic_import'),
         'auto_renew'=>false,'ordinary'=>true,'registrar_hold'=>false,'redemption'=>false,'command_set_version'=>7]];
     $registry=new RegistrarRegistry;
@@ -29,7 +29,7 @@ function exerciseSharedImport($native,$prices,$clock,$staff,$owner,$context,$con
                 public function read(string $name,string $suffix): AdoptionReadback
                 {
                     same(0,DB::transactionLevel(),'Alternate-provider read remains outside native locks');
-                    same(['example-import.com','com'],[$name,$suffix],'Exact import target reaches source');
+                    same(['import-placeholder.com','com'],[$name,$suffix],'Exact import target reaches source');
                     $this->state->calls++;
                     return AdoptionReadback::verified($this->state->resultBinding??$this->account,$this->state->facts);
                 }
@@ -46,8 +46,8 @@ function exerciseSharedImport($native,$prices,$clock,$staff,$owner,$context,$con
     $order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
     $service=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,
         'plan_id'=>$plan->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']);
-    $service->properties()->create(['key'=>'domain','value'=>'example-import.com']);
-    $target=new Target('example-import.com',$service->id,$owner->id,$tld->server_id,Environment::Live);
+    $service->properties()->create(['key'=>'domain','value'=>'import-placeholder.com']);
+    $target=new Target('import-placeholder.com',$service->id,$owner->id,$tld->server_id,Environment::Live);
     $reader=new AdoptionReader($bindings,$mapping,$clock);
     // Another holding without an opaque reference must not collide on SQL NULL.
     DB::table('domains_domains')->where('id',$converted->id)->update(['server_id'=>$tld->server_id,'provider_domain_id'=>null]);

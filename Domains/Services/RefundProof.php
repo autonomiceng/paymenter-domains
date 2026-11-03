@@ -40,7 +40,7 @@ final class RefundProof
         }
         $sealed = ($a['seal'] ?? null) === 'sealed';
         $acquisition=$sealed&&$op->registrar_key==='namesilo'&&in_array($op->action,['register','transfer'],true);
-        $allowed = $sealed ? ['claim_key', 'seal', 'dispatch_attempted_at', 'send_state', 'authorized_cost', ...($acquisition?[$op->action==='transfer'?'transfer_admission':'registration_admission']:['renewal_mode']), 'execution']
+        $allowed = $sealed ? ['claim_key', 'seal', 'dispatch_attempted_at', 'send_state', 'authorized_cost', ...($acquisition?[$op->action==='transfer'?'transfer_admission':'registration_admission']:['renewal_mode']), 'execution', 'capacity_deferrals']
             : ['claim_key', 'seal', 'send_state', 'capacity_deferrals', 'disposition', 'rejection_basis', 'terminal'];
         if(!$sealed&&in_array($op->action,['privacy_purchase','privacy_renew'],true)&&array_key_exists('management_claim',$a)){
             $allowed[]='management_claim';$allowed[]='management_deferrals';if(!ManagementEvidence::deferrals($a)){throw new \DomainException('Unknown management deferral.');}

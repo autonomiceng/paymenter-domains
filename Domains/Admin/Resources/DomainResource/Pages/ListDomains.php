@@ -7,6 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 class ListDomains extends ListRecords
 {
     protected static string $resource = DomainResource::class;
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('Domains'); }
     public function getTitle(): string { return 'Domains'; }
     public function getBreadcrumbs(): array { return []; }
     protected function getHeaderActions(): array { return [\Filament\Actions\Action::make('adopt')->label('Import domain')->visible(fn () => config('domains.adoption.enabled', false) === true && collect(\Paymenter\Extensions\Servers\Domains\Services\AdoptionCommit::PERMISSIONS)->every(fn ($permission) => \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can($permission)))->url(DomainResource::getUrl('adopt'))]; }

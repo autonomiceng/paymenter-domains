@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 class ListOperations extends ListRecords
 {
     protected static string $resource=OperationResource::class;
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::registrars('Registrar requests'); }
     public function getTitle(): string { Staff::requireView(); return 'Registrar requests'; }
     protected function getHeaderActions(): array { return []; }
 }

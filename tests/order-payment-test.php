@@ -6,7 +6,7 @@ use App\Models\Invoice;
 use Illuminate\Support\Carbon;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainListRow, DomainPage, DomainSummary, Missing, OwnedDomain, StatusPill};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaryStrings, OwnedDomains};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, DomainSummaryStrings, OwnedDomains};
 
 storefrontViews();
 $norm=static fn(string $html)=>preg_replace('/\s+/',' ',trim(html_entity_decode(strip_tags($html),ENT_QUOTES|ENT_HTML5)));
@@ -88,6 +88,10 @@ same(null,DomainPage::notice($owned(['state'=>'paid','kind'=>'registration','nex
 $notice=DomainPage::notice($owned($paid),'/tickets/create');
 same('Paid. We’re finishing the registration. There’s nothing you need to do.',$notice['text'],'Paid notice says it plainly');
 same(['label'=>'Contact support','url'=>'/tickets/create'],$notice['action'],'Paid notice says how to reach us');
+// Work that is ours reads blue; amber is for a step the customer owns. The Off switch is the reason we give first.
+$held=static fn(int|string|null $refused)=>new OwnedDomain('held.example','Active','good',null,'',null,['show'=>'/domains/1'],[],[],[],['contacts'=>['recordCheckHeld'=>true]],false,changesUnavailable:$refused!==null,changesRefused:$refused);
+same(['info','We can’t read this domain’s details right now. We are on it, nothing for you to do.'],array_values(array_intersect_key(DomainPage::notice($held(null),'/tickets/create'),['tone'=>1,'text'=>1])),'A held read is our job, so it is blue');
+same(['info','Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.'],array_values(array_intersect_key(DomainPage::notice($held(DomainManagement::SWITCH_OFF),'/tickets/create'),['tone'=>1,'text'=>1])),'The Off switch is named before a held read');
 // Automatic retries keep paid customers reassured; only a stopped check needs the shared support notice.
 foreach(['register'=>'registration','transfer'=>'transfer'] as $action=>$kind){
     foreach(['checked','deferred','scheduled','unavailable'] as $outcome){
@@ -114,14 +118,23 @@ same('This order was cancelled. We added what you paid to account credit. You ca
 $failure=new ReflectionMethod(OwnedDomains::class,'failure');
 same('The registrar did not take this change.',$failure->invoke(null,$op(['safe_code'=>'management_provider_refused'])),'Refused change');
 same('The registrar did not take this change. The customer can try again.',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('management_provider_refused'),'Staff read the same sentence');
-same('We didn’t send this change, so nothing changed.',$failure->invoke(null,$op(['safe_code'=>'enom_test_management_call_cap'])),'Change stopped before sending');
+same('Not sent. Nothing changed at the registrar.',$failure->invoke(null,$op(['state'=>'rejected','safe_code'=>'management_unconfirmed','policy'=>['management'=>['action'=>'nameservers']],'attempt'=>[]])),'Customers read the staff line for a change that never went out');
 same('We couldn’t make this change.',$failure->invoke(null,$op(['safe_code'=>'anything_else'])),'Any other failure still gets a reason');
-$domain=new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Nameservers','state'=>'Failed','date'=>'2026-10-27','note'=>'The registrar refused this change.'],['label'=>'Contacts','state'=>'Under review','date'=>'2026-10-20']],[],[],[],false);
+$domain=new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Nameservers','state'=>'Failed','date'=>'2026-10-27','note'=>'The registrar refused this change.','retry'=>true],['label'=>'Contacts','state'=>'Under review','date'=>'2026-10-20']],[],[],[],false);
 $table=storefrontDom(view('domains::partials.activity',['domain'=>$domain])->render());
-$cells=$table->query('//td[@data-label="Status"]');
-expect(str_contains($norm($cells->item(0)->textContent),'The registrar refused this change. Try again. Still stuck? Contact support'),'Failed row shows reason and next step');
-same('Under review',trim($cells->item(1)->textContent),'Other rows stay short');
+$steps=$table->query('//ol[@class="domains-trace"]/li');
+$word=fn($li)=>trim($table->query('./span[last()]',$li)->item(0)->textContent);
+expect(str_contains($norm($steps->item(0)->textContent),'The registrar refused this change. Try again. Still stuck? Contact support')&&$word($steps->item(0))==='Failed','Failed step shows reason and next step');
+same('Under review',$word($steps->item(1)),'Other steps end in their word');
+// Without Edit, the customer is told to ask us, never to try again.
+$noEdit=storefrontDom(view('domains::partials.activity',['domain'=>new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Contacts','state'=>'Failed','date'=>'2026-10-27','note'=>'Not sent. Nothing changed at the registrar.','retry'=>false]],[],[],[],false)])->render());
+$step=$norm($noEdit->query('//ol[@class="domains-trace"]/li')->item(0)->textContent);
+expect(str_contains($step,'Not sent. Nothing changed at the registrar. Contact support to make this change.')&&!str_contains($step,'Try again'),'A failed change the customer can\'t make asks them to contact us');
+$row=['id'=>75,'pending'=>false,'text'=>'Not sent. Nothing changed at the registrar.'.Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::TRY_AGAIN];
+same('Not sent. Nothing changed at the registrar. Contact support to make this change.',OwnedDomains::askUs($row,false)['text'],'The row under a setting without Edit asks them to contact us');
+same($row,OwnedDomains::askUs($row,true),'With Edit, the row keeps Try again');
 $done=storefrontDom(view('domains::partials.activity',['domain'=>new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Renewal','state'=>'Cancelled','date'=>'2026-10-27','note'=>'We added $1.00 to account credit.']],[],[],[],false)])->render());
-same('CancelledWe added $1.00 to account credit.',$norm($done->query('//td[@data-label="Status"]')->item(0)->textContent),'A settled note asks for nothing more');
-same(2,$table->query('//td[@data-label="Date"][string-length(normalize-space())>0]')->length,'Both rows show a date');
+$step=$norm($done->query('//ol[@class="domains-trace"]/li')->item(0)->textContent);
+expect(str_contains($step,'We added $1.00 to account credit.')&&!str_contains($step,'Contact support')&&!str_contains($step,'Try again'),'A settled note asks for nothing more');
+same(2,$table->query('//ol[@class="domains-trace"]/li[.//time]')->length,'Both steps show a date');
 $nativeSuccessful=true;echo "Order payment checks passed.\n";
