@@ -60,6 +60,12 @@ foreach (['lock' => ['locked' => false], 'nameservers' => ['nameservers' => ['ns
     $engine->reconcile($op->id, $driver); $engine->run($op->id, $driver);
     same(47, count($GLOBALS['enomWire']['forms']), 'At the lifetime limit, no more physical sends');
     same($baseline + 47, $sends(), 'At the lifetime limit, nothing more is counted');
+    // Nothing can run: the engine says why, so no page has to guess.
+    $refused = null; same([], $engine->available($user, $d->fresh(), $driver, [$action], $refused), 'An unresolved request blocks edits');
+    same((int) $op->id, $refused, 'The refusal names the request that blocks');
+    $setting->value = json_encode(null); $setting->save();
+    $refused = null; same([], $engine->available($user, $d->fresh(), $driver, [$action], $refused), 'The Off switch blocks edits');
+    same(Paymenter\Extensions\Servers\Domains\Services\DomainManagement::SWITCH_OFF, $refused, 'The refusal names the switch, not the request');
     app()->offsetUnset(Runtime::class);
     config($previousPolicy);
 }

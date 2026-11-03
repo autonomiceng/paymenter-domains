@@ -6,7 +6,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\HtmlString;
 /** A value the page expects but does not have. One word for customers and staff, never a pill. Every Missing says what
- * to do next: its one fix, or a cause that names the step. Danger text with a warning icon when the reader must act.
+ * to do next: its one fix, or a cause that names the step. Danger text with the red hexagon when the reader must act.
  * When nothing is needed, the cause says so and the word goes muted with no icon, so word and tone cannot disagree.
  * Values that do not apply are hidden, not Missing; "Off" is a value. */
 final class Missing
@@ -14,7 +14,8 @@ final class Missing
     /** Cause for a price or offer a customer needs before buying. */
     public const ASK_FIRST = 'Contact support before you buy';
     public const LABEL = 'Missing';
-    public const ICON = 'heroicon-m-exclamation-triangle';
+    /** The staff err mark in the row size, its cross cut out so it sits on any surface. */
+    public const ICON = '<svg class="domains-missing-mark" width="14" height="16" viewBox="0 0 16 18" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M8 .3l7.7 4.3v8.8L8 17.7.3 13.4V4.6zM8 7.8l2.4-2.4 1.2 1.2L9.2 9l2.4 2.4-1.2 1.2L8 10.2l-2.4 2.4-1.2-1.2L6.8 9 4.4 6.6l1.2-1.2z"/></svg>';
     public const COLOR = 'danger';
     public const FILLS = 'Fills in by itself';
     public const NO_ACTION = 'No action needed.';
@@ -24,7 +25,7 @@ final class Missing
     public static function needsNothing(?string $cause): bool
     { return $cause !== null && (str_starts_with($cause, self::FILLS) || str_ends_with($cause, self::NO_ACTION)); }
     public static function color(?string $cause = null): string { return self::needsNothing($cause) ? 'gray' : self::COLOR; }
-    public static function icon(?string $cause = null): ?string { return self::needsNothing($cause) ? null : self::ICON; }
+    public static function icon(?string $cause = null): ?HtmlString { return self::needsNothing($cause) ? null : new HtmlString(self::ICON); }
     /** Where "Contact support" goes: the ticket form, else config `domains.support_url` (an http:, https:, mailto: or tel: link with a real destination), else nowhere, and System checks tells staff. */
     public static function supportUrl(): ?string
     {

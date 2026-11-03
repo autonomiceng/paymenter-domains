@@ -25,11 +25,12 @@ same($direct, $cold, 'Miss returns the uncached render projection');
 same($renderQueries, $coldQueries, 'Miss executes only the existing render queries');
 [$warm, $hitQueries] = $measure(fn () => [$store->endings(), $store->testEnvironment($cold)]);
 same([$cold, true], $warm, 'Warm display includes cached selected-seller environment');
-$tables = ['domains_sales_policies', 'domains_accounts', 'domains_tlds', 'domains_prices', 'extensions', 'settings', 'products', 'plans', 'prices', 'product_upgrades', 'config_option_products'];
+$tables = ['domains_sales_policies', 'domains_accounts', 'domains_tlds', 'domains_prices', 'extensions', 'products', 'plans', 'prices', 'product_upgrades', 'config_option_products'];
 foreach ($hitQueries as $sql) {
     foreach ($tables as $table) { expect(!preg_match('/\b'.preg_quote($table, '/').'\b/i', $sql), 'Hit never queries '.$table); }
 }
-same([], $hitQueries, 'Array-cache storefront hit is query-free');
+$gateQuery = 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?';
+same([$gateQuery], $hitQueries, 'Array-cache storefront hit reads only the current catalogue gate');
 echo 'Storefront cache queries: render '.count($renderQueries).', miss '.count($coldQueries).', hit '.count($hitQueries).".\n";
 
 // Actual staff price publication (native writer republishes the reviewed owned prices).
@@ -57,7 +58,7 @@ DB::beginTransaction(); $tld->update(['transfer_enabled' => false]); DB::commit(
 DB::rollBack();
 [$rolledBack, $rollbackQueries] = $measure(fn () => $store->endings());
 same($stable, $rolledBack, 'Rolled-back owned writes preserve cached rows');
-same([], $rollbackQueries, 'Rollback retains a warm zero-query display');
+same([$gateQuery], $rollbackQueries, 'Rollback retains a warm display with only the current catalogue gate read');
 same($forgetCount, count($forgotten), 'Rollback does not forget a committed display');
 DB::beginTransaction(); DB::beginTransaction(); $tld->refresh()->update(['register_enabled' => false]);
 DB::rollBack(); DB::commit();
@@ -120,7 +121,7 @@ same([1], $display->remember($render), 'Transaction-local projection was never c
 
 // Standalone writers must invalidate even when no owned model event fires.
 $rules = new Paymenter\Extensions\Servers\Domains\Services\PricingRules;
-DB::transaction(fn () => $rules->saveDefaultRuleLocked($tld->server_id, $rules->defaultRule($tld->server_id)));
+DB::transaction(fn () => $rules->saveDefaultRuleLocked($rules->defaultRule()));
 same([3], $display->remember($render), 'Standalone default-rule save forgets warm display');
 $binding = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tld->server_id)->sole());
 $accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);

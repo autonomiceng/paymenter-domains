@@ -42,7 +42,8 @@ same(1,$dom->query('//input[@data-use-default][@disabled]')->length,'Defaults fl
 same(0,$dom->query('//input[@type="checkbox"]')->length,'No checkbox inputs in owner management views');
 foreach(['nameservers','lock','glue'] as $cap){same(1,$dom->query('//li[@id="'.$cap.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@type="submit"][@name="confirmed"][@value="1"]')->length,'Risky action confirms in a dialog: '.$cap);}
 same(1,$dom->query('//li[@id="auth_code_email"]//form[@data-confirm]//dialog[@data-confirm-dialog]')->length,'Auth code email confirms in a dialog');
-same(1,$dom->query('//li[@id="privacy"]')->length,'Privacy row rendered');same(0,$dom->query('//li[@id="privacy"]//dialog')->length,'Privacy has no confirm step');
+same(0,$dom->query('//li[@id="privacy"]')->length,'Privacy controls are hidden for free privacy too');
+same(0,$dom->query('//form[@action="/e" or @action="/x"]')->length,'Hidden privacy has no owner forms');
 same(0,$dom->query('//form[@action="/a"]//dialog')->length,'Adding a glue record has no confirm step');
 same(['Nameserver','ns1.example.com','IP address','192.0.2.53'],array_values(array_filter(array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//dialog[@id="confirm-glue-0"]//dl/div/*'))))),'Glue delete names the concrete record');
 

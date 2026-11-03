@@ -79,7 +79,10 @@ same(true, $store->endings()[0]['testEnvironment'], 'D7 public catalogue carries
 same('$7.80', $store->endings()[0]['register'], 'Selected Enom retail, not cost or other account');
 Illuminate\Support\Facades\DB::enableQueryLog(); Illuminate\Support\Facades\DB::flushQueryLog();
 $store->endings();
-expect(count(Illuminate\Support\Facades\DB::getQueryLog()) === 0, 'Warm public projection has zero queries');
+// Every entry resolves the current cutover gate; cached display rows need no other reads.
+same([['query' => 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?',
+    'bindings' => ['domains_offer_upgrade']]], array_map(static fn ($q) => array_intersect_key($q, array_flip(['query', 'bindings'])),
+    Illuminate\Support\Facades\DB::getQueryLog()), 'Warm public projection reads only the current catalogue gate');
 Illuminate\Support\Facades\DB::disableQueryLog();
 $displayRows = $store->endings(); Illuminate\Support\Facades\Cache::flush();
 $slowRows = (new Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache($clock))->remember(function () use ($clock, $now, $displayRows) {

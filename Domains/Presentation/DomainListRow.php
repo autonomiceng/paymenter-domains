@@ -49,9 +49,9 @@ final class DomainListRow
     {
         if ($s->kind === 'watch') { return ['value' => 'At your registrar', 'note' => null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null]; }
         if ($s->renewalOffShown()) {
-            return ['value' => 'Auto-renew off', 'note' => $s->expiry ? 'Cancels '.CarbonImmutable::parse(substr($s->expiry, 0, 10), 'UTC')->format('M j, Y') : null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null];
+            return ['value' => 'Off', 'note' => $s->expiry ? 'Cancels '.CarbonImmutable::parse(substr($s->expiry, 0, 10), 'UTC')->format('M j, Y') : null, 'invoiceMissing' => false, 'invoiceCause' => null, 'invoiceFix' => null];
         }
-        return ['value' => 'Auto-renew on', 'note' => !$s->renewalInvoiceMissing && $s->renewalPrice ? $s->renewalPrice.'/yr' : null, 'invoiceMissing' => $s->renewalInvoiceMissing,
+        return ['value' => 'On', 'note' => !$s->renewalInvoiceMissing && $s->renewalPrice ? $s->renewalPrice.'/yr' : null, 'invoiceMissing' => $s->renewalInvoiceMissing,
             'invoiceCause' => $s->renewalInvoiceMissing ? 'Not issued yet' : null, 'invoiceFix' => $s->renewalInvoiceMissing ? Missing::support($s->urls['support'] ?? null) : null];
     }
 }

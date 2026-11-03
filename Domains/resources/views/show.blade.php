@@ -5,7 +5,7 @@
     $support = ($summary ?? null)?->urls['support'] ?? \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl();
     $notice = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
     $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
-    $groups = ['DNS' => ['nameservers', 'dns', 'srv', 'glue', 'ds'], 'Security and contacts' => ['lock', 'privacy', 'contacts', 'auth_code_email']];
+    $settings = array_values(array_filter(['lock', 'privacy', 'auth_code_email', 'contacts', 'nameservers', 'dns', 'srv', 'glue', 'ds'], fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))));
 @endphp
 <nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $domain->name }}</nav>
 <div class="domains-ph"><h1 class="domains-mono">{{ $domain->name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</h1>@if ($pill)<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $pill])</span>@endif</div>
@@ -16,20 +16,17 @@
 @if (($summary ?? null) && $summary->kind === 'managed' && !$summary->relatedServices && !$summary->relatedOverflow && $domain->expiry && !$domain->setupPending && in_array('domain.dns.platform', $summary->dnsKeys, true) && !$summary->website && !$summary->email)
 <p class="domains-muted">To use this domain, buy a service or point it to your own nameservers.</p>
 @endif
-<div class="domains-cols"><div>
-@foreach ($groups as $heading => $caps)
-@php($caps = array_values(array_filter($caps, fn ($cap) => isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))))
-@if ($caps)
-<section class="domains-panel" aria-labelledby="heading-{{ \Illuminate\Support\Str::slug($heading) }}"><div class="domains-panel__h"><h2 id="heading-{{ \Illuminate\Support\Str::slug($heading) }}" class="domains-h2">{{ $heading }}</h2></div>
-<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $caps])</ul></section>
-@endif
-@endforeach
-@unless ($domain->setupPending)
-@include('domains::partials.activity')
-@endunless
-</div><aside>
+<div class="domains-cols"><div class="domains-sheet">
 @include('domains::partials.owner-renew')
-</aside></div>
+@if ($settings)
+<section class="domains-panel" aria-labelledby="heading-settings"><div class="domains-panel__h"><h2 id="heading-settings" class="domains-h2">Settings</h2></div>
+<ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul></section>
+@endif
+</div>
+@unless ($domain->setupPending)
+<aside class="domains-rail">@include('domains::partials.activity')</aside>
+@endunless
+</div>
 @include('domains::partials.client-script')
 @include('domains::partials.management-poll')
 </div></div>

@@ -179,9 +179,10 @@ are immutable and the global reservation forbids a second holding for the same n
 
 Adapted from Enom 0.5 frozen revision `444f31c` Services/PricingRule.php and
 Services/Catalogue{,Runtime}.php, including accepted partial republication behavior.
-`PricingRules` uses one native `domains_pricing_default_rule` per account/server, shared
-by that account's default-rule TLDs; overrides remain on each bound TLD. Retail tables
-remain separate across accounts. Republishing returns failed endings and continues.
+The default rule (`domains_pricing_default_rule`) and the card fee (`domains_card_fee`) are
+one business-wide global setting each, read through `BusinessSetting`; overrides remain on
+each bound TLD. Retail tables remain separate across accounts. Republishing returns failed
+endings and continues.
 `MarginPolicy` assesses per-year published list retail against per-year term costs before
 tax/discount (same currency): below-cost acquisition terms
 are held with staff alerts; below-cost renewals continue with alerts. These assessments

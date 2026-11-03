@@ -96,8 +96,10 @@ final class PriceSync
      * @return array{synced:list<string>,failed:array<string,string>,deferred:list<string>} */
     public function run(Account $account, Clock $clock, ?StaffSettingsReview $review, ?string $ending = null, ?array $only = null, ?int $generation = null): array
     {
+        // Routing itself reads the gate; keep the generation from before that read.
+        $generation ??= UpgradeGate::generation();
         if(($scheduler=OfferScheduler::routed())!==null){
-            if($generation!==null&&$generation!==UpgradeGate::generation()){throw new \DomainException('Settings changed. Reload this page.');}
+            UpgradeGate::active($generation);
             $scheduler->sync(CatalogueAcceptances::binding($account),$review?RequestOrigin::Interactive:RequestOrigin::Background);
             return ['synced'=>[],'failed'=>[],'deferred'=>[],'queued'=>true];
         }
@@ -174,8 +176,9 @@ final class PriceSync
     public function daily(Account $account): void
     {
         OperationClaims::outside();
-        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
-        $generation=UpgradeGate::legacy();
+        $generation=UpgradeGate::generation();
+        if(($scheduler=OfferScheduler::routed())!==null){UpgradeGate::active($generation);$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
+        $generation=UpgradeGate::legacy($generation);
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }
         SellAutomation::refresh($account, $this->clock->now(), $generation);
@@ -277,8 +280,8 @@ final class PriceSync
             });
             if ($event) {
                 // The scheduler already retried; only a person can fix credentials or change our call cap.
-                // Same line as the TLD list, which shows what to fix and when sales stop.
-                $cause = \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncCause($event['code']);
+                // Same words as the TLD list, which shows what to fix and when sales stop.
+                $cause = \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::currentCause((int) $account->server_id, $event['code']);
                 $name = (string) (\App\Models\Server::whereKey($account->server_id)->value('name') ?: 'Registrar account');
                 \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Price sync keeps failing', $name.' (account '.$account->server_id.'): '.$cause.'.',
                     'filament.admin.resources.domain-tlds.index', deliveryKey: 'price-sync:'.$account->account_fingerprint.':'.$event['first_at']);

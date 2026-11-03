@@ -56,5 +56,21 @@ foreach ([
     config(['settings.company_name' => $company, 'app.name' => $appName]);
     writeRenderArtifact($out.'/label-'.$case.'.html', view('domains::partials.client-script')->render());
 }
+
+// Render real contact fields so the client check covers both initial suggestions and country changes.
+$contacts = [];
+foreach (['US', 'CA', 'GB', 'AU', ''] as $country) {
+    foreach ([false, true] as $stateRequired) {
+        $dom = storefrontDom(view('domains::partials.contact', ['prefix'=>'contact',
+            'values'=>['country'=>$country, 'state_province'=>'Retained state'], 'stateRequired'=>$stateRequired])->render());
+        $state = $dom->query('//input[@name="contact[state_province]"]')->item(0);
+        $list = $dom->query('//datalist')->item(0);
+        $contacts[] = ['country'=>$country, 'stateRequired'=>$stateRequired, 'state'=>$state->getAttribute('value'),
+            'required'=>$state->hasAttribute('required'), 'codes'=>$list->getAttribute('data-state-codes'),
+            'options'=>array_map(fn($option)=>$option->getAttribute('value'), iterator_to_array($dom->query('//datalist/option')))];
+    }
+}
+writeRenderArtifact($out.'/contact-suggestions.json', json_encode($contacts, JSON_THROW_ON_ERROR));
+
 $nativeSuccessful = true;
-echo "Rendered shared client script, all seven including views, and company-name cases.\n";
+echo "Rendered shared client script, all seven including views, company-name cases and contact suggestions.\n";

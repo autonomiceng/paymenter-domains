@@ -15,8 +15,8 @@ final class StorefrontCatalogueRead
     private ?array $catalogues = null;
     private array $products = [];
     private array $priceRows = [];
-    private array $defaultRules = [];
-    private array $fees = [];
+    private ?array $defaultRule = null;
+    private ?array $fee = null;
     private ?array $offers = null;
 
     public function __construct(private readonly SellerPolicies $sellers, private readonly NativeCatalogue $native,
@@ -46,8 +46,8 @@ final class StorefrontCatalogueRead
             // Each account can have hundreds of endings; share its acceptance within this display snapshot.
             $accepted = $this->acceptances[$binding->serverId.':'.$binding->fingerprint] ??= CatalogueAcceptances::load($binding);
             $rules = new PricingRules; $serverId = $policy->server_id;
-            $rule = $tld->use_default_rule ? ($this->defaultRules[$serverId] ??= $rules->defaultRule($serverId))
-                : $rules->rule($tld, fee: $tld->pricing_mode === 'markup_fee_percent' ? ($this->fees[$serverId] ??= CardFee::read($serverId)) : null);
+            $rule = $tld->use_default_rule ? ($this->defaultRule ??= $rules->defaultRule())
+                : $rules->rule($tld, fee: $tld->pricing_mode === 'markup_fee_percent' ? ($this->fee ??= CardFee::read()) : null);
             $ruleHash = hash('sha256', json_encode($rule, JSON_THROW_ON_ERROR));
             $prices = ($this->priceRows[$serverId.':'.$ending] ?? collect())->where('account_fingerprint', $binding->fingerprint)
                 ->keyBy(static fn (Price $p) => $p->action.':'.$p->term);

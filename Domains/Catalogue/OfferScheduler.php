@@ -21,7 +21,7 @@ final class OfferScheduler
     public function wake(AccountBinding $b): void { $this->offers->wake($b); }
     public function requestFacts(AccountBinding $b, string $tld): void { $this->offers->requestFacts($b, $tld); }
     public function status(AccountBinding $b, ?string $tld = null): array { return $this->offers->status($b, $tld); }
-    public function resume(int $id, string $reason, ?StaffOperationReview $review = null): void
+    public function resume(int $id, string $reason, StaffOperationReview|\Paymenter\Extensions\Servers\Domains\Services\StaffSyncReview|null $review = null): void
     { $this->holdings->resume($id, $reason, $review, $this->current); }
     public function tick(int $accounts = 8): array
     {

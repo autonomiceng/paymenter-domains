@@ -51,7 +51,7 @@ final class HoldingObservationWork
     }
     public function __construct(private readonly DomainObservation $observer, private readonly Clock $clock) {}
     /** Shared reviewed recovery; the selected scheduler supplies its captured generation guard. */
-    public function resume(int $id, string $reason, ?StaffOperationReview $review, \Closure $current): void
+    public function resume(int $id, string $reason, StaffOperationReview|\Paymenter\Extensions\Servers\Domains\Services\StaffSyncReview|null $review, \Closure $current): void
     {
         OperationClaims::outside(); if (!preg_match('/^[a-z][a-z0-9_]{4,63}$/D',$reason)) { throw new \InvalidArgumentException('Safe reason required.'); }
         $seed=Domain::findOrFail(DB::table('domains_observation_work')->where('id',$id)->value('domain_id'));

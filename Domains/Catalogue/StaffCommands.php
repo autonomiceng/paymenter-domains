@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CardFee,Catal
 /** Dormant translator. Writer owns the reviewed transaction; wake only enqueues bounded local work. */
 final class StaffCommands
 {
-    public const ACTIONS=['acceptance','override','remove_override','default_rule','card_fee','tld_settings','seller','publish','import'];
+    public const ACTIONS=['acceptance','override','remove_override','default_pricing','tld_settings','seller','publish','import'];
     public function __construct(private readonly Writer $writer,private readonly AccountBindings $bindings,
         private readonly \Closure $wake,private readonly ?\Closure $sync=null) {}
 
@@ -20,16 +20,16 @@ final class StaffCommands
     {
         $ending=$tld?Tld::whereKey($tld)->where('server_id',$server)->value('tld'):null;
         $raw=static fn($q)=>(DB::transactionLevel()>0?$q->lockForUpdate():$q)->get()->map(static fn($r)=>(array)$r)->all();
-        $names=Tld::where('server_id',$server)->when($tld,fn($q)=>$q->whereKey($tld))->pluck('tld');
+        $names=Tld::when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server))->when($tld,fn($q)=>$q->whereKey($tld))->pluck('tld');
         $ids=Server::where('extension','Domains')->orderBy('id')->pluck('id');
         return 'offer:'.hash('sha256',OfferState::json([UpgradeGate::generation(),
             $raw(DB::table((new Server)->getTable())->whereIn('id',$ids)->orderBy('id')),
             $raw(DB::table('domains_accounts')->whereIn('server_id',$ids)->orderBy('server_id')),
             $raw(DB::table('settings')->where('settingable_type',(new Server)->getMorphClass())->whereIn('settingable_id',$ids)
                 ->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',Review::KEY).'%'])->orderBy('id')),
-            $raw(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->where('server_id',$server))->orderBy('id')),
-            $raw(DB::table('domains_prices')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->where('server_id',$server))->orderBy('id')),
-            $raw(DB::table('domains_sales_policies')->whereIn('tld',$names)->orderBy('tld')),$server,$tld]));
+            $raw(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
+            $raw(DB::table('domains_prices')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),
+            $raw(DB::table('domains_sales_policies')->whereIn('tld',$names)->orderBy('tld')),\Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::stamp(DB::transactionLevel()>0),$server,$tld]));
     }
     public function publish(int $id,?Review $review=null): void
     {
@@ -43,35 +43,35 @@ final class StaffCommands
     {
         if(!in_array($review->action,self::ACTIONS,true)){throw new \DomainException('Unsupported catalogue action.');}
         if(DB::transactionLevel()!==0){throw new \LogicException('Staff commands require the outer writer.');}
+        if($review->action==='default_pricing'){
+            $fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);
+            $review->input($data);return $this->writer->defaultPricing($review,$this->rule($data,$fee),$fee);
+        }
         $account=Account::where('server_id',$review->serverId)->sole();$binding=CatalogueAcceptances::binding($account);
         $query=Tld::where('server_id',$review->serverId)->where('catalogue_converted',true);
         if($review->tldId!==null){$query->whereKey($review->tldId);}
         $sell=$data['sell']??[];$names=array_unique(array_keys(($sell['choices']??[])+($sell['terms']??[])));
         if(count($names)>25){throw new \DomainException('Review at most 25 TLDs at once.');}
-        $defaults=in_array($review->action,['default_rule','card_fee'],true)||($review->action==='acceptance'&&isset($sell['rule']));
+        $defaults=$review->action==='acceptance'&&isset($sell['rule']);
         $rows=(clone $query)->when($names!==[],fn($q)=>$q->whereIn('tld',$names))->orderBy('id')->limit($names===[]?1:25)->get();
         if($rows->isEmpty()){throw new \DomainException('Converted TLD required.');}
         $d=OfferState::decode($account->catalogue_defaults);$entries=[];$failed=[];
         foreach($names as $name){if(!$rows->contains('tld',$name)){$failed[$name]='Converted TLD required.';}}
         if($defaults){
-            $fee=$d['card_fee']??CardFee::DEFAULT;$intent=$this->intent($d);$rule=$d['pricing_rule']??PricingRule::DEFAULT;
-            if(isset($sell['rule'])){
-                $v=\Paymenter\Extensions\Servers\Domains\Services\SellRule::validate($sell['rule']);
-                $intent=new Intent($v['mode']!=='only',$v['years'],$v['transfers'],$v['max_cost']);
-            }elseif($review->action==='default_rule'){$rule=$this->rule($data,$d,$review->serverId);}
-            else{$fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);if($rule['mode']==='markup_fee_percent'){$rule['card_fee']=$fee;}}
-            // Keep fee evidence in the defaults revision even when the current rule doesn't use it.
-            $command=Edit::defaults($binding,$rows->first()->tld,$intent,$rule,$fee);
+            $intent=$this->intent($d);
+            $v=\Paymenter\Extensions\Servers\Domains\Services\SellRule::validate($sell['rule']);
+            $intent=new Intent($v['mode']!=='only',$v['years'],$v['transfers'],$v['max_cost']);
+            $command=Edit::defaults($binding,$rows->first()->tld,$intent);
             $entries[]=[$command,$this->revision($rows->first(),$d)];
         }
         if(!$defaults||$names!==[]){foreach($rows as $t){
             if($defaults&&!in_array($t->tld,$names,true)){continue;}
             try{
-                $raw=OfferState::decode($t->catalogue_intent);$intent=$this->intent($raw);$rule=$raw['pricing_rule']??null;
+                $raw=OfferState::decode($t->catalogue_intent);$intent=$this->intent($raw);$rule=Pricing::own($t);
                 $command=match($review->action){
                     'publish'=>Edit::republish($binding,$t->tld),
                     'import'=>Edit::requestSync($binding,$t->tld),
-                    'override','remove_override'=>Edit::override($binding,$t->tld,$intent,$review->action==='override'?$this->rule($data,$d,$review->serverId):null),
+                    'override','remove_override'=>Edit::override($binding,$t->tld,$intent,$review->action==='override'?$this->rule($data,CardFee::read()):null),
                     'seller'=>$this->seller($t,$data),
                     'acceptance'=>$this->row($binding,$t,$raw,$sell,$rule),
                     'tld_settings'=>isset($data['retained_annual_retail'])?Edit::retainRenewal($binding,$t->tld,$data['retained_annual_retail']):$this->settings($binding,$t,$raw,$data,$rule),
@@ -94,10 +94,10 @@ final class StaffCommands
     {return OfferState::revision($t,$d,DB::table('domains_sales_policies')->where('tld',$t->tld)->first());}
     private function intent(array $raw): Intent
     {return new Intent(...array_intersect_key($raw,get_object_vars(new Intent)));}
-    private function rule(array $data,array $defaults,int $server): array
+    private function rule(array $data,array $fee): array
     {return PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
         'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null],
-        ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>$defaults['card_fee']??CardFee::DEFAULT]:[])]);}
+        ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>$fee]:[])]);}
     private function row($binding,Tld $t,array $raw,array $sell,?array $rule): Edit
     {
         $name=$t->tld;$choice=$sell['choices'][$name]??null;

@@ -184,6 +184,7 @@ foreach(['+1 day','+8 days'] as $delay){
 $changed=clone $r;$changed->policy=[...$changed->policy,'reconciliation'=>[...$changed->policy['reconciliation'],'reason'=>'transfer_authority_changed']];
 same([['rejected','transfer_status_unavailable',null,true],['rejected','transfer_deadline_passed','done',true],false],
     [...$answerChecks,\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::eligible($changed,$clock->now())],'A failed read, including the final check, keeps the rejected-transfer answer available; changed authority does not');
+\Illuminate\Support\Facades\Auth::setUser($staff->fresh());same(\Paymenter\Extensions\Servers\Domains\Services\EnomAnswers::eligible($changed,$clock->now()),\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($changed,'stamp')->isVisible(),'Enter Enom\'s answer shows only on a request that can\'t settle itself');
 $observe->fault='reject';
 $writes=$state->calls;$attempt=$r->attempt;$beforeCredit=\App\Models\Credit::where('user_id',$user->id)->sum('amount');
 $clock->instant=$now->modify('+8 days');same(null,$refunds->creditRejected($r->id),'Elapsed time never settles a sent rejection');

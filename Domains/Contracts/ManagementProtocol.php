@@ -2,12 +2,26 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Contracts;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, ManagementRequest, ManagementResult, RequestContext};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, ManagementRequest, ManagementResult, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, OperationClaims, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Named capability port. No default exchange, public command execution, purchase or retry path. */
 abstract class ManagementProtocol
 {
     private readonly \SensitiveParameterValue $exchange;
+    private ?WriteReservation $reservation=null;
+    final public function useReservation(WriteReservation $reservation): void
+    {if($this->reservation||$this->binding->registrarKey!=='namesilo'||!$reservation->bindsTo($this->binding)){throw new \LogicException('Reservation binding unavailable.');}$this->reservation=$reservation;}
+    final public function withinReservation(Operation $op,\Closure $work): mixed
+    {
+        if(!$this->reservation){return $work();}
+        if(!isset($op->policy['management'])||$op->registrar_key!=='namesilo'||$op->server_id!==$this->binding->serverId||$op->account_fingerprint!==$this->binding->fingerprint){throw new WriteHeld('write_acceptance_required');}
+        $entered=false;
+        try{return $this->reservation->run('management',(int)$op->id,function()use(&$entered,$work){$entered=true;return $work();});}
+        catch(\Throwable $e){if($entered){throw $e;}throw new WriteHeld('write_acceptance_required');}
+    }
+    final public function unconsumed(int $id): bool {return $this->reservation?->unconsumed($id)??false;}
+
     private ?ManagementRequest $active = null;
     private ?RequestContext $context = null;
     private ?DomainManagement $engine = null;
@@ -56,8 +70,12 @@ abstract class ManagementProtocol
         if ($this->active !== $r || $this->context !== $c || $this->sent || !$this->engine || $command!==$this->requestCommand($r)) { throw new \DomainException('No live management grant.'); }
         try{$c->claimRead($this->binding);return $c->withReservedWire(function()use($r,$c,$command,$parameters):string {
             \Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::reserve($r->binding,'management');
+            if($this->reservation){
+                if($c->origin!==RequestOrigin::Background){throw new WriteHeld('write_acceptance_required');}
+                $this->reservation->reserve($command,$parameters);
+            }
             $this->engine->consume($r,$c,$this);return $c->withinClaimedWire($this->binding,function(int $remaining)use($r,$c,$command,$parameters):string{$this->sent=true;return $this->exchange($r,$c,$command,$parameters,$remaining);});
-        });}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $e){if(!$this->sent){throw new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('write_rate_limited');}throw $e;}
+        });}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $e){if(!$this->sent){throw new WriteHeld('write_rate_limited');}throw $e;}
     }
     final protected function acknowledge(ManagementRequest $r, RequestContext $c, array $facts): void
     {

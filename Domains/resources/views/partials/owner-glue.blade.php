@@ -1,6 +1,6 @@
 {{-- Enom 444f31c child-host layout and copy; MIT, Copyright (c) 2026 Autonomic Engineering. --}}
 @php $retry = $section['retry'] ?? null; @endphp
-@if ($section['asOf'] ?? null)<p class="domains-muted">As of {{ $section['asOf'] }}</p>@endif
+@if ($section['asOf'] ?? null)<p class="domains-muted">As of @include('domains::partials.moment', ['at' => $section['asOf']])</p>@endif
 @foreach ($section['warnings'] ?? [] as $warning)<p class="domains-tone-warn">{{ $warning }}</p>@endforeach
 <p>Register your own nameservers, like ns1.example.com, with their IP addresses.</p>
 @foreach ([...($section['records'] ?? []), ['host'=>'','ip'=>'']] as $index=>$host)

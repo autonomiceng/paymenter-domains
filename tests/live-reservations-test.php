@@ -60,7 +60,7 @@ try {
     throw new LogicException('Background work spent checkout headroom');
 }catch(LiveReservationLimit){}
 $calls->reserve($other);same(3,$calls->usage($other)['used'],'Nested headroom scopes restore after refusal');
-$policy->allowed=false;$refuses(fn()=>$calls->reserve($other));$policy->allowed=true;
+$policy->allowed=false;$refuses(fn()=>$calls->reserve($other));$refuses(fn()=>$calls->usage($other));$policy->allowed=true;
 foreach([['daily_call_cap'=>'4'],['daily_spend_limit_usd'=>'1e2'],['daily_spend_limit_usd'=>'-1.00']] as $bad){
     $saved=$policy->settings;$policy->settings=[...$saved,...$bad];$refuses(fn()=>$calls->reserve($other));$policy->settings=$saved;
 }

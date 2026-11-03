@@ -51,10 +51,13 @@ $store=static function(array $credentials,array $facts)use($save,$binding):void 
 };
 $store($credentials,$facts);
 config(['domains.namesilo_live.accounts'=>[$identity=>['fingerprint'=>$binding->fingerprint,'currency'=>'USD','balance_funding'=>true,'daily_call_cap'=>100,'daily_spend_limit_usd'=>'20.00']]]);
-CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
+CatalogueAcceptances::save($binding,0,[
+    'com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true],
+    'net'=>['register'=>[],'renew'=>[],'transfer'=>[],'registry'=>true,'renewal_safe'=>true],
+]);
 // Keep synthetic money as decimal strings, including while constructing the fake wire envelope.
 $GLOBALS['runtimeWire']=['calls'=>[],'options'=>[],'fail'=>false,'fixtures'=>[
-    'getPrices'=>['reply'=>['code'=>300,'detail'=>'success','com'=>['registration'=>'12.34','transfer'=>'12.35','renew'=>'12.36']]],
+    'getPrices'=>['reply'=>['code'=>300,'detail'=>'success','com'=>['registration'=>'12.34','transfer'=>'12.35','renew'=>'12.36'],'net'=>['registration'=>'13.34','transfer'=>'13.35','renew'=>'13.36']]],
     'getAccountBalance'=>['reply'=>['code'=>300,'detail'=>'success','balance'=>'123.45']],
     'checkRegisterAvailability'=>['reply'=>['code'=>300,'detail'=>'success','available'=>[['domain'=>'example.com','price'=>'12.34','premium'=>0,'duration'=>1]]]],
     'getDomainInfo'=>['reply'=>['code'=>300,'detail'=>'success','created'=>'2026-01-01','expires'=>'2027-01-01','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',
@@ -88,6 +91,12 @@ same('example.com',$domain?->name,'Daily reader retains exact holding');same(tru
 same('/apibatch/getDomainInfo',$GLOBALS['runtimeWire']['calls'][1][0],'Daily reads use apibatch');
 same('12.34',$reader->quote(new Query('example.com',Action::Register,1),$context())->evidence()->quote?->cost->amount,'Accepted annual account prices remain exact');
 same(['used'=>3,'spend_micros'=>0],$usage(),'Each physical read counted once, no spend');
+// A provider price cannot borrow annual acceptance from a different ending.
+$before=count($GLOBALS['runtimeWire']['calls']);$beforeUsage=$usage();
+$refused=$reader->quote(new Query('example.net',Action::Register,1),$context());
+same(['rejected','definitely_unsent',null,0],[$refused->disposition->value,$refused->sendState->value,$refused->evidence()->quote?->cost->amount,count($GLOBALS['runtimeWire']['calls'])-$before],
+    'Unaccepted ending must refuse its quote without a wire call');
+same($beforeUsage,$usage(),'An unaccepted ending consumes no durable call');
 $before=count($GLOBALS['runtimeWire']['calls']);
 $reader->quote(new Query('example.com',Action::Register,2),$context());
 same($before,count($GLOBALS['runtimeWire']['calls']),'No invented multi-year reads');

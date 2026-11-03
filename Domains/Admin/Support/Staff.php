@@ -25,6 +25,7 @@ final class Staff
             $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview::permission($action)]=$label.($action==='resume_reads'?' after read limit':'');
         }
         foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ACTIONS as $action=>$label){
+            if(isset(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::NEEDS[$action])){continue;}
             $permissions[\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission($action)]=$label;
         }
         foreach(\Paymenter\Extensions\Servers\Domains\Services\StaffHoldingReview::ACTIONS as $action=>$label){

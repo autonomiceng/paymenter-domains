@@ -61,7 +61,7 @@ final class ObservationWork
         return $summary;
     }
     /** Internal audited read-only resume through the selected holding worker. */
-    public function resume(int $id, string $reason, ?StaffOperationReview $review = null): void
+    public function resume(int $id, string $reason, StaffOperationReview|StaffSyncReview|null $review = null): void
     {
         if (($scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed())!==null) {
             $scheduler->resume($id,$reason,$review); return;
