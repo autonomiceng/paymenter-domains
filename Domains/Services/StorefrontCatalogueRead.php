@@ -26,6 +26,7 @@ final class StorefrontCatalogueRead
     private function prepare(string $ending): void
     {
         if ($this->catalogues !== null) { return; }
+        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         $this->catalogues = $this->sellers->displayCatalogues($this->wanted ?? [$ending]);
         $tlds = array_column($this->catalogues, 2);
         $this->products = $this->native->displayBatch($tlds);

@@ -32,6 +32,16 @@ $ports->apply(Edit::seller($binding,'com',['register']),$revision());
 expect($storefront->endings()!==[],'Committed evidence invalidates the cached empty display');
 $public=$storefront->offer('com','register',3);
 same(['$23.40','$10.40'],[$public['price'],$public['renew']],'Installed public route uses the shared evidenced term and annual retail');
+// The pricing notice resolves this reader directly, without the storefront's routed adapter.
+$legacyPriceReads=0;$checkingLegacyReader=true;$legacyReaderRefused=false;
+DB::listen(static function($query)use(&$legacyPriceReads,&$checkingLegacyReader):void {
+    if($checkingLegacyReader&&str_contains($query->sql,'"domains_prices"')){$legacyPriceReads++;}
+});
+try{app(Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueRead::class)->offer('com','register',1);}
+catch(DomainException){$legacyReaderRefused=true;}
+finally{$checkingLegacyReader=false;}
+same(0,$legacyPriceReads,'Direct pricing-notice reader refuses before legacy price reads after cutover');
+same(true,$legacyReaderRefused,'Direct legacy reader cannot return an offer after cutover');
 same($public['selection']->catalogue,$sellers->selection('com','register',3,$now)->catalogue,'Direct seller selection uses the same fenced catalogue');
 $page=StaffCatalogue::routed()->page(collect([$tlds[0]->fresh()]));expect($page!==[],'Installed staff table reads the shared offer');
 $locked=DB::transaction(fn()=>$sellers->admit([$public['selection']],$now));same('23.40',$locked[0]->retail,'Installed locked admission uses current shared price');
