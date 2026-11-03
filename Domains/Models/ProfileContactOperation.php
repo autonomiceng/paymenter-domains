@@ -28,7 +28,12 @@ final class ProfileContactOperation extends Model
             if(($before['seal']??null)==='sealed'&&($after['seal']??null)!=='sealed'){throw new \DomainException('Profile seal is retained.');}
             $allowed=['ready'=>['ready','sealed'],'sealed'=>['sealed','created','unsent','uncertain'],'created'=>['created','verified'],
                 'verified'=>['verified'],'unsent'=>['unsent'],'uncertain'=>['uncertain']];
-            if(!in_array($row->state,$allowed[$row->getOriginal('state')]??[],true)){throw new \DomainException('Profile attempt cannot replay.');}
+            // A matching dispatched worker may retain a late receipt; this never restores send authority.
+            $late=$row->getOriginal('state')==='uncertain'&&$row->state==='created'
+                &&($before['seal']??null)==='sealed'&&isset($before['worker_key'],$before['dispatch_at'])
+                &&!isset($before['provider_id'])&&preg_match('/^[1-9][0-9]{0,19}$/D',$after['provider_id']??'')
+                &&isset($after['received_at']);
+            if(!$late&&!in_array($row->state,$allowed[$row->getOriginal('state')]??[],true)){throw new \DomainException('Profile attempt cannot replay.');}
             if(isset($before['observed_at'])&&(!isset($after['observed_at'])||new \DateTimeImmutable($after['observed_at'])<new \DateTimeImmutable($before['observed_at']))){throw new \DomainException('Profile observation cannot go backwards.');}
         });
         static::deleting(static function():never {throw new \DomainException('Profile operations are retained.');});

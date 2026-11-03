@@ -68,20 +68,23 @@ final class ProfileContactOperations
                 $this->update($r,['state'=>'sealed','attempt'=>[...$r->attempt,'seal'=>'sealed','send_state'=>'possibly_sent',
                     'worker_key'=>$worker,'lease_until'=>min($ctx->deadline,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+30 seconds'))->format(DATE_ATOM)]]);
             });
-            $body=$ctx->withinClaimedWire($this->binding,function(int $remaining)use($row,$op,$worker,$parameters):string {
-                $this->authority($op,function(int $owner)use($row,$op,$worker):void {
+            $dispatchAt=null;
+            $body=$ctx->withinClaimedWire($this->binding,function(int $remaining)use($row,$op,$worker,$parameters,&$dispatchAt):string {
+                $dispatchAt=$this->authority($op,function(int $owner)use($row,$op,$worker):string {
                     $r=ProfileOperation::whereKey($row->id)->lockForUpdate()->firstOrFail();$this->matches($r,$op,$owner);
                     if($r->state!=='sealed'||($r->attempt['worker_key']??null)!==$worker||isset($r->attempt['dispatch_at'])
                         ||new \DateTimeImmutable($r->attempt['lease_until'])<=$this->clock->now()){throw new \DomainException('Profile send authority expired.');}
-                    $this->update($r,['attempt'=>[...$r->attempt,'dispatch_at'=>$this->clock->now()->format(DATE_ATOM)]]);
+                    $at=$this->clock->now()->format(DATE_ATOM);
+                    $this->update($r,['attempt'=>[...$r->attempt,'dispatch_at'=>$at]]);return $at;
                 });
                 return $this->exchange('contactAdd',$parameters,$remaining);
             });
             $id=self::reply($body,'contactAdd')['contact_id']??null;if(is_int($id)){$id=(string)$id;}
             if(!is_string($id)||!preg_match('/^[1-9][0-9]{0,19}$/D',$id)){throw new \DomainException('Profile creation unresolved.');}
             // Retain returned identity before any readback or parent-authority check can fail.
-            $this->change($row,function($r)use($id,$worker):array {
-                if($r->state!=='sealed'||($r->attempt['worker_key']??null)!==$worker){throw new \DomainException('Profile response authority changed.');}
+            $this->change($row,function($r)use($id,$worker,$dispatchAt):array {
+                if(!in_array($r->state,['sealed','uncertain'],true)||($r->attempt['worker_key']??null)!==$worker
+                    ||$dispatchAt===null||($r->attempt['dispatch_at']??null)!==$dispatchAt){throw new \DomainException('Profile response authority changed.');}
                 return ['state'=>'created','attempt'=>[...$r->attempt,'provider_id'=>$id,'received_at'=>$this->clock->now()->format(DATE_ATOM)]];
             });
         });

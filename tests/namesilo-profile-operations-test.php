@@ -24,8 +24,8 @@ $grants=new class($binding) implements WriteReservation {
     }
     public function unconsumed(int $id):bool{return $this->active===$id&&$this->reserved&&!$this->consumed;}
 };
-$mode='ok';$writes=0;$reads=0;$nativeExchange=$exchange;
-$profileExchange=static function($origin,$command,$parameters,$timeout)use(&$mode,&$writes,&$reads,$grants,$nativeExchange):string {
+$mode='ok';$writes=0;$reads=0;$nativeExchange=$exchange;$afterReply=null;
+$profileExchange=static function($origin,$command,$parameters,$timeout)use(&$mode,&$writes,&$reads,$grants,$nativeExchange,&$afterReply):string {
     same(0,DB::transactionLevel(),'No profile wire work under locks');
     if($command==='contactAdd'){
         $row=ProfileContactOperation::findOrFail($grants->active);
@@ -34,7 +34,9 @@ $profileExchange=static function($origin,$command,$parameters,$timeout)use(&$mod
         $grants->consumed=true;$writes++;
         if($mode==='lost'){throw new RuntimeException('Synthetic lost contact creation response');}
     }else{$reads++;if($mode==='readfail'){throw new RuntimeException('Synthetic readback loss');}}
-    return $nativeExchange($origin,$command,$parameters,$timeout);
+    $body=$nativeExchange($origin,$command,$parameters,$timeout);
+    if($command==='contactAdd'&&$afterReply){$work=$afterReply;$afterReply=null;$work($body);}
+    return $body;
 };
 $makeProfiles=static function()use($binding,$claims,$clock,$grants,$profileExchange):RegistrationProfiles {
     $ops=new ProfileContactOperations($binding,$claims,$clock,$grants,$profileExchange);
@@ -76,6 +78,26 @@ foreach(['ok','unsent','lost','readfail','cap'] as $case){
         same($case==='lost'?'unknown':'definitely_unsent',$row->attempt['execution'],'No response is not local unsent proof');
     }
 }
+// A valid reply is available to worker A; B expires its seal before A saves the ID.
+$op=$claim('profile-late-reply-placeholder.com');$mode='ok';$before=$writes;$money=$nativeMoney();
+$afterReply=static function(string $body)use($op,$clock,$grants,$binding,$claims,$profileExchange,$context,$refuse):void {
+    $reply=json_decode($body,true,24,JSON_THROW_ON_ERROR);
+    same(300,(int)$reply['reply']['code'],'Original worker already has a valid creation reply');
+    expect(isset($reply['reply']['contact_id']),'Returned identity exists before competing worker runs');
+    $clock->instant=$clock->now()->modify('+31 seconds');
+    $other=clone $grants;$other->active=null;$other->reserved=false;$other->consumed=false;
+    $workerB=new ProfileContactOperations($binding,$claims,$clock,$other,$profileExchange);
+    $refuse(fn()=>$workerB->prepare($op,$context()));
+    same('uncertain',ProfileContactOperation::where('operation_id',$op->id)->sole()->state,'Worker B expires the dispatched seal without replay');
+};
+$prepared=true;try{$makeProfiles()->prepare($op,$context());}catch(WriteHeld){$prepared=false;}
+$row=ProfileContactOperation::where('operation_id',$op->id)->sole();
+expect(isset($row->attempt['provider_id'],$row->attempt['received_at']),'Late matching reply must retain its ID and receipt after seal expiry');
+expect($prepared,'Current parent and exact readback can verify the retained late ID');
+same(['verified','sealed','unknown'],[$row->state,$row->attempt['seal'],$row->attempt['execution']],'Late receipt retains original seal and uncertain classification evidence');
+same($before+1,$writes,'Two workers create only one contact');same($money,$nativeMoney(),'Late receipt preserves native money');
+$makeProfiles()->prepare($op,$context());same($before+1,$writes,'Reconstruction never replays late acknowledged creation');
+$clock->instant=$clock->now()->modify('-31 seconds');
 // Simulate a worker ending after committing its seal, before retaining any response identity.
 $op=$claim('profile-sealed-placeholder.com');$grants->cap=true;$refuse(fn()=>$makeProfiles()->prepare($op,$context()));$grants->cap=false;
 $row=ProfileContactOperation::where('operation_id',$op->id)->sole();
