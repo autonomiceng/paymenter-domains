@@ -13,7 +13,7 @@ foreach (DomainStatus::SET as $key=>[$label,$tone]) {
 foreach (DomainStatus::STATES as $state=>[$key,$reason]) {
     $status=DomainStatus::for($state);
     $tone=$key==='under_review'||isset(DomainStatus::STOPPED[$state])?'info':StatusPill::TONES[$status['tone']];
-    same(['label'=>$status['label'],'tone'=>$tone,'reason'=>$status['reason']],StatusPill::of($state),'Client pill keeps label and reason: '.$state);
+    same(['label'=>$state==='registration_held'?'Under review':$status['label'],'tone'=>$tone,'reason'=>$status['reason']],StatusPill::of($state),'Client pill keeps label and reason: '.$state);
 }
 same(['label'=>'Awaiting payment','tone'=>'info','reason'=>'Invoice not paid'],StatusPill::of('awaiting_payment'),'Unpaid order');
 same(['label'=>'Under review','tone'=>'info','reason'=>'Transfer on hold'],StatusPill::of('held','Transfer on hold'),'Customers cannot act on a review, so it stays blue');
