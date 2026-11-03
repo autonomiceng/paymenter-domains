@@ -140,15 +140,15 @@ final class AccountChecklist
     }
     private static function prices(Account $a): array
     {
+        if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
+            $status=$offers->progress((int)$a->server_id);
+            return [...self::row('TLD prices',ucfirst($status['state']),null,null,null,self::PRICES),'buttons'=>self::priceButtons($a)];
+        }
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
             $at=$failure['at']===null?'':' · '.$failure['at'];
             $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Fix the connection or our call limit, then use Sync prices. Daily retries continue.',null,self::PRICES);
             return [...$row,'buttons'=>self::priceButtons($a)];
-        }
-        if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
-            $status=$offers->progress((int)$a->server_id);
-            return [...self::row('TLD prices',ucfirst($status['state']),null,null,null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $synced=Price::where('server_id',$a->server_id)->max('observed_at');
         return [...self::row('TLD prices',$synced?'Synced '.gmdate('M j, Y H:i \U\T\C',strtotime((string)$synced.' UTC')):null,null,$synced?null:'Not synced yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];

@@ -16,6 +16,12 @@ final class OfferReadiness
     public function stamp(Account $a): string { return StaffCommands::stamp((int)$a->server_id); }
     public function review(Account $a,array $features,bool $lock=false): array
     {
+        if($lock){
+            if(\Illuminate\Support\Facades\DB::transactionLevel()===0){throw new \LogicException('Readiness locks require a transaction.');}
+            \App\Models\Server::whereKey($a->server_id)->lockForUpdate()->firstOrFail();
+            $current=Account::where('server_id',$a->server_id)->lockForUpdate()->sole();
+            CatalogueAcceptances::binding($a)->requireMatch(CatalogueAcceptances::binding($current));$a=$current;
+        }
         $b=CatalogueAcceptances::binding($a);$costs=$failures=[];$counts=['registration'=>0,'transfer'=>0];
         $defaults=OfferState::decode($a->catalogue_defaults);
         Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
@@ -24,6 +30,7 @@ final class OfferReadiness
                 foreach(['register','renew','transfer'] as $action){foreach($action==='register'?range(1,10):[1] as $term){$queries[]=new Query($b,$names,$action,$term);}}
                 $loaded=$lock?$this->reader->loadBatch($queries,Context::Staff,true):null;
                 $display=$lock?null:$this->reader->displayBatch([new Query($b,$names,'register')],Context::Staff)[0];
+                if($lock){$tlds=Tld::whereKey($tlds->pluck('id'))->orderBy('id')->lockForUpdate()->get();}
                 foreach($tlds as $i=>$t){
                     $rows=[];
                     foreach($queries as $j=>$q){$rows[$q->action.':'.$q->term]=$lock?$loaded[$j][$i]:($display[$t->tld][$q->action.':'.$q->term]??null);}
