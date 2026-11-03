@@ -37,14 +37,14 @@ final class AccountChecklist
     private static function siteOff(Account $a): string
     { return ($a->environment==='live'?'Live sales are not set up on this site yet.':'This site does not offer this yet.').' Your site admin can turn it on.'; }
     /** @return list<array> */
-    public static function setup(Account $a,array $status): array
+    public static function setup(Account $a,array $status,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers=null): array
     {
         $check='Checks this site can log in to the registrar with the saved API details.';
         $connection=match($status['label']){AccountStatus::SET['connection_failed'][0]=>self::row('API connection','Connection failed','danger',$status['reason'],'probe',$check),
             AccountStatus::SET['not_connected'][0]=>self::row('API connection','Not connected','gray',$status['reason'],'configure',$check),
             default=>self::row('API connection','Connected','success',null,'probe',$check)};
         try { $binding=CatalogueAcceptances::binding($a); } catch (\Throwable) { $binding=null; }
-        $rows=[$connection,self::tlds($a,$binding),self::prices($a),self::orders($a)];
+        $rows=[$connection,self::tlds($a,$binding,$offers),self::prices($a),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
         $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',$a->registrar_key!=='enom'=>self::NAMESILO,default=>self::siteOff($a)};
         $rows[]=$gates['register']===true?self::row('Registrations','On','success',null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
