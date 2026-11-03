@@ -39,6 +39,11 @@ final class Management extends ManagementProtocol
         if (in_array($action, ['contacts','contact_profile'], true)) { $this->contactsAllowed($name, $domainId); }
         if ($action === 'contacts') { $payload['profile_operation'] = ManagementProfiles::select($this->binding, $name, $payload, $key, $domainId); } return $payload;
     }
+    public function prerequisite(string $action, #[\SensitiveParameter] array $payload): ?array
+    {
+        return $action === 'contacts' ? ['key'=>$payload['profile_operation'], 'action'=>'contact_profile',
+            'input'=>array_diff_key($payload, ['profile_operation'=>true])] : null;
+    }
     private function contactsAllowed(string $name, ?int $domainId): void
     {
         $d = Domain::whereKey($domainId)->where('account_fingerprint', $this->binding->fingerprint)->where('domain', $name)->sole();

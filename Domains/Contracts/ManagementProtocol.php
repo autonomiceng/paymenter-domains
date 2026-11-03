@@ -41,6 +41,8 @@ abstract class ManagementProtocol
     abstract public function capabilities(): Capabilities;
     abstract public function validate(string $action, #[\SensitiveParameter] array $payload, string $name): array;
     public function freeze(string $key, string $name, string $action, #[\SensitiveParameter] array $payload, int $domainId): array { return $payload; }
+    /** Optional frozen prerequisite. Each step remains an ordinary one-write management operation. */
+    public function prerequisite(string $action, #[\SensitiveParameter] array $payload): ?array { return null; }
     abstract public function prepare(ManagementRequest $request, RequestContext $context): array;
     abstract public function observe(ManagementRequest $request, RequestContext $context): ManagementResult;
     abstract protected function apply(ManagementRequest $request, RequestContext $context): ManagementResult;

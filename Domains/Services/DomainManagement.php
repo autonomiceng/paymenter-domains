@@ -78,11 +78,11 @@ final class DomainManagement
             }
             // The domain lock serializes both actors and also cleans up legacy duplicate queued choices.
             $pending=$l['operations']->sortByDesc('id')->filter(fn($peer)=>in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)
-                && isset($peer->policy['management']) && ManagementProgress::setting($peer->action)===ManagementProgress::setting($action)
+                && isset($peer->policy['management']) && !isset($peer->policy['management']['sequence_parent']) && ManagementProgress::setting($peer->action)===ManagementProgress::setting($action)
                 && $peer->authority_generation===$d->authority_generation && $peer->account_fingerprint===$d->account_fingerprint
                 && ManagementProgress::pending($peer,$d));
             // A claimed/sealed write owns the setting, even if an older release queued a newer unsent choice.
-            $unsent=fn($peer)=>ManagementEvidence::idle($peer) && !$peer->invoice_id && ($peer->attempt['seal']??'absent')==='absent';
+            $unsent=fn($peer)=>!ManagementSequence::started($peer,$l['operations']) && ManagementEvidence::idle($peer) && !$peer->invoice_id && ($peer->attempt['seal']??'absent')==='absent';
             $keep=$pending->first(fn($peer)=>!$unsent($peer))
                 ?? $pending->first(fn($peer)=>$peer->action===$action && ($peer->policy['management']['input']??null)===$clean);
             foreach ($pending as $peer) {
@@ -104,7 +104,7 @@ final class DomainManagement
                 'operation_key' => $key, 'action' => $action, 'term' => 1, 'currency' => 'USD', 'amount' => '0.00',
                 'funding_basis' => 'non_billable_management', 'state' => 'queued', 'payload' => $clean, 'policy' => $policy];
             if (in_array($action, ['privacy_purchase', 'privacy_renew'], true)) { $data = ManagementPrivacy::invoice($data, $l, $driver, $this->clock); }
-            return Operation::create($data);
+            return ManagementSequence::create($data, $driver->prerequisite($action, $clean));
         });
     }
     /** Local retirement only; paid or financially touched invoices require the refund boundary. */
@@ -114,7 +114,7 @@ final class DomainManagement
         return DB::transaction(function()use($actor,$id,$seed):Operation{
             $l=HoldingLocks::take($seed,(int)$actor->id);$op=$l['operations']->firstWhere('id',$id);
             if((int)$actor->id!==(int)$l['domain']->user_id&&(!$l['staff']||!$l['staff']->hasPermission('admin.domains.manage'))){throw new \DomainException('Management permission required.');}
-            if(!$op||!ManagementEvidence::resolved($op,$l['domain'])||!ManagementEvidence::idle($op)){throw new \DomainException('Management retirement unavailable.');}
+            if(!$op||ManagementSequence::started($op,$l['operations'])||!ManagementEvidence::resolved($op,$l['domain'])||!ManagementEvidence::idle($op)){throw new \DomainException('Management retirement unavailable.');}
             if(isset($op->attempt['management_terminal'])){return $op;}
             if($op->invoice_id){$invoice=$l['invoices']->firstWhere('id',$op->invoice_id);$item=$l['items']->firstWhere('id',$op->invoice_item_id);
                 if(!$invoice||!$item||(int)$item->invoice_id!==(int)$invoice->id||(int)$invoice->user_id!==(int)$l['domain']->user_id||$invoice->currency_code!=='USD'||(string)$item->quantity!=='1'||PricingRule::minor($item->price)!==PricingRule::minor($op->amount)){throw new \DomainException('Privacy line changed.');}ManagementPrivacy::requireLine($op,$l,$invoice,$item);
@@ -128,6 +128,7 @@ final class DomainManagement
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
     {
+        if (!ManagementSequence::prepare($id, $this, $driver, $origin, $this->clock->now())) { return Operation::findOrFail($id); }
         $work=fn()=>$driver->withinReservation(Operation::findOrFail($id),fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
             $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds))));
         try {
@@ -344,7 +345,7 @@ final class DomainManagement
             if (!$op || !isset($op->policy['management']) || $op->authority_generation !== $l['domain']->authority_generation
                 || $op->account_fingerprint !== $l['domain']->account_fingerprint || $op->service_id !== $l['domain']->service_id
                 || $op->registrar_key !== $l['domain']->registrar_key || $op->server_id !== $l['domain']->server_id) { throw new \DomainException('Management binding changed.'); }
-            if ($authorize) { $this->authority($l, (int)$op->authorized_by, $op->action, $driver, $processing, $op->policy['management']['correction'] ?? null);
+            if ($authorize) { ManagementSequence::requireCurrent($l, $op); $this->authority($l, (int)$op->authorized_by, $op->action, $driver, $processing, $op->policy['management']['correction'] ?? null);
                 if (isset($op->policy['management']['correction'])) { ManagementCorrections::require($l, $op->action, $op->policy['management']['input'], $op->policy['management']['correction']); } } return $use($l, $op);
         });
     }
