@@ -33,6 +33,8 @@ abstract class RegistrationTransport
             $operation->binding->requireMatch($result->binding); return $result;
         } catch (EnomTestCallLimit) {
             throw new EnomTestCallLimit;
+        } catch (\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error) {
+            throw new \Paymenter\Extensions\Servers\Domains\Data\SendFailure($error->category,$error->timeoutMs);
         } catch (\Throwable) { throw new \RuntimeException('Registrar registration outcome is unresolved.'); }
         finally { $this->flight = null; }
     }

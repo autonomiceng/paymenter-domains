@@ -105,7 +105,9 @@ final class DomainOperations
             if($balanceRetry&&$this->writer instanceof RegistrationBridge){$this->writer->guardAccount($this->clock,$deadline);}
             if($testPurchase!==null){EnomTestCalls::assertPurchaseCurrent($binding);EnomTestCalls::reservePurchase($binding,$ready->cost);}
             if ($context->budget->remaining() < 1) { throw new \DomainException('No dispatch request budget remains.'); }
-            $dispatchDeadline = min($deadline, $ready->validUntil, $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds'));
+            // Each physical call has its own 25-second cap. Sealing must not spend that call's time.
+            $dispatchDeadline = min($deadline, $ready->validUntil);
+            if ($dispatchDeadline < $this->clock->now()->modify('+'.ExecuteOperation::REQUEST_SECONDS.' seconds')) { throw new WriteHeld('pre_send_interrupted'); }
             $context = new RequestContext($binding, RequestOrigin::Background, $dispatchDeadline, $context->budget, $this->clock, Runtime::limiter());
             return $context->withReservedWire(function()use(&$op,$ready,$context,$binding,&$result,$entry):Operation {
             if($this->writer instanceof RegistrationBridge){$this->writer->reservePurchase($op,$ready);}
@@ -131,17 +133,19 @@ final class DomainOperations
             return $this->claims->defer($op);
         } catch (WriteHeld $held) {
             return $this->interrupted($op,$binding,$result,$held->reason,$held->cost);
+        } catch (\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error) {
+            return $this->interrupted($op,$binding,$result,failure:$error);
         } catch (\Throwable) {
             // Never chain a provider/input exception or expose raw evidence through diagnostic traces.
             return $this->interrupted($op,$binding,$result); // Completion never repeats a send.
         }
     }
-    private function interrupted(Operation $op,AccountBinding $binding,?DriverResult $result,?string $reason=null,?Money $cost=null): Operation
+    private function interrupted(Operation $op,AccountBinding $binding,?DriverResult $result,?string $reason=null,?Money $cost=null,?\Paymenter\Extensions\Servers\Domains\Data\SendFailure $failure=null): Operation
     {
         $unsent=$this->writer instanceof RegistrationBridge&&$this->writer->unconsumed((int)$op->id);
         if($unsent){$result=new DriverResult($binding,Disposition::Rejected,
             SendState::DefinitelyUnsent,ResultReason::Unsent,
             rejectionBasis:RejectionBasis::DefinitelyUnsent);}
-        return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent);
+        return $this->claims->finish($op,$result,$reason,$cost,locallyUnsent:$unsent,failure:$failure);
     }
 }

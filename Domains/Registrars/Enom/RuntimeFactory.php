@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand,ReadCommand,RegistrationCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand,ReadCommand,RegistrationCommand,ResponseParser};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomTestCallLimit,EnomTestTransfer,OperationClaims,RenewalAcceptance,Runtime,RuntimeComposition,TransferPrecheck,WriteAcceptance,WriteFeatures};
 
 /** Deployment opt-in only. Exchanges remain private inside the genuine engine-bound protocols. */
@@ -65,7 +65,7 @@ final class RuntimeFactory
                     throw new EnomTestCallLimit;
                 }
                 $body='';$handle=curl_init();
-                if ($handle===false) { throw new \RuntimeException('Enom exchange failed.'); }
+                if ($handle===false) { throw new \Paymenter\Extensions\Servers\Domains\Data\SendFailure('other',max(1,min(25000,$timeoutMs))); }
                 $options=[
                     CURLOPT_URL=>$this->origin(),CURLOPT_POST=>true,
                     CURLOPT_POSTFIELDS=>http_build_query(['Command'=>$named->value,'UID'=>$uid,'PW'=>$token,'ResponseType'=>'XML']+$parameters,'','&',PHP_QUERY_RFC3986),
@@ -74,7 +74,7 @@ final class RuntimeFactory
                     CURLOPT_VERBOSE=>false,CURLOPT_HEADER=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
                     CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTPS,
                     CURLOPT_CONNECTTIMEOUT_MS=>min(8000,$timeoutMs),CURLOPT_TIMEOUT_MS=>$timeoutMs,
-                    CURLOPT_LOW_SPEED_LIMIT=>32,CURLOPT_LOW_SPEED_TIME=>10,CURLOPT_FRESH_CONNECT=>true,CURLOPT_FORBID_REUSE=>true,
+                    CURLOPT_LOW_SPEED_LIMIT=>32,CURLOPT_LOW_SPEED_TIME=>$named===RegistrationCommand::Purchase?25:10,CURLOPT_FRESH_CONNECT=>true,CURLOPT_FORBID_REUSE=>true,
                     CURLOPT_WRITEFUNCTION=>static function($handle,string $chunk)use(&$body,$named):int {
                         if (strlen($chunk)>$named->bodyLimit()-strlen($body)) { return 0; }
                         $body.=$chunk;return strlen($chunk);
@@ -97,14 +97,20 @@ final class RuntimeFactory
                 if($reserved!==null){\Paymenter\Extensions\Servers\Domains\Services\EnomTestWriteReservation::consume($this->binding,$role,$day);}
                 else{\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::authorizeSend($this->binding,$purchase,$day);}
                 if (curl_exec($handle)===false||curl_getinfo($handle,CURLINFO_RESPONSE_CODE)!==200) {
-                    throw new \RuntimeException('Enom exchange incomplete.');
+                    throw \Paymenter\Extensions\Servers\Domains\Data\SendFailure::curl(curl_errno($handle),curl_getinfo($handle,CURLINFO_RESPONSE_CODE),$timeoutMs);
+                }
+                // Classify malformed Purchase replies here, where the actual cURL limit is known.
+                if ($named===RegistrationCommand::Purchase && in_array((new ResponseParser)->parse($named,$body)->code,['invalid_response','invalid_envelope'],true)) {
+                    throw new \Paymenter\Extensions\Servers\Domains\Data\SendFailure('parse',$timeoutMs);
                 }
                 return $body;
             } catch (EnomTestCallLimit $error) {
                 throw new EnomTestCallLimit($error->reason);
+            } catch (\Paymenter\Extensions\Servers\Domains\Data\SendFailure $error) {
+                throw new \Paymenter\Extensions\Servers\Domains\Data\SendFailure($error->category,$error->timeoutMs);
             } catch (\Throwable) {
                 // Discard cURL/raw-response/credential-bearing exceptions, including their causes.
-                throw new \RuntimeException('Enom exchange failed.');
+                throw new \Paymenter\Extensions\Servers\Domains\Data\SendFailure('other',max(1,min(25000,$timeoutMs)));
             } finally {
                 if ($handle!==null&&$handle!==false) { curl_close($handle); }
             }
