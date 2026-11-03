@@ -27,7 +27,7 @@ $facts=$source->page(collect([$t->fresh()]));same('For sale',$facts[$t->id]['sal
 DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['wholesale'=>'999.0000','eligibility'=>null]);
 same('6.0000',$source->matrix(collect([$t->fresh()]),1)['rows'][0]['prices']['register']['cost'],'Normalized observation supplies cost, not obsolete columns');
 $seed=$t->fresh()->getRawOriginal();unset($seed['id']);$batch=[];
-for($i=0;$i<598;$i++){$batch[]=[...$seed,'tld'=>'scale'.str_pad((string)$i,4,'0',STR_PAD_LEFT)];}
+for($i=0;$i<598;$i++){$batch[]=[...$seed,'tld'=>'scale'.chr(97+intdiv($i,26)).chr(97+$i%26)];}
 foreach(array_chunk($batch,100) as $chunk){DB::table('domains_tlds')->insert($chunk);}
 $before=SellRow::count();$writes=0;DB::listen(static function($q)use(&$writes):void {if(preg_match('/^(insert|update|delete)/i',$q->sql)){$writes++;}});
 $page=[];$table=new SellTable([$binding->serverId=>$binding],1,true,static function()use(&$page){return $page;},false,$source);
