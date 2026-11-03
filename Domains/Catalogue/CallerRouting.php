@@ -79,10 +79,13 @@ final class CallerRouting
                 }, $current), $caps, $clock)];
     }
 
+    /** Whether this registrar has a sales protocol in the installed catalogue, before price/order setup. */
+    public static function supportsSales(string $registrarKey): bool { return $registrarKey === 'enom'; }
+
     /** Local deployment/protocol gates, independent of price readiness. Missing NS runtime stays closed. */
     private static function feature(AccountBinding $b, ?string $action, bool $setup): bool
     {
-        if ($b->registrarKey !== 'enom') { return false; }
+        if (!self::supportsSales($b->registrarKey)) { return false; }
         return match ($action) {
             'register' => $setup ? EnomTestRegistration::enabled($b) : EnomTestRegistration::sellable($b),
             'renew' => $setup ? EnomTestRenewal::enabled($b) : EnomTestRenewal::accepted($b),

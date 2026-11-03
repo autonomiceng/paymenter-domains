@@ -15,7 +15,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsReview};
@@ -111,7 +111,7 @@ class RegistrarAccount extends Page
         }
         $steps=array_map(fn(array $r)=>['label'=>$r['label'],'value'=>$r['value']??Missing::LABEL,'tone'=>$r['tone'],'detail'=>$r['cause'],'help'=>$r['help'],'buttons'=>$r['buttons']??[]],[...$checks['failing'],...$checks['passing']]);
         $ok=count($checks['passing']).' of '.count($steps).' OK';
-        return $schema->components([Sheet::split($sections,[Sheet::section('System checks',[Sheet::trace($steps)],key:'system_checks',after:[Text::make($ok)])],'account_'.$this->account)]);
+        return $schema->components([...CatalogueSalesNotice::components(),Sheet::split($sections,[Sheet::section('System checks',[Sheet::trace($steps)],key:'system_checks',after:[Text::make($ok)])],'account_'.$this->account)]);
     }
     /** System checks for this account, failing first. @return array{failing:list<array>,passing:list<array>} */
     public function checks(): array
