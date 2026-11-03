@@ -68,9 +68,10 @@ $tracing = true;
 $policy = DB::table('domains_sales_policies')->where('tld', 'com')->sole(); $trace = [];
 $sellers->change('com', (int) $policy->revision, null, false, false, $now); $tracing = false;
 $policyAt = $serverAt = $accountAt = null;
+$serverTable = (new App\Models\Server)->getTable();
 foreach ($trace as $i => $sql) {
     if (str_contains($sql, 'from "domains_sales_policies"') && $policyAt === null) { $policyAt = $i; }
-    if (str_contains($sql, 'from "servers"') && $serverAt === null) { $serverAt = $i; }
+    if (str_contains($sql, 'from "'.$serverTable.'"') && $serverAt === null) { $serverAt = $i; }
     if (str_contains($sql, 'from "domains_accounts"') && $accountAt === null) { $accountAt = $i; }
 }
 if ($serverAt === null || $accountAt === null || $policyAt === null || !($serverAt < $accountAt && $accountAt < $policyAt)) {
