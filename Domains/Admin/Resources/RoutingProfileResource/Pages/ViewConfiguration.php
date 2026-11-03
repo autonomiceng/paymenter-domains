@@ -29,7 +29,7 @@ class ViewConfiguration extends ViewRecord
     public function infolist(Schema $schema): Schema
     {
         $r=$this->getRecord();$profile=$r->readProfile();$used=WatchFacts::usedBy((int)$r->id);
-        $entry=fn(string $label,mixed $value)=>TextEntry::make('fact_'.md5($label))->label($label)->state($value)->inlineLabel()->listWithLineBreaks()->extraAttributes(['style'=>'overflow-wrap:anywhere']);
+        $entry=fn(string $label,mixed $value)=>TextEntry::make('fact_'.md5($label))->label($label)->state($value)->inlineLabel()->listWithLineBreaks()->extraAttributes(['class'=>'domains-wrap']);
         return $schema->components([Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([
             Section::make('Records')->columnSpan(1)->schema([$entry('Status',OnOffSwitch::html((bool)$r->enabled)),$entry('Nameservers',$profile?->nameservers??Missing::LABEL)->fontFamily(\Filament\Support\Enums\FontFamily::Mono),$entry('Website records',$profile?self::records($profile->website):Missing::LABEL),$entry('Email records',$profile?self::records($profile->email):Missing::LABEL)]),
             Section::make('Used by')->columnSpan(1)->schema([$entry('Default on registrar accounts',(string)count(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts((int)$r->id))),$entry('Monitored domains',(string)$used)])])]);

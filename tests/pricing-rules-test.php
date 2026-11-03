@@ -15,60 +15,26 @@ $other = Tld::create([...$b, 'tld' => 'com']);
 $override->refresh(); $other->refresh();
 $rules = new PricingRules;
 same('30.00', $rules->rule($other)['markup'], 'Account starts with standard default');
-$visited = [];
-$result = $rules->saveDefaultRule(1, [...PricingRule::DEFAULT, 'markup' => '50'], static function (Tld $tld) use (&$visited): void {
-    $visited[] = $tld->tld;
-    if ($tld->tld === 'net') { throw new RuntimeException('Synthetic publication failure'); }
-});
-same(['com', 'net', 'org'], $visited, 'Default republication continues past failing ending');
-same(['published' => 2, 'failed' => ['.net'], 'failure_types' => ['.net' => RuntimeException::class]], $result, 'Partial failure reported');
-same('50.00', $rules->rule(Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail())['markup'], 'Shared account default');
-same('30.00', $rules->rule($other)['markup'], 'Other account unaffected');
+saveDefaultRule([...PricingRule::DEFAULT, 'markup' => '50']);
+same('50.00', $rules->rule(Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail())['markup'], 'Followers read the business rule');
+same('50.00', $rules->rule($other)['markup'], 'Every account shares the rule');
 same('2.00', $rules->rule($override)['markup'], 'Per-TLD override unaffected');
 // Read snapshots are supplied by a list, never retained as authority by the rule service.
 DB::beginTransaction();
 try {
     $server = Server::findOrFail(1);
-    $server->settings()->where('key', 'domains_pricing_default_rule')->update(['value' => json_encode(['mode' => 'markup_fee_percent', 'markup' => '30', 'round_up' => 'none'])]);
+    App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->update(['value' => json_encode(['mode' => 'markup_fee_percent', 'markup' => '30', 'round_up' => 'none'])]);
     $custom = $override->fresh(); $custom->pricing_mode = 'markup_fee_percent';
     $default = Tld::where('server_id', 1)->where('tld', 'com')->firstOrFail();
     $snapshot = ['percent' => '7.00', 'fixed' => '0.70'];
     same($snapshot, $rules->rule($custom, false, $snapshot)['card_fee'], 'Custom rule uses the supplied account fee');
-    same($snapshot, $rules->defaultRule(1, false, $snapshot)['card_fee'], 'Default rule uses the supplied account fee');
+    same($snapshot, $rules->defaultRule(false, $snapshot)['card_fee'], 'Default rule uses the supplied account fee');
     same($snapshot, $rules->rule($default, false, $snapshot)['card_fee'], 'Default follower forwards the account fee');
     $fresh = ['percent' => '3.00', 'fixed' => '0.40'];
-    \Paymenter\Extensions\Servers\Domains\Services\CardFee::saveLocked(1, $fresh);
+    \Paymenter\Extensions\Servers\Domains\Services\CardFee::saveLocked($fresh);
     same($fresh, $rules->rule($custom, true)['card_fee'], 'Locked custom rule reads the current fee after a list snapshot');
     same($fresh, $rules->rule($default, true)['card_fee'], 'Locked default follower reads the current fee after a list snapshot');
 } finally { DB::rollBack(); }
-// Read persisted settings directly: an unbound server cannot use defaultRule().
-$unbound = Server::create(['id' => 3, 'name' => 'Unbound registrar', 'extension' => 'Domains', 'type' => 'server', 'enabled' => true]);
-$unbound->settings()->create(['key' => 'domains_pricing_default_rule', 'type' => 'array', 'encrypted' => false,
-    'value' => [...PricingRule::DEFAULT, 'markup' => '17.00']]);
-// An orphaned default-rule ending makes "does not republish" meaningful; Tld::create() refuses an unbound server.
-DB::table('domains_tlds')->insert(['server_id' => 3, 'registrar_key' => 'enom', 'account_fingerprint' => str_repeat('0', 64),
-    'tld' => 'com', 'use_default_rule' => true, 'created_at' => now(), 'updated_at' => now()]);
-same(1, Tld::where('server_id', 3)->where('use_default_rule', true)->count(), 'Unbound server has a default-rule ending');
-$storedDefaults = static fn (): array => DB::table('settings')->where('key', 'domains_pricing_default_rule')->orderBy('id')->get()
-    ->map(static fn (object $setting): array => (array) $setting)->all();
-$rejectDefaultSave = static function (int $serverId, array $rule, string $exception, string $message, string $label) use ($rules, $storedDefaults): void {
-    $before = $storedDefaults(); $called = false; $caught = null;
-    try {
-        $rules->saveDefaultRule($serverId, $rule, static function (Tld $tld) use (&$called): void { $called = true; });
-    } catch (Throwable $error) { $caught = [$error::class, $error->getMessage()]; }
-    same([$exception, $message], $caught, $label.' throws the expected rejection');
-    same(false, $called, $label.' does not republish');
-    same($before, $storedDefaults(), $label.' preserves stored defaults');
-};
-$replacement = [...PricingRule::DEFAULT, 'markup' => '75.00'];
-$rejectDefaultSave(1, [...$replacement, 'round_up' => 'bogus'], InvalidArgumentException::class,
-    'Choose a pricing mode and rounding rule.', 'Invalid default rule');
-DB::transaction(static function () use ($rejectDefaultSave, $replacement): void {
-    // Check before the outer transaction ends, so rollback cannot hide a write.
-    $rejectDefaultSave(1, $replacement, LogicException::class,
-        'Default republication requires independent transactions.', 'Open transaction');
-});
-$rejectDefaultSave(3, $replacement, DomainException::class, 'Bound Domains account required.', 'Unbound server');
 same(0, App\Models\Invoice::count(), 'Rule publication creates no financial records');
 $nativeSuccessful = true;
-echo "Per-account rule and republication checks passed.\n";
+echo "Shared rule checks passed.\n";

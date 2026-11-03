@@ -15,7 +15,7 @@ $blue=static function(string $html,string $tip,string $where):void{
     foreach($x->query('//button[contains(concat(" ",@class," ")," fi-icon-btn ")]') as $button){
         $wanted=str_contains($button->getAttribute('x-tooltip')?:$button->getAttribute('x-tooltip.raw'),$tip);if(!$wanted){continue;}$found++;
         expect(str_contains($button->getAttribute('class'),'fi-color-primary'),$where.': the ? is blue');
-        expect(str_contains($button->getAttribute('style'),'margin-inline-end:auto'),$where.': the ? stays beside its label');
+        expect(str_contains($button->getAttribute('class'),'domains-help'),$where.': a skin can keep the ? beside its label');
         expect(str_contains($button->getAttribute('x-on:focus.capture'),".fi-modal-window"),$where.': a dialog opening does not open this help');
     }
     same(1,$found,$where.': one ? with this help');

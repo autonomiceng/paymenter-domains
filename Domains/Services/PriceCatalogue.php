@@ -301,9 +301,15 @@ final class PriceCatalogue
     /** A saved price is on an older rule, and every cost needed to redo it is here. */
     public function behindRule(Tld $tld, \DateTimeImmutable $now): bool
     {
-        $hash = self::ruleHash($this->rules->rule($tld));
-        if (!self::sold($tld)->contains(fn (Price $price): bool => ($price->eligibility['rule_hash'] ?? null) !== $hash)) { return false; }
+        if (!$this->onOlderRule($tld)) { return false; }
         try { self::requireCosts($tld, $now); return true; } catch (\DomainException) { return false; }
+    }
+
+    /** A saved price is on an older rule, whether or not it can be redone yet. */
+    public function onOlderRule(Tld $tld): bool
+    {
+        $hash = self::ruleHash($this->rules->rule($tld));
+        return self::sold($tld)->contains(fn (Price $price): bool => ($price->eligibility['rule_hash'] ?? null) !== $hash);
     }
 
     /** What saving a rule would publish: cost, current and new term retail, without writing. */

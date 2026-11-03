@@ -7,38 +7,29 @@ use Filament\Forms\Components\{Checkbox,Hidden,Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomAnswers,StaffSettingsReview as Review,StaffSettingsWrites};
 final class EnomAnswerAction
 {
-    public static function make(int $server,string $stamp): Action
+    public const LABEL='Enter Enom’s answer';
+    /** One request's answer. The stamp is the settings review the page opened on. */
+    public static function make(Operation $op,string $stamp): Action
     {
-        $options=static function()use($server):array{
-            return Operation::where('server_id',$server)->where('registrar_key','enom')->whereIn('state',['running','pending','uncertain','held','rejected'])->orderBy('id')->get()
-                ->filter(fn($op)=>EnomAnswers::eligible($op,app(Clock::class)->now()))
-                ->mapWithKeys(fn($op)=>[$op->id=>'Request #'.$op->id.' · '.$op->domain->domain.' · '.$op->action.' · '.($op->attempt['dispatch_attempted_at']??'')])->all();
-        };
-        return Action::make('enom_answer')->label('Record what Enom said')->color('gray')
-            ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))
-                &&Account::where('server_id',$server)->where('registrar_key','enom')->exists()&&$options()!==[])
+        $server=(int)$op->server_id;$id=$op->id;
+        return Action::make('enom_answer')->label(self::LABEL)->modalHeading(self::LABEL)->color('gray')
+            ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))&&EnomAnswers::eligible($op,app(Clock::class)->now()))
             ->modalDescription('The system cannot prove the final result or fee. Ask Enom to check this account and exact attempt, then record its final answer.')
             ->modalSubmitActionLabel('Record answer')->schema([
                 Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'enom_answer',$stamp)),
-                Select::make('operation_id')->label('Request')->options($options)->required()->live()
-                    ->afterStateUpdated(function($state,$set):void{
-                        $op=Operation::find($state);$set('attempt_hash',$op?EnomAnswers::identity($op):null);$set('outcome',null);
-                        $set('order_reference',$op?->action==='transfer'?($op->attempt['evidence']['transferReference']??null):($op?EnomAnswers::capturedReference($op):null));
-                        foreach(['charge','registrar_refund','case_reference','evidence'] as $field){$set($field,null);}
-                        foreach(['final_confirmed','confirmed'] as $field){$set($field,false);}
-                    }),
-                Hidden::make('attempt_hash')->required(),
-                Select::make('outcome')->label('Enom’s final answer')->required()->live()->options(fn($get)=>Operation::find((int)$get('operation_id'))?->action==='transfer'
+                Hidden::make('operation_id')->default($id)->required(),
+                Hidden::make('attempt_hash')->default(fn()=>EnomAnswers::identity($op))->required(),
+                Select::make('outcome')->label('Enom’s final answer')->required()->live()->options($op->action==='transfer'
                     ?['transfer_rejected'=>'Registrar rejected the transfer']
-                    :(EnomAnswers::capturedReference(Operation::find((int)$get('operation_id')) ?? new Operation) !== null
+                    :(EnomAnswers::capturedReference($op) !== null
                         ? ['accepted'=>'Processed: Enom confirmed the saved order number']
                         : ['accepted'=>'Processed: Enom gave the exact order number','not_processed'=>'Not processed: no order and no charge'])),
-                TextInput::make('order_reference')->label(fn($get)=>$get('outcome')==='transfer_rejected'?'Enom transfer number':'Enom order number')
-                    ->helperText(fn($get)=>$get('outcome')==='transfer_rejected'?'Use the transfer number saved on this request. This does not start another transfer.':(EnomAnswers::capturedReference(Operation::find((int)$get('operation_id')) ?? new Operation) !== null ? 'Use the saved Enom order number. This does not send another Purchase.' : 'For a processed order only. Leave blank if Enom confirmed no order and no charge.'))->maxLength(20),
+                TextInput::make('order_reference')->default(fn()=>$op->action==='transfer'?($op->attempt['evidence']['transferReference']??null):EnomAnswers::capturedReference($op))->label(fn($get)=>$get('outcome')==='transfer_rejected'?'Enom transfer number':'Enom order number')
+                    ->helperText(fn($get)=>$get('outcome')==='transfer_rejected'?'Use the transfer number saved on this request. This does not start another transfer.':(EnomAnswers::capturedReference($op) !== null ? 'Use the saved Enom order number. This does not send another Purchase.' : 'For a processed order only. Leave blank if Enom confirmed no order and no charge.'))->maxLength(20),
                 TextInput::make('charge')->label('Registrar charge (USD)')->required()->visible(fn($get)=>$get('outcome')==='transfer_rejected')
                     ->helperText('The final charge for this transfer, including zero.'),
                 TextInput::make('registrar_refund')->label('Registrar refund (USD)')->required()->visible(fn($get)=>$get('outcome')==='transfer_rejected')
