@@ -173,7 +173,8 @@ final class NativeDomainGuard
     {
         $domain=$locked['domain'];
         if($domain->price_mode!=='standard'){throw new \DomainException('Complimentary authority belongs to renewal execution.');}
-        $retail = $this->pricing->renewal($domain, 'USD', $this->clock->now(), !($locked['advisory']??true), $locked['tld']);
+        $retail = isset($locked['offer']) ? ($locked['offer']['retail'] ?? throw new \DomainException('No retained annual retail.'))
+            : $this->pricing->renewal($domain, 'USD', $this->clock->now(), !($locked['advisory']??true), $locked['tld']);
         $gross = self::gross($retail->retail, $locked['tax']);
         return ['id' => $retail->id, 'revision' => $retail->revision, 'annual_net' => $retail->retail, 'annual_gross' => $gross,
             'currency' => 'USD', 'unit' => 'term_total', 'retained' => $retail->retained, 'staff_alert' => $retail->staffAlert];

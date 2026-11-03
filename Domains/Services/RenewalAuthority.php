@@ -26,11 +26,15 @@ final readonly class RenewalAuthority
                 try {
                     $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding);
                     // HoldingLocks already locked all server settings before catalogue/domain rows.
+                    if ($caps = \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
+                        $caps->requireRenewal($binding, $domain->tld, $l['tld']);
+                    } else {
                     $catalogue = CatalogueAcceptances::load($binding, true);
                     $parts = CanonicalName::parse($domain->domain, array_keys($catalogue->endings));
                     $row = $catalogue->endings[$parts['tld']];
                     if (($row['renewal_safe'] ?? null) !== true
                         || !in_array(1, $row['renew'] ?? [], true)) { throw new RenewalRefused(RenewalCode::Acceptance); }
+                    }
                 }
                 catch (\Throwable) { throw new RenewalRefused(RenewalCode::Acceptance); }
                 // A named issued obligation keeps its original authority through a future-only stop.
@@ -57,7 +61,8 @@ final readonly class RenewalAuthority
                     throw new RenewalRefused(RenewalCode::Changed);
                 }
                 $annual = $prices->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $binding->fingerprint)->first();
-                $retail = $annual?->retail !== null ? PricingRule::total(PriceCatalogue::retail($annual->retail), $request->years) : null;
+                $value = isset($l['offer']) ? $l['offer']['retail']?->retail : ($annual?->retail === null ? null : PriceCatalogue::retail($annual->retail));
+                $retail = $value === null ? null : PricingRule::total($value, $request->years);
                 // Resolve original registration proof after the latest anchor advances to a renewal.
                 $registration = $l['identity_source']['kind'] !== 'checkout' ? null : $all->first(fn ($op) => in_array($op->action, ['register', 'transfer'], true) && $op->state === 'succeeded' && self::resolved($op, $domain, $binding));
                 $prior = $registration ?? $prior;

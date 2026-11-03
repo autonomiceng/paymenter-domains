@@ -56,7 +56,8 @@ final class DomainBilling
             $item = $invoice->items()->create(['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => $amount,
                 'description' => InvoiceDescription::renewal($d->domain, $d->provider_expires_at, $years)]);
             $rate = $l['prices']->where('action', 'renew')->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $d->account_fingerprint)->first();
-            $cap = $rate?->wholesale !== null ? ['amount' => PricingRule::decimal(PricingRule::units(PriceCatalogue::cost($rate->wholesale)) * $years, 4), 'currency' => 'USD'] : null;
+            $cost = isset($l['offer']) ? $l['offer']['cost']?->total : ($rate?->wholesale === null ? null : PriceCatalogue::cost($rate->wholesale));
+            $cap = $cost !== null ? ['amount' => PricingRule::decimal(PricingRule::units($cost) * $years, 4), 'currency' => 'USD'] : null;
             if ($late !== null) { $cap = $late['cost']; }
             $operation = Operation::create(['domain_id' => $d->id, 'service_id' => $s->id, 'server_id' => $d->server_id,
                 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint, 'authority_generation' => $d->authority_generation,

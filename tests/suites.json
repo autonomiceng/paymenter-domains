@@ -425,7 +425,8 @@
     "tests/offer-ports-test.php",
     "tests/offer-reader-batch-test.php",
     "tests/caller-ports-test.php",
-    "tests/offer-capabilities-test.php"
+    "tests/offer-capabilities-test.php",
+    "tests/offer-holder-consumers-test.php"
   ],
   "ui": [],
   "runner": [
