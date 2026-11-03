@@ -10,11 +10,15 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate, 
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime, CatalogueAcceptances};
 
 final class InitializationInterrupted extends RuntimeException {}
-$entry = new Domains; $ddl = true; $commit = false; $competing = false;
-DB::connection()->beforeExecuting(static function ($sql) use (&$ddl, &$competing, $entry): void {
-    if (!$ddl || !str_starts_with($sql, 'create table "domains_operations"')) { return; }
-    $ddl = false;
-    try { $entry->installed(); } catch (LockTimeoutException|DomainException) { $competing = true; }
+$entry = new Domains; $commit = false; $competing = false;
+$interrupts = ['create index "domains_domains_user_id_index"', 'create table "domains_operations"',
+    'create table "domains_observation_queues"', 'create table "domains_reminder_deliveries"',
+    'create table "domains_psl_status"', 'create table "domains_watch_audit"',
+    'create table "domains_watch_names"', 'create table "domains_watch_observations"'];
+DB::connection()->beforeExecuting(static function ($sql) use (&$interrupts, &$competing, $entry): void {
+    if (!$interrupts || !str_starts_with($sql, $interrupts[0])) { return; }
+    array_shift($interrupts);
+    if (!$competing) { try { $entry->installed(); } catch (LockTimeoutException|DomainException) { $competing = true; } }
     throw new InitializationInterrupted('After first complete table, before the next DDL');
 });
 try { $entry->installed(); throw new LogicException('DDL interruption did not execute'); }
@@ -38,6 +42,12 @@ try { $entry->installed(); throw new LogicException('Retained holding unexpected
 catch (DomainException) {}
 same($held, DB::table('domains_domains')->get()->toJson(), 'Refusal preserves unexpected holding evidence');
 DB::table('domains_domains')->delete();
+while ($interrupts) {
+    try { $entry->installed(); throw new LogicException('DDL interruption did not execute'); }
+    catch (InitializationInterrupted) {}
+    $pending();
+    same($intent, Setting::where('key',UpgradeGate::KEY)->sole()->value, 'Every partial schema resumes only the original initialization intent');
+}
 Setting::saving(static function (Setting $row) use (&$commit): void {
     if (!$commit || $row->key !== UpgradeGate::KEY) { return; }
     $commit = false; throw new InitializationInterrupted('Before active-state commit');

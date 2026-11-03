@@ -27,12 +27,32 @@ final class SchemaVerifier
                 $connection->statement($statement);
                 $created = true;
             }
+            if (self::columns($table) === self::columns($reference) && Schema::getForeignKeys($table) === []
+                && str_starts_with($table, 'domains_') && FreshInstallation::recovering()) {
+                self::resumeIndexes($table, $reference);
+            }
             if (self::columns($table) !== self::columns($reference)
                 || self::indexes($table) !== self::indexes($reference)
                 || Schema::getForeignKeys($table) !== []) {
                 throw new \RuntimeException('Retained Domains schema mismatch: '.$table);
             }
         } finally { if ($created) { Schema::dropIfExists($reference); } }
+    }
+
+    /** CREATE may commit before its indexes. Only an owned, still-empty new install may add missing indexes. */
+    private static function resumeIndexes(string $table, string $reference): void
+    {
+        $actual = self::indexes($table); $expected = self::indexes($reference);
+        foreach ($actual as $index) { if (!in_array($index, $expected, true)) { return; } }
+        foreach (Schema::getIndexes($reference) as $index) {
+            $shape = $index; unset($shape['name']);
+            if (in_array($shape, $actual, true)) { continue; }
+            if ($index['primary']) { return; } // A malformed CREATE requires restoration, never a table rebuild.
+            Schema::table($table, static function (Blueprint $blueprint) use ($index, $table, $reference): void {
+                $method = $index['unique'] ? 'unique' : 'index';
+                $blueprint->$method($index['columns'], str_replace($reference, $table, $index['name']));
+            });
+        }
     }
 
     private static function columns(string $table): array

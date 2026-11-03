@@ -231,7 +231,7 @@ final class UpgradeGate
             self::lockNative();
             Server::where('extension','Domains')->orderBy('id')->lockForUpdate()->get();
             Account::orderBy('server_id')->lockForUpdate()->get();
-            $row = self::query()->lockForUpdate()->sole(); $state = $intent->check();
+            $row = self::query()->lockForUpdate()->sole(); $state = $intent->check(true);
             self::drained(); $contract = CallerRouting::contract();
             return self::commitActive($row, $state, ['fresh_intent'=>$state['intent'],'manifest'=>$state['manifest']],
                 $contract, ['compatible'=>true,'complete'=>true,'empty'=>true]);

@@ -100,13 +100,17 @@ final class FreshInstallation
     { if (self::$owner === null) { return false; } self::$owner->check(); return true; }
 
     /** Capability check: only the current lifecycle invocation can complete its proven durable intent. */
-    public function check(): array
+    public function check(bool $complete = false): array
     {
         if (self::$owner !== $this) { throw new \LogicException('Owned initialization required.'); }
         $state = UpgradeGate::initializationState();
         if ($state['state'] !== 'initializing' || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
             throw new \DomainException('Domains initialization intent changed.');
         }
-        self::empty(); return $state;
+        self::empty();
+        if ($complete && array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all())) {
+            throw new \DomainException('Domains initialization migration history is incomplete.');
+        }
+        return $state;
     }
 }
