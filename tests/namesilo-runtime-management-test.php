@@ -49,6 +49,8 @@ foreach(['unlock','nameservers','email','unsent','lost','cap','off','drift','int
         same('uncertain',$result->state,'Consumed email with lost acknowledgement stays uncertain');same(['retrieveAuthCode'],$physicalWrites(),'One email request');
         expect(!ManagementEvidence::idle($result),'Lost reply is not an unsent peer');
         commerceReject(fn()=>$result->update(['state'=>'held','safe_code'=>'management_definitely_unsent','attempt'=>[...$result->attempt,'management_unsent'=>true]]));$result->refresh();
+        $forged=$result->replicate();$forged->operation_key.=':forged';$forged->state='held';$forged->safe_code='management_definitely_unsent';
+        $forged->attempt=[...$result->attempt,'management_unsent'=>true];commerceReject(fn()=>$forged->save());
         $ms->fault='';Cache::flush();same('uncertain',$management->reconcile($result->id,$driver)->state,'Readback cannot invent an email acknowledgement');
     }else{same([],$physicalWrites(),'Cap/Off/current authority refuses mutation');expect(($result->attempt['seal']??'absent')==='absent','Refusal precedes seal');}
     $physical=$physicalWrites();$management->run($result->id,$driver,RequestOrigin::Background);same($physical,$physicalWrites(),'No duplicate mutation on later run');
