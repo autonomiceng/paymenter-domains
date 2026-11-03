@@ -73,4 +73,8 @@ same($op->id,$submit($d,$driver,'dns',['changes'=>[4]])->id,'New intent cannot r
 $progress=ManagementProgress::for($d)['dns'];expect(str_contains($progress['text'],'Contact support'),'Unknown child has a support next step');same('warning',$progress['tone'],'Unknown child uses shared warning tone');
 // Freeze evidence cannot be edited after a save.
 try{$p=$op->policy;$p['management']['sequence']['preimage']=[99];$op->update(['policy'=>$p]);throw new LogicException('Mutable preimage');}catch(DomainException){}
+[$d,$driver]=$setup('slow-unclaimed');$op=$submit($d,$driver,'dns',$intent);$op->update(['created_at'=>$op->created_at->copy()->subSeconds(31)]);
+$reads=$wire->reads;$progress=ManagementProgress::for($d)['dns'];
+expect(str_contains($progress['text'],'Contact support'),'Slow unclaimed sequence has a next step even when a write gate prevents claiming');
+expect($progress['pending'],'Slow unclaimed sequence retains the setting');same($reads,$wire->reads,'Progress reads only retained facts');
 $nativeSuccessful=true;echo "Shared durable management sequence passed\n";

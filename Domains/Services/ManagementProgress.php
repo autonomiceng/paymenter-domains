@@ -78,6 +78,9 @@ final class ManagementProgress
                 || (int)$d->service->user_id!==(int)$d->user_id) {
                 return [...$row,'text'=>$prefix.'The account or ownership changed. Contact support to finish the remaining changes.','tone'=>'warning'];
             }
+            if ($blocked?->state==='queued' && $row['slow']) {
+                return [...$row,'text'=>$prefix.'This is taking longer than usual. Contact support to finish the remaining changes.','tone'=>'warning'];
+            }
             if ($blocked && ($blocked->state==='uncertain' || $blocked->state==='held' || $blocked->state==='rejected'
                 || $blocked->state==='running' && $row['slow'])) {
                 $unsent=ManagementEvidence::idle($blocked);
