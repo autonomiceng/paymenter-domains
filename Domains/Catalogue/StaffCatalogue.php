@@ -56,12 +56,13 @@ final class StaffCatalogue
         });
         $cost=DB::table('domains_prices')->where('action','register')->where('term',1)->where('currency','USD');
         $q->leftJoinSub($cost,'p',fn($j)=>$j->on('p.server_id','=','domains_tlds.server_id')->on('p.tld','=','domains_tlds.tld')->on('p.account_fingerprint','=','domains_tlds.account_fingerprint'));
+        $intent="case when json_valid(domains_tlds.catalogue_intent) then domains_tlds.catalogue_intent else null end";
         $extract="json_extract(p.catalogue_observation, '$.total')";
         if(DB::getDriverName()!=='sqlite'){$extract='json_unquote('.$extract.')';}
         $q->select('domains_tlds.id','domains_tlds.server_id','domains_tlds.account_fingerprint','domains_tlds.tld')
             ->selectRaw('null as renew_cost,null as transfer_cost,null as high_cost,null as prices,null as read_at,1 as listed')
-            ->selectRaw("case json_extract(domains_tlds.catalogue_intent, '$.sell') when true then 'sell' when false then 'skip' else null end as choice")
-            ->selectRaw("json_extract(domains_tlds.catalogue_intent, '$.longest') as longest,json_extract(domains_tlds.catalogue_intent, '$.transfers') as transfer")
+            ->selectRaw("case json_extract($intent, '$.sell') when true then 'sell' when false then 'skip' else null end as choice")
+            ->selectRaw("json_extract($intent, '$.longest') as longest,json_extract($intent, '$.transfers') as transfer")
             ->selectRaw(($costs?'cast('.$extract.' as decimal(18,4))':'null').' as register_cost');
         return SellRow::query()->fromSub($q,'domains_sell_rows')->when($focus!==null,fn($q)=>$q->where('tld',$focus));
     }
@@ -111,7 +112,13 @@ final class StaffCatalogue
             ->selectRaw('server_id,tld,account_fingerprint,count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy(fn($r)=>$r->server_id.':'.$r->tld.':'.$r->account_fingerprint);
         $out=[];
         foreach($tlds as $t){
-            $d=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$raw=OfferState::decode($t->catalogue_intent);$all=$offers[$t->server_id.':'.$t->tld]??[];$prices=[];
+            $d=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$unreadable=false;
+            try{
+                $raw=OfferState::decode($t->catalogue_intent);
+                new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));
+                $own=Pricing::hasOwn($t);
+            }catch(\Throwable){$raw=[];$own=!$t->use_default_rule;$unreadable=true;}
+            $all=$unreadable?[]:($offers[$t->server_id.':'.$t->tld]??[]);$prices=[];
             foreach($all as $offer){$decision=$offer->decision;$cost=$offer->observation();$flags=[];
                 if($decision->reason!==null){$flags[]=$decision->reason;}
                 if(!$cost||$cost->total===null){$flags[]='cost_missing';}
@@ -130,7 +137,7 @@ final class StaffCatalogue
             $out[$t->id]=['prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
-                'own'=>Pricing::hasOwn($t),'pricing'=>!Pricing::hasOwn($t)?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
+                'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
         }
         return $out;
     }
@@ -145,11 +152,11 @@ final class StaffCatalogue
             foreach($chunk as $t){$s=$page[$t->id];$id=(int)$t->server_id;$own=$s['own'];
                 if($filter==='default'&&$own||$filter==='own'&&!$own){continue;}
                 if(!isset($settings[$id])){$a=Account::where('server_id',$id)->sole();$d=OfferState::decode($a->catalogue_defaults);$settings[$id]=[$d,Server::whereKey($id)->value('name')];}
-                [$d,$name]=$settings[$id];$accounts[$id]=$name;$raw=OfferState::decode($t->catalogue_intent);
+                [$d,$name]=$settings[$id];$accounts[$id]=$name;
                 $identity=['id'=>(int)$t->id,'tld'=>'.'.$t->tld,'server_id'=>$id,'account'=>$name,'years'=>$years,'pricing'=>$own?'Custom':'Default','currency'=>'USD'];
-                try{$rule=Pricing::rule($t,$default,$fee);}
+                try{if($s['unreadable']){throw new \DomainException('Offer unreadable. Check the TLD settings.');}$rule=Pricing::rule($t,$default,$fee);}
                 catch(\DomainException|\InvalidArgumentException $error){
-                    if(!$own){throw $error;}
+                    if(!$own&&!$s['unreadable']){throw $error;}
                     $skipped[]=[...$identity,'cause'=>'custom_rule'];
                     $warnings[]=['server_id'=>$id,'account'=>$name,'cause'=>'custom_rule','tlds'=>['.'.$t->tld]];continue;
                 }
