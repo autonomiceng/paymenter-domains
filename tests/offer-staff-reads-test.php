@@ -54,8 +54,8 @@ same(599,$component->instance()->getTableRecords()->total(),'Real rendered table
 $component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
 $component->searchTable('')->filterTable('no_cost');same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');
 $component->removeTableFilter('no_cost')->filterTable('country');same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
-// The installed presenter hook stays legacy until the later all-caller composition.
-\Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee('999');
+// The installed legacy presenter still reports the fixture's unreadable saved credentials.
+\Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee('Needs a price sync')->assertSee('Ask your site admin to check the encryption key.');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);$redacted=$source->page(collect([$t->fresh()]));
 foreach($redacted[$t->id]['prices'] as $price){expect(!array_key_exists('cost',$price),'Revoked cost permission redacts snapshot');}
 $plain=new SellTable([$binding->serverId=>$binding],1,false,static fn()=>[],false,$source);
