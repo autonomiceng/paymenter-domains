@@ -6,6 +6,13 @@ require __DIR__.'/Support/owner-records.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\ManagementPayload;
+foreach(['custom','unconfirmed'] as $delegation){
+    $ns=['ns1.customer.example','ns2.customer.example'];
+    $proof=$delegation==='custom'?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed($ns,'enom_getdns',$clock->now()):\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::requested($ns,'registration_request',$clock->now());
+    [$d,$driver]=$holding(placeholderComFixtureName('record-'.$delegation.'-placeholder.com'),$proof);
+    App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
+    $dto=$owners->present($d);expect(!isset($dto->management['dns'])&&!isset($dto->management['srv']),'Registrar record editors stay hidden on '.$delegation.' delegation');
+}
 [$d,$driver]=$holding(placeholderComFixtureName('record-owner-placeholder.com'));storefrontViews();
 $server=App\Models\Server::findOrFail($d->server_id);$server->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $dto=$owners->present($d->fresh());same(null,$dto->management['dns']['records'],'Unknown DNS is held, never an empty authoritative list');

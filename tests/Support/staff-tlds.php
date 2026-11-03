@@ -10,9 +10,11 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,Registrar
 function tldPanel(): void
 {
     \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::install();
+    \Paymenter\Extensions\Servers\Domains\Services\WatchDnsSchema::install();
     // The Registrars list reads balances; bind the clock as Services/Runtime.php does when nothing else did.
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->singleton(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,\Paymenter\Extensions\Servers\Domains\Data\SystemClock::class);}
     \Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__,2).'/Domains/resources/views');
+    \Paymenter\Extensions\Servers\Domains\Admin\Support\SellToolbar::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\TableMenus::boot();
     staffPanel();$panel=Filament::getCurrentPanel();$panel->resources([TldResource::class])->pages([RegistrarSetup::class,RegistrarAccount::class,WhatYouSell::class]);
     Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(function()use($panel){
         Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){TldResource::registerRoutes($panel);RegistrarSetup::registerRoutes($panel);RegistrarAccount::registerRoutes($panel);WhatYouSell::registerRoutes($panel);});
@@ -29,14 +31,14 @@ function tldRefusal(callable $call,string $message): void
 /** Account actions shared by write assertions and rendered fixtures. */
 function staffSetupActions(): array
 {
-    return ['configure','probe','import','processing','enroll_sandbox',
+    return ['new_domain_dns','configure','probe','import','processing','enroll_sandbox',
         'test_renewal','test_transfer','test_management','live_renewal','live_management','live_transfer','late_renewal','renewal_billing','unpaid_hold','default_rule','card_fee'];
 }
 
 /** No TLD/settings button: request answers belong to requests; price publication/defaults are choices in Edit prices. */
 function staffNoButtonActions(): array
 {
-    return ['activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review'];
+    return ['call_limits','activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review'];
 }
 
 /** Pin the engine clock, as staff actions read it for cost freshness. */

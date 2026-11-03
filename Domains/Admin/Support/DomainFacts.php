@@ -159,6 +159,12 @@ final class DomainFacts
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone;
             $f[$row]=$fact;
         }
+        // A failed customer monitoring alert: why, and what to do. The staff alert links here.
+        if ($failed=NoticeHealth::open('managed',(int)$d->id,(string)$d->domain)) {
+            $notice=$f['Open alerts']??self::fact([],tone:$failed['tone']);$notice['value']=[...$notice['value'],$failed['text']];
+            $notice['tone']=in_array('danger',[$notice['tone'],$failed['tone']],true)?'danger':($notice['tone']==='warning'?'warning':$failed['tone']);
+            $f['Open alerts']=$notice;
+        }
         return $f;
     }
     /** The customer's status words and the staff next step (StaffDomainStatus). $inputs (StaffDomainInputs) are passed by the list and the filter, which batch them. */

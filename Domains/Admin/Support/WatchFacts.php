@@ -36,7 +36,9 @@ final class WatchFacts
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
         if($active){$checks['Next check']=self::nextCheck($w);}
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
-        $checks['Monitoring alerts']=self::fact($on?'On':'Off',$on?null:'Turned off by customer');
+        // A failed customer alert says why and what to do; the staff alert links here.
+        $failed=NoticeHealth::open('watch',(int)$w->id,$w->canonical_name);
+        $checks['Monitoring alerts']=self::fact($on?'On':'Off',implode(' · ',array_filter([$on?null:'Turned off by customer',$failed['text']??null]))?:null,$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
         return ['Domain'=>$shown($domain),'Checks'=>$shown($checks)];
@@ -97,6 +99,15 @@ final class WatchFacts
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         return array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows);
     }
-    public static function usedBy(int $id): int{self::gate();return WatchName::where('ns_profile_id',$id)->whereIn('state',['active','paused'])->count();}
+    public static function usedBy(int $id): int
+    {
+        self::gate();
+        return WatchName::where('ns_profile_id',$id)->whereIn('state',['active','paused'])->count()
+            + \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::configured(
+                \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::eligible(time()),'domains_domains.id','domains_domains.user_id',profile:$id)
+                ->whereNotExists(fn($q)=>$q->selectRaw('1')->from('domains_watch_names as predecessor')
+                    ->whereColumn('predecessor.user_id','domains_domains.user_id')->whereColumn('predecessor.canonical_name','domains_domains.reservation_name')
+                    ->where('predecessor.ns_profile_id',$id)->whereIn('predecessor.state',['active','paused']))->count();
+    }
     public static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':Missing::LABEL;}
 }

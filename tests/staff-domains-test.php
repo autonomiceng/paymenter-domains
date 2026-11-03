@@ -289,6 +289,7 @@ $excluded=[
         'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
     'ManagementProgress.php'=>['contacts','dns','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update'], // Grouped setting/action names, not emitted reasons.
     'ManagedPublicEnrollment.php'=>['managed_enrollment'],
+    'ManagedDnsSetup.php'=>['external','platform'], // DNS intent values, not staff reason codes.
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
     'CartHandoffFailure.php'=>['unclassified'], // Structured cart handoff log key, never a staff reason.

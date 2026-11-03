@@ -25,13 +25,15 @@ use Filament\Facades\Filament;
 use Livewire\Livewire;
 app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 WatchScheduleSchema::install();\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::install();StaffWatchSchema::install();staffPanel();
-$panel=Filament::getCurrentPanel();$panel->resources([WatchResource::class,RoutingProfileResource::class]);
-Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){WatchResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);});
+$panel=Filament::getCurrentPanel();$panel->resources([WatchResource::class,RoutingProfileResource::class,\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::class])->pages([\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class]);
+Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){WatchResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource::registerRoutes($panel);\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($panel);});
 require dirname(__DIR__).'/Domains/routes/owned.php';require dirname(__DIR__).'/Domains/routes/web.php';
 app('router')->getRoutes()->refreshNameLookups();
 $manager=staffUser([Staff::VIEW,StaffWatchWrites::VIEW,StaffWatchWrites::MANAGE]);$viewer=staffUser([Staff::VIEW,StaffWatchWrites::VIEW]);
 DB::table('domains_watch_schedule')->insert(['scope'=>'dispatch','progress_at'=>$now]);
 DB::table('domains_watch_schedule')->insert(['scope'=>'health_managed_dns','cursor'=>$now-90000]);
+Auth::setUser($manager);
+require __DIR__.'/Support/account-default-monitoring.php';
 $m=new WatchMaintenance();expect(!$m->health($now)['outage'],'Unconfigured retained work never becomes a resolver outage');
 same(1,ManagedDnsSetup::affected($now)->count(),'Eligible missing template counted');
 DB::table('services')->where('id',$service->id)->update(['status'=>'cancelled']);same(0,ManagedDnsSetup::affected($now)->count(),'Cancelled service omitted from setup count');
@@ -56,10 +58,31 @@ DB::table('domains_domains')->where('id',$id)->update(['status'=>$d->status,'pro
 Livewire::actingAs($owner)->test(ListManagedDns::class)->assertForbidden();
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d);
 app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),true,fn()=>$time->now));
-$noticePage=Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Choose its DNS template.');
+$dnsPermission=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('new_domain_dns');
+foreach([[] , [Staff::POLICY], [$dnsPermission], [Staff::POLICY,$dnsPermission]]as$extra){
+    $actor=staffUser([Staff::VIEW,StaffWatchWrites::VIEW,StaffWatchWrites::MANAGE,...$extra]);$canEdit=count($extra)===2;
+    $page=Livewire::actingAs($actor)->test(ListManagedDns::class);
+    $canEdit?$page->assertTableActionVisible('accountTemplate',$d):$page->assertTableActionHidden('accountTemplate',$d);
+    $noticePage=Livewire::actingAs($actor)->test(ListWatches::class);
+    $canEdit?$noticePage->assertSee('Set account DNS template'):$noticePage->assertDontSee('Set account DNS template');
+    if($canEdit){
+        $templateEditor=$actor;
+        $noticePage->assertSee('DNS monitoring is not set up for 1 domain. Set a default DNS template on the registrar account.');
+        expect(str_contains($noticePage->html(),e(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]))),'Setup action opens this domain registrar account');
+    }
+    $page=Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$id]);
+    $canEdit?$page->assertSee('Set account DNS template'):$page->assertDontSee('Set account DNS template');
+    if($canEdit){
+        $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]).'#switch-template';
+        $page->assertSee('href="'.e($url).'">Set account DNS template',false);
+    }
+}
 Livewire::actingAs($viewer)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain.')
-    ->assertDontSee('Choose its DNS template')->assertDontSee('Choose DNS template');
+    ->assertDontSee('Set account DNS template');
 
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>false]);
+Livewire::actingAs($templateEditor)->test(ListManagedDns::class)->assertTableActionHidden('assignTemplate',$d)->assertTableActionVisible('accountTemplate',$d);
+DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>true]);
 $setupPage=Livewire::actingAs($manager)->test(ListManagedDns::class);
 $mounted=Livewire::actingAs($manager)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->mountTableAction('assignTemplate',$d);
 $assignmentHtml=$mounted->html();
@@ -72,14 +95,14 @@ $manager->role->update(['permissions'=>[Staff::VIEW,StaffWatchWrites::VIEW,Staff
 Livewire::actingAs($manager)->test(ListManagedDns::class)->callTableAction('assignTemplate',$d,['profile'=>$profile->id,'expected_dns'=>'external'])->assertNotified('DNS template assigned');
 same((int)$profile->id,(int)ManagedPublicConfig::find($id)->profile_id,'Staff action uses tested writer');
 expect(!$m->health($now)['outage'],'Assignment does not inherit an old setup-only outage clock');
-same(0,ManagedDnsSetup::affected($now)->count(),'Assigned domain leaves the filtered list');same(2,count((new ManagedPublicReconciliation($signals))->due($now)),'Assigning a template queues both comparison checks');
+same(0,ManagedDnsSetup::affected($now)->count(),'Assigned domain leaves the filtered list');same(1,count((new ManagedPublicReconciliation($signals))->due($now)),'Domain without hosting queues only nameserver checks');
 // A retained enabled template can be unreadable even though the editor refuses that data.
 $storedNameservers=DB::table('domains_watch_profiles')->where('id',$profile->id)->value('nameservers');
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameservers'=>'null']);
 expect($profile->fresh()->enabled && $profile->fresh()->readProfile()===null,'Retained enabled template is unreadable');
 same(1,ManagedDnsSetup::affected($now)->count(),'Unreadable template returns to setup count');
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d]);
-Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Choose its DNS template.');
+Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set a default DNS template on the registrar account.');
 $unreadableSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$unreadableSummary->stateKeys,true),'Customer sees unreadable template as not configured');
 same([], (new ManagedPublicReconciliation($signals))->due($now),'Unreadable template has no configured runnable work');

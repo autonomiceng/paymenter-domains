@@ -59,6 +59,7 @@ final class WatchNoticeDelivery
             if ($resend && (!DB::table('domains_watch_deliveries')->where('id',$resend['id'])->where('notice_id',$n->id)->where('channel',$channel)->whereIn('state',['accepted','uncertain'])->exists() || !\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_type','notice_delivery')->where('subject_id',$resend['id'])->where('actor_id',$resend['actor'])->where('event','notice_resend')->get()->contains(fn($a)=>($a->data['key']??null)===$resend['key']))) { throw new \DomainException('Audited resend required.'); }
             $key=hash('sha256',$n->episode_key.'|'.$channel.($resend?'|'.$resend['key']:''));
             $on=self::current($prepared,$n->user_id,$channel) && WatchNoticePreferences::enabled($n->user_id,$t['name'],true);
+            if ($on) { $this->renderRecovered($n,$channel,$state,$now); }
             $prior=DB::table('domains_watch_deliveries')->where('delivery_key',$key)->lockForUpdate()->first();
             if ($prior) {
                 $predecessor=WatchNotice::find($prior->notice_id);
@@ -98,6 +99,7 @@ final class WatchNoticeDelivery
             $on=$t && $n->state==='open' && WatchNoticePreferences::enabled($n->user_id,$t['name'],true) && WatchNoticeTarget::eligible($n,$t,$state) && self::current($prepared,$n->user_id,$d->channel);
             if ($d->resend_of && !WatchNoticeReview::allowed((int)$d->actor_id,true)) { $on=false; }
             if (!$on) { $q->update(['state'=>'suppressed','safe_code'=>'target_or_preference_changed']);return false; }
+            $this->renderRecovered($n,$d->channel,$state,$now);
             if ($d->channel==='mail') {
                 $day=hash('sha256',$n->scope.'|'.WatchNoticePlan::day($now));
                 // Higher priority still-true notice wins even if a stale worker asks for a lower one first.
@@ -129,6 +131,14 @@ final class WatchNoticeDelivery
             DB::table('domains_watch_deliveries')->where('id',$id)->update(['state'=>'accepted','accepted_at'=>$now,'safe_code'=>null]);return true;
         } catch (\Throwable) { return false; } // Unknown native acceptance remains uncertain forever without audited staff action.
     }
+    /** Called under the notice-state lock only after current preparation succeeds. */
+    private function renderRecovered(WatchNotice $n,string $channel,array $state,int $now): void
+    {
+        $key=$n->id.'|'.$channel;
+        if ($state['render_failures'][$key]??false) {
+            unset($state['render_failures'][$key]);WatchNotices::write($n->scope,$n->user_id,$state,$now);
+        }
+    }
     private function renderFailure(WatchNotice $n,string $channel,int $now): void
     {
         DB::transaction(function()use($n,$channel,$now):void {
@@ -136,7 +146,9 @@ final class WatchNoticeDelivery
             $state=WatchNotices::state($n->scope,true);$key=$n->id.'|'.$channel;
             if (!($state['render_failures'][$key]??false)) {
                 $state['render_failures'][$key]=true;WatchNotices::write($n->scope,$n->user_id,$state,$now);
-                WatchNoticeHealth::record($n->user_id,(int)($n->watch_id??$n->managed_domain_id),$n->target_kind,'render_failed',$now);
+                WatchNoticeHealth::record($n->user_id,(int)($n->watch_id??$n->managed_domain_id),$n->target_kind,'render_failed',$now,
+                    // With site mail off, prepare() throws only for a template that always sends mail.
+                    ['template'=>'domains_watch_'.$n->kind,'channel'=>$channel]+($channel==='mail'&&config('settings.mail_disable')?['mail_paused'=>true]:[]));
             }
         });
     }

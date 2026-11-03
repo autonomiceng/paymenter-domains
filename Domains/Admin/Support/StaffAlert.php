@@ -5,16 +5,18 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\{Notification,User};
 use Illuminate\Support\Facades\{DB,Log,Route,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema;
-/** Native inbox delivery with optional retained episode/day receipts per recipient. */
+/** Native inbox delivery with optional retained episode/day receipts per recipient.
+ * A notice is a title, one short fact and a link to the page that shows the next step. Steps, ids and
+ * provider text stay on that page. $permission must let every recipient open the link. */
 final class StaffAlert
 {
-    public static function send(string $title,string $body,string $route,string $permission=Staff::VIEW,?string $deliveryKey=null): bool
+    public static function send(string $title,string $body,string $route,string $permission=Staff::VIEW,?string $deliveryKey=null,array $parameters=[]): bool
     {
         // Check once per alert, never once per recipient. Older/absent native inboxes stay silent.
         if (!class_exists(Notification::class) || !Schema::hasTable('notifications')
             || !Schema::hasColumns('notifications',['user_id','title','body','url','created_at','updated_at'])) { return false; }
         if($deliveryKey!==null&&!Schema::hasTable(StaffAlertSchema::TABLE)){return false;}
-        $url=Route::has($route)?route($route):null;
+        $url=Route::has($route)?route($route,$parameters):null;
         $complete=true;
         foreach (User::whereHas('role')->with('role')->lazyById(100) as $staff) {
             if (Staff::allows($staff,$permission)) {

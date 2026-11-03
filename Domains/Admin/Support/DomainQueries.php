@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Database\Eloquent\Builder;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 /** Exact holding binding, independent of today's seller. No financial interpretation of state labels. */
 final class DomainQueries
 {
@@ -30,6 +31,17 @@ final class DomainQueries
     public static function attention(Builder $q, array $states = ['held','uncertain']): Builder
     {
         return self::related($q,fn($ops)=>$ops->whereIn('attention.state',$states));
+    }
+    /** Unresolved alerts, excluding staff releases through the detail list's shared read scope. */
+    public static function openAlerts(Builder $q): Builder
+    {
+        return $q->whereExists(ObligationAlerts::open()->selectRaw('1')
+            ->whereColumn('domains_obligation_alerts.domain_id','domains_domains.id'));
+    }
+    /** Two fixed queries on a cold cache: release candidates, then the SQL aggregate. */
+    public static function openAlertCount(Builder $q): int
+    {
+        return self::openAlerts($q)->count();
     }
     public static function creditReview(Builder $q): Builder
     {

@@ -81,7 +81,10 @@ final class InvoiceBinding
             $product = Product::findOrFail($line['product_id']); $annual = $this->native->annualPlan($product);
             $price = new \App\Classes\Price(['price' => $renew->retail, 'currency' => $order->currency],
                 apply_exclusive_tax: true, tax: \App\Classes\Settings::tax($order->user));
-            $this->prepared[$line['item_id']] = ['annual_plan_id' => $annual->id, 'annual_price' => RetailLine::decimal($price->price), 'renewal' => self::price($renew), 'setup_tld' => $tld];
+            $defaults=NewDomainDns::capture($s->serverId,$s->action);
+            try{if($defaults){NewDomainDns::validate($s->registrar,$defaults['nameservers'],$line['name']);}}
+            catch(\InvalidArgumentException){throw new \App\Exceptions\DisplayException('The default nameservers cannot be used for '.$line['name'].'. Ask support to choose nameservers outside this domain before payment.');}
+            $this->prepared[$line['item_id']] = ['annual_plan_id' => $annual->id, 'annual_price' => RetailLine::decimal($price->price), 'renewal' => self::price($renew), 'setup_tld' => $tld, 'default_dns'=>$defaults];
         }
         // Reentrant reservation checks may lock these rows later; never first acquire another
         // domain after operations for an earlier cart line. Global unique name arbitrates absence.
@@ -120,12 +123,13 @@ final class InvoiceBinding
             'domain' => $line['name'], 'server_id' => $s->serverId, 'registrar_key' => $s->registrar,
             'account_fingerprint' => $s->fingerprint, 'authority_generation' => 1, 'status' => $s->action === 'register' ? 'registration_pending' : 'transfer_pending',
             'snapshot' => ['checkout' => $checkout], 'renewal_policy' => $line['renewal']], [$s->tld]);
+        $defaults=$line['default_dns'];
         $operation = Operation::create(['domain_id' => $domain->id, 'service_id' => $service->id, 'server_id' => $s->serverId,
             'registrar_key' => $s->registrar, 'account_fingerprint' => $s->fingerprint, 'authority_generation' => 1,
             'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => 'invoice-item:'.$item->id,
             'action' => $s->action, 'term' => $s->term, 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment',
             'amount' => $line['retail']['total'], 'currency' => 'USD', 'policy' => ['checkout' => $checkout, 'price' => self::price($s), 'seller_revision' => $line['selection']->policyRevision],
-            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => OrderContact::capture($service->user()->firstOrFail(), $line['setup_tld'])]);
+            'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => OrderContact::capture($service->user()->firstOrFail(), $line['setup_tld']) + $defaults]);
         $service->forceFill(['plan_id' => $line['annual_plan_id'], 'price' => $line['annual_price'], 'label' => $line['name'], 'expires_at' => null]);
         NativeDomainGuard::initial($service, $domain);
         self::requireIdentity($operation, $domain, $service->fresh(), $invoice, $item);

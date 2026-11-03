@@ -58,19 +58,24 @@ final class PriceList
             if(match($filter){'below_cost'=>!$below,'loses_money'=>!$loss,'default'=>!$tld->use_default_rule,'own'=>$tld->use_default_rule,default=>false}){continue;}
             $rows[]=$row;
         }
-        $explanations=[];
-        foreach($rows as $row){
-            $key=$row['server_id'].':'.$row['pricing'].':'.$row['formula'];
-            $explanations[$key]??=['account'=>$row['account'],'pricing'=>$row['pricing'],'formula'=>$row['formula'],'fee'=>$row['fee'],'fee_in_price'=>$row['fee_in_price'],'tlds'=>[]];
-            $explanations[$key]['tlds'][]=$row['tld'];
-        }
         $warnings=[];
         foreach($skipped as $row){
             $key=$row['server_id'].':'.$row['cause'].($row['cause']==='custom_rule'?':'.$row['id']:'');
             $warnings[$key]??=['server_id'=>$row['server_id'],'account'=>$row['account'],'cause'=>$row['cause'],'tlds'=>[]];
             $warnings[$key]['tlds'][]=$row['tld'];
         }
-        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_values($warnings),'accounts'=>$accounts,'years'=>$years,'explanations'=>array_values($explanations)];
+        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_values($warnings),'accounts'=>$accounts,'years'=>$years,'explanations'=>self::explain($rows)];
+    }
+    /** One formula per account and pricing type, with the TLDs it prices. Grouped by account id, since two accounts can share a name. */
+    public static function explain(array $rows): array
+    {
+        $explanations=[];
+        foreach($rows as $row){
+            $key=$row['server_id'].':'.$row['pricing'].':'.$row['formula'];
+            $explanations[$key]??=['account'=>$row['account'],'pricing'=>$row['pricing'],'formula'=>$row['formula'],'fee'=>$row['fee'],'fee_in_price'=>$row['fee_in_price'],'tlds'=>[]];
+            $explanations[$key]['tlds'][]=$row['tld'];
+        }
+        return array_values($explanations);
     }
     /** Only saved-setting validation failures are recoverable here; database and programmer errors propagate. */
     private static function readSetting(\Closure $read): ?array
@@ -96,8 +101,10 @@ final class PriceList
             $out=[...$out,$p['cost']===null?$none:self::money($p['cost']),$p['price']??$none,$p['profit']===null?$none:self::money($p['profit'],true),in_array($p['status'],['Missing',self::TRANSFERS_OFF],true)?'':$p['status']];}
         return [...$out,$row['formula'],CardFee::describe($row['fee'])];
     }
-    /** Estimated profit as it shows on the price list. */
+    /** Estimated profit as it shows on What you sell and in the CSV. */
     public static function profit(string $value): string {return self::money($value,true);}
+    /** Saved cost as it shows on What you sell and in the CSV. */
+    public static function cost(string $value): string {return self::money($value);}
     /** Display cents only; round estimated profit down, including a loss, without changing saved values. */
     private static function money(?string $value,bool $down=false): string
     {
@@ -108,7 +115,8 @@ final class PriceList
         if($down?($negative&&$remainder>0):$remainder>=50){$minor++;}
         return PricingRule::decimal($negative?-$minor:$minor);
     }
-    public function csv(int $years=1,string $filter='all',?int $serverId=null): string
+    /** @param ?list<string> $only server:tld keys to keep: the rows a table holds. */
+    public function csv(int $years=1,string $filter='all',?int $serverId=null,?array $only=null): string
     {
         $matrix=$this->read($years,$filter,$serverId);
         $stream=fopen('php://memory','w+');
@@ -118,6 +126,7 @@ final class PriceList
             fputcsv($stream,$values,',','"','');
         };
         $rows=[...$matrix['rows'],...$matrix['skipped']];
+        if($only!==null){$keep=array_flip($only);$rows=array_filter($rows,static fn(array $row):bool=>isset($keep[$row['server_id'].':'.ltrim($row['tld'],'.')]));}
         usort($rows,static fn(array $a,array $b):int=>strcmp($a['tld'],$b['tld'])?:$a['server_id']<=>$b['server_id']);
         $write($this->headings());foreach($rows as $row){$write($this->values($row));}
         rewind($stream);$csv=stream_get_contents($stream);fclose($stream);return $csv;

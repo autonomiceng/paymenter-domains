@@ -263,9 +263,10 @@ final class PriceSync
             });
             if ($event) {
                 // The scheduler already retried; only a person can fix credentials or change our call cap.
+                // Same line as the TLD list, which shows what to fix and when sales stop.
                 $cause = \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncCause($event['code']);
-                \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Price sync keeps failing',
-                    $cause.'. Automatic retry failed for registrar account #'.$account->server_id.'. Open Registrars, fix the connection or our call limit, then use Sync prices. New sales stop when costs reach 48 hours old. Daily retries continue.',
+                $name = (string) (\App\Models\Server::whereKey($account->server_id)->value('name') ?: 'Registrar account');
+                \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send('Price sync keeps failing', $name.' (account '.$account->server_id.'): '.$cause.'.',
                     'filament.admin.resources.domain-tlds.index', deliveryKey: 'price-sync:'.$account->account_fingerprint.':'.$event['first_at']);
             }
         } catch (\Throwable) { Log::warning('Domains price sync diagnostic could not be saved.', ['server_id' => (int) $account->server_id]); }

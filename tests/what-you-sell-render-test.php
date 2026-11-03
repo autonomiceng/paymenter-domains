@@ -1,15 +1,15 @@
 <?php
-// Native light/dark price-list captures; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Native light/dark What you sell captures; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade,DB};
 use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\PriceList;
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
-$out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule,StaffSettingsReview as Review};
+$out=renderOutput($argv[1]??null);
 $f=commerceFixture();extract($f);tldPanel();Carbon\Carbon::setTestNow($now);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 [$first,$second]=$tlds;
@@ -21,14 +21,19 @@ $prices->republish($first);
 DB::table('domains_tlds')->where('id',$second->id)->update(['use_default_rule'=>false,'pricing_mode'=>'fixed','round_up'=>'none',
     'fixed_register'=>'7.80','fixed_renew'=>'8.10','fixed_transfer'=>'9.10']);
 DB::table('domains_prices')->where(['server_id'=>$second->server_id,'action'=>'renew','term'=>1])->update(['retail'=>'8.10']);
-$u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);
+// Rows the demo has none of: a saved price below cost, a term with no saved price, a TLD left out and one the registrar no longer lists. They show the red loss, Missing, the amber line and the blocked row.
+DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>1])->update(['retail'=>'5.00']);
+DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>3])->update(['retail'=>null]);
+$left=$first->replicate();$left->tld='bad';$left->use_default_rule=false;$left->pricing_mode='unknown';$left->save();
+$gone=$first->replicate();$gone->tld='gone';$gone->save();
+$u=staffUser([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('acceptance')]);Auth::setUser($u);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 foreach([1,3] as $years){
-    $test=Livewire::actingAs($u)->test(PriceList::class)->assertSuccessful();
+    $test=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();
     // Resolve the sidebar's original request during the initial GET, before a test-only Livewire update.
     same('GET',\Filament\Support\original_request()->method(),'Static layout retains a GET request');
-    $test->set('years',$years);
+    $test->set('account',$first->server_id)->set('years',$years);
     $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
     $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
     $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
@@ -37,7 +42,9 @@ foreach([1,3] as $years){
     expect(str_contains($html,'How prices are worked out'),'Explanation in render');
     foreach(['light','dark'] as $mode){
         $page=preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1);
-        writeRenderArtifact($out.'/price-list-'.$years.'-year-'.$mode.'.html',$page);
+        writeRenderArtifact($out.'/what-you-sell-'.$years.'-year-'.$mode.'.html',$page);
     }
+    expect(str_contains($html,'domains-sell-left'),'Left-out line in render');expect(str_contains($html,'list this TLD'),'Blocked row reason in render');
+    expect($years===3?str_contains($html,'To add one, open the TLD page and use Edit prices.'):str_contains($html,'This price is below registrar cost.'),'Loss and Missing in render');
 }
-echo "Native price list rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;
+echo "Native What you sell rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;

@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,RequestBudget,Requ
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Catalogue,Driver as EnomDriver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver as NameSiloDriver;
-/** The only code that reads prices for What you sell: once a day, or from Sync now. A failed read writes nothing,
+/** The only code that reads prices for What you sell: once a day, or from Sync prices. A failed read writes nothing,
  * so the last good rows stay. These are reseller costs for the page, not spend evidence: PriceSync and the quote
  * at preflight still prove every sale. */
 final class PriceFill
@@ -51,7 +51,7 @@ final class PriceFill
             $this->fill($binding,$reader,RequestOrigin::Background);
         }catch(\Throwable $error){$this->failed($account,$binding,$error,$now);}
     }
-    /** Sync now. Returns the saved TLD count, including retained rows without prices; 0 when a newer read took over. */
+    /** Sync prices. Returns the saved TLD count, including retained rows without prices; 0 when a newer read took over. */
     public function run(Account $account): int
     {
         OperationClaims::outside();$binding=CatalogueAcceptances::binding($account);
@@ -65,8 +65,9 @@ final class PriceFill
         Log::warning('Domains price fill failed.',['server_id'=>$binding->serverId,'code'=>$code]);
         if(!self::stale(self::last($binding),$now)){return;}
         $name=(string)(\App\Models\Server::whereKey($binding->serverId)->value('name')??'A registrar account');
-        StaffAlert::send('Prices are out of date',$name.' has not given us new prices for 3 days. What you sell still shows the last good prices. Open it and use Sync now to see what stopped the read.',
-            'filament.admin.pages.what-you-sell',Staff::POLICY,'sell_fill:'.$binding->serverId.':'.$binding->fingerprint.':'.$since);
+        // What you sell, on this account, says the last good prices still show and offers Sync prices.
+        StaffAlert::send('Prices are out of date',$name.' has not sent new prices for 3 days.',
+            'filament.admin.pages.what-you-sell',Staff::POLICY,'sell_fill:'.$binding->serverId.':'.$binding->fingerprint.':'.$since,['account'=>$binding->serverId]);
     }
     private function fill(AccountBinding $binding,EnomDriver|NameSiloDriver $reader,RequestOrigin $origin): int
     {

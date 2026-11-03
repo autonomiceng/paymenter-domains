@@ -77,6 +77,13 @@ class RegistrarAccount extends Page
             $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
             $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
             $id=(int)$s->id;
+            $selection=\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::selection($id);$template=$selection['profile'];
+            $value=$template?->name??($selection['chosen']?($a->registrar_key==='enom'?'Registrar defaults':'Customer nameservers'):null);
+            $entry=MissingEntry::apply(TextEntry::make('new_domain_dns')->label('New domains use')->state($value)->inlineLabel(),cause:$value!==null?null:'Choose an enabled DNS template with Change. Create one under DNS templates first.');
+            if($template){$entry->belowContent(implode(', ',$template->nameservers));}
+            $entry->hintAction(HelpHint::make(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::HELP));
+            $sections[]=Section::make('Domain settings')->key('domain_settings_'.$id)->schema([Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'new_domain_dns')])->grow(false)])->extraAttributes(['id'=>'switch-template'])->from('md'),
+                TextEntry::make('whois_privacy')->label('WHOIS privacy')->state($a->registrar_key==='enom'?'Not offered. Enom charges for it and '.(\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company()?:'this site').' does not sell it yet.':'Free when supported by the TLD.')->inlineLabel()])->columnSpanFull();
             if(LiveActivationAction::offered($a)){
                 $sections[]=Section::make('Live sales')->key('live_sales')->schema([Html::make(fn()=>LiveActivationAction::summary($a)),Actions::make([LiveActivationAction::make($a,$this->reviewStamp)])])->columnSpanFull();
             }
@@ -105,7 +112,7 @@ class RegistrarAccount extends Page
         try { $feeText=CardFee::describe(CardFee::read($id)).' per payment'; }
         catch (\Throwable) { $feeText=null; }
         $feeEntry=MissingEntry::apply(TextEntry::make('card_fee')->label('Card fee')->state($feeText)->inlineLabel(),cause:$feeText===null?"Saved card fee can't be read. Use Edit card fee.":null);
-        if ($feeText!==null) { $feeEntry->hintAction(HelpHint::make('Used for estimated profit on the Price list, and by pricing that adds a percentage to cost and card fee.')); }
+        if ($feeText!==null) { $feeEntry->hintAction(HelpHint::make('Used for estimated profit on What you sell, and by pricing that adds a percentage to cost and card fee.')); }
         return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md'),
             Flex::make([$feeEntry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'card_fee')])->grow(false)])->from('md')];
     }
@@ -161,9 +168,9 @@ class RegistrarAccount extends Page
             $entry=MissingEntry::apply(TextEntry::make('calls')->label('API calls, last 24 hours')->state($calls['value'])->inlineLabel(),cause:$calls['value']===null?$calls['sub']:null,color:$calls['tone']);
             if ($calls['value']!==null&&$calls['sub']) { $entry->belowContent($calls['sub']); }
             if ($calls['help']) { $entry->hintAction(HelpHint::make($calls['help'])); }
-            $entries[]=$entry;
+            $entries[]=\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::row($entry,$a,$this->reviewStamp);
         }
-        $entries[]=$fact('last_sync','Last sync',RegistrarFacts::lastSync($s),Missing::fills('within a day'))->hintAction(HelpHint::make('Last successfully saved price read for this account. Use Sync now in What you sell to get current costs.'));
+        $entries[]=$fact('last_sync','Last sync',RegistrarFacts::lastSync($s),Missing::fills('within a day'))->hintAction(HelpHint::make('Last successfully saved price read for this account. Use Sync prices in What you sell to get current costs.'));
         return $entries;
     }
 }

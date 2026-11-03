@@ -103,7 +103,16 @@ foreach([0,1]as$i){
     }
     commerceReject(fn()=>$setup->save($user,$registration->domain_id,['nameservers'=>$i?['ns1.example.com','ns2.example.com']:[],'privacy'=>true]));
     expect(!isset($registration->fresh()->policy['owner_setup']),'Local writer also refuses hidden privacy without freezing setup');
-    $setup->save($user,$registration->domain_id,['nameservers'=>$i?['ns1.example.com','ns2.example.com']:[]]);
+    // Exercise the actual POST grammar: blank nameservers use the account template on either registrar.
+    $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Owner POST registration DNS '.$i,'enabled'=>true,
+        'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
+        'edited_by'=>$user->id,'reason'=>'Synthetic Finish setup default']));
+    $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$registration->server_id)->sole();
+    DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked($account,$template->id));
+    $session->forget('errors');$r=$req($registration->domain,'setup',['nameservers'=>'']);nativeNormalizeInput($r);$action->setup($r,$registration->domain_id);
+    expect(!$session->has('errors'),'Blank Finish setup with a template passes the HTTP boundary');
+    same($template->nameservers,$registration->fresh()->payload['nameservers'],'HTTP capture fills the selected template before dispatch');
+    DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked($account,null));
     expect(isset($registration->fresh()->policy['owner_setup']),'Registration desired settings captured before dispatch');
     same(false,$registration->fresh()->payload['privacy'],'Setup without privacy keeps the stored choice');
     same('awaiting_payment',$registration->fresh()->state,'Setup creates no financial or processing authority');

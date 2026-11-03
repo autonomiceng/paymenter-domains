@@ -40,6 +40,9 @@ final class Labels
     public static function operationReason(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): ?string
     {
         if (($late=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::lateNote($op))!==null) { return $late; }
+        if(RequestFacts::quietRegistrationDns($op)){
+            return \Paymenter\Extensions\Servers\Domains\Services\RegistrationDns::pending($op,$op->domain)?'Domain registered. Chosen nameservers not confirmed':null;
+        }
         if ($op->safe_code==='management_retired') {
             $actor=$op->attempt['management_terminal']['actor_id']??null;
             return $actor===null ? 'Cancelled' : 'Cancelled by '.((int)$actor===(int)$op->domain->user_id?'customer':'staff');
@@ -143,6 +146,7 @@ final class Labels
             'render_failed'=>'Alert template failed',
             'read_deferred'=>'Check delayed. It runs again later.','clock_reversal'=>'Server clock problem. Try again.',
             'profile_unavailable'=>"Couldn't load the check settings",'dns_not_configured'=>'DNS comparison not set up. Choose a DNS template.',
+            'no_hosting'=>'No hosting service. DNS record checks do not apply.',
             'rotation'=>'Check not finished. It continues on the next run.',
             'resolver_failed'=>'DNS resolver failed','invalid_answer'=>'DNS answer invalid','ambiguous_empty'=>'DNS answer incomplete',
             'registrar_price_increased'=>'Not sent: registrar price exceeds the frozen order limit. Cancel and add credit, or use Release hold after the price falls.',

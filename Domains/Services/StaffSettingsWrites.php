@@ -33,6 +33,7 @@ final class StaffSettingsWrites
         if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return null;}
         if(in_array($r->action,['test_transfer','live_transfer'],true)){EnomTestTransfer::review($r,$data);return null;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return null;}
+        if($r->action==='call_limits'){ApiCallLimits::save($r,$data);return null;}
         if($r->action==='unpaid_hold'){UnpaidHoldSetting::save($r,$data);return null;}
         if($r->action==='enroll_sandbox'){
             if(($data['confirmed']??false)!==true){throw new \DomainException('Sandbox contract confirmation required.');}
@@ -137,6 +138,7 @@ final class StaffSettingsWrites
         $r->local(function()use($r,$data,$now):void{
             $s=Server::whereKey($r->serverId)->lockForUpdate()->firstOrFail();$a=Account::where('server_id',$s->id)->lockForUpdate()->firstOrFail();$t=$r->tldId?Tld::whereKey($r->tldId)->lockForUpdate()->firstOrFail():null;
             if($t&&($t->registrar_key!==$a->registrar_key||$t->account_fingerprint!==$a->account_fingerprint)){throw new \DomainException('TLD binding mismatch.');}
+            if($r->action==='new_domain_dns'){NewDomainDns::saveLocked($a,$data['dns_template']??null);return;}
             if($r->action==='history'){
                 HistoryAcceptances::revokeLocked(CatalogueAcceptances::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
             }

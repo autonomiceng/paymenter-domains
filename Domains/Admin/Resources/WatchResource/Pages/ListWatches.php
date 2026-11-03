@@ -37,11 +37,11 @@ class ListWatches extends ListRecords
         $dnsFailure=($notice['action']??null)==='settings';
         $url=$dnsFailure&&MonitoringSettings::canAccess()?WatchResource::getUrl('settings'):null;
         $count=ManagedDnsSetup::affected(time())->count();
-        $canAssign=Staff::can(StaffWatchWrites::MANAGE);
+        $canAssign=Staff::can(StaffWatchWrites::MANAGE) && Staff::canEditDefaultDns();
         $setupText='DNS monitoring is not set up for '.$count.' '.($count===1?'domain.':'domains.');
-        if($canAssign){$setupText.=' Choose '.($count===1?'its':'their').' DNS template.';}
+        if($canAssign){$setupText.=' Set a default DNS template on the registrar account.';}
         $setup=$count?Callout::make($setupText)->status('info')
-            ->footer($canAssign?new HtmlString(view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-setup'),'color'=>'gray','size'=>'sm','slot'=>'Choose DNS template'])->render()):null)->columnSpanFull():null;
+            ->footer($canAssign?new HtmlString(view('filament::components.button.index',['tag'=>'a','href'=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>ManagedDnsSetup::affected(time())->value('domains_domains.server_id')]),'color'=>'gray','size'=>'sm','slot'=>'Set account DNS template'])->render()):null)->columnSpanFull():null;
         $button=$url?view('filament::components.button.index',['tag'=>'a','href'=>$url,'color'=>'gray','size'=>'sm','slot'=>'Resolver settings'])->render():null;
         if($dnsFailure && in_array('managed_dns',$this->failedFamilies,true)){$button.=view('filament::components.button.index',['tag'=>'a','href'=>WatchResource::getUrl('dns-failures'),'color'=>'gray','size'=>'sm','slot'=>'Affected checks'])->render();}
         return $schema->components([...($setup?[$setup]:[]),...($notice?[Callout::make($notice['text'])->status($notice['tone'])->footer($button?new HtmlString($button):null)->columnSpanFull()]:[]),

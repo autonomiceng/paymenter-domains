@@ -19,9 +19,14 @@ native SQLite/Livewire checks; installed browser and provider acceptance remain 
 ## Native staff inbox
 
 `watch-maintenance-test.php`, `watch-notice-negative-test.php` and `registrar-balances-test.php`
-assert one native notification per eligible staff user, exact existing copy, admin links and
-unchanged episode/day deduplication. The unmodified core migrations must supply Paymenter's
-required user/title/body columns; missing storage or columns skips silently. Queue assertions
+assert one native notification per eligible staff user, exact copy, admin links and
+unchanged episode/day deduplication. Each alert is a title, one short fact and a link to the page
+with the next step: `psl-staff-test.php`, `balance-retry-test.php`, `what-you-sell-test.php`,
+`enom-catalogue-test.php` and `watch-maintenance-test.php` pin the line, the destination
+(with its account or domain) and that the recipient can open it. For registrar-request destinations,
+only the URL is pinned; these tests do not prove the recipient can open that page.
+The unmodified core migrations must supply Paymenter's required user/title/body columns;
+missing storage or columns skips silently. Queue assertions
 reject Filament database notification jobs under a fake queue; empty jobs/failed_jobs checks
 are baseline assertions, not worker execution. Native rows and the rejected job cover the
 failed-job symptom. Earlier

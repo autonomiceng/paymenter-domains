@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Filament\Tables\{Columns\TextColumn, Filters\SelectFilter, Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,OperationQueries,RequestFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,NavigationCount,OperationQueries,RequestFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Missing,RequestStatus};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
@@ -31,6 +31,15 @@ class OperationResource extends Resource
     public static function canGloballySearch(): bool { return false; }
     public static function getEloquentQuery(): Builder
     { Staff::requireView(); return OperationQueries::bound(parent::getEloquentQuery()); }
+    /** Statuses that wait on staff. Awaiting payment waits on the customer, and In progress on the registrar. */
+    public const NEEDS_STAFF=['on_hold','under_review'];
+    /** Menu count: requests On hold or Under review, the list's Status filter for those two. Null at zero, so the menu shows nothing. */
+    public static function getNavigationBadge(): ?string
+    {
+        if (!Staff::can()) { return null; }
+        return NavigationCount::read('requests',fn()=>OperationQueries::status(static::getEloquentQuery(),self::NEEDS_STAFF)->count());
+    }
+    public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {
         Staff::requireView();

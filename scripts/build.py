@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_SUFFIXES = {'.php', '.json', '.css', '.js', '.svg'}
 # The owner help page renders this Markdown. No other Markdown ships.
 HELP_FILES = {'resources/help/owner-help.md'}
+# Dormant runtime staged by B1; B6 removes this exception when callers switch.
+STAGED_RUNTIME_ROOTS = {'Catalogue'}
 MAX_FILE_BYTES = 1_048_576
 MAX_ARCHIVE_BYTES = 10_000_000
 MAX_TOTAL_BYTES = 32 * MAX_FILE_BYTES
@@ -139,6 +141,7 @@ def validate_runtime(members):
     present = {name.split('/')[0] for name in relative if '/' in name}
     if roots - present:
         raise ValueError('Runtime-referenced directory is missing: ' + ', '.join(sorted(roots - present)))
+    roots |= STAGED_RUNTIME_ROOTS & present
     for name in relative:
         safe_name(name)
         if name not in LEGAL | {'Domains.php'} and ('/' not in name or name.split('/')[0] not in roots):

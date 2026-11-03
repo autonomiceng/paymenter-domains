@@ -64,7 +64,7 @@ final class DomainSummaries
         if ($c->staff && $c->domains) { throw new \LogicException('Staff watch context cannot include managed domains.'); }
         $uid=$c->owner;
         $dids=array_keys($c->domains);$wids=array_keys($c->watches);
-        $setupIds=$dids?ManagedDnsSetup::eligible($now)->whereIn('domains_domains.id',$dids)->pluck('domains_domains.id')->all():[];
+        $setupIds=$dids?ManagedDnsSetup::affected($now)->whereIn('domains_domains.id',$dids)->pluck('domains_domains.id')->all():[];
         $dns=['watch'=>$this->latest(WatchDnsObservation::class,'watch_id',$wids,$c->staff?null:$uid),'managed'=>$this->latest(ManagedPublicObservation::class,'domain_id',$dids,$uid)];
         $registry=$this->latest(WatchRegistryObservation::class,'watch_id',$wids,$c->staff?null:$uid);
         $work=['watch'=>DB::table('domains_watch_work')->whereIn('watch_id',$wids)->get()->groupBy('watch_id')->all(),
@@ -76,6 +76,17 @@ final class DomainSummaries
         $servers=Server::with('settings')->whereIn('id',array_map(fn($d)=>$d->server_id,$c->domains))->get()->keyBy('id');
         $cycles=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->where('action','renew')->groupBy('domain_id'))->limit(250)->get()->groupBy('domain_id');
         $acquisitions=Operation::whereIn('id',Operation::selectRaw('max(domains_operations.id)')->join('domains_domains as d','d.id','=','domains_operations.domain_id')->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')->whereIn('action',['register','transfer'])->groupBy('domain_id'))->limit(250)->get()->keyBy('domain_id');
+        $dnsChoices=collect();
+        Operation::select('domains_operations.*')->join('domains_domains as d','d.id','=','domains_operations.domain_id')
+            ->whereIn('d.id',$dids)->whereColumn('d.authority_generation','domains_operations.authority_generation')->whereColumn('d.account_fingerprint','domains_operations.account_fingerprint')
+            ->whereColumn('d.service_id','domains_operations.service_id')->whereColumn('d.server_id','domains_operations.server_id')->whereColumn('d.registrar_key','domains_operations.registrar_key')
+            ->where('domains_operations.state','succeeded')->whereIn('domains_operations.action',['register','transfer','nameservers'])
+            ->chunkByIdDesc(100,function($ops)use($c,$dnsChoices):void{
+                foreach($ops->groupBy('domain_id') as $id=>$batch){
+                    $choices=ManagedDnsSetup::choices($c->domains[$id],$dnsChoices->get($id,collect())->concat($batch));
+                    $dnsChoices->put($id,collect(array_filter($choices)));
+                }
+            },'domains_operations.id','id');
         $invoices=Invoice::where('user_id',$uid)->whereIn('id',$cycles->flatten()->pluck('invoice_id')->merge($acquisitions->pluck('invoice_id')))->get()->keyBy('id');
         $targets=[...$c->domains,...$c->watches];
         $scopes=array_map(fn($t)=>WatchNoticePreferences::scope((int)$t->user_id,$t instanceof WatchName?$t->canonical_name:$t->domain),$targets);
@@ -109,7 +120,7 @@ final class DomainSummaries
                 }
                 $signals['partial']=$signals['dns']['stale']||$signals['website']['stale']||$signals['email']['stale'];
                 $keys=DnsSignalLabels::projection($signals);$states=[];
-                if($kind==='managed' && in_array($id,$setupIds,true) && !ManagedDnsSetup::usable($c->profiles[$c->configs[$id]->profile_id??0]??null)){$states[]='domain.dns.not_configured';}$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$issue=null;$waits=null;
+                if($kind==='managed' && in_array($id,$setupIds,true)){$states[]='domain.dns.not_configured';}$expiry=null;$precision=null;$source=null;$order=[];$due=null;$price=null;$off=false;$reminderOff=false;$projected=false;$invoiceMissing=false;$issue=null;$waits=null;
                 if ($kind==='watch') {
                     $registryRows=$registry[$id]??collect();$r=$registryRows->first();$good=$registryRows->firstWhere('result','facts');$j=$jobs->firstWhere('kind','expiry');$match=$r && ($registryStamp=$c->stamp($kind,$id,'registry')) && hash_equals($registryStamp,$r->facts['presentation_stamp']??'');
                     $until=$r?->valid_until;if ($r && WatchRegistryChecks::urgent($r->facts['expiry']??null,$now)) { $until=min((int)$until,$r->started_at+43200); }
@@ -153,7 +164,8 @@ final class DomainSummaries
                     if (!$expiry || $expiry<=gmdate('Y-m-d',$now)) { $invoiceMissing=false; }
                     if (!$expiry) { $waits=$pending?'import':(['registration_pending'=>'registration','transfer_pending'=>'transfer'][$t->status]??null); }
                 }
-                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?$t->expected_dns:($c->configs[$id]->expected_dns??null);
+                $choices=$dnsChoices->get($id,collect());
+                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?$t->expected_dns:ManagedDnsSetup::expected($c->configs[$id]??null,$c->managedProfile($id),$t,...ManagedDnsSetup::choices($t,$choices));
                 $scope=WatchNoticePreferences::scope($uid,$kind==='watch'?$t->canonical_name:$t->domain);$episode=$noticeStates[$scope]??null;if ($episode && (int)$episode->user_id!==$uid) { $episode=null; }
                 try { $episode=$episode?json_decode(Crypt::decryptString($episode->data),true,64,JSON_THROW_ON_ERROR):[]; if (!is_array($episode) || !is_array($episode['portal']??[]) || array_filter($episode['portal']??[],fn($v)=>!is_array($v) || array_filter($v,fn($key)=>!is_string($key)))) { $episode=[]; } } catch (\Throwable) { $episode=[]; }
                 $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];

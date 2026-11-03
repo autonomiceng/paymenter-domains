@@ -3,8 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue,PublicationEligibility};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue,PriceSync,PublicationEligibility,SellRule};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Saved facts only. No reader factory, credentials or provider calls. */
 final class TldFacts
@@ -251,6 +252,12 @@ final class TldFacts
                 $change=self::CHANGES[$r['action']]??$r['action'];
                 if($r['action']==='Sync TLD prices'&&is_string($r['input']['ending']??null)){$change.=' for .'.$r['input']['ending'];}
                 $detail=[];
+                if($r['action']==='Edit call limits'){
+                    foreach(['day'=>'Daily calls','minute'=>'Calls per minute'] as $key=>$label){
+                        $old=$r['before']['call_limits'][$key]??null;$new=$r['after']['call_limits'][$key]??null;
+                        if($old!==$new){$detail[]=$label.': '.($old??'Missing').' → '.($new??'Missing');}
+                    }
+                }
                 if($r['action']==='Edit what you sell'){
                     $change='Sales settings changed';$input=$r['input'];
                     $edited=$tldId?array_intersect_key((array)($input['rows']??[]),[$ending=>true]):(array)($input['rows']??[]);
@@ -316,7 +323,26 @@ final class TldFacts
             $last=$lastPrices??self::lastPrices($serverId);
             if($at===null||($last!==null&&$last>=$at)){return null;}
         }
-        return ['cause'=>self::syncCause($facts['code']),'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
+        $cause=self::syncCause($facts['code']);
+        if($facts['code']==='catalogue_call_capacity'){
+            // Retain the failed sync, but show capacity under today's saved cap without a provider read.
+            try{
+                $binding=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
+                $needed=PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
+                if(SellRule::saved($binding)!==null){
+                    if(PriceSync::callsToday($binding)===null){
+                        $cause="Couldn't read our call count or limit. Try again.";
+                    }else{
+                        $left=PriceSync::backgroundLeft($binding,app(Clock::class));
+                        $cause='Price sync needs '.$needed.' calls; '.$left.' calls left for automatic price reads';
+                    }
+                }else{
+                    $left=PriceSync::callsLeft($binding);
+                    if($left!==null){$cause=$left>=$needed?'Our daily call limit has room to retry the price sync ('.$left.' calls left)':'Price sync needs '.$needed.' calls; '.$left.' calls left under our current limit';}
+                }
+            }catch(\Throwable){} // Missing acceptance or usage keeps the original failure and its next step.
+        }
+        return ['cause'=>$cause,'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
     }
     private static function queue(int $serverId): ?object
     {

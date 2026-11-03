@@ -13,6 +13,9 @@
 @if ($notice)
 <div class="domains-notice domains-notice--{{ $notice['tone'] }}" role="status"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4M12 16h.01"/><circle cx="12" cy="12" r="10"/></svg><span class="domains-notice__tx">{{ $notice['text'] }}</span>@if ($notice['action']) <a class="{{ ($notice['action']['button'] ?? false) ? 'domains-btn domains-btn--primary domains-btn--sm' : 'domains-a' }}" href="{{ $notice['action']['url'] }}">{{ $notice['action']['label'] }}</a>@endif</div>
 @endif
+@if (($summary ?? null) && $summary->kind === 'managed' && !$summary->relatedServices && !$summary->relatedOverflow && $domain->expiry && !$domain->setupPending && in_array('domain.dns.platform', $summary->dnsKeys, true) && !$summary->website && !$summary->email)
+<p class="domains-muted">To use this domain, buy a service or point it to your own nameservers.</p>
+@endif
 <div class="domains-cols"><div>
 @foreach ($groups as $heading => $caps)
 @php($caps = array_values(array_filter($caps, fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused)))))

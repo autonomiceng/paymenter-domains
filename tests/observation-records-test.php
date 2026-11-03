@@ -189,6 +189,10 @@ DB::table('domains_watch_profiles')->insert(['name'=>'Glue candidate fixture','n
 $state->glue['ns-template.'.$d->domain]='8.8.4.4';$state->calls=[];$observer->run($d->id,readRecords:true);
 expect(in_array(['CheckNSStatus',['CheckNSName'=>'ns-template.'.$d->domain]],$state->calls,true),'Template child hosts discovered without changing the template');
 expect(!in_array(['CheckNSStatus',['CheckNSName'=>'ns.other.example.net']],$state->calls,true),'Unrelated template hosts excluded');
+// The independent editor/no-lock checks require confirmed registrar DNS after custom glue discovery.
+$observation->nameservers=$state->ns=['dns1.name-services.com','dns2.name-services.com'];
+$clock->instant=$clock->now()->modify('+61 seconds');
+same('refreshed',$observer->run($d->id,readRecords:true),'Registrar DNS delegation restores the record editor fixture');
 // GET presentation has no writes; query bounds cap operation history decryption.
 DB::connection()->enableQueryLog();$page();$queries=DB::getQueryLog();DB::connection()->disableQueryLog();
 foreach($queries as$q){expect(!preg_match('/^(?:insert|update|delete) /i',$q['query']),'Owner GET has no database writes');if(str_contains($q['query'],'from "domains_operations"')){expect(str_contains($q['query'],'limit'),'Owner operation scans are bounded');}}
