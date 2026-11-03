@@ -24,7 +24,13 @@ final class CallerRouting
     public static function resolve(string $type): ?object
     {
         if (self::$probe !== null) { return self::$probe[$type] ?? null; }
-        $state = UpgradeGate::routeState();
+        return self::select(UpgradeGate::routeState(), $type);
+    }
+    /** CURRENT mode after the holding native/server/account prefix; never use an older read view. */
+    public static function afterPrefix(string $type): ?object
+    { return self::select(UpgradeGate::currentRouteState(), $type); }
+    private static function select(array $state, string $type): ?object
+    {
         if ($state['state'] !== 'active') { return null; }
         if (self::$generation !== $state['generation']) {
             $contract = self::contract();

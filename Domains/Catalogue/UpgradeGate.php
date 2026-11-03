@@ -35,12 +35,15 @@ final class UpgradeGate
             || !is_int($state['generation'] ?? null) || $state['generation'] < 1) {
             throw new \DomainException('Catalogue upgrade state is invalid; keep maintenance active.');
         }
-        if ($state['state'] === 'active' && (!preg_match('/^[a-f0-9]{64}$/D', $state['contract'] ?? '') || !preg_match('/^[a-f0-9]{64}$/D', $state['digest'] ?? ''))) { throw new \DomainException('Invalid active catalogue contract.'); }
+        if ($state['state'] === 'active' && (!is_string($state['contract'] ?? null) || !is_string($state['digest'] ?? null) || !preg_match('/^[a-f0-9]{64}$/D', $state['contract']) || !preg_match('/^[a-f0-9]{64}$/D', $state['digest']))) { throw new \DomainException('Invalid active catalogue contract.'); }
         return $state;
     }
 
     /** Advisory mode selection never takes the gate ahead of a caller's native/account prefix. */
     public static function routeState(): array { return self::state(self::query()->get()); }
+    /** Caller already owns its complete native/server/account prefix. */
+    public static function currentRouteState(): array
+    { if (DB::transactionLevel() === 0) { throw new \LogicException('Current routing requires the owned prefix.'); } return self::state(); }
     public static function active(int $generation): void
     {
         $s = self::state();

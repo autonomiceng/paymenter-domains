@@ -25,7 +25,7 @@ final class HoldingLocks
         $order = $orders->firstWhere('id', $service->order_id);
         $server = Server::whereKey($seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $account = Account::where('server_id', $seed->server_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
-        $routed = Capabilities::routed();
+        $routed = $advisory ? Capabilities::routed() : \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(Capabilities::class);
         $catalogue ??= $routed;
         if ($routed) { \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::current(\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation()); }
         $settings = $server->settings()->when($advisory,fn($q)=>$q->whereIn('key',['domains_credentials','domains_verified_credentials','domains_dns_tools']))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();

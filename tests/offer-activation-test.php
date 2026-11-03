@@ -102,6 +102,6 @@ same(true,$result['activated'],'The checked method commits the sole switch');sam
 expect((bool)preg_match('/^[a-f0-9]{64}$/D',$result['digest']),'Safe digest-only receipt');
 commerceReject(fn()=>$gate->activate($evidence));commerceReject(fn()=>$gate->resume());
 same(0,$reads->calls,'Activation and bounded wake never resolve a provider reader');
-same(true,UpgradeComparison::compare($evidence['before'])['compatible'],'Activation preserves retained native identities and pending/paid/uncertain financial evidence');
+same(['settings'],UpgradeComparison::compare($evidence['before'])['changed'],'Only the encrypted switch changes; native identities and pending/paid/uncertain obligations survive');
 foreach(['contract','digest'] as $field){$state=Setting::where('key',UpgradeGate::KEY)->sole();$raw=$state->getRawOriginal('value');$v=json_decode($state->value,true);$v[$field]=[];$state->value=json_encode($v);$state->saveQuietly();commerceReject(fn()=>CallerRouting::resolve(Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::class));DB::table('settings')->where('id',$state->id)->update(['value'=>$raw]);}
 $nativeSuccessful=true;echo "Checked installed activation and refusal boundaries passed.\n";
