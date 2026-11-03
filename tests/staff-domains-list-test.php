@@ -92,6 +92,6 @@ foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
 same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
 foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
-    same($i%3===0?'Sync failed. Ask staff who can resume sync.':null,$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
+    same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync failed. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;
