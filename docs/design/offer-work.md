@@ -64,8 +64,11 @@ The Enom revision is a local keyed digest; NameSilo uses #387's persisted opaque
 an account identity or provider confirmation. Transactional checks use current locking credential rows.
 
 Both interactive and background catalogue requests share **our** 30% daily call allowance and the
-25-read account minute budget. Existing admitted transport scopes additionally preserve half of our
-call capacity for checkout; their atomic reservations remain authoritative. Feed iteration completes
+25-read account minute budget, reserved atomically for either origin. Checkout keeps its normal
+interactive allowance. The factory narrows the existing admitted transport scope to 30% of our daily
+cap: each physical admission checks that threshold atomically against all origins' usage. A prior
+allowance snapshot grants no send authority. Nested scopes keep the stricter share and restore it
+after refusal; other background callers keep their default half-day share. Feed iteration completes
 inside that scope. These are our configured limits and headroom, never registrar limits. No provider
 I/O runs while database locks are held.
 

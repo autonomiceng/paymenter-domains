@@ -14,10 +14,12 @@ final class EnomTestSendLimit
 {
     private static array $checkoutHeadroom=[];
     /** A synchronous read scope narrows only this login's atomic allowance; checkout keeps the original guard. */
-    public static function withCheckoutHeadroom(string $uid,\Closure $read): mixed
+    public static function withCheckoutHeadroom(string $uid,\Closure $read,int $dailyPercent=50): mixed
     {
-        $account=self::account($uid);$nested=isset(self::$checkoutHeadroom[$account]);self::$checkoutHeadroom[$account]=true;
-        try{return $read();}finally{if(!$nested){unset(self::$checkoutHeadroom[$account]);}}
+        if($dailyPercent<1||$dailyPercent>50){throw new \InvalidArgumentException('Invalid daily read share.');}
+        $account=self::account($uid);$prior=self::$checkoutHeadroom[$account]??null;
+        self::$checkoutHeadroom[$account]=min($prior??100,$dailyPercent);
+        try{return $read();}finally{if($prior===null){unset(self::$checkoutHeadroom[$account]);}else{self::$checkoutHeadroom[$account]=$prior;}}
     }
     public const PER_DAY='domains.enom_test_sends_per_day';
     public const PER_MINUTE='domains.enom_test_sends_per_minute';
@@ -39,7 +41,7 @@ final class EnomTestSendLimit
             if($perDay===null||$perMinute===null){throw new EnomTestCallLimit('bad_setting');}
             if(!$perDay||!$perMinute||$uid===''||!preg_match('/^[A-Za-z_]{1,32}$/D',$command)){throw new EnomTestCallLimit;}
             $account=self::account($uid);
-            if(isset(self::$checkoutHeadroom[$account])){$perDay=intdiv($perDay,2);}
+            if(isset(self::$checkoutHeadroom[$account])){$share=self::$checkoutHeadroom[$account];$perDay=intdiv($perDay,100)*$share+intdiv(($perDay%100)*$share,100);}
             // A deadlock rolls back with nothing written, so the whole check is retried.
             DB::transaction(static function()use($account,$command,$perDay,$perMinute):void {
                 $row=DB::table(EnomTestSendLimitSchema::ACCOUNTS)->where('account',$account);

@@ -76,5 +76,28 @@ $lease = $normalMinute->reserve($binding, RequestOrigin::Interactive, 1);
 $normalMinute->release($binding, RequestOrigin::Interactive, $lease);
 same(26, (int) DB::table('domains_read_budgets')->where('server_id', $binding->serverId)->value('used'), 'Ordinary interactive checkout retains its normal allowance above the catalogue ceiling');
 config(['domains.provider_send_guard' => null]);
+// A holding consumes capacity after advisory admission, before catalogue physical sends.
+DB::table(EnomTestSendLimitSchema::SENDS)->where('account', EnomTestSendLimit::account('offer-fixture'))->delete();
+config([EnomTestSendLimit::PER_DAY => 100]);
+DB::table(EnomTestSendLimitSchema::SENDS)->insert(array_fill(0, 25,
+    ['account' => EnomTestSendLimit::account('offer-fixture'), 'command' => 'Check', 'sent_at' => $clock->now()->getTimestamp() - 120]));
+same(5, $ports->allowance($binding, RequestOrigin::Interactive), 'Advisory admission sees room for the five-read catalogue feed');
+EnomTestSendLimit::admit(Environment::Test, 'offer-fixture', 'Check'); // an intervening holding read
+$sent = 0; $refused = false;
+try {
+    EnomTestSendLimit::withCheckoutHeadroom('offer-fixture', static function () use (&$sent): void {
+        for ($i = 0; $i < 5; $i++) {
+            // Even a nested ordinary background scope must not loosen the catalogue's stricter cap.
+            EnomTestSendLimit::withCheckoutHeadroom('offer-fixture', static fn () => EnomTestSendLimit::admit(Environment::Test, 'offer-fixture', 'GetTLDList'));
+            same(0, DB::transactionLevel(), 'Synthetic physical send happens after the atomic admission transaction');
+            $sent++;
+        }
+    }, 30);
+} catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) { $refused = true; }
+same(4, $sent, 'Our 30% daily catalogue threshold refuses the extra send after another consumer uses capacity');
+same(true, $refused, 'Exhausted daily catalogue headroom refuses rather than exceeding the threshold');
+same(30, EnomTestSendLimit::usage('offer-fixture')['day'], 'Atomic admission counts each synthetic physical attempt exactly once');
+EnomTestSendLimit::admit(Environment::Test, 'offer-fixture', 'Check');
+same(31, EnomTestSendLimit::usage('offer-fixture')['day'], 'The narrowed scope restores ordinary checkout capacity after refusal');
 echo "offer ports: ok\n";
 $nativeSuccessful = true;

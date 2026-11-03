@@ -48,12 +48,12 @@ final class OfferPorts
             $feed = new NameSilo\OfferFeed(new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key'], $transport), clock: $this->clock));
         }
         $scope = $binding->environment === Environment::Test
-            ? static fn (\Closure $read) => EnomTestSendLimit::withCheckoutHeadroom($identity, $read)
-            : static fn (\Closure $read) => LiveReservations::withCheckoutHeadroom($binding->registrarKey, $identity, $read);
+            ? static fn (\Closure $read) => EnomTestSendLimit::withCheckoutHeadroom($identity, $read, 30)
+            : static fn (\Closure $read) => LiveReservations::withCheckoutHeadroom($binding->registrarKey, $identity, $read, 30);
         return new CredentialFeed($feed, $current, $scope);
     }
 
-    /** Our catalogue share is 30% of our daily cap; the atomic transport scope also preserves half for checkout.
+    /** Our catalogue share is 30% of our daily cap, enforced again atomically by each transport send.
      * The minute lease reserves the whole group once. Neither number claims a registrar limit. */
     public function allowance(AccountBinding $binding, RequestOrigin $origin): int
     {
