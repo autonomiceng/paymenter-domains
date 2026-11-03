@@ -26,6 +26,10 @@ $facts=$source->page(collect([$t->fresh()]));same('For sale',$facts[$t->id]['sal
 // The old cost and acceptance columns cannot change the new Staff projection.
 DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['wholesale'=>'999.0000','eligibility'=>null]);
 same('6.0000',$source->matrix(collect([$t->fresh()]),1)['rows'][0]['prices']['register']['cost'],'Normalized observation supplies cost, not obsolete columns');
+$key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id));
+$commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Synthetic below cost'),['mode'=>'fixed','fixed_register'=>'2.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
+$below=$source->matrix(collect([$t->fresh()]),1,'below_cost');same('2.00',$below['rows'][0]['prices']['register']['price'],'Below-cost filter keeps the exact saved staff retail');commerceReject(fn()=>$storefront->offer('com','register',1));
+$key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id));$commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Restore synthetic price'),['mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
 $seed=$t->fresh()->getRawOriginal();unset($seed['id']);$batch=[];
 for($i=0;$i<598;$i++){$batch[]=[...$seed,'tld'=>'scale'.chr(97+intdiv($i,26)).chr(97+$i%26)];}
 foreach(array_chunk($batch,100) as $chunk){DB::table('domains_tlds')->insert($chunk);}
@@ -50,6 +54,8 @@ same(599,$component->instance()->getTableRecords()->total(),'Real rendered table
 $component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
 $component->searchTable('')->filterTable('no_cost');same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');
 $component->removeTableFilter('no_cost')->filterTable('country');same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
+// The installed presenter hook stays legacy until the later all-caller composition.
+\Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee('999');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);$redacted=$source->page(collect([$t->fresh()]));
 foreach($redacted[$t->id]['prices'] as $price){expect(!array_key_exists('cost',$price),'Revoked cost permission redacts snapshot');}
 $plain=new SellTable([$binding->serverId=>$binding],1,false,static fn()=>[],false,$source);

@@ -68,7 +68,7 @@ final class StaffCatalogue
     public function restorable(Tld $t): array
     {
         $facts=$this->page(collect([$t]))[$t->id]['facts'];
-        $safe=$facts&&$facts->fresh($this->clock->now())&&$facts->registryFields===[]&&$facts->renewalSafe===true&&in_array(1,$facts->terms['renew']??[],true);
+        $safe=$facts&&$facts->fresh($this->clock->now())&&\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($t->registrar_key,$t->tld,$facts->registryFields)&&$facts->renewalSafe===true&&$facts->requiresNameservers===false&&$facts->autoRenewOnly===false&&in_array(1,$facts->terms['renew']??[],true);
         return ['register'=>$safe&&!empty($facts->terms['register']),'transfer'=>$safe&&in_array(1,$facts->terms['transfer']??[],true)];
     }
     public function setting(Tld $t,string $key): bool|int

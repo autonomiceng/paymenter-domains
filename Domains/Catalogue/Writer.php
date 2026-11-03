@@ -57,7 +57,7 @@ final class Writer implements Catalogue
             ($this->authorize)($command, null);
             $allowed = match ($review->action) {
                 'acceptance' => ['defaults', 'override'], 'default_rule', 'card_fee' => ['defaults'],
-                'override', 'remove_override', 'tld_settings' => ['override', 'retail'], 'seller' => ['seller'],
+                'override', 'remove_override' => ['override'], 'tld_settings' => ['override', 'retail'], 'seller' => ['seller'],
                 'publish' => ['republish'], 'import' => ['sync'], default => [] };
             $scope = Tld::where('server_id', $review->serverId)->where('tld', $command->tld());
             if ($review->tldId !== null) { $scope->whereKey($review->tldId); }
@@ -123,7 +123,8 @@ final class Writer implements Catalogue
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { throw new \DomainException('This TLD is hidden.'); }
         if (!$widen) { return; }
         $facts = OfferState::facts($t->catalogue_facts);
-        if (!$facts || !$facts->fresh($this->clock->now()) || $facts->registryFields !== [] || $facts->renewalSafe !== true
+        if (!$facts || !$facts->fresh($this->clock->now()) || !\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($edit->binding()->registrarKey,$t->tld,$facts->registryFields) || $facts->renewalSafe !== true
+            || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false
             || !in_array(1, $facts->terms['renew'] ?? [], true)
             || $sell && !in_array($longest, $facts->terms['register'] ?? [], true)
             || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { throw new \DomainException('Explicit verified widening required.'); }
