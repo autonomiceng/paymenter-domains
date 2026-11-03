@@ -56,7 +56,8 @@
 @endcomponent
 @endif
 @elseif ($section['unavailable'] ?? false)
-<span class="domains-row__v"><span class="domains-muted">Not available</span> <span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::DNS_OFF }} Contact support for a change.</span></span>
+@php $total = $records === null ? null : count($records) + count($section['fixed'] ?? []); @endphp
+<span class="domains-row__v">@if ($total === null)<span class="domains-muted">Not available</span>@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of {{ $section['asOf'] }}</span>@endif @endif <span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::DNS_OFF }}</span></span>
 @elseif (in_array($cap, ['dns', 'srv']))
 @php $total = $records === null ? 0 : count($records) + count($section['fixed'] ?? []); @endphp
 <span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of {{ $section['asOf'] }}</span>@endif@endif</span>

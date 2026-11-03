@@ -94,8 +94,9 @@ final class DomainFacts
             if ($d->registrar_key==='namesilo') {
                 try { $off=app(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class)->forDomain($d)->capabilities()->get('dns')->support!==\Paymenter\Extensions\Servers\Domains\Data\Support::Supported; } catch (\Throwable) { $off=false; }
                 $count=isset($records['dns'])?count($records['dns'])+count($records['dns_fixed']):null;
-                if ($count!==null) { $f['DNS records']=self::fact($count.' '.($count===1?'record':'records'),sub:'As of '.($sections['dns']['at']??'')); }
-                elseif ($off) { $f['DNS records']=self::fact('Not available',sub:OwnedDomains::DNS_OFF); }
+                // Closed DNS keeps any saved count and always says why and what to do, in the owner's words.
+                if ($count!==null || $off) { $f['DNS records']=self::fact($count===null?'Not available':$count.' '.($count===1?'record':'records'),
+                    sub:implode(' · ',array_filter([$count!==null?'As of '.($sections['dns']['at']??''):null,$off?OwnedDomains::DNS_OFF:null]))); }
             }
             $glue=$records['glue']??[];
             if ($glue) {

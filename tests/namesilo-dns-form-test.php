@@ -37,7 +37,7 @@ $txt=['name'=>'@','type'=>'TXT','address'=>'v=spf1 -all','mx_pref'=>10,'record_i
 $caa=['name'=>'@','type'=>'CAA','address'=>'0:issue:ca.example.com','mx_pref'=>10,'record_id'=>'opaque','ttl'=>600];
 $srv=['name'=>'_sip._tcp','type'=>'SRV','address'=>'5:5060:sip.example.com.','mx_pref'=>20,'record_id'=>'service','ttl'=>900];
 $cname=['name'=>'www','type'=>'CNAME','address'=>'example.net.','mx_pref'=>10,'ttl'=>7207];
-$driver=null;$ports=new OwnerPorts(function($b)use(&$driver){return $driver;});$owners=new OwnedDomains($clock,$ports,$management);
+$driver=null;$ordinary=null;$ports=new OwnerPorts(function($b)use(&$driver){return $driver;});$owners=new OwnedDomains($clock,$ports,$management);
 app()->instance(OwnerPorts::class,$ports);app()->instance(OwnedDomains::class,$owners);app()->instance(DomainManagement::class,$management);
 $staff=staffUser([Staff::VIEW,'admin.domains.manage']);Auth::setUser($staff);
 $session=app('request')->session();$session->put('_token','owner-csrf');
@@ -53,7 +53,7 @@ $post=function(array $rows)use(&$d,$user,$session,$controller,$section) {
     nativeNormalizeInput($r);$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);$r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':dns'));
     return $controller->manage($r,$d->id,'dns');
 };
-$setup=function(string $label,array $rows,bool $on=true)use($holding,&$binding,$wire,$dnsExchange,&$driver,&$d) {
+$setup=function(string $label,array $rows,bool $on=true)use($holding,&$binding,$wire,$dnsExchange,&$driver,&$d,&$ordinary) {
     [$d,$ordinary]=$holding($label);\App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>true]);
     $wire->records=$rows;$wire->writes=[];$wire->fault='';$driver=$on?new DnsManagement($binding,$dnsExchange):$ordinary;
 };
@@ -73,7 +73,8 @@ same([],$section()['actions']??null,'Dormant NameSilo DNS offers no change');
 $row=$page()->query('//li[@id="dns"]')->item(0);
 expect(str_contains($text($row),'Not available You can’t change DNS records here yet. Contact support for a change.'),'Owner row says DNS is not available and what to do');
 same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form while the capability is off');
-expect(str_contains(html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5),'You can’t change DNS records here yet.'),'Staff sees the same reason');
+$off='You can’t change DNS records here yet. Contact support for a change.';
+expect(str_contains(html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5),$off),'Staff sees the same reason and next step');
 // The opt-in adapter edits standard rows in the shared editor; CAA and SRV stay read-only.
 $setup('dns-form',[$a,$txt,$caa,$srv]);
 $seed=$submit($d,$driver,'dns',['records'=>[$a,$txt,$cname]]);Cache::flush();same('succeeded',$management->run($seed->id,$driver)->state,'Synthetic seed save completes');$wire->writes=[];
@@ -109,6 +110,10 @@ $rows=$form();$rows[1]['address']='v=spf1 mx -all';
 $staffPage()->callAction(TestAction::make('edit_dns')->schemaComponent('fact_'.md5('DNS records'),'infolist'),['records'=>$rows,'preimage_digest'=>$section()['digest']])->assertHasNoActionErrors();
 $op=$latest();same((int)$staff->id,(int)$op->authorized_by,'The staff save is one request');Cache::flush();$management->run($op->id,$driver);
 $progress('Request #'.$op->id.': 1 change verified.');same($caa,$by('CAA'),'Staff edits keep read-only rows');
+// Saved records stay counted when DNS is closed again, and both sides still say why and what to do.
+$driver=$ordinary;$row=$text($page()->query('//li[@id="dns"]/span[contains(@class,"domains-row__v")]')->item(0));
+expect(str_starts_with($row,'4 records')&&str_contains($row,'As of ')&&str_ends_with($row,$off),'Owner keeps the count and gets the reason and next step');same(0,$page()->query('//li[@id="dns"]//form')->length,'No records form with saved records either');
+$html=html_entity_decode($staffPage()->html(),ENT_QUOTES|ENT_HTML5);expect(str_contains($html,'4 records')&&str_contains($html,'As of ')&&str_contains($html,$off),'Staff keep the count and get the reason and next step');
 // Removing the last record is done only once an explicit empty inventory proves it.
 $setup('dns-form-last',[]);$seed=$submit($d,$driver,'dns',['records'=>[array_diff_key($a,['record_id'=>true])]]);Cache::flush();$management->run($seed->id,$driver);$wire->writes=[];
 $rows=$form();same(1,count($rows),'One saved record');$rows[0]['_delete']='1';$post($rows);$op=$latest();

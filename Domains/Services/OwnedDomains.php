@@ -13,8 +13,8 @@ final readonly class OwnedDomains
 {
     /** Enom's default nameservers, shown when an owner chooses them. The request itself sends UseDNS=default. */
     public const DEFAULT_NAMESERVERS=['dns1.name-services.com','dns2.name-services.com','dns3.name-services.com','dns4.name-services.com','dns5.name-services.com'];
-    /** A registrar whose records we can't change yet still shows the row, with what to do instead. */
-    public const DNS_OFF='You can’t change DNS records here yet.';
+    /** Owner and staff see the same reason and next step while records can't be changed here. */
+    public const DNS_OFF='You can’t change DNS records here yet. Contact support for a change.';
     /** History change label for each management request action. */
     private const CHANGES = ['nameservers'=>'Nameservers','contacts'=>'Contacts','contact_profile'=>'Contacts','lock'=>'Transfer lock',
         'privacy_enable'=>'WHOIS privacy','privacy_disable'=>'WHOIS privacy','privacy_purchase'=>'WHOIS privacy','privacy_renew'=>'WHOIS privacy',
@@ -221,7 +221,8 @@ final readonly class OwnedDomains
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
         }
         if ($forms && $caps && $d->registrar_key==='namesilo' && $d->status==='active' && !isset($management['dns']) && $caps->get('dns')->support!==Support::Supported) {
-            $management['dns']=['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>null];
+            try { $read=ObservationProjection::sections($d);$saved=OwnerRecords::forDomain($d,$read); } catch (\Throwable) { $read=$saved=[]; }
+            $management['dns']=['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>$saved['dns']??null,'fixed'=>$saved['dns_fixed']??[],'asOf'=>isset($saved['dns'])?($read['dns']['at']??null):null];
         }
         foreach ($management as $key=>&$section) { $section['progress']=$progressBySetting[ManagementProgress::setting($key)]??null; } unset($section);
         // Only the exact retained issued renewal invoice supplies a due date.
