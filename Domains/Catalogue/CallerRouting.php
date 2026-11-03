@@ -54,7 +54,7 @@ final class CallerRouting
             if (DB::transactionLevel() === 0) { $current(); }
         };
         $feature = static fn (AccountBinding $b, ?string $action): bool => self::feature($b, $action, false);
-        $ports = new CallerPorts(new Projection(app(NativeCatalogue::class)), $clock, $bindings, $authorize, $feature, current: $current);
+        $ports = new CallerPorts(new Projection(app(NativeCatalogue::class), $feature), $clock, $bindings, $authorize, $feature, current: $current);
         $writer = $ports->writer();
         $work = (new OfferPorts($bindings, $clock, $generation, $current))->worker($writer);
         $scheduler = new OfferScheduler($work, app(HoldingObservationWork::class), $clock, $current);
@@ -81,7 +81,7 @@ final class CallerRouting
             'register' => $setup ? EnomTestRegistration::enabled($b) : EnomTestRegistration::sellable($b),
             'renew' => $setup ? EnomTestRenewal::enabled($b) : EnomTestRenewal::accepted($b),
             'transfer' => $setup ? EnomTestTransfer::enabled($b) : EnomTestTransfer::accepted($b),
-            default => false,
+            default => $action === null,
         };
     }
 
