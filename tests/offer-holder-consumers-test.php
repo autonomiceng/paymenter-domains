@@ -2,13 +2,16 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 // Real frozen attempts/native invoices are required: a pure price test cannot prove retained money.
+require_once __DIR__.'/native-app.php';
+expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Capabilities.php'),'Independent holder capabilities required');
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+$installedFixture=true;
 require __DIR__.'/Support/reconciliation-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection, UpgradeConversion, Facts, OfferState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, DomainBilling, HolderPricing, HoldingLocks, LateRenewalQuote, NativeDomainGuard};
 expect((new ReflectionMethod(HoldingLocks::class,'take'))->getNumberOfParameters() >= 10, 'Holding consumers need the prepared offer snapshot before operation locks');
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 [$paid] = $prepare('paid-pending-offer-placeholder.com');
 [$uncertain] = $prepare('uncertain-offer-placeholder.com', 'null');
 $frozen = static fn ($op) => [DB::table('domains_operations')->where('id',$op->id)->sole(), DB::table('invoices')->where('id',$op->invoice_id)->sole(), DB::table('invoice_items')->where('id',$op->invoice_item_id)->sole()];
