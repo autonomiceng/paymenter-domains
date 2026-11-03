@@ -42,14 +42,14 @@ same([], $op->policy['management']['sequence']['preimage'],'The initial preimage
 $reads=$wire->reads;same($op->id,$management->request($user,$d->id,'dns',$intent,$nonce,$driver)->id,'Same nonce returns the frozen sequence');same($reads,$wire->reads,'Idempotent save performs no new inventory read');
 $management->run($steps[1]->id,$driver);same([],$wire->writes,'A later child cannot bypass its predecessor');
 $management->run($op->id,$driver);same([1],$wire->writes,'One entry consumes only one child grant');
-same('1 of 3 changes verified. Saving the remaining changes.',ManagementProgress::for($d)['dns']['text'],'Staff and owner share retained partial progress');
+same('Request #'.$op->id.': 1 of 3 changes verified. Saving the remaining changes.',ManagementProgress::for($d)['dns']['text'],'Staff and owner share retained partial progress');
 $wire->lost=true;Cache::flush();$management->run($op->id,$driver);same([1,2],$wire->writes,'Second delta is sent once despite a lost reply');
 $child=$steps[1]->fresh();same('uncertain',$child->state,'The lost child retains uncertainty');
 $oldAttempt=$child->attempt;$management->run($child->id,$driver);same([1,2],$wire->writes,'Direct child entry cannot replay a sent delta');
 $wire->lost=false;$driver=new SyntheticSequence($binding,$exchangeSequence);Cache::flush();$management->run($op->id,$driver);
 same('succeeded',$child->fresh()->state,'A reconstructed driver recovers only from independent readback');same([1,2],$wire->writes,'Readback cannot mutate');
 Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Final delta completes the original request');same([1,2,3],$wire->writes,'Exactly one grant per intended delta');
-same('All 3 changes verified.',ManagementProgress::for($d)['dns']['text'],'Only complete retained proof reports full success');
+same('Request #'.$op->id.': all 3 changes verified.',ManagementProgress::for($d)['dns']['text'],'Only complete retained proof reports full success');
 foreach($steps as $s){expect(isset($s->fresh()->attempt['dispatch_attempted_at']),'Each mutation retains its own seal');}
 $management->run($op->id,$driver);same([1,2,3],$wire->writes,'Completed sequence cannot replay');
 [$d,$driver]=$setup('stale-config');$op=$submit($d,$driver,'dns',$intent);$management->run($op->id,$driver);

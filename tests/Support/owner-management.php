@@ -65,13 +65,14 @@ if(isset($dto->management['auth_code_email'])){same($free?'We email it to the ad
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
 foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
-foreach($free?['dns','srv','ds','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
+foreach($free?['srv','ds','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
+if($free){same(['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>null,'progress'=>null],$dto->management['dns'],'Dormant NameSilo DNS shows as not available');}
 if($free){ // Stopped reads never restart by themselves, so an unknown row names the step instead of a time.
     $d->update(['observation'=>null]);$lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
     same('Missing Fills in by itself within a day',$lockRow(),'Scheduled reads fill an unknown row in');
     Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
     $stoppedRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable']);
-    expect(!isset($owners->present($d->fresh())->management['dns']),'This registrar has no record sections');
+    same([],$owners->present($d->fresh())->management['dns']['actions'],'This registrar has no record changes');
     same('Missing Our team needs to check this domain. No action needed.',$lockRow(),'A stopped read names the step, not a time');
     Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$stoppedRead)->delete();
 }
