@@ -81,7 +81,7 @@ foreach (['quantity', 'options', 'duplicate', 'owner', 'setup', 'cached_price'] 
     $cart = commerceCart($user); $line = commerceAdd($cart, $public['product'], 'invalid-'.str_replace('_', '-', $bad).'-placeholder.com', 3);
     $counts = [Order::count(), Invoice::count(), Operation::count()]; $nativePrice = $line->plan->prices()->where('currency_code', 'USD')->sole();
     if ($bad === 'quantity') { DB::table('cart_items')->where('id', $line->id)->update(['quantity' => 2]); }
-    if ($bad === 'options') { DB::table('cart_items')->where('id', $line->id)->update(['config_options' => json_encode([['option_id' => 1]])]); }
+    if ($bad === 'options') { DB::table('cart_items')->where('id', $line->id)->update(['config_options' => json_encode([['option_id' => 1, 'option_name' => 'Injected', 'value_name' => 'Invalid']])]); }
     if ($bad === 'duplicate') { $copy = $line->replicate(); $copy->saveQuietly(); }
     if ($bad === 'setup') { DB::table('prices')->where('id', $nativePrice->id)->update(['setup_fee' => '1.00']); }
     if ($bad === 'cached_price') { $mutate = static fn () => App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
