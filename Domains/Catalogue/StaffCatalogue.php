@@ -126,11 +126,12 @@ final class StaffCatalogue
                     'flags'=>$flags,'synced'=>$cost!==null,'observed'=>$cost?->observedAt,
                     ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money($cost->total,4)]:[])];
             }
-            $chosen=collect($all)->first(fn($o)=>$o->decision->action==='register'&&$o->decision->available);
-            $reason=$all['register:1']->decision->reason??'unknown_facts';
+            $register=collect($all)->first(fn($o)=>$o->decision->action==='register'&&$o->decision->available);
+            $transfer=$all['transfer:1']??null;$chosen=$register??($transfer?->decision->available?$transfer:null);
+            $reason=(in_array('register',$raw['stops']??[],true)?$transfer?->decision->reason:($all['register:1']->decision->reason??null))??'unknown_facts';
             $label=match($reason){'staff_stopped','staff_term_stopped'=>'Stopped by staff','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing',default=>TldFacts::NEEDS_SYNC};
             try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}
-            $out[$t->id]=['prices'=>$prices,'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
+            $out[$t->id]=['prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'own'=>isset($raw['pricing_rule']),'offers'=>$all,'facts'=>$facts];

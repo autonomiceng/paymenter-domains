@@ -32,6 +32,14 @@ $run('acceptance',['sell'=>['rule'=>['mode'=>'except','max_cost'=>null,'years'=>
 $run('acceptance',['sell'=>['choices'=>['com'=>'skip']]]);$writes->run($review('tld_settings',$id),$restore,$now);
 same(null,OfferState::decode(Tld::find($id)->catalogue_intent)['sell'],'Restore follows open defaults instead of inventing an explicit choice');expect($storefront->offer('com','register',1)!==null,'Open-default restore reaches the public decision');
 $run('acceptance',['sell'=>['rule'=>['mode'=>'only','max_cost'=>null,'years'=>1,'transfers'=>false]]]);$routed->publish($id,$now);$writes->run($review('tld_settings',$id),$restore,$now);$wake=0;
+// A stopped registration must not hide a currently purchasable transfer.
+$writes->run($review('tld_settings',$id),[...$restore,'register'=>false],$now);
+commerceReject(fn()=>$storefront->offer('com','register',1));expect($storefront->offer('com','transfer',1)!==null,'Public transfer remains available when registration is stopped');
+$transferSnapshot=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::snapshot(Tld::find($id),null,$source);
+same('For sale',$transferSnapshot['sales']['label'],'TLD acquisition status includes available transfers');same(null,$transferSnapshot['sales']['reason'],'Transfer-only TLD has no stopped registration explanation');
+$transferPage=[];$transferTable=new \Paymenter\Extensions\Servers\Domains\Admin\Support\SellTable([$binding->serverId=>$binding],1,true,static function()use(&$transferPage){return $transferPage;},false,$source);$transferPage=$transferTable->rows('com')->get()->all();
+same('Renewals and transfers only',$transferTable->status($transferPage[0])['label'],'What you sell preserves its transfer-only wording');
+$writes->run($review('tld_settings',$id),$restore,$now);
 $nativeIds=Product::orderBy('id')->pluck('id')->all();$calls=$reads->calls;
 $before=count(Review::historyRows(Server::find($binding->serverId)));
 $writes->run($review('default_rule'),['mode'=>'fixed','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00'],$now);

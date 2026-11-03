@@ -106,7 +106,9 @@ final class SellTable
     /** @return array{label:string,tone:string,next?:string,open?:bool} */
     public function status(SellRow $row): array
     {
-        if($this->catalogue!==null){$s=$this->facts()[self::key($row)]['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];return ['label'=>$s['label'],'tone'=>$s['tone'],...($s['reason']===null?[]:['next'=>$s['reason'].'. Open TLDs & pricing','open'=>true])];}
+        if($this->catalogue!==null){$facts=$this->facts()[self::key($row)]??[];
+            if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
+            $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];return ['label'=>$s['label'],'tone'=>$s['tone'],...($s['reason']===null?[]:['next'=>$s['reason'].'. Open TLDs & pricing','open'=>true])];}
         $row=$this->effective($row);
         if(!$row->listed){return ['label'=>'Not for sale','tone'=>'gray'];}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;$rule=$this->rule($server);
