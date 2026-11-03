@@ -40,14 +40,14 @@ final class AccountChecklist
     private static function siteOff(Account $a): string
     { return ($a->environment==='live'?'Live sales are not set up on this site yet.':'This site does not offer this yet.').' Your site admin can turn it on.'; }
     /** @return list<array> */
-    public static function setup(Account $a,array $status): array
+    public static function setup(Account $a,array $status,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers=null): array
     {
         $check='Checks this site can log in to the registrar with the saved API details.';
         $connection=match($status['label']){AccountStatus::SET['connection_failed'][0]=>self::row('API connection','Connection failed','danger',$status['reason'],'probe',$check),
             AccountStatus::SET['not_connected'][0]=>self::row('API connection','Not connected','gray',$status['reason'],'configure',$check),
             default=>self::row('API connection','OK','success',null,'probe',$check)};
         try { $binding=CatalogueAcceptances::binding($a); } catch (\Throwable) { $binding=null; }
-        $rows=[$connection,self::tlds($a,$binding),self::prices($a),self::orders($a)];
+        $rows=[$connection,self::tlds($a,$binding,$offers),self::prices($a),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
         $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',$a->registrar_key!=='enom'=>self::NAMESILO,default=>self::siteOff($a)};
         $rows[]=$gates['register']===true?self::row('Registrations','On, follows Orders',null,null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
@@ -135,9 +135,18 @@ final class AccountChecklist
         if($blocked!==null&&!$on){return self::row('Customer can renew early',$blocked,null,null,null,$help);}
         return self::row('Customer can renew early',$on?'On':'Off',$on?'success':null,$blocked,$blocked===null?'renew_early':null,$help);
     }
-    private static function tlds(Account $a,?object $binding): array
+    private static function tlds(Account $a,?object $binding,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers=null): array
     {
-        try { $endings=array_keys(CatalogueAcceptances::load($binding)->endings); } catch (\Throwable) { $endings=[]; }
+        try {
+            $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$endings=[];
+            if($offers){
+                \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)
+                    ->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings):void {
+                        $page=$offers->page($rows);
+                        foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($sales['register']||$sales['transfer']){$endings[]=$t->tld;}}
+                    });
+            }else{$endings=array_keys(CatalogueAcceptances::load($binding)->endings);}
+        } catch (\Throwable) { $endings=[]; }
         sort($endings);
         try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
         $count=count($endings);
@@ -153,6 +162,10 @@ final class AccountChecklist
     }
     private static function prices(Account $a): array
     {
+        if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
+            $status=$offers->progress((int)$a->server_id);
+            return [...self::row('TLD prices',ucfirst($status['state']),null,null,null,self::PRICES),'buttons'=>self::priceButtons($a)];
+        }
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
             $at=$failure['at']===null?'':', '.$failure['at'];

@@ -26,6 +26,7 @@ class Tld extends Model
         'fixed_register' => 'decimal:2', 'fixed_renew' => 'decimal:2', 'fixed_transfer' => 'decimal:2',
         'cost_register_terms' => 'array', 'sale_holds' => 'array', 'cost_renew' => 'decimal:4', 'cost_transfer' => 'decimal:4',
         'costs_synced_at' => 'immutable_datetime', 'sort_order' => 'integer',
+        'catalogue_retained_annual_retail' => 'decimal:2',
         'min_years' => 'integer', 'max_years' => 'integer', 'registry_fields' => 'array',
     ];
 

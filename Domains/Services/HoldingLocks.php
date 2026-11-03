@@ -4,13 +4,14 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\Server;
+use Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption, Domain, Operation, Price, Tld};
 
 /** Internal billing/save prefix, joining exactly one caller-owned transaction. Never performs I/O. */
 final class HoldingLocks
 {
-    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null): array
+    public static function take(Domain $seed, ?int $staffId = null, bool $advisory = false, array $additionalServices = [], bool $completeInvoices = false, bool $foreignInvoices = false, bool $released = false, bool $nativeReceipt = false, ?\Closure $beforeCatalogue = null, ?Capabilities $catalogue = null): array
     {
         if (!$advisory && ($nativeReceipt ? DB::transactionLevel() < 1 : DB::transactionLevel() !== 1)) { throw new \LogicException('Holding locks require the outer transaction.'); }
         ['user' => $user, 'staff' => $staff, 'credit' => $credit, 'invoices' => $invoices, 'items' => $items,
@@ -27,6 +28,8 @@ final class HoldingLocks
         $settings = $server->settings()->when($advisory,fn($q)=>$q->whereIn('key',['domains_credentials','domains_verified_credentials','domains_dns_tools']))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $tld = Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld])->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $prices = Price::where(['server_id' => $seed->server_id, 'tld' => $seed->tld, 'action' => 'renew'])->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
+        $catalogue ??= Capabilities::routed();
+        $offer = $catalogue?->holding(CatalogueAcceptances::binding($account), $tld, $prices);
         $domain = Domain::whereKey($seed->id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->firstOrFail();
         $operations = Operation::where('domain_id', $seed->id)->when($advisory,fn($q)=>$q->whereIn('id',$opIds)->limit(100))->orderBy('id')->when(!$advisory,fn($q)=>$q->lockForUpdate())->get();
         $adoption = $domain->adoption_id === null ? null : Adoption::whereKey($domain->adoption_id)->when(!$advisory,fn($q)=>$q->lockForUpdate())->first();
@@ -41,6 +44,6 @@ final class HoldingLocks
         $service->setRelation('user', $user);
         $rows = [$user, ...$user->properties, ...$invoices, ...$items, ...$transactions, ...$orders, ...$services, ...$products, ...$plans, ...$cancel, ...$configs, ...$properties, ...$markers, $server, $account, ...$settings, $tld, ...$prices, $domain, ...($adoption ? [$adoption] : []), ...$operations, ...$upgrades, ...$links, ...($tax === 0 ? [] : [$tax])];
         $stamp = hash('sha256', json_encode([array_map(static fn ($row) => method_exists($row, 'getRawOriginal') ? $row->getRawOriginal() : (array) $row, $rows), $identity_source], JSON_THROW_ON_ERROR));
-        return compact('identity_source', 'adoption', 'advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel', 'services', 'orders', 'products') + ['relatedProperties' => $nativeLocks['relatedProperties']];
+        return compact('offer', 'identity_source', 'adoption', 'advisory', 'credit', 'staff', 'stamp', 'prices', 'transactions', 'domain', 'service', 'product', 'plan', 'user', 'tax', 'server', 'account', 'settings', 'tld', 'operations', 'invoices', 'items', 'cancel', 'services', 'orders', 'products') + ['relatedProperties' => $nativeLocks['relatedProperties']];
     }
 }

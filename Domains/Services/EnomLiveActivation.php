@@ -21,7 +21,11 @@ final class EnomLiveActivation
     }
     private static function engine(): LiveActivation
     {return new LiveActivation(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ActivationEvidence);}
-    public static function stamp(Account $a,bool $balance=false): string {return self::engine()->stamp($a,$balance);}
+    public static function stamp(Account $a,bool $balance=false): string
+    {
+        $stamp=self::engine()->stamp($a,$balance);$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed();
+        return $offers?hash('sha256',json_encode([$stamp,$offers->stamp($a)],JSON_THROW_ON_ERROR)):$stamp;
+    }
     private static function balance(Account $a): ?object {return self::engine()->balance($a);}
     private static function evidence(AccountBinding $b): array {return self::engine()->evidence($b);}
     private static function history(AccountBinding $b,array $e,string $feature): HistoryAcceptance {return self::engine()->history($b,$e,$feature);}
@@ -54,6 +58,11 @@ final class EnomLiveActivation
     /** Strict by default. Only the display supplies a failure list to continue after a bad action/term. No price writes. */
     private static function prices(Account $a,AccountBinding $b,array $features,\DateTimeImmutable $now,?array &$failures=null): array
     {
+        if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()) {
+            $r=$offers->review($a,$features,DB::transactionLevel()>0);
+            if($failures!==null){$failures=$r['failures'];} elseif($r['missing']!==null){throw new \DomainException($r['missing']);}
+            return $r['costs'];
+        }
         try{
             $lock=DB::transactionLevel()>0;$accepted=CatalogueAcceptances::load($b,$lock);$rows=[];$counts=['registration'=>0,'transfer'=>0];$rules=new PricingRules;$prices=new PriceCatalogue($rules);
             // Display snapshot only. Activate still takes the original independent locking reads below.
