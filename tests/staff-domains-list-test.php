@@ -18,6 +18,10 @@ $list=function(?callable $queries=null)use($viewer){
     $instance=$page->instance();return [$instance->getTable()->getColumns(),$instance->getTableRecords()->keyBy('id'),count($log),$log];
 };
 
+// Customer has its own column, and search finds a full name.
+$owner=App\Models\User::create(['first_name'=>'Ada','last_name'=>'Lovelace','email'=>'ada@example.test','password'=>'synthetic-password']);DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$owner->id]);same(true,isset($list()[0]['customer']),'Customer column');
+Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee('Search domain or customer')->searchTable($owner->first_name.' '.$owner->last_name)->assertCanSeeTableRecords([$active]);
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('nobody-by-this-name')->assertCountTableRecords(0);
 // Duplicate staff account names remain distinguishable in filters and rows.
 App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update(['name'=>'Shared account']);
 $accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);
@@ -88,6 +92,6 @@ foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
 same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
 foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
-    same($i%3===0?'Sync failed. Sync again from the domain.':null,$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
+    same($i%3===0?'Sync failed. Ask staff who can resume sync.':null,$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

@@ -18,13 +18,15 @@ foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($doma
 // A sync alert only counts while the sync is stopped, because Resume sync is its way out.
 DB::table('domains_observation_work')->insert(['server_id'=>$domain->server_id,'account_fingerprint'=>$domain->account_fingerprint,
     'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
+// The stopped-sync row already names this alert; it does not repeat the generic cause.
+$pageCause=static fn(string $code):string=>$code==='observation_review'?'Stopped until resumed.':DomainFacts::alertCause($code);
 $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
     $html=html_entity_decode(strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSuccessful()->html()),ENT_QUOTES);
     foreach(DomainFacts::ALERTS as $code=>[$row]){
-        $cause=DomainFacts::alertCause($code);
-        if(!str_contains($html,$cause)){$hidden[]=$code.'/'.$status;}
+        $cause=$pageCause($code);
+        if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Sync failed')){$hidden[]=$code.'/'.$status;}
     }
 }
 same([],$hidden,'No open alert may be hidden on a domain page');
@@ -33,10 +35,10 @@ echo "All alert kinds visible in every domain state.\n";
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->delete();
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'registration_pending']);
 ObligationAlerts::record($domain,'unknown_expiry',time());
-// Alerts without an applicable row belong above the fact sections, once each.
+// Alerts without an applicable row sit on the Open alerts row in Registration, once each.
 ObligationAlerts::record($domain,'missing_obligation',time());
 $pending=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id]);
-$pending->assertSeeInOrder(['Open alerts','Expiry missing','Renewal invoice missing','Registration']);
+$pending->assertSeeInOrder(['Registration','Open alerts','Expiry missing','Renewal invoice missing']);
 $text=html_entity_decode(strip_tags($pending->html()),ENT_QUOTES);
 same(1,substr_count($text,'Renewal invoice missing'),'Fallback cause appears once');
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)
@@ -60,7 +62,8 @@ DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update([
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
 $unreadable=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts');
-foreach(array_keys(DomainFacts::ALERTS) as $code){$unreadable->assertSee(DomainFacts::alertCause($code));}
+foreach(array_keys(DomainFacts::ALERTS) as $code){$unreadable->assertSee($pageCause($code));}
+$unreadable->assertSee('Sync failed');
 // Unknown kinds still surface safely, without printing stored codes.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->limit(1)->update(['resolved_at'=>null,'code'=>'PRIVATE-UNKNOWN-CODE']);

@@ -22,6 +22,8 @@ class DomainResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup = 'Domains';
     protected static ?string $navigationLabel = 'Domains';
     protected static ?int $navigationSort = 1;
+    /** The menu item stays marked on DNS templates, its tab. */
+    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',RoutingProfileResource::getRouteBaseName().'.*']; }
     protected static ?string $modelLabel = 'domain';
     protected static ?string $pluralModelLabel = 'domains';
     protected static ?string $breadcrumb = 'Domains';
@@ -52,8 +54,9 @@ class DomainResource extends Resource
         return $table->modifyQueryUsing(fn (Builder $query) => $query
             ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.invoice_id,domains_operations.payload,domains_operations.policy,domains_operations.attempt,domains_operations.funding,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
             DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
-                ->description(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->extraAttributes(['class'=>DomainName::CELL])),
+            TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
+                ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search))->tooltip(fn($state)=>$state)->extraAttributes(['class'=>'domains-cut']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
                 ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::status($record,$livewire)['tone'],'domain-'.$record->id))
                 ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone']),
@@ -61,20 +64,20 @@ class DomainResource extends Resource
             TextColumn::make('note')->label('Note')->state(fn(Domain $record,$livewire)=>self::note($record,$livewire)['text'])->wrap()->color('gray')
                 ->formatStateUsing(fn(string $state,Domain $record,$livewire)=>DomainFacts::noteStep($state,self::status($record,$livewire)))
                 ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
-                ->extraAttributes(fn(Domain $record,$livewire)=>['style'=>'min-width:14rem;max-width:24rem;overflow-wrap:anywhere',...StatusMark::note(self::note($record,$livewire)['act'])]),
+                ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::note(self::note($record,$livewire)['act'])),
             TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')
                 ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::color(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->icon(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::icon(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->description(fn(Domain $record,$state,$livewire)=>$state===Missing::LABEL?DomainFacts::unread($record,self::row($record,$livewire)['sync']):null)
                 ->sortable(query: fn(Builder $query,string $direction)=>$query->orderBy('provider_expires_at',$direction)),
-            // Auto-renew applies until the domain has ended, so pending and under-review rows show it too.
-            TextColumn::make('auto_renew')->label('Auto-renew')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(self::row($record,$livewire)['off']) {
+            // Renewal invoices apply until the domain has ended, so pending and under-review rows show it too.
+            TextColumn::make('auto_renew')->label('Renewal invoices')->state(fn(Domain $record,$livewire)=>DomainFacts::ended($record)?null:match(self::row($record,$livewire)['off']) {
                 null=>Missing::LABEL,true=>'Off',false=>'On'})
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
             TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' #'.$record->server_id:Missing::LABEL)
-                ->toggleable(isToggledHiddenByDefault:true)->wrap()->extraAttributes(['style'=>'max-width:12rem;overflow-wrap:anywhere'])
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
+                ->toggleable(isToggledHiddenByDefault:true)->wrap()->extraAttributes(['class'=>'domains-wrap domains-narrow'])
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found. Check Registrars.':(self::REGISTRARS[$record->registrar_key]??null)),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(self::statusOptions())
@@ -93,7 +96,16 @@ class DomainResource extends Resource
             Filter::make('alerts')->label('Open alerts')->toggle()
                 ->query(fn(Builder $query)=>DomainQueries::openAlerts($query)),
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
-            ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)->stackedOnMobile();
+            ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain or customer');
+    }
+    /** Every word has to match the customer's name or email, so a full name finds them. */
+    private static function customerSearch(Builder $query,string $search): Builder
+    {
+        return $query->whereHas('user',function(Builder $user)use($search):void {
+            foreach (preg_split('/\s+/',trim($search),flags:PREG_SPLIT_NO_EMPTY) as $word) {
+                $user->where(fn(Builder $q)=>$q->where('first_name','like',"%$word%")->orWhere('last_name','like',"%$word%")->orWhere('email','like',"%$word%"));
+            }
+        });
     }
     /** The domain statuses, in DomainStatus order. */
     public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }

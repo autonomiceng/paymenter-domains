@@ -299,6 +299,6 @@ final class RequestFacts
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$op->registrar_key]??null;
         $name=\App\Models\Server::whereKey($op->server_id)->value('name');
         if (!$name) { return ['value'=>null,'sub'=>'Registrar account not found. Check Registrars.','account'=>null]; }
-        return ['value'=>$name,'sub'=>implode(' · ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account?->environment]??null])) ?: null,'account'=>$account];
+        return ['value'=>$name,'sub'=>implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account?->environment]??null])) ?: null,'account'=>$account];
     }
 }

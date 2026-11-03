@@ -18,6 +18,8 @@ class TldResource extends Resource
     protected static string|\UnitEnum|null $navigationGroup='Domains';
     protected static ?string $navigationLabel='TLDs & pricing';
     protected static ?int $navigationSort=3;
+    /** The menu item stays marked on What you sell, its tab. */
+    public static function getNavigationItemActiveRoutePattern(): string|array { return [static::getRouteBaseName().'.*',\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getRouteName()]; }
     protected static ?string $modelLabel='TLD';
     protected static ?string $pluralModelLabel='TLDs';
     protected static ?string $breadcrumb='TLDs & pricing';
@@ -50,18 +52,18 @@ class TldResource extends Resource
         };
         $renewal=static fn(Tld $t,mixed $livewire)=>TldFacts::renewal($row($t,$livewire)['prices']);
         return $table->columns([
-            TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['style'=>'word-break:normal;overflow-wrap:normal']),
+            TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('account')->label('Registrar account')->state(fn(Tld $record)=>$record->server->name)
                 ->suffix(fn(Tld $record)=>$isDemo($record)?new \Illuminate\Support\HtmlString(' '.DemoData::tag(inline:true)->toHtml()):null)
-                ->description(fn(Tld $record,$livewire)=>TldFacts::registrar($record->registrar_key).' · '.strtolower(TldFacts::pricing($record))
-                    .($row($record,$livewire)['seller']===(int)$record->server_id?' · new orders':''))->wrap(),
+                ->description(fn(Tld $record,$livewire)=>TldFacts::registrar($record->registrar_key).', '.strtolower(TldFacts::pricing($record))
+                    .($row($record,$livewire)['seller']===(int)$record->server_id?', new orders':''))->wrap(),
             TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['retail']??Missing::LABEL)
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn($state)=>$state===Missing::LABEL?'Use Sync prices.':null)->extraAttributes(['style'=>'white-space:nowrap']),
+                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
+                ->description(fn($state)=>$state===Missing::LABEL?'Use Sync prices.':null)->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['cost']??Missing::LABEL)
                 ->color(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL||TldFacts::costNote($renewal($record,$livewire))?Missing::COLOR:null)
-                ->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
-                ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'Use Sync prices.':TldFacts::costNote($renewal($record,$livewire)))->extraAttributes(['style'=>'white-space:nowrap']),
+                ->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
+                ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'Use Sync prices.':TldFacts::costNote($renewal($record,$livewire)))->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
                 ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->extraAttributes(fn(Tld $record,$livewire)=>StatusMark::attributes($row($record,$livewire)['sales']['tone'],'tld-'.$record->id))->description(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?trim($reason.'. '.(TldFacts::FIXES[$reason]??'')):null),

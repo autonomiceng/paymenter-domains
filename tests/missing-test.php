@@ -44,7 +44,7 @@ $facts=renderFacts([
 ['expires'=>$expires,'registrar'=>$registrar,'lock'=>$lock,'cost'=>$cost]=$facts['entries'];
 same('Missing',$expires->getState(),'Blank staff state reads Missing');
 same('danger',$expires->getColor($expires->getState()),'Missing is danger text');
-same(Missing::ICON,$expires->getIcon($expires->getState()),'Missing carries the warning icon');
+same(Missing::ICON,(string)$expires->getIcon($expires->getState()),'Missing carries the red hexagon');
 same(['sync'],array_map(fn($a)=>$a->getName(),array_values($expires->getHintActions())),'The fix is the hint action');
 foreach (['Missing','Sync now','Shows when the transfer completes'] as $needle) { expect(str_contains($facts['html'],$needle),'Rendered entry shows '.$needle); }
 same('Enom',$registrar->getState(),'A present value is unchanged');

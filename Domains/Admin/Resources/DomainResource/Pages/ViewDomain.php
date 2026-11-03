@@ -11,10 +11,11 @@ use Filament\Support\Enums\{FontFamily, Width};
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, DomainHistory, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Sheet, Staff, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
+use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,StaffWatchWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
@@ -25,9 +26,13 @@ class ViewDomain extends ViewRecord
 
     protected static string $resource = DomainResource::class;
     protected Width|string|null $maxContentWidth = Sheet::WIDTH;
-    /** Rows of the section that says why changes are on hold. They keep their Edit, greyed out. */
+    /** Rows that keep their button, blocked, while changes are on hold. */
+    private const BLOCKED = ['Transfer lock','Contacts','Nameservers','DNS records'];
+    /** The section that says why, when the head doesn't. */
     private const HELD_SECTION = 'Contacts and DNS';
-    private const RAIL_STEPS = 7;
+    /** One request's edits and facts: the head and the rows both read them. */
+    private ?array $edits = null;
+    private ?array $facts = null;
     public function getTitle(): string { Staff::requireView(); return (string)$this->getRecord()->domain; }
     public function getHeading(): HtmlString
     {
@@ -37,7 +42,21 @@ class ViewDomain extends ViewRecord
     public function getSubheading(): string|Htmlable|null
     {
         $d=$this->getRecord(); $status=DomainFacts::status($d);
-        return StatusMark::line($status['tone'],$status['label'],'domain-'.$d->id,DomainFacts::stepHtml($status));
+        $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']!==null);
+        return StatusMark::line($head['tone'],$status['label'],'domain-'.$d->id,$head['step']);
+    }
+    private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
+    private function facts(): array
+    {
+        if ($this->facts!==null) { return $this->facts; }
+        $d=$this->getRecord(); $facts=self::withDnsSetup($d,DomainFacts::for($d)); $progress=$this->managementProgress();
+        if (isset($this->edits()['rows']['Auth code']) || isset($progress['auth_code_email'])) { $facts['Auth code']=['value'=>$d->registrar_key==='namesilo'?'Admin contact email':'Registrant email','sub'=>null,'url'=>null,'tone'=>null,'help'=>null,'demo'=>false]; }
+        return $this->facts=DomainFacts::withProgress($facts,$progress);
+    }
+    protected function afterActionCalled(Action $action): void
+    {
+        parent::afterActionCalled($action);
+        $this->edits=$this->facts=null;
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     public function hasCombinedRelationManagerTabsWithContent(): bool { return true; }
@@ -88,7 +107,7 @@ class ViewDomain extends ViewRecord
     }
     /** Resume sync sits in the page notice and is mounted as a page action. */
     public function resume_observationAction(): Action
-    { return OperationActions::scheduledReads($this->getRecord())[0]??Action::make('resume_observation')->hidden(); }
+    { return Sheet::button(OperationActions::scheduledReads($this->getRecord())[0]??Action::make('resume_observation')->hidden()); }
     public function notice_reviewAction(): Action
     { return Sheet::button(NoticeReview::action($this->getRecord())); }
     // ViewRecord otherwise fills public form data with the entire model's attributes.
@@ -96,48 +115,42 @@ class ViewDomain extends ViewRecord
     public function infolist(Schema $schema): Schema
     {
         $this->cacheHoldingActions();
-        $d=$this->getRecord(); $facts=DomainFacts::for($d); $edits=DomainEditActions::for($d); $progress=$this->managementProgress();
-        if (isset($edits['rows']['Auth code']) || isset($progress['auth_code_email'])) { $facts['Auth code']=['value'=>$d->registrar_key==='namesilo'?'Admin contact email':'Registrant email','sub'=>null,'url'=>null,'tone'=>null,'help'=>null,'demo'=>false]; }
-        $facts=DomainFacts::withProgress($facts,$progress);
-        // Reminder issues sit on Renewal invoices, then Open alerts, or alone when neither slot exists.
+        $d=$this->getRecord(); $facts=$this->facts(); $edits=$this->edits();
+        // Reminder issues sit on Renewal invoices, then on Open alerts, which they open when neither row exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?$review->toHtml():null;
-        $byRow=isset($facts['Renewal invoices']);
+        if ($button&&!isset($facts['Renewal invoices'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }
+        $slot=isset($facts['Renewal invoices'])?'Renewal invoices':'Open alerts';
         $placed=array_filter(DomainFacts::SECTIONS,fn(array $labels)=>array_intersect($labels,array_keys($facts))!==[]);
-        $held=isset($placed[self::HELD_SECTION])?self::HELD_SECTION:array_key_first($placed);
+        // The rows that stay blocked are said once, at the head of their section. A request's head line names it, so only a page with no such section and no request needs the note elsewhere.
+        $held=isset($placed[self::HELD_SECTION])?self::HELD_SECTION:($edits['request']===null?array_key_first($placed):null);
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
             foreach (array_intersect($labels,array_keys($facts)) as $label) {
-                $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$title,$label==='Renewal invoices'?$button:null));
+                $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$label===$slot?$button:null));
             }
             $sections[]=Sheet::section($title,$rows,$title===$held?$edits['held']:null);
         }
-        return $schema->components([Sheet::split([...$this->notices($d,$facts,$byRow?null:$button),...$sections],[$this->activity($d)])]);
+        return $schema->components([Sheet::split([...$this->notices($d),...$sections],[$this->activity($d)])]);
     }
-    /** @return list<Callout|Html> */
-    private function notices(Domain $d, array $facts, ?string $review): array
+    /** @return list<Callout> */
+    private function notices(Domain $d): array
     {
-        $notice=DomainFacts::notice($d); $out=[];
+        $out=[];
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
             $out[]=Callout::make('Set a default DNS template on the registrar account to start DNS monitoring.')->status('info')->columnSpanFull()
                 ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]).'#switch-template').'">Set account DNS template</a>'):null);
         }
-        if (isset($facts['Open alerts'])) {
-            $alert=$facts['Open alerts'];
-            $out[]=Callout::make('Open alerts')->description(implode(' ',$alert['value']))->status($alert['tone'])->columnSpanFull()
-                ->footer($review?Sheet::buttons([$review]):null);
-        } elseif ($review) { $out[]=Html::make(Sheet::buttons([$review])); }
-        if ($notice) {
-            $buttons=[];
-            $resume=($notice['resume']??false)?$this->getAction('resume_observation',false):null;
-            if ($resume?->isVisible()) { $buttons[]=$resume->label('Resume sync')->toHtml(); }
-            foreach ([$notice['action']??null,$notice['link']??null] as $i=>$link) {
-                if ($link&&$link['url']) { $buttons[]=view('filament::components.button.index',['tag'=>'a','href'=>$link['url'],'color'=>$i===0?'primary':'gray','size'=>'sm','slot'=>new HtmlString(e($link['label']))])->render(); }
-            }
-            $out[]=Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()
-                ->footer($buttons?Sheet::buttons($buttons):null);
-        }
         return $out;
+    }
+    /** A domain monitoring can't compare says so on its DNS row, beside the way to fix it. */
+    private static function withDnsSetup(Domain $d, array $facts): array
+    {
+        $row=isset($facts['DNS records'])?'DNS records':'Nameservers';
+        if (!isset($facts[$row])||!ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()) { return $facts; }
+        $facts[$row]['sub']=trim(($facts[$row]['sub']??'').' DNS comparison not set up.');
+        $facts[$row]['setup']=true;
+        return $facts;
     }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section
@@ -147,26 +160,38 @@ class ViewDomain extends ViewRecord
         return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS)))],
             after:$entries===[]?[]:[Sheet::link('view_history','View all '.count($entries),$url)]);
     }
-    /** A row's action column: its edits or its link. Renewal invoices draws the page's Stop and Resume. */
-    private function side(string $label, array $fact, array $edits, string $section, ?string $review): array|Html
+    /** A row's action column: its edits or its link. Renewal invoices and Last sync draw the page's own actions. */
+    private function side(string $label, array $fact, array $edits, ?string $review): array|Html
     {
         if ($label==='Renewal invoices') {
-            $buttons=array_filter(['stop','resume'],fn(string $name)=>($this->cachedActions[$name]??null)?->isVisible()??false);
+            // On a row that says Off, Stop shows only when the row says what it still stops.
+            $buttons=array_filter(['stop','resume'],fn(string $name)=>(($this->cachedActions[$name]??null)?->isVisible()??false)&&($name!=='stop'||$fact['value']!=='Off'||str_contains((string)$fact['sub'],'Stop renewal')));
             $html=[...array_map(fn(string $name)=>$this->cachedActions[$name]->toHtml(),$buttons),...($review?[$review]:[])];
             return $html?Html::make(Sheet::buttons($html)):[];
         }
+        if ($label==='Open alerts') { return $review?Html::make(Sheet::buttons([$review])):[]; }
+        if ($label==='Last sync') { $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
-        if ($side===[]&&$edits['held']&&$section===self::HELD_SECTION) { $side[]=Sheet::edit(Action::make('held_'.md5($label))->disabled(),$label); }
+        if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::blocked('held_'.md5($label),self::blockedLabel($label,$fact),$label,$edits['held']); }
+        if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }
         if ($fact['url']&&isset(DomainFacts::LINKS[$label])) { $side[]=Sheet::link('open_'.md5($label),DomainFacts::LINKS[$label],$fact['url']); }
         return $side;
+    }
+    private static function blockedLabel(string $label, array $fact): string
+    { return $label==='Transfer lock'?($fact['value']==='On'?'Turn off':'Turn on'):'Edit'; }
+    /** An open alert's cause takes the tone and its value stays plain, so the row says what to do, not that the value is wrong. Words that were on the row before the alert stay plain too. */
+    private static function below(array $fact): string|HtmlString|null
+    {
+        if ($fact['value']===null||$fact['sub']===null||!in_array($fact['tone'],['danger','warning'],true)) { return $fact['sub']; }
+        $plain=$fact['plain']??null; if ($plain===null) { return RegistrarFacts::tone($fact['sub'],$fact['tone']); }
+        return new HtmlString(e($plain).' '.RegistrarFacts::tone(substr($fact['sub'],strlen($plain)+1),$fact['tone'])->toHtml());
     }
     private function row(string $label, array $fact, array|Html $side): Flex
     {
         $entry=TextEntry::make('value_'.md5($label))->label($label)->state($fact['value'])
-            // An open alert's cause takes the tone and its value stays plain, so the row says what to do, not that the value is wrong.
-            ->belowContent($fact['value']!==null&&$fact['sub']!==null&&in_array($fact['tone'],['danger','warning'],true)?RegistrarFacts::tone($fact['sub'],$fact['tone']):$fact['sub']);
+            ->belowContent(self::below($fact));
         if (is_array($fact['value'])) { $entry->listWithLineBreaks(); }
-        if ($label==='Nameservers') { $entry->fontFamily(FontFamily::Mono); }
+        if ($label==='Nameservers'&&$fact['value']!==null) { $entry->fontFamily(FontFamily::Mono); }
         if ($label==='Service'&&$fact['value']!==null) { $entry->formatStateUsing(fn()=>new HtmlString('<span class="font-mono domains-mono">'.DomainName::html($this->getTitle())->toHtml().'</span> registration')); }
         if (isset($fact['at'])) { $entry->formatStateUsing(fn()=>Sheet::moment($fact['at'])); }
         if ($fact['help']) { $entry->hintAction(HelpHint::make($fact['help'])); }

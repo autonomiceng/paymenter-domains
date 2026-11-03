@@ -43,7 +43,8 @@ foreach([[$held,'Transfer on hold. Old registrar needs approval. Check request #
     same(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain->fresh()),\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($record),'Batched list status matches the page');
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');
     same(OwnedDomains::acquisition($record->operations,$record)?->id,$record->latestAcquisition?->id,'Batch matches customer acquisition lookup');
-    same($customer,$columns['domain']->record($record)->getDescriptionBelow(),'Customer name under the domain');
+    same($customer,$columns['customer']->record($record)->getState(),'Customer name has its own column');
+    same(null,$columns['domain']->record($record)->getDescriptionBelow(),'Domain name has no duplicate customer description');
     same(null,$columns['domain']->getTooltip(),'No customer ID tooltip');
     same(null,$columns['provider_expires_at']->record($record)->getState(),'Expiry of a domain under review is blank, not Missing');
 }
@@ -63,7 +64,7 @@ same(['Under review','Check the domain and its requests.'],[$column->getState(),
 DB::table('domains_domains')->where('id',$held->id)->update(['user_id'=>999999,'server_id'=>999999]);
 $fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSeeText($held->domain)->assertDontSee('#999999');
 $record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$columns=$fallback->instance()->getTable()->getColumns();
-same([null,'Missing'],[$columns['domain']->record($record)->getDescriptionBelow(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
+same([null,'Missing'],[$columns['customer']->record($record)->getState(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.
 $op=clone $base;$op->state='uncertain';$op->funding_basis='paid_invoice';$op->safe_code=null;
 foreach([0=>' (under 1 hour so far)',1=>' (1 hour so far)',7=>' (7 hours so far)'] as $hours=>$age){
@@ -76,7 +77,7 @@ same('Paid domain changes on this NameSilo account wait until the result is know
 $op->attempt=[];
 same('NameSilo has not confirmed this transfer.',RequestFacts::for($op)['outcome'],'Uncertain request copy snapshot');
 same(['Start after payment','Paymenter payment events'],array_keys(NativePaidHooks::notices()),'Payment event labels snapshot');
-same('Paused · the invoice-paid listener is missing. Scheduled checks still pick up paid orders.',NativePaidHooks::notices()['Start after payment'],'Missing listener copy snapshot');
+same('Paused. The invoice-paid listener is missing. Scheduled checks still pick up paid orders.',NativePaidHooks::notices()['Start after payment'],'Missing listener copy snapshot');
 // An empty table says what fills it; a search that hid the rows says so instead.
 Livewire::actingAs($viewer)->test(ListDomains::class)->set('tableSearch','no-such-name')->assertSee('No domains match')->assertDontSee('No domains yet')->assertDontSee('after a customer orders');
 Livewire::actingAs($viewer)->test(ListOperations::class)->set('tableSearch','no-such-name')->assertSee('No requests match')->assertDontSee('Requests show here');

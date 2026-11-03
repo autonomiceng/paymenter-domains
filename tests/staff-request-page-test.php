@@ -47,7 +47,7 @@ same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observati
 // List: Request, Domain, Type, Status with reason, Created, Registrar account; Status, Type and Registrar account filters.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
 $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()
-    ->assertSee('Request #'.$heldOp->id)->assertSee('Oct 20, 2026 15:05 UTC')->assertSee('Synthetic registrar')
+    ->assertSee('Request #'.$heldOp->id)->assertSeeHtml('2026-10-20T15:05:00+00:00')->assertSee('Synthetic registrar')
     ->assertSee('On hold')->assertSee('Old registrar needs approval')->assertSee('Registrar account')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
 same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
@@ -66,7 +66,7 @@ expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp-
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
 // Retained expiry and actual charge in this display fixture cannot prove an unsent acquisition.
 $page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('Details')->assertSee('History')
-    ->assertSee('Registrar account')->assertSee('NameSilo · Test')->assertSee('Request created')
+    ->assertSee('Registrar account')->assertSee('NameSilo, Test')->assertSee('Request created')
     ->assertDontSee('Domain not found')->assertDontSee('No time recorded')->assertDontSee('Review actions')->assertDontSee('Saved evidence')->assertDontSee('Request type')->assertDontSee('Customer credit');
 $page->assertActionHidden('release')->assertActionVisible('refund')->assertActionHidden('hold')->assertSee('More');
 same(['recheck'],array_values(array_filter(['recheck','resume_reads'],fn($a)=>Paymenter\Extensions\Servers\Domains\Admin\Support\OperationActions::relevant($a,$heldOp->fresh()))),'One Check status at a time');
@@ -123,7 +123,7 @@ DB::table('domains_operations')->where('id',$heldOp->id)->update(['action'=>'tra
 
 // Pending: no notice, no Sent to registrar row.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'pending','safe_code'=>null,'started_at'=>'2026-10-20 15:06:00']);
-Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('In progress')->assertSee('Sent to registrar')->assertSee('Oct 20, 2026 15:06 UTC');
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('In progress')->assertSee('Sent to registrar')->assertSeeHtml('2026-10-20T15:06:00+00:00');
 
 // Paid and unconfirmed: the notice names the registrar and how long new orders have been paused.
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','funding_basis'=>'paid_invoice','started_at'=>now()->subHours(73)]);

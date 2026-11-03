@@ -98,10 +98,10 @@ class ViewOperation extends ViewRecord
             self::entry('Domain',$op->domain?->domain,url:$op->domain?self::url(fn()=>DomainResource::getUrl('view',['record'=>$op->domain_id])):null,cause:'Domain not found'),
             self::entry('Type',Labels::action($op->action)),
             self::entry('Registrar account',$account['value'],sub:$account['sub'],url:$setup,demo:$account['account']&&DemoData::is($account['account'])),
-            self::entry('Created',self::time($op->created_at),cause:RequestFacts::NO_TIME),
+            self::entry('Created',self::time($op->created_at),cause:RequestFacts::NO_TIME,at:$op->created_at),
         ];
         // Sent to registrar is hidden while the request has not been sent.
-        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && ($sent=StaffReviewHistory::sendEvent($op))) { $rows[]=self::entry($sent,self::time($op->started_at),cause:RequestFacts::NO_TIME); }
+        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && ($sent=StaffReviewHistory::sendEvent($op))) { $rows[]=self::entry($sent,self::time($op->started_at),cause:RequestFacts::NO_TIME,at:$op->started_at); }
         if (!($facts['unreadable']??false)) {
             if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null); }
             if (array_key_exists('cost',$facts)) { $rows[]=self::entry('Cost',$facts['cost'],sub:$facts['cost_sub']); }
@@ -144,10 +144,11 @@ class ViewOperation extends ViewRecord
         return Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()
             ->footer($buttons?Sheet::buttons($buttons):null);
     }
-    private static function entry(string $label, ?string $value, ?string $sub=null, ?string $url=null, bool $demo=false, ?Action $fix=null, ?string $cause=null, array|Html $side=[]): \Filament\Schemas\Components\Flex
+    private static function entry(string $label, ?string $value, ?string $sub=null, ?string $url=null, bool $demo=false, ?Action $fix=null, ?string $cause=null, array|Html $side=[], ?\DateTimeInterface $at=null): \Filament\Schemas\Components\Flex
     {
         $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($value)->url($url);
         if ($value!==null&&$sub!==null) { $entry->belowContent($sub); }
+        if ($at) { $entry->formatStateUsing(fn()=>Sheet::moment($at->getTimestamp())); }
         if ($demo) { $entry->suffix(DemoData::tag(inline:true)); }
         if ($label==='Domain') { $entry->fontFamily('mono'); }
         // $sub sits under a present value; a Missing value shows $cause, else $sub as its cause.

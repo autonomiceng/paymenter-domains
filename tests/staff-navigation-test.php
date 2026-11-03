@@ -7,29 +7,32 @@ use Illuminate\Support\Facades\{Auth,DB,Route};
 use Livewire\Livewire;
 use Filament\Facades\Filament;
 use Filament\Navigation\NavigationItem;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{ActivationStatus,DnsResolver,PublicSuffixList,RegistrarAccount,RegistrarBalances,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{ActivationStatus,DnsResolver,PublicSuffixList,RegistrarAccount,RegistrarBalances,RegistrarSetup,WhatYouSell};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource,PendingAdoptionResource,RoutingProfileResource,TldResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\{ListWatches,MonitoringSettings};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Services\{DnsResolverSettings,StaffWatchWrites as Writes,WatchMaintenance,WatchWork};
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';$f=noticeFixture();extract($f);\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();staffPanel();$panel=Filament::getCurrentPanel();
-$resources=[WatchResource::class,RoutingProfileResource::class,\App\Admin\Resources\FailedJobResource::class];$pages=[DnsResolver::class,PublicSuffixList::class,RegistrarSetup::class];$panel->resources($resources)->pages($pages);
+$resources=[TldResource::class,WatchResource::class,RoutingProfileResource::class,\App\Admin\Resources\FailedJobResource::class];$pages=[DnsResolver::class,PublicSuffixList::class,RegistrarSetup::class,WhatYouSell::class];$panel->resources($resources)->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($resources,$pages,$panel){foreach([...$resources,...$pages] as$r){$r::registerRoutes($panel);}});app('router')->getRoutes()->refreshNameLookups();
 
-// Six pages in one Domains group, in the planned order; every other page leaves the menu but keeps its route.
+// Four pages in one Domains group, in the planned order; every other page leaves the menu but keeps its route.
 $all=[DomainResource::class,OperationResource::class,TldResource::class,RegistrarSetup::class,WatchResource::class,RoutingProfileResource::class,
     PendingAdoptionResource::class,RegistrarAccount::class,RegistrarBalances::class,ActivationStatus::class,PublicSuffixList::class,DnsResolver::class];
-same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring','DNS templates'],array_map(fn($c)=>$c::getNavigationLabel(),array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()))),'Registration DNS templates stay reachable without monitoring');
+same(['Domains','TLDs & pricing','Registrars','Domain monitoring'],array_map(fn($c)=>$c::getNavigationLabel(),array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()))),'Dormant menu hides monitoring configuration');
 app()->instance(WatchWork::class,new WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
 $menu=array_values(array_filter($all,fn($c)=>$c::shouldRegisterNavigation()));usort($menu,fn($a,$b)=>[$a::getNavigationSort()??PHP_INT_MAX]<=>[$b::getNavigationSort()??PHP_INT_MAX]);
-same(['Domains','Registrar requests','TLDs & pricing','Registrars','Domain monitoring','DNS templates'],array_map(fn($c)=>$c::getNavigationLabel(),$menu),'Six staff pages in order');
+same(['Domains','Registrars','TLDs & pricing','Domain monitoring'],array_map(fn($c)=>$c::getNavigationLabel(),$menu),'Four staff pages in order');
 foreach($menu as $c){same('Domains',$c::getNavigationGroup(),'One Domains group: '.$c);}
 // Resource breadcrumbs read like the menu, not Filament's title-cased plural label.
 foreach(array_filter($all,fn($c)=>is_subclass_of($c,\Filament\Resources\Resource::class)) as $c){same($c::getNavigationLabel(),$c::getBreadcrumb(),'Sentence-case breadcrumb: '.$c);}
 same(count($menu),count(array_unique(array_map(fn($c)=>$c::getNavigationIcon(),$menu))),'Each staff page has its own icon');
 same(['domains','registrar-requests','domain-tlds','registrar-setup','domain-watch','dns-routing-profiles','public-suffix-list','dns-resolver'],
     [DomainResource::getSlug(),OperationResource::getSlug(),TldResource::getSlug(),RegistrarSetup::getSlug(),WatchResource::getSlug(),RoutingProfileResource::getSlug(),PublicSuffixList::getSlug(),DnsResolver::getSlug()],'Slugs kept');
+
+Auth::setUser(staffUser([Staff::VIEW,Staff::COSTS]));
+same(['TLDs','What you sell'],array_map(fn(NavigationItem $item)=>$item->getLabel(),\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('TLDs')),'Pricing tabs keep the merged What you sell page without its old Price list alias');
 
 app()->forgetInstance(WatchWork::class);
 
@@ -42,12 +45,12 @@ Livewire::actingAs(staffUser([Staff::VIEW]))->test(MonitoringSettings::class)->a
 
 // Normal monitoring pages hide deployment settings; direct settings bookmarks still work.
 $tabs=fn($page)=>array_map(fn(NavigationItem $i)=>[$i->getLabel(),$i->isActive()],$page->instance()->getSubNavigation());
-$list=Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful();same([['Domains',true]],$tabs($list),'List tabs');
+$list=Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful();same([['Monitored domains',true],['Settings',false]],$tabs($list),'List tabs');
 // List pages carry no breadcrumb, like Domains and Registrars.
 same([],$list->instance()->getBreadcrumbs(),'Monitoring list has no breadcrumb');
 foreach([RoutingProfileResource\Pages\ListConfiguration::class] as $page){same([],Livewire::actingAs($manager)->test($page)->instance()->getBreadcrumbs(),'No breadcrumb: '.$page);}
 $settings=app(DnsResolverSettings::class);
-$tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Domains',false],['Settings',true]],$tabs($tab),'Settings tabs');
+$tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Monitored domains',false],['Settings',true]],$tabs($tab),'Settings tabs');
 // No saved resolver: Missing with its cause and the fix beside it, said once; nothing to test yet, no bootstrap IP.
 $once=fn($test,string $copy)=>same(1,substr_count(html_entity_decode(strip_tags($test->html()),ENT_QUOTES),$copy),'Said once: '.$copy);
 $tab->assertSee('DNS resolver')->assertSee('Resolver')->assertSee('Missing')->assertSee("No resolver set. Checks use the server's resolver.")->assertDontSee('Server default')->assertDontSee('Resolver IP address')->assertSee('If the resolver fails, checks retry once with the server')

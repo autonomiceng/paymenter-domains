@@ -55,7 +55,7 @@ same($sync,Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::la
 Illuminate\Support\Facades\Schema::drop('domains_runtime_turns');
 config(['settings.credits_enabled'=>false]);
 $credits=collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits');
-expect($credits!==null&&str_contains($credits['cause'],'Turn on Credits in Settings.'),'Hidden Credits page warns with the setting to change');
+expect($credits!==null&&str_contains((string)$credits['cause'],'Turn on Credits in Settings.'),'Hidden Credits page warns with the setting to change');
 config(['settings.credits_enabled'=>true]);
 same(null,collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits'),'Warning clears when customers can use Credits');
 
@@ -68,7 +68,7 @@ Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(Regist
 Livewire::actingAs(staffUser([]))->test(RegistrarSetup::class)->assertForbidden();
 // List page.
 $list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertActionDoesNotExist('add_account')->assertSee('Accounts');
-foreach(['Account','Mode','Status','Balance','Due in 30 days','Enom test account','Enom · 1 domain','NameSilo · 0 domains','Test','Active','USD 7.99','Low balance','USD 8.00',
+foreach(['Account','Mode','Status','Balance','Due in 30 days','Enom test account','Enom, 1 domain','NameSilo, 0 domains','Test','Active','USD 7.99','Low balance','USD 8.00',
     'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
 foreach(['https://ote.namesilo.com/cart/add-funds','https://cp.enom.com/','noopener noreferrer',RegistrarAccount::getUrl(['account'=>$enom->server_id]),RegistrarAccount::getUrl(['account'=>$silo->server_id])] as $needle){
@@ -77,6 +77,11 @@ foreach(['Registrar setup','Registrar balances','Server #','Unknown','Viewing us
     expect(!str_contains($html,$needle),'List never shows: '.$needle);}
 $missing=ContactDetails::missingRequiredProperties();
 if($missing){$list->assertSee("Customers can't enter")->assertSee('Add them as custom properties.')->assertSee('Open custom properties');}
+// Search and filters work on this short list too.
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Search account')->searchTable('Spare')->assertSee('Spare account')->assertDontSee('Old account');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('registrar','namesilo')->assertSee('Demo NameSilo')->assertDontSee('Enom test account')->assertDontSee('Spare account');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('mode','live')->assertDontSee('Enom test account');
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('status','Not connected')->assertSee('Spare account')->assertDontSee('Enom test account');
 // Native create permission and a usable route are both required.
 $creator=staffUser([Staff::VIEW,'admin.servers.create']);
 $routes=app('router')->getRoutes();$withoutCreate=new Illuminate\Routing\RouteCollection;
@@ -293,6 +298,9 @@ $held=Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id'
 // A paid request waiting for the registrar shows on the Registrar requests row, never as the account's state.
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertDontSee('Request #'.$held->id.' unconfirmed');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Registrar requests')->assertSee('1 needs review');
+DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'succeeded']);
+same(['open'=>0,'review'=>0],Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::requests($silo->server_id),'Finished requests leave the count');
+DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'uncertain']);
 // Check balance: a failed read and the one-minute wait use the new toasts.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('checkBalance')->assertNotified("Couldn't check balance");
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('checkBalance')->assertNotified('Wait a minute before checking again.');

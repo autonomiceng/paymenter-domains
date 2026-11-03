@@ -19,11 +19,11 @@ $monitoringReader=new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(
 $discovery=new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null);
 foreach([[false,$discovery],[true,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork()]] as [$enabled,$producer]){
     app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$producer,$enabled));
-    foreach([RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Registration DNS templates stay available without monitoring: '.$resource);}
+    same(true,RoutingProfileResource::canViewAny(),'Registration DNS templates stay available without monitoring');
+    expect(str_contains(RoutingProfileResource::getUrl(),'dns-routing-profiles'),'Registration DNS template route stays available');
     same(true,WatchResource::shouldRegisterNavigation(),'Monitoring status remains reachable');
 }
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($monitoringReader,$discovery,true));
-foreach([RoutingProfileResource::class] as $resource){same(true,$resource::shouldRegisterNavigation(),'Configured monitoring shows '.$resource);}
 // Clean copy: no em dash, no "unavailable", no internal terms.
 $clean=function(string $html,string $page):void{$text=html_entity_decode(strip_tags($html));expect(!str_contains($text,'—'),'No em dash on '.$page);foreach(['unavailable','Saved revision','revision','feature gates','Domain watch','routing profile','mapping'] as $word){expect(stripos($text,$word)===false,'No "'.$word.'" on '.$page);}};
 $column=fn($page,string $name)=>$page->instance()->getTable()->getColumn($name);
@@ -59,16 +59,16 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','mo
 
 // Monitored domain page: heading pill, header buttons, sections, one notice.
 $view=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);$page=$view->instance();$clean($view->html(),'monitored domain');
-expect(str_contains($page->getHeading()->toHtml(),'font-mono') && str_contains($page->getHeading()->toHtml(),'Problem found'),'Heading is the mono name and the pill');
+expect(str_contains($page->getHeading()->toHtml(),'font-mono') && str_contains($page->getSubheading()->toHtml(),'Problem found'),'Mono name, then the status line');
 assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Monitored domain title','title');
-same('Expires in '.$days.' days',$page->getSubheading(),'Reason under the heading');
+expect(str_contains($page->getSubheading()->toHtml(),'Expires in '.$days.' days'),'Reason under the heading');
 same([WatchResource::getUrl()=>'Domain monitoring','example.com'],$page->getBreadcrumbs(),'Breadcrumb');
 foreach(['read'=>'Check now','pause'=>'Pause monitoring','profile'=>'Change DNS template','note'=>'Add note','retire'=>'Stop monitoring'] as $name=>$label){same($label,$page->getAction($name)?->getLabel(),'Action '.$name);}
 $view->assertActionHidden('resume');
 foreach(['read','pause'] as $name){same(false,$page->getAction($name)->isConfirmationRequired(),$name.' has no dialog');}
 same('Stop monitoring?',$page->getAction('retire')->getModalHeading(),'Stop dialog heading');same("Checks and alerts stop. The domain won't be added again automatically.",$page->getAction('retire')->getModalDescription(),'Stop dialog body');
 same('Future checks compare against this DNS template.',$page->getAction('profile')->getModalDescription(),'Template dialog body');
-$view->assertSeeInOrder(['Domain','Customer','Expected nameservers','DNS template','Synthetic defaults','Registrar','Expires','Hosting service','Hosting','Checks','Nameservers','DNS records','Website points to','Email points elsewhere','Registry','Registered','Last check','Next check','Monitoring alerts','On','History','No history yet']);
+$view->assertSeeInOrder(['Domain','Customer','Expected nameservers','DNS template','Synthetic defaults','Registrar','Expires','Hosting service','Hosting','Checks','Nameservers','DNS records','Website points to','Email points elsewhere','Registry','Registered','Last check','Next check','Monitoring alerts','On','Activity','No history yet']);
 $view->assertSee('Expires in '.$days.' days.')->assertDontSee('Findings')->assertDontSee('Saved domain checks')->assertDontSee('Notification activity')->assertDontSee('Watch state');
 $facts=WatchFacts::for($record);same(['Domain','Checks'],array_keys($facts),'Two fact sections');same('Other',$facts['Domain']['Registrar']['value']??'Missing','Registrar from the saved registration');
 
@@ -209,7 +209,7 @@ DB::rollBack();Auth::setUser($manager);
 
 // DNS templates.
 $templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');
-same('DNS templates',$templates->instance()->getTitle(),'Templates title');same(null,$templates->instance()->getSubheading(),'No templates subheading');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
+same('DNS templates',$templates->instance()->getTitle(),'Templates title');same('A DNS template sets the nameservers for new domains and is what monitoring checks them against.',$templates->instance()->getSubheading(),'Templates say what they are for');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
 same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');
 $template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['Records','Status','On','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');

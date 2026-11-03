@@ -9,7 +9,7 @@ use Filament\Resources\Pages\ListRecords;
 use Filament\Tables\{Table,Columns\TextColumn};
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{WatchResource,RoutingProfileResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffTabs};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedDnsSetup,StaffManagedDnsSetup,StaffWatchWrites};
 /** A filtered native table, rather than a new configuration style. */
@@ -20,7 +20,7 @@ class ListManagedDns extends ListRecords
     protected function makeTable(): Table{return $this->makeBaseTable();}
     public function getTitle(): string{return 'DNS monitoring setup';}
     public function getSubheading(): ?string{return 'Set a default DNS template on each registrar account. These domains will pick it up automatically. Their expiry monitoring continues.';}
-    public function getSubNavigation(): array{return WatchResource::tabs('dns-setup');}
+    public function getSubNavigation(): array{return StaffTabs::monitoring('DNS monitoring setup');}
     protected function getHeaderActions(): array
     {return [Action::make('templates')->label('DNS templates')->url(RoutingProfileResource::getUrl())];}
     protected function domains(): \Illuminate\Database\Eloquent\Builder{return ManagedDnsSetup::affected(time());}

@@ -57,11 +57,11 @@ final class RegistrarFacts
     { return $account!==null&&$status['label']!==AccountStatus::SET['not_connected'][0]; }
     public static function mode(?Account $account): ?string
     { return $account?($account->environment==='live'?'Live':'Test'):null; }
-    /** "Enom · 2 domains" */
+    /** "Enom, 2 domains" */
     public static function summary(Server $server, ?Account $account): string
     {
         $n=Domain::where('server_id',$server->id)->count();
-        return ($account?TldFacts::registrar($account->registrar_key).' · ':'').$n.' '.($n===1?'domain':'domains');
+        return ($account?TldFacts::registrar($account->registrar_key).', ':'').$n.' '.($n===1?'domain':'domains');
     }
     /** @return array{value:?string,checked:?string,low:bool,cause:?string,due:string,without_cost:int,funds:?string} */
     public static function balance(Account $account): array

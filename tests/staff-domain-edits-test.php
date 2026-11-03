@@ -149,7 +149,7 @@ $replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);same([],DomainEditActions::for($d->fresh())['rows'],'View-only staff get no edits');Auth::setUser($actor);
 $processing=static fn(bool $on)=>DB::table('domains_accounts')->where('server_id',$d->server_id)->update(['processing_enabled'=>$on]);$processing(false);
 $off=DomainEditActions::for($d->fresh());same([],$off['rows'],'Processing off hides edits, as it does for the owner');expect(str_contains((string)$off['held'],'Orders are off'),'Processing off says what to do');
-$view()->assertSee($off['held']);$processing(true);
+$view()->assertSee($off['held'])->assertSeeHtml('domains-blocked')->assertSeeHtml('aria-disabled="true"');$processing(true);
 $d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'automatic_spend_paused'=>true]]);
 expect(str_contains((string)DomainEditActions::for($d->fresh())['held'],'orders are paused'),'Paused orders say what to do');
 echo "Staff domain edits passed.\n";$nativeSuccessful=true;

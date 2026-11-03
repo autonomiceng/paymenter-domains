@@ -8,7 +8,8 @@ use Filament\Tables\Table;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
-/** The History tab's table: Time, Change, Detail, By, over the saved settings and price changes. */
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+/** The History tab's table: Time, Change, Detail, By. A row's url, when it has one, opens its request. */
 final class HistoryTable
 {
     /** @param \Closure():?array $read Null means the saved history can't be read. */
@@ -25,10 +26,13 @@ final class HistoryTable
             })
             ->filters([SelectFilter::make('by')->label('By')->options(fn()=>collect($read()??[])->pluck('by','by')->filter()->sort()->all())])
             ->columns([
-                TextColumn::make('time')->label('Time')->sortable()->color('gray')->formatStateUsing(fn(string $state)=>new HtmlString(view('domains::partials.moment',['at'=>$state,'fallback'=>$state])->render())),
+                TextColumn::make('time')->label('Time')->sortable()->default(Missing::LABEL)
+                    ->formatStateUsing(fn(string $state)=>$state===Missing::LABEL?$state:new HtmlString(view('domains::partials.moment',['at'=>$state,'fallback'=>$state])->render()))
+                    ->color(fn($state)=>$state===Missing::LABEL?Missing::color(RequestFacts::NO_TIME):'gray')->icon(fn($state)=>$state===Missing::LABEL?Missing::icon(RequestFacts::NO_TIME):null)
+                    ->description(fn($state)=>$state===Missing::LABEL?RequestFacts::NO_TIME:null),
                 TextColumn::make('change')->label('Change'),
                 TextColumn::make('reason')->label('Detail')->wrap()->lineClamp(2)->placeholder('None'),
                 TextColumn::make('by')->label('By'),
-            ]);
+            ])->recordUrl(fn(array $record)=>$record['url']??null)->paginated([25,50,100])->defaultPaginationPageOption(25);
     }
 }

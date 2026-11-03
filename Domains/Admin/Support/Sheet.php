@@ -48,6 +48,12 @@ final class Sheet
     /** Every row says Edit and screen readers hear which row. The dialog keeps its own title. */
     public static function edit(Action $action,string $row): Action
     { return self::button($action->modalHeading($action->getModalHeading())->label('Edit'))->extraAttributes(['aria-label'=>'Edit '.$row]); }
+    /** A button that can't run now. It stays in the tab order and says why on hover and on focus. */
+    public static function blocked(string $name,string $label,string $row,string $reason): Action
+    {
+        return self::button(Action::make($name)->label($label)->tooltip($reason)->livewireClickHandlerEnabled(false)
+            ->extraAttributes(['aria-disabled'=>'true','aria-label'=>$label.' '.$row.'. '.$reason,'class'=>'domains-blocked']));
+    }
     /** Finished buttons drawn beside a row or under a notice. */
     public static function buttons(array $html): HtmlString
     { return new HtmlString('<div class="fi-ac domains-actions">'.implode('',$html).'</div>'); }

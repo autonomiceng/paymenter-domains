@@ -43,7 +43,7 @@ final class StaffDomainStatus
             if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top); $act = true; $named = $top['code']; }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal); }
         }
-        if ($shared['reason'] === DomainStatus::MISSING && $step === self::CHECK) { [$shared['reason'], $step] = [null, 'Missing. Sync this domain.']; }
+        if ($shared['reason'] === DomainStatus::MISSING && $step === self::CHECK) { [$shared['reason'], $step, $request] = [null, $op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id]; }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
     }
     /** Late money is checked first by the caller, so it takes the step. */

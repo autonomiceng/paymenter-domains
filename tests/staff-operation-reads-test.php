@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationRecords,ObservationSchema,ObservationWork,Refunds,RenewalReplacements,StaffOperationReview,StaffOperations,StaffSyncReview};
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
 [$check]=$prepare(placeholderComFixtureName('staff-recheck-placeholder.com'));$calls=count($observation->calls);
@@ -74,6 +74,19 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id]
 expect(!ObservationRecords::held($check->domain->fresh()),'Domain recovery clears the record hold');
 same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Record hold resumes current healthy job');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
+// Any domain can stop syncing. One with no request resumes on its own page, through the same writer, audited in its history.
+[$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$soloDomain=$solo->domain;DB::table('domains_operations')->where('id',$solo->id)->delete();
+$soloWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$soloDomain->server_id,'account_fingerprint'=>$soloDomain->account_fingerprint,'domain_id'=>$soloDomain->id,
+    'generation'=>$soloDomain->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
+$soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Resume sync below.')->assertDontSeeHtml('fi-callout');
+commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id,(int)$soloDomain->id,'stale',StaffOperationReview::ACTIONS['resume_observation'],$clock)));
+commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id+1,(int)$soloDomain->id,StaffSyncReview::stamp($soloDomain->fresh()),StaffOperationReview::ACTIONS['resume_observation'],$clock)));
+same(0,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'A stale or foreign review resumes nothing');
+$soloPage->callAction('resume_observation')->assertNotified('Sync resumed');
+same(1,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'No-request domain resumes');
+$soloEntries=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($soloDomain->fresh());
+same(1,count(array_filter($soloEntries,fn(array $row)=>$row['event']==='Sync resumed'&&$row['sub']===null)),'History names the resume once');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionHidden('resume_observation');
 // Independent literal boundaries for both shared acquisition actions.
 foreach(['register','transfer'] as $action){
     [$boundary]=$prepare(placeholderComFixtureName('staff-'.$action.'-boundary-placeholder.com'));

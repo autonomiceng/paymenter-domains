@@ -3,11 +3,6 @@
 // Owned pages use the shared pieces and tokens. New inline styles and raw colors fail here. A file on this list drops off as its page lands.
 declare(strict_types=1);
 const ALLOWED=[
-    'Admin/Resources/DomainResource.php'=>2,
-    'Admin/Resources/DomainResource/Pages/AdoptionPreview.php'=>1,
-    'Admin/Resources/OperationResource.php'=>1,
-    'Admin/Resources/RoutingProfileResource/Pages/ViewConfiguration.php'=>1,
-    'Admin/Resources/TldResource.php'=>3,
     // Existing main pages leave this list when their later sheet/customer slice lands.
     'resources/views/admin/live-activation.blade.php'=>17,
     'resources/views/admin/native-editor-notice.blade.php'=>2,
