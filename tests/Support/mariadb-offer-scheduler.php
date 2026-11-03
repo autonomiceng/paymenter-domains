@@ -7,6 +7,8 @@ use App\Models\{Role, Server, User};
 use Illuminate\Support\Facades\{Artisan, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeConversion, UpgradeGate, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, CatalogueAcceptances, DomainObservation, HoldingObservationWork, Installation, NativeCatalogue, ObservationWork, PriceCatalogue, PricingRules, RegistrarRegistry};
@@ -28,6 +30,8 @@ if ($phase === 'seed') {
     (new Installation)->install();
     $server = Server::create(['name'=>'Synthetic race', 'extension'=>'Domains', 'type'=>'server', 'enabled'=>true]);
     $b = $bindings->configure($server->id, 'enom', Environment::Test, ['token'=>'synthetic-account']);
+    $role = Role::create(['name'=>'Synthetic import staff','permissions'=>[Staff::VIEW,Staff::POLICY,'admin.domains.settings.import']]);
+    User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'race-staff@example.test','password'=>'synthetic-password','role_id'=>$role->id]);
     (new UpgradeConversion)->batch($b); (new UpgradeGate)->pause();
     Schema::create('offer_fixture_reads', static function ($t): void { $t->id(); });
 } else { $b = CatalogueAcceptances::binding(Account::sole()); }
@@ -65,6 +69,10 @@ elseif ($phase === 'second') {
     $refused = false;
     try { (new ObservationWork($observer,$clock,$budget))->tick(1); } catch (DomainException) { $refused = true; }
     same(true,$refused,'Legacy consumer is fenced in the same installed database');
+    $staff = User::sole();
+    expect(Staff::allows($staff,'admin.domains.settings.import'),'Old queued job retains actual staff permission');
+    $old = new SyncPrices($staff->id,$b->serverId,$b->fingerprint); $old->upgradeGeneration = 0; $old->handle();
+    same("Couldn't sync prices",\App\Models\Notification::where('user_id',$staff->id)->latest('id')->value('title'),'Queued old job refuses inside the same installed race');
 } elseif ($phase === 'verify') {
     same(1,DB::table('offer_fixture_reads')->count(),'Two connections start only one physical synthetic feed');
     $q = DB::table('domains_observation_queues')->sole();
