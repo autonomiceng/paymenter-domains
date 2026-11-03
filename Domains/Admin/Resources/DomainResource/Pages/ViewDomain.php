@@ -191,7 +191,9 @@ class ViewDomain extends ViewRecord
         $words=self::words($fact);
         if ($words!==null&&isset($fact['request'])) { $words=DomainFacts::linkRequest($words,$fact['request']); }
         if (isset($fact['progress'])) {
-            $line=$fact['progress']['request']===null?$fact['progress']['text']:DomainFacts::linkRequest($fact['progress']['text'],$fact['progress']['request']);
+            $text=$fact['progress']['text'];
+            if (($fact['progress']['tone']??null)==='warning') { $text=RegistrarFacts::tone($text,'warning'); }
+            $line=$fact['progress']['request']===null?$text:DomainFacts::linkRequest($text,$fact['progress']['request']);
             $html=fn(string|HtmlString $text)=>$text instanceof HtmlString?$text->toHtml():e($text);
             $words=$words===null?$line:new HtmlString($html($words).'<br>'.$html($line));
         }
