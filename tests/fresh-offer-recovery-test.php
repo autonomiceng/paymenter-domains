@@ -39,7 +39,7 @@ catch (DomainException) {}
 same($held, DB::table('domains_domains')->get()->toJson(), 'Refusal preserves unexpected holding evidence');
 DB::table('domains_domains')->delete();
 Setting::saving(static function (Setting $row) use (&$commit): void {
-    if (!$commit || $row->key !== UpgradeGate::KEY || json_decode($row->value,true)['state'] !== 'active') { return; }
+    if (!$commit || $row->key !== UpgradeGate::KEY) { return; }
     $commit = false; throw new InitializationInterrupted('Before active-state commit');
 });
 $commit = true;
