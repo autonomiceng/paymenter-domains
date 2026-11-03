@@ -9,7 +9,6 @@ const ALLOWED=[
     'resources/views/admin/watch-setup.blade.php'=>10,
     'resources/views/admin/what-you-sell.blade.php'=>4,
     'resources/views/index.blade.php'=>1,
-    'resources/views/pricing.blade.php'=>3,
     'resources/views/partials/demo-tag-colors.blade.php'=>8,
     'resources/views/partials/demo-tag.blade.php'=>1,
     'resources/views/search.blade.php'=>1,
