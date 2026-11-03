@@ -38,7 +38,8 @@ same(Outcome::Unknown, Dns::acknowledgement($body('dnsListRecords', []), DnsMapp
     'Inventory is not a mutation acknowledgement');
 $readback = ['record_id' => 'newB2', 'type' => 'A', 'host' => 'example.com', 'value' => '192.0.2.1', 'ttl' => 300, 'distance' => 0];
 $observed = Dns::inventory($body('dnsListRecords', ['resource_record' => [$readback]]), 'example.com');
-same(['state' => 'complete', 'records' => [$record + ['record_id' => 'newB2']]], $observed,
+same(['state' => 'complete', 'records' => [['name' => '@', 'type' => 'A', 'address' => '192.0.2.1',
+    'mx_pref' => 10, 'record_id' => 'newB2', 'ttl' => 300]]], $observed,
     'Independent readback retains replacement ID and TTL in shared shape');
 same(['state' => 'complete', 'records' => []], Dns::inventory($body('dnsListRecords', ['resource_record' => []]), 'example.com'),
     'Deletion of the final record can be observed without a fabricated replacement row');
