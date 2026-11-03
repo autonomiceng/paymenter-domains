@@ -411,6 +411,9 @@ final class AccountBindings
             }
             $localMarker = ($lockedServer ?? $this->server((int) $account->server_id))->settings()->where('key', LocalAccountEnrollment::KEY)->exists();
             if (LocalAccountEnrollment::enrolled($account) || $localMarker) {
+                if (!$this->registry->localEnrollment($binding->registrarKey)) {
+                    throw new \DomainException('Local enrollment requires its original composition.');
+                }
                 $facts = json_decode($this->secret((int) $account->server_id, LocalAccountEnrollment::KEY, $lockedServer, $advisory), true, 8, JSON_THROW_ON_ERROR);
                 LocalAccountEnrollment::validate($account, $facts, $credentials);
             }

@@ -223,6 +223,12 @@ expect(!str_contains($identity, 'placeholder-key'), 'Credentials never become lo
 same([false, null], [$a->processing_enabled, $a->live_site], 'Authentication grants neither processing nor a live site');
 $reject(fn () => $local->reader(10));
 $local->confirmLiveSite(10, 'https://live.example.com');
+$before = count($wire->calls);
+expect($local->configurationAvailable(10), 'The original local composition accepts its saved account');
+expect(!$bindings->configurationAvailable(10), 'A registry without local enrollment must refuse the saved local account');
+same('configuration_unavailable', $bindings->configurationStatus(10), 'Readiness reports the missing local composition safely');
+$reject(fn () => $bindings->reader(10));
+same($before, count($wire->calls), 'Composition refusal performs no authentication');
 $revision = $local->credentialRevision($localBinding);
 $local->requireCredentialRevision($localBinding, $revision);
 foreach (Server::findOrFail(10)->settings()->get() as $setting) {
