@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 final class ManagementEvidence
 {
     private static ?array $unsent=null;
@@ -46,6 +47,14 @@ final class ManagementEvidence
             &&$op->provider_order_id===null&&$op->confirmed_expires_at===null&&!array_key_exists('seal',$op->funding??[])
             &&($a===[]||(($a['seal']??null)==='absent'&&($a['send_state']??null)==='definitely_unsent'
                 &&!array_diff(array_keys($a),['seal','send_state','management_claim','management_terminal','management_deferrals'])));
+    }
+    /** What a stopped or ended change did at the registrar, the one line staff and customers read. Null when the result really is unknown. */
+    public static function outcome(Operation $op): ?string
+    {
+        if($op->safe_code==='management_provider_refused'){return RequestStatus::REFUSED;}
+        if(!in_array($op->state,['held','rejected'],true)){return null;}
+        try{$unsent=self::idle($op)||$op->state==='rejected'&&($op->attempt['send_state']??null)==='definitely_unsent';}catch(\Throwable){$unsent=false;}
+        return $unsent?RequestStatus::UNSENT:($op->state==='rejected'?RequestStatus::NOT_MADE:null);
     }
     public static function recoverable(Operation $op): bool
     {return $op->state==='held'&&$op->safe_code==='management_unconfirmed'&&self::idle($op)

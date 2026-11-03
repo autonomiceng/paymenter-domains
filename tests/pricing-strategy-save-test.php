@@ -83,7 +83,7 @@ $edit()->assertActionDataSet(['pricing'=>'custom','mode'=>'markup_amount','marku
 same('10.00',$retail('register'),'Sync keeps the custom rule and publishes ten dollars');
 same('10.00',$retail('renew'),'Sync also applies the saved rule to renewal');
 // Changing account pricing leaves an own rule alone; explicitly choosing the default adopts it.
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction(setupAction('default_rule',$server->id))
+Livewire::actingAs($staff)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class)->mountAction('default_pricing')
     ->setActionData(['mode'=>'markup_amount','markup'=>'2.00','round_up'=>'half','reason'=>'Check account default and own pricing scopes'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 same('10.00',$retail('register'),'Changing the account default leaves the custom published price alone');

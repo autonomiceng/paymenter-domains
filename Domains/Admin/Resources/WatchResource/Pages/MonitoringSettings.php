@@ -7,10 +7,11 @@ use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
-use Filament\Schemas\{Schema,Components\Callout,Components\Section};
+use Filament\Schemas\{Schema,Components\Callout};
+use Filament\Support\Enums\Width;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\PublicSuffixList;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,MissingEntry,Sheet,Staff,StaffTabs};
 use Paymenter\Extensions\Servers\Domains\Dns\DohEndpoint;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\DnsResolverSettings;
@@ -20,9 +21,10 @@ class MonitoringSettings extends Page
     protected static string $resource=WatchResource::class;
     protected static ?string $title='Domain monitoring';
     protected static ?string $breadcrumb='Settings';
+    protected Width|string|null $maxContentWidth=Sheet::WIDTH;
     public static function canAccess(array $parameters=[]): bool{return Staff::can(PublicSuffixList::VIEW);}
     public function mount(): void{abort_unless(self::canAccess(),403);}
-    public function getSubNavigation(): array{return WatchResource::tabs('settings');}
+    public function getSubNavigation(): array{return StaffTabs::monitoring('Settings');}
     private static function requireManage(): void{abort_unless(self::canAccess()&&Staff::can(PublicSuffixList::MANAGE),403);}
     /** One resolver form: in the header once a resolver is saved, otherwise as the fix beside Missing. */
     private function edit(string $name): Action
@@ -57,12 +59,12 @@ class MonitoringSettings extends Page
         abort_unless(self::canAccess(),403);
         [$endpoint,$reason,$forced]=app(DnsResolverSettings::class)->configuration();
         $fix=Staff::can(PublicSuffixList::MANAGE)?$this->edit('edit')->link():null;
-        $resolver=TextEntry::make('resolver')->label('Resolver')->inlineLabel()->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
+        $resolver=TextEntry::make('resolver')->label('Resolver')->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
             ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
-            Section::make('DNS resolver')->schema([MissingEntry::apply($resolver,$fix,$forced?null:$reason),
-                TextEntry::make('bootstrap')->label('Resolver IP address')->inlineLabel()->state($endpoint?->ip)->visible($endpoint!==null)]),
+            Sheet::split([Sheet::section('DNS resolver',[Sheet::row(MissingEntry::apply($resolver,$fix,$forced?null:$reason)),
+                Sheet::row(TextEntry::make('bootstrap')->label('Resolver IP address')->state($endpoint?->ip))->visible($endpoint!==null)])],[]),
         ]);
     }
 }

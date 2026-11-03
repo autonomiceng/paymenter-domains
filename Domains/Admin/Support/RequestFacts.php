@@ -3,13 +3,17 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, CatalogueAcceptances, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
     public const NO_TIME='No time recorded. No action needed.';
     private const ORDERS_OFF='Orders are off for this account.';
     private const ORDERS_SWITCH='Go to Orders switch';
+    private const DNS_SWITCH='Turn them on';
+    /** Link words that promise a switch, and the switch they land on (RegistrarFacts::SWITCHES). */
+    public const SWITCH_LINKS=[self::ORDERS_SWITCH=>'orders',self::DNS_SWITCH=>'dns'];
     /** Only these requests cost anything at the registrar. */
     private const PAID_ACTIONS=['register','transfer','renew','privacy_purchase','privacy_renew'];
     /** Why "Use updated account details" can't run, by service refusal. */
@@ -139,6 +143,22 @@ final class RequestFacts
         try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
     }
+    /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
+     * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
+     * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
+    /** Staff alone name a registration stopped here On hold; setup still waits on the customer. */
+    public const STATUSES = [...RequestStatus::SET, 'on_hold'=>['On hold','warning']];
+    public static function heldRegistration(Operation $op, bool $ordersOff=false): bool
+    { return $op->action==='register' && RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'; }
+    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
+    {
+        $d??=$op->relationLoaded('domain')?$op->domain:null;
+        $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op);
+        $status=[...Labels::requestStatus($op,$off),'reason'=>self::reason($op,$ordersOff)];
+        try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
+        if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
+        return self::heldRegistration($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
+    }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string
     {
@@ -215,7 +235,7 @@ final class RequestFacts
         if($op->action==='transfer'&&($op->state==='rejected'&&$op->safe_code==='transfer_provider_rejected'||($op->policy['reconciliation']['reason']??null)==='transfer_rejection_unreconciled')){
             $registrar=$op->registrar_key==='enom'?'Enom':'NameSilo';
             return ['title'=>'Registrar rejected the transfer.','body'=>'Final result and fee need a check. Ask '.$registrar.' to confirm the final result and charge or refund.'
-                .(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::eligible($op)?' Use Record what Enom said on the registrar account.':' Don’t start another transfer.'),'tone'=>'warning','link'=>'registrars'];
+                .(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::eligible($op)?' Use '.EnomAnswerAction::label($op).'.':' Don’t start another transfer.'),'tone'=>'warning','link'=>'registrars'];
         }
         if(\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::applies($op)&&$notice=\Paymenter\Extensions\Servers\Domains\Presentation\TransferNotice::for($op,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())){
             if(($op->policy['reconciliation']['staff_alert']??false)&&!\Paymenter\Extensions\Servers\Domains\Services\TransferPolling::expected($op)){
@@ -232,6 +252,7 @@ final class RequestFacts
             $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
             return ['title'=>$ready,'tone'=>'warning',...($ordersLink?['link'=>'registrars','link_label'=>self::ORDERS_SWITCH]:[])];
         }
+        if ($op->state==='held'&&$op->safe_code==='management_unconfirmed'&&ManagementEvidence::idle($op)) { return self::unsent($op); }
         $review=BalanceRetries::pending($op)?OperationClaims::balanceAdmissionReason($op)
             :(in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)?$op->safe_code:null);
         if(BalanceRetries::pending($op)&&self::heldByOrders($review,self::account($op)['account'])){$review=null;}
@@ -247,7 +268,7 @@ final class RequestFacts
             $fix=match($op->safe_code){
                 'processing'=>self::ORDERS_SWITCH,
                 'funding','balance','registrar_balance_insufficient_or_unknown','registrar_balance_insufficient'=>'Go to balance',
-                'awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required'=>'Go to Setup checklist',
+                'awaiting_acceptance','write_disabled','write_acceptance_required','renewal_acceptance_required'=>'Go to System checks',
                 'authority','renewal_authority_invalid','renewal_binding_changed','claim_authority_invalid','seal_authority_invalid','registration_authority_changed',
                 'configuration_unavailable','transfer_setup_review_required','enom_test_transfer_setup_required','enom_test_setup_required'=>'Open account',
                 default=>null};
@@ -293,12 +314,24 @@ final class RequestFacts
             : '"Use updated account details" copies the account details into this request and puts it back in the queue. It may then be sent to '.$registrar.'.');
     }
     /** Account name, registrar and mode for the Registrar account fact. */
+    /** A change that never reached the registrar. The system tries it again itself, so staff only have a step when the switch stops it or the tries run out. */
+    private static function unsent(Operation $op): array
+    {
+        $again=ManagementEvidence::recoverable($op); $account=self::account($op)['account'];
+        try { $off=$op->registrar_key==='enom'&&$account&&!EnomTestManagement::accepted(CatalogueAcceptances::binding($account)); } catch (\Throwable) { $off=false; }
+        if ($off) {
+            return ['title'=>RequestStatus::UNSENT,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on'.($again?' and we try again by ourselves.':', then make the change again on the domain page.'),
+                'tone'=>'warning','link'=>'registrars','link_label'=>self::DNS_SWITCH];
+        }
+        return $again?['title'=>RequestStatus::UNSENT,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info']
+            :['title'=>RequestStatus::UNSENT,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'];
+    }
     public static function account(Operation $op): array
     {
         $account=Account::where('server_id',$op->server_id)->where('registrar_key',$op->registrar_key)->where('account_fingerprint',$op->account_fingerprint)->first();
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$op->registrar_key]??null;
         $name=\App\Models\Server::whereKey($op->server_id)->value('name');
         if (!$name) { return ['value'=>null,'sub'=>'Registrar account not found. Check Registrars.','account'=>null]; }
-        return ['value'=>$name,'sub'=>implode(' · ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account?->environment]??null])) ?: null,'account'=>$account];
+        return ['value'=>$name,'sub'=>implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account?->environment]??null])) ?: null,'account'=>$account];
     }
 }

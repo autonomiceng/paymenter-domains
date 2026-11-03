@@ -19,11 +19,11 @@ $rejected=static function($label,$charged=false)use($prepare,$observe,$reconcile
 $op=$rejected('support');$attempt=$op->attempt;$writes=$state->calls;
 expect(EnomAnswers::eligible($op,$clock->now()),'A rejected NameSilo transfer without an invented transfer ID can receive an audited answer');
 Illuminate\Support\Facades\Auth::setUser($staff);
-$action=\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->server_id,Review::stamp($op->server_id,null));
-expect($action->isVisible(),'Existing registrar answer action is available on the NameSilo account');
+$action=\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op,Review::stamp($op->server_id,null));
+expect($action->isVisible(),'Request answer action is available for NameSilo');
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op);
-expect(str_contains($notice['body']??'','Use '.$action->getLabel().' on the registrar account.'),'Request notice and account action use the same label');
-same('Record what Enom said',$action->getLabel(),'Existing action label stays consistent until the coordinated rename');
+expect(str_contains($notice['body']??'','Use '.$action->getLabel().'.'),'Request notice and account action use the same label');
+same('Enter NameSilo’s answer',$action->getLabel(),'Request action names the registrar and follows main’s answer wording');
 foreach(['evidence','case','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
     $input=$answer($op);
     if($fault==='evidence'){$input['evidence']='';}

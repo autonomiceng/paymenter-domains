@@ -215,10 +215,13 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     private function reconcileAttempt(AttemptEvidence $attempt,RequestContext $context,bool $pendingOnly): ReconciliationResult
     {
         $this->binding()->requireMatch($context->binding); $this->binding()->requireMatch($attempt->binding);
-        $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
+        $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown; $privacyBlocked = false;
         if ($attempt->query->action === Action::Transfer) {
             $status = $this->read(Request::transferStatus($attempt->query->name), $context);
-            if ($status->outcome === Outcome::Success) { $transfer = TransferState::read($status->value('status')); }
+            if ($status->outcome === Outcome::Success) {
+                $transfer = TransferState::read($status->value('status'));
+                $privacyBlocked = $status->value('status') === 'Domain is Private';
+            }
         }
         if($pendingOnly&&$transfer===\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Pending){
             return new ReconciliationResult($attempt,new DriverResult($this->binding(),Disposition::Unknown,SendState::PossiblySent,
@@ -234,6 +237,6 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
             } catch (\InvalidArgumentException | \TypeError) { $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown; }
         }
         return new ReconciliationResult($attempt, new DriverResult($this->binding(), Disposition::Unknown, SendState::PossiblySent,
-            ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $history->candidates, historyComplete: $history->historyComplete, transfer: $transfer)));
+            ResultReason::Unresolved, new Evidence(domain: $domain, candidates: $history->candidates, historyComplete: $history->historyComplete, transfer: $transfer, transferPrivacyBlocked: $privacyBlocked)));
     }
 }

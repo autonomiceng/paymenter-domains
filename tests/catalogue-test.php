@@ -83,7 +83,7 @@ same('10.0000', $catalogue->current(1, $a['account_fingerprint'], 'com', 'regist
 same('15.60', $frozen->retail, 'Frozen old obligation amount immutable');
 expect($holder->renewal($domain, 'USD', $now)->revision > $frozen->revision, 'Refresh advances revision');
 $fixed = [...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '1.00', 'renew' => '1.00', 'transfer' => '1.00']];
-$rules->saveDefaultRule(1, $fixed, $catalogue->republish(...));
+saveDefaultRule($fixed, $catalogue->republish(...));
 same('1.00', $holder->renewal($domain, 'USD', $now)->retail, 'Below-cost holder renewals still priced');
 same('below_cost', $holder->renewal($domain, 'USD', $now)->staffAlert, 'Below-cost renewal staff alert');
 $reject(static fn () => $catalogue->current(1, $a['account_fingerprint'], 'com', 'register', 1, 'USD', $now));

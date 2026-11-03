@@ -11,7 +11,10 @@ final class StaffSettingsReview
     public const KEY='domains_staff_settings_audit';
     public const KEYS='domains_staff_review_keys';
     public const HISTORY_LIMIT=50;
-    public const ACTIONS=['call_limits'=>'Edit call limits','new_domain_dns'=>'Change new domain nameservers','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Record what Enom said','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+    /** Stands in for a server id for business-wide pricing. */
+    public const ALL_ACCOUNTS=0;
+    public const ACTIONS=['call_limits'=>'Edit call limits','new_domain_dns'=>'Change new domain nameservers','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Enter Enom’s answer','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','default_pricing'=>'Edit default pricing','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+
         'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
     private bool $activating=false;
@@ -23,14 +26,22 @@ final class StaffSettingsReview
     { $this->input=array_intersect_key($data,array_flip(['dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
-    /** Syncing prices and saving what you sell ask no reason; the audit still records who, when and what. */
-    public const NO_REASON=['import','acceptance','new_domain_dns'];
+    /** Syncing prices, saving what you sell, DNS template selection and testing the connection ask no reason; the audit still records who, when and what. */
+    public const NO_REASON=['import','acceptance','new_domain_dns','probe'];
     /** Saving these publishes prices, so they also need the publish permission. */
-    public const PUBLISHES=['override','remove_override','default_rule','card_fee'];
+    public const PUBLISHES=['override','remove_override','default_pricing'];
+    /** Rights an action needs instead of its own. Staff who could edit the rule and the fee keep Default pricing, with no role changes. */
+    public const NEEDS=['default_pricing'=>['default_rule','card_fee']];
     public static function permission(string $action): string
     {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return $action==='call_limits'?'admin.domains.settings.configure':'admin.domains.settings.'.$action;}
+    public static function rights(string $action): array
+    {return array_map(self::permission(...),self::NEEDS[$action]??[$action]);}
+    /** Every Domains server, on or off. */
+    private static function domainServers()
+    {return Server::where('extension','Domains')->orderBy('id')->pluck('id');}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
     {
+        if($serverId===self::ALL_ACCOUNTS){return hash('sha256',json_encode([BusinessSetting::stamp($lock),self::domainServers()->map(fn($id)=>self::stamp($id,null,$lock))->all()],JSON_THROW_ON_ERROR));}
         $read=static fn($q)=>($lock?$q->lockForUpdate():$q)->get();
         $s=$read(Server::whereKey($serverId))->firstOrFail();
         $accounts=$read(Account::where('server_id',$serverId));$a=$accounts->first();
@@ -42,7 +53,8 @@ final class StaffSettingsReview
         // What staff set on What you sell rows. Prices a fill writes there do not make a save stale.
         $sell=$tldId?[]:$read(DB::table(SellTableSchema::ROWS)->where('server_id',$serverId)->where(fn($q)=>$q->whereNotNull('choice')->orWhereNotNull('longest')->orWhereNotNull('transfer'))->orderBy('id')->select(['tld','choice','longest','transfer']))->map(fn($v)=>(array)$v)->all();
         $raw=static fn($rows)=>$rows->map(fn($v)=>$v->getRawOriginal())->all();
-        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId,$sell,$a?ApiCallLimits::forAccount($a):null,$a?->environment==='live'?EnomLiveActivation::stamp($a):null],JSON_THROW_ON_ERROR));
+        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId,$sell,$a?ApiCallLimits::forAccount($a):null,$a?->environment==='live'?EnomLiveActivation::stamp($a):null,BusinessSetting::stamp($lock)],JSON_THROW_ON_ERROR));
+
     }
 
     public static function ticket(int $actor,int $server,?int $tld,string $action,string $stamp): string
@@ -51,27 +63,23 @@ final class StaffSettingsReview
     {
         $u=User::whereKey($this->actorId)->lockForUpdate()->firstOrFail();
         $role=$u->role_id?Role::whereKey($u->role_id)->lockForUpdate()->first():null;$u->setRelation('role',$role);
-        foreach(['admin.domains.view','admin.domains.manage-policy',self::permission($this->action),...($this->action==='activate'?['admin.domains.costs']:[]),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
+        foreach(['admin.domains.view','admin.domains.manage-policy',...self::rights($this->action),...($this->action==='activate'?['admin.domains.costs']:[]),...(in_array($this->action,self::PUBLISHES,true)?[self::permission('publish')]:[])] as $p){
             if(!$u->hasPermission($p)){throw new \DomainException('Current staff permissions required.');}}
         if(!in_array($this->action,self::NO_REASON,true)){StaffReason::require($this->reason);}
     }
     /** Canonical shared mutex: all servers, then accounts, policies, TLDs, prices, settings. */
     public function lockAccounts(): void
     {
-        $ids=Server::where('extension','Domains')->pluck('id')->push($this->serverId)->unique()->sort()->values();
+        $ids=self::domainServers()->when($this->serverId!==self::ALL_ACCOUNTS,fn($all)=>$all->push($this->serverId))->unique()->sort()->values();
         Server::whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get();
         Account::whereIn('server_id',$ids)->orderBy('server_id')->lockForUpdate()->get();
     }
     public function check(bool $inFlight=false): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
-        $server=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();if($server->extension!=='Domains'||!$server->enabled){throw new \DomainException('Registrar unavailable.');}
-        $endings=Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->pluck('tld');
-        SalesPolicy::whereIn('tld',$endings)->orderBy('id')->lockForUpdate()->get();
-        Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->get();
-        Price::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereIn('tld',$endings))->orderBy('id')->lockForUpdate()->get();
-        DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$this->serverId)
-            ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id')->lockForUpdate()->get();
+        // Disabled accounts read the same rule, so a business-wide review is not refused for one of them. The stamp locks every account.
+        if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}
+        else{$this->lockOne();}
         if($this->tldId&&!Tld::where(['id'=>$this->tldId,'server_id'=>$this->serverId])->lockForUpdate()->first()){throw new \DomainException('TLD account changed.');}
         try{$t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key.');}
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
@@ -85,6 +93,17 @@ final class StaffSettingsReview
         if($used&&!$inFlight){throw new \DomainException('Review key used.');}
         if(!$used){DB::table(self::KEYS)->insert(['server_id'=>$this->serverId,'review_key'=>$t['key'],'expires_at'=>$t['until']]);}
         $this->verified=$t;$this->before=$this->state($this->serverId,$this->tldId);
+    }
+    /** One account's rows, in mutex order. */
+    private function lockOne(): void
+    {
+        $server=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();if($server->extension!=='Domains'||!$server->enabled){throw new \DomainException('Registrar unavailable.');}
+        $endings=Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->pluck('tld');
+        SalesPolicy::whereIn('tld',$endings)->orderBy('id')->lockForUpdate()->get();
+        Tld::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereKey($this->tldId))->orderBy('id')->lockForUpdate()->get();
+        Price::where('server_id',$this->serverId)->when($this->tldId,fn($q)=>$q->whereIn('tld',$endings))->orderBy('id')->lockForUpdate()->get();
+        DB::table('settings')->where('settingable_type',$server->getMorphClass())->where('settingable_id',$this->serverId)
+            ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id')->lockForUpdate()->get();
     }
     /** Recent display only: current batch and one archive, at most 50 entries. Never replay authority. */
     public static function historyRows(Server $s,bool $lock=false): array
@@ -110,9 +129,10 @@ final class StaffSettingsReview
     public function record(string $phase='completed',?array $outcome=null): void
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
-        $s=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();
-        self::append($s,['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>in_array($this->action,['default_rule','card_fee'],true)?null:$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)]);
+        $entry=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
+            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)];
+        // History is read per account, so a business-wide change is written to each one, disabled accounts too.
+        foreach($this->serverId===self::ALL_ACCOUNTS?self::domainServers():[$this->serverId] as $id){self::append(Server::whereKey($id)->lockForUpdate()->firstOrFail(),$entry);}
         // One sync writes TLD after TLD under one review: the next TLD checks against this run's own last write.
         if($phase==='catalogue_imported'){$this->synced=self::stamp($this->serverId,$this->tldId,true);}
     }
@@ -133,10 +153,14 @@ final class StaffSettingsReview
     }
     private function state(int $server,?int $tld): array
     {
+        if($server===self::ALL_ACCOUNTS){
+            try{$rule=(new PricingRules)->defaultRule(true);}catch(\Throwable){$rule='unavailable';}
+            try{$fee=CardFee::read(true);}catch(\Throwable){$fee='unavailable';}
+            return ['scope'=>'all_accounts','rule'=>$rule,'card_fee'=>$fee,'snapshot'=>self::stamp($server,null,true)];
+        }
         $a=Account::where('server_id',$server)->lockForUpdate()->first();$t=$tld?Tld::whereKey($tld)->lockForUpdate()->first():null;
         $rules=new PricingRules;
-        try{$rule=$this->action==='default_rule'||!$t?$rules->defaultRule($server,true):$rules->rule($t,true);}catch(\Throwable){$rule='unavailable';}
-        try{$fee=$this->action==='card_fee'?CardFee::read($server,true):null;}catch(\Throwable){$fee='unavailable';}
+        try{$rule=$t?$rules->rule($t,true):$rules->defaultRule(true);}catch(\Throwable){$rule='unavailable';}
         try{$acceptance=$a?CatalogueAcceptances::load(CatalogueAcceptances::binding($a),true):null;$accepted=$acceptance?->endings;}catch(\Throwable){$acceptance=null;$accepted='unavailable';}
         $live=null;
         if($a?->environment==='live'){
@@ -144,7 +168,7 @@ final class StaffSettingsReview
             catch(\Throwable){$live='unavailable';}
         }
         return [...($this->action==='new_domain_dns'?['dns_template'=>NewDomainDns::profile($server)?->id]:[]),'server_id'=>$server,'binding'=>$a?->account_fingerprint,'processing'=>$a?->processing_enabled,'tld_id'=>$tld,
-            ...($this->action==='card_fee'?['card_fee'=>$fee]:[]),'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'acceptance_revision'=>$acceptance?->revision,'acceptance'=>is_array($accepted)?['count'=>count($accepted),'changes'=>$this->input['changes']??null,'terms'=>array_intersect_key($accepted,$this->input['changes']??[])]:$accepted,
+            'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'acceptance_revision'=>$acceptance?->revision,'acceptance'=>is_array($accepted)?['count'=>count($accepted),'changes'=>$this->input['changes']??null,'terms'=>array_intersect_key($accepted,$this->input['changes']??[])]:$accepted,
             'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(CatalogueAcceptances::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),

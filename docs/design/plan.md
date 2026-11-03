@@ -18,7 +18,7 @@ provider acceptance and a usable extension remain future gates.
   `domains_operations`. Freeze account/generation/attempt/funding evidence. Missing execution and
   sent-null differ. Unknown never authorizes replay, auto-refund or another registrar fallback.
 - `domains_tlds` and `domains_prices` belong to registrar accounts: one price table per account,
-  per TLD, `use_default_rule` selects either the account's shared default rule or that TLD's
+  per TLD, `use_default_rule` selects either the business-wide default rule or that TLD's
   override, never both combined. This yields one exact price per account/TLD/action/term/currency;
   see [retained storage and pricing rules](storage.md). Build no unified retail mode.
 - Keep Enom 0.5 margin behavior: a registration or transfer term priced below cost is held from

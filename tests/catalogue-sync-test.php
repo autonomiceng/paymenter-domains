@@ -58,7 +58,7 @@ foreach ([1 => 'enom', 2 => 'namesilo'] as $id => $key) {
     Server::create(['id' => $id, 'name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
     $bound[$id] = $bindings->configure($id, $key, Environment::Test, ['key' => 'synthetic-private-key']);
     // This sync fixture keeps a known rule so hash and republication checks are independent of connection defaults.
-    Server::findOrFail($id)->settings()->updateOrCreate(['key' => 'domains_pricing_default_rule'],
+    App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
         ['type' => 'array', 'encrypted' => false, 'value' => PricingRule::DEFAULT]);
     $bindings->setProcessing($id, true, syntheticActivation());
 }
@@ -203,7 +203,7 @@ $sellers->change('com', 4, 2, true, true, $clock->now());
 Tld::where('server_id', 1)->update(['max_years' => 1]);
 // Out-of-range retained terms do not poison rule republication or regain publication.
 $three = Price::where('server_id', 1)->where('term', 3)->firstOrFail()->revision;
-$summary = $rules->saveDefaultRule(1, PricingRule::DEFAULT, $prices->republish(...));
+$summary = saveDefaultRule(PricingRule::DEFAULT, $prices->republish(...));
 same([], $summary['failed'], 'Republication skips out-of-range retained rows');
 same($three, Price::where('server_id', 1)->where('term', 3)->firstOrFail()->revision, 'Out-of-range bytes unchanged');
 $enom->noPrice = true; $sync->refresh(1, $context(1));
@@ -231,7 +231,7 @@ expect($retainedUnknown->retained && $retainedUnknown->revision > $priorRenewal-
 same('unknown_price', $retainedUnknown->staffAlert, 'Holder unknown cost alerts staff');
 same(false, Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail()->transfer_enabled, 'Quarantine closes transfer sale');
 $snapshot = $quarantined->toJson();
-$rules->saveDefaultRule(2, PricingRule::DEFAULT, $prices->republish(...));
+saveDefaultRule(PricingRule::DEFAULT, $prices->republish(...));
 same($snapshot, Price::where('server_id', 2)->where('tld', 'com')->orderBy('id')->get()->toJson(), 'Republication cannot turn malformed evidence into confirmed no-price');
 $unavailable = static fn (string $ending, DateTimeImmutable $at) => new \Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable($bound[2], $ending, $at);
 $accepted = CatalogueAcceptances::load($bound[2]);
