@@ -168,6 +168,14 @@ final class UpgradeConversion
     /** Original-row digests plus a bounded comparison of the actual staged intent/costs/retail. */
     public function report(AccountBinding $binding, array $before): array
     {
+        $comparison = UpgradeComparison::compare($before);
+        $staging = $this->stagingReport($binding);
+        return [...$comparison, ...$staging, 'compatible' => $comparison['compatible'] && $staging['staging_mismatches'] === []];
+    }
+
+    /** Account-local staging checks; the global gate hashes native obligations only once. */
+    public function stagingReport(AccountBinding $binding): array
+    {
         [$accepted, $rule, $source] = $this->source($binding);
         $queue = $this->queue($binding)->first(); $issues = []; $mismatches = [];
         $expected = 0; $present = 0; $converted = 0; $cursor = '';
@@ -218,9 +226,7 @@ final class UpgradeConversion
             $rule['years'] ?? 1, $rule['transfers'] ?? false, $rule['max_cost'] ?? null);
         $storedDefaults = DB::table('domains_accounts')->where('server_id', $binding->serverId)->value('catalogue_defaults');
         if (self::canonical(UpgradeEvidence::json($storedDefaults)) !== self::canonical(json_decode(self::json($defaults), true))) { $mismatches['defaults'] = 1; }
-        $comparison = UpgradeComparison::compare($before);
-        return [...$comparison, 'compatible' => $comparison['compatible'] && $mismatches === [],
-            'staging_mismatches' => $mismatches, 'complete' => $complete,
+        return ['staging_mismatches' => $mismatches, 'complete' => $complete,
             'source_unchanged' => $queue?->offer_conversion_source === $source, 'issues' => $issues,
             'expected' => $expected, 'converted' => $converted,
             'activated' => false];

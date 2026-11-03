@@ -208,6 +208,7 @@ final class NativeCatalogue
             $review?->lockAccounts();
             $server = Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $seed->server_id)->lockForUpdate()->firstOrFail();
+            \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
             $review?->check($import !== null);
             $policy = $automatic ? \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld', $seed->tld)->lockForUpdate()->sole() : null;
             $tld = ($seed->exists ? Tld::whereKey($seed->id) : Tld::where(['server_id' => $seed->server_id, 'tld' => $seed->tld]))->lockForUpdate()->first();
