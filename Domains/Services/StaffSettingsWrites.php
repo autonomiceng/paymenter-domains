@@ -220,7 +220,10 @@ class StaffSettingsWrites
             // A custom TLD this fee can't price refuses the whole save.
             foreach(Account::orderBy('server_id')->lockForUpdate()->get() as $a){
                 foreach(Tld::where(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint,'registrar_key'=>$a->registrar_key,'use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent'])->orderBy('id')->lockForUpdate()->get() as $own){
-                    PricingRule::validate([...$rules->rule($own,true),'card_fee'=>$fee]);
+                    // Malformed saved rules stay on the TLD's repair path; valid rules must still cover the new fee.
+                    try{$rule=$rules->rule($own,true,CardFee::NONE);}
+                    catch(\DomainException|\InvalidArgumentException){continue;}
+                    PricingRule::validate([...$rule,'card_fee'=>$fee]);
                 }
             }
         });

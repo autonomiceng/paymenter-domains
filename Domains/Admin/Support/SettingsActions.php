@@ -323,7 +323,11 @@ final class SettingsActions
         $converted=StaffCatalogue::routed()!==null;
         $tlds=TldFacts::bound(Tld::query())->whereNotIn('server_id',$off->keys())->orderBy('tld')->get();
         $own=static fn(Tld $t)=>$converted?\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::own($t):($t->use_default_rule?null:(new PricingRules)->rule($t));
-        $tlds=$tlds->filter(fn($t)=>($rule=$own($t))===null||$rule['mode']==='markup_fee_percent');
+        $tlds=$tlds->filter(function(Tld $t)use($own):bool{
+            try{$rule=$own($t);return $rule===null||$rule['mode']==='markup_fee_percent';}
+            // The table's sell-note names unreadable own rules and their fix; they cannot follow this save.
+            catch(\DomainException|\InvalidArgumentException){return false;}
+        });
         $followers=$tlds->filter(fn($t)=>$own($t)===null);
         $prices=\Paymenter\Extensions\Servers\Domains\Models\Price::whereIn('server_id',$followers->pluck('server_id')->unique())->whereIn('tld',$followers->pluck('tld')->unique())->where('currency','USD')->orderBy('id')->get()
             ->groupBy(fn($p)=>$p->server_id.':'.$p->registrar_key.':'.$p->account_fingerprint.':'.$p->tld);
