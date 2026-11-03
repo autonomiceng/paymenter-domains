@@ -75,6 +75,11 @@ $factory = static fn ($binding) => $binding->registrarKey === 'namesilo'
 $allowance = 25;
 $worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory,
     static function () use (&$allowance): int { return $allowance; });
+$worker->wake($b); $worker->tick(1);
+same(0, count($wire->calls), 'Local-only work never schedules an account feed');
+same(null, $worker->status($b)['due_at'], 'Local-only work has no feed deadline');
+same(null, $worker->status($b)['succeeded_at'], 'Local-only work has no completed feed');
+same('ready', $worker->status($b)['state'], 'Finished local-only work without a feed deadline is ready');
 $worker->sync($b); $worker->sync($b);
 same('queued', $worker->status($b)['state'], 'Repeated manual sync coalesces before work starts');
 $worker->tick(1);

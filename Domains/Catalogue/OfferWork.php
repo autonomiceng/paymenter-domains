@@ -67,7 +67,7 @@ final class OfferWork
                 'due_at' => $state['due_at'] ?? null];
         }
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }
-        return ['state' => (int) $row->offer_lease > $this->at() ? 'running' : (!empty($work['pending']) || ($work['feed_due'] ?? 0) <= $this->at() ? 'queued' : (!empty($row->offer_feed_failure) ? 'retrying' : 'ready')),
+        return ['state' => (int) $row->offer_lease > $this->at() ? 'running' : (!empty($work['pending']) || ($work['feed_due'] ?? PHP_INT_MAX) <= $this->at() ? 'queued' : (!empty($row->offer_feed_failure) ? 'retrying' : 'ready')),
             'tried_at' => $row->offer_feed_tried_at, 'succeeded_at' => $row->offer_feed_succeeded_at,
             'failed_at' => $row->offer_feed_failed_at, 'failure' => $row->offer_feed_failure,
             'due_at' => $work['feed_due'] ?? null, 'remaining' => count($work['pending'] ?? [])];
