@@ -49,6 +49,28 @@ DB::table('domains_tlds')->where('id', $t->id)->update(['catalogue_facts'=>null]
 same([], $caps->endings($binding), 'Legacy acceptance cannot manufacture missing provider facts');
 expect(method_exists($caps, 'identities'), 'Retained Enom reads need identities independently of fresh spending capabilities');
 same(['com'], $caps->identities($binding), 'Unknown facts preserve the bound converted suffix used to parse historical reads');
+// The checklist describes acquisition decisions, while execution support survives a sales stop.
+$clock->instant=$now;
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+    ['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))]);
+$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['net'],'register');
+$revision=fn()=>$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$costs=[];
+foreach(['register','renew','transfer'] as $action){$costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($action,1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));}
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'net',$costs),$revision());
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'net',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+    ['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$revision());
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'net',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true)),$revision());
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,'net',['register']),$revision());
+require __DIR__.'/Support/staff-panel.php';
+$actor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]);
+\Illuminate\Support\Facades\Auth::setUser($actor);
+$staff=new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock);
+$a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$binding->serverId)->sole();
+$checklist=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::class,'tlds');
+$row=$checklist->invoke(null,$a,$binding,$staff);
+same(\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary(['net']),$row['value'],'What you sell excludes a stopped deselected ending beside an available sibling');
+same(['com','net'],$caps->endings($binding),'Independent execution support still includes the stopped ending');
 $allowed = false; commerceReject(fn () => $caps->holder($binding, 'com'));
 commerceReject(fn () => $caps->identities($binding));
 same(0, $reads->calls, 'Capabilities and holders never read a provider');

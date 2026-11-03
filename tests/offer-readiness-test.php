@@ -32,6 +32,13 @@ expect($r['failures']!==[]&&$r['missing']!==null,'Unknown facts refuse Activate 
 expect(collect($r['costs'])->contains('tld','net'),'A failed ending retains readable sibling readiness');
 expect($stamp!==$ready->stamp($a),'Independent fact changes stale the review stamp');
 same($r,DB::transaction(fn()=>$ready->review($a,$features,true)),'Display and strict locked readiness use the same offer decisions');
+foreach(['null','{"stops":"register"}'] as $malformed){
+    DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_intent'=>$malformed]);
+    $display=$ready->review($a,$features);
+    expect(collect($display['failures'])->contains('tld','com')&&$display['missing']!==null,'Malformed intent names its unavailable ending');
+    expect(collect($display['costs'])->contains('tld','net'),'Malformed intent retains readable sibling readiness');
+    same($display,DB::transaction(fn()=>$ready->review($a,$features,true)),'Malformed intent is isolated in strict readiness too');
+}
 same(0,$reads->calls,'Readiness never resolves a provider');
 $nativeSuccessful=true;
 echo "Offer readiness: ok\n";
