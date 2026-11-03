@@ -76,5 +76,11 @@ final class RuntimePorts
     private ?\Closure $initialManagedRecordObservations=null;
     public function registerInitialManagedRecordObservations(\Closure $producer): void
     {if($this->initialManagedRecordObservations){throw new \LogicException('Initial managed-record producer already registered.');}$this->initialManagedRecordObservations=$producer;}
+    public function initialManagedRecordProducer(): ?array
+    {
+        if ($this->initialManagedRecordObservations === null) { return null; }
+        $reflection = new \ReflectionFunction($this->initialManagedRecordObservations);
+        return [$reflection->getClosureScopeClass()?->getName(), $reflection->getName()];
+    }
     public function initialManagedRecordObservations(): void {($this->initialManagedRecordObservations??static fn()=>null)();}
 }

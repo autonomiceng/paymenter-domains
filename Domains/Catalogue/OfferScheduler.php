@@ -14,7 +14,7 @@ final class OfferScheduler
 {
     public function __construct(private readonly OfferWork $offers, private readonly HoldingObservationWork $holdings,
         private readonly Clock $clock, private readonly \Closure $current) {}
-    public static function routed(): ?self { return CallerRouting::legacy(static fn () => null); }
+    public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     public function enroll(int $server): void
     { $this->offers->wake(CatalogueAcceptances::binding(Account::where('server_id', $server)->sole())); }
     public function sync(AccountBinding $b, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void { $this->offers->sync($b, $origin, $expectedGeneration); }
@@ -31,6 +31,8 @@ final class OfferScheduler
             try { $this->enroll((int)$account->server_id); } catch (\Throwable) { /* Independent account. */ }
         }
         $rows = DB::transaction(function () use ($accounts): array {
+            \App\Models\Server::where('extension', 'Domains')->orderBy('id')->lockForUpdate()->get();
+            Account::orderBy('server_id')->lockForUpdate()->get();
             ($this->current)(); $q = DB::table('domains_observation_queues');
             $rows = (clone $q)->orderBy('turn')->orderBy('server_id')->limit($accounts)->lockForUpdate()->get();
             $turn = (int)$q->max('turn');

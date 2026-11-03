@@ -17,7 +17,7 @@ class PayCheck
 {
     /** Fixed legacy route. No production composition selects the dormant adapter. */
     protected function catalogue(): ?AcquisitionOffers
-    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => null); }
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class); }
 
     /** States of an order nobody has sent or set aside. */
     public const OPEN=['awaiting_payment','awaiting_code','queued'];

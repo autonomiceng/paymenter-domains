@@ -14,7 +14,7 @@ class NativeCatalogue
     public function __construct(private readonly PriceCatalogue $prices) {}
 
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands
-    {return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn()=>null);}
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::class);}
     public static function slug(Tld $tld, string $action): string
     {
         if (!in_array($action, ['register', 'transfer'], true)) { throw new \InvalidArgumentException('Unknown acquisition action.'); }

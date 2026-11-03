@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\RegistryInputs;
  * Locked consumers pass their retained rows; this view acquires no locks after operation locks. */
 final class Capabilities
 {
-    public static function routed(): ?self { return CallerRouting::legacy(static fn () => null); }
+    public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     public function __construct(private readonly CallerPorts $ports, private readonly Clock $clock, private readonly \Closure $authorize) {}
 
     public function facts(AccountBinding $b, string $name, ?Tld $locked = null): Facts

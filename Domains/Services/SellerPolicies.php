@@ -11,6 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tl
 
 final class SellerPolicies
 {
+    protected function catalogue(): ?AcquisitionOffers
+    { return CallerRouting::resolve(AcquisitionOffers::class); }
+
     public function __construct(private readonly PriceCatalogue $prices, private readonly AccountBindings $bindings) {}
 
     public function initialize(string $tld): SalesPolicy

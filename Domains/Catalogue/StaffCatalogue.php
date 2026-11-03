@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,
 /** Bounded Staff snapshots over converted identities; no shadow rows, legacy costs or render writes. */
 final class StaffCatalogue
 {
-    public static function routed(): ?self { return CallerRouting::legacy(static fn()=>null); }
+    public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     public function __construct(private readonly CallerPorts $ports,private readonly Clock $clock,private readonly ?OfferWork $work=null,private readonly ?\Closure $readable=null) {}
     public function readable(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $b): bool
     {Staff::requireView();return $this->readable!==null&&($this->readable)($b);}

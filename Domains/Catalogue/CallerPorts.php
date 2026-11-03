@@ -15,11 +15,12 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
  * No default grant: both trusted deployment callbacks are required, rechecked on each invocation. */
 final class CallerPorts implements Catalogue
 {
+    public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     private readonly Writer $writer;
     private readonly OfferReader $reader;
 
     public function __construct(Projection $projection, private readonly Clock $clock, private readonly AccountBindings $bindings,
-        private readonly \Closure $authorize, private readonly \Closure $featureReady, ?int $actorId = null)
+        private readonly \Closure $authorize, private readonly \Closure $featureReady, ?int $actorId = null, private readonly ?\Closure $current = null)
     {
         $ready = static function (AccountBinding $binding, Server $server, Account $account, ?Query $query = null) use ($bindings, $featureReady): bool {
             try {
@@ -27,9 +28,11 @@ final class CallerPorts implements Catalogue
                 return $featureReady($binding, $query?->action) === true;
             } catch (\DomainException) { return false; }
         };
-        $this->writer = new Writer($projection, $clock, $authorize, $ready, $actorId);
-        $this->reader = new OfferReader($clock, $authorize, $ready);
+        $this->writer = new Writer($projection, $clock, $authorize, $ready, $actorId, $current);
+        $this->reader = new OfferReader($clock, $authorize, $ready, $current);
     }
+
+    public function writer(): Writer { return $this->writer; }
 
     public function apply(Command $command, Revision $expectedRevision): Revision
     { return $this->writer->apply($command, $expectedRevision); }
@@ -58,6 +61,6 @@ final class CallerPorts implements Catalogue
             }
             return $checked[$b->serverId] && ($this->featureReady)($b, $q->action) === true;
         };
-        return (new OfferReader($this->clock, $this->authorize, $ready))->displayBatch($queries, $context);
+        return (new OfferReader($this->clock, $this->authorize, $ready, $this->current))->displayBatch($queries, $context);
     }
 }

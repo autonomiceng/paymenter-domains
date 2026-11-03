@@ -13,6 +13,9 @@ final class PriceCatalogue
 {
     /** Daily sync plus one missed run. This is our sales policy, never a registrar price lock. */
     public const MAX_COST_AGE_SECONDS = 172800;
+    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts
+    { return CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::class); }
+
     public function __construct(private readonly PricingRules $rules, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null) {}
 
     /** Cost-only legacy import: deliberately drops publication proof on touched rows. Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.

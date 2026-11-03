@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Pricing
  * callback checks deployment/runtime/credentials, independently of a saved Live activation receipt. */
 final class OfferReadiness
 {
-    public static function routed(): ?self { return CallerRouting::legacy(static fn()=>null); }
+    public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     public function __construct(private readonly OfferReader $reader,private readonly Capabilities $capabilities,private readonly Clock $clock) {}
     public function stamp(Account $a): string { return StaffCommands::stamp((int)$a->server_id); }
     public function review(Account $a,array $features,bool $lock=false): array

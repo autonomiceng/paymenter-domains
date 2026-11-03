@@ -12,7 +12,7 @@ class CheckoutEligibility
 {
     /** Fixed legacy route. No production composition selects the dormant adapter. */
     protected function catalogue(): ?AcquisitionOffers
-    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => null); }
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class); }
 
     // Reserve time for the remaining batch, pacing waits and native lock acquisition.
     private const REFRESH_HEADROOM_SECONDS = 60;

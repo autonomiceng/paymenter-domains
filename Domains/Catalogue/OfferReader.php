@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 final class OfferReader
 {
     public function __construct(private readonly Clock $clock, private readonly \Closure $authorize,
-        private readonly \Closure $ready) {}
+        private readonly \Closure $ready, private readonly ?\Closure $current = null) {}
 
     public function readOffers(Query $query, Context $context): array
     { return $this->readBatch([$query], $context)[0]; }
@@ -56,6 +56,7 @@ final class OfferReader
         // Acquire the whole prefix once. Never lock another account after policies or offers.
         $servers = $fetch(Server::whereIn('id', $ids)->orderBy('id'))->get()->keyBy('id');
         $accounts = $fetch(Account::whereIn('server_id', $ids)->orderBy('server_id'))->get()->keyBy('server_id');
+        if ($this->current) { ($this->current)(); }
         $defaults = $readiness = [];
         foreach ($bindings as $id => $binding) {
             $server = $servers[$id] ?? throw new \DomainException('Offer server disappeared.');
