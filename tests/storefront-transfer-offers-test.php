@@ -17,7 +17,12 @@ $controller = new OwnedDomainController($owners);
 $request = Request::create('/domains', 'GET'); $request->setUserResolver(fn () => $actor);
 $measure = static function (Closure $read): array {
     DB::flushQueryLog(); DB::enableQueryLog();
-    try { return [$read(), count(DB::getQueryLog())]; }
+    try {
+        $value = $read(); $queries = DB::getQueryLog();
+        $gate = array_filter($queries, static fn ($q) => $q['query'] === 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'
+            && $q['bindings'] === ['domains_offer_upgrade']);
+        return [$value, count($queries), count($gate)];
+    }
     finally { DB::disableQueryLog(); DB::flushQueryLog(); }
 };
 // A valid early offer must stop before any later enabled policy, even on the actual index.
@@ -39,13 +44,13 @@ $parity = static function (bool $expected, string $label) use ($store, $measure)
     same($expected, $store->hasTransferOffers(), $label.' cold existence');
     $rows = $store->endings();
     same($expected, collect($rows)->contains(fn ($row) => $row['transfer'] !== null), $label.' full catalogue');
-    [$warm, $queries] = $measure(fn () => $store->hasTransferOffers());
+    [$warm, $queries, $gateQueries] = $measure(fn () => $store->hasTransferOffers());
     same($expected, $warm, $label.' warm existence');
-    same(0, $queries, $label.' warm existence is query-free');
+    same([1, 1], [$queries, $gateQueries], $label.' warm existence reads only the current catalogue gate');
 };
 $parity(true, 'Test account');
-[$offered, $queries] = $measure(fn () => $store->hasTransferOffers());
-same(true, $offered, 'Warm positive is retained'); same(0, $queries, 'Warm existence is query-free');
+[$offered, $queries, $gateQueries] = $measure(fn () => $store->hasTransferOffers());
+same(true, $offered, 'Warm positive is retained'); same([1, 1], [$queries, $gateQueries], 'Warm existence reads only the current catalogue gate');
 // Raw native edits retain exactly the same display lag as endings(), including negative rows.
 $product = $native->product($tlds[0], 'transfer');
 $product->update(['stock' => 0]);
