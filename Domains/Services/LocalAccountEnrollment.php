@@ -12,7 +12,7 @@ final class LocalAccountEnrollment
     public const PREFIX = 'local-account-enrollment:';
     public static function enrolled(Account $account): bool
     { return str_starts_with($account->stable_identity, self::PREFIX); }
-    public static function bootstrap(RegistrarRegistry $registry): bool
+    public static function bootstrap(RegistrarRegistry $registry, NameSilo\Api\DeadlineTransport $transport = new NameSilo\Api\CurlTransport): bool
     {
         $environment = Environment::tryFrom((string) config('domains.namesilo_account.environment', ''));
         if (!$environment) { return false; }
@@ -23,7 +23,7 @@ final class LocalAccountEnrollment
                 if ($binding->environment !== $environment) { throw new \DomainException('Credential environment changed.'); }
                 return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), []);
             }, true,
-            authenticator: new NameSilo\CredentialAuthenticator($environment));
+            authenticator: new NameSilo\CredentialAuthenticator($environment, $transport));
         return true;
     }
     /** Encoding failures must never retain a built-in trace containing the submitted key. */

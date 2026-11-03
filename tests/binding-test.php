@@ -217,6 +217,18 @@ same($before, count($wire->calls), 'Local enrollment requires staff review befor
 $firstReview = $review(10);
 $localBinding = $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-one'], $firstReview);
 same([[WireEnvironment::Live, WireContext::Interactive, 'getAccountBalance', [], 10000]], $wire->calls, 'Enrollment only authenticates through one bounded balance read');
+foreach ([Environment::Live, Environment::Test] as $bootEnvironment) {
+    config(['domains.namesilo_account.environment' => $bootEnvironment->value]);
+    $bootRegistry = new RegistrarRegistry;
+    LocalAccountEnrollment::bootstrap($bootRegistry, $wire);
+    $before = count($wire->calls); $authenticated = false;
+    try { $bootRegistry->authenticate('namesilo', $bootEnvironment, ['api_key' => 'placeholder-bootstrap-key']); $authenticated = true; }
+    catch (DomainException) { /* Report missing bootstrap transport/composition through the assertion below. */ }
+    expect($authenticated, 'The bootstrap-built authenticator must authenticate through the injected transport');
+    same([[$bootEnvironment === Environment::Live ? WireEnvironment::Live : WireEnvironment::Sandbox,
+        WireContext::Interactive, 'getAccountBalance', [], 10000]], array_slice($wire->calls, $before), 'Bootstrap authenticates once in the configured environment with a bounded balance read');
+}
+config(['domains.namesilo_account.environment' => 'live']);
 $a = Account::where('server_id', 10)->sole(); $identity = $a->stable_identity;
 expect(str_starts_with($identity, LocalAccountEnrollment::PREFIX), 'Local lineage is explicit, random and separate from provider identity');
 expect(!str_contains($identity, 'placeholder-key'), 'Credentials never become local identity');
