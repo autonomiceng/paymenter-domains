@@ -36,10 +36,10 @@ foreach([array_diff_key($op->fresh()->policy,['staff_actions'=>true]),[...$op->f
 echo "Release guard passed.\n";
 // Authorized native hold and refund confirmations invoke only the engine refund path.
 $actions=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->callAction('hold')->assertNotified('Request on hold')
-    ->assertSee('Under review')->assertSee('Put on hold by staff.')->assertActionHidden('hold')->assertActionVisible('release');
+    ->assertSee('On hold')->assertSee('Put on hold by staff.')->assertActionHidden('hold')->assertActionVisible('release');
 echo "Native hold passed.\n"; same('held',$op->fresh()->state,'Native hold action'); $before=$credit();
 $actions->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled this unsent order'])->assertHasNoActionErrors()->assertNotified('Request cancelled')
-    ->assertSee('Cancelled')->assertSee('Credit added')->assertDontSee('Under review')->assertDontSee('Put on hold by staff.')
+    ->assertSee('Cancelled')->assertSee('Credit added')->assertDontSee('On hold')->assertDontSee('Put on hold by staff.')
     ->assertActionHidden('release')->assertActionHidden('refund')->assertActionHidden('disposition');
 echo "Native refund passed.\n";
 same('rejected',$op->fresh()->state,'Native refund uses engine disposition');expect($credit()>$before,'Exact engine account credit applied');
@@ -50,7 +50,7 @@ same(null,$op->domain->fresh()->reservation_name,'Proven unsent registration rel
 $retry=$held('staff-credit-retry-placeholder.com'); $before=$credit();
 DB::unprepared("CREATE TRIGGER staff_credit_fail BEFORE UPDATE ON credits BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
 $retryPage=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$retry->id])->assertActionVisible('refund')->callAction('refund',['reason'=>'Customer cancelled unsent order'])->assertHasNoActionErrors()->assertNotified(Notification::make()->danger()->title("Couldn't update request")->body('Reload the page and try again. Ref database_failure.'))
-    ->assertSee('Cancelled')->assertSee('No credit added')->assertDontSee('Cancelled, credit added')->assertDontSee('Under review')->assertDontSee('Put on hold by staff.')
+    ->assertSee('Cancelled')->assertSee('No credit added')->assertDontSee('Cancelled, credit added')->assertDontSee('On hold')->assertDontSee('Put on hold by staff.')
     ->assertActionHidden('refund')->assertActionHidden('release')->assertActionVisible('credit');
 echo "Failed credit retained.\n";
 DB::unprepared('DROP TRIGGER staff_credit_fail'); same('rejected',$retry->fresh()->state,'Decision survives failed credit');same($before,$credit(),'Failed credit atomic');
