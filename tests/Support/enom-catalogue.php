@@ -25,6 +25,8 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 tldPanel();$staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
+// Saving a global setting reloads Paymenter settings from the table, so what these pages read must be rows.
+foreach(['default_currency'=>'USD','theme'=>'default'] as $key=>$value){App\Models\Setting::updateOrCreate(['key'=>$key,'settingable_type'=>null,'settingable_id'=>null],['value'=>$value]);}
 $server=Server::create(['name'=>'Synthetic TEST catalogue','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $settings=app(StaffSettingsWrites::class);$bindings=app(AccountBindings::class);$front=app(Storefront::class);
 $review=static function(string $action,?int $tld=null)use($server,$staff):Review {
@@ -58,14 +60,14 @@ app(Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->tick(
 same(0,(int)DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->value('daily_due_at'),'TEST runtime leaves daily balance cadence unclaimed');
 same($before,count($GLOBALS['catalogueCalls']),'A skipped daily sync makes no reads');same(0,Tld::where('server_id',$server->id)->count(),'A skipped daily sync imports nothing');
 // Expired state and revoked rights refuse before any I/O; in-flight changes refuse before persistence.
-$stale=$review('import');$write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
+$stale=$review('import');saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$settings->run($stale,['ending'=>'com']),'Settings changed. Reload this page.');same($before,count($GLOBALS['catalogueCalls']),'Stale import makes no call');
 $pending=$review('import');$permissions=$staff->role->permissions;
 $staff->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission('import')]))]);
 $refuse(fn()=>$settings->run($pending,['ending'=>'com']),'Current staff permissions required.');same($before,count($GLOBALS['catalogueCalls']),'Revoked import permission makes no call');$staff->role->update(['permissions'=>$permissions]);
 $GLOBALS['catalogueDuring']=static function()use($staff,$permissions):void {$staff->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission('import')]))]);};
 $refuse(fn()=>$write('import',['ending'=>'com']),'Catalogue import unavailable.');same(0,Tld::where('server_id',$server->id)->count(),'In-flight permission revocation rolls back all import rows');$staff->role->update(['permissions'=>$permissions]);
-$GLOBALS['catalogueDuring']=static function()use($write):void {$write('default_rule',['mode'=>'markup_percent','markup'=>'31.00','round_up'=>'none']);};
+$GLOBALS['catalogueDuring']=static function()use($write):void {saveDefaultRule(['mode'=>'markup_percent','markup'=>'31.00','round_up'=>'none']);};
 $refuse(fn()=>$write('import',['ending'=>'com']),'Catalogue import unavailable.');same(0,Tld::where('server_id',$server->id)->count(),'In-flight settings drift rolls back import');
 $GLOBALS['catalogueMissing']=true;$before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$write('import',['ending'=>'com']),'Catalogue import unavailable.');same($before+1,count($GLOBALS['catalogueCalls']),'Ending absent from provider list stops after one read');$GLOBALS['catalogueMissing']=false;
 $GLOBALS['catalogueListFailed']=true;$before=count($GLOBALS['catalogueCalls']);
@@ -79,7 +81,7 @@ try{$write('import',['ending'=>'com']);expect(false,'Malformed staff import must
     same('read_failed',\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error),'Staff TEST import preserves its closed adapter cause');
     expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::refusal($error,'import'),\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncCause('read_failed')),'Existing import refusal exposes the closed cause');
 }$GLOBALS['catalogueBadPrice']=false;
-$write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
+saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $before=count($GLOBALS['catalogueCalls']);
 queuedPriceSync(fn()=>Livewire::actingAs($staff)->test(ListTlds::class)->mountAction('sync_prices_'.$server->id)->callMountedAction(),'Prices synced');
 $per=['GetTLDDetails','GetExtAttributes','PE_GetProductPrice','PE_GetProductPrice'];

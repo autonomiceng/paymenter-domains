@@ -108,16 +108,17 @@ function staffOperationFilterLookalikes($viewer, Domain $seed): void
         $rows = staffFilterLookalikes($seed);
         Livewire::actingAs($viewer)->test(ListOperations::class)->searchTable('filter-')
             ->assertCanSeeTableRecords(array_column($rows, 'operation'))->assertCountTableRecords(count($rows));
+        // Fixture accounts start with Orders off, so the queued row reads Under review, in the word and in the filter.
         $failed = ['provider_rejected', 'timeout', 'registration_rejected', 'renewal_rejected', 'complimentary_timeout', 'contacts_rejected', 'reasonless', 'credited_timeout'];
         foreach ([
-            [['on_hold'], ['held', 'contact_hold']], [['under_review'], ['uncertain']],
-            [['in_progress'], ['pending', 'running', 'queued']],
-            [['waiting_payment'], ['awaiting_payment']],
-            [['action_required'], []],
+            [['under_review'], ['held', 'uncertain', 'queued']],
+            [['in_progress'], ['pending', 'running']],
+            [['awaiting_payment'], ['awaiting_payment']],
+            [['action_required'], ['contact_hold']],
             [['completed'], ['succeeded']],
             [['failed'], $failed],
             [['cancelled'], []],
-            [['on_hold', 'completed'], ['held', 'contact_hold', 'succeeded']],
+            [['under_review', 'completed'], ['held', 'uncertain', 'queued', 'succeeded']],
         ] as [$value, $keys]) {
             staffAssertLookalikeFilter($viewer, ListOperations::class, 'status', $value, $rows, 'operation', $keys);
         }

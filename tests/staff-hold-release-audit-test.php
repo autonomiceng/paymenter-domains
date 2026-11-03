@@ -40,7 +40,7 @@ foreach([1,2] as $cycle){
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSee('History')
     ->assertSee('Customer asked to wait')->assertSee('Customer confirmed the next attempt')->assertSee('Hold released');
 $history=Livewire::actingAs($staff)->test(RequestsRelationManager::class,['ownerRecord'=>$op->domain->fresh(),'pageClass'=>ViewDomain::class]);
-$history->assertSee('History')->assertSee('Request #'.$op->id);
+$history->assertSee('Search changes')->assertSee('Request #'.$op->id);
 $dom=new DOMDocument;@$dom->loadHTML($history->html());
 $links=(new DOMXPath($dom))->query('//a[contains(normalize-space(.),"Request #'.$op->id.' ")]');
 expect($links->length>0,'History renders an actual request link');

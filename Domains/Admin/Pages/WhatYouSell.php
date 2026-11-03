@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\{Auth,Blade,Log};
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\{Locked,Url};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,SellTable,SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,SellTable,SettingsActions,Staff,StatusMark,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,SellRow};
@@ -32,10 +32,12 @@ class WhatYouSell extends Page implements HasTable
     public const ALL=0;
     protected static string|\BackedEnum|null $navigationIcon='heroicon-o-check-circle';
     protected static string|\UnitEnum|null $navigationGroup='Domains';
-    protected static ?int $navigationSort=4;
+    protected static bool $shouldRegisterNavigation=false;
     protected static ?string $title='TLDs & pricing';
     protected static ?string $slug='what-you-sell';
     protected string $view='domains::admin.what-you-sell';
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('What you sell'); }
     #[Url] public ?int $account=null;
     #[Url] public ?string $tld=null;
     #[Url] public int $years=1;
@@ -182,6 +184,7 @@ class WhatYouSell extends Page implements HasTable
         $all=fn()=>$this->account===self::ALL;$blocked=fn()=>$all()?['aria-disabled'=>'true']:[];
         return [
             Action::make('sync_now')->label('Sync prices')->color('gray')->visible(fn()=>$this->canSync()&&($all()||$this->readable()))->disabled($all)->extraAttributes($blocked)->action(fn()=>$this->syncNow()),
+            SettingsActions::defaultPricing(),
             Action::make('rule')->label('Default for new TLDs')->color('gray')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save')->modalFooterActions(self::cancelFirst())
                 ->fillForm(fn()=>[...$this->rule(),'sell_new'=>$this->rule()['mode']==='only'?'no':'yes'])->schema(fn()=>[
                     Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
@@ -328,7 +331,7 @@ class WhatYouSell extends Page implements HasTable
                 TextColumn::make('pricing')->label('Pricing')->visible($costs)->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow $record)=>$this->reads()->pricing($record)),
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(SellRow $record)=>$this->reads()->status($record)['label'])
-                    ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])
+                    ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(SellRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
                     ->description(fn(SellRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(SellRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
                     ->url(fn(SellRow $record)=>isset($this->reads()->status($record)['open'])&&($id=$this->reads()->tldId($record))!==null?TldResource::getUrl('view',['record'=>$id]):null),
             ])

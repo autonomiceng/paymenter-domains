@@ -8,8 +8,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\WatchActions;
 class ListConfiguration extends ListRecords
 {
     protected static string $resource=RoutingProfileResource::class;
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::domains('DNS templates'); }
     public function getTitle(): string{return 'DNS templates';}
     public function getBreadcrumbs(): array{return [];}
-    public function getSubheading(): ?string{return null;}
+    public function getSubheading(): ?string{return 'A DNS template sets the nameservers for new domains and is what monitoring checks them against.';}
     protected function getHeaderActions(): array{return [WatchActions::configuration(null)];}
 }

@@ -92,6 +92,7 @@ same($dom->query('//form[@data-confirm]')->length,$dom->query('//form[@data-conf
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a hidden or ticked confirmation');
 foreach(['account_fingerprint','provider_domain_id','old_ip','profile_id','cost']as$private){expect(!str_contains($html,'name="'.$private.'"'),'No private authority serialized');}
 expect(str_contains($html,'DNS records')&&str_contains($html,'SRV records')&&str_contains($html,'DNSSEC')&&str_contains($html,'Glue records')&&!str_contains($html,'Child nameservers'),'All supported sections rendered');
+expect(!preg_match('/As of \d{4}-\d{2}-\d{2}T/',strip_tags($html))&&str_contains($html,'data-domains-time'),'Read times follow the date rule');
 // SRV whitespace must reach strict validation instead of being silently repaired by middleware.
 $before=Operation::count();$r=$post('srv',['records'=>[['service'=>'sip','protocol'=>'tcp','priority'=>'0','weight'=>'5','port'=>'443','target'=>' sip.example.com. ']],'preimage_digest'=>ManagementPayload::digest($state->srv,'srv')]);
 $response=$controller->manage($r,$d->id,'srv');same(422,$response->getStatusCode(),'Original SRV target whitespace is invalid');same($before,Operation::count(),'Trimming cannot turn invalid SRV input into a queued change');

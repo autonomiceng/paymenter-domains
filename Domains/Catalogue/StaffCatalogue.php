@@ -78,7 +78,7 @@ final class StaffCatalogue
             'enabled'=>($raw['sell']??$d['defaultSell']??true)&&($raw['stops']??[])!==['register','renew','transfer'],
             default=>!in_array($key,$raw['stops']??[],true)&&($key!=='transfer'||($raw['transfers']??$d['defaultTransfers']??false))};
     }
-    public function own(Tld $t): bool {Staff::requireView();return isset(OfferState::decode($t->catalogue_intent)['pricing_rule']);}
+    public function own(Tld $t): bool {Staff::requireView();return Pricing::hasOwn($t);}
     public function rule(int $server): array
     {
         $grants=Staff::requireView();$d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);
@@ -87,14 +87,10 @@ final class StaffCatalogue
     }
     public function pricing(int $server,?Tld $t=null): array
     {
-        Staff::requireView();$d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);
-        $own=$t?OfferState::decode($t->catalogue_intent):[];
-        $rule=$own['pricing_rule']??$d['pricing_rule']??PricingRule::DEFAULT;
-        if($rule['mode']==='markup_fee_percent'){$rule['card_fee']=$d['card_fee']??CardFee::DEFAULT;}
-        return PricingRule::validate($rule);
+        Staff::requireView();return Pricing::rule($t);
     }
     public function fee(int $server): array
-    {Staff::requireView();$d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);return CardFee::validate($d['card_fee']??CardFee::DEFAULT);}
+    {Staff::requireView();return CardFee::read();}
     /** Each call is at most one table page. Same evaluator and observation evidence as the public adapter. */
     public function page(Collection $tlds): array
     {
@@ -134,22 +130,23 @@ final class StaffCatalogue
             $out[$t->id]=['prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
-                'own'=>isset($raw['pricing_rule']),'offers'=>$all,'facts'=>$facts];
+                'own'=>Pricing::hasOwn($t),'pricing'=>!Pricing::hasOwn($t)?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
         }
         return $out;
     }
     private function publicDefaults(array $d,bool $costs): array
-    {if(!$costs){unset($d['maxAnnualCost'],$d['card_fee'],$d['pricing_rule']);}return $d;}
+    {unset($d['card_fee'],$d['pricing_rule']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
     /** The matrix/CSV contract uses the exact same page snapshots, chunked without an unbounded SQL IN. */
     public function matrix(Collection $tlds,int $years,string $filter='all'): array
     {
         abort_unless(Staff::requireView()->costs,403);$rows=[];$accounts=[];
+        $fee=CardFee::read();$default=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule(false,$fee);
         foreach($tlds->chunk(100) as $chunk){$page=$this->page($chunk);$settings=[];
             foreach($chunk as $t){$s=$page[$t->id];$id=(int)$t->server_id;$own=$s['own'];
                 if($filter==='default'&&$own||$filter==='own'&&!$own){continue;}
                 if(!isset($settings[$id])){$a=Account::where('server_id',$id)->sole();$d=OfferState::decode($a->catalogue_defaults);$settings[$id]=[$d,Server::whereKey($id)->value('name')];}
                 [$d,$name]=$settings[$id];$accounts[$id]=$name;$raw=OfferState::decode($t->catalogue_intent);
-                $rule=$raw['pricing_rule']??$d['pricing_rule']??PricingRule::DEFAULT;$fee=$d['card_fee']??CardFee::DEFAULT;
+                $rule=Pricing::rule($t,$default,$fee);
                 $row=['id'=>(int)$t->id,'tld'=>'.'.$t->tld,'server_id'=>$id,'account'=>$name,'years'=>$years,'pricing'=>$own?'Custom':'Default','currency'=>'USD','prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
                 foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$cost=$offer?->observation()?->total;$price=$offer?->staffRetail();

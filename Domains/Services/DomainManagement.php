@@ -10,6 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Dormant engine boundary. All reads/writes outside locks; every request owns one durable attempt. */
 final class DomainManagement
 {
+    /** available() refused because the account's own switch for these changes is Off. */
+    public const SWITCH_OFF = 'switch';
     private ?array $grant = null;
     private ?array $receiptGrant = null;
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock,
@@ -25,18 +27,19 @@ final class DomainManagement
             default => throw new \DomainException('Unsupported management action.'),
         };
     }
-    /** Read-only owner affordances use the same current predicates; this grants no request/send authority. */
-    public function available(User $actor, Domain $seed, ManagementProtocol $driver, array $actions): array
+    /** Read-only owner affordances use the same current predicates; this grants no request/send authority. $refused says why, when it can: SWITCH_OFF, the id of the request in the way, or the engine's refusal. */
+    public function available(User $actor, Domain $seed, ManagementProtocol $driver, array $actions, int|string|null &$refused = null): array
     {
         if (!$actions) { return []; }
         try {
-            return (function()use($actor,$seed,$driver,$actions):array {
+            return (function()use($actor,$seed,$driver,$actions,&$refused):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id,true);
-                $this->peers($l);
-                return array_values(array_filter($actions,function($action)use($l,$actor,$driver):bool {
+                if($this->testManagement&&!EnomTestManagement::accepted(CatalogueAcceptances::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
+                if(($blocked=$this->unresolved($l))!==null){$refused=(int)$blocked->id;return [];}
+                return array_values(array_filter($actions,function($action)use($l,$actor,$driver,&$refused):bool {
                     if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
                     try { $this->authority($l,(int)$actor->id,$action,$driver,advisory:true); }
-                    catch (\Throwable) { return false; }
+                    catch (\Throwable $refusal) { $refused??=$refusal->getMessage(); return false; }
                     return $driver->capabilities()->get(self::capability($action))->support===Support::Supported;
                 }));
             })();
@@ -128,11 +131,13 @@ final class DomainManagement
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
     {
-        $work=fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
-            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds)));
-        if(!$this->testManagement){return $work();}
-        $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
-        return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
+        $work=fn()=>$driver->withinReservation(Operation::findOrFail($id),fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
+            $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds))));
+        try {
+            if(!$this->testManagement){return $work();}
+            $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
+            return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
+        }catch(WriteHeld $e){if($e->reason!=='write_acceptance_required'){throw $e;}return Operation::findOrFail($id);}
     }
     private function runEntered(int $id, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $deadline): Operation
     {
@@ -189,10 +194,13 @@ final class DomainManagement
             finally { $this->grant = null; $this->receiptGrant = null; }
             return $this->finish($seed, $id, $driver, $result);
         } catch (\Throwable $error) {
-            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals): Operation {
+            return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals, $driver): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($claimed && $op && ($op->attempt['management_claim']??null)===$claim && $op->state === 'running') {
                     $b=CatalogueAcceptances::binding($l['account']);
+                    if(($op->attempt['seal']??null)==='sealed'&&$op->funding_basis==='non_billable_management'&&$b->registrarKey==='namesilo'&&$driver->bindsTo($b)&&$driver->unconsumed($id)){
+                        ManagementEvidence::retainUnsent($op,$driver);return $op;
+                    }
                     $cap=$this->testManagement&&(($op->attempt['seal']??null)==='absent'&&EnomTestCalls::refusedSince($refusals)
                         ||$error instanceof EnomTestCallLimit&&EnomTestWriteReservation::unconsumed($b,'management',$id));
                     if($cap){$op->update(['state'=>'held','safe_code'=>'enom_test_management_call_cap','lease_expires_at'=>null,
@@ -367,12 +375,15 @@ final class DomainManagement
         if ($op->funding_basis === 'paid_invoice' && AccountSpendingHolds::query(Operation::where('account_fingerprint',$op->account_fingerprint)->where('id','!=',$op->id))->orderBy('id')->lockForUpdate()->get(['id'])->isNotEmpty()) { throw new WriteHeld('write_rate_limited'); }
     }
     private function peers(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): void
+    { if ($this->unresolved($l, $except, $correction, $action) !== null) { throw new \DomainException('Prior operation unresolved.'); } }
+    private function unresolved(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): ?Operation
     {
         $b = CatalogueAcceptances::binding($l['account']);
         foreach ($l['operations'] as $op) {
             if ($correction !== null && $op->operation_key === $correction && ManagementCorrections::pending($l, $action ?? '', $correction)) { continue; }
             if($op->id!==$except&&$op->action==='renew'&&in_array($op->state,['awaiting_payment','queued','held'],true)&&($op->attempt??[])===[]){continue;}
-            if ($op->id !== $except && !ManagementEvidence::resolved($op, $l['domain']) && !RenewalAuthority::resolved($op, $l['domain'], $b)) { throw new \DomainException('Prior operation unresolved.'); }
+            if ($op->id !== $except && !ManagementEvidence::resolved($op, $l['domain']) && !RenewalAuthority::resolved($op, $l['domain'], $b)) { return $op; }
         }
+        return null;
     }
 }

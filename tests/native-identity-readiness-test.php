@@ -21,8 +21,8 @@ $test->assertSee('System checks')->assertDontSee('Adoption readiness')->assertDo
 $test->assertDontSee('Missing Paymenter records')->assertDontSee('missing-native-placeholder.com');
 // Each system check appears once; site notes moved to docs/runtime.md appear nowhere.
 $site=[...\Paymenter\Extensions\Servers\Domains\Services\NativePaidHooks::notices(),'Server delete notice'=>1,'Domain editor notice'=>1,'Service refusal notice'=>1];
-$flat=$test->instance()->content(\Filament\Schemas\Schema::make($test->instance()))->getFlatComponents();
-$count=fn(string $label)=>count(array_filter($flat,fn($entry)=>$entry instanceof \Filament\Infolists\Components\TextEntry && $entry->getLabel()===$label));
+$html=$test->html();
+$count=fn(string $label)=>substr_count($html,'>'.$label.'<');
 foreach(['Background worker','Payment events','Domain editor','Site setup'] as $label){same(1,$count($label),'System check appears once: '.$label);}
 foreach(['Renewal safety','Adoption readiness','Credentials','Worker cadence','Worker recovery','Binding recovery','Native server settings',...array_keys($site)] as $label){
     same(0,$count($label),'Removed or renamed fact never appears: '.$label);

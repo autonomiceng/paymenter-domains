@@ -59,7 +59,7 @@ final class HoldingActions
     public static function description(string $action): string
     {
         return match($action){
-            'stop'=>"Stops new renewal invoices. Invoices already sent stay payable, and renewal requests already created may still run. To stop all renewals, also turn off auto-renew at the registrar.",
+            'stop'=>'Stops new renewal invoices. Invoices already sent stay payable, and renewal requests already created may still run.',
             'resume'=>'Restarts renewal invoices and removes any pending service cancellation.',
         };
     }

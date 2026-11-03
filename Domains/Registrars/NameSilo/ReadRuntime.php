@@ -27,11 +27,11 @@ final class ReadRuntime
                     }catch(\Throwable){throw new \DomainException('NameSilo runtime read acceptance unavailable.');}
                 };
                 $key=$current(false)['api_key'];
-                $actions=[];
-                foreach(CatalogueAcceptances::load($binding)->endings as $row){
+                $acceptedCatalogue=CatalogueAcceptances::load($binding);$actions=[];
+                foreach($acceptedCatalogue->endings as $row){
                     foreach(['register','renew','transfer'] as $action){if($row[$action]===[1]){$actions[$action]=$action;}}
                 }
-                return new Driver(new Client($binding,$key,new AdmittedTransport($binding,$current)),array_values($actions),$clock);
+                return new Driver(new Client($binding,$key,new AdmittedTransport($binding,$current)),array_values($actions),$clock,acceptedCatalogue:$acceptedCatalogue);
             }catch(\Throwable){throw new \DomainException('NameSilo runtime reader unavailable.');}
         };
     }

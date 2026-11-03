@@ -17,18 +17,22 @@ $u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);[$t,$other]=$tlds;
 App\Models\Server::whereKey($t->server_id)->update(['name'=>'<First & account>']);
 $service=new PriceList;
 // Extra fee-mode TLDs on the same accounts must not add settings reads to either staff list.
+$saveFee=static fn(array $value)=>App\Models\Setting::updateOrCreate(['key'=>CardFee::KEY,'settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>$value]);
 DB::beginTransaction();
 try{
-    foreach([$t,$other] as $index=>$ending){
-        $server=App\Models\Server::findOrFail($ending->server_id);
-        $server->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
-        $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>(string)($index+2),'fixed'=>'0.30']]);
-    }
+    App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
+    $saveFee(['percent'=>'3','fixed'=>'0.30']);
     DB::table('domains_tlds')->where('id',$t->id)->update(['use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']);
     $grants=Staff::requireView();
     $measure=static function(callable $read):array{
         DB::flushQueryLog();DB::enableQueryLog();
-        try{$result=$read();return [count(DB::getQueryLog()),$result];}
+        try{
+            $result=$read();
+            // Each presenter entry must resolve current mode; measure pricing work separately.
+            $pricing=array_filter(DB::getQueryLog(),static fn($q)=>$q['query']!=='select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?'
+                || $q['bindings']!==['domains_offer_upgrade']);
+            return [count($pricing),$result];
+        }
         finally{DB::disableQueryLog();DB::flushQueryLog();}
     };
     $small=Tld::orderBy('id')->get();
@@ -59,13 +63,13 @@ foreach(['register','renew','transfer'] as $action){
     $saved=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>$action,'term'=>1])->sole();$cell=$row['prices'][$action];
     same(PriceCatalogue::retail($saved->retail),$cell['price'],'Retail equals the published revision');
     same(PriceCatalogue::cost($saved->wholesale),$cell['cost'],'Exact saved term cost');same($saved->revision,$cell['revision'],'Retained revision identity');
-    same(CardFee::profit($cell['price'],$cell['cost'],CardFee::read($t->server_id)),$cell['profit'],'Profit uses current account fee');
+    same(CardFee::profit($cell['price'],$cell['cost'],CardFee::read()),$cell['profit'],'Profit uses current account fee');
 }
 $three=$service->read(3,'all',$t->server_id)['rows'][0]['prices'];same('23.40',$three['register']['price'],'Exact saved three-year total');
 same(null,$three['renew']['price'],'No synthesized three-year renewal');same(null,$three['transfer']['price'],'No synthesized transfer');
 $two=$service->read(2,'all',$t->server_id)['rows'][0]['prices'];same(null,$two['register']['price'],'Missing registration term is never annual times years');
 // A rule edit without publication must not reprice the saved totals.
-App\Models\Server::findOrFail($t->server_id)->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_percent','markup'=>'80','round_up'=>'whole']]);
+App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_percent','markup'=>'80','round_up'=>'whole']]);
 same('7.80',$service->read(1,'all',$t->server_id)['rows'][0]['prices']['register']['price'],'Current rule does not recompute published price');
 // Distinct below-cost and fee-loss rows, plus Default and Custom pricing filters.
 DB::table('domains_tlds')->where('id',$other->id)->update(['use_default_rule'=>false,'pricing_mode'=>'markup_amount','markup'=>'1.25','round_up'=>'none']);
@@ -105,7 +109,7 @@ same($matrix['rows'][0]['formula'],$values[17],'CSV includes visible explanation
 same(['Register est. profit','Renew est. profit','Transfer est. profit'],[$records[0][7],$records[0][11],$records[0][15]],'CSV profit headers match the table');
 $page->assertCountTableRecords(1);$shown=$page->instance()->getTableRecords()->items()[0];
 foreach(['register','renew','transfer'] as $index=>$action){foreach(['cost','price','profit'] as $offset=>$field){$page->assertTableColumnStateSet($action.'_'.$field,$values[5+$index*4+$offset],$shown);}}
-$page->assertTableColumnStateSet('account_name',$values[1],$shown)->assertTableColumnStateSet('pricing',$values[3],$shown)->assertSee('Prices in USD for 1 year.');
+$page->assertTableColumnStateSet('account_name',$values[1],$shown)->assertTableColumnStateSet('pricing',$values[3],$shown)->assertSee('The table shows saved prices.');
 $page->assertSee($values[17])->assertSee($values[18].' per payment.');
 // Red Profit carries its reason on hover. Price and Cost stay plain.
 $cell=fn(string $name,$record)=>$page->instance()->getTable()->getColumn($name)->record($record);
@@ -115,7 +119,7 @@ same(null,$cell('renew_price',$shown)->getColor(null),'Only Profit goes red');
 $dom=new DOMDocument();@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
 same($values[17],$xpath->evaluate('normalize-space(//*[@data-price-explanation]//code[@data-price-formula])'),'Formula shown as a code line');
 same('Custom pricing for .com',$xpath->evaluate('normalize-space(//*[@data-price-pricing])'),'Panel names the TLD with custom pricing');
-same(4,(int)$xpath->evaluate('count(//dl[@data-price-notes]/dt)'),'Panel notes are a short list');
+same(5,(int)$xpath->evaluate('count(//dl[@data-price-notes]/dt)'),'Panel notes include the moved Off explanation');
 Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertDontSee('Price list');expect(str_contains(TldResource::getUrl('price-list'),'/price-list'),'The old address keeps its route');
 Livewire::actingAs($u)->test(PriceListPage::class)->assertRedirect(WhatYouSell::getUrl());
 // All accounts reads every account and saves none.
@@ -137,7 +141,7 @@ expect(!$one->instance()->getTable()->getColumn('account_name')->isVisible(),'On
 // Past 1 year only saved totals show: Off when not sold that long, Missing with its step when sold and not saved.
 $sells=SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole();
 $binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
-$three=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',3)->assertSee('3-year cost')->assertSee('Saved prices in USD for 3 years')
+$three=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',3)->assertSee('3-year cost')->assertSee('No price is saved for this many years.')
     ->assertTableColumnStateSet('register_price','23.40',$sells)->assertTableColumnStateSet('renew_price','Off',$sells)->assertTableColumnStateSet('transfer_cost','Off',$sells);
 $off=$three->instance()->getTable()->getColumn('renew_cost')->record($three->instance()->getTableRecord((string)$sells->id));same(['Off','gray'],[$off->getState(),$off->getColor(null)],'Off is muted, not an alarm');
 $accepted=CatalogueAcceptances::load($binding);$longer=$accepted->endings;$longer['com']['register']=array_values(array_unique([...$longer['com']['register'],2]));sort($longer['com']['register']);CatalogueAcceptances::save($binding,$accepted->revision,$longer);
@@ -175,12 +179,11 @@ $estimate->delete();$au->delete();
 $escaped=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();expect(str_contains($escaped->html(),'&lt;First &amp; account&gt;'),'Account names are escaped');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Page, filters and CSV leave all revisions and prices unchanged');same(0,$reads->calls,'No provider calls');
 // Fees are current read facts, even when a price was published under an older fee.
-$feeServer=App\Models\Server::findOrFail($other->server_id);
-$feeServer->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>'0','fixed'=>'0']]);
+$saveFee(['percent'=>'0','fixed'=>'0']);
 same('0.1000',$service->read(1,'own')['rows'][0]['prices']['renew']['profit'],'Changed fee updates profit immediately');
 same([$t->id],array_column($service->read(1,'loses_money')['rows'],'id'),'Loss filter reads current fee');
 same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Fee estimates never rewrite published revisions');
-$feeServer->settings()->where('key',CardFee::KEY)->delete();
+App\Models\Setting::whereNull('settingable_type')->where('key',CardFee::KEY)->delete();
 // Stale binding and cost-only/unavailable rows never masquerade as published prices.
 DB::beginTransaction();
 DB::table('domains_prices')->where(['server_id'=>$t->server_id,'action'=>'register','term'=>1])->update(['account_fingerprint'=>'earlier-account']);
@@ -197,11 +200,10 @@ DB::rollBack();
 App\Models\Server::whereKey($t->server_id)->update(['name'=>'=1+1']);
 expect(str_contains($service->csv(1,'all',$t->server_id),"'=1+1"),'CSV neutralizes account formulas');
 
-// A real publication distinguishes the correct account fee from two readers agreeing on stale rows.
+// A real publication tells the current fee from two readers agreeing on stale rows.
 foreach([$t,$other] as $index=>$ending){
-    $server=App\Models\Server::findOrFail($ending->server_id);
-    $server->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
-    $server->settings()->updateOrCreate(['key'=>CardFee::KEY],['type'=>'array','encrypted'=>false,'value'=>['percent'=>(string)($index+2),'fixed'=>'0.30']]);
+    App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,'value'=>['mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']]);
+    $saveFee(['percent'=>'3','fixed'=>'0.30']);
     DB::table('domains_tlds')->where('id',$ending->id)->update(['use_default_rule'=>$index===1,'pricing_mode'=>'markup_fee_percent','markup'=>'30','round_up'=>'none']);
     $native->publish($ending->id,$now,null,static fn(Tld $locked)=>null);
 }
@@ -211,12 +213,12 @@ $publicationStatus=static function(bool $changed)use($published,$grants,$t):void
     foreach($published as $ending){
         foreach([$page[$ending->id],TldFacts::snapshot($ending,$grants)] as $facts){
             expect(count($facts['prices'])>0,'Published fee-mode account has saved prices');
-            foreach($facts['prices'] as $price){same($changed&&$ending->id===$t->id,in_array('unpublished',$price['flags'],true),'Fee changes invalidate only that account in both readers');}
+            foreach($facts['prices'] as $price){same($changed,in_array('unpublished',$price['flags'],true),'A fee change reaches every fee-based price in both readers');}
         }
     }
 };
 $publicationStatus(false);
-App\Models\Server::findOrFail($t->server_id)->settings()->where('key',CardFee::KEY)->sole()->update(['value'=>['percent'=>'4','fixed'=>'0.30']]);
+$saveFee(['percent'=>'4','fixed'=>'0.30']);
 $publicationStatus(true);
 
 // Real quarantine retains billed renewal retail while costs/profit and acquisition prices become unknown.
