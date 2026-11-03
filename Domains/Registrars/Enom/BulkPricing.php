@@ -10,7 +10,7 @@ final class BulkPricing
 {
     public static function rows(ProtocolResult $reply): ?array
     {
-        if ($reply->status !== 'success') { return null; }
+        if ($reply->status !== 'success' || !in_array($reply->value('currency'), [null, '', 'USD'], true)) { return null; }
         $rows = $reply->value('pricestructure.product', $reply->value('pricestructure.tld'));
         if (!is_array($rows) || $rows === []) { return null; }
         if (!array_is_list($rows)) { $rows = [$rows]; }
@@ -22,6 +22,7 @@ final class BulkPricing
             if (!is_string($tld) || strlen($tld) > 253) { return null; }
             $tld = strtolower($tld);
             if (!preg_match('/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/D', $tld) || isset($out[$tld])) { return null; }
+            if (!in_array($row['currency'] ?? null, [null, '', 'USD'], true)) { return null; }
             $parsed = ['tld' => $tld];
             foreach (['registerprice', 'resellerpricereg', 'renewprice', 'resellerpricerenew', 'transferprice', 'resellerpricetran', 'rgpprice', 'resellerpricergp'] as $field) {
                 $value = $row[$field] ?? null;

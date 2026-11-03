@@ -24,8 +24,9 @@ NO_RECEIPT = object()
 PREFIX = 'Paymenter\\Extensions\\Servers\\Domains\\'
 FORBIDDEN = {'scripts', 'tests', 'docs', 'private', 'node_modules', 'vendor', 'conversion', 'conversions', 'pins', 'dev'}
 # Runtime conversion files are distinct from the development-only conversion scripts.
-RUNTIME_CONVERSION_FILES = {'ConversionGate.php', 'UpgradeConversion.php',
-                            '2026_11_02_000048_add_offer_conversion.php'}
+RUNTIME_CONVERSION_FILES = {'Services/ConversionGate.php', 'Catalogue/UpgradeConversion.php',
+                            'database/migrations/2026_11_02_000048_add_offer_conversion.php'}
+RUNTIME_CONVERSION_NAMES = {Path(name).name for name in RUNTIME_CONVERSION_FILES}
 LEGAL = {'LICENSE', 'NOTICE', 'NOTICE.txt', 'ATTRIBUTION', 'ATTRIBUTION.txt'}
 
 def php_list(tokens):
@@ -103,7 +104,7 @@ def safe_name(name):
     parts = name.split('/')
     if not re.fullmatch(r'[A-Za-z0-9_./-]+', name) or any(p in {'', '.', '..'} for p in parts):
         raise ValueError('Unexpected runtime member path')
-    if any(p.startswith('.') or p.lower() in FORBIDDEN or ('conversion' in p.lower() and p not in RUNTIME_CONVERSION_FILES) or p.lower().startswith('convert-') for p in parts):
+    if any(p.startswith('.') or p.lower() in FORBIDDEN or ('conversion' in p.lower() and p not in RUNTIME_CONVERSION_NAMES) or p.lower().startswith('convert-') for p in parts):
         raise ValueError('Development or private files cannot enter a release')
     if any(p.lower().startswith(('pin-', 'pin_', 'dev-', 'dev_')) for p in parts) or 'private' in parts[-1].lower().split('.'):
         raise ValueError('Development or private files cannot enter a release')
@@ -147,6 +148,8 @@ def validate_runtime(members):
     roots |= STAGED_RUNTIME_ROOTS & present
     for name in relative:
         safe_name(name)
+        if any('conversion' in part.lower() for part in name.split('/')) and name not in RUNTIME_CONVERSION_FILES:
+            raise ValueError('Development or private files cannot enter a release')
         if name not in LEGAL | {'Domains.php'} and ('/' not in name or name.split('/')[0] not in roots):
             raise ValueError('Member is outside the extension runtime layout')
         if name not in LEGAL | HELP_FILES and Path(name).suffix not in ALLOWED_SUFFIXES:
