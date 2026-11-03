@@ -27,7 +27,8 @@ $result=$save('20.00');same([],$result['failed'],'Global save publishes current 
 foreach(['com','net'] as $name){same('$20.00',$storefront->offer($name,'register',1)['price'],'Every account uses the global form rule');}
 same('20.00',(new PricingRules)->defaultRule()['fixed']['register'],'Only shared rule store changes');same(['percent'=>'3.00','fixed'=>'0.30'],CardFee::read(),'Only shared card fee is used');
 // The F51 migration preserves saved legacy TLD overrides, even after their earlier conversion.
-DB::table('domains_tlds')->where('id',$com->id)->update(['use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'13.00','fixed_transfer'=>'14.00']);
+$legacyIntent=OfferState::decode($com->fresh()->catalogue_intent);unset($legacyIntent['pricing_rule']);
+DB::table('domains_tlds')->where('id',$com->id)->update(['catalogue_intent'=>OfferState::json($legacyIntent),'use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'13.00','fixed_transfer'=>'14.00']);
 $commands->publish($com->id);$own=$com->fresh()->getRawOriginal();$save('30.00');
 same('$12.00',$storefront->offer('com','register',1)['price'],'Saved TLD own rule survives global save');same('$30.00',$storefront->offer('net','register',1)['price'],'Other account follows new global default');
 same($own,$com->fresh()->getRawOriginal(),'Global save leaves own-rule intent, retail and revisions untouched');
