@@ -61,8 +61,10 @@ commerceReject(fn () => (new ObservationWork($observer, $clock, $budget))->tick(
 $q = DB::table('domains_observation_work')->where('domain_id', $d->id);
 $q->update(['due_at' => $clock->now()->getTimestamp()]);
 $before = $d->fresh()->observation;
+$physical = count($observation->calls);
 $observation->during = static fn () => (new UpgradeGate)->resume();
 $scheduler->tick(2);
+same($physical + 1, count($observation->calls), 'Generation change stops the remaining physical holding reads');
 same($before, $d->fresh()->observation, 'Generation change between read and commit cannot save a holding projection');
 same(null, $q->value('claim'), 'Superseded holding releases its own claim');
 $nativeSuccessful = true;

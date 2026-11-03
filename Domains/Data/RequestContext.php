@@ -8,11 +8,12 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 final class RequestContext
 {
     public function __construct(public readonly AccountBinding $binding, public readonly RequestOrigin $origin,
-        public readonly \DateTimeImmutable $deadline, public readonly RequestBudget $budget, private readonly Clock $clock = new SystemClock, private readonly ?\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter $limiter = null, private readonly bool $stopOnReadFailure = false, public readonly bool $readNameservers = false) {}
+        public readonly \DateTimeImmutable $deadline, public readonly RequestBudget $budget, private readonly Clock $clock = new SystemClock, private readonly ?\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter $limiter = null, private readonly bool $stopOnReadFailure = false, public readonly bool $readNameservers = false, private readonly ?\Closure $current = null) {}
 
     /** Drivers must call before each wire request, not just once per logical operation. */
     public function claimRead(#[\SensitiveParameter] AccountBinding $driver): int
     {
+        if($this->current){($this->current)();}
         $driver->requireMatch($this->binding);
         $now = $this->clock->now();
         $remaining = intdiv(((int) $this->deadline->format('U') - (int) $now->format('U')) * 1000000
@@ -52,6 +53,7 @@ final class RequestContext
             $until=$reserved?min($this->deadline,$this->leaseUntil):$this->deadline;
             $remaining = (int) floor(((float)$until->format('U.u') - (float)$this->clock->now()->format('U.u')) * 1000);
             if ($remaining < 1) { throw new \RuntimeException('Registrar request deadline reached.'); }
+            if($this->current){($this->current)();}
             return $wire($remaining);
         }
         finally { if ($token !== null) { $this->limiter->release($driver, $this->origin, $token); } }

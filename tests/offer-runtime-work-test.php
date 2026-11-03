@@ -33,8 +33,10 @@ same(5, count($wire->calls) - $before, 'Restart does not repeat physical feed re
 $restarted->accountTurn($b->serverId);
 $clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
 $lastGood = $worker->status($b)['succeeded_at'];
-$wire->during = static function ($command): void { if ($command === ReadCommand::Tlds) { (new UpgradeGate)->resume(); } };
+$physical = count($wire->calls);
+$wire->during = static function ($command): void { if ($command === ReadCommand::RetailPricing) { (new UpgradeGate)->resume(); } };
 commerceReject(static fn () => $worker->accountTurn($b->serverId)); $wire->during = null;
+same($physical + 1, count($wire->calls), 'Generation change stops the remaining physical feed group reads');
 $row = DB::table('domains_observation_queues')->where('server_id', $b->serverId)->first();
 same($lastGood, $row->offer_feed_succeeded_at, 'Superseded feed cannot acknowledge success');
 same(null, $row->offer_claim, 'Stale completion releases only its own claim');

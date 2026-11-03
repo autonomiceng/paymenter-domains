@@ -175,7 +175,7 @@ final class OfferWork
             $rows = $this->read($b, $origin, $calls, function ($context) use ($feed, $guard, $b, $job): array {
                 $this->save($b, $job, ['offer_feed_tried_at' => $this->at()]);
                 return FeedRun::prices($feed, $context, $guard);
-            });
+            }, $guard);
             if (count($rows) > 5000) { throw new \DomainException('Oversized offer feed.'); }
             $pending = [];
             foreach ($rows as $r) { $pending[] = ['tld' => $r->tld(), 'costs' => array_values(array_map(OfferState::encodeCost(...), $r->costs))]; }
@@ -204,7 +204,7 @@ final class OfferWork
             }
             $command = $this->read($b, RequestOrigin::Background, $calls, function ($context) use ($feed, $tld, &$state) {
                 $state['tried_at'] = $this->at(); return $feed->facts($tld, $context);
-            });
+            }, $guard);
             $guard(); $b->requireMatch($command->binding());
             if ($command->tld() !== $tld) { throw new \DomainException('Facts ending changed.'); }
             $writer->apply($command, $this->revision($b, $tld));
@@ -230,7 +230,7 @@ final class OfferWork
         return $ending;
     }
 
-    private function read(AccountBinding $b, RequestOrigin $origin, int $calls, \Closure $read): mixed
+    private function read(AccountBinding $b, RequestOrigin $origin, int $calls, \Closure $read, ?\Closure $current = null): mixed
     {
         $this->outside();
         if ($calls < 1 || $calls > 10) { throw new \DomainException('Invalid feed read count.'); }
@@ -238,7 +238,7 @@ final class OfferWork
         $budget = new FeedReadBudget($this->minute, $b, $origin, $calls);
         try {
             return $read(new RequestContext($b, $origin, $this->clock->now()->modify('+'.($calls * 25 + 5).' seconds'),
-                new RequestBudget($calls), $this->clock, $budget, stopOnReadFailure: true));
+                new RequestBudget($calls), $this->clock, $budget, stopOnReadFailure: true, current: $current));
         } finally { $budget->finish(); }
     }
 
