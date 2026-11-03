@@ -85,6 +85,14 @@ $before=$writes;$refuse(fn()=>$makeProfiles()->prepare($op,$context()));same('se
 $clock->instant=$clock->now()->modify('+31 seconds');$refuse(fn()=>$makeProfiles()->prepare($op,$context()));
 same('uncertain',$row->fresh()->state,'Expired worker without identity remains uncertain');same($before,$writes,'Worker expiry never authorizes another contactAdd');
 $clock->instant=$clock->now()->modify('-31 seconds');
+// Proof lookup measures elapsed freshness; a wall-clock fall-back cannot extend old evidence.
+$row=ProfileContactOperation::where('state','verified')->firstOrFail();$op=Operation::findOrFail($row->operation_id);$saved=$clock->instant;
+$beforeFallback=(new DateTimeImmutable('2026-11-01T08:59:00Z'))->setTimezone(new DateTimeZone('America/Los_Angeles'));
+ProfileContactOperation::writing(fn()=>$row->update(['attempt'=>[...$row->attempt,'observed_at'=>$beforeFallback->format(DATE_ATOM)]]));
+$clock->instant=(new DateTimeImmutable('2026-11-01T09:01:01Z'))->setTimezone(new DateTimeZone('America/Los_Angeles'));
+expect(!$makeProfiles()->hasProof($op),'Fall-back cannot extend the 120-second proof lifetime');
+ProfileContactOperation::writing(fn()=>$row->update(['attempt'=>[...$row->attempt,'observed_at'=>$clock->now()->format(DATE_ATOM)]]));
+expect($makeProfiles()->hasProof($op),'A later absolute observation can have an earlier wall-clock hour');$clock->instant=$saved;
 // Current parent authority is rechecked before allocating any profile ledger entry.
 $op=$claim('profile-drift-placeholder.com');$op->fresh()->update(['policy'=>[...$op->policy,'synthetic_drift'=>true]]);
 try{$makeProfiles()->prepare($op,$context());throw new LogicException('Expected parent authority refusal');}catch(\Paymenter\Extensions\Servers\Domains\Services\ProfileAuthorityMismatch){}

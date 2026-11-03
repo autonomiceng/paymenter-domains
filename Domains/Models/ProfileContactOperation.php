@@ -29,7 +29,7 @@ final class ProfileContactOperation extends Model
             $allowed=['ready'=>['ready','sealed'],'sealed'=>['sealed','created','unsent','uncertain'],'created'=>['created','verified'],
                 'verified'=>['verified'],'unsent'=>['unsent'],'uncertain'=>['uncertain']];
             if(!in_array($row->state,$allowed[$row->getOriginal('state')]??[],true)){throw new \DomainException('Profile attempt cannot replay.');}
-            if(isset($before['observed_at'])&&(!isset($after['observed_at'])||$after['observed_at']<$before['observed_at'])){throw new \DomainException('Profile observation cannot go backwards.');}
+            if(isset($before['observed_at'])&&(!isset($after['observed_at'])||new \DateTimeImmutable($after['observed_at'])<new \DateTimeImmutable($before['observed_at']))){throw new \DomainException('Profile observation cannot go backwards.');}
         });
         static::deleting(static function():never {throw new \DomainException('Profile operations are retained.');});
     }

@@ -66,7 +66,7 @@ final class ProfileContactOperations
                 if($r->state!=='ready'){throw new \DomainException('Profile attempt already claimed.');}
                 $ctx->requireReservedCapacity();
                 $this->update($r,['state'=>'sealed','attempt'=>[...$r->attempt,'seal'=>'sealed','send_state'=>'possibly_sent',
-                    'worker_key'=>$worker,'lease_until'=>min($ctx->deadline,$this->clock->now()->modify('+30 seconds'))->format(DATE_ATOM)]]);
+                    'worker_key'=>$worker,'lease_until'=>min($ctx->deadline,$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+30 seconds'))->format(DATE_ATOM)]]);
             });
             $body=$ctx->withinClaimedWire($this->binding,function(int $remaining)use($row,$op,$worker,$parameters):string {
                 $this->authority($op,function(int $owner)use($row,$op,$worker):void {
@@ -106,7 +106,7 @@ final class ProfileContactOperations
     {
         $row=ProfileOperation::where('operation_id',$op->id)->firstOrFail();$this->matches($row,$op,(int)$op->domain->user_id);
         $at=new \DateTimeImmutable($row->attempt['observed_at']??'1970-01-01T00:00:00Z');
-        if($row->state!=='verified'||$at>$this->clock->now()||$at<=$this->clock->now()->modify('-120 seconds')){throw new WriteHeld('contact_profile_proof_required');}
+        if($row->state!=='verified'||$at>$this->clock->now()||$at<=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('-120 seconds')){throw new WriteHeld('contact_profile_proof_required');}
         $profile=ContactProfile::findOrFail($row->attempt['profile_id']);$details=$profile->details;
         if((int)$profile->user_id!==$row->user_id||(int)$profile->server_id!==$row->server_id||$profile->account_fingerprint!==$row->account_fingerprint
             ||($details['provider_id']??null)!==$row->attempt['provider_id']||($details['contact']??null)!==ContactDetails::validate('namesilo',$op->payload['contacts'])['registrant']
