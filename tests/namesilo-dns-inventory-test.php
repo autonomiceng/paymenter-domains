@@ -66,4 +66,9 @@ foreach (['more' => true, 'next_page' => '2', 'total' => 2, 'unexpected' => []] 
 same('partial', Dns::inventory($body(['resource_record' => [$row, $row]]), 'example.com')['state'], 'Duplicate provider IDs cannot authorize a delta');
 same('partial', Dns::inventory($body(['resource_record' => $row + ['unproven' => 'field']]), 'example.com')['state'], 'Unknown row fields prevent a complete preimage');
 same('unknown', Dns::inventory(str_repeat(' ', 1048577), 'example.com')['state'], 'Oversized response is bounded');
+$duplicateList = '{"request":{"operation":"dnsListRecords"},"reply":{"code":300,"detail":"synthetic",'
+    .'"resource_record":[],"resource_record":['.json_encode($row).']}}';
+same('unknown', Dns::inventory($duplicateList, 'example.com')['state'], 'Duplicate JSON list keys cannot erase inventory');
+$duplicateTtl = str_replace('"ttl":"7207"', '"ttl":"60","\\u0074tl":"7207"', $body(['resource_record' => $row]));
+same('unknown', Dns::inventory($duplicateTtl, 'example.com')['state'], 'Escaped duplicate JSON row keys cannot replace TTL silently');
 echo "NameSilo DNS inventory checks passed\n";
