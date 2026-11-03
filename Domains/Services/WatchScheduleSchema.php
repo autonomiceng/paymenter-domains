@@ -36,8 +36,8 @@ final class WatchScheduleSchema
     private static function references(Blueprint $t): void { $t->string('family',16); $t->unsignedBigInteger('observation_id'); $t->primary(['family','observation_id']); }
     public static function install(): void
     {
-        if (array_filter(array_map(Schema::hasTable(...),self::tables()))) { self::verify(); return; }
-        foreach (array_combine(self::tables(),['observations','quota','schedule','discovery','references']) as $table=>$method) { Schema::create($table,self::$method(...)); }
+        if (array_filter(array_map(Schema::hasTable(...),self::tables())) && !FreshInstallation::recovering()) { self::verify(); return; }
+        foreach (array_combine(self::tables(),['observations','quota','schedule','discovery','references']) as $table=>$method) { if (!Schema::hasTable($table)) { Schema::create($table,self::$method(...)); } }
         self::verify();
     }
     public static function verify(): void

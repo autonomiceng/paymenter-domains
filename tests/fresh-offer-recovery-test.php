@@ -14,7 +14,10 @@ $entry = new Domains; $commit = false; $competing = false;
 $interrupts = ['create index "domains_domains_user_id_index"', 'create table "domains_operations"',
     'create table "domains_observation_queues"', 'create table "domains_reminder_deliveries"',
     'create table "domains_psl_status"', 'create table "domains_watch_audit"',
-    'create table "domains_watch_names"', 'create table "domains_watch_observations"'];
+    'create table "domains_watch_names"', 'create table "domains_watch_observations"',
+    'create table "domains_managed_public_config"', 'create table "domains_public_rdap_pool"',
+    'create table "domains_watch_notices"', 'create table "domains_audit_archives"',
+    'create table "domains_enom_test_sends"'];
 DB::connection()->beforeExecuting(static function ($sql) use (&$interrupts, &$competing, $entry): void {
     if (!$interrupts || !str_starts_with($sql, $interrupts[0])) { return; }
     array_shift($interrupts);

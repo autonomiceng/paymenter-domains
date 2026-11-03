@@ -26,9 +26,9 @@ final class StaffAuditSchema
     }
     public static function install(): void
     {
-        if(array_filter(array_map(Schema::hasTable(...),self::tables()))){self::verify();return;}
-        Schema::create('domains_staff_review_keys',self::keys(...));
-        Schema::create('domains_audit_archives',self::archives(...));
+        if(array_filter(array_map(Schema::hasTable(...),self::tables()))&&!FreshInstallation::recovering()){self::verify();return;}
+        if(!Schema::hasTable('domains_staff_review_keys')){Schema::create('domains_staff_review_keys',self::keys(...));}
+        if(!Schema::hasTable('domains_audit_archives')){Schema::create('domains_audit_archives',self::archives(...));}
         self::verify();
     }
     public static function verify(): void

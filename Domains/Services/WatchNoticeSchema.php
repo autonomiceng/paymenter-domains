@@ -34,8 +34,8 @@ final class WatchNoticeSchema
     { $t->string('scope',64)->primary();$t->unsignedBigInteger('delivery_id');$t->unsignedBigInteger('created_at'); }
     public static function install(): void
     {
-        if (array_filter(array_map(Schema::hasTable(...),self::tables()))) { self::verify();return; }
-        foreach(array_combine(self::tables(),['state','notices','deliveries','preferences','days']) as $table=>$method) { Schema::create($table,self::$method(...)); }self::verify();
+        if (array_filter(array_map(Schema::hasTable(...),self::tables())) && !FreshInstallation::recovering()) { self::verify();return; }
+        foreach(array_combine(self::tables(),['state','notices','deliveries','preferences','days']) as $table=>$method) { if (!Schema::hasTable($table)) { Schema::create($table,self::$method(...)); } }self::verify();
     }
     public static function verify(bool $legacy=false): void
     { foreach(array_combine(self::tables(),['state','notices','deliveries','preferences','days']) as $table=>$method) { SchemaVerifier::verify($table,$method==='preferences'?static fn(Blueprint $t)=>self::preferences($t,$legacy):self::$method(...)); } }
