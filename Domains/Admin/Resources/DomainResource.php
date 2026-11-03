@@ -52,14 +52,14 @@ class DomainResource extends Resource
     {
         EmptyTable::apply($table,'No domains yet','They show here after a customer orders one.','No domains match');
         return $table->modifyQueryUsing(fn (Builder $query) => $query
-            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition:domains_operations.id,domains_operations.domain_id,domains_operations.action,domains_operations.state,domains_operations.safe_code,domains_operations.invoice_id,domains_operations.payload,domains_operations.policy,domains_operations.attempt,domains_operations.funding,domains_operations.service_id,domains_operations.server_id,domains_operations.registrar_key,domains_operations.authority_generation,domains_operations.account_fingerprint']))->columns([
+            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition']))->columns([
             DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->extraAttributes(['class'=>DomainName::CELL])),
             TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search))->tooltip(fn($state)=>$state)->extraAttributes(['class'=>'domains-cut']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
-                ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::status($record,$livewire)['tone'],'domain-'.$record->id))
-                ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone']),
+                ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::tone($record,$livewire),'domain-'.$record->id))
+                ->color(fn(Domain $record,$livewire)=>self::tone($record,$livewire)),
             // The next step, never cut short. Every open alert is listed on the domain page. A step that names a request opens it.
             TextColumn::make('note')->label('Note')->state(fn(Domain $record,$livewire)=>self::note($record,$livewire)['text'])->wrap()->color('gray')
                 ->formatStateUsing(fn(string $state,Domain $record,$livewire)=>DomainFacts::noteStep($state,self::status($record,$livewire)))
@@ -116,6 +116,8 @@ class DomainResource extends Resource
     {
         return DomainFacts::status($record,self::row($record,$livewire)['inputs']);
     }
+    private static function tone(Domain $record, mixed $livewire): string
+    { return DomainFacts::listTone(self::status($record,$livewire),self::row($record,$livewire)['sync']); }
     private static function note(Domain $record, mixed $livewire): array
     { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync']); }
     private static function registered(Domain $record): bool

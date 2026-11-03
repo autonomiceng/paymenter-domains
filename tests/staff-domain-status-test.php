@@ -50,7 +50,7 @@ $cases['auth code']=[$row('transfer_pending','transfer','awaiting_code'),'action
 $d=$row('registration_pending','register','held','nameservers_required');
 $cases['nameservers hold']=[$d,'action_required','Action required','Finish setup. Not sent: nameservers missing. '.$req($d)];
 $d=$row('transfer_pending','transfer','held','transfer_needs_action');
-$cases['held transfer']=[$d,'under_review','Under review','Transfer on hold. Old registrar needs approval. '.$req($d)];
+$cases['held transfer']=[$d,'under_review','On hold','Old registrar needs approval. '.$req($d)];
 $d=$row('registration_pending','register','uncertain');
 $cases['unconfirmed registration']=[$d,'pending_registration','Under review','Registrar has not confirmed the result. '.$req($d)];
 $cases['queued registration']=[$row('registration_pending','register','queued'),'pending_registration','Pending registration','Registration in progress. Nothing to do yet.'];
@@ -66,6 +66,8 @@ $cases['redemption']=[$row('redemption','transfer','succeeded',null,-40),'redemp
 $cases['rejected']=[$row('registration_rejected','register','rejected','preflight_failed'),'failed','Failed','Registration did not finish.'];
 $cases['credited order']=[$row('registration_rejected','register','rejected','refund_approved',funding:['refund'=>['to'=>'account_credit']]),'cancelled','Cancelled','Order cancelled.'];
 $cases['cancelled order']=[$row('cancelled','register','disposed','acquisition_cancelled_unpaid'),'cancelled','Cancelled',null];
+$waiting=$row('something_new','nameservers','queued');$cases['unknown status with a request waiting']=[$waiting,'under_review','In progress','Nameservers in progress. Nothing to do yet.'];
+$stuck=$row('something_new','nameservers','held','management_unconfirmed');$cases['unknown status reads as the request in the way']=[$stuck,'under_review','On hold','Registrar has not confirmed the result. Check request #'.$stuck->operations()->sole()->id.'.'];
 $unknown=$row('something_new','transfer','succeeded');$cases['unknown status']=[$unknown,'under_review','Under review','Status missing. Check request #'.$unknown->latestAcquisition->id.'.'];
 // An order reads as it does for the customer once its invoice is known. Paid orders keep only what the customer still owes.
 $invoiced=static function(Domain $d, string $status, ?int $owner=null): Domain {
@@ -272,4 +274,27 @@ same(null,$columns['note']->record($records[$one->id])->getUrl(),'No request lin
 $soon=$row('active','transfer','succeeded',null,10); $soon->forceFill(['renewal_policy'=>['owner_auto_renew'=>false]])->saveQuietly();
 same(['Action required','Auto-renew off'],array_values(array_intersect_key(DomainFacts::status($soon->fresh()),['label'=>1,'reason'=>1])),'Auto-renew off near expiry');
 expect(in_array($soon->id,$ids('action_required'),true),'The status filter reads auto-renew off');
+// A list row is amber when its sync stopped, so its note says so too. The same request on a healthy domain stays as it is.
+$job=['reason'=>null,'step'=>'Registrar request needs a check. Check request #9.','act'=>true,'request'=>9];
+same(['text'=>'Sync stopped. Registrar request needs a check. Check request #9.','act'=>true],DomainFacts::note($job,'failed'),'A stopped sync is in the note');
+same(['text'=>'Registrar request needs a check. Check request #9.','act'=>true],DomainFacts::note($job,null),'No stopped sync, no mention');
+same('Sync stopped after a failed check. Use Resume sync below.',DomainFacts::note(['reason'=>null,'step'=>'Sync stopped after a failed check. Use Resume sync below.','act'=>true,'request'=>null],'failed')['text'],'A step about the sync does not say it twice');
+// An ended domain places no orders, so a saved pause on it says nothing. A live one still says it.
+$pausedPolicy=['automatic_spend_paused'=>true];
+$ended=$row('cancelled','register','disposed'); $ended->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
+$live=$row('active','transfer','succeeded'); $live->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
+expect(!str_contains((string)DomainFacts::for($ended->fresh())['Registrar']['sub'],'orders paused'),'Cancelled domain has no paused orders');
+expect(str_contains((string)DomainFacts::for($live->fresh())['Registrar']['sub'],'orders paused'),'Live domain keeps the pause');
+// Orders off: one state reads one way on the list, the heading and the request, because each reads the whole request.
+$offTransfer=$row('transfer_pending','transfer','held','processing'); $offChange=$row('something_new','nameservers','queued');
+Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>false]);
+$page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
+$columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()->getTableRecords()->keyBy('id');
+foreach ([$offTransfer,$offChange] as $d) {
+    $op=$d->operations()->sole(); $line=RequestFacts::status($op); $status=DomainFacts::status($d->fresh());
+    same('On hold',$line['label'],'The request reads On hold');
+    $read=[$line['label'],rtrim((string)$line['reason'],'.').'. Check request #'.$op->id.'.'];
+    same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading reads as its request');
+    same($read,[$columns['status']->record($records[$d->id])->getState(),$columns['note']->record($records[$d->id])->getState()],'The list reads as its request');
+}
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

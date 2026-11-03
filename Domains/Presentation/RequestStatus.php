@@ -14,11 +14,16 @@ final class RequestStatus
     ];
     /** The registrar said no. Customers and staff read this same sentence, each with their own next step. */
     public const REFUSED = 'The registrar did not take this change.';
+    /** The result of a change that may have reached the registrar is not known yet. */
+    public const UNCONFIRMED = 'Registrar has not confirmed the result';
+    /** ManagementEvidence::outcome reads these. Customers and staff read the same sentence. */
+    public const UNSENT = 'Not sent. Nothing changed at the registrar.';
+    public const NOT_MADE = 'We couldn’t make this change.';
     /** Operation state => [status key, default reason line] */
     public const STATES = [
         'awaiting_payment' => ['waiting_payment', 'Customer has not paid the invoice. Not sent yet.'], 'awaiting_code' => ['action_required', 'Auth code needed'],
         'queued' => ['in_progress', null], 'running' => ['in_progress', null], 'pending' => ['in_progress', null],
-        'held' => ['on_hold', 'Not sent'], 'uncertain' => ['under_review', 'Registrar has not confirmed the result'],
+        'held' => ['on_hold', 'Not sent'], 'uncertain' => ['under_review', self::UNCONFIRMED],
         'succeeded' => ['completed', null], 'rejected' => ['failed', null], 'disposed' => ['cancelled', null], 'cancelled' => ['cancelled', null],
     ];
     /** A request in any other state is still open. */

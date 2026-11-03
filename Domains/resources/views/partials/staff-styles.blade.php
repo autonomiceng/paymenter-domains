@@ -20,4 +20,9 @@
 .domains-table td{padding:8px 12px;vertical-align:top}
 .domains-table tbody tr{border-top:1px solid color-mix(in srgb,currentColor 20%,transparent)}
 .domains-table-tag{margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap}
+.domains-space{margin-top:.75rem}
+.domains-list{list-style:disc;padding-inline-start:1.25rem}
+.domains-scroll{max-height:24rem;overflow:auto}
+.domains-scroll-short{max-height:8rem}
+.domains-disclosure{cursor:pointer}
 </style>

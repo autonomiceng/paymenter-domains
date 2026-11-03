@@ -249,6 +249,9 @@ $test=$domain(['testEnvironment'=>true]);$dom=storefrontDom($render($test));
 same(1,$dom->query('//h1//span[contains(@class,"domains-demo-tag--test")]')->length,'Test tag');
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'Test mode adds no banner');
 same(false,DomainPage::notice($domain())!==null,'No notice for an active domain');
+same('Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.',DomainPage::notice($domain(['changesUnavailable'=>true,'changesRefused'=>Paymenter\Extensions\Servers\Domains\Services\DomainManagement::SWITCH_OFF]),'/tickets/create')['text']??null,'Customers read the same reason and their next step');
+same('Changes are on hold until we finish checking an earlier request. There’s nothing you need to do.',DomainPage::notice($domain(['changesUnavailable'=>true,'changesRefused'=>7]),'/tickets/create')['text']??null,'A request in the way says who acts');
+same('Changes to this domain are on hold right now. Try again later.',DomainPage::notice($domain(['changesUnavailable'=>true]),'/tickets/create')['text']??null,'No known cause stays general');
 $expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE]),'/tickets/create');
 same(['This domain has expired. Contact support to check whether it can still be renewed.','Contact support','/tickets/create'],[$expired['text'],$expired['action']['label'],$expired['action']['url']],'An expired domain says what to do next, with the way to do it');
 

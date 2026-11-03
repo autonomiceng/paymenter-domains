@@ -73,6 +73,10 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id]
     ->callAction('resume_observation')->assertNotified('Sync resumed');
 expect(!ObservationRecords::held($check->domain->fresh()),'Domain recovery clears the record hold');
 same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Record hold resumes current healthy job');
+// Sync now reads outside a job row and can set a hold, so with no row its own button is the way back, and a complete read clears the hold.
+DB::table('domains_observation_work')->where('id',$stopped)->delete();ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
+$noRow=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation')->assertSee('Use Sync now.')->assertDontSee('Use Resume sync');
+$noRow->assertActionVisible('sync_now');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
 // Any domain can stop syncing. One with no request resumes on its own page, through the same writer, audited in its history.
 [$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$soloDomain=$solo->domain;DB::table('domains_operations')->where('id',$solo->id)->delete();

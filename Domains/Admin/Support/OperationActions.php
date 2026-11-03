@@ -84,7 +84,7 @@ final class OperationActions
         foreach(self::make($op,StaffOperationReview::stamp($op,$d)) as $action){
             if($action->getName()==='resume_observation'){
                 return [$action->visible(fn()=>Staff::can(StaffOperationReview::permission('resume_observation'))
-                    &&!StaffOperationReview::liveLease($op,app(Clock::class))&&ObservationRecords::stopped($d))];
+                    &&!StaffOperationReview::liveLease($op,app(Clock::class))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)];
             }
         }
         return [];
@@ -94,7 +94,7 @@ final class OperationActions
     {
         $name='resume_observation';
         return Action::make($name)->label(StaffOperationReview::ACTIONS[$name])->color('gray')
-            ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)
+            ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)
             ->action(function()use($d,$name):void {
                 try { $actor=Auth::user(); $id=ObservationWork::currentId($d); if(!$actor instanceof \App\Models\User||$id===null){throw new \DomainException('Staff required.');}
                     app(ObservationWork::class)->resume($id,'staff_review',new StaffSyncReview((int)$actor->id,(int)$d->id,StaffSyncReview::stamp($d->fresh()),StaffOperationReview::ACTIONS[$name],app(Clock::class)));
@@ -108,7 +108,7 @@ final class OperationActions
     {
         if(StaffOperationReview::liveLease($op,app(Clock::class))){return false;}
         if($op->state==='succeeded'){return false;}
-        if($action==='resume_observation'){return ObservationRecords::stopped($op->domain);}
+        if($action==='resume_observation'){return !DomainFacts::ended($op->domain)&&ObservationRecords::stopped($op->domain);}
         if(PaidUncertainty::summary($op)!==null&&!in_array($action,['recheck','resume_reads','resume_observation'],true)){return false;}
         return match($action){
             // Release needs what the customer still owes, so a hold here would have no way back.

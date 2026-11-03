@@ -4,15 +4,16 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\{Auth, DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, PendingAdoptionResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainFacts, HoldingActions, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainEditActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, DomainManagement, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
 config(['settings.company_name'=>'Example Hosting']);
 staffPanel(); [$held,$active,$long]=staffData(); Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
@@ -23,6 +24,23 @@ DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$custo
 $value=static fn(Domain $d,string $label)=>array_key_exists($label,$facts=DomainFacts::for($d->fresh()))?$facts[$label]['value']:'absent';
 $sub=static fn(Domain $d,string $label)=>DomainFacts::for($d->fresh())[$label]['sub']??null;
 
+// A hold says what is really in the way, and never a request that doesn't exist.
+Illuminate\Support\Facades\Route::get('/admin/registrar-account/{account}',fn()=>'')->name('filament.admin.pages.registrar-account'); app('router')->getRoutes()->refreshNameLookups();
+$processing=Account::where('server_id',$active->server_id)->value('processing_enabled'); Account::where('server_id',$active->server_id)->update(['processing_enabled'=>true]);
+$switch=DomainEditActions::held($active,DomainManagement::SWITCH_OFF);
+same('Changes are on hold: DNS, nameservers and contacts are Off for this registrar account. Turn them on, then reload this page.',strip_tags($switch['note'] instanceof Htmlable?$switch['note']->toHtml():$switch['note']),'The hold names the switch');
+expect(str_contains($switch['held'],'DNS, nameservers and contacts')&&$switch['request']===null,'A switch blames no request');
+same(['On hold until request #7 is checked.',7],[DomainEditActions::held($active,7)['held'],DomainEditActions::held($active,7)['request']],'Only the blocking request is named');
+same(['This registrar doesn\'t support this change.',null],[DomainEditActions::held($active,'Management capability unsupported.')['held'],DomainEditActions::held($active,'Management capability unsupported.')['request']],'A known refusal keeps its words');
+$unknown=DomainEditActions::held($active,null)['held'];
+expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
+Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$processing]);
+// Progress sits under a row's own words, and a finished change stops talking.
+$rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
+$saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
+same(['ada@example.test Saving…','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
+same(['ada@example.test','Sync to read them'],array_column(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>true]]),'sub'),'A settled result shows nothing');
+same('ada@example.test Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['sub'],'A fresh result still shows');
 // Registration and Billing: one value per row, Missing as null, rows that do not apply are absent.
 $f=DomainFacts::for($active);
 same(['Expires','Registrar','In registrar account','Transfer lock','Registrar auto-renew','Last sync'],array_values(array_intersect(array_keys($f),DomainFacts::SECTIONS['Registration'])),'Registration rows in order');
@@ -32,13 +50,16 @@ same(['Contacts','Nameservers'],array_values(array_intersect(array_keys($f),Doma
 same(false,isset($f['Glue records']),'No staff glue row without records');
 $beforeGlue=$active->fresh()->observation;$glueHost='ns1.'.$active->domain;
 ObservationRecords::save($active->fresh(),['glue'=>['state'=>'partial','records'=>[$glueHost=>'8.8.8.8']]],new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
-same([[$glueHost.' 8.8.8.8'],'As of 2026-10-20T15:05:00+00:00'],[$value($active,'Glue records'),$sub($active,'Glue records')],'Staff glue includes host, address and read time');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Glue records')->assertSee($glueHost)->assertSee('8.8.8.8')->assertSee('As of 2026-10-20T15:05:00+00:00');
+same([[$glueHost.' 8.8.8.8'],null,'2026-10-20T15:05:00+00:00'],[$value($active,'Glue records'),$sub($active,'Glue records'),DomainFacts::for($active->fresh())['Glue records']['asOf']??null],'Staff glue includes host, address and read time');
+$gluePage=strip_tags(Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Glue records')->assertSee($glueHost)->assertSee('8.8.8.8')->html());
+expect(str_contains($gluePage,'As of Oct 20, 2026')&&!str_contains($gluePage,'2026-10-20T15:05'),'Read times follow the date rule');
 // One record projection serves DNS, glue rows, timestamps and drift; lock/privacy retain their own reads.
 $glueDnsSetting=App\Models\Server::findOrFail($active->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 DB::flushQueryLog();DB::enableQueryLog();DomainFacts::for($active->fresh());$recordQueries=DB::getQueryLog();DB::disableQueryLog();
 $historyQueries=array_filter($recordQueries,fn($row)=>str_contains($row['query'],'domains_operations')&&str_contains($row['query'],'limit 101'));
 expect(count($historyQueries)<=3,'Staff record facts reuse one bounded history projection');
+ObservationRecords::save($active->fresh(),['dns'=>['state'=>'complete','records'=>[]],'srv'=>['state'=>'complete','records'=>[]]],new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
+$read=DomainFacts::for($active->fresh())['DNS records'];same(['0 records',null,'2026-10-20T15:05:00+00:00'],[$read['value'],$read['sub'],$read['asOf']??null],'No SRV says nothing, and the read time stays a time');
 $glueDnsSetting->delete();
 $active->fresh()->update(['observation'=>$beforeGlue]);
 same([null,'Ask the customer to add them on the domain page'],[$f['Contacts']['value'],$f['Contacts']['sub']],'Unknown contacts say what to do next');
@@ -58,9 +79,12 @@ ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active
     expiry:new DateEvidence($active->provider_expires_at->format('Y-m-d'),ExpiryPrecision::Date,'synthetic_read'),
     providerAutoRenew:false,privacy:false,locked:true,active:true),TransferStatus::Unknown,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));
 $dnsMissing[]=[$value($active,'DNS records'),$sub($active,'DNS records')];
-same([[null,'Use Sync now to read DNS records.'],[null,'Use Sync now to read DNS records.']],$dnsMissing,'Unread on-demand DNS names Sync now before and after a good core sync');
+same([['Not read yet',null],['Not read yet',null]],$dnsMissing,'Unread on-demand DNS is a plain state, not Missing');
+$unread=DomainFacts::for($active->fresh())['DNS records'];same(null,$unread['tone'],'Unread DNS has no tone');
+same('success',DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),['DNS records'=>$unread])['tone'],'A healthy domain stays green with its DNS unread');
+Auth::setUser(staffUser([Staff::VIEW,'admin.domains.manage']));same(['Not read yet','Use Sync now to read them.'],[$value($active,'DNS records'),$sub($active,'DNS records')],'Staff who can sync are told how');Auth::setUser($viewer);
 same([null,'Registrar did not return it. Check the domain at the registrar.'],[$value($active,'Nameservers'),$sub($active,'Nameservers')],'Unread core facts keep their own recovery guidance');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Use Sync now to read DNS records.');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('DNS records')->assertSee('Not read yet');
 // Persistent record limits name the condition and a next step that changes it.
 foreach ([
     'child_host_limit'=>"Missing: more than 50 child hosts to check. Ask your site admin to remove unused entries from this domain's saved discovery data, registrar nameservers and DNS templates so at most 50 child hosts remain, then use Sync now.",
@@ -134,7 +158,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 // An inactive domain's renewal timing is not Missing: the rows do not apply.
 $pending=DomainFacts::for($held);
 expect(!isset($pending['Next invoice'])&&!isset($pending['Expires']),'Pending transfer hides expiry and next invoice');
-same(['Under review','Transfer on hold. Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
+same(['On hold','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
 same([null,'Customer account not found. Check the Users page.'],[$value($held,'Customer'),$sub($held,'Customer')],'Deleted customer is Missing with its cause');
 
 // Renewal settings.
@@ -153,7 +177,7 @@ foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 // One head line: no box on the page, and green can't sit over rows that need work.
 $page->assertDontSeeHtml('fi-callout');
-$missingHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()),false);
+$missingHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same(['warning','Some details are Missing. Each row says what to do.'],[$missingHead['tone'],$missingHead['step']],'Active over a Missing row turns amber and says where to look');
 same(null,DomainFacts::notice($active->fresh()),'A healthy domain has no notice');
 $notice=DomainFacts::notice($held);
@@ -201,12 +225,55 @@ same('Sync stopped after a failed check.',DomainFacts::notice($active->fresh())[
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
 same('Sync failed. Use Resume sync.',$sub($active,'Expires'),'Missing expiry names the failed sync');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
+same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped after a failed check.')->assertSee('Resume sync')->assertSee('Sync failed');
-Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()),false);
+Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same('warning',$stoppedHead['tone'],'Active over a stopped sync turns amber');
 expect(str_contains((string)$stoppedHead['step'],'Sync stopped after a failed check. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
-Auth::setUser($viewer);expect(str_contains((string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()),false)['step'],'Ask staff who can resume sync.'),'Without the right the step names who can');
+Auth::setUser($viewer);expect(str_contains((string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()))['step'],'Ask staff who can resume sync.'),'Without the right the step names who can');
+// One rule for the request a page names: the one that needs staff, in the head and on the rows alike, and none when nothing does.
+Auth::setUser($staff);
+$request=static fn(string $key,string $state,string $code,array $more=[])=>$active->operations()->create(['server_id'=>$active->server_id,'registrar_key'=>$active->registrar_key,'account_fingerprint'=>$active->account_fingerprint,
+    'service_id'=>$active->service_id,'authority_generation'=>$active->authority_generation,'operation_key'=>$key,'action'=>'contacts','state'=>$state,'safe_code'=>$code,'currency'=>'USD','amount'=>'0.00','attempt'=>[],'funding'=>[],'cost'=>[],...$more]);
+$headOf=static fn(?int $held=null)=>(string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()),$held)['step'];
+$done=$request('done-ui','succeeded','readback_confirmed');
+expect(!str_contains($headOf(),'Check request'),'A finished request is no step for staff');
+$stuck=$request('stuck-ui','held','management_unconfirmed'); $closed=$request('closed-ui','rejected','management_retired');
+ObligationAlerts::record($active->fresh(),'operation_review',time(),(int)$stuck->id);
+expect(str_contains($headOf(),'Check request #'.$stuck->id.'<')&&!str_contains($headOf(),'#'.$closed->id),'The head names the request that needs staff, not the newest');
+expect(!str_contains((string)$sub($active,'Registrar'),'Check'),'The head names it, so the row does not');
+$second=$request('second-ui','held','management_unconfirmed');ObligationAlerts::record($active->fresh(),'operation_review',time(),(int)$second->id);
+expect(str_contains($headOf(),'Check request #'.$stuck->id.'<')&&!str_contains((string)$sub($active,'Registrar'),'Check'),'With two held requests the head names one and the row names neither');
+same(1,substr_count($headOf(777),'Check request #777'),'The request holding changes comes first');
+ObligationAlerts::record($active->fresh(),'below_cost',time());
+expect(str_ends_with((string)$sub($active,'Registrar'),'Registrar request needs a check. Check request #'.$stuck->id.'.'),'A row the head leaves says the number: '.$sub($active,'Registrar'));
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSeeHtml('>Check request #'.$stuck->id.'</a>');
+// A change the system tries again by itself is no job, on the page or in the next sweep.
+$claim=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
+$stuck->update(['policy'=>['management'=>['action'=>'contacts']],'attempt'=>$claim,'started_at'=>now()]);
+expect(str_contains((string)$sub($active,'Registrar'),'Check request #'.$second->id.'.'),'The next held request is named once the first clears');
+DB::table('domains_obligation_alerts')->where('operation_id',$second->id)->delete();
+expect(!str_contains($headOf(),'Check request')&&!str_contains((string)$sub($active,'Registrar'),'Check'),'A retry that runs by itself names no request');
+$sweep=static fn(array $ops)=>ObligationAlerts::retained(['domain'=>$active->fresh(),'operations'=>collect($ops)],100);
+same($sweep([]),$sweep([$stuck->fresh()]),'The sweep raises no alert for it');
+$stuck->update(['attempt'=>[...$claim,'management_deferrals'=>array_fill(0,5,'2026-10-30T00:00:00+00:00')]]);
+expect(str_ends_with((string)$sub($active,'Registrar'),'Check request #'.$stuck->id.'.'),'When the tries run out the same alert is back');
+DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
+DB::table('domains_operations')->whereIn('id',[$done->id,$stuck->id,$closed->id,$second->id])->delete();
+Auth::setUser($viewer);
+// Nothing syncs on a domain that has ended, so a stopped sync is no step and has no button.
+ObligationAlerts::record($active->fresh(),'observation_review',time());
+Auth::setUser($staff); DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'cancelled']);
+$ended=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
+same('gray',$ended['tone'],'An ended domain keeps its own tone');
+expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
+expect($value($active,'Last sync')!=='Sync failed','An ended domain does not ask for a resume');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed');
+same(null,DomainFacts::sync($active->fresh()),'The list reads the same');
+DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
+DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
+Auth::setUser($viewer);
 DB::table('domains_observation_work')->where('id',$work)->delete();
 foreach(['history_limit'=>'Missing: saved record history needs a fresh read. Use Sync now to refresh DNS records.','ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
     'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",

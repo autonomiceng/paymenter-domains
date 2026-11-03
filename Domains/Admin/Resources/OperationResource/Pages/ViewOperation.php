@@ -27,7 +27,7 @@ class ViewOperation extends ViewRecord
     /** The state and, when no notice says it, the reason. */
     public function getSubheading(): string|Htmlable|null
     {
-        $op=$this->getRecord(); $status=Labels::requestStatus($op);
+        $op=$this->getRecord(); $status=RequestFacts::status($op);
         return StatusMark::line($status['tone'],$status['label'],'request-'.$op->id,RequestFacts::notice($op)===null?$status['reason']:null);
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Registrar requests',$this->getTitle()]; }
@@ -121,7 +121,7 @@ class ViewOperation extends ViewRecord
     private function history(Operation $op, ?array $rows): Section
     {
         if ($rows===null) { return Sheet::section('History',[TextEntry::make('history_unreadable')->hiddenLabel()->state(DomainFacts::UNREADABLE)->color('danger')]); }
-        $status=Labels::requestStatus($op);
+        $status=RequestFacts::status($op);
         $steps=array_map(fn(array $row,int $i)=>Sheet::event($row['event'],$row['sub'],$row['time'],$row['by'],$i===0?$status['tone']:'gray',noTime:RequestFacts::NO_TIME),$list=array_reverse(StaffReviewHistory::timeline($op,$rows)),array_keys($list));
         return Sheet::section('History',[$steps===[]?Text::make('No history yet'):Sheet::trace($steps)]);
     }

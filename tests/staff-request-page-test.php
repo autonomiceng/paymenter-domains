@@ -160,6 +160,35 @@ foreach(['review'=>'Refund needs a check','pending'=>'Refund processing','refund
     expect(!str_contains($facts['refund_sub'],'Contact support')&&!str_contains($facts['refund_sub'],'We are returning'),'Staff guidance does not address the customer');
 }
 
+// A change that never reached the registrar says what happens next, since its page has no button.
+$claim=['seal'=>'absent','send_state'=>'definitely_unsent','management_claim'=>str_repeat('a',32)];
+$unsent=$doneOp->fresh()->forceFill(['state'=>'held','safe_code'=>'management_unconfirmed','action'=>'contacts','provider_order_id'=>null,'confirmed_expires_at'=>null,'funding'=>[],'started_at'=>now(),
+    'policy'=>['management'=>['action'=>'contacts']],'attempt'=>$claim]);
+$told=static fn(Operation $op)=>array_intersect_key(RequestFacts::notice($op,['reason'=>'Registrar has not confirmed the result']),['title'=>1,'body'=>1,'tone'=>1,'link'=>1,'link_label'=>1]);
+$title='Not sent. Nothing changed at the registrar.';
+same(['title'=>$title,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on and we try again by ourselves.','tone'=>'warning','link'=>'registrars','link_label'=>'Turn them on'],$told($unsent),'The switch is the next step');
+$elsewhere=(clone $unsent)->forceFill(['registrar_key'=>'namesilo']);
+same(['title'=>$title,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info'],$told($elsewhere),'A retry that runs by itself asks nothing');
+$spent=(clone $elsewhere)->forceFill(['attempt'=>[...$claim,'management_deferrals'=>array_fill(0,5,'2026-10-30T00:00:00+00:00')]]);
+same(['title'=>$title,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'],$told($spent),'Spent tries send staff to the domain');
+// One line says what a stopped or ended change did, from its real state, for staff and customers alike.
+$line=static fn(Operation $op)=>Labels::requestStatus($op)['reason'];
+same($title,$line($unsent),'Held and never sent reads Not sent');
+same($title,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unsent,$unsent->domain,true)['status']['reason'],'The rail reads the same');
+$sealed=(clone $unsent)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);
+same('Registrar has not confirmed the result',$line($sealed),'Only a change that may have gone out is unknown');
+$failedUnsent=(clone $unsent)->forceFill(['state'=>'rejected']);
+same($title,$line($failedUnsent),'A failed change that never went out says so');
+same('We couldn’t make this change.',$line((clone $sealed)->forceFill(['state'=>'rejected'])),'A failed row never says the result is unknown');
+// Orders off stop all queued work, so a queued request reads On hold on its page, in the list and on the domain's rail.
+$queued=$heldOp->fresh()->forceFill(['state'=>'queued','safe_code'=>null,'invoice_id'=>null,'funding_basis'=>'non_billable_management']);
+$orders=Paymenter\Extensions\Servers\Domains\Models\Account::where('account_fingerprint',$heldOp->account_fingerprint);
+$orders->update(['processing_enabled'=>true]);
+same('In progress',RequestFacts::status($queued)['label'],'Queued with Orders on is moving');
+$orders->update(['processing_enabled'=>false]);
+same(['On hold','warning','Not sent. Orders are off for this account.'],array_values(RequestFacts::status($queued)),'Queued with Orders off is stopped');
+same('On hold',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($queued,$heldOp->domain,true)['status']['label'],'The rail reads the same');
+same('In progress',RequestFacts::status($queued,false)['label'],'A list that knows Orders are on skips the check');
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');

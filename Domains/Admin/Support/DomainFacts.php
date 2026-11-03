@@ -85,7 +85,7 @@ final class DomainFacts
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
         $f['Registrar']=$account&&$registrar ? self::fact(\App\Models\Server::whereKey($d->server_id)->value('name')??$registrar,
             sub:implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
-                $paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false)?'orders paused':null])),
+                !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?'orders paused':null])),
             url:self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id)),
             demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':'Registrar account not found. Check Registrars.');
         if ($registered && $observation!==null) {
@@ -102,13 +102,14 @@ final class DomainFacts
             catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??'Use Sync now to read DNS records.'):implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
+                $f['DNS records']=self::fact($count===null?(ObservationRecords::limitNotice($d)===null?'Not read yet':null):$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??(Staff::can('admin.domains.manage')?'Use Sync now to read them.':null)):(empty($records['srv'])?null:count($records['srv']).' SRV '.(count($records['srv'])===1?'record':'records').'.'));
+                if ($count!==null) { $f['DNS records']['asOf']=$sections['dns']['at']??null; }
             }
             $glue=$records['glue']??[];
             if ($glue) {
                 $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
                 $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
-                $f['Glue records']=self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',array_filter([$at?'As of '.$at:null,...$warnings])),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.');
+                $f['Glue records']=[...self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
@@ -119,7 +120,8 @@ final class DomainFacts
             $f['Registrar auto-renew']=self::fact(self::flag($renews),sub:match($renews) {null=>$unread,false=>self::registrarRenewOff(),default=>null},help:$renews?self::help()['Registrar auto-renew']:null);
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
-        if ($registered||$job||$d->last_synced_at) { $f['Last sync']=match(true) {
+        // An ended domain won't sync again, so it keeps its last read and shows no row without one.
+        if (($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
             $paused=>self::fact('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
             $sync==='failed'=>self::fact('Sync failed',sub:(int)$job->tries.' attempt'.((int)$job->tries===1?'':'s').'. Stopped until resumed.',tone:'danger'),
             default=>['at'=>$d->last_synced_at?->getTimestamp(),...self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
@@ -155,12 +157,17 @@ final class DomainFacts
     {
         // The head names a held order, or the top alert when no notice takes its place, so a review alert on a row would only repeat them.
         $inputs=StaffDomainInputs::for([$d])[$d->id]; $status=self::status($d,$inputs);
-        $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:($status['alert']==='operation_review'&&self::notice($d)===null?$status['request']:null);
-        $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$a['request']===$named&&$named!==null));
+        $notice=self::notice($d);
+        $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:(in_array($status['alert'],['operation_review','held_obligation'],true)&&($notice===null||($notice['resume']??false))?$status['request']:null);
+        // One link at a time: another held request stays in the rail, and the head names it once this one clears.
+        $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$named!==null&&($a['request']===$named||$named===$status['request'])));
         foreach (array_unique(array_column($rows,'code')) as $code) {
             // Late payment already has a status reason and says so in the head.
             if ($code==='acquisition_late_money') { continue; }
             [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code);
+            // The row sends staff to the same place the head would.
+            $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
+            if ($request!==null) { $cause=str_replace('Check the request','Check request #'.$request,$cause); }
             if (!isset($f[$row])) {
                 $notice=$f['Open alerts']??self::fact([],tone:$tone);
                 $notice['value']=array_values(array_unique([...$notice['value'],$cause]));
@@ -174,6 +181,7 @@ final class DomainFacts
             if ($fact['sub']!==null&&$fact['sub']!==$cause) { $fact['plain']??=StaffDomainStatus::sentence($fact['sub']); }
             $fact['sub']=$fact['sub']===null||$fact['sub']===$cause?$cause:StaffDomainStatus::sentence($fact['sub']).' '.$cause;
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone; $fact['alert']=true;
+            if ($request!==null) { $fact['request']=$request; }
             $f[$row]=$fact;
         }
         // A failed customer monitoring alert: why, and what to do. The staff alert links here.
@@ -193,17 +201,20 @@ final class DomainFacts
         [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
-        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal']);
+        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting']);
     }
+    /** The list's status tone. A stopped sync is a job for staff, as in the domain's head. */
+    public static function listTone(array $status, ?string $sync): string
+    { return $status['tone']==='success'&&$sync==='failed'?'warning':$status['tone']; }
     /** The status reason, then the staff step, as sentences. */
     public static function statusLine(array $status): ?string
     { return implode(' ',array_map(StaffDomainStatus::sentence(...),array_filter([$status['reason'],$status['step']])))?:null; }
-    /** The Note in the Domains list: the status line, or what a sync problem needs. $act: staff have a job here.
+    /** The Note in the Domains list: the status line, or what a sync problem needs. A stopped sync is amber (listTone), so the note always says it. $act: staff have a job here.
      * @return array{text:?string,act:bool} */
     public static function note(array $status, ?string $sync): array
     {
         $line=self::statusLine($status);
-        if ($line!==null) { return ['text'=>$line,'act'=>$status['act']]; }
+        if ($line!==null) { return $sync==='failed'&&!str_contains($line,'Sync ')?['text'=>'Sync stopped. '.$line,'act'=>true]:['text'=>$line,'act'=>$status['act']]; }
         return match($sync) { 'failed'=>['text'=>'Sync failed. '.(self::canResume()?'Use Resume sync on the domain.':self::ASK_RESUME),'act'=>true],'paused'=>['text'=>'Sync paused.','act'=>false],default=>['text'=>null,'act'=>false] };
     }
     /** The request a status step names, when this panel can open it. */
@@ -220,22 +231,31 @@ final class DomainFacts
         return $status['act']&&$mark?StatusMark::act($html):$html;
     }
     /** The head of a domain a request is holding: the link first, then what it holds, said once for the page. */
-    public static function holdHtml(array $status, bool $mark=true): HtmlString
+    public static function holdHtml(int $request, bool $mark=true): HtmlString
     {
-        $url=self::requestUrl($status); $label='Check request #'.$status['request'];
+        $url=self::requestUrl(['request'=>$request]); $label='Check request #'.$request;
         $html=new HtmlString(($url?self::requestLink($url,$label):e($label)).' Changes are on hold until it is checked.');
-        return $status['act']&&$mark?StatusMark::act($html):$html;
+        return $mark?StatusMark::act($html):$html;
+    }
+    /** A row's words with its "Check request #N" as a link, when this panel can open it. */
+    public static function linkRequest(string|HtmlString $words, int $request): string|HtmlString
+    {
+        $url=self::requestUrl(['request'=>$request]); $label='Check request #'.$request;
+        if (!$url) { return $words; }
+        return new HtmlString(str_replace($label,self::requestLink($url,$label),$words instanceof HtmlString?$words->toHtml():e($words)));
     }
     /** The page's one status line: the notice, else the hold, else the status step, under one mark.
      * Active can't stay green over a stopped sync or rows that need work. An amber or red state is already the mark, so its words get none of their own.
+     * $held is the request holding changes. It comes first, then the request the status names, and no request names none.
      * @return array{tone:string,step:string|HtmlString|null} */
-    public static function head(Domain $d, array $status, array $facts, bool $held): array
+    public static function head(Domain $d, array $status, array $facts, ?int $held=null): array
     {
-        $notice=self::notice($d);
+        $notice=self::notice($d); $request=$held??$status['request'];
+        if (($notice['resume']??false)&&$request) { $notice['link']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
         $missing=array_filter($facts,fn(array $fact)=>$fact['value']===null&&!Missing::needsNothing($fact['sub']));
         $tone=$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])?'warning':$status['tone'];
         $mark=!in_array($tone,['warning','danger'],true);
-        $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held=>self::holdHtml($status,$mark),default=>self::stepHtml($status,$mark) };
+        $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),default=>self::stepHtml($status,$mark) };
         return ['tone'=>$tone,'step'=>$step??($missing!==[]?'Some details are Missing. Each row says what to do.':null)];
     }
     /** A notice in the head line: its words, then its links. */
@@ -260,13 +280,11 @@ final class DomainFacts
     {
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
-        $request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
-        $requestLink=$request?['label'=>'Check request #'.$request,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$request]))]:null;
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::canResume()?'Use Resume sync below.':self::ASK_RESUME,'tone'=>'warning','resume'=>true,'link'=>$requestLink]; }
+        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::restart($d),'tone'=>'warning','resume'=>true]; }
         if (AcquisitionPaymentReview::count($d)>0) {
             $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
                 ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
@@ -304,10 +322,11 @@ final class DomainFacts
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }
     }
-    /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list.
+    /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list. Nothing syncs on an ended domain, so it has neither.
      * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account. */
     public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null, bool $accountLoaded=false): ?string
     {
+        if (self::ended($d)) { return null; }
         if(!$accountLoaded){$account??=self::account($d);}
         return $account&&DemoData::syncPaused($d,$account)?'paused':(($stopped??ObservationWork::stopped($d))?'failed':null);
     }
@@ -318,6 +337,12 @@ final class DomainFacts
             default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
     }
     private const ASK_RESUME='Ask staff who can resume sync.';
+    /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */
+    private static function restart(Domain $d): string
+    {
+        if (ObservationWork::currentId($d)!==null) { return self::canResume()?'Use Resume sync below.':self::ASK_RESUME; }
+        return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';
+    }
     private static function canResume(): bool { return Staff::can(StaffOperationReview::permission('resume_observation')); }
     /** The customer's own Off still lets them renew by hand or turn it back on. A staff stop blocks both, so its red button says what is left to stop. */
     private static function ownerOff(): string

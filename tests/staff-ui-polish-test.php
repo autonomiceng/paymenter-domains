@@ -22,7 +22,7 @@ DB::enableQueryLog();DB::flushQueryLog();
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
 $queries=DB::getQueryLog();DB::disableQueryLog();
 $opQueries=array_filter($queries,fn($q)=>str_contains($q['query'],'from "domains_operations"'));
-same(2,count($opQueries),'One acquisition query and one status read for the rendered table page');
+same(3,count($opQueries),'One acquisition query, one status read and one read of waiting requests for the rendered table page');
 $userReads=array_filter($queries,fn($q)=>str_contains($q['query'],'from "users"')&&str_contains($q['query'],'"email"'));
 same(1,count($userReads),'Customer descriptions use one eager query');
 $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;
@@ -35,10 +35,10 @@ $pending=\Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionRe
 assertDomainNameWraps($pending->record($records[$uncertain->id])->toEmbeddedHtml(),$uncertain->domain,'Adoption pending list');
 same('&lt;b&gt;.<wbr>x-<wbr>y',$pending->formatState('<b>.x-y')->toHtml(),'Adoption pending list escapes the name before adding line breaks');
 assertDomainNameWraps(Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$uncertain->id])->instance()->getHeading()->toHtml(),$uncertain->domain,'Domain page title','title');
-foreach([[$held,'Transfer on hold. Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Transfer not confirmed. Old registrar needs approval. Check request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Check the domain and its requests.']] as [$domain,$reason]){
+foreach([[$held,'On hold','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Under review','Old registrar needs approval. Check request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Under review','Check the domain and its requests.']] as [$domain,$label,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
-    same('Under review',$column->getState(),'Held, uncertain and stored review share one status');
-    same('warning',$column->getColor($column->getState()),'Under review tone');
+    same($label,$column->getState(),'A held or unconfirmed transfer reads as its request');
+    same('warning',$column->getColor($column->getState()),'Staff have a job here');
     same($reason,$columns['note']->record($record)->getState(),'The next step sits in the note');
     same(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain->fresh()),\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($record),'Batched list status matches the page');
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');

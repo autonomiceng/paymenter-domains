@@ -37,9 +37,9 @@ foreach ([
     'registration_rejected'=>$pill('Failed','danger','Registration did not finish'),
     'transfer_rejected'=>$pill('Failed','danger','Transfer did not finish'),
     'cancelled'=>$pill('Cancelled','gray'),
-    'something_new'=>$pill('Under review','warning','Status missing'),
+    'something_new'=>$pill('Under review','warning','We are on it, nothing for you to do'),
 ] as $state=>$expected) { same($expected,DomainStatus::for($state),'Domain state '.$state); }
-same($pill('Under review','warning','Status missing'),DomainStatus::for(null),'No domain state is Under review with the cause');
+same($pill('Under review','warning','We are on it, nothing for you to do'),DomainStatus::for(null),'No domain state gives the customer no step of their own');
 same($pill('Under review','warning','Transfer on hold'),DomainStatus::for('held','Transfer on hold'),'The caller names the hold cause');
 same($pill('Action required','warning','Not using Example nameservers'),DomainStatus::for('watch.ns_changed','Not using Example nameservers'),'The caller can name the company');
 

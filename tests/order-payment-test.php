@@ -114,7 +114,7 @@ same('This order was cancelled. We added what you paid to account credit. You ca
 $failure=new ReflectionMethod(OwnedDomains::class,'failure');
 same('The registrar did not take this change.',$failure->invoke(null,$op(['safe_code'=>'management_provider_refused'])),'Refused change');
 same('The registrar did not take this change. The customer can try again.',Paymenter\Extensions\Servers\Domains\Admin\Support\Labels::reason('management_provider_refused'),'Staff read the same sentence');
-same('We didn’t send this change, so nothing changed.',$failure->invoke(null,$op(['safe_code'=>'enom_test_management_call_cap'])),'Change stopped before sending');
+same('Not sent. Nothing changed at the registrar.',$failure->invoke(null,$op(['state'=>'rejected','safe_code'=>'management_unconfirmed','policy'=>['management'=>['action'=>'nameservers']],'attempt'=>[]])),'Customers read the staff line for a change that never went out');
 same('We couldn’t make this change.',$failure->invoke(null,$op(['safe_code'=>'anything_else'])),'Any other failure still gets a reason');
 $domain=new OwnedDomain('order.example','Active','ok',null,'',null,['show'=>'/domains/1'],[['label'=>'Nameservers','state'=>'Failed','date'=>'2026-10-27','note'=>'The registrar refused this change.'],['label'=>'Contacts','state'=>'Under review','date'=>'2026-10-20']],[],[],[],false);
 $table=storefrontDom(view('domains::partials.activity',['domain'=>$domain])->render());

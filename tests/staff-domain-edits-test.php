@@ -55,6 +55,7 @@ $op=$last('nameservers');same('succeeded',$op->state,'Staff response termination
 same(['ns5.example.com','ns6.example.com'],$op->payload['nameservers'],'Same normalization as the owner form');
 // Real queued free changes must not offer purchase controls or an inapplicable status read.
 // Native Filament visibility is the boundary; a pure predicate test would miss permission/action wiring.
+// The saved edit already completed after the response; build separate unsent work for these checks.
 $op=$management->request($actor,$d->id,'nameservers',$op->payload,bin2hex(random_bytes(32)),$driver);
 $permissions=$actor->role->permissions;
 $actor->role->update(['permissions'=>[...$permissions,'admin.invoices.update',...array_map(
@@ -106,7 +107,7 @@ $registrarDns();
 expect(!isset(DomainFacts::for($d->fresh())['DNS records']),'No DNS row while DNS tools are off');
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 expect(!isset(DomainEditActions::for($d->fresh())['rows']['DNS records']),'Unread records offer no replacement form');
-same(null,DomainFacts::for($d->fresh())['DNS records']['value'],'Unread records are Missing');
+same('Not read yet',DomainFacts::for($d->fresh())['DNS records']['value'],'Unread records are normal, not Missing');
 ObservationSchema::install();
 same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'Complete empty records');
 same('0 records',DomainFacts::for($d->fresh())['DNS records']['value'],'Registration card counts DNS records');

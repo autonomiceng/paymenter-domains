@@ -43,7 +43,7 @@ final class DomainHistory
         if (is_array($entry)) { return $entry; }
         return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
             'sub'=>RequestFacts::reason($entry,$ordersOff),
-            'status'=>Labels::requestStatus($entry),'by'=>self::requester($entry,$domain)];
+            'status'=>RequestFacts::status($entry,$ordersOff),'by'=>self::requester($entry,$domain)];
     }
     /** The newest entries as Sheet::trace steps: the reason, then when and who. */
     public static function steps(Domain $domain, array $entries): array

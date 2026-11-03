@@ -10,6 +10,8 @@ final class ManagementProgress
     public const UNREADABLE='This change cannot be read. Contact support.';
     public const ACTIONS=['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email',
         'privacy_enable','privacy_disable','privacy_purchase','privacy_renew','ds_add','ds_delete','glue_add','glue_update','glue_delete'];
+    /** A finished change is news for this long. After that the row's value says it. */
+    public const SETTLED_SECONDS = 600;
     public static function setting(string $action): string
     { return match($action) { 'contact_profile'=>'contacts','srv'=>'dns',
         'privacy_enable','privacy_disable','privacy_purchase','privacy_renew'=>'privacy','ds_add','ds_delete'=>'ds',
@@ -46,7 +48,8 @@ final class ManagementProgress
                     default=>($op->action==='auth_code_email'?'The auth code email request failed.':'The '.strtolower(['lock'=>'Transfer lock','nameservers'=>'Nameservers','contacts'=>'Contacts','dns'=>'DNS records','privacy'=>'WHOIS privacy','ds'=>'DNSSEC','glue'=>'Glue records'][self::setting($op->action)]??'change').' change failed.').' Try again. If it keeps happening, contact support.',
                 };
                 if($op->action==='auth_code_email' && $pending && $sent && !$slow){$text='Email request sent. Acceptance is not confirmed. We will keep checking.';}
-                $row=['id'=>(int)$op->id,'pending'=>$pending,'slow'=>$slow,'text'=>$text];
+                $settled=$op->state==='succeeded'&&$op->action!=='contact_profile'&&$op->updated_at->getTimestamp()<=now()->getTimestamp()-self::SETTLED_SECONDS;
+                $row=['id'=>(int)$op->id,'pending'=>$pending,'slow'=>$slow,'text'=>$text,'settled'=>$settled];
                 $priority=$pending?2:($op->safe_code==='management_retired'?0:1);
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
                 $row=['id'=>(int)$op->id,'pending'=>false,'slow'=>false,'unreadable'=>true,'text'=>self::UNREADABLE];

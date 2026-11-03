@@ -42,7 +42,7 @@ class ViewDomain extends ViewRecord
     public function getSubheading(): string|Htmlable|null
     {
         $d=$this->getRecord(); $status=DomainFacts::status($d);
-        $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']!==null);
+        $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']);
         return StatusMark::line($head['tone'],$status['label'],'domain-'.$d->id,$head['step']);
     }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
@@ -129,7 +129,7 @@ class ViewDomain extends ViewRecord
             foreach (array_intersect($labels,array_keys($facts)) as $label) {
                 $rows[]=$this->row($label,$facts[$label],$this->side($label,$facts[$label],$edits,$label===$slot?$button:null));
             }
-            $sections[]=Sheet::section($title,$rows,$title===$held?$edits['held']:null);
+            $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
         return $schema->components([Sheet::split([...$this->notices($d),...$sections],[$this->activity($d)])]);
     }
@@ -179,8 +179,17 @@ class ViewDomain extends ViewRecord
     }
     private static function blockedLabel(string $label, array $fact): string
     { return $label==='Transfer lock'?($fact['value']==='On'?'Turn off':'Turn on'):'Edit'; }
-    /** An open alert's cause takes the tone and its value stays plain, so the row says what to do, not that the value is wrong. Words that were on the row before the alert stay plain too. */
+    /** The row's words, after when it was read when the row has a read time. */
     private static function below(array $fact): string|HtmlString|null
+    {
+        $words=self::words($fact);
+        if ($words!==null&&isset($fact['request'])) { $words=DomainFacts::linkRequest($words,$fact['request']); }
+        if (!isset($fact['asOf'])) { return $words; }
+        $read=Sheet::moment($fact['asOf'],'As of')->toHtml();
+        return new HtmlString($words===null?$read:$read.'. '.($words instanceof HtmlString?$words->toHtml():e($words)));
+    }
+    /** An open alert's cause takes the tone and its value stays plain, so the row says what to do, not that the value is wrong. Words that were on the row before the alert stay plain too. */
+    private static function words(array $fact): string|HtmlString|null
     {
         if ($fact['value']===null||$fact['sub']===null||!in_array($fact['tone'],['danger','warning'],true)) { return $fact['sub']; }
         $plain=$fact['plain']??null; if ($plain===null) { return RegistrarFacts::tone($fact['sub'],$fact['tone']); }

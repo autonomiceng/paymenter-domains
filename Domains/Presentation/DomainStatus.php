@@ -7,8 +7,6 @@ namespace Paymenter\Extensions\Servers\Domains\Presentation;
  * callers pass the real cause when the state alone cannot name it (held, uncertain, needs_review). */
 final class DomainStatus
 {
-    /** The reason for a state this version does not know. */
-    public const MISSING = 'Status missing';
     /** key => [label, tone] */
     public const SET = [
         'active' => ['Active', 'success'], 'pending_registration' => ['Pending registration', 'info'], 'pending_transfer' => ['Pending transfer', 'info'],
@@ -41,7 +39,7 @@ final class DomainStatus
     public static function for(?string $state, ?string $reason = null): array
     {
         [$label, $tone] = self::STOPPED[$state] ?? self::SET[self::key($state)];
-        return ['label' => $label, 'tone' => $tone, 'reason' => $reason ?? (self::STATES[$state] ?? [null, self::MISSING])[1]];
+        return ['label' => $label, 'tone' => $tone, 'reason' => $reason ?? (self::STATES[$state] ?? [null, self::ON_IT])[1]];
     }
     /** The SET key a state belongs to; unknown states count as under_review. */
     public static function key(?string $state): string { return (self::STATES[$state] ?? ['under_review'])[0]; }

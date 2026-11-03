@@ -3,7 +3,8 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, CatalogueAcceptances, EnomTestManagement, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -139,6 +140,13 @@ final class RequestFacts
         try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
     }
+    /** A request's status. Orders off stop all queued work, so a queued request is On hold wherever it shows, not In progress. Lists pass $ordersOff as for reason(). */
+    public static function status(Operation $op, bool $ordersOff=true): array
+    {
+        $status=[...Labels::requestStatus($op),'reason'=>self::reason($op,$ordersOff)];
+        if ($op->state!=='queued'||!$ordersOff||!str_ends_with((string)$status['reason'],self::ORDERS_OFF)) { return $status; }
+        return [...RequestStatus::for('held'),'reason'=>$status['reason']];
+    }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string
     {
@@ -232,6 +240,7 @@ final class RequestFacts
             $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
             return ['title'=>$ready,'tone'=>'warning',...($ordersLink?['link'=>'registrars','link_label'=>self::ORDERS_SWITCH]:[])];
         }
+        if ($op->state==='held'&&$op->safe_code==='management_unconfirmed'&&ManagementEvidence::idle($op)) { return self::unsent($op); }
         $review=BalanceRetries::pending($op)?OperationClaims::balanceAdmissionReason($op)
             :(in_array($op->safe_code,BalanceRetries::REVIEW_CODES,true)?$op->safe_code:null);
         if(BalanceRetries::pending($op)&&self::heldByOrders($review,self::account($op)['account'])){$review=null;}
@@ -293,6 +302,18 @@ final class RequestFacts
             : '"Use updated account details" copies the account details into this request and puts it back in the queue. It may then be sent to '.$registrar.'.');
     }
     /** Account name, registrar and mode for the Registrar account fact. */
+    /** A change that never reached the registrar. The system tries it again itself, so staff only have a step when the switch stops it or the tries run out. */
+    private static function unsent(Operation $op): array
+    {
+        $again=ManagementEvidence::recoverable($op); $account=self::account($op)['account'];
+        try { $off=$op->registrar_key==='enom'&&$account&&!EnomTestManagement::accepted(CatalogueAcceptances::binding($account)); } catch (\Throwable) { $off=false; }
+        if ($off) {
+            return ['title'=>RequestStatus::UNSENT,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on'.($again?' and we try again by ourselves.':', then make the change again on the domain page.'),
+                'tone'=>'warning','link'=>'registrars','link_label'=>'Turn them on'];
+        }
+        return $again?['title'=>RequestStatus::UNSENT,'body'=>'We try again by ourselves. There is nothing to do yet.','tone'=>'info']
+            :['title'=>RequestStatus::UNSENT,'body'=>'We won\'t try again. If the change is still needed, make it again on the domain page.','tone'=>'warning','link'=>'domain'];
+    }
     public static function account(Operation $op): array
     {
         $account=Account::where('server_id',$op->server_id)->where('registrar_key',$op->registrar_key)->where('account_fingerprint',$op->account_fingerprint)->first();

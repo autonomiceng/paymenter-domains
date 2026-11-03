@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/management.php';
 require __DIR__.'/Support/owner-pages.php';
 require __DIR__.'/Support/staff-panel.php';
+\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
@@ -56,6 +57,9 @@ $state->fault='';$state->locked=false;same('succeeded',$management->reconcile($o
 expect(!ManagementProgress::for($d)['lock']['pending'],'Completion stops polling');
 same($op->id,ManagementProgress::for($d)['lock']['id'],'Completion keeps the confirmed retained result instead of newer retired history');
 $html=$controller->show($request,$d->id)->render();expect(str_contains($html,'id="form-lock"'),'Completion restores the action');
+expect(str_contains($html,'Saved.'),'A fresh result shows');
+$op->update(['updated_at'=>now()->subSeconds(ManagementProgress::SETTLED_SECONDS+1)]);same(true,ManagementProgress::for($d)['lock']['settled'],'A finished change settles');
+$html=$controller->show($request,$d->id)->render();expect(!str_contains($html,'Saved.'),'Saved shows only while it is news');
 // A local failed attempt may retry safely, while a lost reply may not send again.
 Cache::flush();$state->fault='refused';$op=$submit($d,$driver,'lock',['locked'=>true]);same('rejected',$management->run($op->id,$driver)->state,'A provider refusal finishes');
 expect(!ManagementProgress::for($d)['lock']['pending'],'Definite failure stops polling');
@@ -197,14 +201,14 @@ same('succeeded',$management->run($dnsOp->id,$dnsDriver)->state,'DNS change comp
 $dnsPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$dnsDomain->id]);
 $factRow=static fn($html,$label)=>storefrontDom($html)->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0);
 $missing=$factRow($dnsPage->html(),'DNS records');
-expect($missing&&str_contains($missing->textContent,'Missing')&&str_contains($missing->textContent,'Use Sync now to read DNS records.'),'Failed sync keeps the current DNS recovery instruction after a saved change');
-expect(!str_contains($missing->textContent,'Saved.'),'An older saved request is not the cause of Missing DNS');
+expect($missing&&str_contains($missing->textContent,'Not read yet')&&str_contains($missing->textContent,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
+expect(str_contains($missing->textContent,'Saved.'),'The saved request remains a separate progress line under unread DNS');
 same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Failed sync does not rewrite the completed request');
-$dnsPage->assertSee('DNS records request')->assertSee('Saved.');
+$dnsPage->assertSee('DNS records')->assertSee('Saved.');
 $readAt=$clock->now()->modify('+2 minutes');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
 $dnsPage->call('pollManagement');$available=$factRow($dnsPage->html(),'DNS records');
 expect($available&&str_contains($available->textContent,'1 record')&&str_contains($available->textContent,'1 SRV')
-    &&str_contains($available->textContent,'As of '.$readAt->format(DATE_ATOM)),'Available DNS keeps its as-of time and SRV count beside management status');
-$dnsPage->assertSee('DNS records request')->assertSee('Saved.');
+    &&str_contains($available->textContent,'As of')&&str_contains($dnsPage->html(),$readAt->format(DATE_ATOM)),'Available DNS keeps its as-of time and SRV count beside management status');
+$dnsPage->assertSee('DNS records')->assertSee('Saved.');
 echo "Management pending controls, duplicate requests, local status and immediate start passed.\n";$nativeSuccessful=true;

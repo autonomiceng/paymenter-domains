@@ -6,6 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus};
 /** The staff view of a domain's status: the customer's status words, with the one staff step under them.
  * Status words come from DomainStatus, so customers and staff read the same thing. Only the step is staff-only.
+ * Where the domain only says a request is in the way, the status is that request's own (RequestFacts::status), so head, list, rail and request agree.
  * Request history and every open alert stay on the domain and request pages.
  * This is the only copy of the rule: the list, the heading and the status filter all read it through DomainFacts::status(). */
 final class StaffDomainStatus
@@ -28,13 +29,13 @@ final class StaffDomainStatus
     private const LATE = 'Check renewal options and status at the registrar.';
     /** Reasons written for the customer. Staff read their step. */
     private const CUSTOMER_ONLY = [DomainStatus::LATE, DomainStatus::ON_IT];
-    /** $shared is the status the customer sees and $state the state it came from (DomainFacts::status). $alerts and $renewal come from StaffDomainInputs.
+    /** $shared is the status the customer sees and $state the state it came from (DomainFacts::status). $alerts, $renewal and $waiting come from StaffDomainInputs.
      * An open alert names the step unless the row already has a specific one (a held request, an import) or has ended.
      * With no alert, an open renewal says what happens next on a domain that is otherwise Active.
      * @param array{key:string,label:string,tone:string,reason:?string} $shared
      * @param list<array{code:string,request:?int}> $alerts
      * @return array{key:string,label:string,tone:string,reason:?string,step:?string,request:?int,act:bool,alert:?string} $request is set when the step names one, $act when staff have a job here, $alert when the step is that open alert */
-    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null): array
+    public static function for(array $shared, string $state, Domain $d, ?Operation $op, array $alerts, ?Operation $renewal=null, ?Operation $waiting=null): array
     {
         [$step, $specific, $request] = self::resolve($state, $d, $op);
         $act = $step !== null && !in_array($step, self::WAITING, true);
@@ -43,7 +44,18 @@ final class StaffDomainStatus
             if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top); $act = true; $named = $top['code']; }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal); }
         }
-        if ($shared['reason'] === DomainStatus::MISSING && $step === self::CHECK) { [$shared['reason'], $step, $request] = [null, $op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id]; }
+        // A held or unconfirmed transfer, and a state this version doesn't know, only say a request is in the way. They read as that request.
+        $unknown = !isset(DomainStatus::STATES[$state]);
+        $behind = in_array($state, ['held', 'uncertain'], true) ? $op : ($unknown ? $waiting : null);
+        if ($behind) {
+            $line = RequestFacts::status($behind);
+            $shared = [...$shared, 'label' => $line['label'], 'tone' => $line['tone'], 'reason' => null];
+            if ($step === self::CHECK) {
+                [$step, $request, $act] = $line['reason'] === null ? [Labels::action($behind->action).' in progress. Nothing to do yet.', null, false] : [self::sentence($line['reason']).self::check($behind->id), $behind->id, true];
+            }
+        } elseif ($unknown && $step === self::CHECK) {
+            [$step, $request] = [$op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id];
+        }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
     }
     /** Late money is checked first by the caller, so it takes the step. */
@@ -101,7 +113,7 @@ final class StaffDomainStatus
     private static function stopped(Operation $op): string
     {
         $cause = RequestFacts::reason($op);
-        return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : 'Registrar has not confirmed the result')).self::check($op->id);
+        return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : RequestStatus::UNCONFIRMED)).self::check($op->id);
     }
     private static function check(int $id): string { return ' Check request #'.$id.'.'; }
     /** The first danger alert, else the oldest. */
