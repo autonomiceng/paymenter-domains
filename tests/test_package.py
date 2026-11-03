@@ -117,6 +117,21 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Development or private files'):
                 builder.runtime_members(source)
 
+    def test_staged_catalogue_builds_but_unlisted_unreferenced_roots_fail(self):
+        with tempfile.TemporaryDirectory(prefix='domains-staged-runtime-') as temp:
+            root = Path(temp)
+            source = root/'Domains'; source.mkdir()
+            (source/'Domains.php').write_text("<?php #[ExtensionMeta(version: '0.1.0')]")
+            (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
+            (source/'Catalogue').mkdir()
+            (source/'Catalogue/Offer.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Catalogue;')
+            receipt = builder.build(source, root/'staged')
+            self.assertIn('Domains/Catalogue/Offer.php', receipt['members'])
+            (source/'Unlisted').mkdir()
+            (source/'Unlisted/Offer.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Unlisted;')
+            with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'):
+                builder.build(source, root/'unlisted')
+
     def test_unreachable_namespaced_trees_cannot_approve_themselves(self):
         with tempfile.TemporaryDirectory(prefix='domains-unreachable-') as temp:
             source = Path(temp)/'Domains'
