@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CorrectionWork,ManagementEvid
 expect(method_exists(ManagementProtocol::class,'useReservation'),'Management needs its own pre-seal reservation scope');
 $transferEnvironment=Environment::Live;
 require __DIR__.'/Support/management-namesilo.php';require __DIR__.'/Support/namesilo-write-wire.php';
+\Paymenter\Extensions\Servers\Domains\Services\LiveReservationSchema::install();
 $legacyTransferExchange=$exchange;$exchange=static fn($origin,$cmd,$p,$ms)=>$legacyTransferExchange(str_replace('https://www.namesilo.com','https://ote.namesilo.com',$origin),$cmd,$p,$ms);
 $money=static function():array {return array_map(static fn($t)=>DB::table($t)->orderBy('id')->get()->toJson(),['invoices','invoice_items','invoice_transactions','credits','jobs','failed_jobs']);};
 $physicalWrites=static fn()=>array_values(array_filter($GLOBALS['nsPhysical'],static fn($c)=>AdmittedTransport::feature($c)!=='catalogue'));
