@@ -58,7 +58,7 @@ $component->removeTableFilter('no_cost')->filterTable('country');same(0,$compone
 // The installed legacy presenter still reports the fixture's unreadable saved credentials.
 \Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee('Needs a price sync')->assertSee('Ask your site admin to check the encryption key.');
 // Mixed valid/missing batch results must reach the existing page failure notification.
-$writes=new class($native,$sellers,$bindings) extends \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$writes->commands=$commands;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,$writes);
+$staffWrites=new class($native,$sellers,$bindings) extends \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$staffWrites->commands=$commands;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,$staffWrites);
 session()->forget('filament.notifications');
 $m=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class,'write');
 $editable=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->instance();$m->invoke($editable,['choices'=>['com'=>'skip','missing'=>'skip']]);
