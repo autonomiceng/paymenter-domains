@@ -20,7 +20,7 @@ final class EnomAnswerAction
                 ->filter(fn($op)=>Answers::eligible($op,app(Clock::class)->now()))
                 ->mapWithKeys(fn($op)=>[$op->id=>'Request #'.$op->id.' · '.$op->domain->domain.' · '.$op->action.' · '.($op->attempt['dispatch_attempted_at']??'')])->all();
         };
-        return Action::make('enom_answer')->label('Record registrar answer')->color('gray')
+        return Action::make('enom_answer')->label('Record what Enom said')->color('gray')
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('enom_answer'))
                 &&Account::where('server_id',$server)->whereIn('registrar_key',['enom','namesilo'])->exists()&&$options()!==[])
             ->modalDescription('The system cannot prove the final result or fee. Ask the registrar to check this account and exact attempt, then record its final answer.')
@@ -40,7 +40,7 @@ final class EnomAnswerAction
                         ? ['accepted'=>'Processed: registrar confirmed the exact order number']
                         : ['accepted'=>'Processed: registrar gave the exact order number','not_processed'=>'Not processed: no order and no charge'])),
                 TextInput::make('order_reference')->label(fn($get)=>$get('outcome')==='transfer_rejected'&&Operation::find((int)$get('operation_id'))?->registrar_key==='enom'?'Enom transfer number':'Registrar order number')
-                    ->helperText('Use the exact number confirmed for this account and request. Recording it does not send another order.')->maxLength(20),
+                    ->helperText(fn($get)=>$get('outcome')==='not_processed'?'Leave this blank if the registrar says there was no order and no charge.':'Use the exact number confirmed for this account and request. Recording it does not send another order.')->maxLength(20),
                 TextInput::make('processed_at')->label('Order processing time')->required()
                     ->visible(fn($get)=>$get('outcome')==='accepted'&&Operation::find((int)$get('operation_id'))?->registrar_key==='namesilo')
                     ->helperText('Ask the registrar for the exact time and UTC offset, for example 2026-10-18T05:00:01-07:00.')->maxLength(35),

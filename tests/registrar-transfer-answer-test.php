@@ -21,7 +21,9 @@ expect(EnomAnswers::eligible($op,$clock->now()),'A rejected NameSilo transfer wi
 Illuminate\Support\Facades\Auth::setUser($staff);
 $action=\Paymenter\Extensions\Servers\Domains\Admin\Support\EnomAnswerAction::make($op->server_id,Review::stamp($op->server_id,null));
 expect($action->isVisible(),'Existing registrar answer action is available on the NameSilo account');
-same('Record registrar answer',$action->getLabel(),'One provider-neutral action, with the existing permission');
+$notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($op);
+expect(str_contains($notice['body']??'','Use '.$action->getLabel().' on the registrar account.'),'Request notice and account action use the same label');
+same('Record what Enom said',$action->getLabel(),'Existing action label stays consistent until the coordinated rename');
 foreach(['evidence','case','confirmation','finality','status','pending','unknown','reference','stale','permission','amount','refund','not_processed'] as $fault){
     $input=$answer($op);
     if($fault==='evidence'){$input['evidence']='';}
