@@ -316,6 +316,10 @@ final class AccountBindings
         $query = Account::where('server_id', $expected->serverId);
         $account = ($locked ? $query->lockForUpdate() : $query)->sole();
         $expected->requireMatch($this->binding($account));
+        if ($expected->registrarKey === 'namesilo' && (LocalAccountEnrollment::enrolled($account)
+            || $server->settings()->where('key', LocalAccountEnrollment::KEY)->exists())) {
+            return $this->offerCredentialRevision($expected);
+        }
         return $this->digest($expected, $this->configuration($account, true, $server));
     }
 

@@ -260,6 +260,17 @@ $rotated = $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'p
 same($localBinding->fingerprint, $rotated->fingerprint, 'Key rotation retains local budget and holding lineage');
 same([$identity, 'https://live.example.com', false], [$a->fresh()->stable_identity, $a->fresh()->live_site, $a->fresh()->processing_enabled], 'Rotation preserves identity/site and pauses processing');
 $reject(fn () => $local->requireCredentialRevision($localBinding, $revision));
+foreach (['same-key' => ['placeholder-key-two'], 'A-B-A' => ['placeholder-key-one', 'placeholder-key-two']] as $scenario => $keys) {
+    $holdingRevision = $local->holdingCredentialRevision($localBinding);
+    $previousRevision = $local->credentialRevision($localBinding);
+    foreach ($keys as $key) { $replacement = $local->configure(10, 'namesilo', Environment::Live, ['api_key' => $key], $review(10)); }
+    expect($previousRevision !== $local->credentialRevision($localBinding), 'Reviewed replacement creates a new persisted revision');
+    same($localBinding->fingerprint, $replacement->fingerprint, 'Same-key replacement retains holding identity');
+    DB::transaction(static function () use ($local, $localBinding, $holdingRevision, $scenario): void {
+        expect(!hash_equals($holdingRevision, $local->holdingCredentialRevision($localBinding)), $scenario.' replacement must refuse the captured holding revision despite identical final key bytes');
+        same($local->credentialRevision($localBinding), $local->holdingCredentialRevision($localBinding), 'Local holding fence retains the persisted credential revision');
+    });
+}
 $secondRevision = $local->credentialRevision($localBinding);
 expect($secondRevision !== $revision, 'Rotation replaces the credential revision');
 $reject(fn () => $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-one'], $firstReview));
