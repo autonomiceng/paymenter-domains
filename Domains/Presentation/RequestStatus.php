@@ -21,6 +21,8 @@ final class RequestStatus
         'held' => ['on_hold', 'Not sent'], 'uncertain' => ['under_review', 'Registrar has not confirmed the result'],
         'succeeded' => ['completed', null], 'rejected' => ['failed', null], 'disposed' => ['cancelled', null], 'cancelled' => ['cancelled', null],
     ];
+    /** A request in any other state is still open. */
+    public const FINISHED = ['succeeded', 'rejected', 'disposed', 'cancelled'];
     /** Rejected requests that ended on purpose: closed unpaid, cancelled by staff, or cancelled with account credit. They read Cancelled, not Failed. */
     public const CLOSED_CODES = ['acquisition_cancelled_unpaid', 'renewal_cancelled_unpaid', 'refund_approved', 'management_retired', 'name_unavailable', 'premium_name', 'order_not_supported'];
     public static function closed(?string $state, ?string $code): bool

@@ -39,6 +39,8 @@ function assertDomainNameWraps(string $html, string $name, string $where, string
     expect($cell instanceof Dom\Element, $where.': domain cell found');
     $style = domainNameStyle($cell);
     // A title with domains-mono wraps from the Domains staff stylesheet, so a plain install wraps it too.
+    $sheet = file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php');
+    if ($element === 'table' && str_contains((string) $cell->getAttribute('class'), 'domains-name-cell')) { expect(str_contains($sheet, '.domains-name-cell{overflow-wrap:break-word;min-width:11rem'), $where.': the Domains stylesheet sets the cell'); return; }
     if (str_contains((string) $cell->getAttribute('class'), 'domains-mono')) { expect(str_contains(file_get_contents(dirname(__DIR__,2).'/Domains/resources/views/partials/staff-styles.blade.php'), '.domains-mono,'), $where.': the staff stylesheet wraps the name'); }
     else { same($element === 'table' ? 'break-word' : 'anywhere', $style['overflow-wrap'] ?? null, $where.': labels break only when wider than the cell'); }
     expect(!isset($style['word-break']), $where.': no word-break override');

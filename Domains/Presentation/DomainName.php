@@ -8,7 +8,7 @@ final class DomainName
 {
     /** Table cell style. break-word keeps the column as wide as the longest label, so a normal name stays on
      * one line; max-width still breaks a single label wider than the cell. */
-    public const CELL = 'overflow-wrap:break-word;min-width:11rem;max-width:24rem';
+    public const CELL = 'domains-name-cell';
     /** Escaped name with a line break opportunity after each dot and hyphen. */
     public static function html(string $name): HtmlString
     {

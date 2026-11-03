@@ -13,7 +13,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require __DIR__.'/enom-test-registration-fixture.php';
 config(['domains.enom_writes.registration'=>false]);$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
 $routeFact=Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh());expect(str_starts_with($routeFact,'Revision ')&&!str_contains($routeFact,'take orders'),'No unaccepted TEST route warning without the deployment opt-in');
-config(['domains.enom_writes.registration'=>true]);same($routeFact.' · Save What you sell to take orders',Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'Opted-in deployment warns about unaccepted TEST route');
+config(['domains.enom_writes.registration'=>true]);same($routeFact.'. Save What you sell to take orders',Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'Opted-in deployment warns about unaccepted TEST route');
 config(['domains.enom_catalogue.enabled'=>false]);same($routeFact,Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'No unaccepted TEST route warning while the TEST catalogue is off');config(['domains.enom_catalogue.enabled'=>true]);
 config(['domains.enom_identity.environment'=>'live']);same($routeFact,Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::acceptance($a->fresh()),'No unaccepted TEST route warning for a live identity');config(['domains.enom_identity.environment'=>'test']);
 $write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);

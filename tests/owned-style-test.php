@@ -3,18 +3,11 @@
 // Owned pages use the shared pieces and tokens. New inline styles and raw colors fail here. A file on this list drops off as its page lands.
 declare(strict_types=1);
 const ALLOWED=[
-    'Admin/Resources/DomainResource.php'=>3,
+    'Admin/Resources/DomainResource.php'=>2,
     'Admin/Resources/DomainResource/Pages/AdoptionPreview.php'=>1,
     'Admin/Resources/OperationResource.php'=>1,
-    'Admin/Resources/OperationResource/Pages/ViewOperation.php'=>5,
-    'Admin/Resources/PendingAdoptionResource.php'=>1,
-    'Admin/Resources/PendingAdoptionResource/Pages/ViewPending.php'=>1,
     'Admin/Resources/RoutingProfileResource/Pages/ViewConfiguration.php'=>1,
     'Admin/Resources/TldResource.php'=>3,
-    'Admin/Resources/TldResource/Pages/ViewTld.php'=>4,
-    'Admin/Resources/WatchResource.php'=>1,
-    'Admin/Resources/WatchResource/Pages/ViewWatch.php'=>5,
-    'Admin/Support/TldFacts.php'=>17,
     // Existing main pages leave this list when their later sheet/customer slice lands.
     'resources/views/admin/live-activation.blade.php'=>17,
     'resources/views/admin/native-editor-notice.blade.php'=>2,
@@ -27,9 +20,8 @@ const ALLOWED=[
     'resources/views/partials/demo-tag.blade.php'=>1,
     'resources/views/search.blade.php'=>1,
     'resources/views/service.blade.php'=>2,
-    'resources/views/staff/watch-header.blade.php'=>1,
 ];
-/** The customer stylesheet holds the tokens and email clients need inline styles, so neither is a page. */
+/** The stylesheets hold the tokens and email clients need inline styles, so neither is a page. */
 const SKIPPED='~/partials/(staff-)?styles\.blade\.php$|/emails?/|WatchNoticeTemplates\.php$~';
 $root=dirname(__DIR__).'/Domains';$found=[];
 foreach (['Admin','resources/views'] as $area) {

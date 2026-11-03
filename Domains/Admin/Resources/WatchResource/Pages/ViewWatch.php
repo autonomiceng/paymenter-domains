@@ -3,24 +3,29 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
 use Filament\Actions\Action;
+use Filament\Navigation\NavigationItem;
 use Filament\Notifications\Notification;
+use Filament\Pages\Enums\SubNavigationPosition;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\{Schema,Components\Callout,Components\Grid,Components\Section};
+use Filament\Schemas\{Schema,Components\Callout,Components\Flex,Components\Section,Components\Text};
 use Filament\Infolists\Components\TextEntry;
+use Filament\Support\Enums\Width;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,WatchActions,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{MissingEntry,Sheet,StatusMark,WatchActions,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchAudit,WatchDnsObservation,WatchRegistryObservation};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewWatch extends ViewRecord
 {
     protected static string $resource=WatchResource::class;
+    protected static ?SubNavigationPosition $subNavigationPosition=SubNavigationPosition::Top;
+    protected Width|string|null $maxContentWidth=Sheet::WIDTH;
     /** The revision this page shows; writes from a stale page are refused. */
     #[Locked] public int $revision=0;
     #[Locked] public array $pendingCheck=[];
-    private const FACTS_STYLE='<style>@media (min-width:40rem){.domains-facts .fi-in-entry.fi-in-entry-has-inline-label{grid-template-columns:minmax(0,40%) minmax(0,1fr) minmax(0,1fr)}}</style>';
     protected ?array $resolved=null;
     public function mount(int|string $record): void{parent::mount($record);$this->revision=(int)$this->getRecord()->revision;$this->waitForCheck();}
     protected function fillForm(): void{$this->data=[];}
@@ -58,13 +63,16 @@ class ViewWatch extends ViewRecord
     }
     public function getTitle(): string{return $this->getRecord()->canonical_name;}
     public function getHeading(): HtmlString
+    {return new HtmlString('<span class="font-mono domains-mono">'.DomainName::html($this->getTitle())->toHtml().'</span>'.(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():''));}
+    public function getSubheading(): string|Htmlable|null
+    {$status=$this->facts()['status'];return StatusMark::line($status['tone'],$status['label'],'watch-'.$this->getRecord()->id,$status['reason']);}
+    /** @return list<NavigationItem> */
+    public function getSubNavigation(): array
     {
-        $status=$this->facts()['status'];
-        return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.DomainName::html($this->getTitle())->toHtml().'</span>'
-            .(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
-            .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.self::FACTS_STYLE);
+        $id=['record'=>$this->getRecord()];$history=$this instanceof WatchHistory;
+        return [NavigationItem::make('Overview')->url(WatchResource::getUrl('view',$id))->isActiveWhen(fn()=>!$history),
+            NavigationItem::make('History')->url(WatchResource::getUrl('history',$id))->isActiveWhen(fn()=>$history)];
     }
-    public function getSubheading(): ?string{return $this->facts()['status']['reason'];}
     public function getBreadcrumbs(): array{return [WatchResource::getUrl()=>'Domain monitoring',$this->getTitle()];}
     public function getHeader(): ?\Illuminate\Contracts\View\View{return view('domains::staff.watch-header');}
     protected function getHeaderActions(): array{return WatchActions::watch($this->getRecord(),$this->revision);}
@@ -72,29 +80,25 @@ class ViewWatch extends ViewRecord
     public function checkAction(): Action{return WatchActions::check($this->getRecord(),$this->revision);}
     public function infolist(Schema $schema): Schema
     {
-        ['facts'=>$facts,'notice'=>$notice]=$this->facts();$components=[];$check=$this->getAction('check',false);
+        ['facts'=>$facts,'notice'=>$notice]=$this->facts();$sheet=[];$check=$this->getAction('check',false);
         // Each Missing check time gets its own Check now hint.
         $fix=$check?->isVisible()?fn()=>WatchActions::check($this->getRecord(),$this->revision):null;
-        if($notice){$components[]=Callout::make($notice)->status('warning')->columnSpanFull()->footer($check?->isVisible()?new HtmlString($check->toHtml()):null);}
-        $section=fn(string $title)=>Section::make($title)->columnSpan(1)->extraAttributes(['class'=>'domains-facts'])
-            ->schema(array_map(fn(string $label)=>self::entry($label,$facts[$title][$label],$fix),array_keys($facts[$title])));
-        $components[]=Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([$section('Domain'),$section('Checks')]);
-        $components[]=Section::make('History')->columnSpanFull()->schema(self::history($this->getRecord()));
-        return $schema->components($components);
+        if($notice){$sheet[]=Callout::make($notice)->status('warning')->columnSpanFull()->footer($check?->isVisible()?Sheet::buttons([$check->toHtml()]):null);}
+        foreach(['Domain','Checks'] as $title){$sheet[]=Sheet::section($title,array_map(fn(string $label)=>self::entry($label,$facts[$title][$label],$fix),array_keys($facts[$title])));}
+        return $schema->components([Sheet::split($sheet,[$this->activity()])]);
     }
-    private static function entry(string $label,array $fact,?\Closure $fix): TextEntry
+    private static function entry(string $label,array $fact,?\Closure $fix): Flex
     {
-        $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($fact['value'])->inlineLabel()->listWithLineBreaks()
-            ->extraAttributes(['style'=>'overflow-wrap:anywhere'])->belowContent($fact['value']!==null?$fact['sub']:null)->url($fact['url']);
-        return MissingEntry::apply($entry,fix:$fact['check'] && $fix?$fix():null,cause:$fact['value']===null?$fact['cause']:null,color:$fact['tone']);
+        $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($fact['value'])->listWithLineBreaks()->belowContent($fact['value']!==null?$fact['sub']:null)->url($fact['url']);
+        return Sheet::row(MissingEntry::apply($entry,fix:$fact['check'] && $fix?$fix():null,cause:$fact['value']===null?$fact['cause']:null,color:$fact['tone']));
     }
-    /** @return list<TextEntry> */
-    private static function history(\Paymenter\Extensions\Servers\Domains\Models\WatchName $w): array
+    /** The rail: the newest history, with the tab holding the rest. */
+    private function activity(): Section
     {
-        $rows=WatchFacts::history($w);
-        if($rows===null){return [TextEntry::make('history')->hiddenLabel()->state(WatchFacts::DECRYPT)->color('danger')];}
-        if(!$rows){return [TextEntry::make('history')->hiddenLabel()->state('No history yet')->color('gray')];}
-        return array_map(fn(array $r,int $i)=>TextEntry::make('history_'.$i)->label($r['time'])->inlineLabel()->state($r['event'])
-            ->belowContent(implode(' · ',array_filter([$r['by'],$r['note']])))->extraAttributes(['style'=>'overflow-wrap:anywhere']),$rows,array_keys($rows));
+        $w=$this->getRecord();$rows=WatchFacts::history($w);
+        if($rows===null){return Sheet::section('Activity',[Text::make(WatchFacts::DECRYPT)->color('danger')]);}
+        if($rows===[]){return Sheet::section('Activity',[Text::make('No history yet')]);}
+        return Sheet::section('Activity',[Sheet::trace(array_map(fn(array $r)=>Sheet::event($r['event'],$r['note'],$r['time'],$r['by']),array_slice($rows,0,Sheet::RAIL_STEPS)))],
+            after:[Sheet::link('view_history','View all '.count($rows),WatchResource::getUrl('history',['record'=>$w]))]);
     }
 }

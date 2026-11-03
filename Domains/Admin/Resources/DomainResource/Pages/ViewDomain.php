@@ -144,7 +144,7 @@ class ViewDomain extends ViewRecord
     {
         $entries=DomainHistory::entries($d);
         $url=DomainResource::getUrl('view',['record'=>$d->id,'relation'=>'0']);
-        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,self::RAIL_STEPS)))],
+        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS)))],
             after:$entries===[]?[]:[Sheet::link('view_history','View all '.count($entries),$url)]);
     }
     /** A row's action column: its edits or its link. Renewal invoices draws the page's Stop and Resume. */

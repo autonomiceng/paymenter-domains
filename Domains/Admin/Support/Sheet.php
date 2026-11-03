@@ -8,12 +8,15 @@ use Filament\Schemas\Components\{Actions,Component,Flex,Group,Html,Section};
 use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 /** The one detail page layout: a sheet of sections with a rail beside it. A row is a label, a value and an action column.
  * It emits plain Filament plus domains-* class names. A skin draws the sheet from those; without one it stays stacked Filament sections. */
 final class Sheet
 {
     /** Detail pages stop here. Tables keep the full width. */
     public const WIDTH=Width::SixExtraLarge;
+    /** A rail stops at this many steps. A tab holds the rest. */
+    public const RAIL_STEPS=7;
     /** @param list<Component> $sheet @param list<Component> $rail The rail drops under the sheet on narrow screens. */
     public static function split(array $sheet,array $rail,?string $key=null): Group
     {
@@ -58,6 +61,12 @@ final class Sheet
     {
         $iso=is_int($at)?gmdate('c',$at):$at;$fallback=is_int($at)?gmdate('M j, Y H:i \\U\\T\\C',$at):$at;
         return new HtmlString(($before===''?'':e($before).' ').view('domains::partials.moment',['at'=>$iso,'fallback'=>$fallback])->render());
+    }
+    /** A trace step for something that happened: its reason, then when and who. A step with no time says Missing and why. */
+    public static function event(string $label,?string $sub,int|string|null $at,string $by,string $tone='gray',?string $value=null,?string $noTime=null): array
+    {
+        $when=$at===null?e(Missing::LABEL.($noTime===null?'':'. '.$noTime)):self::moment($at)->toHtml();
+        return ['label'=>$label,'value'=>$value,'tone'=>$tone,'detail'=>new HtmlString(($sub?'<div>'.e($sub).'</div>':'').'<div class="domains-trace-when">'.$when.', '.e($by).'</div>')];
     }
     /** Steps on a line, each with its mark: a list to screen readers, plain lines without a skin.
      * A step is {label, value, tone, detail, help, buttons}. Unknown tones draw as OK.
