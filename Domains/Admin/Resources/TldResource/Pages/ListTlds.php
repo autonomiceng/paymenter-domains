@@ -14,6 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 class ListTlds extends ListRecords
 {
     protected static string $resource=TldResource::class;
+    protected static ?\Filament\Pages\Enums\SubNavigationPosition $subNavigationPosition=\Filament\Pages\Enums\SubNavigationPosition::Top;
+    public function getSubNavigation(): array { return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffTabs::tlds('TLDs'); }
     public function getTitle(): string{return 'TLDs & pricing';}
     public function getBreadcrumbs(): array{return [];}
     /** The head line says the page's job. TLDs are added in What you sell; this page is for each one's prices. */

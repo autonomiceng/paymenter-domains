@@ -22,7 +22,7 @@ foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permiss
     $u=staffUser($permissions);Auth::setUser($u);$can=in_array(Staff::VIEW,$permissions,true);$cost=$can&&in_array(Staff::COSTS,$permissions,true);
     $list=Livewire::actingAs($u)->test(ListTlds::class);$setup=Livewire::actingAs($u)->test(RegistrarSetup::class);$account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]);
     if(!$can){$list->assertForbidden();$setup->assertForbidden();$account->assertForbidden();continue;}
-    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('Setup checklist')->assertSee('What you sell')->assertDontSee('Catalogue acceptance');
+    $list->assertCanSeeTableRecords($tlds);$setup->assertSuccessful()->assertSee('Enom')->assertSee('NameSilo')->assertSee('Status');$account->assertSuccessful()->assertSee('System checks')->assertSee('What you sell')->assertDontSee('Catalogue acceptance');
     $detail=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSuccessful()->assertSet('data',[])
         ->assertSee('History')->assertSee('Sync failed')->assertSee('Registrar read failed')->assertSee('Existing domains stay with their registrar');
     $body=$detail->html().$setup->html().$account->html().json_encode($detail->snapshot).json_encode($setup->snapshot).json_encode($account->snapshot);
@@ -87,7 +87,7 @@ $prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($b
 $calls=$reads->calls;staffTldFilterLookalikes($u,$tlds);same($calls,$reads->calls,'TLD selectors use saved facts only');
 foreach (['12.0000'=>'USD 12.00','12.3000'=>'USD 12.30','12.3450'=>'USD 12.345','12.3456'=>'USD 12.3456','0.0000'=>'USD 0.00'] as $amount=>$label) { same($label,TldFacts::money($amount,4),'Wholesale precision stays exact while redundant zeros are trimmed'); }
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
-$rules->saveDefaultRule($t->server_id,['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
+saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Below cost')->assertSee('Registrations and transfers below cost are held. Renewals are billed.');
 foreach(TldFacts::prices($t->fresh()) as $row){expect(in_array('below_cost',$row['flags'],true),'Below cost flagged: '.$row['action'].' '.$row['term']);}
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Below-cost registration is held');

@@ -64,8 +64,8 @@ $n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_
 $accepted = CatalogueAcceptances::load($b);
 $reject(fn () => CatalogueAcceptances::save($b, $accepted->revision, $accepted->endings), 'Quiet window preserves legacy acceptance');
 $reject(fn () => $sellers->change('com', 2, $n->serverId, true, true, $now), 'Quiet window preserves selected sellers');
-$reject(fn () => (new PricingRules)->saveDefaultRule($b->serverId, PricingRule::DEFAULT, static fn () => null), 'Quiet window preserves account pricing defaults');
-$reject(fn () => DB::transaction(fn () => CardFee::saveLocked($b->serverId, ['percent' => '1.00', 'fixed' => '0.10'])), 'Quiet window preserves account fees');
+$reject(fn () => DB::transaction(fn () => (new PricingRules)->saveDefaultRuleLocked(PricingRule::DEFAULT)), 'Quiet window preserves account pricing defaults');
+$reject(fn () => DB::transaction(fn () => CardFee::saveLocked(['percent' => '1.00', 'fixed' => '0.10'])), 'Quiet window preserves account fees');
 $reject(fn () => DB::transaction(fn () => SellRule::applyLocked(Account::where('server_id', $b->serverId)->sole(), $b, $accepted,
     ['rule' => ['mode' => 'except', 'max_cost' => null, 'years' => 1, 'transfers' => false]])), 'Quiet window preserves explicit staff intent');
 

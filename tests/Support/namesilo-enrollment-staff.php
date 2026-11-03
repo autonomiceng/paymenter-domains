@@ -186,7 +186,7 @@ foreach(['confirmed'=>false,'account_id'=>'123','contact_id'=>'789','order_numbe
 }
 foreach([null,false,123,['unexpected'],'',' synthetic label',str_repeat('x',129),"bad\nlabel",'candidate-ote-key'] as $label){$refuse(fn()=>$attempt(['label'=>$label],$invalid),'Bounded label');}
 foreach(['','a key',str_repeat('x',257)] as $key){$refuse(fn()=>$attempt(['api_key'=>$key],$invalid),'Bounded key');}
-$s=$fresh();config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);expect(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::make($s->id,null,Review::stamp($s->id,null),true)[0]->isDisabled(),'Enrollment UI off');$refuse(fn()=>$attempt([],$s),'Deployment disabled');same($guardStart,$GLOBALS['enrollmentCalls'],'Input guards send nothing');
+$s=$fresh();config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);expect(SettingsActions::setup($s->id,Review::stamp($s->id,null),'enroll_sandbox')->isDisabled(),'Enrollment UI off');$refuse(fn()=>$attempt([],$s),'Deployment disabled');same($guardStart,$GLOBALS['enrollmentCalls'],'Input guards send nothing');
 config(['domains.namesilo_sandbox_enrollment.enabled'=>true]);
 $GLOBALS['enrollmentExpectedTimeout']=10000;
 $s=$fresh();foreach(['ok','html','wrong_operation','missing_balance','bad_balance','null_balance','throw'] as $mode){

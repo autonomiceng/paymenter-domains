@@ -146,7 +146,7 @@ same(false, Schema::hasColumn('domains_tlds', 'offer_facts_work'), 'Queue owns f
 
 // Local rule fan-out shares the worker without consuming any provider allowance.
 $read = static fn ($binding = null, $tld = 'com') => $writer->readOffers(new Query($binding ?? $b, [$tld], 'register'), Context::Staff)[0];
-$writer->apply(Edit::defaults($b, 'com', new Intent(defaultSell: true), PricingRule::DEFAULT), $read()->revision);
+$writer->apply(Edit::defaults($b, 'com', new Intent(defaultSell: true)), $read()->revision);
 same('publication_pending', $read()->reason, 'Changed defaults fence old publication immediately');
 $before = count($wire->calls); $worker->wake($b); $worker->tick(1); $worker->tick(1);
 expect($read()->reason !== 'publication_pending', 'Bounded local rotation clears publication fences');

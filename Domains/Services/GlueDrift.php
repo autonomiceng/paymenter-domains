@@ -52,7 +52,7 @@ final class GlueDrift
             foreach ($check['hosts']??[] as $host=>$row) {
                 if (isset($seen[$host])||!is_bool($row['drift']??null)||$row['at']>$now||$row['until']<=$now) { continue; }
                 $seen[$host]=true; if (!$row['drift']) { continue; }
-                $warnings[]=$host.': registrar has '.$row['saved'].'. Public DNS has '.(implode(', ',$row['addresses'])?:'no address').'. If public DNS is right, edit the glue record.';
+                $warnings[]=$host.': registrar has '.$row['saved'].'. Public DNS has '.(implode(', ',$row['addresses'])?:'no address').'. Edit it to match.';
             }
         }
         return $warnings;

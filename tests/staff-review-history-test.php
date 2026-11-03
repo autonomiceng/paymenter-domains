@@ -23,7 +23,7 @@ $review('hold',$reason);
 same('Staff #'.$staff->id,$op->fresh()->policy['staff_actions'][0]['actor_name'],'Nameless actor saves a neutral staff identifier instead of email');
 $staff->update($staffNames);
 same('Staff #'.$staff->id,$op->fresh()->policy['staff_actions'][0]['actor_name'],'Restoring the actor name leaves saved history unchanged');
-$detail=$page()->assertSuccessful()->assertSee('Put on hold')->assertSee('Oct 18, 2026 12:00 UTC');
+$detail=$page()->assertSuccessful()->assertSee('Put on hold')->assertSeeHtml('2026-10-18T12:00:00+00:00');
 expect(str_contains($detail->html(),'&lt;script&gt;alert(&quot;review&quot;)&lt;/script&gt;'),'History escapes script reason');
 expect(!str_contains($detail->html(),$reason),'History never emits raw script reason');
 $review('release','Release after evidence review');
@@ -33,7 +33,7 @@ expect(strpos($detail->html(),'Put on hold')<strpos($detail->html(),'Hold releas
 $read=new StaffOperationReview($staff->id,$domain->id,$op->id,'recheck',$ticket($op->fresh(),'recheck'),'Read current evidence',$clock);
 $read->read(static function()use($page){
     $detail=$page()->assertSee('Hold released')->assertSee('Status check requested')->assertSee('Read current evidence');
-    expect(strpos($detail->html(),'Hold released')<strpos($detail->html(),'Status check requested'),'Release precedes the status check');
+    expect(strpos($detail->html(),'Status check requested')<strpos($detail->html(),'Hold released'),'Newest first: the status check comes before the release');
 });
 $rows=StaffReviewHistory::rows($op->fresh());
 same(['Put on hold','Hold released','Cannot check registrar'],array_column($rows,'event'),'A check shows as one row once it finishes');

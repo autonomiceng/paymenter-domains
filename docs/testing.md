@@ -24,6 +24,7 @@ native/PHP environment below and a fresh output directory under `TMPDIR`:
 ```sh
 suite-slot --quick python3 scripts/render-reminders.py "$BUTTON_RENDER_DIR" tests/Support/button-layout-render.php tests/domain-page-render.php
 suite-slot --quick node scripts/check-button-layout.cjs "$BUTTON_RENDER_DIR"
+suite-slot --quick node scripts/check-row-labels.cjs
 ```
 
 The renderer verifies the pinned read-only native dependency and renders real Blade with synthetic DTOs.
@@ -339,8 +340,9 @@ output directory to keep the pages. No panel registration is installed.
 when sync failed with its stored cause, and with no registrar for new orders, across two registrar accounts (one demo).
 `tests/tld-pricing-publish-test.php` checks that saving **Edit prices** publishes the previewed
 prices with new revisions, keeps below-cost holds and alerts, publishes default-pricing followers
-and refuses stale costs without changes. The TLD render also captures the price preview (custom, below
-cost, account default), the refusal after the seller changes and the account default pricing dialog.
+account by account (a failure is named, saving again repairs it, a disabled account is skipped)
+and refuses stale costs without changes. The TLD render also captures the price preview (below cost,
+Default pricing, stale costs) and the Default pricing dialog.
 Source layout/labels adapt Enom `444f31c` TldResource and EnomSetup (MIT).
 
 ### Neutral reminders and obligation alerts

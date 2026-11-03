@@ -5,7 +5,7 @@ require __DIR__.'/Support/managed-public.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{WatchSource,ManagedPublicObservation};
 use Paymenter\Extensions\Servers\Domains\Services\ManagedPublicWorkSchema;
-extract(managedFixture(skipA3:true));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+$f=managedFixture(skipA3:true);extract($f);$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
 for($i=0;$i<100;$i++) {
     $o=App\Models\Order::create(['user_id'=>$uid,'currency_code'=>'USD']);
     $s=App\Models\Service::create(['user_id'=>$uid,'order_id'=>$o->id,'product_id'=>$host->product_id,'plan_id'=>$host->plan_id,
@@ -17,6 +17,7 @@ for($i=0;$i<100;$i++) {
 expect($signals->enqueue($id,$uid),'Large predecessor batch accepted');
 same(100,WatchSource::where('state','managed_link')->count(),'One relink transaction bounds native sources to one hundred');
 same(1,WatchSource::where('state','watch')->count(),'Remaining predecessor source durable for next repair');
+managedPlatformChoice($f);
 $fake->answers['example.com|NS']=managedNs();
 expect($signals->observe($id,$uid,'delegation'),'Overflow still checks apex NS');
 same(101,WatchSource::where('state','managed_link')->count(),'Next reconciliation repairs remaining predecessor host without an active watch');

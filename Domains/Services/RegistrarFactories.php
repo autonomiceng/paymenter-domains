@@ -63,7 +63,7 @@ final class RegistrarFactories
                 foreach ($accepted->endings as $row) {
                     foreach (['register', 'renew', 'transfer'] as $action) { if ($row[$action] === [1]) { $actions[$action] = $action; } }
                 }
-                return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), array_values($actions));
+                return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), array_values($actions), acceptedCatalogue: $accepted);
             });
         }
     }

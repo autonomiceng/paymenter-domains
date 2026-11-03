@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\Li
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
-staffPanel();[$held,$active]=staffData();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
+staffPanel();[$held,$active]=staffData();Paymenter\Extensions\Servers\Domains\Services\HoldingProvenanceSchema::install();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);
 $list=function(?callable $queries=null)use($viewer){
     DB::flushQueryLog();DB::enableQueryLog();$page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
@@ -18,16 +18,20 @@ $list=function(?callable $queries=null)use($viewer){
     $instance=$page->instance();return [$instance->getTable()->getColumns(),$instance->getTableRecords()->keyBy('id'),count($log),$log];
 };
 
+// Customer has its own column, and search finds a full name.
+$owner=App\Models\User::create(['first_name'=>'Ada','last_name'=>'Lovelace','email'=>'ada@example.test','password'=>'synthetic-password']);DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$owner->id]);same(true,isset($list()[0]['customer']),'Customer column');
+Livewire::actingAs($viewer)->test(ListDomains::class)->assertSee('Search domain or customer')->searchTable($owner->first_name.' '.$owner->last_name)->assertCanSeeTableRecords([$active]);
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('nobody-by-this-name')->assertCountTableRecords(0);
 // Duplicate staff account names remain distinguishable in filters and rows.
 App\Models\Server::whereIn('id',[$held->server_id,$active->server_id])->update(['name'=>'Shared account']);
 $accountsPage=Livewire::actingAs($viewer)->test(ListDomains::class);
 $options=$accountsPage->instance()->getTable()->getFilter('server_id')->getOptions();
 foreach([$held,$active] as $domain){
-    same('Shared account · #'.$domain->server_id,$options[$domain->server_id],'Filter keeps account ID');
+    same('Shared account #'.$domain->server_id,$options[$domain->server_id],'Filter keeps account ID');
     $accountsPage->filterTable('server_id',$domain->server_id)->assertCanSeeTableRecords([$domain]);
     $other=$domain->id===$held->id?$active:$held;$accountsPage->assertCanNotSeeTableRecords([$other]);
     $record=$accountsPage->instance()->getTableRecords()->firstWhere('id',$domain->id);
-    same('Shared account · #'.$domain->server_id,$accountsPage->instance()->getTable()->getColumn('server_id')->record($record)->getState(),'Registrar row keeps account ID');
+    same('Shared account #'.$domain->server_id,$accountsPage->instance()->getTable()->getColumn('server_id')->record($record)->getState(),'Registrar row keeps account ID');
 }
 unset($accountsPage);
 
@@ -39,9 +43,21 @@ foreach ($cases as $case=>[$status,$action,$state,$code]) {
     DB::table('domains_domains')->where('id',$held->id)->update(['status'=>$status,'provider_expires_at'=>null]);
     DB::table('domains_operations')->where('domain_id',$held->id)->update(['action'=>$action,'state'=>$state,'safe_code'=>$code]);
     [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
-    same(DomainFacts::for($held->fresh())['Auto-renew']['value']??'Missing',$cell->getState(),'Auto-renew cell matches the domain page: '.$case);
+    same(DomainFacts::for($held->fresh())['Renewal invoices']['value']??'Missing',$cell->getState(),'Auto-renew cell matches the domain page: '.$case);
     expect(in_array($cell->getState(),['On','Off','Missing'],true),'Auto-renew cell is not blank: '.$case);
 }
+// A pending import never bills renewals: the list says Off, Until import, like the domain page. By status or by provenance alone.
+$saved=(array)DB::table('domains_domains')->where('id',$held->id)->first(['status','provenance','provider_expires_at']);
+foreach (['status'=>['status'=>'adoption_pending'],'provenance'=>['provenance'=>'adoption_pending']] as $case=>$pending) {
+    DB::table('domains_domains')->where('id',$held->id)->update([...$pending,'provider_expires_at'=>today()->addDays(200)->format('Y-m-d')]);
+    [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);$page=DomainFacts::for($held->fresh())['Renewal invoices'];
+    same(['Off','Until import'],[$page['value'],$page['sub']],'Domain page says Off until import: pending '.$case);
+    same([$page['value'],$page['sub']],[$cell->getState(),$cell->getDescriptionBelow()],'List matches the domain page: pending '.$case);
+    DB::table('domains_domains')->where('id',$held->id)->update($saved);
+}
+DB::table('domains_domains')->where('id',$held->id)->update(['status'=>'cancelled']);
+[$columns,$records]=$list();same(null,$columns['auto_renew']->record($records[$held->id])->getState(),'Ended domains leave the cell blank');
+DB::table('domains_domains')->where('id',$held->id)->update($saved);
 DB::table('domains_domains')->where('id',$held->id)->update(['renewal_policy'=>'not-readable']);
 [$columns,$records]=$list();$cell=$columns['auto_renew']->record($records[$held->id]);
 same(['Missing',DomainFacts::UNREADABLE_RENEWAL],[$cell->getState(),$cell->getDescriptionBelow()],'Unreadable renewal settings show Missing with the cause');
@@ -54,7 +70,7 @@ $demo=Domain::create([...fixtureAccount((int)App\Models\Server::max('id')+1,'eno
 foreach (['test'=>true,'live'=>false] as $environment=>$paused) {
     config(['domains.enom_identity.environment'=>$environment,'domains.enom_writes.registration'=>false,'domains.enom_writes.renewal'=>false]);
     [$columns,$records]=$list();
-    same($paused?'Sync paused':null,$columns['status']->record($records[$demo->id])->getDescriptionBelow(),'Demo list row says sync is paused: '.$environment);
+    same($paused?'Sync paused.':null,$columns['note']->record($records[$demo->id])->getState(),'Demo list row says sync is paused: '.$environment);
     same($paused?'Paused':null,DomainFacts::for($demo->fresh())['Last sync']['value']??null,'Staff page agrees: '.$environment);
     same($paused,DemoData::syncPaused($demo->fresh()),'Customer view agrees: '.$environment);
     same($paused?'paused':null,DomainFacts::sync($demo->fresh()),'Standalone sync lazily loads the valid demo account: '.$environment);
@@ -88,6 +104,6 @@ foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
 same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
 foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
-    same($i%3===0?'Sync failed':null,$columns['status']->record($row)->getDescriptionBelow(),'Missing accounts never falsely pause demo sync');
+    same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync failed. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

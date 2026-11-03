@@ -12,14 +12,18 @@ final class RegistrationProfiles
     private array $created = [];
     private readonly \SensitiveParameterValue $diagnostic;
     public function __construct(private readonly AccountBinding $binding, private readonly OperationClaims $claims,
-        private readonly Clock $clock, #[\SensitiveParameter] \Closure $exchange, #[\SensitiveParameter] ?\Closure $diagnostic = null)
-    { $this->exchange = new \SensitiveParameterValue($exchange); $this->diagnostic = new \SensitiveParameterValue($diagnostic); }
+        private readonly Clock $clock, #[\SensitiveParameter] \Closure $exchange, #[\SensitiveParameter] ?\Closure $diagnostic = null, private readonly ?ProfileContactOperations $operations = null)
+    {
+        if($operations&&!$operations->bindsTo($binding)){throw new \DomainException('Profile operation binding unavailable.');}
+        $this->exchange = new \SensitiveParameterValue($exchange); $this->diagnostic = new \SensitiveParameterValue($diagnostic);
+    }
     public function prepare(Operation $op, RequestContext $ctx): void
     {
         OperationClaims::outside(); $this->binding->requireMatch($ctx->binding);
         if ($ctx->origin !== RequestOrigin::Background || $this->binding->registrarKey !== 'namesilo') { throw new \DomainException('Profile context unavailable.'); }
         [$binding, $owner] = $this->authority($op, 'authority_before');
         if ($this->hasProof($op)) { return; }
+        if($this->operations){$this->operations->prepare($op,$ctx);return;}
         $contacts = ContactDetails::validate('namesilo', $op->payload['contacts'] ?? null);
         if (count(array_unique(array_map(static fn ($row) => json_encode($row, JSON_THROW_ON_ERROR), $contacts))) !== 1) {
             throw new WriteHeld('contact_profile_proof_required'); // Single purchase profile covers all four frozen roles.
@@ -29,7 +33,18 @@ final class RegistrationProfiles
         $id = $created['contact_id'] ?? null;
         if (is_int($id)) { $id = (string) $id; }
         if (!is_string($id) || !preg_match('/^[1-9][0-9]{0,19}$/D', $id)) { throw new WriteHeld('contact_profile_proof_required'); }
-        try{$read = $this->request($ctx, 'contactList', ['contact_id' => $id]);}catch(ReadDeferred){throw new WriteHeld('contact_profile_proof_required');} $rows = $read['contact'] ?? null;
+        try{$read = $this->request($ctx, 'contactList', ['contact_id' => $id]);}catch(ReadDeferred){throw new WriteHeld('contact_profile_proof_required');}
+        self::requireReadback($read,$parameters,$id);
+        // Provider work is over. Recheck current claim before retaining its exact owner/payload proof.
+        $this->authority($op, 'authority_after');
+        $profile = ContactProfiles::recordCreated($binding, $owner, $id, $contact, false,
+            ['operation' => $op->operation_key, 'payload' => OperationClaims::payloadDigest($op), 'observed_at' => $ctx->now()->format(DATE_ATOM)]);
+        $this->created[$op->operation_key] = (int) $profile->id;
+    }
+    /** Shared exact-ID, non-default and normalized-field proof; never adopts account inventory. */
+    public static function requireReadback(#[\SensitiveParameter] array $read,#[\SensitiveParameter] array $parameters,string $id): void
+    {
+        $rows = $read['contact'] ?? null;
         if (is_array($rows) && !array_is_list($rows)) { $rows = [$rows]; }
         $row = is_array($rows) && count($rows) === 1 ? $rows[0] : [];
         if ((string) ($row['contact_id'] ?? '') !== $id || !in_array($row['default_profile'] ?? null, [0, '0'], true)) {
@@ -42,11 +57,6 @@ final class RegistrationProfiles
                 ? !\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ContactReadback::phoneMatches($row[$field] ?? null, $parameters[$wire], $parameters['ct'])
                 : ($row[$field] ?? null) !== $parameters[$wire]) { throw new WriteHeld('contact_profile_proof_required'); }
         }
-        // Provider work is over. Recheck current claim before retaining its exact owner/payload proof.
-        $this->authority($op, 'authority_after');
-        $profile = ContactProfiles::recordCreated($binding, $owner, $id, $contact, false,
-            ['operation' => $op->operation_key, 'payload' => OperationClaims::payloadDigest($op), 'observed_at' => $ctx->now()->format(DATE_ATOM)]);
-        $this->created[$op->operation_key] = (int) $profile->id;
     }
     /** Observer receives only a fixed predicate name and boolean, never claim/contact data. */
     private function authority(Operation $op, string $predicate): array
@@ -70,6 +80,7 @@ final class RegistrationProfiles
     }
     private function profiles(Operation $op): ContactProfile
     {
+        if($this->operations){return $this->operations->profile($op);}
         if ($op->account_fingerprint !== $this->binding->fingerprint) { throw new \DomainException('Profile binding changed.'); }
         $expected = ContactDetails::validate('namesilo', $op->payload['contacts'])['registrant'];
         // Local handle is obtained only from this worker's fresh creation; no inventory scan/adoption.

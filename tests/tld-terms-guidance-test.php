@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\Auth;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,ViewTld};
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,WhatYouSell};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Price,SellRow};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsReview as Review,StaffSettingsWrites};
@@ -45,9 +45,9 @@ same('Customers still own .com domains here, so renewals must stay on. Nothing w
 same('Prices for .com are missing or out of date. Use Sync prices on the TLD list, then try again. Nothing was saved.',$refusal('Catalogue publication evidence changed.',[]),'Stale prices are named');
 
 $fee=['fee_percent'=>'3','fee_fixed'=>'0.30','reason'=>'Set the card fee'];
-$accountPage=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id]);
-foreach(['3','4'] as $percent){$accountPage->mountAction(setupAction('card_fee',$t->server_id))->setActionData([...$fee,'fee_percent'=>$percent])->callMountedAction()->assertNotified('Saved')->assertHasNoActionErrors();}
-expect(str_contains($accountPage->html(),'4%'),'The account page shows the second save');
+$sellPage=Livewire::actingAs($u)->test(WhatYouSell::class);
+foreach(['3','4'] as $percent){$sellPage->mountAction('default_pricing')->setActionData([...$fee,'fee_percent'=>$percent])->callMountedAction()->assertNotified('Saved')->assertHasNoActionErrors();}
+same('4.00',Paymenter\Extensions\Servers\Domains\Services\CardFee::read()['percent'],'The second save lands on the same page');
 
 // Transfers off is not Missing: Sync can never fill it.
 Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'transfer'])->delete();$grants=Staff::requireView();

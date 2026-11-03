@@ -68,8 +68,8 @@ foreach(['register','transfer'] as $kind){
     $page->callAction('release')->assertNotified('Contact details updated');
     $page->assertSee('Contact details updated')->assertDontSee('Use updated account details')
         ->assertDontSee('The customer account is complete now.');
-    if($kind==='register'){$page->assertSee('In progress')->assertDontSee('On hold')->assertActionHidden('release')->assertActionVisible('hold');}
-    else{$page->assertSee('On hold')->assertActionVisible('release');}
+    if($kind==='register'){$page->assertSee('In progress')->assertDontSee('Under review')->assertActionHidden('release')->assertActionVisible('hold');}
+    else{$page->assertSee('Under review')->assertActionVisible('release');}
     $after=$op->fresh();same($kind==='transfer'?['held','transfer_setup_review_required']:['queued',null],[$after->state,$after->safe_code],'Design recovery state: '.$kind);
     same('+1.2025550100',$after->payload['contacts']['registrant']['phone'],'Recollect owner, never staff contacts');
     same(false,$after->payload['setup_required'],'Recollected contacts are ready');
@@ -84,7 +84,7 @@ foreach(['register','transfer'] as $kind){
     same($money,nativeFinancialSnapshot($op),'Recovery changes no money, service or reservation');
     commerceReject(fn()=>$run($after,'release',$key));
     if($kind==='transfer'){
-        $page->callAction('release')->assertNotified('Hold released')->assertSee('In progress')->assertDontSee('On hold')->assertActionHidden('release');
+        $page->callAction('release')->assertNotified('Hold released')->assertSee('In progress')->assertDontSee('Under review')->assertActionHidden('release');
         same('queued',$op->fresh()->state,'Transfer needs a separate reviewed release');
     }
     $run($op->fresh(),'hold');$run($op->fresh(),'release');same('queued',$op->fresh()->state,'A later ordinary hold can release');

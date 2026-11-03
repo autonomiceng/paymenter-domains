@@ -12,7 +12,8 @@ final class OwnerFormValidation extends \DomainException
     {
         $out=[];
         foreach ($this->fields as $field) {
-            $out[$field]=match($field) {
+            $out[$field==='privacy'?'owner_action':$field]=match($field) {
+                'privacy'=>'WHOIS privacy is not offered yet. Reload this page and save again without it.',
                 'nameservers'=>OwnerNameservers::message($this->nameservers,$input['nameservers']??null,$domain),
                 'ds.key_tag'=>'Enter a number from 0 to 65535.',
                 'ds.algorithm','ds.digest_type'=>'Choose an option from the list.',
