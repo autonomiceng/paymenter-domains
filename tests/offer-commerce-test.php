@@ -33,7 +33,7 @@ same($before, $reads->calls, 'Locked checkout and invoice binding never resolve 
 [$secondBinding, $second] = offerCommerceSecond($fixture);
 foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generation', 'second_account'] as $change) {
     $cart = commerceCart($user); commerceAdd($cart, $public['product'], 'race-'.str_replace('_', '-', $change).'-placeholder.com', 3);
-    commerceAdd($cart, $second['product'], 'race-'.str_replace('_', '-', $change).'-placeholder.net');
+    commerceAdd($cart, $second['product'], 'example.net');
     $counts = [Order::count(), Invoice::count(), Operation::count()]; $before = $reads->calls;
     $reached = false; $saved = [];
     $mutate = static function () use ($change, $binding, $secondBinding, &$saved, &$reached): void {
@@ -67,7 +67,7 @@ foreach (['seller', 'defaults', 'facts', 'publication', 'credential', 'generatio
 }
 // Both accounts can also succeed in one native batch with ordinary hosting and discounts.
 $cart = commerceCart($user); commerceAdd($cart, $public['product'], 'mixed-acquire-placeholder.com', 3);
-commerceAdd($cart, $second['product'], 'mixed-acquire-placeholder.net');
+commerceAdd($cart, $second['product'], 'example.net');
 $hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting');
 $coupon = App\Models\Coupon::create(['code' => 'OFFER-HALF', 'type' => 'percentage', 'value' => 50, 'applies_to' => 'price']);
 $cart->update(['coupon_id' => $coupon->id]); $before = $reads->calls; $count = Operation::count();
