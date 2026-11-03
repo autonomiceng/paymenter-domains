@@ -51,12 +51,12 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
             if(($scheduler=OfferScheduler::routed())!==null){
                 // Reviewed imports continue through StaffSettingsWrites, preserving their current ticket.
                 if($this->reviewKey!==null){app(StaffSettingsWrites::class)->run(new Review($this->actor,$this->server,null,'import',$this->reviewKey,''),[]);}
-                else{$scheduler->sync(CatalogueAcceptances::binding($account));}
+                else{$scheduler->sync(CatalogueAcceptances::binding($account), expectedGeneration:$this->upgradeGeneration);}
                 $this->notice('Price sync queued','The account worker will refresh prices. Check sync progress on What you sell.');return;
             }
             UpgradeGate::legacy($this->upgradeGeneration);
             if($this->reviewKey===null){
-                $count=app(PriceFill::class)->run($account);
+                $count=app(PriceFill::class)->run($account,$this->upgradeGeneration);
                 $this->notice($count===0?'Another price read is running':'Prices updated',$count===0?'Its prices will appear when it finishes. Refresh What you sell.':'Saved '.$count.' TLDs, including retained rows without new prices. Refresh What you sell to see the prices.');
             }else{
                 $result=app(StaffSettingsWrites::class)->run(new Review($this->actor,$this->server,null,'import',$this->reviewKey,''),[]);

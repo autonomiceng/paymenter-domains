@@ -17,7 +17,7 @@ final class OfferScheduler
     public static function routed(): ?self { return CallerRouting::legacy(static fn () => null); }
     public function enroll(int $server): void
     { $this->offers->wake(CatalogueAcceptances::binding(Account::where('server_id', $server)->sole())); }
-    public function sync(AccountBinding $b, RequestOrigin $origin = RequestOrigin::Interactive): void { $this->offers->sync($b, $origin); }
+    public function sync(AccountBinding $b, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void { $this->offers->sync($b, $origin, $expectedGeneration); }
     public function wake(AccountBinding $b): void { $this->offers->wake($b); }
     public function requestFacts(AccountBinding $b, string $tld): void { $this->offers->requestFacts($b, $tld); }
     public function status(AccountBinding $b, ?string $tld = null): array { return $this->offers->status($b, $tld); }

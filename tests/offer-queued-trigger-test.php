@@ -31,5 +31,15 @@ $before = $wire->calls; $job->handle();
 same($before, $wire->calls, 'An old queued job cannot read or fill after pause/resume');
 same("Couldn't sync prices", App\Models\Notification::where('user_id', $staff->id)->latest('id')->value('title'), 'Stale queued work reports refusal');
 same(UpgradeGate::generation(), (new SyncPrices($staff->id, $binding->serverId, $binding->fingerprint))->upgradeGeneration, 'Fresh jobs capture the new generation');
+// Pause/resume after delivery validation, while resolving the actual admission service.
+$gapJob = new SyncPrices($staff->id, $binding->serverId, $binding->fingerprint);
+app()->bind(PriceFill::class, static function () use ($registry, $clock): PriceFill {
+    (new UpgradeGate)->pause(); (new UpgradeGate)->resume();
+    return new PriceFill(new AccountBindings($registry), $clock);
+});
+$before = $wire->calls; $gapJob->handle();
+same($before, $wire->calls, 'A queued generation cannot be recaptured after delivery validation');
+same(0, DB::table(Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)->count(), 'Stale delivery cannot admit a price-fill run');
+same("Couldn't sync prices", App\Models\Notification::where('user_id', $staff->id)->latest('id')->value('title'), 'Admission gap reports refusal');
 $nativeSuccessful = true;
 echo "Queued catalogue trigger generation checks passed.\n";
