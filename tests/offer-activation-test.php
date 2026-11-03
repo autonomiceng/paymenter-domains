@@ -70,7 +70,6 @@ $seller=DB::table('domains_sales_policies')->first();$changed('domains_sales_pol
 foreach(['invoices'=>['status','cancelled'],'invoice_items'=>['price','11.00'],'credits'=>['amount','9.00'],'domains_operations'=>['attempt','changed frozen attempt']] as $table=>[$column,$value]) {
     $row=DB::table($table)->orderBy('id')->first();$changed($table,$row->id,$column,$value,'Changed financial obligation refuses: '.$table);
 }
-$accountRows=DB::table('domains_accounts')->where('id',$account->id)->first();
 $changed('domains_accounts',$account->id,'registrar_key','namesilo','Changed account membership refuses');
 $secret=DB::table('settings')->where('settingable_id',$account->server_id)->where('key','domains_credentials')->first();
 $changed('settings',$secret->id,'value','synthetic altered ciphertext','Same-identity credential change refuses');
@@ -84,6 +83,11 @@ foreach([0,$now->getTimestamp()+300] as $lease) {
     $id=DB::table('domains_read_budgets')->insertGetId(['server_id'=>$account->server_id,'account_fingerprint'=>$account->account_fingerprint,'window_at'=>0,'leases'=>json_encode(['synthetic'=>$lease])]);
     $reject(fn()=>$gate->activate($evidence),'Read reservation must release even when expired');DB::table('domains_read_budgets')->where('id',$id)->delete();
 }
+foreach([0,$now->getTimestamp()+300] as $lease){$id=DB::table('domains_observation_work')->insertGetId(['server_id'=>$account->server_id,'account_fingerprint'=>$account->account_fingerprint,'domain_id'=>$domain,'generation'=>1,'due_at'=>0,'claim'=>str_repeat('b',32),'lease_until'=>$lease]);$reject(fn()=>$gate->activate($evidence),'Domain observation claim must drain even when expired');DB::table('domains_observation_work')->where('id',$id)->delete();}
+$serverRaw=(array)DB::table((new App\Models\Server)->getTable())->where('id',$account->server_id)->first();unset($serverRaw['id']);$sid=DB::table((new App\Models\Server)->getTable())->insertGetId($serverRaw);
+$accountRaw=(array)DB::table('domains_accounts')->where('id',$account->id)->first();unset($accountRaw['id']);$accountRaw['server_id']=$sid;DB::table('domains_accounts')->insert($accountRaw);
+$reject(fn()=>$gate->activate($evidence),'New account outside captured set refuses');DB::table('domains_accounts')->where('server_id',$sid)->delete();DB::table((new App\Models\Server)->getTable())->where('id',$sid)->delete();
+$enrollment=Setting::create(['key'=>Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::KEY,'settingable_id'=>$account->server_id,'settingable_type'=>(new App\Models\Server)->getMorphClass(),'type'=>'string','encrypted'=>true,'value'=>'synthetic changed enrollment']);$reject(fn()=>$gate->activate($evidence),'Changed enrollment bytes refuse');$enrollment->deleteQuietly();
 $state=Setting::where('key',UpgradeGate::KEY)->sole();$raw=$state->getRawOriginal('value');
 $bad=$state->replicate();$bad->saveQuietly();commerceReject(fn()=>$gate->activate($evidence));$bad->deleteQuietly();
 DB::table('settings')->where('id',$state->id)->update(['value'=>'invalid ciphertext']);commerceReject(fn()=>$gate->activate($evidence));DB::table('settings')->where('id',$state->id)->update(['value'=>$raw]);

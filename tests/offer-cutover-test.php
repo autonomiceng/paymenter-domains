@@ -29,6 +29,7 @@ $q=new Query($binding,['com'],'register');$revision=fn()=>$ports->readOffers($q,
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$revision());
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3)),$revision());
 $ports->apply(Edit::seller($binding,'com',['register']),$revision());
+expect($storefront->endings()!==[],'Committed evidence invalidates the cached empty display');
 $public=$storefront->offer('com','register',3);
 same(['$23.40','$10.40'],[$public['price'],$public['renew']],'Installed public route uses the shared evidenced term and annual retail');
 same($public['selection']->catalogue,$sellers->selection('com','register',3,$now)->catalogue,'Direct seller selection uses the same fenced catalogue');
@@ -39,6 +40,8 @@ $admission->refresh();$before=$reads->calls;$checkout=commerceCheckout($user,$ca
 same(4,Operation::count(),'Real installed checkout adds exactly one obligation beside three frozen historical operations');
 $op=Operation::where('operation_key','like','invoice-item:%')->sole();same('23.40',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
 same($before,$reads->calls,'Locked checkout creates no second provider read');
+$cost=DB::transaction(fn()=>$prices->current($binding->serverId,$binding->fingerprint,'com','register',3,'USD',$now,true,$tlds[0]->fresh()));same([3,'23.40','18.0000'],[$cost->term,$cost->retail,$cost->wholesale],'Locked normalized cost path preserves exact term-total evidence');
+commerceReject(fn()=>DB::transaction(fn()=>$prices->current($binding->serverId,str_repeat('f',64),'com','register',3,'USD',$now,true,$tlds[0]->fresh())));
 $invoice=App\Models\Invoice::findOrFail($op->invoice_id);same(null,app(PayCheck::class)->stop($invoice),'Installed payment check accepts current local offer evidence');
 $financial=[$op->fresh()->getRawOriginal(),$invoice->fresh()->getRawOriginal()];
 auth()->login($staff);
@@ -52,6 +55,12 @@ app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->instant=$now=$
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$revision());
 commerceReject(fn()=>DB::transaction(fn()=>$sellers->admit([$public['selection']],$now)));
 same('unavailable',app(PayCheck::class)->stop($invoice)['why'],'Payment refuses a stale saved offer');
+same([],$storefront->endings(),'Withdrawn evidence invalidates the previously warm display');
+$claims=new Paymenter\Extensions\Servers\Domains\Services\OperationClaims($bindings,app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));
+$acceptance=new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25);$held=false;
+try{$claims->locked($op->id,fn($locked)=>$acceptance->requireCurrent($binding,new Paymenter\Extensions\Servers\Domains\Data\Query($op->domain->domain,Paymenter\Extensions\Servers\Domains\Data\Action::Register,3),$locked,true,false));}
+catch(Paymenter\Extensions\Servers\Domains\Services\WriteHeld $e){$held=$e->reason==='order_not_supported';}
+same(true,$held,'Installed locked spending checks current facts rather than legacy accepted terms');
 same('10.40',$prices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$now)->retail,'Withdrawal retains holder retail');
 same([Runtime::class,'initialManagedRecordObservations'],app(RuntimePorts::class)->initialManagedRecordProducer(),'Only the installed named initial-record producer is registered');
 // Old jobs and the actual manual/callback routes cannot restart legacy catalogue reads.
