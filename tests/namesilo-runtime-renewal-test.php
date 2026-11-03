@@ -33,6 +33,10 @@ for($cycle=0;$cycle<2;$cycle++){
     $year=2027+$cycle;$clock->instant=new \DateTimeImmutable($year.'-09-27T12:00:00Z');
     $bill=$billing->invoice($holding->id,$user);$op=Operation::where('invoice_id',$bill->id)->sole();\App\Helpers\ExtensionHelper::addPayment($bill,null,$op->amount);
     $clock->instant=new \DateTimeImmutable($year.'-10-16T12:00:00Z');$GLOBALS['nsOperation']=$op->id;Cache::flush();
+    foreach(['server_id','account_fingerprint'] as $field){
+        $foreign=clone $op;$foreign->$field=$field==='server_id'?$op->server_id+1:str_repeat('a',64);$entered=false;
+        commerceReject(fn()=>$writer->withinReservation($foreign,static function()use(&$entered){$entered=true;}));same(false,$entered,'Foreign renewal '.$field.' cannot enter reservation');
+    }
     if($cycle===0){foreach(['cap','off'] as $refusal){
         config([$GLOBALS['nsAccountKey'].'.daily_spend_limit_usd'=>$refusal==='cap'?'0.00':'1000.00','domains.namesilo_live.renewal'=>$refusal!=='off']);
         $before=nsUsage($binding);$result=$engine->run($op->id,$writer);
