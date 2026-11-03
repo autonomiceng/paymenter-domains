@@ -74,6 +74,7 @@
     "tests/enom-pricing-test.php",
     "tests/offer-conversion-test.php",
     "tests/offer-writer-test.php",
+    "tests/offer-work-test.php",
     "tests/seller-policy-test.php",
     "tests/namesilo-pricing-test.php",
     "tests/namesilo-installed-quote-test.php",

@@ -14,7 +14,11 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Pricing
 final class Writer implements Catalogue
 {
     public function __construct(private readonly Projection $projection, private readonly Clock $clock,
-        private readonly \Closure $authorize, private readonly \Closure $ready, private readonly ?int $actorId = null) {}
+        private readonly \Closure $authorize, private readonly \Closure $ready, private readonly ?int $actorId = null, private readonly ?\Closure $current = null) {}
+
+    /** Queue generation is checked again under the writer locks, before mutations. */
+    public function withGuard(\Closure $current): self
+    { return new self($this->projection, $this->clock, $this->authorize, $this->ready, $this->actorId, $current); }
 
     public function readOffers(Query $query, Context $context): array
     { return (new OfferReader($this->clock, $this->authorize, $this->ready))->readOffers($query, $context); }
@@ -33,7 +37,6 @@ final class Writer implements Catalogue
         if (!$seller) { $seedQuery->where('server_id', $binding->serverId); }
         $seeds = $seedQuery->orderBy('id')->get()->all();
         if (!$seeds && ($command instanceof FeedObserved || $command instanceof FactsObserved)) {
-            if ($command instanceof FeedObserved && !$command->costs) { throw new \DomainException('Empty feed cannot discover an offer.'); }
             $seeds = [new Tld(['server_id' => $binding->serverId, 'registrar_key' => $binding->registrarKey,
                 'account_fingerprint' => $binding->fingerprint, 'tld' => $name])];
         }
@@ -50,7 +53,9 @@ final class Writer implements Catalogue
             if (!isset($accounts[$binding->serverId])) { throw new \DomainException('Seller offer missing.'); }
             $binding->requireMatch(CatalogueAcceptances::binding($accounts[$binding->serverId]));
             $policy = DB::table('domains_sales_policies')->where('tld', $name)->lockForUpdate()->first();
+            $created = false;
             if (!$seeds[0]->exists && !Tld::where('server_id', $binding->serverId)->where('tld', $name)->exists()) {
+                $created = true;
                 DB::table('domains_tlds')->insert(['server_id' => $binding->serverId, 'registrar_key' => $binding->registrarKey,
                     'account_fingerprint' => $binding->fingerprint, 'tld' => $name, 'catalogue_created' => true,
                     'catalogue_converted' => true, 'catalogue_intent' => OfferState::json(new Intent)]);
@@ -74,6 +79,7 @@ final class Writer implements Catalogue
             }
             // Reauthorize after taking mutexes, before any command mutation.
             ($this->authorize)($command, null); $now = $this->clock->now();
+            if ($this->current) { ($this->current)(); }
             if ($defaultsEdit) {
                 $fee = $command->rule['card_fee'] ?? $defaults['card_fee'] ?? \Paymenter\Extensions\Servers\Domains\Services\CardFee::read($binding->serverId);
                 $defaults = [...get_object_vars($command->intent), '_revision' => $revision->defaults + 1,
@@ -84,7 +90,7 @@ final class Writer implements Catalogue
                 $this->afterCommit([$binding->serverId => null]);
                 return new Revision($revision->offer, $revision->defaults + 1, $revision->selection);
             }
-            $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now);
+            $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now) || $created;
             if (!$changed) { return $revision; }
             if ($seller) {
                 $values = ['server_id' => $command->actions ? $binding->serverId : null,

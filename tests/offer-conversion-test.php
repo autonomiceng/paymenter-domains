@@ -11,13 +11,14 @@ use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\{DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Evaluator, FeedObserved, Intent, Query, Revision, Snapshot, UpgradeComparison, UpgradeConversion};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation, OfferSchema, SellRule, SellTableSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation, OfferSchema, OfferWorkSchema, SellRule, SellTableSchema};
 
 // A real retained/native database is necessary: atomic resume, permanent mappings and frozen
 // financial rows are the converter's persistence contract. Registrar fixtures are entirely fake.
 $migrator = app(Migrator::class);
 $files = $migrator->getMigrationFiles([dirname(__DIR__).'/Domains/database/migrations']);
-unset($files[OfferSchema::MIGRATION]);
+// Retain the schema from before conversion and its later worker migration.
+unset($files[OfferSchema::MIGRATION], $files[OfferWorkSchema::MIGRATION]);
 $migrator->runPending($files, ['force' => true]);
 extract(commerceFixture());
 [$enom, $namesilo] = $tlds;
@@ -138,6 +139,10 @@ DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' =>
 $malformed = $converter->report($binding, $before);
 same(false, $malformed['compatible'], 'Malformed staged intent rejects comparison without throwing');
 same(1, $malformed['staging_mismatches']['intent'], 'Malformed JSON is reported as a staged intent mismatch');
+DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => '42']);
+$scalar = $converter->report($binding, $before);
+same(false, $scalar['compatible'], 'Scalar staged intent rejects comparison without throwing');
+same(1, $scalar['staging_mismatches']['intent'], 'Scalar JSON is reported as a staged intent mismatch');
 DB::table('domains_tlds')->where('id', $enom->id)->update(['catalogue_intent' => $originalIntent]);
 // Compare membership as well as values: each mutation leaves retained source digests untouched.
 $coverage = [];
