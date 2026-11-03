@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/offer-activation-test.php';$nativeSuccessful=false;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Capabilities,Context,Edit,Facts,FactsObserved,Intent,OfferScheduler,Query,Revision,StaffCatalogue,StaffCommands,UpgradeGate};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,CatalogueAcceptances,CheckoutEligibility,EnomTestRenewal,InvoiceBinding,NativeCatalogue,PayCheck,PriceFill,PublicationEligibility,Runtime,RuntimePorts,StaffSettingsReview,StaffSettingsWrites,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,CatalogueAcceptances,CheckoutEligibility,EnomTestRenewal,InvoiceBinding,NativeCatalogue,ObservationRecords,PayCheck,PriceFill,PublicationEligibility,Runtime,RuntimePorts,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSettingsWrites,Storefront};
 use Illuminate\Support\Facades\DB;
 // No test routing overrides: native events and long-lived installed services must select together.
 $caps=Capabilities::routed();same(true,$caps instanceof Capabilities,'The checked switch must route the installed holder adapter');
@@ -68,4 +68,34 @@ $job=new Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices((int)$staff->id,$b
 $manual=new Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices((int)$staff->id,$binding->serverId,$binding->fingerprint);$manual->handle();
 expect(is_array($scheduler->status($binding,'com')),'Actual status entry reads the shared consumer');
 $frozen=DB::table('domains_operations')->orderBy('id')->get()->toJson();Runtime::initialManagedRecordObservations();same($frozen,DB::table('domains_operations')->orderBy('id')->get()->toJson(),'Initial-record callback preserves paid/pending/uncertain attempts');same($before,$reads->calls,'Sole active callback never invokes the legacy account reader');
+// Synthetic completed holding on the real checkout graph; recovery must use installed staff routing.
+DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'succeeded']);
+DB::table('domains_domains')->where('id',$op->domain_id)->update(['status'=>'active']);
+$readDomain=$op->domain->fresh();$clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
+DB::table('domains_observation_work')->where('domain_id',$readDomain->id)->delete();
+$readJob=DB::table('domains_observation_work')->insertGetId(['server_id'=>$op->server_id,'account_fingerprint'=>$op->account_fingerprint,
+    'domain_id'=>$readDomain->id,'generation'=>$op->authority_generation,'phase'=>'holding','safe_code'=>'read_unavailable','tries'=>5,'due_at'=>0]);
+$ticket=static fn($actor)=>StaffOperationReview::ticket((int)$actor->id,(int)$readDomain->id,(int)$op->id,'resume_observation',StaffOperationReview::stamp($op->fresh(),$readDomain->fresh()),$clock);
+$resume=static fn($actor,$ticket)=>app(StaffOperations::class)->run($actor,(int)$readDomain->id,(int)$op->id,'resume_observation',$ticket,'Synthetic holding sync recovery');
+$frozenHolding=[$op->fresh()->attempt,$op->fresh()->funding,$op->fresh()->cost,$op->fresh()->amount];
+$resume($staff,$ticket($staff));
+$job=DB::table('domains_observation_work')->where('id',$readJob)->sole();
+same([1,0,null,null,$clock->now()->getTimestamp()],[(int)$job->resumes,(int)$job->tries,$job->safe_code,$job->claim,(int)$job->due_at],'Active Resume sync resets stopped reads immediately');
+ObservationRecords::hold($readDomain->fresh(),'records_unavailable',$clock->now());
+$resume($staff,$ticket($staff));
+same(false,ObservationRecords::held($readDomain->fresh()),'Active record-only recovery clears the record hold');
+same(2,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Record-only recovery uses the same resume counter');
+same(2,count(array_filter($op->fresh()->policy['staff_actions'],static fn($a)=>$a['action']==='resume_observation')),'Both active resumptions retain staff audit');
+same(2,count($readDomain->fresh()->observation['resumptions']),'Both active resumptions retain holding audit');
+same($frozenHolding,[$op->fresh()->attempt,$op->fresh()->funding,$op->fresh()->cost,$op->fresh()->amount],'Resume cannot change frozen financial evidence');
+DB::table('domains_observation_work')->where('id',$readJob)->update(['safe_code'=>'read_unavailable','tries'=>5]);
+$withoutPermission=commerceUser();commerceReject(fn()=>$resume($withoutPermission,$ticket($withoutPermission)));
+$stale=$ticket($staff);$readDomain->fresh()->update(['observation'=>[...$readDomain->fresh()->observation,'synthetic_review_change'=>true]]);
+commerceReject(fn()=>$resume($staff,$stale));
+DB::table('domains_observation_work')->where('id',$readJob)->update(['lease_until'=>$clock->now()->getTimestamp()+60]);
+commerceReject(fn()=>$resume($staff,$ticket($staff)));
+same(2,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Permission, stale review and live lease refusals cannot consume a resume');
+DB::table('domains_observation_work')->where('id',$readJob)->update(['lease_until'=>0,'resumes'=>20]);
+commerceReject(fn()=>$resume($staff,$ticket($staff)));
+same(20,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Active recovery preserves the resume cap');
 $nativeSuccessful=true;echo "Installed checked cutover caller matrix passed.\n";

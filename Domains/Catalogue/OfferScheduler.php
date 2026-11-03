@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, HoldingObservationWork, OperationClaims, ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, HoldingObservationWork, OperationClaims, ReadFailure, StaffOperationReview};
 
 /** One shared account rotation. No job or timer registration; composition owns its generation. */
 final class OfferScheduler
@@ -21,6 +21,8 @@ final class OfferScheduler
     public function wake(AccountBinding $b): void { $this->offers->wake($b); }
     public function requestFacts(AccountBinding $b, string $tld): void { $this->offers->requestFacts($b, $tld); }
     public function status(AccountBinding $b, ?string $tld = null): array { return $this->offers->status($b, $tld); }
+    public function resume(int $id, string $reason, ?StaffOperationReview $review = null): void
+    { $this->holdings->resume($id, $reason, $review, $this->current); }
     public function tick(int $accounts = 8): array
     {
         OperationClaims::outside(); ($this->current)();
