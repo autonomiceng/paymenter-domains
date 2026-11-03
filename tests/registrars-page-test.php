@@ -269,6 +269,7 @@ $identityEnvironment=config('domains.enom_identity.environment');config(['domain
 $liveCapFacts=$capFacts::calls($liveCap);
 same(null,$liveCapFacts['value'],'Unconfigured Live account never reports the TEST count or cap');
 expect(str_contains($liveCapFacts['sub'],'Live account setup'),'Missing Live count or cap says what to fix');
+Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$liveCapServer->id])->assertSee('API calls, today (UTC)')->assertDontSee('API calls, last 24 hours');
 config(['domains.enom_identity.environment'=>$identityEnvironment]);
 
 config(['domains.enom_test_sends_per_day'=>'many']);
