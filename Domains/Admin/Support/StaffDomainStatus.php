@@ -58,7 +58,7 @@ final class StaffDomainStatus
             [$step, $request] = [$op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id];
         }
         if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldRegistration($op, $state==='registration_held')) {
-            $shared=[...$shared,'label'=>'On hold','tone'=>'warning'];
+            $shared=[...$shared,'key'=>'on_hold','label'=>'On hold','tone'=>'warning'];
         }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
     }

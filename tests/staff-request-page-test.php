@@ -200,11 +200,11 @@ foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_
         if(!isset(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::STATES[$state])){continue;}
         $op=$heldOp->fresh()->forceFill(['action'=>$kind,'state'=>$state]);
         foreach(['page'=>RequestFacts::status($op,true,$heldOp->domain)['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
-            if($word!==$domainWord($state)){$words[]="$kind $state ($where): request \"$word\", domain \"{$domainWord($state)}\"";}
+            if($word!==($kind==='register'&&$state==='held'?'On hold':$domainWord($state))){$words[]="$kind $state ($where): request \"$word\", domain \"{$domainWord($state)}\"";}
         }
     }
     $op=(clone $queued)->forceFill(['action'=>$kind]);
-    if(($word=RequestFacts::status($op)['label'])!==$domainWord('held')){$words[]="$kind queued, Orders off: request \"$word\", domain \"{$domainWord('held')}\"";}
+    if(($word=RequestFacts::status($op)['label'])!==($kind==='register'?'On hold':$domainWord('held'))){$words[]="$kind queued, Orders off: request \"$word\", domain \"{$domainWord('held')}\"";}
 }
 same([],$words,'A request reads the same word as its domain for the same state, for every kind');
 same(['Under review','warning','Not sent. Orders are off for this account.'],array_values(RequestFacts::status($queued)),'Queued with Orders off reads Under review, amber, with the hold');

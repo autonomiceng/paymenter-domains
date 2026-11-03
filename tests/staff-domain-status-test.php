@@ -38,7 +38,7 @@ $d=$row('active','register','succeeded',null,730,['operation_review','renewal_un
 $cases['walk: active with a saved correction review']=[$d,'active','Active','Registrar request needs a check. Check the request.'];
 foreach (['walk: paid registration held for staff (1)','walk: paid registration held for staff (2)'] as $name) {
     $d=$row('registration_pending','register','held','staff_review_required',120,['operation_review']);
-    $cases[$name]=[$d,'pending_registration','On hold','Put on hold by staff. '.$req($d)];
+    $cases[$name]=[$d,'on_hold','On hold','Put on hold by staff. '.$req($d)];
 }
 $d=$row('registration_pending','register','cancelled');
 $cases['walk: old cancelled request on a pending domain']=[$d,'pending_registration','Pending registration','Request cancelled, order still open. Cancel the order to release the name. '.$req($d)];
@@ -157,7 +157,7 @@ foreach ($cases as $name=>[$d,$key,$label,$step]) {
     $members[$key][]=$d->id;
 }
 // One head word: for every status, staff read the customer's word and add their detail in the step.
-$heads=[]; foreach ($cases as $name=>[$d]) { $s=DomainFacts::status($d->fresh()); $customer=DomainStatus::SET[$s['key']][0]; if ($s['label']!==$customer) { $heads[]=$name.': staff "'.$s['label'].'", customer "'.$customer.'"'; } }
+$heads=[]; foreach ($cases as $name=>[$d]) { $s=DomainFacts::status($d->fresh()); $customer=$s['key']==='on_hold'?'On hold':DomainStatus::SET[$s['key']][0]; if ($s['label']!==$customer) { $heads[]=$name.': staff "'.$s['label'].'", customer "'.$customer.'"'; } }
 same([],$heads,'Customers and staff read one head word for every status');
 same('warning',DomainFacts::status($cases['held transfer'][0]->fresh())['tone'],'A held transfer is a staff job, so staff read it in amber');
 // The amber note is for staff jobs only.
@@ -251,7 +251,7 @@ same([],$wrong,'Every row has one status and one next step');
 expect(!isset($columns['alert']),'No separate alert column: the next step is under the status');
 // The filter offers the customer's words.
 same(['active'=>'Active','pending_registration'=>'Pending registration','pending_transfer'=>'Pending transfer','awaiting_payment'=>'Awaiting payment','action_required'=>'Action required','under_review'=>'Under review',
-    'expired'=>'Expired','redemption'=>'Redemption','failed'=>'Failed','cancelled'=>'Cancelled'],DomainResource::statusOptions(),'Status filter set');
+    'expired'=>'Expired','redemption'=>'Redemption','failed'=>'Failed','cancelled'=>'Cancelled','on_hold'=>'On hold'],DomainResource::statusOptions(),'Status filter set');
 foreach (array_keys(DomainResource::statusOptions()) as $key) {
     $expected=$members[$key]??[]; sort($expected);
     same($expected,$ids($key),'Status filter matches the rows: '.$key);
