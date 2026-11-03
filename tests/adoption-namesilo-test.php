@@ -29,6 +29,7 @@ $wire=new class implements DeadlineTransport {
         return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>$this->reply]));
     }
 };
+expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/NameSiloAdoptionReader.php'),'NameSilo imports require a dedicated read-only source');
 $reader=new NameSiloAdoptionReader(new Driver(new Client($binding,'placeholder-private-key',$wire),clock:$clock),$clock);
 $facts=$reader->read('example.com','com')->facts();
 same(null,$facts['refusal'],'Active owned NameSilo domain can be imported');
@@ -62,4 +63,6 @@ $badFactory=NameSiloAdoptionReader::factory(static fn()=>new Driver(new Client($
 try {$badFactory($binding,[],$clock);expect(false,'Foreign runtime refuses');}catch(InvalidArgumentException|DomainException){}
 same($before,count($wire->calls),'Factory construction and mismatch perform no reads');
 expect(!str_contains(json_encode($reader->read('example.com','com')),'example.com'),'Readback projection hides private domain facts');
+$details=['renewal_eligibility'=>['eligible'=>false,'reason'=>'imported_renewal_unproven']];
+same('Renewal is unavailable until eligibility and price are confirmed.',\Paymenter\Extensions\Servers\Domains\Data\Adoption\Review::renewalNotice($details),'Staff review never promises an unproven imported renewal');
 echo "NameSilo import normalizes owned state, nullable reference and date precision without writes.\n";

@@ -69,6 +69,7 @@ class AdoptionPreview extends ViewRecord
             'Result' => ($this->review['code'] ?? null) === 'ready' && ($details['test_only'] ?? false) ? 'Test only. No real domain is imported.' : ($this->review['message'] ?? 'Not checked yet.'),
             'Expiry' => AdoptDomain::when($details['expiry'] ?? null), 'Expiry on file' => AdoptDomain::when($source),
             'Renewal due' => ($details['do_not_renew'] ?? false) ? 'None. Do not renew was requested.' : AdoptDomain::when($details['renewal_due'] ?? null),
+            'Renewal' => Review::renewalNotice($details),
             'Current annual charge' => isset($details['annual_charge']) ? $details['annual_charge'].' USD (including tax)' : 'Unconfirmed',
             'Price review' => isset($details['annual_charge']) ? Review::priceNotice($details['price_notice'] ?? null) : 'Unconfirmed',
             'Past invoices' => empty($details['history']) ? 'No verified past invoices.'

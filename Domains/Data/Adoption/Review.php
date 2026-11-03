@@ -33,6 +33,15 @@ final readonly class Review implements \JsonSerializable
         'unknown_price', 'unknown_margin' => 'Registrar cost missing. Check the published annual price.',
         default => "Saved annual price needs a check. Couldn't confirm the current cost.",
     }; }
+    public static function renewalNotice(array $details): string
+    {
+        return match (true) {
+            ($details['test_only'] ?? false) => 'Test only. No invoice or charge is created.',
+            ($details['do_not_renew'] ?? false) => 'Do not renew. The domain ends at its expiry date.',
+            ($details['renewal_eligibility']['eligible'] ?? true) !== true => 'Renewal is unavailable until eligibility and price are confirmed.',
+            default => 'Renewal stays on. Normal invoices apply. If the domain is already due, an invoice may go out right away.',
+        };
+    }
     public function __construct(public string $code, public array $details = [], public ?int $previewId = null)
     { if (!isset(self::LABELS[$code])) { throw new \InvalidArgumentException('Unknown adoption review.'); } }
     public function jsonSerialize(): array

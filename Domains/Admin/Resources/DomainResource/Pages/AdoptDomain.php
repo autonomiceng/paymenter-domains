@@ -107,7 +107,7 @@ class AdoptDomain extends Page
                 $facts = $this->review['details'] ?? [];
                 return 'Customer #'.$this->target['customer'].' · Service #'.$this->target['service'].' · Account #'.$this->target['account']
                     .'. Expiry: '.self::when($facts['expiry'] ?? null).'. Annual charge: '.($facts['annual_charge'] ?? 'Unconfirmed').' USD including tax. '
-                    .(($facts['do_not_renew'] ?? false) ? 'Do not renew. The domain ends at its expiry date. ' : 'Renewal stays on. Normal invoices apply. ')
+                    .Review::renewalNotice($facts).' '
                     .'Nothing is charged now. Reason: '.$this->reason;
             })
             ->schema([Toggle::make('verified')->label('I checked the details above.')->required()->accepted()])
@@ -185,7 +185,7 @@ class AdoptDomain extends Page
                 'Annual charge' => isset($details['annual_charge']) ? $details['annual_charge'].' USD (including tax)' : 'Unconfirmed',
                 'Price review' => Review::priceNotice($details['price_notice'] ?? null),
                 'Past invoices' => array_map(fn ($i) => 'Invoice #'.$i['invoice_id'].' ('.ucfirst($i['status']).')', $details['history'] ?? []) ?: ['No verified past invoices.'],
-                'Renewal' => ($details['test_only'] ?? false) ? 'Test only. No invoice or charge is created.' : (($details['do_not_renew'] ?? false) ? 'Do not renew. The domain ends at its expiry date.' : 'Renewal stays on. Normal invoices apply. If the domain is already due, an invoice may go out right away.'),
+                'Renewal' => Review::renewalNotice($details),
                 'Reason' => $this->reason, 'Valid until' => $a?->valid_until ? $a->valid_until->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y H:i:s').' UTC' : 'Expired. Check again.'];
             $entries = []; foreach ($facts as $label => $value) { $entries[] = TextEntry::make('review_'.count($entries))->label($label)->state($value)->listWithLineBreaks(); }
             if ($why = $this->unavailable()) { $entries[] = TextEntry::make('unavailable')->label("Why you can't confirm")->hiddenLabel()->state($why)->columnSpanFull(); }

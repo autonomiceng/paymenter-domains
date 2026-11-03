@@ -52,6 +52,7 @@ final class AdoptionReader
         if ($this->clock->now() >= $observed->modify('+90 seconds')) { $code = 'read_failed'; }
         $calendar = $expiry ? BillingCalendar::dates(new \DateTimeImmutable($expiry->value), $before['calendar_timing']['issue'], $before['calendar_timing']['due']) : null;
         $environment = $before['binding']->environment->value;
+        $renewalEligibility = AdoptionRenewalEligibility::forRegistrar($before['binding']->registrarKey);
         $evidence = ['version' => 1, 'canonical_name' => $target->name, 'native_identity' => $before['native_identity'],
             'registrar_key' => $before['binding']->registrarKey, 'environment' => $environment, 'account_proof_digest' => $before['binding']->fingerprint,
             'provider_domain_id' => $code === 'ready' ? $facts['provider_id'] : null,
@@ -61,7 +62,7 @@ final class AdoptionReader
             'capture_digest' => $captureDigest, 'intent_digest' => $intentDigest,
             'permission_snapshot' => [Staff::VIEW => true, Staff::ADOPT_PREVIEW => true],
             'command_set_version' => $facts['command_set_version'] ?? null, 'credential_revision' => $before['stamps']['settings'], 'revisions' => $before['stamps'],
-            'retail' => $before['retail'], 'calendar' => $calendar, 'existing_do_not_renew' => $before['existing_do_not_renew'], 'prior_generation' => $before['prior_generation'], 'prior_revision' => $before['prior_revision'],
+            'retail' => $before['retail'], 'calendar' => $calendar, 'renewal_eligibility' => $renewalEligibility, 'existing_do_not_renew' => $before['existing_do_not_renew'], 'prior_generation' => $before['prior_generation'], 'prior_revision' => $before['prior_revision'],
             'resulting_generation' => $before['prior_generation'] + 1, 'resulting_revision' => $before['prior_revision'] + 1,
             'source_conversion_row_id' => null, 'history_link_ids' => $before['history_link_ids'],
             'actor_id' => $staff->actorId, 'reason' => $staff->reason, 'requested_do_not_renew' => $staff->doNotRenew, 'do_not_renew' => $doNotRenew, 'refusal' => $code === 'ready' ? null : $code];
@@ -73,9 +74,9 @@ final class AdoptionReader
             'reason' => $staff->reason, 'do_not_renew' => $doNotRenew, 'observed_at' => $observed, 'valid_until' => $observed->modify('+120 seconds')]));
         return new Review($code, ['name' => $target->name, 'customer_id' => $target->customerId, 'service_id' => $target->serviceId,
             'environment' => $environment, 'test_only' => $environment === 'test', 'expiry' => $expiry?->value,
-            'renewal_due' => $calendar['due'] ?? null, 'source_expiry' => $before['expected_expiry'],
+            'renewal_due' => $renewalEligibility['eligible'] ? ($calendar['due'] ?? null) : null, 'source_expiry' => $before['expected_expiry'],
             'price_notice' => $before['retail']['staff_alert'], 'existing_do_not_renew' => $before['existing_do_not_renew'],
-            'annual_charge' => $before['retail']['annual_gross'], 'currency' => 'USD', 'history' => $before['history_review'], 'requested_do_not_renew' => $staff->doNotRenew, 'do_not_renew' => $doNotRenew], $row->id);
+            'annual_charge' => $renewalEligibility['eligible'] ? $before['retail']['annual_gross'] : null, 'renewal_eligibility' => $renewalEligibility, 'currency' => 'USD', 'history' => $before['history_review'], 'requested_do_not_renew' => $staff->doNotRenew, 'do_not_renew' => $doNotRenew], $row->id);
     }
     private function comparable(array $capture): array { unset($capture['binding']); return $capture; }
     private static function refusal(\Throwable $error, string $fallback): Review
