@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/Support/management.php';
 require __DIR__.'/Support/owner-pages.php';
 require __DIR__.'/Support/staff-panel.php';
+\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
