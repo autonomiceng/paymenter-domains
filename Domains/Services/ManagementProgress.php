@@ -48,9 +48,11 @@ final class ManagementProgress
         foreach($candidates as $op){
             $key=self::setting($op->action);
             try {
-                if(!isset($op->policy['management'])){continue;}
+                if(!isset($op->policy['management']) || isset($op->policy['management']['sequence_parent'])){continue;}
                 $row=self::sequence($op,$d,self::row($op,$d));
                 $priority=$row['pending']?2:($op->safe_code==='management_retired'?0:1);
+            } catch (\DomainException) {
+                $row=['id'=>(int)$op->id,'pending'=>true,'slow'=>false,'tone'=>'warning','text'=>self::UNREADABLE];$priority=2;
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
                 $row=['id'=>(int)$op->id,'pending'=>false,'slow'=>false,'unreadable'=>true,'text'=>self::UNREADABLE];
                 $priority=2;
@@ -87,6 +89,29 @@ final class ManagementProgress
     /** Retained sequence facts only: an unsent parent must not hide its prerequisite's outcome. */
     private static function sequence(Operation $op, Domain $d, array $row): array
     {
+        if (isset($op->policy['management']['sequence']) && !isset($op->attempt['management_terminal'])) {
+            $done=0;$members=ManagementSequence::members($op,ManagementSequence::retained($op,$d));$blocked=null;
+            foreach ($members as $child) {
+                if ($child->state==='succeeded' && ManagementEvidence::resolved($child,$d)) { $done++; }
+                elseif ($blocked===null) { $blocked=$child; }
+            }
+            $total=$members->count();
+            if ($done===$total) { return [...$row,'text'=>'All '.$total.' changes verified.']; }
+            $prefix=$done.' of '.$total.' changes verified. ';
+            if ($op->policy['management']['sequence']['configuration']!==ManagementSequence::currentConfiguration($d)
+                || (int)$d->service->user_id!==(int)$d->user_id) {
+                return [...$row,'text'=>$prefix.'The account or ownership changed. Contact support to finish the remaining changes.','tone'=>'warning'];
+            }
+            if ($blocked?->state==='queued' && $row['slow']) {
+                return [...$row,'text'=>$prefix.'This is taking longer than usual. Contact support to finish the remaining changes.','tone'=>'warning'];
+            }
+            if ($blocked && ($blocked->state==='uncertain' || $blocked->state==='held' || $blocked->state==='rejected'
+                || $blocked->state==='running' && $row['slow'])) {
+                $unsent=ManagementEvidence::idle($blocked);
+                return [...$row,'pending'=>!$unsent,'text'=>$prefix.($unsent?'The remaining changes were not sent. Save again to retry.':'The result is not confirmed. Contact support before making more changes.'),'tone'=>'warning'];
+            }
+            return [...$row,'text'=>$prefix.'Saving the remaining changes.'];
+        }
         $key=$op->policy['management']['prerequisite']['key']??null;
         if ($op->action!=='contacts' || !is_string($key) || isset($op->attempt['management_terminal'])) { return $row; }
         $step=$d->operations()->where('operation_key',$key)->where('action','contact_profile')

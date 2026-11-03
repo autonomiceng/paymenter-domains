@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, ManagementPay
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment, Outcome, RegistrarRequest, ResponseParser};
 /** Baseline management only. No default sender, purchases, profile updates or advanced tools. */
-final class Management extends ManagementProtocol
+class Management extends ManagementProtocol
 {
     public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange)
     {
@@ -87,7 +87,7 @@ final class Management extends ManagementProtocol
         foreach (['order_amount','order_number','order_id'] as $key) { if (array_key_exists($key, $p)) { throw new \DomainException('Contradictory management reply.'); } }
         return $p;
     }
-    private function owned(ManagementRequest $r, RequestContext $c): array
+    protected function owned(ManagementRequest $r, RequestContext $c): array
     {
         if ($r->providerId !== null || CanonicalName::normalize($r->name) !== $r->name) { throw new \DomainException('Domain identity unavailable.'); }
         $request = RegistrarRequest::domainInfo($r->name);
