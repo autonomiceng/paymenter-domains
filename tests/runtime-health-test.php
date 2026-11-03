@@ -7,6 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,CatalogueAcceptances};
 
+// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();extract(commerceFixture(false,static fn()=>null));
 app()->instance(AccountBindings::class,$bindings);
 // Worker cadence is operator documentation, not a staff page fact.

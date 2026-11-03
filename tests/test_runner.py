@@ -56,6 +56,7 @@ class InstalledPhaseTests(unittest.TestCase):
                  mock.patch.object(installed, 'time', mock.Mock(monotonic=lambda: clock[0], sleep=advance)), \
                  mock.patch.object(installed.build, 'build', side_effect=build_package), \
                  mock.patch.object(installed.build, 'verify', side_effect=verify_package), \
+                 mock.patch.object(installed, 'previous_build', return_value=None), \
                  mock.patch.object(installed, 'refuse_unsafe_archives'), \
                  mock.patch.object(installed.subprocess, 'run', side_effect=child), \
                  mock.patch.object(Path, 'read_text', read), contextlib.redirect_stdout(io.StringIO()) as output:

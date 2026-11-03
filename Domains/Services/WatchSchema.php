@@ -38,10 +38,11 @@ final class WatchSchema
     {
         EvidenceDatesSchema::verify(PslReviewSchema::class); // The shared append-only audit was installed with suffix review.
         $present = array_map(Schema::hasTable(...), self::tables());
-        if (in_array(true, $present, true) && in_array(false, $present, true)) { throw new \RuntimeException('Partial retained watch schema.'); }
-        if (!$present[0]) {
-            Schema::create(self::tables()[0], self::maps(...)); Schema::create(self::tables()[1], self::names(...)); Schema::create(self::tables()[2], self::sources(...));
-        }
+        if ((in_array(true, $present, true) && in_array(false, $present, true)) && !FreshInstallation::recovering()) { throw new \RuntimeException('Partial retained watch schema.'); }
+        if (!$present[0]) { Schema::create(self::tables()[0], self::maps(...)); }
+        if (!$present[1]) { Schema::create(self::tables()[1], self::names(...)); }
+        if (!$present[2]) { Schema::create(self::tables()[2], self::sources(...)); }
+
         EvidenceDatesSchema::verify(self::class);
     }
     public static function verify(bool $legacyDates = false): void

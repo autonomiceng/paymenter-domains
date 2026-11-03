@@ -48,13 +48,14 @@ final class ManagedPublicSchema
     }
     public static function install(): void
     {
-        if (array_filter(array_map(Schema::hasTable(...), self::tables())) || Schema::hasColumn(ManagedPublicWorkSchema::TABLE, 'claim')) {
+        if ((array_filter(array_map(Schema::hasTable(...), self::tables())) || Schema::hasColumn(ManagedPublicWorkSchema::TABLE, 'claim'))
+            && !FreshInstallation::recovering()) {
             self::verify(); return;
         }
         ManagedPublicWorkSchema::verify();
-        Schema::table(ManagedPublicWorkSchema::TABLE, self::workColumns(...));
+        if (!Schema::hasColumn(ManagedPublicWorkSchema::TABLE, 'claim')) { Schema::table(ManagedPublicWorkSchema::TABLE, self::workColumns(...)); }
         foreach (array_combine(self::tables(), ['config', 'observations', 'pool']) as $table => $method) {
-            Schema::create($table, self::$method(...));
+            if (!Schema::hasTable($table)) { Schema::create($table, self::$method(...)); }
         }
         self::verify();
     }

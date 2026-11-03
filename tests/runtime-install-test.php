@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\{DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimePorts,RuntimeSchema,ReminderSchedules,AccountBindings,NativePresenter,StaffSettingsReview as Review,StaffSettingsWrites,NativeCatalogue,NativeServerGuard};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $entry=new Domains([]);$entry->installed();
 foreach(Installation::SCHEMAS as $schema){$schema::verify();}
 // A preview installation already recorded the index migration before glue was included.

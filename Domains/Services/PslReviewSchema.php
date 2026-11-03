@@ -23,8 +23,9 @@ final class PslReviewSchema
     public static function install(): void
     {
         $a = Schema::hasTable('domains_psl_candidates'); $b = Schema::hasTable('domains_watch_audit');
-        if ($a !== $b) { throw new \RuntimeException('Partial retained suffix review schema.'); }
-        if (!$a) { Schema::create('domains_psl_candidates', self::candidates(...)); Schema::create('domains_watch_audit', self::audit(...)); }
+        if (($a !== $b) && !FreshInstallation::recovering()) { throw new \RuntimeException('Partial retained suffix review schema.'); }
+        if (!$a) { Schema::create('domains_psl_candidates', self::candidates(...)); }
+        if (!$b) { Schema::create('domains_watch_audit', self::audit(...)); }
         self::verify();
     }
     public static function verify(bool $legacyDates = false): void

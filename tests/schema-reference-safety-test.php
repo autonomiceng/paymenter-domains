@@ -41,8 +41,14 @@ namespace {
     Schema::drop($reference);
     unset($GLOBALS['schemaReferenceRandom']);
     $before = Schema::getTableListing(); sort($before);
-    for ($i = 0; $i < 20; $i++) { SchemaVerifier::verify('domains_reference_test', $definition); }
-    same(20, count(array_unique(array_slice($builder->references, -20))), 'Independent concurrent invocations have distinct names');
+    $references = [];
+    for ($i = 0; $i < 20; $i++) {
+        $start = count($builder->references);
+        SchemaVerifier::verify('domains_reference_test', $definition);
+        // Verification may inspect a reference more than once; compare one name per invocation.
+        $references[] = $builder->references[$start];
+    }
+    same(20, count(array_unique($references)), 'Independent concurrent invocations have distinct names');
     // CREATE succeeds, but a later index statement fails: finally must remove the owned table.
     try {
         SchemaVerifier::verify('domains_reference_test', static function (Blueprint $t): void {

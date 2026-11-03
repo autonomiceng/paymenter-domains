@@ -106,8 +106,8 @@ and a bounded local wake happen after commit. There is still one minute consumer
    beside the earlier check. This method performs the authoritative locked recheck, including the
    compiled installed routing contract; an earlier compatible report supplies no authority. Any
    refusal keeps maintenance active for investigation. Do not edit the encrypted setting, seed active
-   state, clear claims, reset conversion markers or activate a subset. Mere deployment never switches
-   callers. Our feed/facts call ceilings are budgets, not registrar limits; this procedure grants no
+   state, clear claims, reset conversion markers or activate a subset. Deployment never switches
+   callers on a retained installation. Our feed/facts call ceilings are budgets, not registrar limits; this procedure grants no
    connected reads or paid proof.
 6. After the checked switch, compare original IDs and frozen obligations again. Prove a paid
    pending request can continue without a duplicate attempt, an uncertain request cannot resend,
@@ -126,3 +126,20 @@ Offline B6a evidence is `tests/offer-upgrade-gate-test.php`: two accounts, 1,009
 uncertain obligations, writer refusal, superseded price reads, generation/binding checks, claims,
 tampered staging and frozen costs, one global obligation comparison and usable legacy rollback.
 SQLite fixture results do not establish installed MySQL concurrency or provider acceptance.
+
+## New installations
+
+The extension install/upgrade lifecycle automatically activates only a proven-new Domains installation:
+no Domains tables, migration history, global or scoped settings, server identity (including deleted records), queued/failed Domains work or notification templates.
+Unrelated Paymenter customers, hosting and financial records do not prevent a new Domains install.
+An old empty installation, holding-only storage, orphan settings or partial history cannot take this shortcut.
+Retained installations keep the maintenance procedure above, including authenticated operator activation.
+
+Before creating tables, installation commits an encrypted initialization intent. While that intent is pending,
+executable routing and legacy work refuse; there is no fallback. A completely uninstalled database also refuses
+executable routing before its intent is created. Retry the same package's installation after an
+interruption. The owned intent permits missing tables/indexes to be completed only while all Domains business
+storage remains empty. Unexpected data or schema drift refuses; preserve the evidence and investigate.
+Verification, empty-state recheck and the installed caller contract precede one atomic active receipt.
+Repeated lifecycle calls preserve it. Initialization does not create accounts, enable processing or contact a registrar.
+The schema-maintenance service alone never grants new-install activation authority.

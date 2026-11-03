@@ -24,11 +24,10 @@ final class PslSchema
     {
         $tables = ['domains_psl_snapshots', 'domains_psl_status'];
         $present = array_map(Schema::hasTable(...), $tables);
-        if (in_array(true, $present, true) && in_array(false, $present, true)) { throw new \RuntimeException('Partial retained public suffix schema.'); }
-        if (!$present[0]) {
-            Schema::create($tables[0], self::snapshots(...)); Schema::create($tables[1], self::status(...));
-            DB::table($tables[1])->insert(['id' => 1]);
-        }
+        if ((in_array(true, $present, true) && in_array(false, $present, true)) && !FreshInstallation::recovering()) { throw new \RuntimeException('Partial retained public suffix schema.'); }
+        if (!$present[0]) { Schema::create($tables[0], self::snapshots(...)); }
+        if (!$present[1]) { Schema::create($tables[1], self::status(...)); DB::table($tables[1])->insert(['id'=>1]); }
+        elseif (FreshInstallation::recovering() && !DB::table($tables[1])->exists()) { DB::table($tables[1])->insert(['id'=>1]); }
         self::verify();
     }
     public static function verify(): void

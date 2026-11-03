@@ -6,12 +6,12 @@ use App\Attributes\ExtensionMeta;
 use App\Classes\Extension\Server;
 use App\Models\Service;
 use Illuminate\Support\Facades\Auth;
-use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission,Installation,Runtime};
+use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission,FreshInstallation,Runtime};
 #[ExtensionMeta(name: 'Domains', description: 'Sell and manage domains through supported registrars.', version: '0.1.0', author: 'Autonomic Engineering')]
 class Domains extends Server
 {
     public function boot(): void { Runtime::register(); app(Runtime::class)->boot(); }
-    public function installed(): void { Runtime::register(); app(Installation::class)->install(); }
+    public function installed(): void { Runtime::register(); FreshInstallation::install(); }
     public function upgraded($oldVersion = null): void { $this->installed(); }
     public function uninstalled(): void {} // Retain all ownership, billing and operation evidence.
     /** Optional gateway seam. Domains alone decides current renewal authority. */

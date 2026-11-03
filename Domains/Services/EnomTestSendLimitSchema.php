@@ -20,8 +20,9 @@ final class EnomTestSendLimitSchema
     public static function install(): void
     {
         foreach(self::RETIRED as $table){Schema::dropIfExists($table);}
-        if(!array_filter(array_map(Schema::hasTable(...),self::tables()))){
-            Schema::create(self::ACCOUNTS,self::accounts(...));Schema::create(self::SENDS,self::sends(...));
+        if(!array_filter(array_map(Schema::hasTable(...),self::tables()))||FreshInstallation::recovering()){
+            if(!Schema::hasTable(self::ACCOUNTS)){Schema::create(self::ACCOUNTS,self::accounts(...));}
+            if(!Schema::hasTable(self::SENDS)){Schema::create(self::SENDS,self::sends(...));}
         }
         self::verify();
     }

@@ -95,22 +95,24 @@ if($phase==='server-delete'){
     // The extension's separate uninstall hook also promises retained history.
     App\Helpers\ExtensionHelper::call($server,'uninstalled',mayFail:true);assertRetained($receipt);
     echo "Native disabled/delete refused and uninstall hook retained data.\n";
-}elseif(in_array($phase,['install','install-enom-test-management','upload','reinstall'],true)){
+}elseif(in_array($phase,['retained-install','install','install-enom-test-management','upload','reinstall'],true)){
     Illuminate\Support\Carbon::setTestNow(TEMPLATE_UPGRADE_AT);
-    if(in_array($phase,['install','install-enom-test-management','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
+    if(in_array($phase,['retained-install','install','install-enom-test-management','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
     $zip=(string)getenv('PACKAGE_ZIP');expect(is_file($zip),'Verified upload copy exists');
     $installStarted=hrtime(true);
     same('server',app(App\Services\Extensions\UploadExtensionService::class)->handle($zip),'Native uploader classifies and installs server extension');
     $traceTiming('zip_install',$installStarted);
     expect(!file_exists($zip),'Native uploader consumed upload');
     expect(is_file(base_path('extensions/Servers/Domains/manifest.json')),'Native extraction retained embedded manifest');
-    if(in_array($phase,['install','install-enom-test-management'],true)){
+    if(in_array($phase,['retained-install','install','install-enom-test-management'],true)){
         // Upstream commands catch exceptions: assert schema and migration history directly.
         app(Installation::class)->verify();
         same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed migration inventory');
         foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Native install ran each extension migration once');}
         assertInstalledMigrationOrder();
         same(0,Account::count(),'Fresh package creates no activated accounts');
+        if($phase!=='retained-install'&&getenv('PACKAGE_CATALOGUE_MODE')==='retained-legacy'){same('legacy',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Lifecycle scenario retains the unconverted catalogue through native installation');}
+        if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Fresh native installation activates the offer catalogue');}
         echo "Native upload/extract/Install branch passed.\n";
         if($phase==='install-enom-test-management'){
             $setupStarted=hrtime(true);
@@ -204,7 +206,8 @@ if($phase==='server-delete'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
     expect(!is_link(base_path('extensions/Servers/Domains')),'Runtime is installed files, never a source link');
     $entry=new Paymenter\Extensions\Servers\Domains\Domains;
-    extract(commerceFixture(true,static fn()=>null));
+    if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){require __DIR__.'/Support/installed-fresh.php';extract(installedFreshCommerceFixture());}
+    else{extract(commerceFixture(true,static fn()=>null));}
     $clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
     app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     foreach([AccountBindings::class=>$bindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
@@ -231,6 +234,7 @@ if($phase==='server-delete'){
     echo "Native checkout, uncertain evidence, invoice/payment/credit and reservations seeded.\n";
 }elseif($phase==='verify'){
     assertBooted(); // Native provider discovery must supply these before any manual boot.
+    if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Fresh catalogue remains active across upload, upgrade and reinstall');}
     // Prove the upload-time upgrade succeeded before any second upgrade can repair it.
     app(Installation::class)->verify();
     require_once __DIR__.'/Support/installed-watch.php';assertInstalledWatchGates();assertRetained($receipt);

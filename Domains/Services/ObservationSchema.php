@@ -38,7 +38,7 @@ final class ObservationSchema
     public static function install(): void
     {
         $present=array_filter(array_keys(self::definitions()),fn($name)=>Schema::hasTable($name));
-        if ($present && count($present)!==count(self::definitions())) { throw new \RuntimeException('Partial retained observation schema.'); }
+        if (($present && count($present)!==count(self::definitions())) && !FreshInstallation::recovering()) { throw new \RuntimeException('Partial retained observation schema.'); }
         foreach (self::definitions() as $name=>$definition) {
             if (Schema::hasTable($name)) {
                 if ($name === 'domains_observation_work' && !Schema::hasIndex($name, $name.'_account_due_index')) {

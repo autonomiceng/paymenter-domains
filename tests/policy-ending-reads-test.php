@@ -14,6 +14,8 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainSummaries, PolicyEndings, Rdap, Storefront, TransferPrecheck, WatchTransfer};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
+// This fixture exercises retained legacy commerce, rather than new-install activation.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $f = noticeFixture(); extract($f); extract(commerceFixture(true, static fn () => null));
 $clock = new FakeClock($now); $at = $now->getTimestamp();
 config(['domains.watch_transfer.enabled' => true]);

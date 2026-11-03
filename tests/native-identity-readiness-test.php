@@ -8,6 +8,8 @@ use Illuminate\Support\HtmlString;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $entry=new Paymenter\Extensions\Servers\Domains\Domains;$entry->installed();extract(commerceFixture(true,static fn()=>null));$entry->boot();tldPanel();
 $orphan=Paymenter\Extensions\Servers\Domains\Models\Domain::create(['user_id'=>987654,'service_id'=>987654,'domain'=>'missing-native-placeholder.com','sld'=>'missing-native-placeholder','tld'=>'com','server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);
 Paymenter\Extensions\Servers\Domains\Services\NativeIdentityDiscrepancies::inspect($orphan,now()->getTimestamp());
