@@ -331,6 +331,7 @@
     "tests/native-service-refusal-holding-test.php",
     "tests/watch-notice-delivery-test.php",
     "tests/watch-notice-negative-test.php",
+    "tests/watch-notice-health-test.php",
     "tests/watch-notice-managed-test.php",
     "tests/watch-notice-managed-claim-test.php",
     "tests/watch-notice-priority-test.php",

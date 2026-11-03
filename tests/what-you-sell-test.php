@@ -169,7 +169,8 @@ queuedPriceSync(fn()=>Livewire::actingAs($staff)->test(WhatYouSell::class)->asse
 $now=app(Clock::class)->now()->getTimestamp();
 DB::table(SellTableSchema::FILLS)->where('server_id',$server->id)->update(['filled_at'=>$now-PriceFill::STALE_SECONDS,'tried_at'=>$now-PriceFill::EVERY_SECONDS]);
 $fill->daily($account);expect($inbox()>0,'Three days without a good fill tells staff');$sent=$inbox();
-same(WhatYouSell::getUrl(),Inbox::where('title','Prices are out of date')->first()->url,'The notice opens the page');
+$notice=Inbox::where('title','Prices are out of date')->first();
+same([$server->name.' has not sent new prices for 3 days.',WhatYouSell::getUrl(['account'=>$server->id])],[$notice->body,$notice->url],'One short line; the notice opens this account on the page');
 $back(PriceFill::EVERY_SECONDS);$fill->daily($account);same($sent,$inbox(),'One notice for one stretch');
 Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices are out of date')->assertSee('Those prices are still shown');
 unset($GLOBALS['catalogueBulkFailed']);

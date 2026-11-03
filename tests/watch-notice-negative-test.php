@@ -24,14 +24,35 @@ $template->update(['body'=>'@php throw new \\RuntimeException("Synthetic render 
 $before=DB::table('domains_watch_deliveries')->count();$health=WatchAudit::where('event','notice_health')->count();
 expect($delivery->reserve($n->id,'mail',$at)===null,'Render failure does not claim');expect($delivery->reserve($n->id,'mail',$at)===null,'Repeated render failure safe');
 same($before,DB::table('domains_watch_deliveries')->count(),'No delivery identity on render error');same($health+1,WatchAudit::where('event','notice_health')->count(),'Render health deduplicated');
-staffAlerts('Domain monitoring check failed','Open Domain monitoring to see the domain.',route('filament.admin.resources.domain-watch.index'),$staff);
+staffAlerts('Domain monitoring check failed','A customer notice for '.\Paymenter\Extensions\Servers\Domains\Models\WatchName::findOrFail($id)->canonical_name.' could not be prepared.',route('filament.admin.resources.domain-watch.view',['record'=>$id]),$staff);
+// The alert's page says why the customer alert failed and what to do, until an alert goes out again.
+require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';staffPanel();\Paymenter\Extensions\Servers\Domains\Services\StaffWatchSchema::install();
+\Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
+$watchPage=fn()=>Livewire\Livewire::actingAs($staff[0])->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id]);
+$watchPage()->assertSee('Customer alert failed '.gmdate('M j, Y H:i',$at).' UTC.')->assertSee($template->name)->assertSee('template has an error. Fix it in Notification templates.');
+// Another channel going out proves nothing about the broken mail body: the step stays until mail from this template goes out.
+$app=$delivery->reserve($n->id,'app',$at+1);expect($app!==null && $delivery->handoff($app,$at+1),'App goes out while mail is broken');
+expect((static function()use($n,$uid):bool {try{WatchNoticeDelivery::prepare($n,'mail',App\Models\User::findOrFail($uid));return false;}catch(\Throwable){return true;}})(),'Mail still cannot be prepared');
+$watchPage()->assertSee('template has an error. Fix it in Notification templates.');
 $template->update(['body'=>'{{ $domain }} {{ $date }} <a href="{{ $domain_url }}">View domain checks</a>']);
 $claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Fixed template can claim');
+// A successful preparation rearms this same notice/channel, even before a delivery is accepted.
+$health=WatchAudit::where('event','notice_health')->count();
+$template->update(['body'=>'@php throw new \\RuntimeException("Synthetic second render failure"); @endphp']);
+same(null,$delivery->reserve($n->id,'mail',$at),'Same notice fails again after template recovery');
+same($health+1,WatchAudit::where('event','notice_health')->count(),'Second render failure after recovery is recorded');
+same(null,$delivery->reserve($n->id,'mail',$at),'Second failure remains safe to retry');
+same($health+1,WatchAudit::where('event','notice_health')->count(),'Second failure episode still deduplicates');
+$template->update(['body'=>'{{ $domain }} {{ $date }} <a href="{{ $domain_url }}">View domain checks</a>']);
+same($claim,$delivery->reserve($n->id,'mail',$at),'Recovery keeps the existing unhanded claim');
 $nativePref=NotificationPreference::create(['user_id'=>$uid,'notification_template_id'=>$template->id,'mail_enabled'=>false,'in_app_enabled'=>true]);
 expect(!$delivery->handoff($claim,$at),'Native opt-out after reservation suppresses mail');
-$app=$delivery->reserve($n->id,'app',$at);expect($app!==null && $delivery->handoff($app,$at),'Independent native app preference honored');
+[$n,$at]=$new();same(['mail'=>false,'app'=>true],$delivery->deliver($n->id,$at),'Independent native app preference honored');
+$watchPage()->assertSee('template has an error');
 [$n,$at]=$new();$nativePref->update(['mail_enabled'=>true,'in_app_enabled'=>false]);
 $r=$delivery->deliver($n->id,$at);same(['mail'=>true,'app'=>false],$r,'Native mail on app off independent');
+$watchPage()->assertDontSee('template has an error');
 [$n,$at]=$new();$nativePref->update(['in_app_enabled'=>true]);$template->update(['enabled'=>false]);
 same(['mail'=>false,'app'=>false],$delivery->deliver($n->id,$at),'Disabled template suppresses both channels');
 [$n,$at]=$new();$template->update(['enabled'=>true]);config(['settings.mail_disable'=>true]);
@@ -42,6 +63,7 @@ $queued=Mail::queued(NoticeMail::class)->count();$health=WatchAudit::where('even
 same(['mail'=>false,'app'=>true],$delivery->deliver($n->id,$at),'Forced watch mail pause preserves independent app delivery');
 same(0,DB::table('domains_watch_deliveries')->where('notice_id',$n->id)->where('channel','mail')->count(),'Unavailable forced watch mail consumes no delivery identity');
 same($health+1,WatchAudit::where('event','notice_health')->count(),'Unavailable forced watch mail alerts staff');
+$watchPage()->assertSee('template always sends mail. Turn off Disable Mail in Settings.')->assertDontSee('template has an error');
 config(['settings.mail_disable'=>false]);$claim=$delivery->reserve($n->id,'mail',$at);expect($claim!==null,'Restored forced watch mail can reserve');
 config(['settings.mail_disable'=>true]);expect(!$delivery->handoff($claim,$at),'Forced watch mail paused after reservation waits');
 same('reserved',DB::table('domains_watch_deliveries')->find($claim)->state,'Mail pause preserves reserved forced watch claim');

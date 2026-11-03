@@ -65,8 +65,9 @@ final class PriceFill
         Log::warning('Domains price fill failed.',['server_id'=>$binding->serverId,'code'=>$code]);
         if(!self::stale(self::last($binding),$now)){return;}
         $name=(string)(\App\Models\Server::whereKey($binding->serverId)->value('name')??'A registrar account');
-        StaffAlert::send('Prices are out of date',$name.' has not given us new prices for 3 days. What you sell still shows the last good prices. Open it and use Sync prices to see what stopped the read.',
-            'filament.admin.pages.what-you-sell',Staff::POLICY,'sell_fill:'.$binding->serverId.':'.$binding->fingerprint.':'.$since);
+        // What you sell, on this account, says the last good prices still show and offers Sync prices.
+        StaffAlert::send('Prices are out of date',$name.' has not sent new prices for 3 days.',
+            'filament.admin.pages.what-you-sell',Staff::POLICY,'sell_fill:'.$binding->serverId.':'.$binding->fingerprint.':'.$since,['account'=>$binding->serverId]);
     }
     private function fill(AccountBinding $binding,EnomDriver|NameSiloDriver $reader,RequestOrigin $origin): int
     {

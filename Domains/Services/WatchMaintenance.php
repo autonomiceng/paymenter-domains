@@ -10,7 +10,8 @@ final class WatchMaintenance
     {
         if(($health['alert_attempts']??1)===1){Log::warning('Domain monitoring needs staff review.',['code'=>$health['reason']]);}
         $title=$health['reason']==='checks_unsuccessful'?'Domain monitoring checks failed':'Domain monitoring stopped';
-        $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['text'];
+        // The fact only. Domain monitoring shows the full notice with its next step.
+        $body=$health['reason']==='dispatch_overdue'?'Checks have not run since '.self::date($health['since']??null).'.':self::notice($health)['line'];
         return \Paymenter\Extensions\Servers\Domains\Admin\Support\StaffAlert::send($title,$body,'filament.admin.resources.domain-watch.index','admin.domains.watch.view','watch:'.$health['alert_key']);
     }
     private function families(int $now): array
@@ -68,7 +69,8 @@ final class WatchMaintenance
     }
     private static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':'the first run';}
     /** The Domain monitoring notice: one line, its tone and its resolver settings action, when it can help. Normal states have none;
-     * a short queue timeout shows under Registrars > account > System checks instead. */
+     * a short queue timeout shows under Registrars > account > System checks instead. Failed checks also return 'line', the
+     * fact alone, for the staff alert that links here. */
     public static function notice(array $health): ?array
     {
         $since=self::date($health['since']??null);
@@ -76,13 +78,15 @@ final class WatchMaintenance
             $families=$health['families']??[$health['family']??'local'];
             if(!array_diff($families,['watch_dns','managed_dns']) && in_array($health['resolver_error']??null,['resolver_failed','deadline'],true)){
                 $cause=$health['resolver_error']==='deadline'?'The resolver did not reply in time.':'The resolver request failed.';
-                return ['text'=>"DNS checks can't reach the resolver. Recent error: ".$cause.' Retrying automatically.','tone'=>'danger','action'=>'settings'];
+                $line="DNS checks can't reach the resolver.";
+                return ['text'=>$line.' Recent error: '.$cause.' Retrying automatically.','tone'=>'danger','action'=>'settings','line'=>$line];
             }
             $names=array_values(array_unique(array_map(static fn($f)=>['registry'=>'Expiry checks','watch_dns'=>'DNS checks','managed_dns'=>'DNS checks','products'=>'Domain products'][$f]??'Domain discovery',$families)));
             $products=in_array('products',$families,true);$local=in_array('local',$families,true);
             $action=!$local&&!$products&&array_intersect(['watch_dns','managed_dns'],$families)?'settings':null;
             $next=$products?'fix domain products'.($local?' and discovery':''):($local?'fix domain discovery':($action==='settings'?'check the DNS resolver':'check the registry connection'));
-            return ['text'=>implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'. Ask your site admin to '.$next.'.','tone'=>'danger','action'=>$action];
+            $line=implode(' and ',$names).(count($names)>1||$names[0]!=='Domain discovery'?' have':' has').' failed since '.$since.'.';
+            return ['text'=>$line.' Ask your site admin to '.$next.'.','tone'=>'danger','action'=>$action,'line'=>$line];
         }
         return match($health['reason']) {
             'disabled'=>['text'=>'Monitoring is not set up on this site.','tone'=>'warning','action'=>'setup'],

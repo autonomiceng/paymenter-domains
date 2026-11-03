@@ -82,6 +82,9 @@ foreach(['cutoff','funded','short','paused','two_ticks','transfer','read_cap','s
     $worker->operation($op->id);$held=$op->fresh();
     same(['held','registrar_balance_insufficient','absent'],[$held->state,$held->safe_code,$held->attempt['seal']],$case.': initial shortfall is proven unsent');
     same($noticeBefore+1,$notices(),'First shortfall alerts staff once');
+    $alert=App\Models\Notification::where('user_id',$staff->id)->latest('id')->firstOrFail();
+    same(['Registrar balance is too low',($case==='transfer'?'Transfer':'Registration').' of '.$held->domain->domain.' is waiting for registrar funds.',route('filament.admin.resources.registrar-requests.view',['record'=>$held->id])],
+        [$alert->title,$alert->body,$alert->url],$case.': one short line, linked to its request');
     $claim=$held->attempt['claim_key'];$funding=$held->funding;$money=$nativeMoney();$before=$state->sends;
     try {
         if($case==='cutoff'){
@@ -216,6 +219,8 @@ foreach(range(2,BalanceRetries::READ_LIMIT) as $count){
 }
 same(['held','registrar_read_failed'],[$op->fresh()->state,$op->fresh()->safe_code],'Retries stop on the real problem');
 expect(!BalanceRetries::pending($op->fresh()),'Exhausted reads are no longer pending');same(1,$notices()-$noticeBefore,'Staff are told once');
+$alert=App\Models\Notification::where('user_id',$staff->id)->latest('id')->firstOrFail();
+same(['Registrar reads keep failing','Registration of '.$op->domain->domain.' stopped retrying.',route('filament.admin.resources.registrar-requests.view',['record'=>$op->id])],[$alert->title,$alert->body,$alert->url],'Read stop alert links to its request');
 $reads=$readCount();$advance(21600);$worker->tickOperations();$worker->operation($op->id);
 same([$reads,$before],[$readCount(),$state->sends],'Exhausted reads make no more calls');
 }catch(Throwable $e){$failures[]='read limit: '.$e->getMessage();}

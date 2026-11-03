@@ -76,7 +76,7 @@ class TldResource extends Resource
     {
         $out=[];
         foreach(Account::query()->whereIn('server_id',\App\Models\Server::where('extension','Domains')->where('type','server')->select('id'))->orderBy('server_id')->get() as $a){
-            if($failure=TldFacts::syncFailure((int)$a->server_id)){$out[]=['account'=>(string)\App\Models\Server::whereKey($a->server_id)->value('name'),...$failure];}
+            if($failure=TldFacts::syncFailure((int)$a->server_id)){$out[]=['account'=>(string)\App\Models\Server::whereKey($a->server_id)->value('name').' (account '.$a->server_id.')',...$failure];}
         }
         return $out;
     }

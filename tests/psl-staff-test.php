@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,PslFacts,PslAction
 use Paymenter\Extensions\Servers\Domains\Services\{PublicSuffixList as Lists,PslTransport,PslValidator,RuntimeWork,Installation};
 $entry=new Paymenter\Extensions\Servers\Domains\Domains([]);$entry->installed();$entry->boot();
 staffPanel();$panel=Filament::getCurrentPanel();$panel->pages([Page::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class]);
-Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn()=>Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){Page::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::registerRoutes($panel);}));
+Route::name('filament.admin.')->prefix($panel->getPath())->middleware($panel->getMiddleware())->group(fn()=>Route::middleware($panel->getAuthMiddleware())->group(function()use($panel){Page::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::registerRoutes($panel);Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::registerRoutes($panel);}));
 app('router')->getRoutes()->refreshNameLookups();app('router')->getRoutes()->refreshActionLookups();
 $clock=new PslClock;$count=0;$duringFetch=null;$list=new Lists($clock,new PslTransport(function()use(&$count,&$duringFetch){$count++;if($duringFetch){$run=$duringFetch;$duringFetch=null;$run();}return ['status'=>200,'body'=>pslFixture()];}),new PslValidator(128,5,1));
 app()->instance(Lists::class,$list);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
@@ -42,7 +42,8 @@ $dueStatus=(array)$list->status();$runMinute($base-1);Illuminate\Support\Facades
 $runMinute($base);Illuminate\Support\Facades\Bus::assertDispatchedTimes(get_class($job),1);
 same($dueStatus,(array)$list->status(),'Weekly eligibility is read-only at the exact boundary');
 $scheduledFailures=0;$scheduledList=new Lists($clock,new PslTransport(function()use(&$scheduledFailures){$scheduledFailures++;throw new \Paymenter\Extensions\Servers\Domains\Services\PslFailure('timeout');}),new PslValidator(128,5,1));
-$job->handle($scheduledList);same(1,$scheduledFailures,'The dispatched weekly job performs one real attempt');
+$early=staffUser([Staff::VIEW,Page::VIEW]);$job->handle($scheduledList);same(1,$scheduledFailures,'The dispatched weekly job performs one real attempt');
+same('No list has been downloaded yet.',App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$early->id)->sole()->body,'A first failed download never claims a saved list');
 app(Illuminate\Bus\UniqueLock::class)->release($job);
 for($minute=1;$minute<=1440;$minute++){$runMinute($base+$minute*60);app(Illuminate\Bus\UniqueLock::class)->release($job);}
 Illuminate\Support\Facades\Bus::assertDispatchedTimes(get_class($job),1);same(1,$scheduledFailures,'A failed weekly job dispatches no further work for 1440 minutes');
@@ -98,7 +99,10 @@ $failedList=new Lists($clock,new PslTransport(function()use(&$failures){$failure
 $watchOnly=staffUser([Page::VIEW]); // Every Domains page also requires the base Domains view permission.
 $saved=$list->current();$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();$job->handle($failedList);
 same(0,App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$watchOnly->id)->count(),'No recovery link to a page this role cannot open');
-expect(App\Models\Notification::where('title','Public suffix list update failed')->count()>$notices,'Failed scheduled update alerts staff');$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();
+expect(App\Models\Notification::where('title','Public suffix list update failed')->count()>$notices,'Failed scheduled update alerts staff');
+$alert=App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$staff->id)->latest('id')->firstOrFail();
+same(['The saved list is still in use.',Page::getUrl()],[$alert->body,$alert->url],'One short line and the page with the next step');
+Livewire::actingAs($staff)->test(Page::class)->assertSee('Last download failed')->assertSee("Couldn't download: timed out.");$notices=App\Models\Notification::where('title','Public suffix list update failed')->count();
 same(1,$failures,'Due job attempts one failed download');same('timeout',$list->status()->last_result,'Job retains the download failure');
 $failedAt=$list->status()->last_attempt_at;
 for($minute=1;$minute<=5;$minute++){$clock->at+=60;$job->handle($failedList);}
@@ -107,7 +111,12 @@ same($failedAt,$list->status()->last_attempt_at,'Skipped jobs do not renew the f
 same((array)$saved,(array)$list->current(),'Failed download retains the cached list');
 same(1,$job->tries,'Failed public-data jobs have no queue retry');
 $clock->at=$failedAt+7*86400-1;$job->handle($failedList);same(1,$failures,'Failed download preserves weekly admission');
+$registrar=App\Models\Server::create(['name'=>'Synthetic registrar','extension'=>'Domains','type'=>'server','enabled'=>true]);$viewOnly=staffUser([Staff::VIEW]);
 $clock->at++;$job->handle($failedList);same(2,$failures,'Failed download becomes eligible again after a week');
+$alert=App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$staff->id)->latest('id')->firstOrFail();
+same(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$registrar->id]),$alert->url,'With registrars the alert opens an account page, where System checks shows the list');
+same(0,App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$viewOnly->id)->count(),'Staff who cannot see the list row get no alert');
+App\Models\Server::withoutEvents(fn()=>$registrar->delete()); // Fixture only: the identity guard refuses model deletes of Domains servers.
 
 $clock->at=(int)$list->current()->validated_at+90*86400;same('Current',PslFacts::state($list),'List current through expiry');
 $clock->at++;same('New discovery paused',PslFacts::state($list),'Discovery pauses after expiry');
@@ -122,6 +131,12 @@ same('dns_failed',$manualList->update(),'Failed download returns safe reason');
 same(1,$manualFailures,'Allowed manual download attempts exactly one fake exchange');
 same('dns_failed',$manualList->status()->last_result,'Manual action retains the safe failure');
 same($manualSnapshot,(array)$manualList->current(),'Manual failed download keeps current bytes');
+
+// An expired saved list is not a list in use; the page keeps the cause beside Out of date.
+$clock->at+=7*86400;$job->handle($failedList);
+$alert=App\Models\Notification::where('title','Public suffix list update failed')->where('user_id',$staff->id)->latest('id')->firstOrFail();
+same(['The saved list is out of date.',Page::getUrl()],[$alert->body,$alert->url],'Expired list alert says what is true');
+Livewire::actingAs($staff)->test(Page::class)->assertSee('Out of date')->assertSee("Couldn't download: timed out.");
 
 // The native migrator/retained-history preflight must neither replace lost data nor repair partial installs.
 $setRights($rights);$entry->upgraded('0.1.0');$entry->uninstalled();same(1,DB::table('domains_psl_snapshots')->count(),'Lifecycle retains snapshot');
