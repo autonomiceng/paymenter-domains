@@ -29,13 +29,15 @@ $guard = static function (?int $server = null) use ($generation): void {
 };
 $feed = new class($observation) implements PricedFeed {
     public int $calls = 0;
+    public array $accounts = [];
     public function __construct(private object $observation) {}
     public function priceReads(): int { return 1; }
     public function factsReads(): int { return 0; }
     public function prices(RequestContext $c): iterable {
         same(0, DB::transactionLevel(), 'Feed runs outside locks');
         expect(count($this->observation->calls) > 0, 'Due holder read precedes a failing feed');
-        $this->calls++; throw new RuntimeException('Synthetic feed unavailable'); yield;
+        $this->calls++; $id = $c->binding->serverId; $this->accounts[$id] = ($this->accounts[$id] ?? 0) + 1;
+        throw new RuntimeException('Synthetic feed unavailable'); yield;
     }
     public function facts(string $tld, RequestContext $c): FactsObserved { throw new DomainException('No facts'); }
 };
@@ -54,7 +56,7 @@ same('retrying', $scheduler->status($b)['state'], 'Feed failure is durable and h
 same($frozen, serialize($original->fresh()->getAttributes()), 'Shared scheduler preserves financial authority bytes');
 $reads = count($observation->calls); $scheduler->tick(2);
 same($reads, count($observation->calls), 'Durable due times prevent a duplicate holder read');
-same(1, $feed->calls, 'Backoff survives repeated scheduler starts');
+same(1, $feed->accounts[$b->serverId], 'Backoff survives repeated scheduler starts while other accounts get turns');
 commerceReject(fn () => (new ObservationWork($observer, $clock, $budget))->tick(), 'Legacy consumer cannot run in the composed fixture window');
 $q = DB::table('domains_observation_work')->where('domain_id', $d->id);
 $q->update(['due_at' => $clock->now()->getTimestamp()]);
