@@ -217,12 +217,30 @@ same($before, count($wire->calls), 'Local enrollment requires staff review befor
 $firstReview = $review(10);
 $localBinding = $local->configure(10, 'namesilo', Environment::Live, ['api_key' => 'placeholder-key-one'], $firstReview);
 same([[WireEnvironment::Live, WireContext::Interactive, 'getAccountBalance', [], 10000]], $wire->calls, 'Enrollment only authenticates through one bounded balance read');
+foreach ([Environment::Live, Environment::Test] as $bootEnvironment) {
+    config(['domains.namesilo_account.environment' => $bootEnvironment->value]);
+    $bootRegistry = new RegistrarRegistry;
+    LocalAccountEnrollment::bootstrap($bootRegistry, $wire);
+    $before = count($wire->calls); $authenticated = false;
+    try { $bootRegistry->authenticate('namesilo', $bootEnvironment, ['api_key' => 'placeholder-bootstrap-key']); $authenticated = true; }
+    catch (DomainException) { /* Report missing bootstrap transport/composition through the assertion below. */ }
+    expect($authenticated, 'The bootstrap-built authenticator must authenticate through the injected transport');
+    same([[$bootEnvironment === Environment::Live ? WireEnvironment::Live : WireEnvironment::Sandbox,
+        WireContext::Interactive, 'getAccountBalance', [], 10000]], array_slice($wire->calls, $before), 'Bootstrap authenticates once in the configured environment with a bounded balance read');
+}
+config(['domains.namesilo_account.environment' => 'live']);
 $a = Account::where('server_id', 10)->sole(); $identity = $a->stable_identity;
 expect(str_starts_with($identity, LocalAccountEnrollment::PREFIX), 'Local lineage is explicit, random and separate from provider identity');
 expect(!str_contains($identity, 'placeholder-key'), 'Credentials never become local identity');
 same([false, null], [$a->processing_enabled, $a->live_site], 'Authentication grants neither processing nor a live site');
 $reject(fn () => $local->reader(10));
 $local->confirmLiveSite(10, 'https://live.example.com');
+$before = count($wire->calls);
+expect($local->configurationAvailable(10), 'The original local composition accepts its saved account');
+expect(!$bindings->configurationAvailable(10), 'A registry without local enrollment must refuse the saved local account');
+same('configuration_unavailable', $bindings->configurationStatus(10), 'Readiness reports the missing local composition safely');
+$reject(fn () => $bindings->reader(10));
+same($before, count($wire->calls), 'Composition refusal performs no authentication');
 $revision = $local->credentialRevision($localBinding);
 $local->requireCredentialRevision($localBinding, $revision);
 foreach (Server::findOrFail(10)->settings()->get() as $setting) {
@@ -297,5 +315,34 @@ $reject(fn () => $local->requireCredentialRevision($localBinding, $secondRevisio
 foreach (StaffSettingsReview::historyRows(Server::findOrFail(10)) as $entry) {
     expect(!str_contains(json_encode($entry, JSON_THROW_ON_ERROR), 'placeholder-key'), 'Audit contains no key or raw balance response');
 }
+// Retained OTE facts must survive switching from the old opt-in to local Test enrollment.
+// Native encrypted settings and reviewed enrollment are needed to expose the cross-composition gap.
+use Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox;
+foreach ([20, 21] as $id) { Server::forceCreate(['id' => $id, 'name' => 'Retained OTE regression', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]); }
+$oteCredentials = ['api_key' => 'placeholder-retained-ote-key'];
+$oteFacts = NameSiloSandbox::facts(20, 'Synthetic retained OTE', $oteCredentials);
+$oteIdentity = NameSiloSandbox::identity($oteFacts);
+$oteAccount = Account::withVerifiedBindingWrite(static fn () => Account::create(['server_id' => 20,
+    'registrar_key' => 'namesilo', 'environment' => 'test', 'stable_identity' => $oteIdentity, 'processing_enabled' => false]));
+$oteBinding = new AccountBinding('namesilo', 20, Environment::Test, $oteIdentity);
+foreach ([NameSiloSandbox::KEY => json_encode($oteFacts, JSON_THROW_ON_ERROR),
+    'domains_credentials' => json_encode($oteCredentials, JSON_THROW_ON_ERROR),
+    'domains_verified_credentials' => hash_hmac('sha256', $oteBinding->fingerprint.json_encode($oteCredentials, JSON_THROW_ON_ERROR), (string) config('app.key'))] as $key => $value) {
+    $setting = Server::findOrFail(20)->settings()->make(['key' => $key]);
+    $setting->encrypted = true; $setting->type = 'string'; $setting->value = $value; $setting->save();
+}
+config(['domains.namesilo_account.environment' => 'test', 'domains.namesilo_sandbox_enrollment.enabled' => false]);
+$testRegistry = new RegistrarRegistry;
+$testRegistry->register('namesilo', ['api_key'], new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\AccountVerifier, $factory,
+    authenticator: new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\CredentialAuthenticator(Environment::Test, $wire));
+$testLocal = new AccountBindings($testRegistry);
+$before = count($wire->calls);
+try { $testLocal->configure(21, 'namesilo', Environment::Test, $oteCredentials, $review(21)); expect(false, 'Retained OTE key was enrolled as another local Test account'); }
+catch (DomainException $error) { same('This key is already enrolled. Rotate it on its existing local account.', $error->getMessage(), 'Retained OTE duplicate has the same safe refusal as a local duplicate'); }
+same($before, count($wire->calls), 'Retained OTE duplicate refuses before authentication');
+expect(!Account::where('server_id', 21)->exists(), 'Retained OTE duplicate saves no new lineage');
+same($oteIdentity, $oteAccount->fresh()->stable_identity, 'Duplicate refusal preserves retained OTE identity');
+$testLocal->configure(21, 'namesilo', Environment::Test, ['api_key' => 'placeholder-independent-test-key'], $review(21));
+same($before + 1, count($wire->calls), 'A different Test key still authenticates with the old OTE composition disabled');
 echo "Bindings: positive synthetic identity, immutable accounts/sites, encrypted settings and guarded rotation passed.\n";
 $nativeSuccessful = true;
