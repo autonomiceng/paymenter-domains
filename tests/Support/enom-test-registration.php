@@ -44,9 +44,25 @@ $historyAttempt=new AttemptEvidence($binding,new Query('history-only-placeholder
     $historyNow->modify('-60 seconds'),$historyNow->modify('-1 second'),seal:DispatchSeal::Sealed,historyAcceptance:$history);
 expect($history->covers($historyAttempt,$historyNow),'Regression fixture carries valid pre-existing Enom history acceptance');$beforeHistory=count($GLOBALS['enomWire']['forms']);
 $historyContext=new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(20),$clock,Paymenter\Extensions\Servers\Domains\Services\Runtime::limiter());
-try{$generalReader->reconcile($historyAttempt,$historyContext);throw new LogicException('TEST reconciliation cannot query history without a captured OrderID.');}
-catch(DomainException $error){same('Captured TEST Purchase OrderID is required.',$error->getMessage(),'History acceptance cannot satisfy captured-ID reconciliation');}
-same($beforeHistory,count($GLOBALS['enomWire']['forms']),'History acceptance cannot open the TEST reconciliation history path');
+// Accepted registration history opens read-only recovery; an empty XML list cannot establish a purchase.
+$GLOBALS['enomWire']['reply']=static fn(array $p):string=>$p['Command']==='GetOrderList'
+    ?'<interface-response><Command>GetOrderList</Command><ErrCount>0</ErrCount><Done>true</Done><OrderCount>0</OrderCount><OrderList></OrderList></interface-response>'
+    :$reply($p);
+try{$historyResult=$generalReader->reconcile($historyAttempt,$historyContext);}
+finally{$GLOBALS['enomWire']['reply']=$reply;}
+same(['GetDomainInfo','GetRenew','GetRegLock','GetWPPSInfo','GetDomainInfo','GetDomainExp','GetOrderList'],
+    array_column(array_slice($GLOBALS['enomWire']['forms'],$beforeHistory),'Command'),'Covering acceptance opens only bounded read-only reconciliation');
+$historyFacts=$historyResult->result()->evidence();
+same([false,[],Paymenter\Extensions\Servers\Domains\Data\Disposition::Unknown],
+    [$historyFacts->historyComplete,$historyFacts->candidates,$historyResult->disposition],'Empty XML history remains incomplete and never invents a successful purchase');
+foreach([null,new HistoryAcceptance($binding,'America/Los_Angeles',120,86400,'enom_registration_v1')]as$uncovered){
+    $attempt=new AttemptEvidence($binding,$historyAttempt->query,'history-uncovered',1,ExecutionRecord::RecordedNull,SendState::PossiblySent,
+        $historyAttempt->windowStart,$historyAttempt->windowEnd,seal:DispatchSeal::Sealed,historyAcceptance:$uncovered);
+    expect(!($uncovered?->covers($attempt,$historyNow)??false),'Negative has no covering history acceptance');$beforeHistory=count($GLOBALS['enomWire']['forms']);
+    try{$generalReader->reconcile($attempt,$historyContext);throw new LogicException('Missing or lagging history acceptance must refuse before reads.');}
+    catch(DomainException $error){same('Captured TEST Purchase OrderID is required.',$error->getMessage(),'Uncovered history cannot substitute for a captured order');}
+    same($beforeHistory,count($GLOBALS['enomWire']['forms']),'Uncovered history sends no registrar request');
+}
 $closedQuery=new Paymenter\Extensions\Servers\Domains\Data\Query('closed-poll.example',Action::Register,1);$beforeClosed=count($GLOBALS['enomWire']['forms']);
 foreach([fn()=>$generalReader->quote($closedQuery,$readContext),fn()=>$generalReader->readDomain('closed-poll.example',$readContext),
     fn()=>$generalReader->renewalAssessment($closedQuery,$readContext)] as $closedRead){try{$closedRead();throw new LogicException('General TEST reader exposed a reconciliation-only method.');}catch(DomainException){}}
