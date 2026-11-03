@@ -15,7 +15,11 @@ expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/AdmittedTransport.
 // Namespaced cURL functions make accidental sockets impossible while exercising the physical boundary.
 function hrtime(bool $number=false): int {return $GLOBALS['wire']['ns'];}
 function curl_init(): object {++$GLOBALS['wire']['inits'];return new \stdClass;}
-function curl_setopt_array($handle,array $options): bool {$GLOBALS['wire']['options']=array_replace($GLOBALS['wire']['options'],$options);return true;}
+function curl_setopt_array($handle,array $options): bool {
+    ++$GLOBALS['wire']['setopts'];
+    if($GLOBALS['wire']['setopts']===2&&$GLOBALS['wire']['secondSetopt']!==null){($GLOBALS['wire']['secondSetopt'])();}
+    $GLOBALS['wire']['options']=array_replace($GLOBALS['wire']['options'],$options);return true;
+}
 function curl_exec($handle): bool {
     ++$GLOBALS['wire']['sends'];
     parse_str(parse_url($GLOBALS['wire']['options'][CURLOPT_URL],PHP_URL_QUERY),$p);
@@ -26,7 +30,7 @@ function curl_exec($handle): bool {
 }
 function curl_getinfo($handle,int $option): int {return $GLOBALS['wire']['status'];}
 function curl_close($handle): void {++$GLOBALS['wire']['closed'];}
-function resetWire(array $overrides=[]): void {$GLOBALS['wire']=$overrides+['ns'=>0,'options'=>[],'sends'=>0,'inits'=>0,'closed'=>0,'parameters'=>[],'timeout'=>false,'status'=>200,'chunks'=>['{}']];}
+function resetWire(array $overrides=[]): void {$GLOBALS['wire']=$overrides+['ns'=>0,'setopts'=>0,'secondSetopt'=>null,'options'=>[],'sends'=>0,'inits'=>0,'closed'=>0,'parameters'=>[],'timeout'=>false,'status'=>200,'chunks'=>['{}']];}
 ini_set('zend.exception_ignore_args','0');
 resetWire();(new Installation)->install();
 $clock=new FakeClock(new \DateTimeImmutable('2026-11-02T12:00:00Z'));app()->instance(Clock::class,$clock);
@@ -169,5 +173,14 @@ $grant->run('management',50,function()use($grant,$exchange,$origin,$deny):void {
     $grant->reserve('domainLock',['domain'=>'example.com']);$deny(fn()=>$exchange($origin,'domainLock',['domain'=>'example.com'],20000));
     expect($grant->unconsumed(50),'No remaining whole millisecond refuses before consuming a mutation grant');
 });
+// Cross midnight after timeout calculation but before the final reserved-day check and physical handoff.
+$clock->instant=new \DateTimeImmutable('2026-11-02T23:59:59.500000Z');$reservedDay=LiveReservations::day();$before=$used();
+resetWire(['secondSetopt'=>static function()use($clock):void {$clock->instant=new \DateTimeImmutable('2026-11-03T00:00:00Z');}]);
+$rolloverRefused=false;try{$read();}catch(LiveReservationLimit){$rolloverRefused=true;}
+expect($rolloverRefused,'Read must refuse a reserved-day rollover during final cURL setup');
+same(2,$GLOBALS['wire']['setopts'],'Rollover occurs in the second cURL option update');
+same(0,$GLOBALS['wire']['sends'],'Read crossing its reserved day performs zero physical sends');
+$clock->instant=new \DateTimeImmutable($reservedDay.'T23:59:59.500000Z');
+same($before['used']+1,$used()['used'],'Rollover refusal retains the original day reservation');
 echo "NameSilo admitted transport enforces reservations, fixed routes, one send and redacted uncertain outcomes.\n";
 $nativeSuccessful=true;
