@@ -109,16 +109,18 @@ class WhatYouSell extends Page implements HasTable
         $binding??=$this->binding();
         return $binding!==null&&($binding->registrarKey!=='enom'||config($binding->environment->value==='live'?'domains.enom_live.catalogue':'domains.enom_catalogue.enabled')===true)&&!$this->hasReader($binding);
     }
+    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();}
     private function reads(): SellTable
     {
-        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL);
+        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL,$this->catalogue());
     }
     private function reload(): void
     {
         $this->reads=null;$this->readers=[];
         // All accounts only reads: its table shows the same rows without saving them.
-        if($this->account!==self::ALL&&($binding=$this->binding())!==null){try{SellRule::ensure($binding,CatalogueAcceptances::load($binding));}catch(\DomainException){}}
-        $this->reviewStamp=$this->account?SellRule::stamp($this->account):'';
+        if($this->catalogue()===null&&$this->account!==self::ALL&&($binding=$this->binding())!==null){try{SellRule::ensure($binding,CatalogueAcceptances::load($binding));}catch(\DomainException){}}
+        $this->reviewStamp=$this->account?($this->catalogue()!==null?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($this->account):SellRule::stamp($this->account)):'';
         $this->flushCachedTableRecords();
     }
     private function rule(): array {return $this->reads()->rule((int)$this->account);}
@@ -202,6 +204,7 @@ class WhatYouSell extends Page implements HasTable
     {
         if($this->account===self::ALL){return $this->mayEdit()||$this->canSync()?'Choose one account to sync or edit.':null;}
         if(($binding=$this->binding())===null){return null;}
+        if($this->catalogue()!==null){return null;}
         // For sale means the rule picks it and the account has accepted a registration this long. Renewals or transfers alone are not a sale.
         $accepted=$this->reads()->accepted($binding->serverId);$years=$this->years();
         $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow $row)=>SellRule::decide($row,$this->rule())==='sell'&&in_array($years,$accepted[$row->tld]['register']??[],true));
@@ -238,12 +241,12 @@ class WhatYouSell extends Page implements HasTable
         // All accounts warns for each account that needs it, by name, with a way to that account.
         foreach($all?$this->bindings():array_filter([(int)$this->account=>$this->binding()]) as $server=>$binding){
             $name=$this->accounts()[$server]??'Registrar account #'.$server;
-            $state=PriceFill::last($binding);$readerFailed=$this->readerNeedsAttention($binding);
+            $state=$this->catalogue()!==null?null:PriceFill::last($binding);$readerFailed=$this->readerNeedsAttention($binding);
             if($readerFailed){
                 $components[]=Callout::make($all?'Check '.$name.' to sync prices':'Check the registrar account to sync prices')->warning()->columnSpanFull()
                     ->footer($button('Open registrar account',RegistrarAccount::getUrl(['account'=>$server])));
             }
-            if(PriceFill::stale($state,app(Clock::class)->now()->getTimestamp())){
+            if($this->catalogue()===null&&PriceFill::stale($state,app(Clock::class)->now()->getTimestamp())){
                 $components[]=Callout::make($all?'Prices for '.$name.' are out of date':'Prices are out of date')->warning()->columnSpanFull()
                     ->description(($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.SellTable::time((int)$state->filled_at).'. Those prices are still shown.').' We try again once a day. '
                         .($readerFailed?'Check the registrar account.':($all?'Show this account and use Sync prices to see what stopped the read.':'Use Sync prices to see what stopped the read.')))

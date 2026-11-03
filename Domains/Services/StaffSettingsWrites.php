@@ -7,15 +7,18 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,SalesPolicy,SellRow,Tld};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueAcceptance,Environment,RequestBudget,RequestContext,RequestOrigin,SystemClock};
 /** Local reviews and deliberately composed account reads; connection access defaults off. */
-final class StaffSettingsWrites
+class StaffSettingsWrites
 {
     public function __construct(private readonly NativeCatalogue $native,private readonly SellerPolicies $sellers,
         private readonly AccountBindings $bindings,private readonly bool $allowInjectedProbes=false) {}
+    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn()=>null);}
     public function connectionAvailable(?string $registrar=null): bool
     {return $this->allowInjectedProbes&&($registrar===null||$this->bindings->hasRegistrar($registrar));}
     /** Returns the publish summary for a default pricing change, otherwise null. */
     public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): ?array
     {
+        if(($catalogue=$this->catalogue())!==null&&in_array($r->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){return $catalogue->run($r,$data);}
         $clock=app()->bound(Clock::class)?app(Clock::class):new SystemClock;
         if($now!==null){
             $clock=new class($now) implements Clock {

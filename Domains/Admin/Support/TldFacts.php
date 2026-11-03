@@ -33,8 +33,10 @@ final class TldFacts
     /** One server-only snapshot per row/render; never retain across requests or use as write authority.
      * Each row: action, term, retail (null when missing), flags (below_cost, cost_missing, not_offered, price_missing, needs_sync, unpublished),
      * fresh, observed and until; cost only with the costs permission. */
-    public static function snapshot(Tld $tld, ?StaffGrants $grants = null): array
+    public static function snapshot(Tld $tld, ?StaffGrants $grants = null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue = null): array
     {
+        $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+        if($catalogue!==null){return $catalogue->page(collect([$tld]))[$tld->id];}
         $grants ??= Staff::requireView();
         try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
         try{$ruleHash=self::ruleHash((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld));}catch(\Throwable){$ruleHash=null;}
@@ -43,8 +45,10 @@ final class TldFacts
     }
     /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per
      * account, including card fees; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
-    public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null): array
+    public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue = null): array
     {
+        $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+        if($catalogue!==null){return $catalogue->page($tlds);}
         $grants ??= Staff::requireView();
         if($tlds->isEmpty()){return [];}
         $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();

@@ -30,6 +30,14 @@ final class StaffCommands
             $raw(DB::table('domains_prices')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->where('server_id',$server))->orderBy('id')),
             $raw(DB::table('domains_sales_policies')->when($ending,fn($q)=>$q->where('tld',$ending))->orderBy('tld')),$server,$tld]));
     }
+    public function publish(int $id,?Review $review=null): void
+    {
+        $t=Tld::findOrFail($id);
+        if($review!==null){$this->run($review,[]);return;}
+        $b=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
+        $d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
+        $this->writer->apply(Edit::republish($b,$t->tld),$this->revision($t,$d));
+    }
     public function run(Review $review,array $data): array
     {
         if(!in_array($review->action,self::ACTIONS,true)){throw new \DomainException('Unsupported catalogue action.');}

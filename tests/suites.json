@@ -83,6 +83,7 @@
     "tests/cart-admission-test.php",
     "tests/offer-commerce-test.php",
     "tests/offer-staff-test.php",
+    "tests/offer-staff-reads-test.php",
     "tests/offer-pay-check-test.php",
     "tests/offer-cache-test.php",
     "tests/checkout-refresh-test.php",

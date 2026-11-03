@@ -8,11 +8,13 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 
 /** Permanent account/TLD/action products. Publication never changes an existing dispatch route. */
-final class NativeCatalogue
+class NativeCatalogue
 {
     private const KEYS = ['domains_catalogue', 'domains_tld_id', 'domains_action', 'domains_registrar'];
     public function __construct(private readonly PriceCatalogue $prices) {}
 
+    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn()=>null);}
     public static function slug(Tld $tld, string $action): string
     {
         if (!in_array($action, ['register', 'transfer'], true)) { throw new \InvalidArgumentException('Unknown acquisition action.'); }
@@ -154,6 +156,7 @@ final class NativeCatalogue
      * A $change that returns false leaves the TLD alone. */
     public function publish(int $tldId, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, ?\Closure $change = null): void
     {
+        if (($catalogue = $this->catalogue()) !== null) { if ($change !== null) { throw new \DomainException('Typed catalogue command required.'); } $catalogue->publish($tldId, $review); return; }
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Native publication owns its lock prefix.'); }
         $this->publication(Tld::findOrFail($tldId), $now, $review, $change);
     }

@@ -5,8 +5,10 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Price,Tld};
 /** Saved exact-term totals only. Never republishes, recomputes retail or contacts a registrar. */
-final class PriceList
+class PriceList
 {
+    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
+    {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();}
     public const FILTERS=['all'=>'All TLDs','below_cost'=>'Below cost','loses_money'=>'Loses money after card fee','default'=>'Default pricing','own'=>'Custom pricing'];
     public const ACTIONS=['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'];
     /** Sync never fills a price for sales that are off, so this is not Missing. */
@@ -16,6 +18,10 @@ final class PriceList
     {
         self::authorize();
         if($years<1||$years>10||!array_key_exists($filter,self::FILTERS)){throw new \InvalidArgumentException('Choose 1 to 10 years and a price filter.');}
+        if(($catalogue=$this->catalogue())!==null){
+            $tlds=TldFacts::bound(Tld::query())->where('catalogue_converted',true)->when($serverId!==null,fn($q)=>$q->where('server_id',$serverId))->orderBy('tld')->orderBy('server_id')->get();
+            return $catalogue->matrix($tlds,$years,$filter);
+        }
         $query=TldFacts::bound(Tld::query())->with('server:id,name')->orderBy('tld')->orderBy('server_id');
         $all=$query->get();$accounts=$all->pluck('server.name','server_id')->all();
         $tlds=$serverId===null?$all:$all->where('server_id',$serverId);
