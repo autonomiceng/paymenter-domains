@@ -140,6 +140,25 @@ final class FreshInstallation
         }
     }
 
+    /** The source-bound package owns only this storage, not every empty domains_* table. */
+    private static function progress(): void
+    {
+        $allowed = ['domains_domains','domains_operations','domains_tlds','domains_accounts','domains_prices',
+            'domains_sales_policies','domains_contact_profiles','domains_read_budgets','domains_observation_queues','domains_observation_work',
+            'domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations',
+            'domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit',
+            ...WatchSchema::tables(),'domains_adoptions','domains_history_links',...WatchDnsSchema::tables(),'domains_native_intents',
+            BalanceSchema::TABLE,ManagedPublicWorkSchema::TABLE,...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables(),
+            ...WatchNoticeSchema::tables(),'domains_watch_staff_claims',...StaffAuditSchema::tables(),UserDeletionSchema::TABLE,
+            EnomLiveCallSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,...EnomTestSendLimitSchema::tables(),...SellTableSchema::tables()];
+        $expected = array_keys(self::files());
+        $ran = DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all();
+        $extra = array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains') && !in_array($name,$expected,true));
+        if (array_diff(self::tables(),$allowed) !== [] || $extra !== []) {
+            throw new \DomainException('Unexpected Domains schema or migration history refuses initialization. Preserve it and investigate.');
+        }
+    }
+
     /** Partial DDL is repairable only inside the owning lifecycle invocation, never by retained installers. */
     public static function recovering(): bool
     { if (self::$owner === null) { return false; } self::$owner->check(); return true; }
@@ -152,7 +171,7 @@ final class FreshInstallation
         if ($state['state'] !== 'initializing' || $state['generation'] !== 1 || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
             throw new \DomainException('Domains initialization intent changed.');
         }
-        self::empty();
+        self::progress(); self::empty();
         if ($complete) { self::work(); }
         if ($complete && (self::manifest() !== $this->manifest
             || array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all()))) {

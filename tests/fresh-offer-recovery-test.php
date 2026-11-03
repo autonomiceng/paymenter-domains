@@ -3,7 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
 use App\Models\Setting;
-use Illuminate\Support\Facades\{Cache, DB};
+use Illuminate\Support\Facades\{Cache, DB, Schema};
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate, OfferScheduler, Capabilities};
@@ -43,6 +44,24 @@ $refused = false;
 try { $entry->installed(); } catch (DomainException) { $refused = true; } catch (InitializationInterrupted) {}
 expect($refused, 'Changed intent generation refuses before schema work');
 $row = Setting::where('key',UpgradeGate::KEY)->sole(); $row->value = $intent; $row->save();
+// An original intent permits only package-owned partial progress, never restored foreign evidence.
+foreach (['schema','history'] as $extra) {
+    if ($extra === 'schema') {
+        Schema::create('domains_conversion_runs', static function (Blueprint $t): void { $t->id(); $t->string('state'); });
+    } else { DB::table('migrations')->insert(['migration'=>'2000_01_01_000001_create_domains_retired','batch'=>1]); }
+    $beforeTables = Schema::getTableListing(null,false);
+    $beforeMigrations = DB::table('migrations')->orderBy('id')->get()->toJson();
+    $remaining = $interrupts; $refused = false;
+    try { $entry->installed(); } catch (DomainException) { $refused = true; } catch (InitializationInterrupted) {}
+    expect($refused, 'Pending initialization refuses unexpected '.$extra.' before more DDL');
+    same($remaining, $interrupts, 'Foreign evidence cannot advance package DDL');
+    same($beforeTables, Schema::getTableListing(null,false), 'Unexpected empty schema is preserved');
+    same($beforeMigrations, DB::table('migrations')->orderBy('id')->get()->toJson(), 'Unexpected migration history is preserved');
+    same($intent, Setting::where('key',UpgradeGate::KEY)->sole()->value, 'Foreign evidence cannot replace the original intent');
+    $pending();
+    if ($extra === 'schema') { Schema::drop('domains_conversion_runs'); }
+    else { DB::table('migrations')->where('migration','2000_01_01_000001_create_domains_retired')->delete(); }
+}
 // An owned intent still cannot initialize over unexpected holding/credential evidence.
 DB::table('domains_domains')->insert(['service_id'=>91,'user_id'=>92,'server_id'=>93,'registrar_key'=>'enom',
     'account_fingerprint'=>str_repeat('a',64),'domain'=>'retained-placeholder.com','sld'=>'retained-placeholder','tld'=>'com','status'=>'active']);
