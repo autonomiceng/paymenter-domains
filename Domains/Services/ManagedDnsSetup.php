@@ -5,7 +5,8 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Dns\DnsQuery;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,ManagedPublicConfig,WatchProfile,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
+use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation,ManagedPublicConfig,WatchProfile,WatchAudit};
 /** Local comparison configuration only. A template never writes customer DNS or registrar defaults. */
 final class ManagedDnsSetup
 {
@@ -21,21 +22,112 @@ final class ManagedDnsSetup
             ->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_accounts as a')->whereColumn('a.server_id','domains_domains.server_id')
                 ->whereColumn('a.account_fingerprint','domains_domains.account_fingerprint')->whereColumn('a.registrar_key','domains_domains.registrar_key'));
     }
-    /** Decode retained enabled templates once per query, not once per managed domain. */
-    private static function unreadableProfileIds(): array
-    { return WatchProfile::where('enabled',true)->get()->filter(fn($p)=>!self::usable($p))->modelKeys(); }
-    public static function configured($q,string $domainColumn,string $ownerColumn): mixed
+    /** Same effective choice for dispatch, health and setup notices, including before the daily sweep. */
+    public static function configured($q,string $domainColumn,string $ownerColumn,bool $missing=false,?int $profile=null): mixed
     {
-        return $q->whereExists(fn($c)=>$c->selectRaw('1')->from('domains_managed_public_config as c')
-            ->join('domains_watch_profiles as p','p.id','=','c.profile_id')->where('p.enabled',true)->whereNotIn('p.id',self::unreadableProfileIds())
-            ->whereColumn('c.domain_id',$domainColumn)->whereColumn('c.user_id',$ownerColumn));
+        $usable=WatchProfile::where('enabled',true)->get()->filter(fn($p)=>self::usable($p))->modelKeys();
+        $profiles=$profile===null?$usable:array_values(array_intersect($usable,[$profile]));
+        $comparison=fn($c)=>$c->selectRaw('1')->from('domains_domains as configured_domain')
+            ->leftJoin('domains_managed_public_config as c',fn($j)=>$j->on('c.domain_id','=','configured_domain.id')->on('c.user_id','=','configured_domain.user_id'))
+            ->leftJoin('settings as dns_default',fn($j)=>$j->on('dns_default.settingable_id','=','configured_domain.server_id')
+                ->where('dns_default.settingable_type',(new \App\Models\Server)->getMorphClass())->where('dns_default.key',NewDomainDns::KEY))
+            ->whereColumn('configured_domain.id',$domainColumn)->whereColumn('configured_domain.user_id',$ownerColumn)
+            ->where(fn($p)=>$p->whereIn('c.profile_id',$profiles)->orWhere(fn($d)=>$d->where(fn($c)=>$c->whereNull('c.profile_id')->orWhereNotIn('c.profile_id',$usable))->whereIn('dns_default.value',array_map('strval',$profiles))));
+        return $missing?$q->whereNotExists($comparison):$q->whereExists($comparison);
     }
     public static function affected(int $now): Builder
     {
         if(!Schema::hasTable('domains_managed_public_config') || !Schema::hasTable('domains_watch_profiles')){return self::eligible($now)->whereRaw('1=0');}
-        return self::eligible($now)->whereNotExists(fn($c)=>$c->selectRaw('1')->from('domains_managed_public_config as c')
-            ->join('domains_watch_profiles as p','p.id','=','c.profile_id')->where('p.enabled',true)->whereNotIn('p.id',self::unreadableProfileIds())
-            ->whereColumn('c.domain_id','domains_domains.id')->whereColumn('c.user_id','domains_domains.user_id'));
+        return self::configured(self::eligible($now),'domains_domains.id','domains_domains.user_id',true);
+    }
+    /** A usable per-domain assignment wins. Defaults remain live account choices. */
+    public static function profile(Domain $domain,?ManagedPublicConfig $config,bool $lock=false): ?WatchProfile
+    {
+        $profile=$config?->profile_id?WatchProfile::whereKey($config->profile_id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
+        if(self::usable($profile)){return $profile;}
+        $id=\App\Models\Server::find($domain->server_id)?->settings()->where('key',NewDomainDns::KEY)->first()?->value;
+        $profile=$id?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
+        return self::usable($profile)?$profile:null;
+    }
+    /** Caller holds the current holding lock. Reads establish missing import history once; choices always win. */
+    public static function retainBaseline(Domain $domain,?ManagedPublicConfig $config,?NameserverEvidence $read=null,?iterable $operations=null): bool
+    {
+        try {
+            if($config?->edited_by!==null || ObservationProjection::registrationNameservers($domain)){return false;}
+            // A finish transaction may have opened its read view before waiting for the holding lock.
+            $operations??=$domain->operations()->where('authority_generation',$domain->authority_generation)->where('account_fingerprint',$domain->account_fingerprint)
+                ->where('service_id',$domain->service_id)->where('server_id',$domain->server_id)->where('registrar_key',$domain->registrar_key)
+                ->whereIn('action',['register','transfer','nameservers'])->lockForUpdate()->get();
+            foreach($operations as $op){
+                if($op->authority_generation!==$domain->authority_generation || $op->account_fingerprint!==$domain->account_fingerprint
+                    || (int)$op->service_id!==(int)$domain->service_id || (int)$op->server_id!==(int)$domain->server_id || $op->registrar_key!==$domain->registrar_key){continue;}
+                // A choice in flight must not inherit the delegation it is replacing.
+                if($op->action==='nameservers' && !in_array($op->state,['succeeded','rejected','cancelled','disposed'],true)){return false;}
+                if($op->state!=='succeeded'){continue;}
+                if(in_array($op->action,['register','transfer'],true) || ($op->action==='nameservers' && ManagementEvidence::resolved($op,$domain))){return false;}
+            }
+            // Prefer a previously stored identity-valid read on upgrade; never replace a valid baseline.
+            $read=ObservationProjection::nameservers($domain)??$read;
+            if(!$read || $read->state!=='observed'){return false;}
+            Domain::withoutTimestamps(fn()=>$domain->update(['observation'=>ObservationProjection::recordNameservers($domain,$read)]));
+            return true;
+        }
+        catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}
+    }
+    /** The newest confirmed change can sit behind newer unresolved successes. Both consumers use this decision. */
+    public static function choices(Domain $domain,iterable $operations): array
+    {
+        $acquisition=null;$change=null;
+        foreach(collect($operations)->sortByDesc('id') as $op){
+            if($op->state!=='succeeded' || (int)$op->domain_id!==(int)$domain->id || $op->authority_generation!==$domain->authority_generation
+                || $op->account_fingerprint!==$domain->account_fingerprint || (int)$op->service_id!==(int)$domain->service_id
+                || (int)$op->server_id!==(int)$domain->server_id || $op->registrar_key!==$domain->registrar_key){continue;}
+            if($acquisition===null && in_array($op->action,['register','transfer'],true)){$acquisition=$op;}
+            if($change===null && $op->action==='nameservers'){
+                try{if(ManagementEvidence::resolved($op,$domain)){$change=$op;}}
+                catch(\Illuminate\Contracts\Encryption\DecryptException){/* Unreadable confirmation is not a resolved choice. */}
+            }
+            if($acquisition!==null && $change!==null){break;}
+        }
+        return [$acquisition,$change];
+    }
+    /** Staff intent wins; otherwise use the newest retained choice before acquisition evidence or inherited defaults. */
+    public static function expected(?ManagedPublicConfig $config,?WatchProfile $profile,Domain $domain,?Operation $acquisition,?Operation $change): ?string
+    {
+        if(!self::usable($profile)){return $config?->expected_dns;}
+        // Staff > retained choices > acquisition baseline > automatic inheritance. Refreshes never choose intent.
+        $intent=['order'=>[-1,0,0],'expected'=>null];
+        $offer=static function(?string $expected,int $source,int $at,int $management=0)use(&$intent):void{
+            if([$source,$at,$management]>$intent['order']){$intent=['order'=>[$source,$at,$management],'expected'=>$expected];}
+        };
+        // An automatic platform comparison is not a choice; missing legacy history must stay quiet.
+        if($config && ($config->edited_by!==null || $config->expected_dns!=='platform')){$offer($config->expected_dns,$config->edited_by!==null?3:0,$config->updated_at?->getTimestamp()??0);}
+        $nameservers=static function(?array $chosen,int $source,int $at,int $management=0)use($profile,$offer):void{
+            if(!$chosen){return;}sort($chosen,SORT_STRING);
+            $offer($chosen===$profile->profile()->nameservers?'platform':'external',$source,$at,$management);
+        };
+        foreach([$acquisition,$change]as$op){
+            if(!$op){continue;}$at=($op->completed_at??$op->created_at)?->getTimestamp()??0;
+            $management=$op->action==='nameservers'?1:0;
+            try{
+                if($management){
+                    if(!ManagementEvidence::resolved($op,$domain)){continue;}
+                }
+                if($op->action==='transfer'){$offer('external',2,$at);}
+                elseif($op->action==='register' && ($op->payload['nameservers_origin']['source']??null)==='account_default'){$offer('platform',2,$at);}
+                else{$nameservers($op->payload['nameservers']??null,2,$at,$management);}
+            }
+            catch(\Illuminate\Contracts\Encryption\DecryptException){$offer(null,2,$at,$management);}
+        }
+        try{
+            // This retained baseline precedes management refreshes; current sections are observations only.
+            $stored=ObservationProjection::registrationNameservers($domain);
+            if($stored){
+                $nameservers($stored->nameservers,1,(new \DateTimeImmutable($stored->at))->getTimestamp());
+            }
+        }
+        catch(\Illuminate\Contracts\Encryption\DecryptException){$offer(null,1,PHP_INT_MAX);}
+        return $intent['expected'];
     }
     public static function usable(?WatchProfile $profile): bool
     { return $profile?->enabled && $profile->readProfile()!==null; }

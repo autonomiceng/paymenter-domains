@@ -37,6 +37,10 @@ foreach(array_diff(array_keys(Review::ACTIONS),staffNoButtonActions()) as $actio
     }
     if($action==='tld_settings'){continue;} // Terms link to What you sell.
     if($action==='processing'){$page->assertActionExists($name);continue;} // A switch has no form.
+    if($action==='new_domain_dns'){
+        $page->mountAction($name)->assertActionMounted($name);
+        same(['review_key','dns_template'],array_keys($page->get('mountedActions.0.data')),'The account DNS default asks for a template, with no typed reason');continue;
+    }
     $page->mountAction($name)->assertActionMounted($name)->setActionData(['reason'=>'x'])->callMountedAction()->assertHasActionErrors(['reason'=>'min']);
 }
 // Every settings action is hidden without its own permission, even with view/manage access.

@@ -7,6 +7,9 @@ use Paymenter\Extensions\Servers\Domains\Dns\{DnsQuery,DnsAnswer,PublicSignalsTa
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,ManagedPublicConfig,WatchName,WatchSource};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,PublicSignalsProjection,ManagedPublicWorkSchema};
 extract(managedFixture(true));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+// This confirmation/isolation scenario starts with known delegation; first-read imports have their own table.
+$d->update(['observation'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::recordNameservers($d,
+    \Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed($profile->profile()->nameservers,'enom_getdns',new DateTimeImmutable('@'.$now)))]);
 $before=DB::table(ManagedPublicWorkSchema::TABLE)->orderBy('id')->get();$money=scenarioMoney();$authority=$d->fresh()->getRawOriginal();$count=WatchName::count();$calls=count($wire->calls);
 $off=new ManagedPublicSignals($fake);expect(!$off->enqueue($id,$uid,$now),'Activation remains explicit');
 same('awaiting_acceptance',DB::table(ManagedPublicWorkSchema::TABLE)->value('safe_code'),'Old A3 enrollment stays dormant by default');

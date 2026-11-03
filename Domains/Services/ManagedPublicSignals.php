@@ -45,7 +45,7 @@ final class ManagedPublicSignals
             $q=DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$seed->authority_generation)->where('kind',$kind);
             $peek=$q->first();if (!$peek) { return null; }
             $t=(new ManagedPublicTarget())->capture($id,$owner,$now,(int)$peek->source_cursor);
-            if (!$t || !$t['profile']) { return null; }$d=$t['domain'];$c=$t['config'];$p=$t['profile'];$w=$q->lockForUpdate()->first();
+            if (!$t || !$t['profile'] || ($kind==='points' && !$t['check_records'])) { return null; }$d=$t['domain'];$c=$t['config'];$p=$t['profile'];$w=$q->lockForUpdate()->first();
             if (!$w || $w->retired_at!==null || $w->safe_code==='awaiting_acceptance' || (int)$w->user_id!==$owner
                 || $w->account_fingerprint!==$d->account_fingerprint || $w->due_at>$now || ($w->backoff_until??0)>$now
                 || ($w->lease_until??0)>$now || (int)$w->source_cursor!==(int)$peek->source_cursor) { return null; }
@@ -102,6 +102,15 @@ final class ManagedPublicSignals
             }
             if ($ticket->sourceOverflow) { $reading=$reading->withOmittedHosts(); }
             $complete=$reading->result()==='complete';$code=$reading->safeCode();
+            if($complete && $ticket->kind==='delegation'){
+                foreach($reading->queries as $answer){
+                    if($answer['name']!==$t['domain']->domain || $answer['type']!=='NS' || $answer['state']!=='rrset'){continue;}
+                    $baseline=\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::fromArray([
+                        'nameservers'=>array_values(array_unique(array_column($answer['records'],'value'))),'state'=>'observed','source'=>'public_dns_check','at'=>gmdate(DATE_ATOM,$ticket->startedAt)]);
+                    if($baseline){ManagedDnsSetup::retainBaseline($t['domain'],$t['config'],$baseline);}
+                    break;
+                }
+            }
             $confirmed=false;$earlyPoints=false;$delay=$ticket->interval;
             if ($complete && $ticket->kind==='delegation') { [$confirmed,$delay,$earlyPoints]=$this->confirmation($ticket,$reading,$now); }
             ManagedPublicObservation::create(['domain_id'=>$id,'user_id'=>$ticket->target->owner,'account_fingerprint'=>$ticket->target->account,

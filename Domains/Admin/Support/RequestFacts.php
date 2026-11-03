@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestRegistration, ManagementEvidence, OperationClaims, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -179,6 +179,16 @@ final class RequestFacts
         $due=(int)\Illuminate\Support\Facades\DB::table('domains_runtime_operations')->where('operation_id',$op->id)->value('due_at');
         return $due>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp()?'Next try '.gmdate('M j, Y H:i',$due).' UTC.':null;
     }
+    /** Only a financially confirmed, nameserver-only registration fallback needs no staff task. */
+    public static function quietRegistrationDns(Operation $op): bool
+    {
+        if($op->action!=='register' || $op->state!=='succeeded' || $op->safe_code!=='registration_correction_required'){return false;}
+        try{
+            $reconciliation=$op->policy['reconciliation']??[];
+            return ($reconciliation['staff_alert']??null)===false && ($reconciliation['reason']??null)==='correction_required'
+                && RegistrationDns::corrections($op,$reconciliation['observed_corrections']??[])===['nameservers'] && $op->domain!==null;
+        }catch(\Throwable){return false;}
+    }
     /** The one request notice: the most urgent cause, a short next step and the action that fixes it, or null. */
     public static function notice(Operation $op, ?array $facts = null): ?array
     {
@@ -195,6 +205,10 @@ final class RequestFacts
             return ['title'=>$facts['reason'].'.','body'=>'Open the domain and press Record payment review.','tone'=>'warning','link'=>'domain'];
         }
         if ($op->state==='succeeded' && $op->safe_code==='registration_correction_required') {
+            if(self::quietRegistrationDns($op)){
+                return RegistrationDns::pending($op,$domain)
+                    ? ['title'=>$facts['reason'].'.','body'=>'The customer can set up DNS with their provider, then change nameservers.','tone'=>'info']:null;
+            }
             return ['title'=>$facts['reason'].'.','body'=>'The registrar accepted the order. Check these on the domain page.','tone'=>'warning','link'=>'domain'];
         }
         if (isset($facts['cutoff'])) { return ['title'=>$facts['cutoff'],'tone'=>'danger','action'=>'refund']; }

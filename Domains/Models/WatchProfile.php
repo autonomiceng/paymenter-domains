@@ -18,6 +18,11 @@ final class WatchProfile extends WatchRecord
             throw new \DomainException('A profile name, actor and reason are required.');
         }
         $profile = $this->profile();
+        $accounts=\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts((int)$this->id,true);
+        if($accounts){
+            if(!$this->enabled){throw new \DomainException('This template is a registrar account default. Choose another template on those registrar accounts before turning it off.');}
+            foreach(Account::whereIn('server_id',$accounts)->pluck('registrar_key')->unique() as $registrar){\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::validate($registrar,$profile->nameservers);}
+        }
         $this->nameservers = $profile->nameservers; $this->website_endpoints = $profile->website; $this->email_endpoints = $profile->email;
     }
     public function profile(): RoutingProfile { return new RoutingProfile($this->nameservers, $this->website_endpoints, $this->email_endpoints); }
@@ -28,6 +33,9 @@ final class WatchProfile extends WatchRecord
     }
     protected static function booted(): void
     {
+        static::deleting(static function(self $row):void {
+            if(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts((int)$row->id)){throw new \DomainException('This template is a registrar account default. Choose another template on those registrar accounts before deleting it.');}
+        });
         parent::booted();
         static::saved(static function (self $row): void {
             WatchAudit::create(['subject_type' => 'dns_profile', 'subject_id' => $row->id, 'actor_id' => $row->edited_by,
