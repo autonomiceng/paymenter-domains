@@ -28,6 +28,11 @@ try { $entry->installed(); } catch (DomainException) {}
 $legacy('Queued Domains work');
 same($payload, DB::table('jobs')->where('id',$jobId)->value('payload'), 'Queued work remains intact');
 DB::table('jobs')->where('id',$jobId)->delete();
+$failedId = DB::table('failed_jobs')->insertGetId(['uuid'=>'33333333-3333-4333-8333-333333333333','connection'=>'database','queue'=>'default','payload'=>$payload,'exception'=>'Synthetic failure']);
+try { $entry->installed(); } catch (DomainException) {}
+$legacy('Failed Domains work');
+same($payload, DB::table('failed_jobs')->where('id',$failedId)->value('payload'), 'Failed work remains intact');
+DB::table('failed_jobs')->where('id',$failedId)->delete();
 // Retained orphan settings include scoped rows whose key happens to match the global gate.
 foreach ([['key'=>'domains_catalogue_acceptance_orphan'],
     ['key'=>UpgradeGate::KEY,'settingable_type'=>'server','settingable_id'=>999]] as $attributes) {
@@ -53,6 +58,10 @@ $legacy('Holding-only state');
 same('synthetic retained holding', DB::table('domains_domains')->sole()->snapshot, 'Holding-only evidence survives refusal');
 expect(!Schema::hasTable('domains_accounts'), 'Partial holding-only state is not silently completed');
 Schema::drop('domains_domains');
+// An unfamiliar recorded Domains migration is history too, even without current tables.
+DB::table('migrations')->insert(['migration'=>'2000_01_01_000001_create_domains_retired','batch'=>1]);
+try { $entry->installed(); } catch (DomainException) {}
+$legacy('Unfamiliar Domains migration history');
 // Schema maintenance represents an already installed, empty C6 database, never new-install authority.
 (new Installation)->install(); $before = DB::table('migrations')->orderBy('id')->get()->toJson();
 $entry->installed(); $entry->upgraded('0.1.0');

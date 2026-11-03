@@ -18,6 +18,13 @@ final class FreshInstallation
     private static function files(): array
     { return app(Migrator::class)->getMigrationFiles([dirname(__DIR__).'/database/migrations']); }
 
+    private static function history(): bool
+    {
+        $ran = app(Migrator::class)->getRepository()->getRan();
+        return array_intersect($ran, array_keys(self::files())) !== []
+            || array_filter($ran, static fn ($name) => str_contains(strtolower($name),'domains')) !== [];
+    }
+
     private static function manifest(): string
     {
         $root = dirname(__DIR__); $files = [];
@@ -32,7 +39,7 @@ final class FreshInstallation
     /** Advisory bootstrap check; only the locked lifecycle proof may create initialization authority. */
     public static function uninstalled(): bool
     {
-        if (self::tables() !== [] || array_intersect(app(Migrator::class)->getRepository()->getRan(), array_keys(self::files()))) { return false; }
+        if (self::tables() !== [] || self::history()) { return false; }
         try { self::empty(true); return true; } catch (\DomainException) { return false; }
     }
 
@@ -64,9 +71,7 @@ final class FreshInstallation
                 if ($state['manifest'] !== $manifest) { throw new \DomainException('Domains initialization package changed. Restore the initializing package.'); }
                 return new self($state['intent'], $manifest);
             }
-            $ran = app(Migrator::class)->getRepository()->getRan();
-            $history = array_intersect($ran, array_keys(self::files()));
-            if ($history !== [] || self::tables() !== []) { return null; } // Retained C6 preflight/activation remain authoritative.
+            if (self::history() || self::tables() !== []) { return null; } // Retained C6 preflight/activation remain authoritative.
             self::empty(true);
             $intent = bin2hex(random_bytes(16));
             $row = new Setting; $row->forceFill(['key'=>UpgradeGate::KEY,'type'=>'string','encrypted'=>true,
