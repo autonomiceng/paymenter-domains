@@ -182,6 +182,8 @@ final class Writer implements Catalogue
                 return new Revision($revision->offer, $revision->defaults + 1, $revision->selection);
             }
             if ($command instanceof Edit && $command->kind === 'sync') { return $revision; }
+            $preserveRetained = $command instanceof Edit && ($seller || $command->kind === 'override'
+                && ($command->rule === (OfferState::decode($target->catalogue_intent)['pricing_rule'] ?? null)));
             $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now) || $created;
             if (!$changed) { return $revision; }
             if ($seller) {
@@ -199,7 +201,9 @@ final class Writer implements Catalogue
                 $id = (int) $offer->server_id; $account = $accounts[$id]; $b = CatalogueAcceptances::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
+                $annual = $offer->catalogue_retained_annual_retail;
                 if (!$command instanceof Edit || $command->kind !== 'retail') { $this->publishPrices($offer, $d, $now); }
+                if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
                 $prices = UpgradeComparison::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
                 $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), true);
                 $this->projection->write($offer, $snapshot, $now, $native);

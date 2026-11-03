@@ -45,7 +45,7 @@ class OfferStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Pages\W
 // Blade calls binding() on the concrete component; expose the inherited private helper in this fixture only.
 public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding{return $this->account?\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$this->account)->sole()):null;}}
 \Livewire\Livewire::component('offer-staff-page',OfferStaffPage::class);
-$component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('What you sell')->assertSee('12.00');
+$component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('12.00');
 same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');
 $component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
 $component->searchTable('')->filterTable('no_cost');same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');

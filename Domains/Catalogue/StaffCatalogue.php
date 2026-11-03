@@ -65,6 +65,12 @@ final class StaffCatalogue
             ->selectRaw(($costs?'cast('.$extract.' as decimal(18,4))':'null').' as register_cost');
         return SellRow::query()->fromSub($q,'domains_sell_rows')->when($focus!==null,fn($q)=>$q->where('tld',$focus));
     }
+    public function restorable(Tld $t): array
+    {
+        $facts=$this->page(collect([$t]))[$t->id]['facts'];
+        $safe=$facts&&$facts->fresh($this->clock->now())&&$facts->registryFields===[]&&$facts->renewalSafe===true&&in_array(1,$facts->terms['renew']??[],true);
+        return ['register'=>$safe&&!empty($facts->terms['register']),'transfer'=>$safe&&in_array(1,$facts->terms['transfer']??[],true)];
+    }
     public function setting(Tld $t,string $key): bool|int
     {
         Staff::requireView();$raw=OfferState::decode($t->catalogue_intent);$d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);

@@ -153,7 +153,7 @@ final class TldFacts
                 default=>self::missing('Use Edit prices.'),
             };
             // Sync never fills a price for sales that are off.
-            $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Off':$price($transfer);
+            $transfer=$first('transfer');$catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$transfer=!($catalogue?->setting($row,'transfer')??$row->transfer_enabled)&&($transfer['retail']??null)===null?'Off':$price($transfer);
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
