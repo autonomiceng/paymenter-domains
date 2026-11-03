@@ -125,7 +125,7 @@ $cause="Couldn't load the registrar account's settings";
 same(['cause'=>$cause,'at'=>'Oct 18, 2026 13:05 UTC'],TldFacts::syncFailure($enom->server_id),'Stored failure code becomes its cause');
 same('Sync failed: '.$cause,TldFacts::refreshState($enom->server_id),'Refresh state names the cause');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
-    ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check: '.$cause.'.')->assertSee('New sales stop when saved costs reach 48 hours old.')->assertSee('Open Registrars');
+    ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('New sales stop when saved costs reach 48 hours old.')->assertSee('Open Registrars');
 $clean($list->html(),'List sync failed');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
     ->assertSee('Sync failed')->assertSee($cause.' · Oct 18, 2026 13:05 UTC')->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Prices last synced')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
