@@ -39,8 +39,9 @@ final class ManagementSequence
     public static function unsent(Operation $parent, $operations): bool
     {
         if (isset($parent->policy['management']['sequence'])) {
-            return self::members($parent,$operations)->contains(fn($child)=>$child->safe_code==='management_definitely_unsent'
-                && ($child->attempt['management_unsent']??false)===true && ManagementEvidence::idle($child));
+            return self::members($parent,$operations)->contains(fn($child)=>ManagementEvidence::idle($child)
+                && ($child->safe_code==='management_definitely_unsent' && ($child->attempt['management_unsent']??false)===true
+                    || $child->state==='held' && ($child->attempt['seal']??'absent')==='absent'));
         }
         $step=$operations->firstWhere('operation_key',$parent->policy['management']['prerequisite']['key']??null);
         return $step && $step->safe_code==='management_definitely_unsent' && ($step->attempt['management_unsent']??false)===true && ManagementEvidence::idle($step);
@@ -73,7 +74,7 @@ final class ManagementSequence
         if (isset($parent->policy['management']['sequence']) && !isset($parent->policy['management']['sequence_parent'])) {
             if (!in_array($parent->state,['queued','held'],true) || isset($parent->attempt['management_terminal'])) { return true; }
             try {
-                foreach (self::members($parent,$parent->domain->operations()->get()) as $child) {
+                foreach (self::members($parent,self::retained($parent,$parent->domain)) as $child) {
                     self::pairPlan($parent,$child);
                     if ($child->id===$parent->id) { return true; }
                     if ($child->state==='succeeded' && ManagementEvidence::resolved($child,$parent->domain)) { continue; }
@@ -146,6 +147,8 @@ final class ManagementSequence
                     ...($i===$last?[]:['sequence_parent'=>$key])]]]);
         } return $root;
     }
+    public static function retained(Operation $parent,\Paymenter\Extensions\Servers\Domains\Models\Domain $d)
+    { return $d->operations()->whereIn('operation_key',array_column($parent->policy['management']['sequence']['steps'],'key'))->limit(50)->get(); }
     public static function members(Operation $parent,$operations)
     {
         $steps=$parent->policy['management']['sequence']['steps'];$rows=collect();

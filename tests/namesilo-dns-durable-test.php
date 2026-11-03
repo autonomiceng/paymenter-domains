@@ -36,15 +36,52 @@ $setup=static function($label,array $rows)use($holding,&$binding,$wire,$dnsExcha
 $op=$submit($d,$driver,'dns',['records'=>[$want,$add]]);same([],$wire->writes,'One save reads inventory but sends no mutation');
 $children=$d->operations()->where('action','dns')->orderBy('id')->get();same(2,$children->count(),'Update and add have separate durable grants');
 $wire->fault='lost';$management->run($op->id,$driver);same(['dnsUpdateRecord'],$wire->writes,'Lost update is sent only once');
-$wire->fault='';$driver=new DnsManagement($binding,$dnsExchange);$management->run($op->id,$driver);
+$wire->fault='';$ms->route='apibatch';$driver=new DnsManagement($binding,$dnsExchange);$management->run($op->id,$driver);
 same('succeeded',$children->first()->fresh()->state,'Unique new ID readback recovers the update without its response');same(['dnsUpdateRecord'],$wire->writes,'Recovery only reads');
 $proof=$children->first()->fresh()->attempt['management_reads'];$latest=end($proof);same('made1',$latest['facts']['sequence_preimage']['records'][1]['record_id'],'Replacement ID is durably retained for remaining preimage');
-Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Verified predecessor permits the separately granted add');
+$ms->route='api';Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Verified predecessor permits the separately granted add');
 same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Exactly one provider mutation per delta');
 expect(in_array($caa,$wire->records,true),'Unsupported CAA row and TTL remain unchanged');same(3,count($wire->records),'Only one requested TXT is added');
 $made=array_values(array_filter($wire->records,fn($r)=>$r['type']==='TXT'))[0];same([$add['address'],7207],[$made['address'],$made['ttl']],'TXT bytes and explicit TTL survive');
 $management->run($op->id,$driver);same(2,count($wire->writes),'No completed DNS replay');
 foreach(['missing','partial'] as $fault){[$d,$driver]=$setup('inventory-'.$fault,[$a]);$wire->fault=$fault;try{$submit($d,$driver,'dns',['records'=>[]]);throw new LogicException('Incomplete preimage accepted');}catch(DomainException){}same([],$wire->writes,'Incomplete inventory creates no writer');same(0,$d->operations()->where('action','dns')->count(),'Incomplete preimage leaves no partial sequence');}
-foreach(['duplicate','wrongID'] as $fault){[$d,$driver]=$setup('dns-'.$fault,[]);$op=$submit($d,$driver,'dns',['records'=>[$add]]);$wire->fault=$fault;same('uncertain',$management->run($op->id,$driver)->state,'Ambiguous or mismatched receipt cannot complete');$wire->fault='';$management->reconcile($op->id,$driver);same('uncertain',$op->fresh()->state,'Readback cannot silently replace the original receipt or choose duplicate IDs');same(['dnsAddRecord'],$wire->writes,'Unknown add never repeats');expect(str_contains(ManagementProgress::for($d)['dns']['text'],'Contact support'),'Unknown DNS gives the shared support next step');}
-[$d,$driver]=$setup('final-delete',[$a]);$op=$submit($d,$driver,'dns',['records'=>[]]);$wire->fault='lost';same('uncertain',$management->run($op->id,$driver)->state,'Lost deletion stays unknown');$wire->fault='missing';same('uncertain',$management->reconcile($op->id,$driver)->state,'Missing inventory cannot prove empty');$wire->fault='';same('succeeded',$management->reconcile($op->id,$driver)->state,'Explicit empty inventory proves final deletion');same(['dnsDeleteRecord'],$wire->writes,'Final delete is never replayed');
+foreach(['duplicate','wrongID'] as $fault){[$d,$driver]=$setup('dns-'.$fault,[]);$op=$submit($d,$driver,'dns',['records'=>[$add]]);$wire->fault=$fault;same('uncertain',$management->run($op->id,$driver)->state,'Ambiguous or mismatched receipt cannot complete');$wire->fault='';$ms->route='apibatch';$management->reconcile($op->id,$driver);same('uncertain',$op->fresh()->state,'Readback cannot silently replace the original receipt or choose duplicate IDs');same(['dnsAddRecord'],$wire->writes,'Unknown add never repeats');expect(str_contains(ManagementProgress::for($d)['dns']['text'],'Contact support'),'Unknown DNS gives the shared support next step');}
+[$d,$driver]=$setup('final-delete',[$a]);$op=$submit($d,$driver,'dns',['records'=>[]]);$wire->fault='lost';same('uncertain',$management->run($op->id,$driver)->state,'Lost deletion stays unknown');$ms->route='apibatch';$wire->fault='missing';same('uncertain',$management->reconcile($op->id,$driver)->state,'Missing inventory cannot prove empty');$wire->fault='';same('succeeded',$management->reconcile($op->id,$driver)->state,'Explicit empty inventory proves final deletion');same(['dnsDeleteRecord'],$wire->writes,'Final delete is never replayed');
+// An exact synthetic reservation refuses before wire consumption, after the engine seal.
+$refusal=static function()use(&$binding,$dnsExchange,$wire):DnsManagement {
+    $reservation=new class($binding) implements \Paymenter\Extensions\Servers\Domains\Contracts\WriteReservation {
+        public ?int $id=null;public bool $refused=false;
+        public function __construct(private $binding){}
+        public function bindsTo($b):bool{return $this->binding->matches($b);}
+        public function run(string $feature,int $id,Closure $work):mixed {$this->id=$id;try{return $work();}finally{$this->id=null;}}
+        public function reserve(string $command,array $parameters,?\Paymenter\Extensions\Servers\Domains\Data\Money $cost=null):void{}
+        public function unconsumed(int $id):bool{return $this->id===$id && $this->refused;}
+    };
+    $driver=new DnsManagement($binding,static function($o,$cmd,$p,$t)use($dnsExchange,$wire,$reservation):string {
+        if ($wire->fault==='prewire' && in_array($cmd,['dnsAddRecord','dnsUpdateRecord','dnsDeleteRecord'],true)) {$reservation->refused=true;throw new RuntimeException('Synthetic unconsumed reservation');}
+        $reservation->refused=false;return $dnsExchange($o,$cmd,$p,$t);
+    });$driver->useReservation($reservation);return $driver;
+};
+foreach([false,true] as $partial) {
+    [$d,$driver]=$setup('unsent-'.($partial?'partial':'first'),[$a]);$wire->next=0;
+    $driver=$refusal();$op=$submit($d,$driver,'dns',['records'=>[$want,$add]]);$ms->route='apibatch';
+    if($partial){$management->run($op->id,$driver,RequestOrigin::Background);Cache::flush();}
+    $wire->fault='prewire';$management->run($op->id,$driver,RequestOrigin::Background);
+    $stuck=$d->operations()->where('action','dns')->where('safe_code','management_definitely_unsent')->sole();$evidence=$stuck->attempt;
+    same('sealed',$evidence['seal'],'Unconsumed child retains its original seal');
+    expect(!ManagementProgress::for($d)['dns']['pending'],'Proven-unsent child restores the existing save control');
+    $wire->fault='';$ms->route='api';$driver=new DnsManagement($binding,$dnsExchange);Cache::flush();
+    $desired=$partial?[$wire->records[0],$add]:[$want,$add];$fresh=$submit($d,$driver,'dns',['records'=>$desired]);
+    expect($fresh->id!==$op->id,'Ordinary fresh save replaces the proven-unsent sequence');
+    same('rejected',$stuck->fresh()->state,'Proven-unsent child closes locally');
+    same($evidence,array_diff_key($stuck->fresh()->attempt,['management_terminal'=>true]),'Closing preserves every seal and reservation proof byte');
+    $management->run($fresh->id,$driver);Cache::flush();$management->run($fresh->id,$driver);
+    same('succeeded',$fresh->fresh()->state,'Fresh sequence finishes only the remaining deltas');
+    same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Completed prefix and unsent old child never replay');
+    $before=$wire->writes;$management->run($op->id,$driver);$management->run($stuck->id,$driver);same($before,$wire->writes,'Retired descriptors have no grant');
+}
+[$d,$driver]=$setup('unsent-preparation',[$a]);$op=$submit($d,$driver,'dns',['records'=>[$want]]);$wire->records[0]['ttl']=301;
+$management->run($op->id,$driver);same('held',$op->fresh()->state,'Changed provider preimage refuses before send');
+$fresh=$submit($d,$driver,'dns',['records'=>[$want]]);expect($fresh->id!==$op->id,'Fresh ordinary save replaces a failed unsent preparation');
+Cache::flush();same('succeeded',$management->run($fresh->id,$driver)->state,'New snapshot permits the intended edit');same(['dnsUpdateRecord'],$wire->writes,'Unsent preparation cannot duplicate a mutation');
 $nativeSuccessful=true;echo "Dormant DNS durable execution passed\n";

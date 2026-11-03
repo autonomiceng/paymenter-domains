@@ -66,7 +66,7 @@ final class ManagementProgress
     private static function sequence(Operation $op, Domain $d, array $row): array
     {
         if (isset($op->policy['management']['sequence']) && !isset($op->attempt['management_terminal'])) {
-            $done=0;$members=ManagementSequence::members($op,$d->operations()->get());$blocked=null;
+            $done=0;$members=ManagementSequence::members($op,ManagementSequence::retained($op,$d));$blocked=null;
             foreach ($members as $child) {
                 if ($child->state==='succeeded' && ManagementEvidence::resolved($child,$d)) { $done++; }
                 elseif ($blocked===null) { $blocked=$child; }
