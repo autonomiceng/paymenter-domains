@@ -156,6 +156,19 @@ $worker->tick(2); $worker->tick(2); $worker->tick(2);
 $before = count($wire->calls); $worker->tick(2);
 same($before, count($wire->calls), 'Unrequested discovered suffixes do not trigger a metadata sweep');
 
+// Manual Sync during facts-only work must survive a warm account feed's active claim.
+expect($worker->status($b)['due_at'] > $clock->now()->getTimestamp(), 'The account feed is warm before the facts-only turn');
+$worker->requestFacts($b, 'suffixac');
+$wire->during = static function ($command) use ($worker, $b): void {
+    if ($command === ReadCommand::TldInfo) { $worker->sync($b); }
+};
+$before = count($wire->calls); $worker->tick(2); $wire->during = null;
+same(2, count($wire->calls) - $before, 'Manual Sync during facts reads waits for the next account turn');
+$before = count($wire->calls); $worker->tick(2);
+same(5, count($wire->calls) - $before, 'Manual Sync made during facts-only work runs one feed group afterward');
+$worker->tick(2);
+same(5, count($wire->calls) - $before, 'The retained manual Sync is consumed by exactly one feed group');
+
 // Simulate process loss after a durable feed buffer, then reconstruct the worker.
 $clock->time = $clock->time->modify('+61 seconds'); $wire->extra = 60;
 $worker->sync($b); $worker->tick(2);

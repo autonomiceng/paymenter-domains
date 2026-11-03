@@ -3,6 +3,7 @@
 `Catalogue/OfferWork` owns the new path's account scheduling in `domains_observation_queues`.
 It is not registered, scheduled or called by current staff/public/holding flows. B6 supplies the
 checked activation and routes triggers here; legacy fill/sync work remains untouched until then.
+B6 must not run this seam beside the legacy `ObservationWork` consumer on shared queue rows.
 
 - `sync(binding, origin)` coalesces manual/daily feed requests. A failed run keeps its retry time;
   another Sync does not start overlapping reads or reset failure backoff.

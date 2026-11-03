@@ -24,11 +24,13 @@ final class OfferWork
     public function sync(AccountBinding $binding, RequestOrigin $origin = RequestOrigin::Interactive): void
     {
         $this->editQueue($binding, function ($q, $row) use ($origin): void {
-            if ((int) $row->offer_lease > $this->at()) { return; }
             $work = OfferState::decode($row->offer_work);
+            $claimed = (int) $row->offer_lease > $this->at();
+            if ($claimed && ($work['feed_claim'] ?? null) === $row->offer_claim) { return; }
             if (!empty($work['pending']) || ($work['tries'] ?? 0) > 0) { return; }
             $work['feed_due'] = $origin === RequestOrigin::Interactive ? $this->at() : ($work['feed_due'] ?? $this->at());
             if (!isset($work['origin']) || $origin === RequestOrigin::Interactive) { $work['origin'] = $origin->value; }
+            if ($claimed) { $work['feed_hint'] = true; }
             $q->update(['offer_work' => OfferState::json($work)]);
         });
     }
@@ -114,6 +116,7 @@ final class OfferWork
                 if ($t && (!$due || ($work['last'] ?? '') === 'feed')) {
                     $work['last'] = 'facts'; $this->facts($writer, $b, $t, $work);
                 } elseif ($due) {
+                    $this->beginFeed($b, $job, $work);
                     $work['last'] = 'feed'; $this->prices($b, $job, $work, $guard);
                     // Durable buffer precedes per-offer writes; a crash can resume without rereading.
                     $this->save($b, $job, ['offer_work' => OfferState::json($work)]);
@@ -127,6 +130,18 @@ final class OfferWork
             $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_claim' => null, 'offer_lease' => 0]);
             throw $error;
         }
+    }
+
+    private function beginFeed(AccountBinding $b, object $job, array &$work): void
+    {
+        $this->editQueue($b, function ($q, $row) use ($b, $job, &$work): void {
+            $this->current($b, $job); $stored = OfferState::decode($row->offer_work);
+            // This feed satisfies hints received during earlier local work in the same turn.
+            if (!empty($stored['feed_hint'])) { $work['origin'] = $stored['origin']; }
+            $stored['feed_claim'] = $work['feed_claim'] = $job->offer_claim;
+            unset($stored['feed_hint'], $work['feed_hint']);
+            $q->update(['offer_work' => OfferState::json($stored)]);
+        });
     }
 
     private function prices(AccountBinding $b, object $job, array &$work, \Closure $guard): void
@@ -267,6 +282,10 @@ final class OfferWork
                 // Hints may arrive outside locks while the provider read is in flight.
                 $stored = OfferState::decode((clone $q)->value('offer_work')); $next = OfferState::decode($values['offer_work']);
                 $next['facts'] = [...($stored['facts'] ?? []), ...($next['facts'] ?? [])];
+                if (!empty($stored['feed_hint'])) {
+                    $next['feed_hint'] = true; $next['feed_due'] = $stored['feed_due']; $next['origin'] = $stored['origin'];
+                }
+                if (array_key_exists('offer_claim', $values) && $values['offer_claim'] === null) { unset($next['feed_claim']); }
                 $values['offer_work'] = OfferState::json($next);
             }
             $q->update($values);
