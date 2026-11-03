@@ -140,6 +140,11 @@ final class UpgradeGate
             throw new \DomainException('Catalogue upgrade capture is missing.');
         }
         $compatible = true; $complete = true; $offers = 0; $issues = []; $mismatches = [];
+        $unexpected = DB::table('domains_tlds')->where('catalogue_converted', true)->where(static function ($q): void {
+            $q->whereNotNull('catalogue_facts')->orWhereNotNull('catalogue_published_revision')->orWhere('catalogue_revision', '!=', 1);
+        })->count();
+        if ($unexpected > 0) { $compatible = false; $mismatches['staging_changed'] = $unexpected; }
+
         Account::orderBy('server_id')->chunk(250, static function ($accounts) use (&$compatible, &$complete, &$offers, &$issues, &$mismatches): void {
             foreach ($accounts as $account) {
                 $report = (new UpgradeConversion)->stagingReport(CatalogueAcceptances::binding($account));
