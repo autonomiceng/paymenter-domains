@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand,ReadCommand,RegistrationCommand};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand,ReadCommand,RegistrationCommand,ResponseParser};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomTestCallLimit,EnomTestTransfer,OperationClaims,RenewalAcceptance,Runtime,RuntimeComposition,TransferPrecheck,WriteAcceptance,WriteFeatures};
 
 /** Deployment opt-in only. Exchanges remain private inside the genuine engine-bound protocols. */
@@ -98,6 +98,10 @@ final class RuntimeFactory
                 else{\Paymenter\Extensions\Servers\Domains\Services\EnomTestCalls::authorizeSend($this->binding,$purchase,$day);}
                 if (curl_exec($handle)===false||curl_getinfo($handle,CURLINFO_RESPONSE_CODE)!==200) {
                     throw \Paymenter\Extensions\Servers\Domains\Data\SendFailure::curl(curl_errno($handle),curl_getinfo($handle,CURLINFO_RESPONSE_CODE),$timeoutMs);
+                }
+                // Classify malformed Purchase replies here, where the actual cURL limit is known.
+                if ($named===RegistrationCommand::Purchase && in_array((new ResponseParser)->parse($named,$body)->code,['invalid_response','invalid_envelope'],true)) {
+                    throw new \Paymenter\Extensions\Servers\Domains\Data\SendFailure('parse',$timeoutMs);
                 }
                 return $body;
             } catch (EnomTestCallLimit $error) {

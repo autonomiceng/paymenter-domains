@@ -10,8 +10,6 @@ abstract class RegistrationProtocol extends RegistrationTransport
 {
     private readonly \SensitiveParameterValue $exchange;
     private ?WriteReservation $reservation=null;
-    private int $lastTimeoutMs=25000;
-    final protected function lastRequestTimeout(): int { return $this->lastTimeoutMs; }
     final public function useReservation(WriteReservation $reservation): void
     { if($this->reservation||!$reservation->bindsTo($this->binding)){throw new \LogicException('Reservation binding unavailable.');}$this->reservation=$reservation; }
     final public function withinReservation(Operation $op,\Closure $work): mixed
@@ -41,7 +39,7 @@ abstract class RegistrationProtocol extends RegistrationTransport
         #[\SensitiveParameter] array $parameters): string
     {
         $timeout = $this->requestTimeout($op, $ctx); $this->binding->requireMatch($op->binding);
-        $body = $ctx->withinClaimedWire($op->binding,function(int $remaining)use($origin,$command,$parameters,$timeout){$this->lastTimeoutMs=min($timeout,$remaining);return ($this->exchange->getValue())($origin,$command,$parameters,$this->lastTimeoutMs);});
+        $body = $ctx->withinClaimedWire($op->binding,function(int $remaining)use($origin,$command,$parameters,$timeout){return ($this->exchange->getValue())($origin,$command,$parameters,min($timeout,$remaining));});
         if (!is_string($body) || strlen($body) > 1048576) { throw new \RuntimeException('Registration response unavailable.'); }
         return $body;
     }

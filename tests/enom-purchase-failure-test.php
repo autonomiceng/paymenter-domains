@@ -50,19 +50,20 @@ foreach ([['timeout',28,200,false],['connect',7,200,false],['tls',60,200,false],
     Cache::flush();$clock->instant=$clock->now()->modify('+61 seconds');
     $op=$new(placeholderComFixtureName('lost-reply-'.$index.'-placeholder.com'));
     $GLOBALS['failureErrno']=$errno;
-    resetWire(['execFail'=>!$parse&&$status===200,'status'=>$status,'chunks'=>['<invalid private="SENTINEL">']]);
+    $expectedTimeout=$parse?24900:25000;
+    resetWire(['configure'=>$parse?static function():void{$GLOBALS['enomWire']['nanoseconds']=100000000;}:null,'execFail'=>!$parse&&$status===200,'status'=>$status,'chunks'=>['<invalid private="SENTINEL">']]);
     $result=$runRegistration($op)->fresh();
     Illuminate\Support\Facades\Auth::setUser($staff);
     same(25,$GLOBALS['enomWire']['options'][CURLOPT_LOW_SPEED_TIME],'A quiet Purchase is allowed its full call limit');
-    same(['category'=>$category,'timeout_ms'=>25000],$result->attempt['send_failure']??null,'The original attempt keeps the fixed reason and actual call limit');
+    same(['category'=>$category,'timeout_ms'=>$expectedTimeout],$result->attempt['send_failure']??null,'The original attempt keeps the fixed reason and actual call limit');
     same('uncertain',$result->state,'Failure never authorizes another Purchase');
     same(null,$result->attempt['execution'],'Lost reply keeps recorded-null execution');
     same(1,$purchaseForms(),'One Purchase only');
     $engine->execute($op->id);same(1,$purchaseForms(),'No replay');
     $facts=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($result);
-    same($category.'; time limit 25000 ms',$facts['send_failure']??null,'Staff sees safe send failure');
+    same($category.'; time limit '.$expectedTimeout.' ms',$facts['send_failure']??null,'Staff sees safe send failure');
     $page=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$result->id]);
-    $page->assertSee('Registrar reply')->assertSee($category.'; time limit 25000 ms')->assertDontSee('SENTINEL');
+    $page->assertSee('Registrar reply')->assertSee($category.'; time limit '.$expectedTimeout.' ms')->assertDontSee('SENTINEL');
     commerceReject(fn()=>$result->update(['attempt'=>array_replace($result->attempt,['send_failure'=>['category'=>'other','timeout_ms'=>1]])]));
 }
 $nativeSuccessful=true;echo "Safe Purchase failure retained and shown without replay or raw response.\n";
