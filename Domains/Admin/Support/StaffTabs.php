@@ -17,7 +17,7 @@ final class StaffTabs
     { return self::items($active,['Accounts'=>[RegistrarSetup::canAccess(),fn()=>RegistrarSetup::getUrl()],'Registrar requests'=>[OperationResource::canViewAny(),fn()=>OperationResource::getUrl('index')]]); }
     /** @return list<NavigationItem> */
     public static function tlds(string $active): array
-    { return self::items($active,['TLDs'=>[TldResource::canViewAny(),fn()=>TldResource::getUrl('index')],'What you sell'=>[WhatYouSell::canAccess(),fn()=>WhatYouSell::getUrl()],'Price list'=>[Staff::can(Staff::COSTS),fn()=>TldResource::getUrl('price-list')]]); }
+    { return self::items($active,['TLDs'=>[TldResource::canViewAny(),fn()=>TldResource::getUrl('index')],'What you sell'=>[WhatYouSell::canAccess(),fn()=>WhatYouSell::getUrl()]]); }
     /** @return list<NavigationItem> */
     public static function monitoring(string $active): array
     { return self::items($active,['Monitored domains'=>[WatchResource::canViewAny(),fn()=>WatchResource::getUrl('index')],'DNS monitoring setup'=>[WatchResource::canViewAny() && \Illuminate\Support\Facades\Schema::hasTable('domains_domains') && \Illuminate\Support\Facades\Schema::hasTable('domains_accounts') && \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->exists(),fn()=>WatchResource::getUrl('dns-setup')],'Settings'=>[MonitoringSettings::canAccess(),fn()=>WatchResource::getUrl('settings')]]); }
