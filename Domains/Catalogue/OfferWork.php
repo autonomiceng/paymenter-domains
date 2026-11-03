@@ -27,8 +27,8 @@ final class OfferWork
             if ((int) $row->offer_lease > $this->at()) { return; }
             $work = OfferState::decode($row->offer_work);
             if (!empty($work['pending']) || ($work['tries'] ?? 0) > 0) { return; }
-            $work['feed_due'] = min($work['feed_due'] ?? $this->at(), $this->at());
-            $work['origin'] = $origin->value;
+            $work['feed_due'] = $origin === RequestOrigin::Interactive ? $this->at() : ($work['feed_due'] ?? $this->at());
+            if (!isset($work['origin']) || $origin === RequestOrigin::Interactive) { $work['origin'] = $origin->value; }
             $q->update(['offer_work' => OfferState::json($work)]);
         });
     }
@@ -144,7 +144,7 @@ final class OfferWork
             if (strlen(OfferState::json($pending)) > 8 * 1024 * 1024) { throw new \DomainException('Oversized offer feed.'); }
             $work['pending'] = $pending; $work['feed_due'] = $this->at() + 86400; $work['tries'] = 0;
             $work['origin'] = RequestOrigin::Background->value;
-            $this->save($b, $job, ['offer_feed_succeeded_at' => $this->at(), 'offer_feed_failure' => null]);
+            $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_feed_succeeded_at' => $this->at(), 'offer_feed_failure' => null]);
         } catch (ReadDeferred|EnomTestCallLimit) { $work['feed_due'] = $this->at() + 120; }
         catch (\Throwable $error) {
             $guard(); $work['tries'] = ($work['tries'] ?? 0) + 1;
@@ -261,14 +261,16 @@ final class OfferWork
     }
     private function save(AccountBinding $b, object $job, array $values): void
     {
-        $this->editQueue($b, function ($q) use ($b, $job, $values): void { $this->current($b, $job);
+        $this->editQueue($b, function ($q) use ($b, $job, $values): void {
+            $this->current($b, $job);
             if (isset($values['offer_work'])) {
                 // Hints may arrive outside locks while the provider read is in flight.
                 $stored = OfferState::decode((clone $q)->value('offer_work')); $next = OfferState::decode($values['offer_work']);
                 $next['facts'] = [...($stored['facts'] ?? []), ...($next['facts'] ?? [])];
                 $values['offer_work'] = OfferState::json($next);
             }
-            $q->update($values); });
+            $q->update($values);
+        });
     }
     private function backoff(int $tries): int { return [120, 600, 3600, 21600][min(3, $tries - 1)]; }
     private function at(): int { return $this->clock->now()->getTimestamp(); }

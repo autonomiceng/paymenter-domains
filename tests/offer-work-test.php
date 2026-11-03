@@ -76,6 +76,8 @@ $worker->tick(1);
 same(5, count($wire->calls), 'One account feed uses five reads, including discovered unpriced suffixes');
 $worker->tick(1);
 same(5, count($wire->calls), 'Warm account feed is reused without another read');
+$worker->sync($b, RequestOrigin::Background); $worker->tick(1);
+same(5, count($wire->calls), 'Repeated background hints reuse a warm account feed');
 expect(Tld::where('server_id', $b->serverId)->where('tld', 'co.uk')->exists(), 'An unpriced discovered suffix is retained for cold search');
 same(false, $writer->readOffers(new Query($b, ['co.uk'], 'register'), Context::Public)[0]->available,
     'Discovery alone cannot publish or select a suffix');
@@ -168,6 +170,14 @@ $worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $fac
 $worker->tick(2); same(13, $worker->status($b)['remaining'], 'Restart advances only one bounded buffer batch');
 $worker->tick(2); same(0, $worker->status($b)['remaining'], 'The restarted worker finishes its durable buffer');
 same($before, count($wire->calls), 'Crash recovery does not repeat a completed provider feed');
+
+// A cold hint arriving while a feed reads outside locks must survive the worker's later save.
+$clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
+$wire->during = static function () use ($worker, $b): void { $worker->requestFacts($b, 'suffixab'); $worker->sync($b); };
+$before = count($wire->calls); $worker->tick(2); $wire->during = null;
+same(5, count($wire->calls) - $before, 'In-flight hints and manual sync do not start overlapping feeds');
+$worker->tick(2); $worker->tick(2);
+same('ready', $worker->status($b, 'suffixab')['state'], 'A cold hint made during provider reads survives buffered-work saves');
 
 // A later queue generation or an account rebind during reads exposes no new observations.
 $clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
