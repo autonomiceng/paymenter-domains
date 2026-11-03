@@ -28,10 +28,10 @@ final class DomainObservation
             $recordOverflow=count($knownGlue)>GlueDiscoveryLimit::HOSTS;
             return [$binding,$l['stamp'],$attempt,$l['domain'],$knownGlue,$recordOverflow,$recordEnabled,$recordProtected];
         });
-        $credential=$current?$this->bindings->offerCredentialRevision($binding):null;
+        $credential=$current?$this->bindings->holdingCredentialRevision($binding):null;
         $wireGuard=$current?function()use($current,$binding,$credential):void {
             $current();
-            if(!hash_equals($credential,$this->bindings->offerCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
+            if(!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
         }:null;
         $ctx=new RequestContext($binding,RequestOrigin::Background,$this->clock->now()->modify('+250 seconds'),new RequestBudget(25),$this->clock,$this->budget,stopOnReadFailure:true,readNameservers:true,current:$wireGuard);
         $snapshot=null; $transfer=TransferStatus::Unknown; $records=null; $failed=false; $recordFailed=false; $deferred=false; $failureCode=null;
@@ -71,7 +71,7 @@ final class DomainObservation
         $code=DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential): string {
             $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             $binding->requireMatch(CatalogueAcceptances::binding($l['account']));
-            if($current&&!hash_equals($credential,$this->bindings->offerCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
+            if($current&&!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
             if ($stamp!==$l['stamp']) { throw new ReadDeferred('Observation authority changed.'); }
             if ($recordEnabled && $this->recordGate && !($this->recordGate)($l)) { throw new ReadDeferred('Record processing authority changed.'); }
             if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
