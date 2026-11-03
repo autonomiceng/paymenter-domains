@@ -12,7 +12,6 @@ use Paymenter\Extensions\Servers\Domains\Services\ReminderSchedules;
 /** Optional reminders never toggle mandatory paid-order or recorded-credit notices. */
 final class ReminderAction
 {
-    private const SWITCH_REASON='Changed with the on/off switch.';
     /** The Reminder emails switch. The revision is the one this page showed, so a stale page is refused. */
     public static function toggle(int $server): Action
     {
@@ -20,7 +19,7 @@ final class ReminderAction
         $before=ReminderSchedules::storedDays($row?->before_days);$after=ReminderSchedules::storedDays($row?->after_days);
         return Action::make('reminders_switch_'.$server)->visible(fn()=>Staff::can(Staff::POLICY)&&$row!==null&&$before!==null&&$after!==null)->arguments(['revision'=>$row?->revision])
             ->action(function(array $arguments)use($server,$row,$before,$after):void {
-                try{ReminderSchedules::save(Auth::user(),$server,(int)$arguments['revision'],!$row->enabled,implode(',',$before),implode(',',$after),self::SWITCH_REASON);Notification::make()->success()->title('Reminders saved')->send();}
+                try{ReminderSchedules::save(Auth::user(),$server,(int)$arguments['revision'],!$row->enabled,implode(',',$before),implode(',',$after),$row->enabled?'Turned off':'Turned on');Notification::make()->success()->title('Reminders saved')->send();}
                 catch(\Throwable){Notification::make()->danger()->title("Couldn't save reminders")->body('Reload the account page, then try again.')->send();}
             });
     }

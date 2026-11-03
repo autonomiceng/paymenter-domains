@@ -27,7 +27,7 @@ $payload=$ready->getRawOriginal('payload');
 \Illuminate\Support\Facades\Auth::setUser($staff);
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($ready->domain->fresh());
 expect(str_contains($notice['title'],'not sent'),'Unreadable ready payload falls back to the held domain notice');
-same('Open request #'.$ready->id,$notice['action']['label'],'Unreadable ready payload retains the request recovery link');
+same('Check request #'.$ready->id,$notice['action']['label'],'Unreadable ready payload retains the request recovery link');
 \Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$ready->id)->update(['payload'=>$payload]);
 
 Illuminate\Support\Facades\DB::table('domains_accounts')->where('server_id',$ready->server_id)->update(['processing_enabled'=>true]);

@@ -49,7 +49,7 @@ final class OperationReconciliation
         });
         if (!$capture) { return Operation::findOrFail($id); }
         [$attempt, $stamp, $contract, $requestedNameservers, $watch, $light] = $capture; $proof = null; $nameservers = null; $covered = false; $transferConflict = false; $transfer = \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown;
-        $callCapBlocked = false; $pendingAnomaly = false;
+        $callCapBlocked = false; $pendingAnomaly = false; $privacyBlocked = false;
         $limiter=$watch?new TransferReadBudget($this->clock,Runtime::limiter()):null;
         try {
             $context = $check->context = new RequestContext($attempt->binding, RequestOrigin::Background, $this->clock->now()->modify('+250 seconds'), new RequestBudget(25), $this->clock, $limiter ?? Runtime::limiter());
@@ -66,6 +66,7 @@ final class OperationReconciliation
                 $covered = $facts->domain?->owned === true && $facts->domain->expiry !== null
                     && ($facts->historyComplete || ($attempt->executionFacts && $attempt->providerReference !== null && count($facts->candidates) > 0));
                 $transfer = $facts->transfer;
+                $privacyBlocked = $transfer === \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::NeedsAction && $facts->transferPrivacyBlocked;
                 $pendingAnomaly=count($facts->candidates)>1 || ($attempt->expectedCharge!==null && count($facts->candidates)===1
                     && $facts->candidates[0]->charge!==null && ($facts->candidates[0]->charge->currency!==$attempt->expectedCharge->currency
                         || self::decimal($facts->candidates[0]->charge->amount)!==self::decimal($attempt->expectedCharge->amount)));
@@ -105,7 +106,7 @@ final class OperationReconciliation
                 return $op;
             });
         }
-        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted): Operation {
+        $completed = $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($attempt, $stamp, $contract, $proof, $nameservers, $transfer, $transferConflict, $pendingAnomaly, $readStarted, $privacyBlocked): Operation {
             if (!$this->eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
             try {
                 $binding = $this->authority($op, $domain, $all, $funding, $server, $account);
@@ -119,6 +120,7 @@ final class OperationReconciliation
             $policy['reconciliation']['staff_alert']=true;
             if ($op->action === 'transfer') {
                 if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){$op->safe_code='reconciliation_required';}
+                $policy['reconciliation']['transfer_privacy_blocked'] = $privacyBlocked;
                 $policy['reconciliation']['transfer_status'] = $transfer->value; $policy['reconciliation']['read_at'] = $this->clock->now()->getTimestamp(); unset($policy['reconciliation']['read_failed']);
                 if ($op->state === 'held') { $op->update(['state' => 'uncertain', 'safe_code' => 'reconciliation_required']); }
                 if ($transferConflict) {

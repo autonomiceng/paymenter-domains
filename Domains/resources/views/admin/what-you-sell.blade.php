@@ -19,6 +19,8 @@
         /* Status's next step and a word in a money cell (Left out, No cost yet) break onto a second line before the table outgrows its box. Prices have no spaces, so they never break. */
         .domains-sell-table .fi-ta-table td.domains-sell-status .fi-ta-text-description{white-space:normal;min-width:9rem;max-width:15rem}
         .domains-sell-table .fi-ta-table :is(td.domains-sell-register,td.domains-sell-renew,td.domains-sell-transfer) .fi-ta-text-item{white-space:normal}
+        /* The longest TLDs wrap, so the Status column stays in view at 1440. */
+        .domains-sell-table .fi-ta-table td.domains-sell-pin .fi-ta-text-item{white-space:normal;overflow-wrap:anywhere;max-width:9rem}
         .domains-sell-table .fi-ta-table>thead>tr,.dark .domains-sell-table .fi-ta-table>thead>tr{background:none}
         .fi-header-subheading .domains-help-beside{margin-inline:0 .875rem}
         /* With more than one group on, cells are 12px apart as in the mock, so every group fits a 1440 screen. The rules below keep the 20px edge. */

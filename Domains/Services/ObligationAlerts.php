@@ -30,7 +30,7 @@ final class ObligationAlerts
         'invalid_invoice'=>'Renewal invoice needs a check: owner, line and due date.',
         'below_cost'=>'Below cost. Billing continues. Check the margin.',
         'observation_review'=>'Sync stopped. Use Resume sync.',
-        'operation_review'=>'Registrar request needs a check. Open the request.',
+        'operation_review'=>'Registrar request needs a check. Check the request.',
         'unknown_payment_time'=>'Transfer payment time missing. Check the payment before you send a deadline.',
         'delivery_uncertain'=>'Reminder not confirmed. Check its delivery before you resend.',
         'template_failed'=>'Reminder failed. Check its template and channels.',
@@ -103,9 +103,11 @@ final class ObligationAlerts
     }
     /** Waits the system clears by itself, so no one has a step to take yet. The request keeps every fact, and when the wait
      * runs out the next inspection raises the same alert. Anything unproven alerts: an uncertain transfer may not have been accepted.
-     * A transfer wait is quiet only while its reads work and will continue: a failed read, a stale one or stopped checks alert. */
+     * A transfer wait is quiet only while its reads work and will continue: a failed read, a stale one or stopped checks alert.
+     * An unsent change the runtime tries again is quiet until its tries run out. */
     private static function waiting(Operation $op,Domain $d,int $now):bool
     {
+        if(ManagementEvidence::recoverable($op)){return true;}
         $window=self::WAIT_DAYS*86400;
         if($op->action==='renew'){
             return $op->state==='queued'&&in_array($op->safe_code,[RenewalCode::Rate->value,RenewalCode::Reads->value],true)
@@ -126,7 +128,7 @@ final class ObligationAlerts
     {
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
-        try{return in_array($alert->code,self::REVIEW,true)&&$op->state==='succeeded'&&!self::flagged($op,$operations,$d);}
+        try{return in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
         catch(\Throwable){return false;}
     }
     /** A request that succeeds closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.

@@ -26,6 +26,7 @@ final class StaffSettingsWrites
             };
         }
         $now??=$clock->now();$r->input($data);
+        if($r->action==='default_pricing'){return $this->saveDefaultPricing($r,$data,$now);}
         if($r->action==='enom_answer'){EnomAnswers::record($r,$data,$now);return null;}
         if($r->action==='late_renewal'){EnomLateRenewal::review($r,$data);return null;}
         if($r->action==='activate'){EnomLiveActivation::review($r,$data);return null;}
@@ -97,7 +98,7 @@ final class StaffSettingsWrites
         if(in_array($r->action,['override','remove_override'],true)){
             // Saving prices publishes them in the same transaction; missing or stale costs refuse the whole change.
             $this->native->publish($r->tldId??0,$now,$r,function(Tld $t)use($r,$data,$now):void{
-                $rule=$r->action==='override'?self::rule($data,$r->serverId):null;
+                $rule=$r->action==='override'?self::rule($data):null;
                 $t->update($rule===null?['use_default_rule'=>true]:['use_default_rule'=>false,'pricing_mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up'],
                     'fixed_register'=>$rule['fixed']['register'],'fixed_renew'=>$rule['fixed']['renew'],'fixed_transfer'=>$rule['fixed']['transfer']]);
                 PriceCatalogue::requireCosts($t,$now);
@@ -142,18 +143,6 @@ final class StaffSettingsWrites
             if($r->action==='history'){
                 HistoryAcceptances::revokeLocked(CatalogueAcceptances::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
             }
-            if($r->action==='card_fee'){
-                $fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);
-                // Validate the effective rules against the replacement fee; any refusal rolls it back.
-                CardFee::saveLocked((int)$s->id,$fee);
-                $rules=new PricingRules;$default=$rules->defaultRule((int)$s->id,true);
-                if($default['mode']==='markup_fee_percent'){PricingRule::validate([...$default,'card_fee'=>$fee]);}
-                foreach(Tld::where(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'registrar_key'=>$a->registrar_key,'use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent'])->orderBy('id')->lockForUpdate()->get() as $own){
-                    PricingRule::validate([...$rules->rule($own,true),'card_fee'=>$fee]);
-                }
-                return;
-            }
-            if($r->action==='default_rule'){(new PricingRules)->saveDefaultRuleLocked((int)$s->id,self::rule($data,$r->serverId));return;}
             if($r->action==='tld_settings'){
                 if(!$t){throw new \DomainException('TLD required.');}
                 $min=filter_var($data['min_years']??null,FILTER_VALIDATE_INT);$max=filter_var($data['max_years']??null,FILTER_VALIDATE_INT);
@@ -215,31 +204,50 @@ final class StaffSettingsWrites
             SellAutomation::refresh($r->serverId,$now);
             return null;
         }
-        if(!in_array($r->action,['default_rule','card_fee'],true)){return null;}
-        // Publish affected TLDs independently; one failure does not stop the rest.
-        // A TLD that switched to its own prices meanwhile is left alone.
-        $summary=['published'=>0,'failed'=>[]];$a=Account::where('server_id',$r->serverId)->firstOrFail();
-        $targets=Tld::where(['server_id'=>$r->serverId,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint]);
-        if($r->action==='default_rule'){$targets->where('use_default_rule',true);}
-        else{
-            try{$defaultFee=(new PricingRules)->defaultRule($r->serverId)['mode']==='markup_fee_percent';}
-            catch(\Throwable){$defaultFee=true;}
-            $targets->where(function($q)use($defaultFee):void{
-                $q->where(fn($own)=>$own->where('use_default_rule',false)->where('pricing_mode','markup_fee_percent'));
-                if($defaultFee){$q->orWhere('use_default_rule',true);}
-            });
-        }
-        foreach($targets->orderBy('tld')->get() as $tld){
-            $follows=true;
+        return null;
+    }
+
+    /** Rule and fee save together. Then each account publishes on its own, and saving again retries what failed. */
+    private function saveDefaultPricing(StaffSettingsReview $r,#[\SensitiveParameter] array $data,\DateTimeImmutable $now): array
+    {
+        $r->local(function()use($data):void{
+            try{$fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);}
+            catch(\InvalidArgumentException){throw new \DomainException('Invalid card fee.');}
+            $rules=new PricingRules;CardFee::saveLocked($fee);$rules->saveDefaultRuleLocked(self::rule($data,$fee));
+            // A custom TLD this fee can't price refuses the whole save.
+            foreach(Account::orderBy('server_id')->lockForUpdate()->get() as $a){
+                foreach(Tld::where(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint,'registrar_key'=>$a->registrar_key,'use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent'])->orderBy('id')->lockForUpdate()->get() as $own){
+                    PricingRule::validate([...$rules->rule($own,true),'card_fee'=>$fee]);
+                }
+            }
+        });
+        $summary=['published'=>0,'failed'=>[],'skipped'=>[]];$prices=new PriceCatalogue(new PricingRules);
+        foreach(Account::orderBy('server_id')->get() as $a){
+            $server=Server::find($a->server_id);$name=$server?->name??'Server #'.$a->server_id;
+            // A disabled account can't sell or publish; its prices catch up once it is back on.
+            if(!$server?->enabled){$summary['skipped'][]=$name;continue;}
             try{
-                $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($r,$now,&$follows):bool{
-                    if($r->action==='default_rule'?!$t->use_default_rule:(new PricingRules)->rule($t,true)['mode']!=='markup_fee_percent'){return $follows=false;}
-                    PriceCatalogue::requireCosts($t,$now);return true;});
-                if($follows){$summary['published']++;}
+                foreach(Tld::where(['server_id'=>$a->server_id,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint])->where(fn($q)=>$q->where('use_default_rule',true)->orWhere('pricing_mode','markup_fee_percent'))->orderBy('tld')->get() as $tld){
+                    $follows=true;
+                    try{
+                        // Prices move only when the rule or fee they use really changed. Unchanged is fine; a change it can't follow is named below.
+                        $older=$prices->onOlderRule($tld);
+                        if($older||$tld->use_default_rule){PriceCatalogue::requireCosts($tld,$now);}
+                        if(!$older){continue;}
+                        $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($now,&$follows):bool{
+                            if(!$t->use_default_rule&&$t->pricing_mode!=='markup_fee_percent'){return $follows=false;}
+                            PriceCatalogue::requireCosts($t,$now);return true;});
+                        if($follows){$summary['published']++;}
+                    }
+                    catch(\Throwable $error){
+                        $summary['failed'][$name.' #'.$a->server_id][]='.'.$tld->tld;
+                        if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$tld->tld,'exception_class'=>$error::class]);}
+                    }
+                }
             }
             catch(\Throwable $error){
-                $summary['failed'][]='.'.$tld->tld;
-                if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$tld->tld,'exception_class'=>$error::class]);}
+                $summary['failed'][$name.' #'.$a->server_id]??=[];
+                \Illuminate\Support\Facades\Log::warning('Domains default pricing account failed.',['server_id'=>(int)$a->server_id,'exception_class'=>$error::class]);
             }
         }
         // Each publication has committed independently; losing this audit cannot undo it.
@@ -251,10 +259,10 @@ final class StaffSettingsWrites
         return $summary;
     }
 
-    private static function rule(array $data,int $serverId): array
+    private static function rule(array $data,?array $fee=null): array
     {
         return PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
             'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null],
-            ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>CardFee::read($serverId,true)]:[])]);
+            ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>$fee??CardFee::read(true)]:[])]);
     }
 }

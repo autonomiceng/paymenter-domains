@@ -26,14 +26,14 @@ foreach(['resources/views/index.blade.php','Presentation/DomainListRow.php','Pre
     same(false,str_contains((string)file_get_contents($root.'/'.$file),'Not yet'),$file.' has no customer-only word');
 }
 
-// Red with the warning icon when the reader must act. Muted, with no icon, when it fills in by itself or needs nothing.
+// Red with the hexagon when the reader must act. Muted, with no icon, when it fills in by itself or needs nothing.
 foreach(['Fills in by itself within a day','No time recorded. No action needed.'] as $calm){
     same(['gray',null,true],[Missing::color($calm),Missing::icon($calm),Missing::needsNothing($calm)],$calm);
     $html=(string)Missing::html($calm);
     expect(str_contains($html,'domains-missing--calm')&&!str_contains($html,'<svg'),'Muted markup: '.$calm);
 }
 foreach(['Sync failed. Use Resume sync.',null,'Check at your registrar'] as $act){
-    same([Missing::COLOR,Missing::ICON,false],[Missing::color($act),Missing::icon($act),Missing::needsNothing($act)],(string)$act);
+    same([Missing::COLOR,Missing::ICON,false],[Missing::color($act),(string)Missing::icon($act),Missing::needsNothing($act)],(string)$act);
     $html=(string)Missing::html($act,['label'=>'Contact support','url'=>'/tickets/create']);
     expect(!str_contains($html,'domains-missing--calm')&&str_contains($html,'<svg'),'Red markup: '.(string)$act);
 }

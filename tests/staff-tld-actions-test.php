@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\Auth;
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup,WhatYouSell};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\SalesPolicy;
@@ -29,16 +29,17 @@ $settingsQueries=static function()use($t):array{
     \Illuminate\Support\Facades\DB::flushQueryLog();\Illuminate\Support\Facades\DB::enableQueryLog();
     try{
         $visible=[];
-        foreach(['card_fee','default_rule','renewal_billing','unpaid_hold'] as $name){
+        foreach(['renewal_billing','unpaid_hold'] as $name){
             $visible[]=\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$t->server_id,'',$name)->isVisible();
         }
+        $visible[]=\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::defaultPricing()->isVisible();
         $queries=\Illuminate\Support\Facades\DB::getQueryLog();
         $counts=array_map(static fn($table)=>count(array_filter($queries,static fn($q)=>str_contains($q['query'],'from "'.$table.'"'))),['users','roles']);
         return [$visible,$counts];
     }finally{\Illuminate\Support\Facades\DB::disableQueryLog();\Illuminate\Support\Facades\DB::flushQueryLog();}
 };
 [$visible,$counts]=$settingsQueries();
-same([true,true,true,true],$visible,'All permitted settings rows remain visible');
+same([true,true,true],$visible,'All permitted settings rows remain visible');
 echo 'Settings row user/role queries: '.json_encode($counts)."\n";
 same([1,1],$counts,'Settings rows reuse one request permission snapshot');
 $savedRequest=app('request');
@@ -46,46 +47,49 @@ try{
     $u->role->update(['permissions'=>[Staff::VIEW]]);
     app()->instance('request',\Illuminate\Http\Request::create('/registrar-account','GET'));
     [$visible,$counts]=$settingsQueries();
-    same([false,false,false,false],$visible,'A new request observes revoked settings permissions');
+    same([false,false,false],$visible,'A new request observes revoked settings permissions');
     same([1,1],$counts,'Denied rows also reuse one fresh request snapshot');
-    Auth::setUser(staffUser([Staff::POLICY,Review::permission('card_fee')]));
-    same([false,false,false,false],$settingsQueries()[0],'Another actor cannot inherit the request snapshot or omit View');
+    Auth::setUser(staffUser([Staff::POLICY,Review::permission('card_fee'),Review::permission('default_rule')]));
+    same([false,false,false],$settingsQueries()[0],'Another actor cannot inherit the request snapshot or omit View');
 }finally{$u->role->update(['permissions'=>$permissions]);Auth::setUser($u);app()->instance('request',$savedRequest);}
 $fixed=['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20','fixed_renew'=>'21','fixed_transfer'=>'22'];
 // "Use the account default" is a choice in Edit prices; it saves as remove_override.
-$inputs=['card_fee'=>['fee_percent'=>'3.10','fee_fixed'=>'0.40'],'default_rule'=>$fixed,'override'=>['pricing'=>'custom',...$fixed],'remove_override'=>['pricing'=>'default'],
+$inputs=['default_pricing'=>[...$fixed,'fee_percent'=>'3.10','fee_fixed'=>'0.40'],'override'=>['pricing'=>'custom',...$fixed],'remove_override'=>['pricing'=>'default'],
     'tld_settings'=>['min_years'=>1,'max_years'=>2,'enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true],
     'seller'=>['seller'=>$t->server_id,'register'=>true,'transfer'=>true],
     'configure'=>['registrar'=>'enom','environment'=>'test','uid'=>'synthetic-user','token'=>'account-enom'],'probe'=>[]];
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertActionHasUrl('tld_settings',Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$t->server_id,'tld'=>$t->tld]));
 unset($inputs['tld_settings']);
-$accountSide=['card_fee','default_rule','configure','probe'];
+$accountSide=['configure','probe'];
 $mount=static function(string $action)use($u,$t,$accountSide){
+    if($action==='default_pricing'){return Livewire::actingAs($u)->test(WhatYouSell::class)->mountAction($action)->assertActionMounted($action);}
     $setup=in_array($action,$accountSide,true);
     $name=$setup?setupAction($action,$t->server_id):($action==='remove_override'?'override':$action);
     return Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id])->mountAction($name)->assertActionMounted($name);
 };
 foreach($inputs as $action=>$input){
     echo 'Native action: '.$action."\n";
-    $setup=in_array($action,$accountSide,true);$ending=$setup?null:$t->id;
+    $pricing=$action==='default_pricing';$setup=$pricing||in_array($action,$accountSide,true);$ending=$setup?null:$t->id;$account=$pricing?Review::ALL_ACCOUNTS:$t->server_id;
     $page=$mount($action);$key=$page->get('mountedActions.0.data.'.($action==='remove_override'?'default_key':'review_key'));
     $defaults=$page->get('mountedActions.0.data');
-    if($action==='default_rule'){same('markup_percent',$defaults['mode'],'Current default mode prefilled');}
+    if($pricing){same('markup_percent',$defaults['mode'],'Current default mode prefilled');same('2.90',$defaults['fee_percent'],'Current fee prefilled');}
     if($action==='tld_settings'){same(1,(int)$defaults['min_years'],'Current minimum prefilled');same(3,(int)$defaults['max_years'],'Current maximum prefilled');}
     if($action==='seller'){same($t->server_id,(int)$defaults['seller'],'Current seller prefilled');expect($defaults['register']&&$defaults['transfer'],'Current seller actions prefilled');}
     if($action==='configure'){same('enom',$defaults['registrar'],'Bound registrar prefilled');same('test',$defaults['environment'],'Bound environment prefilled');expect(empty($defaults['token'])&&empty($defaults['uid']),'Credentials never prefilled');}
-    $page->setActionData([...$input,'reason'=>"Reviewed\u{2028}settings"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
-    same($key,$page->get('mountedActions.0.data.'.($action==='remove_override'?'default_key':'review_key')),'Settings reason error keeps the current review open');
+    if($action!=='probe'){ // A read asks no reason.
+        $page->setActionData([...$input,'reason'=>"Reviewed\u{2028}settings"])->callMountedAction()->assertHasActionErrors(['reason'=>'regex']);
+        same($key,$page->get('mountedActions.0.data.'.($action==='remove_override'?'default_key':'review_key')),'Settings reason error keeps the current review open');
+    }
     $page->setActionData([...$input,'reason'=>'Confirm native action with saved facts'])->callMountedAction()->assertHasNoActionErrors()
-        ->assertNotified($action==='card_fee'?\Filament\Notifications\Notification::make()->success()->title('Saved')->body('Card fee saved. No TLDs count the card fee in their prices, so no prices changed.'):($setup?($action==='probe'?'Balance updated':'Saved'):(in_array($action,['override','remove_override'],true)?'Prices published':'Change recorded')))->assertSet('mountedActions',[]);
+        ->assertNotified($pricing?\Filament\Notifications\Notification::make()->success()->title('Saved')->body('Published new prices for 2 TLDs.'):($setup?($action==='probe'?'Balance updated':'Saved'):(in_array($action,['override','remove_override'],true)?'Prices published':'Change recorded')))->assertSet('mountedActions',[]);
     if($action==='remove_override'){expect($t->fresh()->use_default_rule,'Account default chosen in Edit prices');}
-    $review=new Review($u->id,$t->server_id,$ending,$action,$key,'Replay must refuse this native action');
+    $review=new Review($u->id,$account,$ending,$action,$key,'Replay must refuse this native action');
     tldRefusal(fn()=>$writer->run($review,$input,$now),$action==='probe'?'Review key used.':'Settings changed. Reload this page.');
     $page=$mount($action);SalesPolicy::where('tld','com')->increment('revision');
     $page->setActionData([...$input,'reason'=>'Refuse stale native action after change'])->callMountedAction()->assertHasNoActionErrors()->assertNotified(\Filament\Notifications\Notification::make()->danger()->title($setup?"Couldn't save":'Change refused')->body('Someone else changed this. Nothing was saved. Try again.'))->assertSet('mountedActions',[]);
-    $key=Review::ticket($u->id,$t->server_id,$ending,$action,Review::stamp($t->server_id,$ending));
-    $u->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission($action)]))]);
-    commerceReject(fn()=>$writer->run(new Review($u->id,$t->server_id,$ending,$action,$key,'Permission revoked before submission'),$input,$now));
+    $key=Review::ticket($u->id,$account,$ending,$action,Review::stamp($account,$ending));
+    $u->role->update(['permissions'=>array_values(array_diff($permissions,Review::rights($action)))]);
+    commerceReject(fn()=>$writer->run(new Review($u->id,$account,$ending,$action,$key,'Permission revoked before submission'),$input,$now));
     if(in_array($action,['override','remove_override'],true)){
         // Edit prices offers only the choices this staff member may save.
         $choices=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')->assertActionMounted('override')->get('mountedActions.0.data.pricing');
@@ -96,7 +100,7 @@ foreach($inputs as $action=>$input){
 // Saving prices publishes them, so price dialogs need the publish permission too.
 $u->role->update(['permissions'=>array_values(array_diff($permissions,[Review::permission('publish')]))]);
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertActionHidden('override')->assertActionVisible('tld_settings');
-Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSuccessful()->assertSee('Default pricing')->assertDontSee('Edit default pricing');
+Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->assertActionHidden('default_pricing');
 $u->role->update(['permissions'=>$permissions]);
 $rows=Review::historyRows(App\Models\Server::find($t->server_id));
 foreach(array_keys($inputs) as $action){$label=Review::ACTIONS[$action];expect(count(array_filter($rows,fn($r)=>$r['action']===$label))>=1,'Every allowed native action audited');}
@@ -108,7 +112,7 @@ for($i=0;$i<30&&Illuminate\Support\Facades\DB::table(AuditArchives::TABLE)->wher
     $entry->local(static fn()=>null);
 }
 expect(Illuminate\Support\Facades\DB::table(AuditArchives::TABLE)->where('server_id',$t->server_id)->where('family','staff_settings')->count()>$archives,'A new encrypted audit archive is created');
-foreach(array_column($rows,'key') as $used){expect(Illuminate\Support\Facades\DB::table(Review::KEYS)->where('server_id',$t->server_id)->where('review_key',$used)->exists(),'Earlier keys retained independently of audit archives');}
+foreach(array_column($rows,'key') as $used){expect(Illuminate\Support\Facades\DB::table(Review::KEYS)->whereIn('server_id',[$t->server_id,Review::ALL_ACCOUNTS])->where('review_key',$used)->exists(),'Earlier keys retained independently of audit archives');}
 expect($rotation!==null,'Rollover exercised a successful unchanged-stamp action');
 tldRefusal(fn()=>$rotation->local(static fn()=>null),'Review key used.');
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings));
@@ -152,13 +156,13 @@ config(['domains.enom_catalogue.enabled'=>$catalogueConfig,'domains.enom_identit
 same($providerReads,$reads->calls,'Seller refusal makes no provider read');
 // Field defaults share one lazy read per form.
 $fields=static function(string $name)use($t):array{
-    $action=$name==='default_rule'?\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$t->server_id,'unused',$name):\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::make((int)$t->server_id,(int)$t->id,'unused',false,[$name])[0];$out=[];
+    $action=$name==='default_pricing'?\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::defaultPricing():\Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::make((int)$t->server_id,(int)$t->id,'unused',false,[$name])[0];$out=[];
     foreach($action->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true) as $field){if($field instanceof \Filament\Forms\Components\Field){$out[$field->getName()]=$field;}}
     return $out;
 };
 $reading=false;$queries=0;Illuminate\Support\Facades\DB::listen(static function($query)use(&$reading,&$queries):void{if($reading&&str_starts_with(strtolower($query->sql),'select')){$queries++;}});
-foreach(['default_rule'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'],'override'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'],'seller'=>['seller','register','transfer']] as $name=>$names){
-    $form=$fields($name);$queries=0;$reading=true;$form[$names[0]]->getDefaultState();$first=$queries;expect($first>0,$name.' uses real saved facts');
+foreach(['default_pricing'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','fee_percent','fee_fixed'],'override'=>['mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'],'seller'=>['seller','register','transfer']] as $name=>$names){
+    $form=$fields($name);$queries=0;$reading=true;$form[$names[0]]->getDefaultState();if($name==='default_pricing'){$form['fee_percent']->getDefaultState();}$first=$queries;expect($first>0,$name.' uses real saved facts');
     foreach($names as $field){$form[$field]->getDefaultState();}same($first,$queries,$name.' defaults share the first read');$reading=false;
 }
 echo "Ten native action submissions, missing-cost refusals, replay, permission denial and retained audit passed.\n";$nativeSuccessful=true;

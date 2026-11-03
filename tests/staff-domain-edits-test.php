@@ -9,16 +9,19 @@ use Filament\Actions\Testing\TestAction;
 use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainEditActions,DomainFacts,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainManagement,DomainObservation,ManagementForms,ObservationSchema,OwnedDomains,OwnerPorts};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffOperationReview,StaffOperations};
 staffPanel();storefrontViews();
 [$d,$driver]=$holding(placeholderComFixtureName('staff-edit-placeholder.com'));
 $ports=new OwnerPorts(fn($b)=>$driver);$owners=new OwnedDomains($clock,$ports,$management);
 app()->instance(OwnerPorts::class,$ports);app()->instance(OwnedDomains::class,$owners);app()->instance(DomainManagement::class,$management);
 $staff=staffUser([Staff::VIEW,'admin.domains.manage']);$staff->update(['first_name'=>'Sam','last_name'=>'Support']);$actor=$staff->fresh();Auth::setUser($actor);
 $view=static fn()=>Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id]);
+$view()->assertSee('Email auth code');
 $open=static fn(string $row,string $action)=>$view()->mountAction(TestAction::make('edit_'.$action)->schemaComponent('fact_'.md5($row),'infolist'));
 $edit=static fn(string $row,string $action,array $data=[])=>$open($row,$action)->setActionData($data)->callMountedAction();
 $last=static fn(string $action)=>$d->operations()->where('action',$action)->orderByDesc('id')->first();
@@ -54,6 +57,7 @@ $op=$last('nameservers');same('succeeded',$op->state,'Staff response termination
 same(['ns5.example.com','ns6.example.com'],$op->payload['nameservers'],'Same normalization as the owner form');
 // Real queued free changes must not offer purchase controls or an inapplicable status read.
 // Native Filament visibility is the boundary; a pure predicate test would miss permission/action wiring.
+// The saved edit already completed after the response; build separate unsent work for these checks.
 $op=$management->request($actor,$d->id,'nameservers',$op->payload,bin2hex(random_bytes(32)),$driver);
 $permissions=$actor->role->permissions;
 $actor->role->update(['permissions'=>[...$permissions,'admin.invoices.update',...array_map(
@@ -105,7 +109,7 @@ $registrarDns();
 expect(!isset(DomainFacts::for($d->fresh())['DNS records']),'No DNS row while DNS tools are off');
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 expect(!isset(DomainEditActions::for($d->fresh())['rows']['DNS records']),'Unread records offer no replacement form');
-same(null,DomainFacts::for($d->fresh())['DNS records']['value'],'Unread records are Missing');
+same('Not read yet',DomainFacts::for($d->fresh())['DNS records']['value'],'Unread records are normal, not Missing');
 ObservationSchema::install();
 same('refreshed',(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports))->run($d->id),'Complete empty records');
 same('0 records',DomainFacts::for($d->fresh())['DNS records']['value'],'Registration card counts DNS records');
@@ -148,7 +152,43 @@ $replay->callMountedAction()->assertNotified(ManagementForms::REQUESTED);same([$
 $viewer=staffUser([Staff::VIEW]);Auth::setUser($viewer);same([],DomainEditActions::for($d->fresh())['rows'],'View-only staff get no edits');Auth::setUser($actor);
 $processing=static fn(bool $on)=>DB::table('domains_accounts')->where('server_id',$d->server_id)->update(['processing_enabled'=>$on]);$processing(false);
 $off=DomainEditActions::for($d->fresh());same([],$off['rows'],'Processing off hides edits, as it does for the owner');expect(str_contains((string)$off['held'],'Orders are off'),'Processing off says what to do');
-$view()->assertSee($off['held']);$processing(true);
+$view()->assertSee($off['held'])->assertSeeHtml('domains-blocked')->assertSeeHtml('aria-disabled="true"');
+// Email auth code is a row like the others: under Registration, with its words, and blocked with the reason when changes are on hold.
+$blockedRow=$view();$blockedRow->assertSeeInOrder(['Registration','Transfer lock','Email auth code','Goes to the registrant email','Never shown here.','Email code','Registrar auto-renew','Contacts and DNS'])->assertSeeHtml('aria-label="Email code Email auth code. '.e($off['held']));
+expect(in_array('Email auth code',DomainFacts::SECTIONS['Registration'],true)&&!in_array('Auth code',DomainFacts::SECTIONS['Contacts and DNS'],true),'The row sits under Registration');
+$processing(true);
+$view()->assertSeeInOrder(['Transfer lock','Email auth code','Never shown here.','Email code','Registrar auto-renew']);
+same('Email code',DomainEditActions::for($d->fresh())['rows']['Email auth code'][0]->getLabel(),'The live button says what the mock says');
 $d->update(['renewal_policy'=>[...($d->renewal_policy??[]),'automatic_spend_paused'=>true]]);
 expect(str_contains((string)DomainEditActions::for($d->fresh())['held'],'orders are paused'),'Paused orders say what to do');
+
+// Real paid requests and Livewire Release exercise the saved audit and the domain rail together.
+// A unit row fixture cannot prove that the real action records the actor and time the page reads.
+$releaseStaff=staffUser([Staff::VIEW,'admin.domains.manage',StaffOperationReview::permission('hold'),StaffOperationReview::permission('release')]);
+$releaseStaff->update(['first_name'=>'Alex','last_name'=>'Admin']);
+$releaseOps=[$new(placeholderComFixtureName('rail-release-placeholder.com'),action:'transfer'),$new(placeholderComFixtureName('rail-held-placeholder.com'),action:'transfer')];
+$reviews=new StaffOperations($clock);
+foreach ($releaseOps as $request) {
+    $key=StaffOperationReview::ticket($releaseStaff->id,$request->domain_id,$request->id,'hold',StaffOperationReview::stamp($request,$request->domain),$clock);
+    $reviews->run($releaseStaff,$request->domain_id,$request->id,'hold',$key,'Put on hold');
+}
+$clock->instant=$clock->now()->modify('+5 minutes');
+DB::table('domains_accounts')->where('server_id',$releaseOps[0]->server_id)->update(['processing_enabled'=>false]);
+Livewire::actingAs($releaseStaff)->test(ViewOperation::class,['record'=>$releaseOps[0]->id])->assertActionVisible('release')
+    ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
+same('queued',$releaseOps[0]->fresh()->state,'The real Release leaves the request queued with Orders off');
+foreach ($releaseOps as $i=>$request) {
+    $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$request->domain_id])->assertSuccessful()->html();
+    $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+    $rail='//*[contains(concat(" ",normalize-space(@class)," ")," domains-rail ")]';
+    $entries=$xpath->query($rail.'//*[contains(concat(" ",normalize-space(@class)," ")," domains-trace-item ")][contains(.,"Hold released")]');
+    same($i===0?1:0,$entries->length,'Only the released domain rail has a staff release entry');
+    if ($i===0) {
+        expect(str_contains($entries->item(0)->textContent,'Alex Admin'),'The rail names the staff member who released the hold');
+        same($clock->now()->format(DATE_ATOM),$xpath->query('.//time',$entries->item(0))->item(0)?->getAttribute('datetime'),'The release row uses the action time');
+    }
+    $railText=preg_replace('/\s+/',' ',$xpath->query($rail)->item(0)->textContent);
+    expect(str_contains($railText,'Request #'.$request->id.' Transfer Under review'),'Both request lines keep their existing status word');
+    if ($i===0) { expect(str_contains($railText,'Not sent. Orders are off for this account.'),'The released request keeps its Orders-off reason'); }
+}
 echo "Staff domain edits passed.\n";$nativeSuccessful=true;
