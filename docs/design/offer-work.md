@@ -35,7 +35,8 @@ One account's error does not interrupt another account or the existing holding o
 The local feed/request safety bounds are 5,000 suffixes and an 8 MiB encoded feed buffer.
 
 Whole feeds are buffered before writes; pending observations survive restart in the retained queue.
-An active 300-second claim coalesces triggers. After expiry, read-only work can be reclaimed with a new
+Syncs during provider reads coalesce; manual Syncs after stored success or during buffer drain
+remain pending for the next feed. After a 300-second claim expires, read-only work can be reclaimed with a new
 generation. Already committed equal observations are no-ops. Binding/generation/lease checks run after
 reads and again under Writer's native-first locks; stale workers cannot save observations or acknowledge
 success. All catalogue changes, including unpriced discovery, go through `Writer::apply`. There is no

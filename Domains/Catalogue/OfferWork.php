@@ -159,6 +159,8 @@ final class OfferWork
             if (strlen(OfferState::json($pending)) > 8 * 1024 * 1024) { throw new \DomainException('Oversized offer feed.'); }
             $work['pending'] = $pending; $work['feed_due'] = $this->at() + 86400; $work['tries'] = 0;
             $work['origin'] = RequestOrigin::Background->value;
+            // Provider success ends feed coalescing; later Sync requests need another feed.
+            unset($work['feed_claim']);
             $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_feed_succeeded_at' => $this->at(), 'offer_feed_failure' => null]);
         } catch (ReadDeferred|EnomTestCallLimit) { $work['feed_due'] = $this->at() + 120; }
         catch (\Throwable $error) {

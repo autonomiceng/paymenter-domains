@@ -52,7 +52,12 @@ $wire = new class implements Transport {
         return "Command={$command->value}\nErrCount=0\nDone=true\nCount=1\nTLD1=com\nResellerPriceReg1=7.0000\nRegisterEnabled1=true\nResellerPriceRenew1=8.0000\nRenewEnabled1=true\nResellerPriceTran1=9.0000\nTransferEnabled1=true\n";
     }
 };
-$writer = new Writer(new Projection($native), $clock, static function (): void {}, static fn () => true);
+$afterFeed = null;
+$writer = new Writer(new Projection($native), $clock, static function ($command) use (&$afterFeed): void {
+    if ($afterFeed && $command instanceof FeedObserved && DB::transactionLevel() === 0) {
+        $callback = $afterFeed; $afterFeed = null; $callback();
+    }
+}, static fn () => true);
 $nsWire = new class implements DeadlineTransport {
     public int $calls = 0;
     public function send(NsEnvironment $environment, NsContext $context, RegistrarRequest $request, string $apiKey): TransportResponse
@@ -81,11 +86,26 @@ same(5, count($wire->calls), 'Repeated background hints reuse a warm account fee
 expect(Tld::where('server_id', $b->serverId)->where('tld', 'co.uk')->exists(), 'An unpriced discovered suffix is retained for cold search');
 same(false, $writer->readOffers(new Query($b, ['co.uk'], 'register'), Context::Public)[0]->available,
     'Discovery alone cannot publish or select a suffix');
+// Sync after durable provider success must survive the rest of the active writer turn.
+$clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
+$afterFeed = static function () use ($worker, $b, $clock): void {
+    same($clock->now()->getTimestamp(), $worker->status($b)['succeeded_at'], 'The provider success is stored before the manual Sync');
+    same('running', $worker->status($b)['state'], 'The completed feed still owns its worker claim');
+    $worker->sync($b);
+};
+$before = count($wire->calls); $worker->tick(1);
+same(5, count($wire->calls) - $before, 'Sync after provider success does not start an overlapping feed');
+$worker->tick(1);
+same(10, count($wire->calls) - $before, 'Sync after provider success runs one feed on the next turn');
+$worker->tick(1);
+same(10, count($wire->calls) - $before, 'Sync after provider success is consumed once');
+
+$factsBefore = count($wire->calls);
 $worker->requestFacts($b, 'co.uk'); $worker->requestFacts($b, 'co.uk');
 $worker->tick(1);
-same(7, count($wire->calls), 'Concurrent cold requests coalesce to two Enom fact reads');
+same($factsBefore + 2, count($wire->calls), 'Concurrent cold requests coalesce to two Enom fact reads');
 $worker->requestFacts($b, 'co.uk'); $worker->tick(1);
-same(7, count($wire->calls), 'Warm independent facts are reused');
+same($factsBefore + 2, count($wire->calls), 'Warm independent facts are reused');
 same('ready', $worker->status($b, 'co.uk')['state'], 'Lazy fact success is visible without granting sale authority');
 // A buffered account feed must not delay a cold search until the whole account has drained.
 $clock->time = $clock->time->modify('+1 minute'); $wire->extra = 30;
