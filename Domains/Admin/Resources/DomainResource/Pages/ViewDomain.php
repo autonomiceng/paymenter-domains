@@ -69,8 +69,8 @@ class ViewDomain extends ViewRecord
     {
         $d=$this->getRecord(); $facts=DomainFacts::for($d); $notice=DomainFacts::notice($d); $edits=DomainEditActions::for($d); $components=[];
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
-            $components[]=Callout::make('DNS comparison not set up')->status('info')->columnSpanFull()
-                ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW)?new HtmlString('<a href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::getUrl('dns-setup')).'">Choose DNS template</a>'):null);
+            $components[]=Callout::make('Set a default DNS template on the registrar account to start DNS monitoring.')->status('info')->columnSpanFull()
+                ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]).'#switch-template').'">Set account DNS template</a>'):null);
         }
         $progress=$this->managementProgress();
         if (isset($edits['rows']['Auth code']) || isset($progress['auth_code_email'])) { $facts['Auth code']=['value'=>$d->registrar_key==='namesilo'?'Admin contact email':'Registrant email','sub'=>null,'url'=>null,'tone'=>null,'help'=>null,'demo'=>false]; }

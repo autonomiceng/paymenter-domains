@@ -13,9 +13,13 @@ final class AccountReadBudget implements ReadLimiter
     /** A narrower background consumer shares usage and leases without double counting. */
     public function restricted(int $limit): self { return new self($this->clock,min($limit,$this->backgroundLimit)); }
     public function acquire(AccountBinding $binding, RequestOrigin $origin): string
+    { return $this->reserve($binding,$origin,1); }
+    /** Reserve all physical reads before sending. One lease spans the bounded feed deadline. */
+    public function reserve(AccountBinding $binding, RequestOrigin $origin, int $calls): string
     {
+        if($calls<1||$calls>60){throw new \InvalidArgumentException('Invalid read group.');}
         OperationClaims::outside();
-        return DB::transaction(function () use ($binding,$origin): string {
+        return DB::transaction(function () use ($binding,$origin,$calls): string {
             $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->firstOrFail();
             $binding->requireMatch(CatalogueAcceptances::binding($a));
             $now=$this->micros(); $q=DB::table('domains_read_budgets');
@@ -29,14 +33,14 @@ final class AccountReadBudget implements ReadLimiter
             $cap=$binding->registrarKey==='namesilo'&&$origin===RequestOrigin::Background?2:1;
             $window=$row?(int)$row->window_at:$now; $used=$row?(int)$row->used:0;
             if ($now-$window>=60000000) { $window=$now; $used=0; }
-            if ($active>=$cap || $used>=($origin===RequestOrigin::Background?$this->backgroundLimit:60)) {
+            if ($active>=$cap || $used+$calls>($origin===RequestOrigin::Background?$this->backgroundLimit:60)) {
                 throw new ReadDeferred('Account read budget unavailable.');
             }
             if ($binding->registrarKey==='namesilo' && $origin===RequestOrigin::Interactive && $row && $now<(int)$row->next_api_at) {
                 throw new ReadDeferred('Account read budget unavailable.', (int)$row->next_api_at-$now);
             }
-            $token=bin2hex(random_bytes(16)); $leases[$token]=['route'=>$route,'until'=>$now+30000000];
-            $values=['account_fingerprint'=>$binding->fingerprint,'window_at'=>$window,'used'=>$used+1,'leases'=>json_encode($leases,JSON_THROW_ON_ERROR),
+            $token=bin2hex(random_bytes(16)); $leases[$token]=['route'=>$route,'until'=>$now+max(30000000,$calls*25000000+5000000)];
+            $values=['account_fingerprint'=>$binding->fingerprint,'window_at'=>$window,'used'=>$used+$calls,'leases'=>json_encode($leases,JSON_THROW_ON_ERROR),
                 'next_api_at'=>$binding->registrarKey==='namesilo'&&$origin===RequestOrigin::Interactive?$now+1000000:($row->next_api_at??0)];
             $q->updateOrInsert(['server_id'=>$binding->serverId],$values); return $token;
         });

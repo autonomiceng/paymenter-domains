@@ -64,6 +64,7 @@ foreach ($nameSiloModes as $mode) {
     expect(!$profiles->hasProof($otherOwner), 'Proof owner isolated');
     $clock->instant = $clock->now()->modify('+121 seconds'); expect(!$profiles->hasProof($result), 'Stale profile proof refuses'); $clock->instant = $clock->now()->modify('-121 seconds');
 }
+if ($runNewDomainDns ?? false) { require __DIR__.'/new-domain-dns.php'; }
 if ($runNameSiloProfileTail) {
 $attacker = new class extends RegistrationTransport {
     public function attack($target, $op, $ctx): DriverResult { return $target->sendRegistration($op, $ctx, [], 'https://ote.namesilo.com/apibatch', 25000); }

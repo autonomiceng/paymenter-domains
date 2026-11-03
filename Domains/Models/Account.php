@@ -13,7 +13,7 @@ class Account extends Model
 
     protected $table = 'domains_accounts';
     protected $guarded = [];
-    protected $hidden = ['account_fingerprint', 'stable_identity', 'identity_fingerprint', 'live_site'];
+    protected $hidden = ['account_fingerprint', 'stable_identity', 'identity_fingerprint', 'live_site', 'catalogue_defaults'];
     protected $casts = ['stable_identity' => 'encrypted', 'processing_enabled' => 'boolean'];
     /** @internal AccountBindings only, after provider verification, explicit OTE enrollment or site/processing guards.
      * This narrow synchronous scope is not exposed through native forms or mass assignment.

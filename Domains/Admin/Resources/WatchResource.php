@@ -27,7 +27,7 @@ class WatchResource extends WatchReadResource
     public static function tabs(string $active): array
     {
         return [NavigationItem::make('Domains')->url(static::getUrl('index'))->isActiveWhen(fn()=>$active==='index'),
-            NavigationItem::make('DNS monitoring setup')->url(static::getUrl('dns-setup'))->isActiveWhen(fn()=>$active==='dns-setup'),
+            ...(\Illuminate\Support\Facades\Schema::hasTable('domains_domains') && \Illuminate\Support\Facades\Schema::hasTable('domains_accounts') && \Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->exists()?[NavigationItem::make('DNS monitoring setup')->url(static::getUrl('dns-setup'))->isActiveWhen(fn()=>$active==='dns-setup')]:[]),
             ...($active==='settings'&&MonitoringSettings::canAccess()?[NavigationItem::make('Settings')->url(static::getUrl('settings'))->isActiveWhen(fn()=>$active==='settings')]:[])];
     }
     public static function getEloquentQuery(): Builder{return parent::getEloquentQuery()->with(['delegation','registry','work']);}

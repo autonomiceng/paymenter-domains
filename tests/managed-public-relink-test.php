@@ -6,8 +6,15 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicConfig,ManagedPublicObservation,WatchAudit,WatchName,WatchSource,WatchDnsObservation};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,ManagedPublicWorkSchema,WatchDnsChecks};
-extract(managedFixture(skipA3:true));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+extract(managedFixture(skipA3:true,beforeConfirm:static function(array $f):void{
+    DB::table('domains_watch_profiles')->where('id',$f['profile']->id)->update(['nameservers'=>json_encode(['ns1.platform.example','ns2.platform.example'])]);
+    DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked(
+        \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$f['binding']->serverId)->sole(),$f['profile']->id));
+}));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
 same('active',$watch->fresh()->state,'A3 failed postcommit relink fixture');same(0,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'No A3 work after atomic failure');
+$counter=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW]);
+\Illuminate\Support\Facades\Auth::setUser($counter);
+same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($profile->id),'Pre-enrollment holding and its existing watch count once');
 $old=WatchDnsObservation::sole();$watchCount=WatchName::count();
 Schema::create('domains_watch_notices',function(Blueprint $t){$t->id();$t->unsignedBigInteger('watch_id');$t->string('state');$t->unsignedBigInteger('resolved_at')->nullable();});
 Schema::create('domains_watch_deliveries',function(Blueprint $t){$t->id();$t->unsignedBigInteger('notice_id');$t->string('state');$t->string('safe_code')->nullable();});
@@ -22,6 +29,7 @@ same('linked',$watch->fresh()->state,'Watch tombstone linked');same('retired',$s
 same(['suppressed','suppressed','accepted','uncertain'],DB::table('domains_watch_deliveries')->orderBy('id')->pluck('state')->all(),'Only definitely unsent deliveries suppressed');
 same('suppressed',DB::table('domains_watch_notices')->value('state'),'External expiry/NS notice closed');
 same($old->started_at,WatchDnsObservation::sole()->started_at,'Original watch timestamp retained');same(0,ManagedPublicObservation::count(),'No watch fact copied as fresh managed evidence');
+same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($profile->id),'Linked predecessor leaves the same single monitored holding');
 $config=ManagedPublicConfig::find($id);same($old->id,$config->dns_episode['predecessor_observation_id'],'Continuity reference preserved without evidence copying');
 $checks=new WatchDnsChecks(true);expect(!$checks->begin($watch->id,$uid,'delegation',$now),'Managed watch jobs cannot restart');
 $fake->answers['example.com|NS']=managedNs();expect($signals->observe($id,$uid,'delegation'),'Fresh read independent of lost hint');same($now,ManagedPublicObservation::sole()->started_at,'Fresh managed read has its own timestamp');

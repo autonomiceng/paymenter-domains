@@ -92,6 +92,8 @@ class PackageTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'license must match'):
                         builder.runtime_members(source)
     def test_one_time_converter_is_excluded(self):
+        runtime_conversion = {'Services/ConversionGate.php', 'Catalogue/UpgradeConversion.php',
+                              'database/migrations/2026_11_02_000048_add_offer_conversion.php'}
         for source in [ROOT/'scripts/convert-enom-05.php', ROOT/'scripts/collect-conversion-evidence.php', *(ROOT/'scripts/conversion').rglob('*')]:
             self.assertFalse(source.is_relative_to(ROOT/'Domains'))
         with tempfile.TemporaryDirectory(prefix='domains-converter-package-') as temp:
@@ -104,18 +106,82 @@ class PackageTests(unittest.TestCase):
             with zipfile.ZipFile(archive) as package:
                 self.assertEqual(set(package.namelist()), set(first['members']))
                 for name in package.namelist():
-                    self.assertFalse(any(p.lower() in {'scripts', 'tests', 'docs', '.github'} or ('conversion' in p.lower() and p != 'ConversionGate.php') for p in Path(name).parts))
+                    self.assertFalse(any(p.lower() in {'scripts', 'tests', 'docs', '.github'} for p in Path(name).parts))
+                    if any('conversion' in p.lower() for p in Path(name).parts):
+                        self.assertIn(name.removeprefix('Domains/'), runtime_conversion)
                     self.assertNotEqual(Path(name).name.lower(), 'readme.md')
                     self.assertEqual(first['members'][name], hashlib.sha256(package.read(name)).hexdigest())
                 for name in ['Mail/DomainNotice.php', 'Presentation/OwnedDomain.php', 'routes/web.php', 'resources/views/search.blade.php', 'resources/help/owner-help.md', 'database/migrations/2026_10_18_000001_create_domains_foundation.php']:
                     self.assertIn('Domains/'+name, package.namelist())
+                for name in runtime_conversion:
+                    self.assertIn('Domains/'+name, package.namelist())
                 self.assertEqual(package.read('Domains/LICENSE'), (ROOT/'LICENSE').read_bytes())
             source = root/'Domains'
             shutil.copytree(ROOT/'Domains', source)
+            for name in ['Catalogue/UpgradeConversionProbe.php', 'Catalogue/upgradeconversion.php']:
+                with self.subTest(name=name):
+                    script = source/name
+                    script.write_bytes((ROOT/'scripts/convert-enom-05.php').read_bytes())
+                    try:
+                        with self.assertRaisesRegex(ValueError, 'Development or private files'):
+                            builder.runtime_members(source)
+                    finally:
+                        script.unlink()
             (source/'Services/conversion').mkdir()
             (source/'Services/conversion/Apply.php').write_bytes((ROOT/'scripts/convert-enom-05.php').read_bytes())
             with self.assertRaisesRegex(ValueError, 'Development or private files'):
                 builder.runtime_members(source)
+
+    def test_conversion_allowlist_requires_exact_runtime_paths(self):
+        with tempfile.TemporaryDirectory(prefix='domains-conversion-paths-') as temp:
+            root = Path(temp); source = root/'Domains'; source.mkdir()
+            (source/'Domains.php').write_text("<?php use Paymenter\\Extensions\\Servers\\Domains\\Services\\Probe; #[ExtensionMeta(version: '0.1.0')]")
+            (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
+            (source/'Services').mkdir(); (source/'Services/Probe.php').write_bytes(b'<?php')
+            clean = builder.build(source, root/'clean')
+            with zipfile.ZipFile(root/'clean'/clean['archive']) as package:
+                original = {name: package.read(name) for name in package.namelist() if name != builder.MANIFEST}
+            for index, name in enumerate(['Services/UpgradeConversion.php', 'Catalogue/ConversionGate.php',
+                                          'Services/2026_11_02_000048_add_offer_conversion.php']):
+                script = source/name; script.parent.mkdir(exist_ok=True); script.write_bytes(b'<?php')
+                try:
+                    with self.subTest(name=name, boundary='build'):
+                        with self.assertRaisesRegex(ValueError, 'Development or private files'):
+                            builder.build(source, root/('build-'+str(index)))
+                finally:
+                    script.unlink()
+                # A self-consistent ZIP and both manifests must not bypass runtime path validation.
+                members = {**original, 'Domains/'+name: b'<?php'}
+                members[builder.MANIFEST] = builder.json_bytes({'schema_version': 1, 'version': '0.1.0',
+                    'license': 'MIT', 'members': builder.digests(members)})
+                output = root/('verify-'+str(index)); output.mkdir(); archive = output/'Domains.zip'
+                with zipfile.ZipFile(archive, 'w') as package:
+                    for member, data in members.items():
+                        entry = zipfile.ZipInfo(member); entry.external_attr = (stat.S_IFREG | 0o644) << 16
+                        package.writestr(entry, data)
+                receipt = {'schema_version': 1, 'version': '0.1.0', 'archive': archive.name,
+                    'archive_sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+                    'archive_bytes': archive.stat().st_size, 'file_count': len(members),
+                    'license': 'MIT', 'members': builder.digests(dict(sorted(members.items())))}
+                (output/'manifest.json').write_bytes(builder.json_bytes(receipt))
+                with self.subTest(name=name, boundary='--verify'), mock.patch.object(sys, 'argv', ['build.py', '--verify', str(archive)]), contextlib.redirect_stdout(io.StringIO()):
+                    with self.assertRaisesRegex(ValueError, 'Development or private files'):
+                        builder.main()
+
+    def test_staged_catalogue_builds_but_unlisted_unreferenced_roots_fail(self):
+        with tempfile.TemporaryDirectory(prefix='domains-staged-runtime-') as temp:
+            root = Path(temp)
+            source = root/'Domains'; source.mkdir()
+            (source/'Domains.php').write_text("<?php #[ExtensionMeta(version: '0.1.0')]")
+            (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
+            (source/'Catalogue').mkdir()
+            (source/'Catalogue/Offer.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Catalogue;')
+            receipt = builder.build(source, root/'staged')
+            self.assertIn('Domains/Catalogue/Offer.php', receipt['members'])
+            (source/'Unlisted').mkdir()
+            (source/'Unlisted/Offer.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Unlisted;')
+            with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'):
+                builder.build(source, root/'unlisted')
 
     def test_unreachable_namespaced_trees_cannot_approve_themselves(self):
         with tempfile.TemporaryDirectory(prefix='domains-unreachable-') as temp:

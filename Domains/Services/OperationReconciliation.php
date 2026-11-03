@@ -151,7 +151,9 @@ final class OperationReconciliation
             $difference = $expected && ($expected->currency !== 'USD' || rtrim($expected->amount, '0') !== rtrim($cost['amount'], '0'));
             $corrections = ($op->attempt['corrections'] ?? $op->attempt['evidence']['registration']['corrections'] ?? []) !== [] || $proof['observed_corrections'] !== [];
             $below = strcmp(self::decimal($cost['amount']), self::decimal($op->amount)) > 0;
-            $policy['reconciliation']['observed_corrections'] = $proof['observed_corrections']; $policy['reconciliation']['staff_alert'] = $difference || $corrections || $below;
+            $nameserversHeld=RenewalStop::blocksExisting($funding->initialFacts($domain))||($domain->renewal_policy['automatic_spend_paused']??false);
+            $staffCorrections=$op->action==='register'?array_diff(RegistrationDns::corrections($op,$proof['observed_corrections']),$nameserversHeld?[]:['nameservers'])!==[]:$corrections;
+            $policy['reconciliation']['observed_corrections'] = $proof['observed_corrections']; $policy['reconciliation']['staff_alert'] = $difference || $staffCorrections || $below;
             $policy['reconciliation']['reason'] = $below ? 'below_cost' : ($difference ? 'actual_charge_changed' : ($corrections ? 'correction_required' : 'confirmed'));
             $op->update(['state' => 'succeeded', 'safe_code' => $corrections ? 'registration_correction_required' : ($difference ? 'actual_charge_changed' : null),
                 'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => [...($op->cost ?? []), 'actual' => $cost],

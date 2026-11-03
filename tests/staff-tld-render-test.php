@@ -75,5 +75,5 @@ $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ti
 $account=Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Used by 1 TLD: .com'],false);$render($account,'account-default-pricing');
 $account->mountAction(setupAction('default_rule',$t->server_id))->call('$refresh');$sees($account,['1 TLD uses the account default: .com. Saving publishes its new prices.']);$render($account,'modal-default_rule-followers');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-same(9,count($strings),'Nine settings modals rendered');
-echo "Native TLD list/detail/revisions, account page, nine modals, price preview and refusals rendered.\n";$nativeSuccessful=true;
+same(10,count($strings),'Ten settings modals rendered');
+echo "Native TLD list/detail/revisions, account page, ten modals, price preview and refusals rendered.\n";$nativeSuccessful=true;

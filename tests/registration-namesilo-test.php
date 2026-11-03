@@ -3,4 +3,5 @@
 declare(strict_types=1);
 $nameSiloModes = ['300', '301', '302', 'amount', 'badns', 'mismatch'];
 $runNameSiloProfileTail = true;
+$runNewDomainDns = true;
 require __DIR__.'/Support/namesilo-registration-suite.php';
