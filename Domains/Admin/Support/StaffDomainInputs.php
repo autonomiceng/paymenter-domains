@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\{Invoice, Service, ServiceCancellation};
-use Illuminate\Support\Facades\{DB, Schema};
+use Illuminate\Support\Facades\Schema;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation, ObligationAlerts, OwnedDomains, RenewalCycles, RenewalStop};
 /** What the staff status and the Registration card read beyond the domain row, in one batch per page.
@@ -18,7 +18,7 @@ final class StaffDomainInputs
     public static function for(iterable $domains): array
     {
         $domains=collect($domains); $ids=$domains->pluck('id')->all();
-        $open=Schema::hasTable('domains_obligation_alerts') ? DB::table('domains_obligation_alerts')->whereIn('domain_id',$ids)->whereNull('resolved_at')
+        $open=Schema::hasTable('domains_obligation_alerts') ? ObligationAlerts::open($ids)
             ->orderBy('id')->get(['domain_id','code','operation_id','last_seen'])->groupBy('domain_id') : collect();
         // Every renewal, because only the newest one counts. All requests of a domain with a linked alert, to check its fixes.
         $linked=$open->flatten(1)->whereNotNull('operation_id')->pluck('domain_id')->unique()->values()->all();
