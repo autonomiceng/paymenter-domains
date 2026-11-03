@@ -111,7 +111,10 @@ $grant->run('renewal',45,function()use($grant,$params,$renew,$deny):void {
     }
     same(1,$GLOBALS['wire']['sends'],'Exactly one attempt on timeout');expect(!$grant->unconsumed(45),'Lost reply grants no unsent proof');$deny(fn()=>$renew($params));
 });
-resetWire(['status'=>302]);$denyResponse=false;try{$read();}catch(\RuntimeException){$denyResponse=true;}expect($denyResponse,'Redirect is unresolved');same(1,$GLOBALS['wire']['sends'],'Redirect not retried');
+foreach([302,500] as $status){
+    resetWire(['status'=>$status]);$denyResponse=false;try{$read();}catch(\RuntimeException){$denyResponse=true;}
+    expect($denyResponse,'Redirect or server error is unresolved');same(1,$GLOBALS['wire']['sends'],'HTTP error not retried');
+}
 resetWire(['chunks'=>[str_repeat('x',Api\CurlTransport::BODY_LIMIT),'x']]);$denyResponse=false;try{$read();}catch(\RuntimeException){$denyResponse=true;}expect($denyResponse,'Oversize body is unresolved');same(1,$GLOBALS['wire']['sends'],'Oversize body not retried');
 foreach([CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,CURLOPT_PROXY=>'',CURLOPT_NOPROXY=>'*',CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS] as $option=>$value){same($value,$GLOBALS['wire']['options'][$option],'Fixed TLS and routing options');}
 expect(in_array(true,$writeChecks,true)&&in_array(false,$writeChecks,true),'Credentials freshly checked for reads and writes');
