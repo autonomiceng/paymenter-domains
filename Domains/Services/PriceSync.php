@@ -96,8 +96,10 @@ final class PriceSync
      * @return array{synced:list<string>,failed:array<string,string>,deferred:list<string>} */
     public function run(Account $account, Clock $clock, ?StaffSettingsReview $review, ?string $ending = null, ?array $only = null, ?int $generation = null): array
     {
+        // Routing itself reads the gate; keep the generation from before that read.
+        $generation ??= UpgradeGate::generation();
         if(($scheduler=OfferScheduler::routed())!==null){
-            if($generation!==null&&$generation!==UpgradeGate::generation()){throw new \DomainException('Settings changed. Reload this page.');}
+            UpgradeGate::active($generation);
             $scheduler->sync(CatalogueAcceptances::binding($account),$review?RequestOrigin::Interactive:RequestOrigin::Background);
             return ['synced'=>[],'failed'=>[],'deferred'=>[],'queued'=>true];
         }
@@ -174,8 +176,9 @@ final class PriceSync
     public function daily(Account $account): void
     {
         OperationClaims::outside();
-        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
-        $generation=UpgradeGate::legacy();
+        $generation=UpgradeGate::generation();
+        if(($scheduler=OfferScheduler::routed())!==null){UpgradeGate::active($generation);$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
+        $generation=UpgradeGate::legacy($generation);
         $binding = CatalogueAcceptances::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }
         SellAutomation::refresh($account, $this->clock->now(), $generation);
