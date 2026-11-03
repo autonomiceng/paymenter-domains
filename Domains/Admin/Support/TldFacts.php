@@ -37,6 +37,7 @@ final class TldFacts
     {
         $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
         if($catalogue!==null){return $catalogue->page(collect([$tld]))[$tld->id];}
+        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         $grants ??= Staff::requireView();
         try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
         try{$ruleHash=self::ruleHash((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld));}catch(\Throwable){$ruleHash=null;}
@@ -49,6 +50,7 @@ final class TldFacts
     {
         $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
         if($catalogue!==null){return $catalogue->page($tlds);}
+        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         $grants ??= Staff::requireView();
         if($tlds->isEmpty()){return [];}
         $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();
