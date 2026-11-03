@@ -18,13 +18,24 @@ final class FreshInstallation
     private static function files(): array
     { return app(Migrator::class)->getMigrationFiles([dirname(__DIR__).'/database/migrations']); }
 
+    private static function manifest(): string
+    {
+        $root = dirname(__DIR__); $files = [];
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS)) as $file) {
+            if ($file->isFile() && $file->getExtension() === 'php') {
+                $files[substr($file->getPathname(),strlen($root)+1)] = hash_file('sha256',$file->getPathname());
+            }
+        }
+        ksort($files); return hash('sha256', OfferState::json($files));
+    }
+
     public static function install(): void
     {
         OperationClaims::outside(); Installation::legacy();
         Cache::lock('domains-fresh-installation', 60)->block(5, static function (): void {
             // MariaDB DDL commits transactions. A connection lock survives both DDL and cache TTL expiry.
             $connection = DB::connection(); $mysql = in_array($connection->getDriverName(), ['mysql','mariadb'], true);
-            $lock = 'domains-install-'.hash('sha256', $connection->getDatabaseName());
+            $lock = hash('sha256', 'domains-install-'.$connection->getDatabaseName());
             if ($mysql && (int) $connection->selectOne('SELECT GET_LOCK(?, 0) AS owned', [$lock])->owned !== 1) {
                 throw new \DomainException('Another Domains initializer is running. Retry installation.');
             }
@@ -35,7 +46,7 @@ final class FreshInstallation
 
     private static function run(): void
     {
-        $manifest = hash('sha256', OfferState::json(array_map(static fn ($path) => hash_file('sha256', $path), self::files())));
+        $manifest = self::manifest();
         $owner = DB::transaction(static function () use ($manifest): ?self {
             // Lock the global settings range before proving absence or creating the durable intent.
             Setting::orderBy('id')->lockForUpdate()->get();
@@ -104,12 +115,13 @@ final class FreshInstallation
     {
         if (self::$owner !== $this) { throw new \LogicException('Owned initialization required.'); }
         $state = UpgradeGate::initializationState();
-        if ($state['state'] !== 'initializing' || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
+        if ($state['state'] !== 'initializing' || $state['generation'] !== 1 || $state['intent'] !== $this->intent || $state['manifest'] !== $this->manifest) {
             throw new \DomainException('Domains initialization intent changed.');
         }
         self::empty();
-        if ($complete && array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all())) {
-            throw new \DomainException('Domains initialization migration history is incomplete.');
+        if ($complete && (self::manifest() !== $this->manifest
+            || array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all()))) {
+            throw new \DomainException('Domains initialization source or migration history changed.');
         }
         return $state;
     }

@@ -34,6 +34,12 @@ $pending = static function (): void {
 };
 $pending();
 $intent = Setting::where('key',UpgradeGate::KEY)->sole()->value;
+$changed = json_decode($intent, true); $changed['generation']++;
+$row = Setting::where('key',UpgradeGate::KEY)->sole(); $row->value = json_encode($changed); $row->save();
+$refused = false;
+try { $entry->installed(); } catch (DomainException) { $refused = true; } catch (InitializationInterrupted) {}
+expect($refused, 'Changed intent generation refuses before schema work');
+$row = Setting::where('key',UpgradeGate::KEY)->sole(); $row->value = $intent; $row->save();
 // An owned intent still cannot initialize over unexpected holding/credential evidence.
 DB::table('domains_domains')->insert(['service_id'=>91,'user_id'=>92,'server_id'=>93,'registrar_key'=>'enom',
     'account_fingerprint'=>str_repeat('a',64),'domain'=>'retained-placeholder.com','sld'=>'retained-placeholder','tld'=>'com','status'=>'active']);

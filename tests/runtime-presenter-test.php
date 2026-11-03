@@ -10,6 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimePorts,AccountBindings,CartAdmission,CheckoutEligibility,InvoiceBinding,NativeCatalogue,PriceCatalogue,OwnedDomains,NativePresenter,OwnerPorts,HolderPricing};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $entry=new Domains;$entry->installed();extract(commerceFixture(true,static fn()=>null));$clock=new FakeClock($now);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);app()->instance(PriceCatalogue::class,$prices);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class,$sellers);
