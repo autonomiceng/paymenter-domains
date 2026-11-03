@@ -259,6 +259,30 @@ $guarded = $writer->withGuard(static function (): void {
 commerceReject(static fn () => $guarded->apply(new FeedObserved($b, 'freshsuffix', []), $read($b, 'freshsuffix')->revision));
 same(false, Tld::where('server_id', $b->serverId)->where('tld', 'freshsuffix')->exists(), 'Late generation refusal rolls back discovery too');
 
+// A credential rotation invalidates a durable buffer even though the verified account identity is unchanged.
+$q->update(['offer_work' => '{}', 'offer_claim' => null, 'offer_lease' => 0]);
+$clock->time = $clock->time->modify('+301 seconds'); $credential = 'synthetic-revision-one';
+$credentialPort = static function () use (&$credential): string { return $credential; };
+$worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory, static fn () => 25, $credentialPort);
+$worker->sync($b); $worker->tick(2);
+same(38, $worker->status($b)['remaining'], 'The first credential revision owns a durable feed buffer');
+$credential = 'synthetic-revision-two'; $clock->time = $clock->time->modify('+61 seconds');
+$before = count($wire->calls); $worker->tick(2);
+same(5, count($wire->calls) - $before, 'Rotation discards the old buffer and fetches current account evidence before publishing more offers');
+same(38, $worker->status($b)['remaining'], 'The replacement feed has its own complete bounded buffer');
+$worker->tick(2); $worker->tick(2);
+$clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
+$oldRevision = $read()->revision; $lastGood = $worker->status($b)['succeeded_at'];
+$wire->during = static function ($command) use (&$credential): void {
+    if ($command === ReadCommand::Tlds) { $credential = 'synthetic-revision-three'; }
+};
+$worker->tick(2); $wire->during = null;
+expect($oldRevision->matches($read()->revision), 'Rotation during the last wire read cannot publish or acknowledge the old credential evidence');
+same($lastGood, $worker->status($b)['succeeded_at'], 'A credential-superseded feed cannot acknowledge success');
+$clock->time = $clock->time->modify('+301 seconds'); $before = count($wire->calls);
+$worker->tick(2);
+same(5, count($wire->calls) - $before, 'A later worker recovers an expired superseded claim with a fresh credential-bound feed');
+
 // Upgrade an actual retained B2 schema, preserving all catalogue/native identities.
 $ids = Tld::orderBy('id')->pluck('id')->all();
 Schema::table('domains_observation_queues', static fn ($t) => $t->dropColumn(['offer_work', 'offer_claim', 'offer_lease', 'offer_turn']));

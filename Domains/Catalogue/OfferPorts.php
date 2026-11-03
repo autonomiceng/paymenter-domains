@@ -37,7 +37,8 @@ final class OfferPorts
             $feed = new Enom\OfferFeed(new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token'], $transport), []));
         } else {
             // #386 is an explicit dependency; never silently fall back to the unadmitted cURL transport.
-            if ($binding->environment !== Environment::Live || !class_exists(NameSilo\AdmittedTransport::class)) {
+            if ($binding->environment !== Environment::Live || !is_file(dirname(__DIR__).'/Registrars/NameSilo/AdmittedTransport.php')
+                || !class_exists(NameSilo\AdmittedTransport::class)) {
                 throw new \DomainException('Admitted NameSilo offer transport unavailable.');
             }
             $transport = new NameSilo\AdmittedTransport($binding, function (bool $write) use ($binding, $revision): array {

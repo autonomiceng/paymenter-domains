@@ -310,14 +310,22 @@ final class AccountBindings
     /** Local offer fence, including same-identity credential rotation. Never resolves a reader. */
     public function offerCredentialRevision(AccountBinding $expected): string
     {
-        $server = $this->server($expected->serverId);
-        $account = Account::where('server_id', $expected->serverId)->sole();
+        $locked = DB::transactionLevel() > 0;
+        $server = $this->server($expected->serverId, $locked);
+        $query = Account::where('server_id', $expected->serverId);
+        $account = ($locked ? $query->lockForUpdate() : $query)->sole();
         $expected->requireMatch($this->binding($account));
         $credentials = $this->configuration($account, true, $server);
         if ($expected->registrarKey === 'namesilo') {
             // #387 owns local enrollment and its opaque, persisted revision. No inferred fallback.
             if (!method_exists($this, 'credentialRevision')) { throw new \DomainException('Offer credential revision dependency unavailable.'); }
-            return $this->credentialRevision($expected);
+            $revision = $this->credentialRevision($expected);
+            // #387's public read may use an existing InnoDB snapshot. Under writer locks also
+            // compare the current encrypted enrollment row, never the earlier snapshot alone.
+            $facts = json_decode($this->secret($expected->serverId, LocalAccountEnrollment::KEY, $server), true, 8, JSON_THROW_ON_ERROR);
+            LocalAccountEnrollment::validate($account, $facts, $credentials);
+            if (!hash_equals($revision, $facts['credential_revision'])) { throw new \DomainException('Offer credentials changed.'); }
+            return $revision;
         }
         return $this->digest($expected, $credentials);
     }
