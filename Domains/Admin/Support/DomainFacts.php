@@ -140,7 +140,7 @@ final class DomainFacts
             $off=match(true) {$renewal===null=>null,RenewalStop::adopted($renewal)=>'Set at import',$pending=>'Until import',
                 RenewalStop::blocksExisting($renewal)=>'Service cancellation pending',$cancel=>'Cancels at period end',
                 (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>self::ownerOff(),default=>null};
-            $f['Renewal invoices']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL):self::fact($off?'Off':'On',sub:$off,help:self::help()['Renewal invoices']);
+            $f['Renewal invoices']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal invoices']):self::fact($off?'Off':'On',sub:$off,help:self::help()['Renewal invoices']);
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
             if (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }

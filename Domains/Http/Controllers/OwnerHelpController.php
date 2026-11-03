@@ -7,6 +7,6 @@ final class OwnerHelpController
 {
     public function show()
     {
-        return view('domains::help',['html'=>OwnerHelp::html(),'anchors'=>OwnerHelp::ANCHORS]);
+        return view('domains::help',['html'=>OwnerHelp::html(),'anchors'=>OwnerHelp::anchors()]);
     }
 }

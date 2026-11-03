@@ -119,6 +119,8 @@ class ViewDomain extends ViewRecord
     {
         $this->cacheHoldingActions();
         $d=$this->getRecord(); $facts=$this->facts(); $edits=$this->edits();
+        // WHOIS privacy stays stored and read, but the page does not show it (PrivacyVisibility).
+        if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { unset($facts['WHOIS privacy']); }
         // Reminder issues sit on Renewal invoices, then on Open alerts, which they open when neither row exists.
         $review=$this->getAction('notice_review',false); $button=$review?->isVisible()?$review->toHtml():null;
         if ($button&&!isset($facts['Renewal invoices'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }

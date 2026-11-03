@@ -126,6 +126,13 @@ ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active
 ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active->domain,owned:true,providerAutoRenew:false),TransferStatus::Unknown,$snapshotAt->modify('+1 minute'));
 same($snapshotNs,$value($active,'Nameservers'),'Later save preserves the latest snapshot nameservers');
 $active->fresh()->update(['observation'=>$beforeDns,'last_synced_at'=>null]);$dnsSetting->delete();
+// Privacy is presentation-only: both registrars hide it without changing stored facts.
+foreach (['enom','namesilo'] as $registrar) {
+    DB::table('domains_domains')->where('id',$active->id)->update(['registrar_key'=>$registrar]);
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('WHOIS privacy');
+}
+same('Off',DomainFacts::for($active->fresh())['WHOIS privacy']['value'],'Hidden privacy remains in local facts');
+DB::table('domains_domains')->where('id',$active->id)->update(['registrar_key'=>'enom']);
 // Registrar facts and ownership holds belong to the current assignment only.
 $factObservation=$active->fresh()->observation;
 $stable=DomainFacts::for($active->fresh());
@@ -171,6 +178,17 @@ expect(!isset($f['Auto-renew']),'Auto-renew and renewal invoices are one row');
 same(today()->addDays(120-21)->format('M j, Y'),$f['Next invoice']['value'],'Next invoice from the billing calendar');
 expect(!isset($f['Open invoice']),'Open invoice hidden when none');
 same("The registrar's own auto-renew. Keep it off: Example Hosting renews after the customer pays.",DomainFacts::help()['Registrar auto-renew'],'Registrar auto-renew help');
+// "Off on purpose" belongs only on a registrar auto-renew that was seen off. On gets the keep-it-off help; not yet read gets neither.
+$autoRenew=$active->fresh()->observation;
+foreach (['off'=>[false,'Off',true],'on'=>[true,'On',false],'unknown'=>[null,null,false]] as $case=>[$seen,$shown,$off]) {
+    $saved=$autoRenew;if ($seen===null) { unset($saved['facts']['auto_renew']); } else { $saved['facts']['auto_renew']=$seen; }
+    $active->fresh()->update(['observation'=>$saved]);$fact=DomainFacts::for($active->fresh())['Registrar auto-renew'];
+    same([$shown,$seen===true?DomainFacts::help()['Registrar auto-renew']:null],[$fact['value'],$fact['help']],'Registrar auto-renew help only when seen on: '.$case);
+    expect(str_starts_with((string)$fact['sub'],'Off on purpose')===$off,'Off on purpose only when seen off: '.$case);
+    $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
+    $off?$page->assertSee('Off on purpose'):$page->assertDontSee('Off on purpose');
+}
+$active->fresh()->update(['observation'=>$autoRenew]);
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
 same([null,'Fills in by itself within a day',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes');
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Fills in by itself within a day');
@@ -194,7 +212,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['renewal_policy'=
 
 // Page: no internal facts, one notice, breadcrumb uses the name.
 $page=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSuccessful()->assertSet('data',[]);
-$page->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
+$page->assertDontSee('WHOIS privacy')->assertSee('Renewal invoices')->assertSee('Registration')->assertSee('Billing')->assertSee('Ada Lovelace')->assertSee('Missing')->assertSee('Needs the linked service. Check the Services page.')->assertSeeHtml('domains-sheet');
 foreach(['Saved facts','Assignment generation','Observation drift','Follow-up','Data retention','Server #','Domain #','Account spending holds','Preview adoption','Scheduled reads'] as $old){$page->assertDontSee($old);}
 same([DomainResource::getUrl('index')=>'Domains','active.example.com'],$page->instance()->getBreadcrumbs(),'Breadcrumb names the domain');
 // One head line: no box on the page, and green can't sit over rows that need work.
