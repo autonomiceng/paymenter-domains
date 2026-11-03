@@ -43,7 +43,14 @@ final class ActivationEvidence implements LiveActivationEvidence
     public function label(): string {return 'NameSilo';}
     public function configuration(): array
     {return [config('domains.namesilo_live'),config('domains.namesilo_account.environment')];}
-    public function requireControls(array $evidence): void {}
+    public function requireControls(array $evidence): void
+    {
+        foreach(['reject_invalid_contacts','restore_disabled','auto_replenishment_disabled'] as $control){
+            if(($evidence['portal_controls'][$control]??null)!==true){
+                throw new \DomainException('NameSilo portal controls Missing. Have your site admin retain dated evidence of rejected invalid contacts, disabled restoration and disabled auto-replenishment in the existing activation review.');
+            }
+        }
+    }
     public function transferProofRequired(): bool {return false;}
     public function receiptContext(AccountBinding $binding): array
     {
