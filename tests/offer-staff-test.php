@@ -53,4 +53,4 @@ same($before,$state(),'Projection failure rolls back intent/native/audit/key tog
 $staff->run($r,[...$rule,'fixed_register'=>'15.00']);
 same('$15.00',$storefront->offer('com','register',1)['price'],'Rolled-back ticket remains usable');
 echo "Offer staff: ok\n";
-$nativeTestComplete=true;
+$nativeSuccessful=true;
