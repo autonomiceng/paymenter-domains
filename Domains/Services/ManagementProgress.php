@@ -30,7 +30,7 @@ final class ManagementProgress
         foreach($candidates as $op){
             $key=self::setting($op->action);
             try {
-                if(!isset($op->policy['management'])){continue;}
+                if(!isset($op->policy['management']) || isset($op->policy['management']['sequence_parent'])){continue;}
                 $row=self::sequence($op,$d,self::row($op,$d));
                 $priority=$row['pending']?2:($op->safe_code==='management_retired'?0:1);
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
@@ -63,6 +63,22 @@ final class ManagementProgress
     /** Retained sequence facts only: an unsent parent must not hide its prerequisite's outcome. */
     private static function sequence(Operation $op, Domain $d, array $row): array
     {
+        if (isset($op->policy['management']['sequence']) && !isset($op->attempt['management_terminal'])) {
+            $done=0;$members=ManagementSequence::members($op,$d->operations()->get());$blocked=null;
+            foreach ($members as $child) {
+                if ($child->state==='succeeded' && ManagementEvidence::resolved($child,$d)) { $done++; }
+                elseif ($blocked===null) { $blocked=$child; }
+            }
+            $total=$members->count();
+            if ($done===$total) { return [...$row,'text'=>'All '.$total.' changes verified.']; }
+            $prefix=$done.' of '.$total.' changes verified. ';
+            if ($blocked && ($blocked->state==='uncertain' || $blocked->state==='held' || $blocked->state==='rejected'
+                || $blocked->state==='running' && $row['slow'])) {
+                $unsent=ManagementEvidence::idle($blocked);
+                return [...$row,'pending'=>!$unsent,'text'=>$prefix.($unsent?'The remaining changes were not sent. Save again to retry.':'The result is not confirmed. Contact support before making more changes.'),'tone'=>'warning'];
+            }
+            return [...$row,'text'=>$prefix.'Saving the remaining changes.'];
+        }
         $key=$op->policy['management']['prerequisite']['key']??null;
         if ($op->action!=='contacts' || !is_string($key) || isset($op->attempt['management_terminal'])) { return $row; }
         $step=$d->operations()->where('operation_key',$key)->where('action','contact_profile')

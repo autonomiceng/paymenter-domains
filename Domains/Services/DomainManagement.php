@@ -65,15 +65,33 @@ final class DomainManagement
             if ($existing) { if ($existing->action !== $action || (int)$existing->authorized_by !== (int)$actor->id) { throw new \DomainException('Management key reused.'); } return $existing; }
             $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter()));
         }
-        return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction, $recordIdentity): Operation {
+        $plan=null;$sequenceStamp=null;
+        if ($driver->sequences($action)) {
+            if ($paid || $correction!==null) { throw new \DomainException('Sequenced billing or correction unsupported.'); }
+            [$input,$sequenceStamp,$binding,$configuration,$existing]=DB::transaction(function()use($seed,$actor,$action,$payload,$nonce,$driver):array {
+                $l=HoldingLocks::take($seed,(int)$actor->id);$this->authority($l,(int)$actor->id,$action,$driver);
+                $input=$driver->validate($action,$payload,$l['domain']->domain);$key='manage:'.$seed->id.':'.$nonce;
+                $input=$driver->freeze($key,$l['domain']->domain,$action,$input,(int)$seed->id);
+                $old=$l['operations']->firstWhere('operation_key',$key);
+                if ($old && ($old->action!==$action || (int)$old->authorized_by!==(int)$actor->id
+                    || ($old->policy['management']['intent']??null)!==$input)) { throw new \DomainException('Management key reused.'); }
+                return [$input,$l['stamp'],CatalogueAcceptances::binding($l['account']),ManagementSequence::configuration($l),$old];
+            });
+            if ($existing) { return $existing; }
+            $r=new ManagementRequest($binding,'manage:'.$seed->id.':'.$nonce,$seed->domain,$action,$input,$seed->provider_domain_id,domainId:(int)$seed->id);
+            $plan=$driver->plan($r,new RequestContext($binding,RequestOrigin::Interactive,$deadline,new RequestBudget(10),$this->clock,Runtime::limiter()));
+            $plan['configuration']=$configuration;
+        }
+        return DB::transaction(function () use ($seed, $actor, $action, $payload, $nonce, $driver, $reason, $terms, $initial, $correction, $recordIdentity, $plan, $sequenceStamp): Operation {
             $l = HoldingLocks::take($seed, (int) $actor->id); $d = $l['domain']; $this->authority($l, (int) $actor->id, $action, $driver, correction: $correction);
+            if ($sequenceStamp!==null && $sequenceStamp!==$l['stamp']) { throw new \DomainException('Management changed while reading inventory.'); }
             if ($recordIdentity!==null && (ObservationRecords::identity($d)!==$recordIdentity || !isset(OwnerRecords::forDomain($d)[$action]))) { throw new \DomainException('Current records required.'); }
             $clean = $terms ?? $driver->validate($action, $payload, $d->domain); $key = 'manage:'.$seed->id.':'.$nonce;
             $clean = $driver->freeze($key, $d->domain, $action, $clean, (int) $d->id);
             if ($correction !== null) { ManagementCorrections::require($l, $action, $clean, $correction); }
             $old = $l['operations']->firstWhere('operation_key', $key);
             if ($old) {
-                if (($old->policy['management']['correction'] ?? null) !== $correction || $old->action !== $action || (int)$old->authorized_by !== (int) $actor->id || ($terms===null && ($old->policy['management']['input'] ?? null) !== $clean)) { throw new \DomainException('Management key reused.'); }
+                if (($old->policy['management']['correction'] ?? null) !== $correction || $old->action !== $action || (int)$old->authorized_by !== (int) $actor->id || ($terms===null && ($old->policy['management']['intent'] ?? $old->policy['management']['input'] ?? null) !== $clean)) { throw new \DomainException('Management key reused.'); }
                 return $old;
             }
             // The domain lock serializes both actors and also cleans up legacy duplicate queued choices.
@@ -84,7 +102,7 @@ final class DomainManagement
             // A claimed/sealed write owns the setting, even if an older release queued a newer unsent choice.
             $unsent=fn($peer)=>!ManagementSequence::started($peer,$l['operations']) && ManagementEvidence::idle($peer) && !$peer->invoice_id && ($peer->attempt['seal']??'absent')==='absent';
             $keep=$pending->first(fn($peer)=>!$unsent($peer))
-                ?? $pending->first(fn($peer)=>$peer->action===$action && !ManagementSequence::unsent($peer,$l['operations']) && ($peer->policy['management']['input']??null)===$clean);
+                ?? $pending->first(fn($peer)=>$peer->action===$action && !ManagementSequence::unsent($peer,$l['operations']) && ($peer->policy['management']['intent']??$peer->policy['management']['input']??null)===$clean);
             foreach ($pending as $peer) {
                 if ($peer->id===$keep?->id || !$unsent($peer)) { continue; }
                 ManagementSequence::retirePrerequisite($peer,$l['operations'],(int)$actor->id,$this->clock->now());
@@ -105,7 +123,7 @@ final class DomainManagement
                 'operation_key' => $key, 'action' => $action, 'term' => 1, 'currency' => 'USD', 'amount' => '0.00',
                 'funding_basis' => 'non_billable_management', 'state' => 'queued', 'payload' => $clean, 'policy' => $policy];
             if (in_array($action, ['privacy_purchase', 'privacy_renew'], true)) { $data = ManagementPrivacy::invoice($data, $l, $driver, $this->clock); }
-            return ManagementSequence::create($data, $driver->prerequisite($action, $clean));
+            return ManagementSequence::create($data, $driver->prerequisite($action, $clean), $plan);
         });
     }
     /** Local retirement only; paid or financially touched invoices require the refund boundary. */
@@ -240,6 +258,7 @@ final class DomainManagement
             $valid=$op->action==='auth_code_email' ? $facts===['email_accepted'=>true] : in_array($op->action,['privacy_purchase','privacy_renew'],true)&&count($facts)===1&&is_string($facts['order_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['order_id']);
             // NameSilo is the only accepted durable profile creator; no generic inventory acknowledgement.
             if($op->action==='contact_profile'&&$op->registrar_key==='namesilo'){$valid=count($facts)===1&&is_string($facts['profile_id']??null)&&preg_match('/^[1-9][0-9]{0,19}$/D',$facts['profile_id']);}
+            if($op->action==='dns' && isset($op->policy['management']['sequence'])) { $valid=count($facts)===1 && is_string($facts['record_id']??null) && preg_match('/^[a-zA-Z0-9]{1,128}$/D',$facts['record_id']); }
             if(!$valid){throw new \DomainException('Invalid management acknowledgement.');}
             $op->update(['attempt'=>[...$op->attempt,'management_ack'=>$facts]]);
         },false,false);
@@ -338,7 +357,7 @@ final class DomainManagement
         }, false, false);
     }
     private function descriptor(Operation $op, array $l): ManagementRequest
-    { return new ManagementRequest(CatalogueAcceptances::binding($l['account']), $op->operation_key, $l['domain']->domain, $op->action, $op->payload ?? [], $l['domain']->provider_domain_id,$op->attempt['management_ack']['order_id']??null,$op->attempt['management_ack']['profile_id']??null, (int) $l['domain']->id); }
+    { return new ManagementRequest(CatalogueAcceptances::binding($l['account']), $op->operation_key, $l['domain']->domain, $op->action, $op->payload ?? [], $l['domain']->provider_domain_id,$op->attempt['management_ack']['order_id']??null,$op->attempt['management_ack']['profile_id']??null, (int) $l['domain']->id, ManagementSequence::context($op,$l)); }
     private function locked(Domain $seed, int $id, ManagementProtocol $driver, \Closure $use, bool $processing = true, bool $authorize = true): mixed
     {
         return DB::transaction(function () use ($seed, $id, $driver, $use, $processing, $authorize): mixed {
