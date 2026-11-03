@@ -417,7 +417,7 @@ final class DomainFacts
             $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
             $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
             if ($facts[$label]['value']===null) { $facts[$label]['sub']=$text; continue; }
-            $facts[$label]['progress']=['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false)];
+            $facts[$label]['progress']=['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false),'tone'=>$row['tone']??null];
         }
         return $facts;
     }
