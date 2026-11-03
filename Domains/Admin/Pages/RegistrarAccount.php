@@ -159,7 +159,7 @@ class RegistrarAccount extends Page
             $entry=MissingEntry::apply(TextEntry::make('calls')->label('API calls, last 24 hours')->state($calls['value'])->inlineLabel(),cause:$calls['value']===null?$calls['sub']:null,color:$calls['tone']);
             if ($calls['value']!==null&&$calls['sub']) { $entry->belowContent($calls['sub']); }
             if ($calls['help']) { $entry->hintAction(HelpHint::make($calls['help'])); }
-            $entries[]=$entry;
+            $entries[]=\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::row($entry,$a,$this->reviewStamp);
         }
         $entries[]=$fact('last_sync','Last sync',RegistrarFacts::lastSync($s),Missing::fills('within a day'))->hintAction(HelpHint::make('Last successfully saved price read for this account. Use Sync prices in What you sell to get current costs.'));
         return $entries;

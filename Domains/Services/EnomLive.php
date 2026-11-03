@@ -34,6 +34,7 @@ final class EnomLive
         foreach(Account::where('registrar_key','enom')->where('environment','test')->get() as $test){
             if($test->stable_identity===$uid){throw new \DomainException('An Enom TEST account cannot be used live.');}
         }
+        $row['daily_call_cap']=ApiCallLimits::read(Environment::Live,$uid)['day'];
         return $row;
     }
     public static function enabled(AccountBinding $b,string $action): bool
