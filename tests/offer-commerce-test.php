@@ -102,6 +102,7 @@ Illuminate\Support\Once::flush();
 $page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 expect($cart->items()->count() === 1, 'Refresh fixture retains one real cart item');
 expect($page->get('total') !== null, 'Mounted refresh fixture has a visible total');
+$debug = []; Livewire\Livewire::listen('call', static function ($component, $method) use (&$debug): void { if ($method === 'checkout') { $c = App\Classes\Cart::getOnce(); $debug[] = [request()->cookie('cart'), $c->id, $c->items->count()]; } });
 $clock->instant = $now->modify('+6 minutes'); $before = $reads->calls;
 $q = new Query($binding, ['com'], 'register', 3);
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
@@ -113,7 +114,7 @@ app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts, [Order::count(), Invoice::count(), Operation::count()], 'Changed total stops the first checkout click');
 $notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
-expect(str_contains($notice, 'Review the total'), 'Changed-total notice: '.$notice);
+expect(str_contains($notice, 'Review the total'), 'Changed-total notice: '.$notice.' '.json_encode([$cart->id, $cart->ulid, $debug]));
 same($before + 1, $reads->calls, 'Stale five-minute receipt costs one unlocked read');
 app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
