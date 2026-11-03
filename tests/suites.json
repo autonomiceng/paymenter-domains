@@ -132,6 +132,7 @@
     "tests/transfer-dispatch-test.php",
     "tests/transfer-completion-test.php",
     "tests/transfer-completion-namesilo-test.php",
+    "tests/registrar-transfer-answer-test.php",
     "tests/transfer-safety-namesilo-test.php",
     "tests/management-test.php",
     "tests/management-progress-test.php",
