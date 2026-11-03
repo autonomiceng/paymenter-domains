@@ -98,9 +98,9 @@ foreach([1,2] as $i){
     foreach(Price::where('server_id',$enom->server_id)->get() as $price){$saved=$price->getRawOriginal();unset($saved['id']);DB::table('domains_prices')->insert([...$saved,...$binding]);}
 }
 [$detail,$fourAccounts]=$detailRead($grants);
-// Default-rule validation checks one account per server, in addition to the shared account read.
-same(3,$twoAccounts['domains_accounts'],'Two accounts use one shared read and two default-rule checks');
-same(5,$fourAccounts['domains_accounts'],'Four accounts use one shared read and four default-rule checks, with no demo-tag reads');
+// The default rule is one row for the business, so more accounts add no account reads.
+same(1,$twoAccounts['domains_accounts'],'Two accounts use one shared read');
+same(1,$fourAccounts['domains_accounts'],'Four accounts use one shared read, with no default-rule or demo-tag reads');
 unset($twoAccounts['domains_accounts'],$fourAccounts['domains_accounts']);
 same($twoAccounts,$fourAccounts,'Price, holder and seller reads stay fixed across detail accounts');
 foreach($fourAccounts as $table=>$count){same(1,$count,'One detail query for '.$table);}
@@ -165,7 +165,7 @@ Carbon\Carbon::setTestNow($now);
 
 // Below cost: red Cost with its reason, and the TLD is not for sale.
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
-$rules->saveDefaultRule($enom->server_id,['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
+saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost')->assertSee('USD 1.00');
 $clean($list->html(),'List below cost');

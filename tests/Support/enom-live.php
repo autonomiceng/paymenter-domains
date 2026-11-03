@@ -118,7 +118,7 @@ foreach(['renewal','management'] as $action){
     $deny(fn()=>$write('live_'.$action,['accept'=>true,'verified'=>true]));expect(!$class::accepted($binding),'The shared writer refuses Live turn-on, whatever the caller supplies');
 
 }
-$write('default_rule',['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
+saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 config(['domains.enom_live.catalogue'=>false]);$before=count($GLOBALS['enomWire']['forms']);$deny(fn()=>$write('import',['ending'=>'com']));same($before,count($GLOBALS['enomWire']['forms']),'Catalogue off refuses import before send');config(['domains.enom_live.catalogue'=>true]);
 $write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);

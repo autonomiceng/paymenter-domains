@@ -73,8 +73,8 @@ final class EnomLiveActivation
                 $ruleError=null;
                 if(!$lock){
                     try{
-                        $rule=$t->use_default_rule?($default??=$rules->defaultRule((int)$a->server_id))
-                            :$rules->rule($t,fee:$t->pricing_mode==='markup_fee_percent'?($fee??=CardFee::read((int)$a->server_id)):null);
+                        $rule=$t->use_default_rule?($default??=$rules->defaultRule())
+                            :$rules->rule($t,fee:$t->pricing_mode==='markup_fee_percent'?($fee??=CardFee::read()):null);
                         $hash=hash('sha256',json_encode($rule,JSON_THROW_ON_ERROR));
                     }catch(\Throwable $e){if($failures===null){throw $e;}$ruleError=$e;}
                     $evidence=($saved->get($t->tld)??collect())->keyBy(static fn(Price $p)=>$p->action.':'.$p->term);

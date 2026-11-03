@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,Operati
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,StaffSettingsReview};
+use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One registrar account (a Domains server): status, balance and setup. Reached from the Registrars list. */
 class RegistrarAccount extends Page
@@ -89,7 +89,7 @@ class RegistrarAccount extends Page
         $sections=[];$checks=$this->checks();
         if ($a) {
             $id=(int)$s->id;
-            $rows=array_column([...AccountChecklist::setup($a,$this->status()),...AccountChecklist::renewals($id),...$this->pricing($id),AccountChecklist::whois($a)??self::fact('WHOIS privacy','Free when supported by the TLD.')],null,'label');
+            $rows=array_column([...AccountChecklist::setup($a,$this->status()),...AccountChecklist::renewals($id),AccountChecklist::whois($a)??self::fact('WHOIS privacy','Free when supported by the TLD.')],null,'label');
             $pick=fn(string ...$labels)=>array_values(array_filter(array_map(fn(string $label)=>$rows[$label]??null,$labels)));
             $sections=[Sheet::section('Account',$this->rows('account',[...$this->accountRows($a),...$pick('API connection')]))];
             if(LiveActivationAction::offered($a)){
@@ -121,26 +121,16 @@ class RegistrarAccount extends Page
         if ($a) {
             $runtime=AccountChecklist::runtime($a);$system[$runtime['value']===null?'failing':'passing'][]=$runtime;
             $alerts=AccountChecklist::alerts($a);$system[$alerts['tone']==='success'?'passing':'failing'][]=$alerts;
+
         }
         return $system;
     }
     /** A value with no fix of its own. */
     private static function fact(string $label,?string $value,string|Htmlable|null $cause=null,?string $help=null): array
     { return ['label'=>$label,'value'=>$value,'tone'=>null,'cause'=>$cause,'action'=>null,'help'=>$help]; }
-    /** The account's default pricing, and how many TLDs use it. Saving publishes those TLDs. */
-    private function pricing(int $id): array
-    {
-        if(!Staff::can(Staff::POLICY)){return [];}
-        try { $rule=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::describe((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule($id)); }
-        catch (\Throwable) { $rule=null; }
-        $used=TldFacts::bound(Tld::query())->where('server_id',$id)->where('use_default_rule',true)->count();
-        try { $fee=CardFee::describe(CardFee::read($id)).' per payment'; }
-        catch (\Throwable) { $fee=null; }
-        return [[...self::fact('Customer pays',$rule===null?null:ucfirst($rule),$rule===null?"Saved default pricing can't be read. Use Edit.":($used===0?'No TLDs use it yet.':'Used by '.$used.' '.($used===1?'TLD':'TLDs'))),'action'=>'default_rule'],
-            [...self::fact('Card fee',$fee,$fee===null?"Saved card fee can't be read. Use Edit.":null,'Used for estimated profit on the Price list, and by pricing that adds a percentage to cost and card fee.'),'action'=>'card_fee']];
-    }
     /** Rows with a value and their action column. A value of On or Off gets a switch. Missing shows in danger with its cause. */
     private function rows(string $prefix,array $rows): array
+
     {
         $out=[];
         foreach ($rows as $i=>$r) {

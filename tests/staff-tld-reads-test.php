@@ -87,7 +87,7 @@ $prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($b
 $calls=$reads->calls;staffTldFilterLookalikes($u,$tlds);same($calls,$reads->calls,'TLD selectors use saved facts only');
 foreach (['12.0000'=>'USD 12.00','12.3000'=>'USD 12.30','12.3450'=>'USD 12.345','12.3456'=>'USD 12.3456','0.0000'=>'USD 0.00'] as $amount=>$label) { same($label,TldFacts::money($amount,4),'Wholesale precision stays exact while redundant zeros are trimmed'); }
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
-$rules->saveDefaultRule($t->server_id,['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
+saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee('Below cost')->assertSee('Registrations and transfers below cost are held. Renewals are billed.');
 foreach(TldFacts::prices($t->fresh()) as $row){expect(in_array('below_cost',$row['flags'],true),'Below cost flagged: '.$row['action'].' '.$row['term']);}
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Below-cost registration is held');

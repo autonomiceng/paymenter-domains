@@ -53,10 +53,9 @@ final class SettingsActions
             'new_domain_dns'=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::HELP,
             'renewal_billing'=>'Set when renewal invoices go out.',
             'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
-            'card_fee'=>'Sets the estimated card fee for this account. Saving publishes new prices for TLDs whose pricing adds a percentage to cost and card fee. Other prices and issued invoices stay the same.',
-            'default_rule'=>'Sets the pricing every TLD on this account uses unless it has its own. Saving publishes new prices for those TLDs at once. Issued invoices keep their prices.',
+            'default_pricing'=>'Sets the pricing every TLD uses unless it has its own, and the estimated card fee. Saving publishes new prices at once. Issued invoices keep their prices.',
             'override'=>'Saving publishes these prices at once. Registrations and transfers below cost are not sold; renewals below cost are still billed. Both alert staff. Issued invoices keep their prices.',
-            'remove_override'=>'Uses this account’s default pricing. Saving publishes the new prices at once. Issued invoices keep their prices.',
+            'remove_override'=>'Uses Default pricing. Saving publishes the new prices at once. Issued invoices keep their prices.',
             'publish'=>'Publishes prices from saved costs and the current pricing. It does not refresh costs or change issued invoices.',
             'tld_settings'=>'Choose the years customers can buy and what is for sale.',
             'seller'=>'Choose the registrar for new orders. Existing domains stay where they are.',
@@ -83,23 +82,27 @@ final class SettingsActions
     /** One account setup action, keyed by its name (e.g. "processing"). */
     public static function setup(int $server,string $stamp,string $name): Action
     { return self::make($server,null,$stamp,true,[$name])[0]; }
-    public static function make(int $server,?int $tld,string $stamp,bool $setup=false,?array $only=null): array
+    /** Default pricing and the card fee, shared by every account. Its stamp reads every account, so it is taken when the dialog opens. */
+    public static function defaultPricing(): Action
+    { return self::make(Review::ALL_ACCOUNTS,null,fn()=>Review::stamp(Review::ALL_ACCOUNTS,null),true,['default_pricing'])[0]; }
+    public static function make(int $server,?int $tld,string|\Closure $stamp,bool $setup=false,?array $only=null): array
     {
-        $out=[];$names=$setup?['new_domain_dns','enroll_sandbox','configure','probe','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','late_renewal','processing','renew_early','renewal_billing','unpaid_hold','default_rule','card_fee']:['override','tld_settings','seller'];
+        $out=[];$names=$setup?['new_domain_dns','enroll_sandbox','configure','probe','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','late_renewal','processing','renew_early','renewal_billing','unpaid_hold','default_pricing']:['override','tld_settings','seller'];
         if($only!==null){$names=array_values(array_intersect($names,$only));}
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $id){
             $name=self::SHARED[$id]??$id;$switch=in_array($id,self::SWITCHES,true);$popup=isset(self::POPUPS[$id]);
-            $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp))];
-            if(in_array($name,['default_rule','override'],true)){
-                $rule=self::cached(static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule($server);}catch(\Throwable){return PricingRule::DEFAULT;}});
-                $default=self::cached(static function()use($server){try{return (new PricingRules)->defaultRule($server);}catch(\Throwable){return null;}});
+            $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)))];
+            if(in_array($name,['default_pricing','override'],true)){
+                // Saving writes rule and fee together. The form shows only the rule's own fields, so no fee may swap them for the built-in rule.
+                $rule=self::cached(static function()use($tld,$name){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
+                $default=self::cached(static function(){try{return (new PricingRules)->defaultRule();}catch(\Throwable){return null;}});
                 $own=static fn($get)=>$name!=='override'||$get('pricing')!=='default';
                 if($name==='override'){
-                    // "Use the account default" saves as remove_override, so it keeps that permission and history label.
-                    $fields[]=Hidden::make('default_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,'remove_override',$stamp));
+                    // "Use Default pricing" saves as remove_override, so it keeps that permission and history label.
+                    $fields[]=Hidden::make('default_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,'remove_override',value($stamp)));
                     $fields[]=Radio::make('pricing')->hiddenLabel()->live()->required()
-                        ->options(fn()=>array_filter(['default'=>'Use the account default ('.($default()===null?'not readable':PricingRule::describe($default())).')','custom'=>'Set prices for this TLD only'],
+                        ->options(fn()=>array_filter(['default'=>'Use Default pricing ('.($default()===null?'not readable':PricingRule::describe($default())).')','custom'=>'Set prices for this TLD only'],
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
                         ->default(fn()=>((Tld::find($tld)?->use_default_rule??true)&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
@@ -110,26 +113,33 @@ final class SettingsActions
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
                 foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key])->maxLength(14)->live(debounce:500)
                     ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
-                $entered=static function($get)use($name,$default,$server):?array{
+                $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
+                if($name==='default_pricing'){
+                    $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>$saved()['percent']??null)->required()->maxLength(6)->live(debounce:500);
+                    $fields[]=TextInput::make('fee_fixed')->label('Plus a fixed amount (USD)')->default(fn()=>$saved()['fixed']??null)->required()->maxLength(12)->live(debounce:500);
+                    $fields[]=\Filament\Schemas\Components\Text::make('An estimate per payment. International cards and refunds can cost more, so set it a little high.')->key('fee_note');
+                }
+                $newFee=static fn($get)=>CardFee::validate(['percent'=>$get('fee_percent'),'fixed'=>$get('fee_fixed')]);
+                $entered=static function($get)use($name,$default,$saved,$newFee):?array{
                     if($name==='override'&&$get('pricing')==='default'){return $default();}
                     try{return PricingRule::validate(['mode'=>$get('mode'),'markup'=>$get('markup')??'0','round_up'=>$get('round_up')??'none',
                         'fixed'=>['register'=>$get('fixed_register'),'renew'=>$get('fixed_renew'),'transfer'=>$get('fixed_transfer')],
-                        ...($get('mode')==='markup_fee_percent'?['card_fee'=>CardFee::read($server)]:[])]);}
+                        ...($get('mode')==='markup_fee_percent'?['card_fee'=>$name==='override'?$saved():$newFee($get)]:[])]);}
                     catch(\Throwable){return null;}
                 };
                 $fields[]=\Filament\Schemas\Components\Text::make(fn($get)=>($r=$entered($get))===null?'Enter prices to see what customers pay.':'Customer pays: '.PricingRule::describe($r))->key('formula');
                 if($name==='override'){$fields[]=\Filament\Schemas\Components\Html::make(fn($get)=>self::preview($tld,$entered($get)))->key('preview');}
-                else{$fields[]=\Filament\Schemas\Components\Html::make(fn()=>new \Illuminate\Support\HtmlString(e(self::followers($server)).self::tldListLink($server)))->key('followers');}
+                else{
+                    $reach=self::cached(static fn()=>self::reach());
+                    $feeMoves=static function($get)use($saved,$newFee):bool{try{return $newFee($get)!==$saved();}catch(\Throwable){return false;}};
+                    $fields[]=\Filament\Schemas\Components\Text::make(fn()=>self::reachDefault($reach()))->key('reach');
+                    $fields[]=\Filament\Schemas\Components\Text::make(fn()=>$reach()['own'].' '.($reach()['own']===1?'TLD':'TLDs').' with '.($reach()['own']===1?'its':'their').' own pricing '.($reach()['own']===1?'counts':'count').' the card fee and also '.($reach()['own']===1?'changes':'change').'.')->key('reach_own')->visible(fn($get)=>$reach()['own']>0&&$feeMoves($get));
+                    $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Off in Paymenter, so skipped: '.implode(', ',$reach()['off']).'. Prices there catch up once it is back on.')->key('reach_off')->visible(fn()=>$reach()['off']!==[]);
+                }
             }
             if($name==='new_domain_dns'){
                 $fields[]=Select::make('dns_template')->label('DNS template')->options(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::where('enabled',true)->orderBy('name')->get()->filter(fn($p)=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($p))->pluck('name','id')->all())
                     ->default(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($server)?->id)->placeholder(Account::where('server_id',$server)->value('registrar_key')==='enom'?'None: keep registrar defaults':'None: Finish setup needs customer nameservers');
-            }
-            if($name==='card_fee'){
-                $fee=self::cached(static function()use($server):array{try{return CardFee::read($server);}catch(\Throwable){return CardFee::DEFAULT;}});
-                $fields[]=TextInput::make('fee_percent')->label('Card fee (%)')->default(fn()=>$fee()['percent'])->required()->maxLength(6);
-                $fields[]=TextInput::make('fee_fixed')->label('Plus a fixed amount (USD)')->default(fn()=>$fee()['fixed'])->required()->maxLength(12);
-                $fields[]=\Filament\Schemas\Components\Text::make('An estimate per payment. International cards and refunds can cost more, so set it a little high.');
             }
             if($name==='tld_settings'){
                 // Offer only what the saved account terms allow; the writer still checks every change.
@@ -193,20 +203,21 @@ final class SettingsActions
                 ||($name==='configure'&&!app(StaffSettingsWrites::class)->connectionAvailable($registrar()))||($name==='probe'&&!app(StaffSettingsWrites::class)->connectionAvailable((string)$registrar()));
             $turn=fn()=>self::switchOn($id,$server)?'Turn off':'Turn on';
             $label=$setup?fn()=>self::setupLabel($name,$registrar()!==null):Review::ACTIONS[$name];
-            $out[]=Action::make($id.($setup?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
-                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&(!str_starts_with($name,'live_')||(Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&self::canSee(Staff::POLICY)&&(self::canSee(Review::permission($name))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&($name!=='test_transfer'||(EnomTestTransfer::deploymentEnabled()&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
+            $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
+                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&(!str_starts_with($name,'live_')||(Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&($name!=='test_transfer'||(EnomTestTransfer::deploymentEnabled()&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
                 ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
                 ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name)))))
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
                     try{$data=[...$data,...self::saved($id,$server)];
-                        if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,$stamp),'reason'=>self::switchOn($id,$server)?'Turned off':'Turned on'];}
+                        if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)),'reason'=>self::switchOn($id,$server)?'Turned off':'Turned on'];}
+
                         $default=$name==='override'&&($data['pricing']??null)==='default';
                         $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??($name==='new_domain_dns'?'New domain DNS template changed.':''))));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
-                        Notification::make()->status(($summary['audit_failed']??false)?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
+                        Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
                                 $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
-                            ->body($name==='processing'||$name==='probe'?null:(in_array($name,['default_rule','card_fee'],true)?self::published($summary??['published'=>0,'failed'=>[]],$name):($name==='enroll_sandbox'?'NameSilo accepted the key. Orders are paused and no TLDs are chosen yet.':null)))->send();
+                            ->body($name==='processing'||$name==='probe'?null:($name==='default_pricing'?self::published($summary):($name==='enroll_sandbox'?'NameSilo accepted the key. Orders are paused and no TLDs are chosen yet.':null)))->send();
                         if($name==='processing'){$livewire->redirect(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$server]));}
                     }catch(\Throwable $error){
                         if($error instanceof \DomainException&&$error->getMessage()==='Terms unchanged.'){Notification::make()->info()->title('Nothing to save')->body('These terms are the same as before.')->send();return;}
@@ -303,33 +314,35 @@ final class SettingsActions
         if($missing){$html.='<p class="domains-err">Some costs are missing. Use Sync prices on the TLD list first. Saving now changes nothing.</p>';}
         return new \Illuminate\Support\HtmlString($html);
     }
-    /** Link only when the current panel registers the TLD list. */
-    public static function tldListLink(int $server): string
+    /** What saving Default pricing publishes: TLDs on enabled accounts, and who waits for a price sync. */
+    private static function reach(): array
     {
-        try{$url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server]]]);}
-        catch(\Symfony\Component\Routing\Exception\RouteNotFoundException){return '';}
-        return ' <a class="fi-link" href="'.e($url).'">View TLDs</a>';
-    }
-    /** Which TLDs a default pricing change publishes to, and which of them will wait for a price sync. */
-    private static function followers(int $server): string
-    {
-        $tlds=TldFacts::bound(Tld::query())->where('server_id',$server)->where('use_default_rule',true)->orderBy('tld')->get();
-        if($tlds->isEmpty()){return 'No TLDs use the account default yet. Saving changes the default only.';}
-        $account=$tlds->first();
-        $prices=\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$server)
-            ->where('registrar_key',$account->registrar_key)->where('account_fingerprint',$account->account_fingerprint)
-            ->whereIn('tld',$tlds->pluck('tld'))->where('currency','USD')->orderBy('id')->get()->groupBy('tld');
+        $off=\App\Models\Server::where('extension','Domains')->where('enabled',false)->whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id');
+        $tlds=TldFacts::bound(Tld::query())->whereNotIn('server_id',$off->keys())->where(fn($q)=>$q->where('use_default_rule',true)->orWhere('pricing_mode','markup_fee_percent'))->orderBy('tld')->get();
+        $followers=$tlds->where('use_default_rule',true);
+        $prices=\Paymenter\Extensions\Servers\Domains\Models\Price::whereIn('server_id',$followers->pluck('server_id')->unique())->whereIn('tld',$followers->pluck('tld')->unique())->where('currency','USD')->orderBy('id')->get()
+            ->groupBy(fn($p)=>$p->server_id.':'.$p->registrar_key.':'.$p->account_fingerprint.':'.$p->tld);
         $now=now()->toDateTimeImmutable();
-        $waiting=$tlds->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireCosts($t,$now,$prices->get($t->tld,collect()));return false;}catch(\Throwable){return true;}});
-        $text=$tlds->count().' '.($tlds->count()===1?'TLD uses':'TLDs use').' the account default: '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($tlds->pluck('tld')->all()).'. Saving publishes '.($tlds->count()===1?'its':'their').' new prices.';
-        return $text.($waiting->isEmpty()?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting->pluck('tld')->all()).'. '.($waiting->count()===1?'Its prices':'Their prices').' stay the same until you sync prices.');
+        $waiting=$followers->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireCosts($t,$now,$prices->get($t->server_id.':'.$t->registrar_key.':'.$t->account_fingerprint.':'.$t->tld,collect()));return false;}catch(\Throwable){return true;}});
+        return ['default'=>$followers->count(),'own'=>$tlds->count()-$followers->count(),'waiting'=>$waiting->pluck('tld')->unique()->values()->all(),'off'=>$off->values()->all()];
     }
-    /** Notification text after a pricing or card fee change. */
-    private static function published(array $summary,string $name): string
+    private static function reachDefault(array $reach): string
     {
-        $text=$summary['published']===0&&$summary['failed']===[]?($name==='card_fee'?'Card fee saved. No TLDs count the card fee in their prices, so no prices changed.':'No TLDs use the account default.'):'Published new prices for '.$summary['published'].' '.($summary['published']===1?'TLD':'TLDs').'.';
-        return $text.($summary['failed']===[]?'':' Could not publish '.implode(', ',$summary['failed']).'. Use Sync prices on the TLD list.')
-            .(($summary['audit_failed']??false)?" Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":'');
+        $count=$reach['default'];$waiting=$reach['waiting'];
+        if($count===0){return 'No TLDs use Default pricing yet.';}
+        return $count.' '.($count===1?'TLD uses':'TLDs use').' Default pricing.'.($waiting===[]?'':' Costs are missing for '.\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($waiting).'. '.(count($waiting)===1?'Its prices stay':'Their prices stay').' the same until you sync prices.');
+    }
+    /** Notification text after a Default pricing save. Each account that failed is named. */
+    private static function published(array $summary): string
+    {
+        $count=$summary['published'];$failed=[];
+        foreach($summary['failed'] as $account=>$tlds){$failed[]=$account.($tlds===[]?'':' ('.implode(', ',$tlds).')');}
+        return implode(' ',array_filter([
+            $count===0?'No prices changed.':'Published new prices for '.$count.' '.($count===1?'TLD':'TLDs').'.',
+            $failed===[]?null:'Could not publish '.implode(', ',$failed).'. Use Sync prices under What you sell, then save again.',
+            $summary['skipped']===[]?null:'Off in Paymenter, so skipped: '.implode(', ',$summary['skipped']).'.',
+            ($summary['audit_failed']??false)?"Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":null,
+        ]));
     }
     /** Renewals, DNS management and transfers are on when their saved acceptance is current. */
     private static function accepted(int $server,string $name): bool
@@ -371,18 +384,18 @@ final class SettingsActions
     {
         return match(true){$name==='new_domain_dns'=>'Change',$name==='late_renewal'=>'Late renewal',$name==='processing'=>'Orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
             $name==='enroll_sandbox'=>'Connect NameSilo test account',$name==='probe'=>'Test connection',
-            $name==='renewal_billing'=>'Edit schedule',$name==='unpaid_hold'=>'Edit unpaid hold',$name==='default_rule'=>'Edit default pricing',$name==='card_fee'=>'Edit card fee',default=>Review::ACTIONS[$name]??$name};
+            $name==='renewal_billing'=>'Edit schedule',$name==='unpaid_hold'=>'Edit unpaid hold',$name==='default_pricing'=>'Default pricing',default=>Review::ACTIONS[$name]??$name};
     }
     /** Dialog title: what the button does, as a question. */
     private static function setupHeading(string $name,bool $connected): string
     {
-        return match(true){$name==='new_domain_dns'=>'New domains use',$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_rule'=>'Edit default pricing?',$name==='card_fee'=>'Edit card fee?',
+        return match(true){$name==='new_domain_dns'=>'New domains use',$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_pricing'=>'Edit default pricing?',
             default=>self::setupLabel($name,$connected).'?'};
     }
     private static function submitLabel(string $name,bool $connected): string
     {
         return match(true){$name==='enroll_sandbox'||($name==='configure'&&!$connected)=>'Connect',
-            $name==='probe'=>'Test connection',in_array($name,['default_rule','card_fee'],true)=>'Save and publish',default=>'Save'};
+            $name==='probe'=>'Test connection',$name==='default_pricing'=>'Save and publish',default=>'Save'};
     }
     /** "the Enom test account": where Sync prices reads from. */
     private static function seller(Account $account): string
@@ -444,12 +457,10 @@ final class SettingsActions
         ],true)){return $error->getMessage();}
         if($name==='tld_settings'&&$error instanceof \DomainException&&($text=self::termsRefusal($error->getMessage(),$data,$server,$tld))!==null){return $text;}
         if($name==='acceptance'&&$error->getMessage()==='Audit entry too large. Changes held.'){return 'That is too many changes for one save. Save fewer at a time. Nothing was saved.';}
-        if($name==='card_fee'&&$error instanceof \InvalidArgumentException&&!in_array($error->getMessage(),['This percentage cannot cover the card fee. Lower the markup or card fee.','The calculated price is too large.'],true)){
-            return 'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.';
-        }
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
         return $error instanceof EnomTestCallLimit?self::testRefusal($error,$name,$server,$data)
                 :match($error->getMessage()){'The calculated price is too large.'=>'This makes a price too large to save. Lower the markup or the card fee. Nothing was changed.','Processing state unchanged.'=>'Orders are already set that way. Nothing changed.',
+                'Invalid card fee.'=>'Enter a card fee from 0% to 99.99% and a fixed amount from $0 to $100,000, with up to two decimal places. Nothing was changed.',
                 'This TLD is hidden.'=>"That TLD isn't offered here. Nothing was saved.",'Choose at least one year.'=>'Tick at least one year. Nothing was saved.','Nothing to save.'=>'Nothing changed. Nothing was saved.',
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This expired, or someone else changed this account. '.self::NO_KEY_CHECK.' Try again.':'Someone else changed this. Nothing was saved. Try again.',

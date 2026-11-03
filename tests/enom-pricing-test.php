@@ -43,7 +43,7 @@ same($before, Price::orderBy('id')->get()->toJson(), 'Timeout retains all price 
 $wire->fail = false; $wire->price = '8.95500000'; same(0, $catalogue->sync(1, $read)['synced'], 'Unsupported precision rejects whole TLD refresh');
 same($before, Price::orderBy('id')->get()->toJson(), 'Unsupported precision retains all prices');
 $wire->price = '8.9550';
-$rules->saveDefaultRule(1, [...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '1.00', 'renew' => '1.00', 'transfer' => '1.00']], $catalogue->republish(...));
+saveDefaultRule([...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '1.00', 'renew' => '1.00', 'transfer' => '1.00']], $catalogue->republish(...));
 $renew = $catalogue->current(1, $account['account_fingerprint'], 'com', 'renew', 1, 'USD', $clock->now());
 same('1.00', $renew->retail, 'Below-cost renewals remain priced'); same('below_cost', $renew->staffAlert, 'Below-cost renewal only alerts staff');
 $wire->enabled = false;

@@ -64,8 +64,8 @@ foreach([...$staleFirst,...array_values(array_diff(array_keys(Review::ACTIONS),$
     $bad=$review($action,$setup?null:$t->id,null,str_repeat('0',64));
     tldRefusal(fn()=>$writer->run($bad,['registrar'=>'enom','environment'=>'test','credentials'=>['token'=>'account-enom'],'history_action'=>'register','confirmed'=>true,'enabled'=>false,'delivery_id'=>1,'alert_id'=>1], $now),'Settings changed. Reload this page.');
 }
-foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$writer->run($review('default_rule',$t->id,reason:$bad),$fixed,$now));}
-$r=$review('default_rule',$t->id,reason:str_repeat('🦦',500));same(['published'=>1,'failed'=>[]],$writer->run($r,$fixed,$now),'Default publishes the TLD that follows it');same('fixed',(new PricingRules)->defaultRule($t->server_id)['mode'],'Default saved');
+foreach([str_repeat('é',4),str_repeat('é',501),"valid\xff"] as $bad){commerceReject(fn()=>$writer->run(pricingReview($u->id,$bad),pricingForm($fixed),$now));}
+$r=pricingReview($u->id,str_repeat('🦦',500));same(['published'=>2,'failed'=>[],'skipped'=>[]],$writer->run($r,pricingForm($fixed),$now),'Default publishes the TLDs that follow it');same('fixed',(new PricingRules)->defaultRule()['mode'],'Default saved');
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($t->fresh()),'Published below-cost default is not for sale');
 $auditBeforeReplay=Review::historyRows(App\Models\Server::findOrFail($t->server_id));
 same(['completed','publication_completed'],array_column($auditBeforeReplay,'phase'),'Default save and publication outcome audited');
@@ -77,7 +77,7 @@ expect(in_array('Default pricing changed',array_column(TldFacts::history($t->ser
 // Missing renewal cost: the default is saved, but this TLD keeps its published prices and says so.
 $renewalCost=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->sole();
 Price::whereKey($renewalCost->id)->update(['wholesale'=>null]);
-same(['published'=>0,'failed'=>['.com']],$writer->run($review('default_rule',$t->id),[...$fixed,'fixed_renew'=>'2.00'],$now->modify('+2 days')),'Missing-cost TLD is named');
+same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),pricingForm([...$fixed,'fixed_renew'=>'2.00']),$now->modify('+2 days')),'Missing-cost TLD is named');
 Price::whereKey($renewalCost->id)->update(['wholesale'=>$renewalCost->wholesale]);
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Prices not published'],TldFacts::salesState($t->fresh()),'Unpublished rule blocks ready status');
 Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->assertSee('Prices not published. Open Edit prices and save.');
@@ -99,10 +99,10 @@ tldRefusal(fn()=>$writer->run($review('override',$t->id,null,null,$nativeKey),$f
 $r=$review('override',$t->id);$writer->run($r,[...$fixed,'fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00'],$now);
 expect(!$t->fresh()->use_default_rule,'Override enabled');$writer->run($review('publish',$t->id),[],$now);
 $r=$review('remove_override',$t->id);$writer->run($r,[],$now);expect($t->fresh()->use_default_rule,'Override removed');
-$stale=Review::stamp($t->server_id,$t->id);$writer->run($review('default_rule',$t->id),[...$fixed,'fixed_renew'=>'30.00'],$now);
+$stale=Review::stamp($t->server_id,$t->id);$writer->run(pricingReview($u->id),pricingForm([...$fixed,'fixed_renew'=>'30.00']),$now);
 tldRefusal(fn()=>$writer->run($review('publish',$t->id,null,$stale),[],$now),'Settings changed. Reload this page.');
-$r=$review('default_rule',$t->id);$u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);commerceReject(fn()=>$writer->run($r,$fixed,$now));$u->role->update(['permissions'=>$permissions]);
-$writer->run($review('default_rule',$t->id),['mode'=>'markup_percent','markup'=>'30','round_up'=>'none'],$now);$writer->run($review('publish',$t->id),[],$now);
+$r=pricingReview($u->id);$u->role->update(['permissions'=>[Staff::VIEW,Staff::POLICY]]);commerceReject(fn()=>$writer->run($r,pricingForm($fixed),$now));$u->role->update(['permissions'=>$permissions]);
+$writer->run(pricingReview($u->id),pricingForm(['mode'=>'markup_percent','markup'=>'30','round_up'=>'none']),$now);$writer->run($review('publish',$t->id),[],$now);
 $holding=Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);$generation=$holding->authority_generation;
 $writer->run($review('seller',$t->id),['seller'=>$tlds[1]->server_id,'register'=>true,'transfer'=>true],$now);
