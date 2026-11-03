@@ -57,7 +57,7 @@ $management->run($op->id,$driver);same([1,2,3],$wire->writes,'Completed sequence
 same([1],$wire->writes,'Config drift between children cannot run the frozen sequence');
 expect(str_contains(ManagementProgress::for($d)['dns']['text'],'Contact support'),'A stuck sequence gives a concrete next step');
 [$d,$driver]=$setup('owner-drift');$op=$submit($d,$driver,'dns',$intent);$management->run($op->id,$driver);
-$d->service->update(['user_id'=>$other->id]);Cache::flush();try{$management->run($op->id,$driver);}catch(DomainException){}
+DB::table('services')->where('id',$d->service_id)->update(['user_id'=>commerceUser()->id]);Cache::flush();try{$management->run($op->id,$driver);}catch(DomainException){}
 same([1],$wire->writes,'Stale native owner cannot execute remaining children');
 [$d,$driver]=$setup('preimage-drift');$op=$submit($d,$driver,'dns',$intent);$wire->state=[99];$management->run($op->id,$driver);same([],$wire->writes,'Preimage drift prevents the first mutation');
 [$d,$driver]=$setup('consume-drift');$op=$submit($d,$driver,'dns',$intent);$wire->during=fn()=>\App\Models\Server::findOrFail($d->server_id)->settings()->create(['key'=>'synthetic_race','value'=>'changed']);$management->run($op->id,$driver);same([],$wire->writes,'Configuration drift during preparation prevents sealing');

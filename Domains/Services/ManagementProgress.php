@@ -33,6 +33,8 @@ final class ManagementProgress
                 if(!isset($op->policy['management']) || isset($op->policy['management']['sequence_parent'])){continue;}
                 $row=self::sequence($op,$d,self::row($op,$d));
                 $priority=$row['pending']?2:($op->safe_code==='management_retired'?0:1);
+            } catch (\DomainException) {
+                $row=['id'=>(int)$op->id,'pending'=>true,'slow'=>false,'tone'=>'warning','text'=>self::UNREADABLE];$priority=2;
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
                 $row=['id'=>(int)$op->id,'pending'=>false,'slow'=>false,'unreadable'=>true,'text'=>self::UNREADABLE];
                 $priority=2;

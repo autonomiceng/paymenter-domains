@@ -1,0 +1,50 @@
+<?php
+// Synthetic provider adapter through durable management. MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/Support/management-namesilo.php';
+use Illuminate\Support\Facades\{Cache,DB};
+use Paymenter\Extensions\Servers\Domains\Data\{RequestOrigin,Support};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DnsManagement,Dns};
+use Paymenter\Extensions\Servers\Domains\Services\ManagementProgress;
+expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/DnsManagement.php'),'Dormant DNS adapter executes only independently granted deltas');
+$wire=(object)['records'=>[],'writes'=>[],'fault'=>'','next'=>0,'lists'=>0];
+$dnsExchange=static function($origin,$cmd,$p,$timeout)use($wire,$managementExchange):string {
+    if(!str_starts_with($cmd,'dns')){return $managementExchange($origin,$cmd,$p,$timeout);}
+    same(0,DB::transactionLevel(),'DNS wire remains outside holding locks');$reply=['code'=>300,'detail'=>'synthetic'];
+    if($cmd==='dnsListRecords'){
+        $wire->lists++;$rows=[];
+        foreach($wire->records as $r){$rows[]=['record_id'=>$r['record_id'],'type'=>$r['type'],'host'=>($r['name']==='@'?'':$r['name'].'.').$p['domain'],'value'=>$r['address'],'ttl'=>$r['ttl'],'distance'=>$r['mx_pref']];}
+        if($wire->fault!=='missing'){$reply['resource_record']=$rows;}
+        if($wire->fault==='partial'){$reply['extra']='unknown';}
+    }else{
+        $wire->writes[]=$cmd;$old=null;
+        if(isset($p['rrid'])){foreach($wire->records as $i=>$r){if($r['record_id']===$p['rrid']){$old=$r;unset($wire->records[$i]);}}}
+        if($cmd!=='dnsDeleteRecord'){
+            $id='made'.++$wire->next;$row=['name'=>$p['rrhost']===''?'@':$p['rrhost'],'type'=>$p['rrtype']??$old['type'],'address'=>$p['rrvalue'],'mx_pref'=>$p['rrdistance']??10,'record_id'=>$id,'ttl'=>$p['rrttl']];$wire->records[]=$row;
+            if($wire->fault==='duplicate'){$wire->records[]=array_replace($row,['record_id'=>'duplicate']);}
+            $reply['record_id']=$wire->fault==='wrongID'?'wrong':$id;
+        }
+        $wire->records=array_values($wire->records);
+        if($wire->fault==='lost'){throw new RuntimeException('Synthetic lost DNS response');}
+    }
+    return json_encode(['request'=>['operation'=>$cmd],'reply'=>$reply],JSON_THROW_ON_ERROR);
+};
+$a=['name'=>'@','type'=>'A','address'=>'192.0.2.1','mx_pref'=>10,'record_id'=>'original','ttl'=>300];
+$caa=['name'=>'@','type'=>'CAA','address'=>'0:issue:ca.example.com','mx_pref'=>10,'record_id'=>'opaque','ttl'=>600];
+$setup=static function($label,array $rows)use($holding,&$binding,$wire,$dnsExchange){[$d,$ordinary]=$holding($label);same(Support::Unsupported,$ordinary->capabilities()->get('dns')->support,'Installed ordinary adapter still closes DNS editing');\App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>true]);$wire->records=$rows;$wire->writes=[];$wire->fault='';return [$d,new DnsManagement($binding,$dnsExchange)];};
+[$d,$driver]=$setup('dns-durable',[$a,$caa]);$want=array_replace($a,['address'=>'192.0.2.2']);$add=['name'=>'verify','type'=>'TXT','address'=>'  "synthetic"  ','mx_pref'=>10,'ttl'=>7207];
+$op=$submit($d,$driver,'dns',['records'=>[$want,$add]]);same([],$wire->writes,'One save reads inventory but sends no mutation');
+$children=$d->operations()->where('action','dns')->orderBy('id')->get();same(2,$children->count(),'Update and add have separate durable grants');
+$wire->fault='lost';$management->run($op->id,$driver);same(['dnsUpdateRecord'],$wire->writes,'Lost update is sent only once');
+$wire->fault='';$driver=new DnsManagement($binding,$dnsExchange);$management->run($op->id,$driver);
+same('succeeded',$children->first()->fresh()->state,'Unique new ID readback recovers the update without its response');same(['dnsUpdateRecord'],$wire->writes,'Recovery only reads');
+$proof=$children->first()->fresh()->attempt['management_reads'];$latest=end($proof);same('made1',$latest['facts']['sequence_preimage']['records'][1]['record_id'],'Replacement ID is durably retained for remaining preimage');
+Cache::flush();same('succeeded',$management->run($op->id,$driver)->state,'Verified predecessor permits the separately granted add');
+same(['dnsUpdateRecord','dnsAddRecord'],$wire->writes,'Exactly one provider mutation per delta');
+expect(in_array($caa,$wire->records,true),'Unsupported CAA row and TTL remain unchanged');same(3,count($wire->records),'Only one requested TXT is added');
+$made=array_values(array_filter($wire->records,fn($r)=>$r['type']==='TXT'))[0];same([$add['address'],7207],[$made['address'],$made['ttl']],'TXT bytes and explicit TTL survive');
+$management->run($op->id,$driver);same(2,count($wire->writes),'No completed DNS replay');
+foreach(['missing','partial'] as $fault){[$d,$driver]=$setup('inventory-'.$fault,[$a]);$wire->fault=$fault;try{$submit($d,$driver,'dns',['records'=>[]]);throw new LogicException('Incomplete preimage accepted');}catch(DomainException){}same([],$wire->writes,'Incomplete inventory creates no writer');same(0,$d->operations()->where('action','dns')->count(),'Incomplete preimage leaves no partial sequence');}
+foreach(['duplicate','wrongID'] as $fault){[$d,$driver]=$setup('dns-'.$fault,[]);$op=$submit($d,$driver,'dns',['records'=>[$add]]);$wire->fault=$fault;same('uncertain',$management->run($op->id,$driver)->state,'Ambiguous or mismatched receipt cannot complete');$wire->fault='';$management->reconcile($op->id,$driver);same('uncertain',$op->fresh()->state,'Readback cannot silently replace the original receipt or choose duplicate IDs');same(['dnsAddRecord'],$wire->writes,'Unknown add never repeats');expect(str_contains(ManagementProgress::for($d)['dns']['text'],'Contact support'),'Unknown DNS gives the shared support next step');}
+[$d,$driver]=$setup('final-delete',[$a]);$op=$submit($d,$driver,'dns',['records'=>[]]);$wire->fault='lost';same('uncertain',$management->run($op->id,$driver)->state,'Lost deletion stays unknown');$wire->fault='missing';same('uncertain',$management->reconcile($op->id,$driver)->state,'Missing inventory cannot prove empty');$wire->fault='';same('succeeded',$management->reconcile($op->id,$driver)->state,'Explicit empty inventory proves final deletion');same(['dnsDeleteRecord'],$wire->writes,'Final delete is never replayed');
+$nativeSuccessful=true;echo "Dormant DNS durable execution passed\n";

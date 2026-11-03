@@ -98,16 +98,16 @@ final class DomainManagement
             $pending=$l['operations']->sortByDesc('id')->filter(fn($peer)=>in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)
                 && isset($peer->policy['management']) && !isset($peer->policy['management']['sequence_parent']) && ManagementProgress::setting($peer->action)===ManagementProgress::setting($action)
                 && $peer->authority_generation===$d->authority_generation && $peer->account_fingerprint===$d->account_fingerprint
-                && ManagementProgress::pending($peer,$d));
+                && (ManagementProgress::pending($peer,$d) || ManagementSequence::unsent($peer,$l['operations'])));
             // A claimed/sealed write owns the setting, even if an older release queued a newer unsent choice.
-            $unsent=fn($peer)=>!ManagementSequence::started($peer,$l['operations']) && ManagementEvidence::idle($peer) && !$peer->invoice_id && ($peer->attempt['seal']??'absent')==='absent';
+            $unsent=fn($peer)=>!ManagementSequence::started($peer,$l['operations']) && ManagementEvidence::idle($peer) && !$peer->invoice_id && (($peer->attempt['seal']??'absent')==='absent' || $peer->safe_code==='management_definitely_unsent' && ($peer->attempt['management_unsent']??false)===true);
             $keep=$pending->first(fn($peer)=>!$unsent($peer))
                 ?? $pending->first(fn($peer)=>$peer->action===$action && (!isset($peer->policy['management']['sequence']) || $peer->policy['management']['sequence']['configuration']===ManagementSequence::configuration($l)) && !ManagementSequence::unsent($peer,$l['operations']) && ($peer->policy['management']['intent']??$peer->policy['management']['input']??null)===$clean);
             foreach ($pending as $peer) {
                 if ($peer->id===$keep?->id || !$unsent($peer)) { continue; }
                 ManagementSequence::retirePrerequisite($peer,$l['operations'],(int)$actor->id,$this->clock->now());
                 $peer->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$this->clock->now(),
-                    'attempt'=>[...($peer->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent',
+                    'attempt'=>[...($peer->attempt??[]),'seal'=>$peer->attempt['seal']??'absent','send_state'=>$peer->attempt['send_state']??'definitely_unsent',
                         'management_terminal'=>['actor_id'=>(int)$actor->id,'at'=>$this->clock->now()->format(DATE_ATOM)]]]);
             }
             if ($keep) { return $keep; }
@@ -143,7 +143,7 @@ final class DomainManagement
             $at=$this->clock->now();$terminal=$op->invoice_id?PrivacyRetirement::terminal($op,$l['domain'],(int)$actor->id,$at):['actor_id'=>(int)$actor->id,'at'=>$at->format(DATE_ATOM)];
             ManagementSequence::retirePrerequisite($op,$l['operations'],(int)$actor->id,$at);
             $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
-                'attempt'=>[...($op->attempt??[]),'seal'=>$op->attempt['seal']??'absent','send_state'=>'definitely_unsent','management_terminal'=>$terminal]]);return $op;
+                'attempt'=>[...($op->attempt??[]),'seal'=>$op->attempt['seal']??'absent','send_state'=>$op->attempt['send_state']??'definitely_unsent','management_terminal'=>$terminal]]);return $op;
         });
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
