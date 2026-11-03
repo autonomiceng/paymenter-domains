@@ -19,9 +19,10 @@ final class UpgradeGate
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', self::KEY); }
 
-    private static function state(): array
+    private static function state(?\Illuminate\Support\Collection $rows = null): array
     {
-        $rows = self::query()->get();
+        // A transaction may already own an older consistent snapshot. Only a locking read is current.
+        $rows ??= DB::transactionLevel() > 0 ? self::query()->lockForUpdate()->get() : self::query()->get();
         if ($rows->isEmpty()) { return ['state' => 'legacy', 'generation' => 0]; }
         if ($rows->count() !== 1 || !$rows[0]->encrypted || $rows[0]->type !== 'string') {
             throw new \DomainException('Catalogue upgrade state is invalid; keep maintenance active.');
@@ -56,13 +57,14 @@ final class UpgradeGate
         self::outside();
         return DB::transaction(static function () use ($from, $to): int {
             // Same server/account prefix as retained writers. No native, offer or price writes here.
-            $ids = Server::where('extension', 'Domains')->orderBy('id')->pluck('id');
-            Server::whereKey($ids)->orderBy('id')->lockForUpdate()->get();
+            Server::where('extension', 'Domains')->orderBy('id')->lockForUpdate()->get();
             Account::orderBy('server_id')->lockForUpdate()->get();
-            self::query()->lockForUpdate()->get();
-            $state = self::state();
+            // Keep the rows from this current read, including the absent-row decision. The shared
+            // server/account prefix serializes first creation; the setting range is locked as well.
+            $rows = self::query()->lockForUpdate()->get();
+            $state = self::state($rows);
             if ($state['state'] !== $from) { throw new \DomainException('Catalogue upgrade state changed.'); }
-            $row = self::query()->first() ?? new Setting(['key' => self::KEY, 'settingable_type' => null, 'settingable_id' => null]);
+            $row = $rows->first() ?? new Setting(['key' => self::KEY, 'settingable_type' => null, 'settingable_id' => null]);
             $row->encrypted = true; $row->type = 'string';
             $row->value = json_encode(['state' => $to, 'generation' => $state['generation'] + 1], JSON_THROW_ON_ERROR);
             $row->save();
