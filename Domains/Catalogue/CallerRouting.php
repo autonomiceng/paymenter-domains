@@ -16,6 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionO
 final class CallerRouting
 {
     private static ?array $probe = null;
+    public static function reset(): void {}
     public static function legacy(\Closure $body): mixed { return $body(); }
     public static function resolve(string $type): ?object { return self::$probe[$type] ?? null; }
 

@@ -117,19 +117,20 @@ final class UpgradeConversion
     private function scoped(string $table, AccountBinding $binding): Builder
     { return UpgradeComparison::query($table)->where(self::key($binding)); }
     private function queue(AccountBinding $binding): Builder
-    { return DB::table('domains_observation_queues')->where(self::key($binding)); }
+    { return UpgradeComparison::read(DB::table('domains_observation_queues'))->where(self::key($binding)); }
     private static function json(mixed $value): string
     { return json_encode($value, JSON_THROW_ON_ERROR); }
 
     private function source(AccountBinding $binding): array
     {
-        $account = Account::where('server_id', $binding->serverId)->sole();
+        $account = Account::where('server_id', $binding->serverId)->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->sole();
         $binding->requireMatch(CatalogueAcceptances::binding($account));
-        $server = Server::findOrFail($binding->serverId);
+        $server = Server::whereKey($binding->serverId)->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->firstOrFail();
         if ($server->extension !== 'Domains') { throw new \DomainException('Not a Domains server.'); }
-        $exists = $server->settings()->where('key', CatalogueAcceptances::KEY)->exists();
-        $accepted = $exists ? CatalogueAcceptances::load($binding)->endings : null;
-        $rule = SellRule::saved($binding); $digests = [];
+        $exists = $server->settings()->where('key', CatalogueAcceptances::KEY)->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->exists();
+        $accepted = $exists ? CatalogueAcceptances::load($binding, UpgradeComparison::locking())->endings : null;
+        $saved = $server->settings()->where('key', SellRule::KEY)->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->first()?->value;
+        $rule = is_array($saved) ? SellRule::validate($saved) : null; $digests = [];
         foreach (['domains_tlds', 'domains_prices', SellTableSchema::ROWS, SellTableSchema::FILLS] as $table) {
             // Include wrong-binding rows too: they must block, never be silently adopted.
             $query = UpgradeComparison::retained($table)->where('server_id', $binding->serverId);
@@ -217,7 +218,7 @@ final class UpgradeConversion
             }
             if ($names !== []) { $cursor = $names[array_key_last($names)]; }
         } while (count($names) === 250);
-        $extra = DB::table('domains_tlds')->where('server_id', $binding->serverId)->count() - $present;
+        $extra = UpgradeComparison::read(DB::table('domains_tlds'))->where('server_id', $binding->serverId)->count() - $present;
         if ($extra > 0) { $mismatches['extra_offer'] = $extra; }
         $complete = (bool) ($queue?->offer_conversion_complete ?? false) && $converted === $expected
             && $present === $expected && $extra === 0 && !isset($mismatches['offer_identity'])
@@ -225,7 +226,7 @@ final class UpgradeConversion
         if (!$complete) { $mismatches['completion'] = 1; }
         $defaults = new Intent($rule !== null ? $rule['mode'] !== 'only' : !$accepted,
             $rule['years'] ?? 1, $rule['transfers'] ?? false, $rule['max_cost'] ?? null);
-        $storedDefaults = DB::table('domains_accounts')->where('server_id', $binding->serverId)->value('catalogue_defaults');
+        $storedDefaults = UpgradeComparison::read(DB::table('domains_accounts'))->where('server_id', $binding->serverId)->value('catalogue_defaults');
         if (self::canonical(UpgradeEvidence::json($storedDefaults)) !== self::canonical(json_decode(self::json($defaults), true))) { $mismatches['defaults'] = 1; }
         return ['staging_mismatches' => $mismatches, 'complete' => $complete,
             'source_unchanged' => $queue?->offer_conversion_source === $source, 'issues' => $issues,

@@ -36,6 +36,6 @@ $gate = new UpgradeGate; $gate->pause();
 same($contract, CallerRouting::contract(), 'Paused inspection remains construction-only');
 commerceReject(fn () => app(RuntimePorts::class)->registerInitialManagedRecordObservations(static fn () => null));
 same($calls, $reads->calls, 'Paused inspection and duplicate callback refusal send nothing');
-same(false, method_exists(UpgradeGate::class, 'activate'), 'C6a cannot activate an incomplete cutover');
+same(null, Capabilities::routed(), 'Checked activation remains the only route to the active composition');
 $nativeSuccessful = true;
 echo "Installed dormant routing contract and probe isolation passed.\n";
