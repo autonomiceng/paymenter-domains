@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Owns the renewal-specific ordered prefix. No general callback or write-authority scope is exposed. */
 final readonly class RenewalAuthority
 {
-    public function __construct(private AccountBindings $bindings, private Clock $clock) {}
+    public function __construct(private AccountBindings $bindings, private Clock $clock, private ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null) {}
     public function capture(RenewalRequest $request): array { return $this->locked($request); }
     public function recheck(RenewalRequest $request, string $stamp, RenewalAcceptance $accepted, \DateTimeImmutable $until): void
     {
@@ -22,12 +22,12 @@ final readonly class RenewalAuthority
             $seed = Domain::findOrFail($request->domainId);
             return DB::transaction(function () use ($seed, $request, $stamp, $accepted, $until): array {
                 $l = HoldingLocks::take($seed); $domain = $l['domain'];
-                $binding = CatalogueAcceptances::binding($l['account']);
+                $binding = CatalogueAcceptances::binding($l['account']); $capabilityUntil = null;
                 try {
                     $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding);
                     // HoldingLocks already locked all server settings before catalogue/domain rows.
-                    if ($caps = \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
-                        $caps->requireRenewal($binding, $domain->tld, $l['tld']);
+                    if ($caps = $this->offers ?? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
+                        $capabilityUntil = $caps->requireRenewal($binding, $domain->tld, $l['tld'])->freshUntil;
                     } else {
                     $catalogue = CatalogueAcceptances::load($binding, true);
                     $parts = CanonicalName::parse($domain->domain, array_keys($catalogue->endings));
@@ -76,7 +76,7 @@ final readonly class RenewalAuthority
                         && WriteMoney::compare((new Money($prior->cost['actual']['amount'] ?? '', 'USD'))->amount,
                             (new Money($admission['cost']['amount'] ?? '', 'USD'))->amount) === 0;
                 } catch (\InvalidArgumentException | \TypeError) {}
-                return [$binding, $domain->domain, $current, $retail, $nonpremium];
+                return [$binding, $domain->domain, $current, $retail, $nonpremium, $capabilityUntil];
             });
         } catch (RenewalRefused $error) { throw $error; }
         catch (\Throwable) { throw new RenewalRefused(RenewalCode::Authority); }

@@ -130,9 +130,18 @@ final class AccountChecklist
         if($blocked!==null&&!$on){return self::row('Customer can renew early',$blocked,null,null,null,$help);}
         return self::row('Customer can renew early',$on?'On':'Off',$on?'success':null,$blocked,$blocked===null?'renew_early':null,$help);
     }
-    private static function tlds(Account $a,?object $binding): array
+    private static function tlds(Account $a,?object $binding,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers=null): array
     {
-        try { $endings=($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed())?$offers->endings($binding):array_keys(CatalogueAcceptances::load($binding)->endings); } catch (\Throwable) { $endings=[]; }
+        try {
+            $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$endings=[];
+            if($offers){
+                \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)
+                    ->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings):void {
+                        $page=$offers->page($rows);
+                        foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($sales['register']||$sales['transfer']){$endings[]=$t->tld;}}
+                    });
+            }else{$endings=array_keys(CatalogueAcceptances::load($binding)->endings);}
+        } catch (\Throwable) { $endings=[]; }
         sort($endings);
         try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
         return [...self::row('What you sell',$endings?\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary($endings):null,null,$endings?null:'Choose the TLDs you sell.',null,'The TLDs customers can buy from this account.'),

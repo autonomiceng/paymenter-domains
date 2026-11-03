@@ -27,7 +27,7 @@ final readonly class RenewalAdmission
     {
         OperationClaims::outside(); $status = RenewalStatus::Unknown; $renewalUntil = null;
         try {
-            [$binding, $name, $stamp, $retail, $nonpremium] = $this->authority->capture($request);
+            [$binding, $name, $stamp, $retail, $nonpremium, $capabilityUntil] = $this->authority->capture($request);
             if(EnomTestRenewal::enabled($binding)&&$request->years!==1){throw new RenewalRefused(RenewalCode::Term);}
             if ($reserve) { $this->accepted->reserve($binding); } else { $this->accepted->requireCurrent($binding); }
             $reader = $this->bindings->reader($binding->serverId); $binding->requireMatch($reader->binding());
@@ -72,6 +72,7 @@ final readonly class RenewalAdmission
             }
             $until = min($context->deadline, $facts->quote->validUntil, $started->modify('+120 seconds'));
             if ($renewalUntil !== null) { $until = min($until, $renewalUntil); }
+            if ($capabilityUntil !== null) { $until = min($until, $capabilityUntil); }
             $this->authority->recheck($request, $stamp, $this->accepted, $until);
             return new RenewalDecision(RenewalCode::Admitted, $status, $cost, $until,
                 $retail !== null && WriteMoney::compare($cost->amount, $retail) > 0 ? 'below_cost' : null, $renewalUntil, $facts->domain->expiry->value);

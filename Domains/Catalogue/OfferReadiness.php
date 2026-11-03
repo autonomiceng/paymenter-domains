@@ -28,13 +28,25 @@ final class OfferReadiness
             ->orderBy('id')->chunkById(25,function($tlds)use($b,$features,$lock,$defaults,&$costs,&$failures,&$counts):void {
                 $names=$tlds->pluck('tld')->all();$queries=[];
                 foreach(['register','renew','transfer'] as $action){foreach($action==='register'?range(1,10):[1] as $term){$queries[]=new Query($b,$names,$action,$term);}}
-                $loaded=$lock?$this->reader->loadBatch($queries,Context::Staff,true):null;
                 $display=$lock?null:$this->reader->displayBatch([new Query($b,$names,'register')],Context::Staff)[0];
                 if($lock){$tlds=Tld::whereKey($tlds->pluck('id'))->orderBy('id')->lockForUpdate()->get();}
                 foreach($tlds as $i=>$t){
-                    $rows=[];
-                    foreach($queries as $j=>$q){$rows[$q->action.':'.$q->term]=$lock?$loaded[$j][$i]:($display[$t->tld][$q->action.':'.$q->term]??null);}
-                    $intent=OfferState::decode($t->catalogue_intent);$sell=$intent['sell']??$defaults['defaultSell']??true;
+                    try {
+                        $intent=OfferState::decode($t->catalogue_intent);
+                        new Intent(...array_intersect_key($intent,array_flip(['sell','longest','transfers','stops'])));
+                        $rows=[];
+                        foreach($queries as $q){
+                            $rows[$q->action.':'.$q->term]=$lock
+                                ? $this->reader->loadBatch([new Query($b,[$t->tld],$q->action,$q->term)],Context::Staff,true)[0][0]
+                                : ($display[$t->tld][$q->action.':'.$q->term]??null);
+                        }
+                    } catch (\Throwable) {
+                        foreach(['registration'=>'register','transfer'=>'transfer','renewal'=>'renew'] as $feature=>$action){
+                            if($features[$feature]??false){$failures[]=['tld'=>$t->tld,'action'=>$action,'term'=>1,'note'=>'Offer unreadable. Check the TLD settings.'];}
+                        }
+                        continue;
+                    }
+                    $sell=$intent['sell']??$defaults['defaultSell']??true;
                     foreach(['registration'=>'register','transfer'=>'transfer','renewal'=>'renew'] as $feature=>$action){
                         if(!($features[$feature]??false)){continue;}
                         if($action!=='renew'&&(!$sell||in_array($action,$intent['stops']??[],true)

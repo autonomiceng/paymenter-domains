@@ -65,8 +65,14 @@ final class Capabilities
             });
         sort($out,SORT_STRING);return $out;
     }
-    public function holder(AccountBinding $b, string $name): RenewalPrice
-    { ($this->authorize)(new Query($b, [$name], 'renew'), Context::Holder); return $this->ports->loadBatch([new Query($b, [$name], 'renew')], Context::Holder)[0][0]->renewal(); }
+    public function holder(AccountBinding $b, string $name, ?Tld $locked = null): RenewalPrice
+    {
+        if ($locked) {
+            if (DB::transactionLevel() !== 1) { throw new \LogicException('Locked holding TLD requires its outer transaction.'); }
+            $this->identity($b, $name, $locked);
+            return $this->holding($b, $locked, [])['retail'] ?? throw new \DomainException('No retained annual retail.');
+        }
+        ($this->authorize)(new Query($b, [$name], 'renew'), Context::Holder); return $this->ports->loadBatch([new Query($b, [$name], 'renew')], Context::Holder)[0][0]->renewal(); }
     public function cost(AccountBinding $b, string $name): ?Cost
     {
         ($this->authorize)(new Query($b, [$name], 'renew'), Context::Holder);

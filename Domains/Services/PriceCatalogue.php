@@ -13,7 +13,7 @@ final class PriceCatalogue
 {
     /** Daily sync plus one missed run. This is our sales policy, never a registrar price lock. */
     public const MAX_COST_AGE_SECONDS = 172800;
-    public function __construct(private readonly PricingRules $rules) {}
+    public function __construct(private readonly PricingRules $rules, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null) {}
 
     /** Cost-only legacy import: deliberately drops publication proof on touched rows. Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.
      * Callback returns explicit rate/no-price entries; omissions NEVER withdraw existing terms.
@@ -186,11 +186,11 @@ final class PriceCatalogue
      */
     public function renewal(int $serverId, string $fingerprint, string $tld, string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): RenewalPrice
     {
-        if ($caps = \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
+        if ($caps = $this->offers ?? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
             if ($currency !== 'USD') { throw new \DomainException('USD holder retail required.'); }
             $b = CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());
             if ($b->fingerprint !== $fingerprint) { throw new \DomainException('Holder binding changed.'); }
-            return $lock ? ($caps->holding($b,$locked ?? throw new \LogicException('Locked holding TLD required.'),[])['retail'] ?? throw new \DomainException('No retained annual retail.')) : $caps->holder($b,$tld);
+            return $caps->holder($b,$tld,$lock ? ($locked ?? throw new \LogicException('Locked holding TLD required.')) : null);
         }
         return CallerRouting::legacy(fn () => $this->legacyRenewal($serverId, $fingerprint, $tld, $currency, $now, $lock, $locked));
     }
