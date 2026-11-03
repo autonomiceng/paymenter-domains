@@ -139,15 +139,21 @@ final class StaffCatalogue
     /** The matrix/CSV contract uses the exact same page snapshots, chunked without an unbounded SQL IN. */
     public function matrix(Collection $tlds,int $years,string $filter='all'): array
     {
-        abort_unless(Staff::requireView()->costs,403);$rows=[];$accounts=[];
+        abort_unless(Staff::requireView()->costs,403);$rows=[];$accounts=[];$skipped=[];$warnings=[];
         $fee=CardFee::read();$default=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule(false,$fee);
         foreach($tlds->chunk(100) as $chunk){$page=$this->page($chunk);$settings=[];
             foreach($chunk as $t){$s=$page[$t->id];$id=(int)$t->server_id;$own=$s['own'];
                 if($filter==='default'&&$own||$filter==='own'&&!$own){continue;}
                 if(!isset($settings[$id])){$a=Account::where('server_id',$id)->sole();$d=OfferState::decode($a->catalogue_defaults);$settings[$id]=[$d,Server::whereKey($id)->value('name')];}
                 [$d,$name]=$settings[$id];$accounts[$id]=$name;$raw=OfferState::decode($t->catalogue_intent);
-                $rule=Pricing::rule($t,$default,$fee);
-                $row=['id'=>(int)$t->id,'tld'=>'.'.$t->tld,'server_id'=>$id,'account'=>$name,'years'=>$years,'pricing'=>$own?'Custom':'Default','currency'=>'USD','prices'=>[],
+                $identity=['id'=>(int)$t->id,'tld'=>'.'.$t->tld,'server_id'=>$id,'account'=>$name,'years'=>$years,'pricing'=>$own?'Custom':'Default','currency'=>'USD'];
+                try{$rule=Pricing::rule($t,$default,$fee);}
+                catch(\DomainException|\InvalidArgumentException $error){
+                    if(!$own){throw $error;}
+                    $skipped[]=[...$identity,'cause'=>'custom_rule'];
+                    $warnings[]=['server_id'=>$id,'account'=>$name,'cause'=>'custom_rule','tlds'=>['.'.$t->tld]];continue;
+                }
+                $row=[...$identity,'prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
                 foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$cost=$offer?->observation()?->total;$price=$offer?->staffRetail();
                     if($action==='renew'&&$years===1){$price=UpgradeEvidence::money($t->catalogue_retained_annual_retail,2);}
@@ -157,6 +163,6 @@ final class StaffCatalogue
                 if($filter==='below_cost'&&!$below||$filter==='loses_money'&&!$loss){continue;}$rows[]=$row;
             }
         }
-        return ['rows'=>$rows,'skipped'=>[],'warnings'=>[],'accounts'=>$accounts,'years'=>$years,'explanations'=>PriceList::explain($rows)];
+        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>$warnings,'accounts'=>$accounts,'years'=>$years,'explanations'=>PriceList::explain($rows)];
     }
 }

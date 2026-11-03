@@ -250,8 +250,8 @@ class WhatYouSell extends Page implements HasTable
             }
             if($progress===null?PriceFill::stale($state,app(Clock::class)->now()->getTimestamp()):in_array($progress['state'],['retrying'],true)){
                 $components[]=Callout::make($all?'Prices for '.$name.' are out of date':'Prices are out of date')->warning()->columnSpanFull()
-                    ->description(($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.SellTable::time((int)$state->filled_at).'. Those prices are still shown.').' We try again once a day. '
-                        .($readerFailed?'Check the registrar account.':($all?'Show this account and use Sync prices to see what stopped the read.':'Use Sync prices to see what stopped the read.')))
+                    ->description(new HtmlString(($state->filled_at===null?'We have not been able to read prices yet.':'The last good read was '.view('domains::partials.moment',['at'=>CarbonImmutable::createFromTimestamp((int)$state->filled_at,config('app.timezone'))])->render().'. Those prices are still shown.').' We try again once a day. '
+                        .($readerFailed?'Check the registrar account.':($all?'Show this account and use Sync prices to see what stopped the read.':'Use Sync prices to see what stopped the read.'))))
                     ->footer($all&&!$readerFailed?$button('Show this account',self::getUrl(['account'=>$server])):null);
             }
         }
