@@ -78,7 +78,13 @@ final class Dns
         $address = self::address($type, $row['value'] ?? null);
         $record = ['name' => $name === '' ? '@' : $name, 'type' => $type, 'address' => $address,
             'mx_pref' => $type === 'MX' ? $distance : 10, 'record_id' => $id, 'ttl' => $ttl];
-        if ($type === 'SRV') { $record += ['distance' => $distance, 'priority_proven' => false]; }
+        if ($type === 'SRV') {
+            $parts = explode(':', $address);
+            if (count($parts) !== 3) { throw new \DomainException; }
+            $record += ['distance' => $distance, 'priority_proven' => false,
+                'weight' => self::integer($parts[0], 65535), 'port' => self::integer($parts[1], 65535),
+                'target' => $parts[2] === '.' ? '.' : self::address('CNAME', $parts[2])];
+        }
         return $record;
     }
 
