@@ -131,7 +131,7 @@ final class LiveActivation
             if($features['transfer']??false){$this->history($b,$e,'transfer');}
             if(($features['transfer']??false)&&$this->provider->transferProofRequired()&&(!is_array($e['transfer_proof']??null)||!$this->dated($e['transfer_proof']))){throw new \DomainException('Transfer proof Missing. Finish the approved Live transfer pilot and have your site admin record its dated result. Transfers can stay Off.');}
         });
-        $check($priceReadiness);
+        $check(static function()use($priceReadiness,$b,$now):void {$priceReadiness($b,$now);});
         return array_values(array_unique($missing));
     }
     /** A receipt is assembled only after the caller's reviewed readiness check; this method writes nothing. */

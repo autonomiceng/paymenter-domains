@@ -38,8 +38,8 @@ final class EnomLiveActivation
     public static function problems(Account $a,array $features): array {return self::readiness($a,$features);}
     private static function readiness(Account $a,array $features,?array $projection=null): array
     {
-        return self::engine()->problems($a,$features,static function()use($a,$features,$projection):void {
-            if($projection===null){self::prices($a,CatalogueAcceptances::binding($a),$features,app(Clock::class)->now());}
+        return self::engine()->problems($a,$features,static function(AccountBinding $b,\DateTimeImmutable $now)use($a,$features,$projection):void {
+            if($projection===null){self::prices($a,$b,$features,$now);}
             elseif($projection['missing']!==null){throw new \DomainException($projection['missing']);}
         });
     }
