@@ -187,7 +187,7 @@ final readonly class OwnedDomains
                 // Lock and privacy as last read from the registrar (a confirmed change first, then the sync); null until read.
                 foreach (['lock'=>'locked','privacy'=>'privacy'] as $cap=>$fact) { if (isset($management[$cap])) { $management[$cap]['state']=self::storedFlag($d,$cap,$fact); } }
             }
-            if(!RegistrationDns::registrarDns($d)){unset($management['dns'],$management['srv']);}
+            if($d->registrar_key==='enom'&&!RegistrationDns::registrarDns($d)){unset($management['dns'],$management['srv']);}
             try {
                 $sections=$forms&&array_intersect(array_keys($management),['dns','srv','ds','glue'])?ObservationProjection::sections($d):[];
                 $records=$sections?OwnerRecords::forDomain($d,$sections):[];
