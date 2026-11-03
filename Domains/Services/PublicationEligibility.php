@@ -40,7 +40,6 @@ final class PublicationEligibility
     public static function requireEvidence(Tld $tld, string $action, int $term,
         \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, ?Price $renewal, ?Price $acquisition): void
     {
-        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         if (!RegistryInputs::supported($tld->registrar_key, $tld->tld, $tld->registry_fields)) { throw new \DomainException('Registry details are not supported for this ending.'); }
         $row = $accepted->endings[$tld->tld] ?? [];
         if (!($row['registry'] ?? false) || !($row['renewal_safe'] ?? false) || !in_array(1, $row['renew'] ?? [], true)
