@@ -57,7 +57,9 @@ $registry=new RegistrarRegistry;$bindings=new AccountBindings($registry);$allow=
 // Mutable acceptance must revoke already-created handles as well as future factories.
 $accept=static function($b,$r)use(&$allow,&$revision,$binding):bool{return $allow&&$b->matches($binding)&&$r===$revision;};
 $factory=NameSiloAdoptionReader::factory($bindings->nameSiloRuntimeReaderFactory($binding,$clock,$accept));
-$registry->register('namesilo',['api_key'],new AccountVerifier,static fn()=>throw new \LogicException('No general reader fallback'),adoptionReaderFactory:$factory);
+// Retained local enrollment requires its original authenticator composition; import never invokes it.
+$registry->register('namesilo',['api_key'],new AccountVerifier,static fn()=>throw new \LogicException('No general reader fallback'),
+    adoptionReaderFactory:$factory,authenticator:new CredentialAuthenticator(Environment::Live));
 $mapping=new AdoptionMapping($native,$prices,$clock,$bindings);$reader=new AdoptionReader($bindings,$mapping,$clock);$commit=new AdoptionCommit($mapping,$bindings,$clock);
 $target=new Target('example-import.com',$service->id,$owner->id,$server->id,Environment::Live);
 $GLOBALS['importCalls']=0;$GLOBALS['importReply']=['code'=>300,'detail'=>'success','created'=>'2020-01-01','expires'=>'2027-11-02','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',
