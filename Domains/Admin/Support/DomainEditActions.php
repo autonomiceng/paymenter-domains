@@ -86,18 +86,15 @@ final class DomainEditActions
         return self::edit($d,'lock',self::lockLabel($state),$state===false?'Turn on transfer lock?':'Turn off transfer lock?',$form,
             fn(array $data)=>['locked'=>(string)($data['locked']??'')],$state===false?null:ManagementForms::lockRisk($d->domain),$state===null?[]:['locked'=>$state?'0':'1'],bound:['opened'=>json_encode($state)]);
     }
-    /** @return list<Action> Staged registrars take new details first, then use them once approved. */
+    /** @return list<Action> One save freezes all contact steps for either registrar. */
     private static function contacts(Domain $d, array $m): array
     {
+        if (!isset($m['actions']['contacts'])) { return []; }
         $form=array_map(fn(string $field)=>TextInput::make($field)->label(self::CONTACT[$field])->maxLength($m['limits'][$field]),array_keys($m['limits']));
-        $staged=$m['staged']; $approved=$staged?$m['approved']:null; $keep=[];
-        if ($approved && isset($m['actions']['contacts'])) { $keep[]=self::edit($d,'contacts','Use the approved details','Use the approved details?',[Hidden::make('approved')],fn(array $data)=>(array)json_decode((string)($data['approved']??''),true),
-            'Step 2 of 2: apply the approved details for '.trim(($approved['contact']['first_name']??'').' '.($approved['contact']['last_name']??'')).'.',bound:['approved'=>json_encode($approved)]); }
-        if (!isset($m['actions'][$staged?'contact_profile':'contacts'])) { return $keep; }
-        return [...$keep,self::edit($d,$staged?'contact_profile':'contacts','Edit','Edit contacts',[...$form,Hidden::make('opened_contacts_digest')],
+        return [self::edit($d,'contacts','Edit','Edit contacts',[...$form,Hidden::make('opened_contacts_digest')],
             fn(array $data)=>['role'=>'all','contact'=>array_map(fn($value)=>(string)($value??''),array_intersect_key($data,$m['limits']))],
-            ($staged?'Step 1 of 2: we send the new details for approval. ':'').'We use these details for every contact on this domain. '.ManagementForms::CONTACTS_RISK,
-            array_intersect_key($m['saved'],$m['limits']),$staged?'Send for approval':'Save',
+            'We use these details for every contact on this domain. '.ManagementForms::CONTACTS_RISK,
+            array_intersect_key($m['saved'],$m['limits']),'Save',
             bound:['opened_contacts_digest'=>$m['digest']])];
     }
     private static function records(Domain $d, string $kind, string $label, array $m): Action

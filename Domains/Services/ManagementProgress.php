@@ -49,27 +49,8 @@ final class ManagementProgress
             $key=self::setting($op->action);
             try {
                 if(!isset($op->policy['management'])){continue;}
-                $pending=self::pending($op,$d);$slow=$pending && $op->created_at->getTimestamp()<=now()->getTimestamp()-30;
-                $sent=($op->attempt['seal']??null)==='sealed';
-                $text=match(true){
-                    $slow=>"This is taking longer than usual. We'll keep trying.",
-                    $pending && $sent=>'Sent. Checking the result…',
-                    $pending && $op->action==='lock'=>($op->policy['management']['input']['locked']??false)?'Turning on…':'Turning off…',
-                    $pending=>'Saving…',
-                    $op->state==='succeeded' && $op->action==='auth_code_email'=>'Email request accepted. Check the '.($d->registrar_key==='namesilo'?'admin contact email':'registrant email').'.',
-                    $op->state==='succeeded' && $op->action==='contact_profile'=>'Details approved. Use the approved details to finish.',
-                    $op->state==='succeeded' && $op->action==='nameservers' && self::nameserversChanged($op,$d)=>'Nameservers changed after this request. Check them and change them if needed.',
-                    $op->state==='succeeded'=>'Saved.',
-                    $op->safe_code==='management_retired'=>'Replaced by your latest choice.',
-                    default=>(ManagementEvidence::outcome($op)===RequestStatus::UNSENT?RequestStatus::UNSENT:($op->action==='auth_code_email'?'The auth code email request failed.':'The '.strtolower(['lock'=>'Transfer lock','nameservers'=>'Nameservers','contacts'=>'Contacts','dns'=>'DNS records','privacy'=>'WHOIS privacy','ds'=>'DNSSEC','glue'=>'Glue records'][self::setting($op->action)]??'change').' change failed.')).self::TRY_AGAIN,
-                };
-                if($op->action==='auth_code_email' && $pending && $sent && !$slow){$text='Email request sent. Acceptance is not confirmed. We will keep checking.';}
-                $settled=$op->state==='succeeded'&&$op->action!=='contact_profile'&&$op->updated_at->getTimestamp()<=now()->getTimestamp()-self::SETTLED_SECONDS;
-                $replaced=$op->safe_code==='management_retired';
-                // What staff read in place of $text, which speaks to the customer.
-                $outcome=$pending||$replaced||$op->state==='succeeded'?null:ManagementEvidence::outcome($op)??RequestStatus::UNCONFIRMED;
-                $row=['id'=>(int)$op->id,'pending'=>$pending,'slow'=>$slow,'text'=>$text,'settled'=>$settled,'outcome'=>$outcome,'replaced'=>$replaced];
-                $priority=$pending?2:($op->safe_code==='management_retired'?0:1);
+                $row=self::sequence($op,$d,self::row($op,$d));
+                $priority=$row['pending']?2:($op->safe_code==='management_retired'?0:1);
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
                 $row=['id'=>(int)$op->id,'pending'=>false,'slow'=>false,'unreadable'=>true,'text'=>self::UNREADABLE];
                 $priority=2;
@@ -77,6 +58,54 @@ final class ManagementProgress
             if(!isset($priorities[$key]) || $priority>$priorities[$key]){$rows[$key]=$row;$priorities[$key]=$priority;}
         }
         return $rows;
+    }
+    private static function row(Operation $op, Domain $d): array
+    {
+        $pending=self::pending($op,$d);$slow=$pending && $op->created_at->getTimestamp()<=now()->getTimestamp()-30;
+        $sent=($op->attempt['seal']??null)==='sealed';
+        $text=match(true){
+            $slow=>"This is taking longer than usual. We'll keep trying.",
+            $pending && $sent=>'Sent. Checking the result…',
+            $pending && $op->action==='lock'=>($op->policy['management']['input']['locked']??false)?'Turning on…':'Turning off…',
+            $pending=>'Saving…',
+            $op->state==='succeeded' && $op->action==='auth_code_email'=>'Email request accepted. Check the '.($d->registrar_key==='namesilo'?'admin contact email':'registrant email').'.',
+            $op->state==='succeeded' && $op->action==='contact_profile'=>'Details approved. Use the approved details to finish.',
+            $op->state==='succeeded' && $op->action==='nameservers' && self::nameserversChanged($op,$d)=>'Nameservers changed after this request. Check them and change them if needed.',
+            $op->state==='succeeded'=>'Saved.',
+            $op->safe_code==='management_retired'=>'Replaced by your latest choice.',
+            default=>(ManagementEvidence::outcome($op)===RequestStatus::UNSENT?RequestStatus::UNSENT:($op->action==='auth_code_email'?'The auth code email request failed.':'The '.strtolower(['lock'=>'Transfer lock','nameservers'=>'Nameservers','contacts'=>'Contacts','dns'=>'DNS records','privacy'=>'WHOIS privacy','ds'=>'DNSSEC','glue'=>'Glue records'][self::setting($op->action)]??'change').' change failed.')).self::TRY_AGAIN,
+        };
+        if($op->action==='auth_code_email' && $pending && $sent && !$slow){$text='Email request sent. Acceptance is not confirmed. We will keep checking.';}
+        $settled=$op->state==='succeeded'&&$op->action!=='contact_profile'&&$op->updated_at->getTimestamp()<=now()->getTimestamp()-self::SETTLED_SECONDS;
+        $replaced=$op->safe_code==='management_retired';
+        // What staff read in place of $text, which speaks to the customer.
+        $outcome=$pending||$replaced||$op->state==='succeeded'?null:ManagementEvidence::outcome($op)??RequestStatus::UNCONFIRMED;
+        $row=['id'=>(int)$op->id,'pending'=>$pending,'slow'=>$slow,'text'=>$text,'settled'=>$settled,'outcome'=>$outcome,'replaced'=>$replaced];
+        return $row;
+    }
+
+    /** Retained sequence facts only: an unsent parent must not hide its prerequisite's outcome. */
+    private static function sequence(Operation $op, Domain $d, array $row): array
+    {
+        $key=$op->policy['management']['prerequisite']['key']??null;
+        if ($op->action!=='contacts' || !is_string($key) || isset($op->attempt['management_terminal'])) { return $row; }
+        $step=$d->operations()->where('operation_key',$key)->where('action','contact_profile')
+            ->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->first();
+        if (!$step || ($step->policy['management']['sequence_parent']??null)!==$op->operation_key) { return $row; }
+        $verified=$step->state==='succeeded' && ManagementEvidence::resolved($step,$d);
+        if ($verified && $op->state==='succeeded' && ManagementEvidence::resolved($op,$d)) {
+            return [...$row,'text'=>'Contact details verified.'];
+        }
+        // Once association was sent, its own pending/readback status is the sequence status.
+        if (!ManagementEvidence::idle($op)) { return $row; }
+        if ($verified) { return [...$row,'text'=>'Contact details saved. Applying them to the domain.']; }
+        $row=[...self::row($step,$d),'id'=>(int)$op->id];
+        if ($step->state==='uncertain' && ($step->attempt['seal']??null)==='sealed'
+            && !isset($step->attempt['management_ack']['profile_id'])) {
+            $row['text']="We couldn't confirm the new contact details. Nothing else was changed. Contact support and we'll sort it out.";
+            $row['tone']='warning';
+        }
+        return $row;
     }
     private static function nameserversChanged(Operation $op, Domain $d): bool
     {

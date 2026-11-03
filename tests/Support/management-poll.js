@@ -6,8 +6,10 @@ const script = require('node:fs').readFileSync(0, 'utf8');
 (async () => {
     for (const status of [200, 403]) {
         let timer, reloaded = 0;
-        const control = {dataset: {managementPending: 'lock', operation: '42'}, textContent: ''};
-        const row = {id: 42, pending: true, slow: false, text: 'Turning off…'};
+        const classes = new Set();
+        const control = {dataset: {managementPending: 'lock', operation: '42'}, textContent: '',
+            classList: {toggle(name, enabled) { if (enabled) { classes.add(name); } else { classes.delete(name); } }}};
+        const row = {id: 42, pending: true, slow: false, tone: 'info', text: 'Turning off…'};
         const delays = [];
         vm.runInNewContext(script, {
             Date,
@@ -25,9 +27,12 @@ const script = require('node:fs').readFileSync(0, 'utf8');
         await tick();
         if (status === 403) { assert.equal(timer, null, 'Lost ownership stops polling'); continue; }
         assert.equal(control.textContent, row.text);
+        assert.equal(classes.has('domains-tone-text-warn'), false);
         assert.equal(delays.pop(), 2000);
         row.slow = true;
+        row.tone = 'warning';
         await tick();
+        assert.equal(classes.has('domains-tone-text-warn'), true, 'Support status gets the warning tone');
         assert.equal(delays.pop(), 10000, 'Stored slow state survives a reload');
         row.pending = false;
         await tick();
