@@ -21,8 +21,8 @@ import build
 # older version is implied. Source is pinned, with explicit unreleased schema
 # fixture adjustments below; superseded declarations have no upgrade path.
 PREVIOUS = 'e7881cf404e934e1cc84931ab9036e84804b8b61'
-# Last C6 runtime before fresh lifecycle activation; a real native installation, not a gate edit.
-RETAINED = 'e2d48467b37cd17ec56cd0774ef6550ca54c150d'
+# Published main before C activation: a production-valid retained installation.
+RETAINED = 'eab53f0e98c8c2274adc7b4d5e806aa612e0d325'
 
 
 def previous_build(root, revision=PREVIOUS, *, legacy=True, name='previous'):
