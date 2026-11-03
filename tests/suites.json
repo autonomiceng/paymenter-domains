@@ -384,6 +384,7 @@
     "tests/enom-test-send-limit-test.php",
     "tests/api-call-limit-form-test.php",
     "tests/live-reservations-test.php",
+    "tests/namesilo-admitted-transport-test.php",
     "tests/enom-send-limit-upgrade-test.php",
     "tests/enom-send-limit-unsent-writes-test.php",
     "tests/enom-send-limit-unsent-purchase-test.php",
