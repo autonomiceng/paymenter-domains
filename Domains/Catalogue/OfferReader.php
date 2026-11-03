@@ -9,45 +9,91 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 
-/** Local batch loader. B6 supplies scoped authorization and local feature/processing readiness.
- * Locked reads join checkout AFTER its native locks. No callback may perform provider I/O. */
+/** Local loader. Authorization and readiness callbacks must never resolve a provider.
+ * Locked batches join checkout AFTER all native item/product/plan/price locks. */
 final class OfferReader
 {
     public function __construct(private readonly Clock $clock, private readonly \Closure $authorize,
         private readonly \Closure $ready) {}
 
     public function readOffers(Query $query, Context $context): array
+    { return $this->readBatch([$query], $context)[0]; }
+
+    /** @param non-empty-list<Query> $queries @return list<list<Decision>> */
+    public function readBatch(array $queries, Context $context, bool $lock = false): array
     {
-        ($this->authorize)($query, $context);
-        $lock = $context === Context::Locked;
+        return array_map(static fn ($batch) => array_map(static fn (ReadOffer $row) => $row->decision, $batch),
+            $this->loadBatch($queries, $context, $lock));
+    }
+
+    /** Server-only DTO mapping shares exactly the same loaded rows and evaluator as readBatch.
+     * Lock mode is independent of Holder business context; it never turns it into public admission.
+     * @param non-empty-list<Query> $queries @return list<list<ReadOffer>> */
+    public function loadBatch(array $queries, Context $context, bool $lock = false): array
+    {
+        $lock = $lock || $context === Context::Locked;
         if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Locked reads require caller native locks and transaction.'); }
-        $fetch = static function ($q) use ($lock) { return $lock ? $q->lockForUpdate() : $q; };
-        $server = $fetch(Server::whereKey($query->binding->serverId))->firstOrFail();
-        $account = $fetch(Account::where('server_id', $server->id))->sole();
-        $query->binding->requireMatch(CatalogueAcceptances::binding($account));
-        $defaults = OfferState::decode($account->catalogue_defaults);
-        $policies = $fetch(DB::table('domains_sales_policies')->whereIn('tld', $query->tlds)->orderBy('tld'))->get()->keyBy('tld');
-        $tlds = $fetch(UpgradeComparison::query('domains_tlds')->where('server_id', $server->id)->whereIn('tld', $query->tlds)->orderBy('id'))->get();
-        $prices = $fetch(UpgradeComparison::query('domains_prices')->where('server_id', $server->id)->whereIn('tld', $query->tlds)->orderBy('id'))->get()->groupBy('tld');
-        $ready = $server->enabled && $server->extension === 'Domains' && ($this->ready)($query->binding);
-        $result = []; $evaluator = new Evaluator; $now = $this->clock->now();
-        foreach ($tlds as $tld) {
-            if ($tld->account_fingerprint !== $query->binding->fingerprint || $tld->registrar_key !== $query->binding->registrarKey
-                || !$tld->catalogue_converted) { throw new \DomainException('Offer binding or conversion changed.'); }
-            $rows = $prices[$tld->tld] ?? collect();
-            foreach ($rows as $p) {
-                if ($p->account_fingerprint !== $query->binding->fingerprint || $p->registrar_key !== $query->binding->registrarKey) {
-                    throw new \DomainException('Price binding changed.');
-                }
+        if ($queries === [] || !array_is_list($queries) || count($queries) > 500) { throw new \InvalidArgumentException('Invalid offer batch.'); }
+        $bindings = []; $names = []; $count = 0;
+        foreach ($queries as $query) {
+            if (!$query instanceof Query || ($count += count($query->tlds)) > 500) { throw new \InvalidArgumentException('Invalid offer batch.'); }
+            ($this->authorize)($query, $context);
+            $id = $query->binding->serverId;
+            if (isset($bindings[$id])) { $bindings[$id]->requireMatch($query->binding); }
+            $bindings[$id] = $query->binding;
+            foreach ($query->tlds as $name) { $names[$name] = true; }
+        }
+        ksort($bindings, SORT_NUMERIC); $ids = array_keys($bindings); $names = array_keys($names); sort($names, SORT_STRING);
+        $fetch = static fn ($q) => $lock ? $q->lockForUpdate() : $q;
+        // Acquire the whole prefix once. Never lock another account after policies or offers.
+        $servers = $fetch(Server::whereIn('id', $ids)->orderBy('id'))->get()->keyBy('id');
+        $accounts = $fetch(Account::whereIn('server_id', $ids)->orderBy('server_id'))->get()->keyBy('server_id');
+        $defaults = $readiness = [];
+        foreach ($bindings as $id => $binding) {
+            $server = $servers[$id] ?? throw new \DomainException('Offer server disappeared.');
+            $account = $accounts[$id] ?? throw new \DomainException('Offer account disappeared.');
+            $binding->requireMatch(CatalogueAcceptances::binding($account));
+            $defaults[$id] = OfferState::decode($account->catalogue_defaults);
+            foreach ($queries as $i => $query) {
+                if ($query->binding->serverId !== $id) { continue; }
+                ($this->authorize)($query, $context);
+                $readiness[$i] = $server->enabled && $server->extension === 'Domains'
+                    && ($this->ready)($binding, $server, $account, $query, $context);
             }
-            $snapshot = OfferState::snapshot($query->binding, $tld, $defaults, $policies[$tld->tld] ?? null, $rows, $ready);
-            $result[$tld->tld] = $evaluator->evaluate($snapshot, $query, $context, $now);
         }
-        // Preserve query order and fail closed when a candidate disappeared.
-        foreach ($query->tlds as $name) {
-            $result[$name] ??= new Decision($name, $query->action, $query->term, false, null,
-                new Revision(0, $defaults['_revision'] ?? 0, (int) (($policies[$name] ?? null)?->revision ?? 0)), 'unavailable');
+        $policies = $fetch(DB::table('domains_sales_policies')->whereIn('tld', $names)->orderBy('tld'))->get()->keyBy('tld');
+        // Exact account/ending pairs avoid loading another account's unrelated cart candidates.
+        $scope = static function ($q) use ($queries): void {
+            foreach ($queries as $query) {
+                $q->orWhere(static fn ($q) => $q->where('server_id', $query->binding->serverId)->whereIn('tld', $query->tlds));
+            }
+        };
+        $tlds = $fetch(UpgradeComparison::query('domains_tlds')->where($scope)->orderBy('id'))->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
+        $prices = $fetch(UpgradeComparison::query('domains_prices')->where($scope)->orderBy('id'))->get()->groupBy(static fn ($p) => $p->server_id.':'.$p->tld);
+        $result = []; $evaluator = new Evaluator; $now = $this->clock->now();
+        foreach ($queries as $i => $query) {
+            $binding = $query->binding; $d = $defaults[$binding->serverId]; $batch = [];
+            foreach ($query->tlds as $name) {
+                $key = $binding->serverId.':'.$name; $tld = $tlds[$key] ?? null; $policy = $policies[$name] ?? null;
+                $rows = $prices[$key] ?? collect();
+                foreach ([$tld, ...$rows] as $row) {
+                    if ($row !== null && ($row->account_fingerprint !== $binding->fingerprint || $row->registrar_key !== $binding->registrarKey)) {
+                        throw new \DomainException('Offer or price binding changed.');
+                    }
+                }
+                if ($tld === null) {
+                    $decision = new Decision($name, $query->action, $query->term, false, null,
+                        new Revision(0, $d['_revision'] ?? 0, (int) ($policy?->revision ?? 0)), 'unavailable');
+                } else {
+                    if (!$tld->catalogue_converted) { throw new \DomainException('Offer conversion changed.'); }
+                    $snapshot = OfferState::snapshot($binding, $tld, $d, $policy, $rows, $readiness[$i]);
+                    $decision = $evaluator->evaluate($snapshot, $query, $context, $now);
+                }
+                $price = $rows->first(static fn ($p) => $p->action === $query->action && (int) $p->term === $query->term && $p->currency === $query->currency);
+                $batch[] = new ReadOffer($decision, $binding, $price, $context);
+            }
+            $result[] = $batch;
         }
-        return array_map(static fn ($name) => $result[$name], $query->tlds);
+        return $result;
     }
 }
