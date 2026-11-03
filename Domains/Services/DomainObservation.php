@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class DomainObservation
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock, private readonly ReadLimiter $budget, private readonly ?OwnerPorts $records=null, private readonly ?\Closure $recordGate=null) {}
-    public function run(int $id, ?int $generation=null, ?string $fingerprint=null, bool $readRecords=true, ?\Closure $current=null): string
+    public function run(int $id, ?int $generation=null, ?string $fingerprint=null, bool $readRecords=true, ?\Closure $current=null, ?\Closure $completion=null): string
     {
         OperationClaims::outside(); if($current){$current();} $seed=Domain::findOrFail($id);
         if (($generation!==null&&$seed->authority_generation!==$generation)||($fingerprint!==null&&$seed->account_fingerprint!==$fingerprint)) { throw new ReadDeferred('Stale observation work.'); }
@@ -68,7 +68,7 @@ final class DomainObservation
                 catch (\Throwable $error) { $records=['glue'=>['state'=>'partial','records'=>$knownGlue]]; $recordFailed=true; $failureCode=ReadFailure::code($error); }
             }
         }
-        return DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential): string {
+        $code=DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential): string {
             $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             $binding->requireMatch(CatalogueAcceptances::binding($l['account']));
             if($current&&!hash_equals($credential,$this->bindings->offerCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
@@ -87,6 +87,7 @@ final class DomainObservation
             if ($readRecords && $this->records!==null && !$recordEnabled) { return 'records_disabled'; }
             return $l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
         });
+        return $completion ? $completion($code,$wireGuard) : $code;
     }
     /** Observation must yield before it can invalidate a live management/financial grant. */
     private function available(array $locked): void

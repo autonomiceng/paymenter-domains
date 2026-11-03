@@ -66,10 +66,11 @@ final class HoldingObservationWork
                 ->where('lease_until','>',$this->clock->now()->getTimestamp());
             if(!(DB::transactionLevel()>0?$q->lockForUpdate():$q)->exists()){throw new ReadDeferred('Stale observation work.');}
         };
-        try{$code=$this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:false,current:$current);}
+        try{return $this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:false,current:$current,
+            completion:fn(string $code,?\Closure $credentials):string=>$this->finish($job,$code,$current,$credentials));}
         catch(ReadDeferred|EnomTestCallLimit){$code='read_deferred';}
         catch(\Throwable $error){$code=ReadFailure::code($error);}
-        $this->finish($job,$code,$guard); return $code;
+        return $this->finish($job,$code,$current);
     }
     private function discover(object $queue, \Closure $guard): void
     {
@@ -111,16 +112,16 @@ final class HoldingObservationWork
             return $job;
         });
     }
-    private function finish(object $job, string $code, \Closure $guard): void
+    private function finish(object $job, string $code, \Closure $guard, ?\Closure $credentials=null): string
     {
-        DB::transaction(function()use($job,$code,$guard):void {
-            try { $guard((int)$job->server_id); }
+        return DB::transaction(function()use($job,$code,$guard,$credentials):string {
+            try { $guard(); if($credentials){$credentials();} }
             catch (\DomainException) {
                 // Draining a stopped generation may release only its own lease, never reschedule it.
                 DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)
-                    ->update(['claim'=>null,'lease_until'=>0]); return;
+                    ->update(['claim'=>null,'lease_until'=>0]); return 'read_deferred';
             }
-            $this->finishCurrent($job,$code);
+            $this->finishCurrent($job,$code); return $code;
         });
     }
     private function finishCurrent(object $job, string $code): void
