@@ -422,7 +422,7 @@ config(['settings.company_name'=>'Example Hosting','app.name'=>'Generic app']);
 $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Shared registration DNS','enabled'=>true,
     'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
-$action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('domain_settings_'.$enom->server_id,'content');
+$action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action);
 $page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('New domains use')->assertSee('Choose an enabled DNS template with Change. Create one under DNS templates first.')->assertSee('Example Hosting does not sell it yet.');
 $anchorDom=new DOMDocument();@$anchorDom->loadHTML($page->html());
@@ -434,7 +434,7 @@ same($template->id,\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Shared registration DNS')->assertSee('ns1.provider.example');
 $history=StaffSettingsReview::historyRows(App\Models\Server::find($enom->server_id));$last=end($history);
 same('Change new domain nameservers',$last['action'],'DNS template selection is audited');same($template->id,$last['after']['dns_template'],'Audit includes the selected template');
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->callAction(TestAction::make('new_domain_dns_'.$silo->server_id)->schemaComponent('domain_settings_'.$silo->server_id,'content'),['dns_template'=>(string)$template->id])->assertHasNoActionErrors()->assertNotified('Saved');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->callAction(TestAction::make('new_domain_dns_'.$silo->server_id)->schemaComponent('account_'.$silo->server_id,'content'),['dns_template'=>(string)$template->id])->assertHasNoActionErrors()->assertNotified('Saved');
 same(2,count(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts($template->id)),'One DNS template can serve both registrar accounts');
 // Retained settings can outlive a template or an old enabled state; neither is an explicit None.
 $dnsSetting=App\Models\Server::find($enom->server_id)->settings()->where('key',\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::KEY)->sole();
