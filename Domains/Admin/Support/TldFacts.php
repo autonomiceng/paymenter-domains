@@ -72,7 +72,7 @@ final class TldFacts
             if($t->use_default_rule){$hash=$defaults[(int)$t->server_id];}else{try{$hash=self::ruleHash($rules->rule($t,false,$fees[(int)$t->server_id]));}catch(\Throwable){$hash=null;}}
             $seller=isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null;
             $out[$t->id]=[...self::build($t,$grants,$accepted[(int)$t->server_id],$hash,$prices[$key($t)]??collect(),static fn():?int=>$seller),
-                'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0),'demo'=>DemoData::is($accounts[(int)$t->server_id]??null)];
+                'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0),'demo'=>DemoData::is($accounts[(int)$t->server_id]??null),'pricing'=>self::legacyPricing($t)];
         }
         return $out;
     }
@@ -102,6 +102,11 @@ final class TldFacts
     public static function pricing(Tld $t): string
     {
         if(($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){return !$catalogue->own($t)?'Default pricing':($catalogue->pricing((int)$t->server_id,$t)['mode']==='fixed'?'Fixed price':'Custom markup');}
+        return self::legacyPricing($t);
+    }
+    /** Label from the already selected legacy page; no mode query per table row. */
+    private static function legacyPricing(Tld $t): string
+    {
         if($t->use_default_rule){return 'Default pricing';}
         if($t->pricing_mode!=='fixed'){return 'Custom markup';}
         try{return (new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($t)['mode']==='fixed'?'Fixed price':'Custom markup';}catch(\Throwable){return 'Custom markup';}
