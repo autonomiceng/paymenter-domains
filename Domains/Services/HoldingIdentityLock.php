@@ -80,6 +80,8 @@ final class HoldingIdentityLock
         }
         $server = \App\Models\Server::whereKey($domain->server_id)->lockForUpdate()->firstOrFail();
         $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
+        $state=\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState();
+        if($state['state']==='active'){\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::current($state['generation']);}
         $settings = $server->settings()->orderBy('id')->lockForUpdate()->get();
         $tld = \Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id' => $server->id, 'tld' => $domain->tld])->lockForUpdate()->firstOrFail();
         if ($server->extension !== 'Domains' || $account->registrar_key !== $domain->registrar_key

@@ -51,6 +51,7 @@
     "tests/offer-runtime-work-test.php",
     "tests/offer-routing-test.php",
     "tests/offer-activation-test.php",
+    "tests/offer-cutover-test.php",
     "tests/test_enom_send_limit_concurrency.py",
     "tests/management-send-bound-test.php",
     "tests/management-send-reservations-test.php",

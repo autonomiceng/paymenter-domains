@@ -16,13 +16,33 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionO
 final class CallerRouting
 {
     private static ?array $probe = null;
-    public static function reset(): void {}
-    public static function legacy(\Closure $body): mixed { return $body(); }
-    public static function resolve(string $type): ?object { return self::$probe[$type] ?? null; }
+    private static ?array $active = null;
+    private static ?int $generation = null;
+    public static function reset(): void { self::$active = null; self::$generation = null; }
+    public static function legacy(\Closure $body): mixed
+    { if (UpgradeGate::routeState()['state'] === 'active') { throw new \DomainException('Legacy catalogue path is superseded.'); } return $body(); }
+    public static function resolve(string $type): ?object
+    {
+        if (self::$probe !== null) { return self::$probe[$type] ?? null; }
+        $state = UpgradeGate::routeState();
+        if ($state['state'] !== 'active') { return null; }
+        if (self::$generation !== $state['generation']) {
+            $contract = self::contract();
+            if (!hash_equals($contract['id'], $state['contract'])) { throw new \DomainException('Installed catalogue contract changed.'); }
+            self::$active = self::composition($state['generation']); self::$generation = $state['generation'];
+        }
+        return self::$active[$type] ?? null;
+    }
 
-    /** C6a deliberately has no executable active generation. */
+    /** Every invocation and write retains its captured generation. Account prefix precedes gate. */
     public static function current(int $generation, ?int $server = null): void
-    { throw new \DomainException('Catalogue cutover is not installed.'); }
+    {
+        if (DB::transactionLevel() > 0 && $server !== null) {
+            Server::whereKey($server)->lockForUpdate()->firstOrFail();
+            \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->lockForUpdate()->sole();
+        }
+        UpgradeGate::active($generation);
+    }
 
     private static function composition(int $generation): array
     {

@@ -35,6 +35,7 @@ final class UpgradeGate
             || !is_int($state['generation'] ?? null) || $state['generation'] < 1) {
             throw new \DomainException('Catalogue upgrade state is invalid; keep maintenance active.');
         }
+        if ($state['state'] === 'active' && (!preg_match('/^[a-f0-9]{64}$/D', $state['contract'] ?? '') || !preg_match('/^[a-f0-9]{64}$/D', $state['digest'] ?? ''))) { throw new \DomainException('Invalid active catalogue contract.'); }
         return $state;
     }
 
