@@ -204,11 +204,11 @@ $missing=$factRow($dnsPage->html(),'DNS records');
 expect($missing&&str_contains($missing->textContent,'Not read yet')&&str_contains($missing->textContent,'Use Sync now to read them.'),'Unread DNS keeps the current recovery instruction after a saved change');
 expect(str_contains($missing->textContent,'Saved.'),'The saved request remains a separate progress line under unread DNS');
 same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Failed sync does not rewrite the completed request');
-$dnsPage->assertSee('DNS records request')->assertSee('Saved.');
+$dnsPage->assertSee('DNS records')->assertSee('Saved.');
 $readAt=$clock->now()->modify('+2 minutes');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
 $dnsPage->call('pollManagement');$available=$factRow($dnsPage->html(),'DNS records');
 expect($available&&str_contains($available->textContent,'1 record')&&str_contains($available->textContent,'1 SRV')
     &&str_contains($available->textContent,'As of '.$readAt->format(DATE_ATOM)),'Available DNS keeps its as-of time and SRV count beside management status');
-$dnsPage->assertSee('DNS records request')->assertSee('Saved.');
+$dnsPage->assertSee('DNS records')->assertSee('Saved.');
 echo "Management pending controls, duplicate requests, local status and immediate start passed.\n";$nativeSuccessful=true;
