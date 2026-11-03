@@ -176,18 +176,39 @@ final class DomainFacts
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
         return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal']);
     }
-    /** The line under the status: its reason, then the staff step. */
+    /** The status reason, then the staff step, as sentences. */
     public static function statusLine(array $status): ?string
-    { return implode(' · ',array_filter([$status['reason'],$status['step']]))?:null; }
+    { return implode(' ',array_map(StaffDomainStatus::sentence(...),array_filter([$status['reason'],$status['step']])))?:null; }
+    /** The Note in the Domains list: the status line, or what a sync problem needs. $act: staff have a job here.
+     * @return array{text:?string,act:bool} */
+    public static function note(array $status, ?string $sync): array
+    {
+        $line=self::statusLine($status);
+        if ($line!==null) { return ['text'=>$line,'act'=>$status['act']]; }
+        return match($sync) { 'failed'=>['text'=>'Sync failed. Sync again from the domain.','act'=>true],'paused'=>['text'=>'Sync paused.','act'=>false],default=>['text'=>null,'act'=>false] };
+    }
     /** The request a status step names, when this panel can open it. */
     public static function requestUrl(array $status): ?string
     { return $status['request']?self::url(fn()=>OperationResource::getUrl('view',['record'=>$status['request']])):null; }
-    /** The status line, with its "Open request #N." as a link. */
+    /** The status line, with its "Check request #N." as a link and a mark when staff have a job here. */
     public static function stepHtml(array $status): string|HtmlString|null
     {
-        $line=self::statusLine($status); $open='Open request #'.$status['request'].'.'; $url=self::requestUrl($status);
-        if (!$url||!str_ends_with((string)$line,$open)) { return $line; }
-        return new HtmlString(e(substr($line,0,-strlen($open))).'<a href="'.e($url).'" style="text-decoration:underline">'.e($open).'</a>');
+        $line=self::statusLine($status); $check='Check request #'.$status['request'].'.'; $url=self::requestUrl($status);
+        if ($line===null) { return null; }
+        $linked=$url&&str_ends_with($line,$check);
+        if (!$linked&&!$status['act']) { return $line; }
+        $html=new HtmlString($linked?e(substr($line,0,-strlen($check))).self::requestLink($url,$check):e($line));
+        return $status['act']?StatusMark::act($html):$html;
+    }
+    /** A link to a request, in the text around it. */
+    public static function requestLink(string $url, string $label): string
+    { return '<a class="domains-link" href="'.e($url).'" style="text-decoration:underline">'.e($label).'</a>'; }
+    /** A Note cell is already the link, since a table row can't hold another one. Its step just has to look like one. */
+    public static function noteStep(string $note, array $status): string|HtmlString
+    {
+        $check='Check request #'.$status['request'].'.';
+        if (!self::requestUrl($status)||!str_ends_with($note,$check)) { return $note; }
+        return new HtmlString(e(substr($note,0,-strlen($check))).'<span class="domains-link" style="text-decoration:underline">'.e($check).'</span>');
     }
     /** The one page notice: the most urgent cause and its fix. */
     public static function notice(Domain $d): ?array
@@ -195,7 +216,7 @@ final class DomainFacts
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
         $request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
-        $requestLink=$request?['label'=>'Open request #'.$request,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$request]))]:null;
+        $requestLink=$request?['label'=>'Check request #'.$request,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$request]))]:null;
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
@@ -221,7 +242,7 @@ final class DomainFacts
             $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code)),'.');
             $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.(preg_match('/\A(?:Enom|NameSilo)\b/',$cause)?$cause:lcfirst($cause))).'.':' not confirmed by the registrar.');
             try{$title=RequestFacts::readyMessage($op)??$title;}catch(\Throwable){}
-            return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Open request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
+            return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         return null;
     }

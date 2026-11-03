@@ -9,7 +9,7 @@ use Filament\Schemas\Components\{Callout, Section};
 use Filament\Schemas\Schema;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HistoryRecovery, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Staff, StaffReviewHistory};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HistoryRecovery, Labels, MissingEntry, OperationActions, RegistrarFacts, RequestFacts, Staff, StaffReviewHistory, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewOperation extends ViewRecord
@@ -24,7 +24,7 @@ class ViewOperation extends ViewRecord
         $status=Labels::requestStatus($this->getRecord());
         return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem">'.e($this->getTitle())
             .(OperationResource::demo($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
-            .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.self::FACTS_STYLE);
+            .StatusMark::head($status['tone'],$status['label'],'request-'.$this->getRecord()->id)->toHtml().'</span>'.self::FACTS_STYLE);
     }
     /** The reason line under the heading when no notice says it. */
     public function getSubheading(): ?string

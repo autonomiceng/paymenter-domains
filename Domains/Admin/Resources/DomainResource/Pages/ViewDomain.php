@@ -10,7 +10,7 @@ use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, AcquisitionPaymentReview, DomainEditActions, DomainFacts, HelpHint, HoldingActions, MissingEntry, NoticeReview, OperationActions, RegistrarFacts, Staff, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainName;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
@@ -30,7 +30,7 @@ class ViewDomain extends ViewRecord
         $status=DomainFacts::status($this->getRecord());
         return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span class="font-mono" style="overflow-wrap:anywhere">'.DomainName::html($this->getTitle())->toHtml().'</span>'
             .(DemoData::is($this->getRecord())?DemoData::tag(inline:true)->toHtml():'')
-            .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.self::FACTS_STYLE);
+            .StatusMark::head($status['tone'],$status['label'],'domain-'.$this->getRecord()->id)->toHtml().'</span>'.self::FACTS_STYLE);
     }
     public function getSubheading(): string|Htmlable|null { return DomainFacts::stepHtml(DomainFacts::status($this->getRecord())); }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }

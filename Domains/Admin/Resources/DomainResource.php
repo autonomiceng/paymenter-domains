@@ -9,7 +9,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount, Staff, StaffDomainInputs};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount, Staff, StaffDomainInputs, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
@@ -54,12 +54,14 @@ class DomainResource extends Resource
             DemoTag::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->description(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->extraAttributes(['style'=>DomainName::CELL])),
-            // One status and its next step. Every open alert is listed on the domain page. A step that names a request opens it.
             TextColumn::make('status')->label('Status')->badge()->state(fn(Domain $record,$livewire)=>self::status($record,$livewire)['label'])
-                ->wrap()->extraAttributes(['style'=>'max-width:20rem;overflow-wrap:anywhere'])
+                ->extraAttributes(fn(Domain $record,$livewire)=>StatusMark::attributes(self::status($record,$livewire)['tone'],'domain-'.$record->id))
+                ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone']),
+            // The next step, never cut short. Every open alert is listed on the domain page. A step that names a request opens it.
+            TextColumn::make('note')->label('Note')->state(fn(Domain $record,$livewire)=>self::note($record,$livewire)['text'])->wrap()->color('gray')
+                ->formatStateUsing(fn(string $state,Domain $record,$livewire)=>DomainFacts::noteStep($state,self::status($record,$livewire)))
                 ->url(fn(Domain $record,$livewire)=>DomainFacts::requestUrl(self::status($record,$livewire)))
-                ->color(fn(Domain $record,$livewire)=>self::status($record,$livewire)['tone'])->description(fn(Domain $record,$livewire)=>DomainFacts::statusLine(self::status($record,$livewire))
-                    ??match(self::row($record,$livewire)['sync']){'failed'=>'Sync failed','paused'=>'Sync paused',default=>null}),
+                ->extraAttributes(fn(Domain $record,$livewire)=>['style'=>'min-width:14rem;max-width:24rem;overflow-wrap:anywhere',...StatusMark::note(self::note($record,$livewire)['act'])]),
             TextColumn::make('provider_expires_at')->label('Expires')->state(fn(Domain $record)=>$record->provider_expires_at?->format('M j, Y')
                 ?? (self::registered($record)?Missing::LABEL:null))->color(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::color(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
                 ->icon(fn($state,Domain $record,$livewire)=>$state===Missing::LABEL?Missing::icon(DomainFacts::unread($record,self::row($record,$livewire)['sync'])):null)
@@ -70,8 +72,8 @@ class DomainResource extends Resource
                 null=>Missing::LABEL,true=>'Off',false=>'On'})
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null),
-            TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' · #'.$record->server_id:Missing::LABEL)
-                ->wrap()->extraAttributes(['style'=>'max-width:12rem;overflow-wrap:anywhere'])
+            TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' #'.$record->server_id:Missing::LABEL)
+                ->toggleable(isToggledHiddenByDefault:true)->wrap()->extraAttributes(['style'=>'max-width:12rem;overflow-wrap:anywhere'])
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::ICON:null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found. Check Registrars.':(self::REGISTRARS[$record->registrar_key]??null)),
         ])->filters([
@@ -79,7 +81,7 @@ class DomainResource extends Resource
                 ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
             SelectFilter::make('server_id')->label('Registrar account')->options(function(): array {
                 if (!Staff::can()) { return []; }
-                return \App\Models\Server::whereIn('id',Account::query()->pluck('server_id'))->orderBy('name')->orderBy('id')->get(['id','name'])->mapWithKeys(fn($server)=>[$server->id=>$server->name.' · #'.$server->id])->all();
+                return \App\Models\Server::whereIn('id',Account::query()->pluck('server_id'))->orderBy('name')->orderBy('id')->get(['id','name'])->mapWithKeys(fn($server)=>[$server->id=>$server->name.' #'.$server->id])->all();
             }),
             SelectFilter::make('expiring')->label('Expires within')->options(['7'=>'7 days','30'=>'30 days','60'=>'60 days','90'=>'90 days'])
                 ->query(function(Builder $query,array $data) {
@@ -91,7 +93,7 @@ class DomainResource extends Resource
             Filter::make('alerts')->label('Open alerts')->toggle()
                 ->query(fn(Builder $query)=>DomainQueries::openAlerts($query)),
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
-            ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25);
+            ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)->stackedOnMobile();
     }
     /** The domain statuses, in DomainStatus order. */
     public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }
@@ -102,6 +104,8 @@ class DomainResource extends Resource
     {
         return DomainFacts::status($record,self::row($record,$livewire)['inputs']);
     }
+    private static function note(Domain $record, mixed $livewire): array
+    { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync']); }
     private static function registered(Domain $record): bool
     { return DomainFacts::registered($record); }
     /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'sync': DomainFacts::sync(). */

@@ -7,11 +7,12 @@ use Filament\Actions\{Action,ActionGroup};
 use Filament\Infolists\Components\TextEntry;
 use Filament\Pages\Page;
 use Filament\Panel;
-use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Group,Components\Html,Components\Section};
+use Filament\Schemas\{Schema,Components\Actions,Components\Flex,Components\Grid,Components\Group,Components\Html,Components\Section};
 use Filament\Support\Enums\FontFamily;
+use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,ReminderAction,SettingsActions,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,StaffSettingsReview};
@@ -42,9 +43,9 @@ class RegistrarAccount extends Page
         $a=$this->record();$status=$this->status();
         return new HtmlString('<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem"><span>'.e($this->getTitle()).'</span>'
             .($a&&DemoData::is($a)?DemoData::tag(inline:true)->toHtml():'')
-            .view('filament::components.badge',['color'=>$status['tone'],'size'=>'lg','slot'=>new HtmlString(e($status['label']))])->render().'</span>'.RegistrarFacts::STYLE);
+            .StatusMark::head($status['tone'],$status['label'],'registrar-'.$this->account)->toHtml().'</span>'.RegistrarFacts::STYLE);
     }
-    public function getSubheading(): ?string { return $this->status()['reason']; }
+    public function getSubheading(): string|Htmlable|null { return RegistrarFacts::reason($this->status()); }
     public function getBreadcrumbs(): array { return [RegistrarSetup::getUrl()=>'Registrars',$this->getTitle()]; }
     protected function afterActionCalled(Action $action): void
     {
@@ -95,10 +96,11 @@ class RegistrarAccount extends Page
                 Section::make('Default pricing')->schema($this->defaultPricing($id))->visible(fn()=>Staff::can(Staff::POLICY))->columnSpanFull(),
             ])->key('account_'.$id)->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
         }
-        $checks=$system['failing']?$this->rows('check',$system['failing'],false):[TextEntry::make('all_good')->hiddenLabel()->state('All good')->icon('heroicon-m-check-circle')->iconColor('success')];
-        if ($system['passing']) { $checks[]=Section::make('Details')->schema($this->rows('pass',$system['passing'],false))->collapsible()->collapsed()->compact(); }
-        $sections[]=Section::make('System checks')->schema($checks)->key('system_checks')->extraAttributes(['class'=>'domains-account'])->columnSpanFull();
-        return $schema->components($sections);
+        $checks=$system['failing']?[$this->trace('check',$system['failing'])]:[TextEntry::make('all_good')->hiddenLabel()->state('All good')->icon('heroicon-m-check-circle')->iconColor('success')];
+        if ($system['passing']) { $checks[]=Section::make('Details')->schema([$this->trace('pass',$system['passing'])])->collapsible()->collapsed()->compact(); }
+        $rail=Section::make('System checks')->description(count($system['passing']).' of '.(count($system['passing'])+count($system['failing'])).' OK')->schema($checks)->key('system_checks');
+        // The rail drops under the sheet on narrow screens.
+        return $schema->components([Grid::make(['default'=>1,'xl'=>3])->columnSpanFull()->schema([Group::make($sections)->columnSpan(['default'=>1,'xl'=>2]),$rail->columnSpan(1)])]);
     }
     /** The account's default pricing and the TLDs that use it. Saving publishes those TLDs. */
     private function defaultPricing(int $id): array
@@ -116,12 +118,19 @@ class RegistrarAccount extends Page
         return [Flex::make([$entry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'default_rule')])->grow(false)])->from('md'),
             Flex::make([$feeEntry,Actions::make([SettingsActions::setup($id,$this->reviewStamp,'card_fee')])->grow(false)])->from('md')];
     }
+    /** Rows on one line, each with its tone: a list to screen readers, plain rows without a skin. */
+    private function trace(string $prefix,array $rows): Group
+    {
+        return Group::make(array_map(fn(array $row,mixed $component)=>Group::make([$component])
+            ->extraAttributes(['class'=>'domains-trace-item','role'=>'listitem','data-beco-tone'=>StatusMark::tone($row['tone'])??'ok']),$rows,$this->rows($prefix,$rows,false,false)))
+            ->extraAttributes(['class'=>'domains-trace','role'=>'list']);
+    }
     /** Fact rows with an optional button each: Missing shows in danger with its cause. */
-    private function rows(string $prefix,array $rows,bool $buttons=true): array
+    private function rows(string $prefix,array $rows,bool $buttons=true,bool $inline=true): array
     {
         $out=[];
         foreach ($rows as $i=>$r) {
-            $entry=MissingEntry::apply(TextEntry::make($prefix.'_'.$i)->label($r['label'])->state($r['value'])->inlineLabel(),cause:$r['value']===null?$r['cause']:null,color:$r['tone']==='success'?null:$r['tone']);
+            $entry=MissingEntry::apply(TextEntry::make($prefix.'_'.$i)->label($r['label'])->state($r['value'])->inlineLabel($inline),cause:$r['value']===null?$r['cause']:null,color:$r['tone']==='success'?null:$r['tone']);
             if ($r['value']!==null&&$r['cause']!==null) { $entry->belowContent($r['tone']==='danger'||$r['tone']==='warning'?RegistrarFacts::tone($r['cause'],$r['tone']):$r['cause']); }
             if ($r['tone']==='success') { $entry->icon('heroicon-m-check-circle')->iconColor('success'); }
             if ($r['help']) { $entry->hintAction(HelpHint::make($r['help'])); }

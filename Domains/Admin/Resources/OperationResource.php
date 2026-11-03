@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Filament\Tables\{Columns\TextColumn, Filters\SelectFilter, Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,NavigationCount,OperationQueries,RequestFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,NavigationCount,OperationQueries,RequestFacts,Staff,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Missing,RequestStatus};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
@@ -54,6 +54,7 @@ class OperationResource extends Resource
                 ->extraAttributes(['style'=>'overflow-wrap:break-word;min-width:11rem;max-width:16rem']),
             TextColumn::make('action')->label('Type')->formatStateUsing(fn($state)=>Labels::action($state)),
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>Labels::requestStatus($record)['tone'])
+                ->extraAttributes(fn($record)=>StatusMark::attributes(Labels::requestStatus($record)['tone'],'request-'.$record->id))
                 ->formatStateUsing(fn($record)=>Labels::requestStatus($record)['label'])->wrap()
                 ->description(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off))),
             TextColumn::make('created_at')->label('Created')->dateTime('M j, Y H:i \\U\\T\\C','UTC')->sortable()->visibleFrom('lg'),

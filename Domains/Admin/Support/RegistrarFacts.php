@@ -40,7 +40,7 @@ final class RegistrarFacts
     {
         return new HtmlString(Blade::render('<x-filament::link :href="$url" target="_blank" rel="noopener noreferrer" icon="heroicon-m-arrow-top-right-on-square" icon-position="after" size="sm">Add funds</x-filament::link>',['url'=>$url]));
     }
-    /** @return array{label:string,tone:string,reason:?string} */
+    /** @return array{label:string,tone:string,reason:?string,request?:int} $request is the request that paused orders */
     public static function status(Server $server, ?Account $account): array
     {
         $configuration=app(AccountBindings::class)->configurationStatus((int)$server->id);
@@ -53,8 +53,15 @@ final class RegistrarFacts
         if ($turn!==null&&$turn!==$account->account_fingerprint) { return AccountStatus::for('configuration_unavailable'); }
         if (DemoData::paused($account)) { return AccountStatus::for($configuration,false,AccountStatus::DEMO_PAUSED); }
         $held=AccountSpendingHolds::query(Operation::where('server_id',$server->id))->where('state','uncertain')->orderBy('id')->value('id');
-        if ($held!==null) { return AccountStatus::for($configuration,false,'Request #'.$held.' unconfirmed'); }
+        if ($held!==null) { return [...AccountStatus::for($configuration,false,'Request #'.$held.' unconfirmed'),'request'=>$held]; }
         return AccountStatus::for($configuration,(bool)$account->processing_enabled);
+    }
+    /** The account's reason under its head. A request that paused orders is a job for staff, so it gets a mark and a link. */
+    public static function reason(array $status): string|HtmlString|null
+    {
+        $url=isset($status['request'])?DomainFacts::requestUrl($status):null;
+        if (!$url) { return $status['reason']; }
+        return StatusMark::act(new HtmlString(e($status['reason']).'. '.DomainFacts::requestLink($url,'Check request #'.$status['request'].'.')));
     }
     /** Add funds and balance checks apply once the account is set up and its server is on. */
     public static function connected(?Account $account, array $status): bool

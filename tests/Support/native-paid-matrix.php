@@ -166,7 +166,7 @@ same($before+1,$writer->calls,'Actual saving guards allow one recovered send: '.
 $late=Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ListDomains::class)->filterTable('status',['failed','cancelled']);
 $late->set('tableDeferredFilters',$late->get('tableFilters'))->call('applyTableFilters')->assertCanSeeTableRecords([$failed->domain,$retired->domain]);
 // The mixed order keeps its own step (registrar result not confirmed), not the late money one.
-same('Registrar has not confirmed the result. Open request #'.$mixed->id.'.',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($mixed->domain->fresh())['step'],'Mixed order keeps its own next step');
+same('Registrar has not confirmed the result. Check request #'.$mixed->id.'.',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($mixed->domain->fresh())['step'],'Mixed order keeps its own next step');
 same('Payment activity after the order closed. Check the invoice.',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($failed->domain->fresh())['step'],'Late payment shows its next step');
 $invoiceUrl=App\Admin\Resources\InvoiceResource::getUrl('edit',['record'=>$failed->invoice_id]);
 Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$failed->domain_id])->assertSee('Payment activity after the order closed. Check the invoice.')->assertSee('Payment activity after the order closed.')->assertSee('Open invoice')->assertSeeHtml('href="'.e($invoiceUrl).'"');

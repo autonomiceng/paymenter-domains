@@ -13,7 +13,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{RegistrarFacts,Staff,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
@@ -59,7 +59,7 @@ class RegistrarSetup extends Page implements HasTable
                     ->suffix(fn(Server $record)=>$row($record)['demo']?DemoData::tag(inline:true):null),
                 TextColumn::make('mode')->label('Mode')->state(fn(Server $record)=>$row($record)['connected']?RegistrarFacts::mode($row($record)['account']):null),
                 TextColumn::make('status')->label('Status')->badge()->state(fn(Server $record)=>$row($record)['status']['label'])
-                    ->color(fn(Server $record)=>$row($record)['status']['tone'])->description(fn(Server $record)=>$row($record)['status']['reason']),
+                    ->color(fn(Server $record)=>$row($record)['status']['tone'])->extraAttributes(fn(Server $record)=>StatusMark::attributes($row($record)['status']['tone'],'registrar-'.$record->id))->description(fn(Server $record)=>$row($record)['status']['reason']),
                 $missing(TextColumn::make('balance')->label('Balance')->state(fn(Server $record)=>$row($record)['balance']?($row($record)['balance']['value']??Missing::LABEL):null)
                     ->description(function(Server $record)use($row){$b=$row($record)['balance'];if(!$b){return null;}
                         return $b['value']===null?$b['cause']:($b['low']?RegistrarFacts::warn('Low balance'):'Checked '.$b['checked']);})),

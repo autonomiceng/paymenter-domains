@@ -6,7 +6,7 @@ use Filament\Tables\{Table,Columns\TextColumn,Filters\Filter,Filters\SelectFilte
 use Filament\Forms\Components\TextInput;
 use Filament\Support\Enums\FontFamily;
 use Illuminate\Database\Eloquent\Builder;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,WatchReadResource,WatchFacts,WatchFindings};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag,StatusMark,WatchReadResource,WatchFacts,WatchFindings};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainName,Missing};
 use Filament\Navigation\NavigationItem;
 use Filament\Pages\Enums\SubNavigationPosition;
@@ -46,7 +46,7 @@ class WatchResource extends WatchReadResource
         return $table->columns([
             DemoTag::apply(TextColumn::make('canonical_name')->label('Domain')->searchable()->sortable()->wrap()->fontFamily(FontFamily::Mono)->formatStateUsing(fn(string $state)=>DomainName::html($state))
                 ->description(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label'])->extraAttributes(['style'=>DomainName::CELL])),
-            TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])
+            TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])->extraAttributes(fn($record,$livewire)=>StatusMark::attributes($livewire->watchRow($record)['status']['tone'],'watch-'.$record->id))
                 ->description(fn($record,$livewire)=>$livewire->watchRow($record)['status']['reason']),
             self::fact(TextColumn::make('registration')->label('Registrar')->visibleFrom('xl'),fn($record)=>['value'=>WatchFindings::who($record->registration),'cause'=>Missing::fills('after the next check')]),
             self::fact(TextColumn::make('delegation.dns')->label('Nameservers')->visibleFrom('lg'),fn($record)=>['value'=>WatchFindings::who($record->delegation?->dns),'cause'=>Missing::fills('after the next check')]),

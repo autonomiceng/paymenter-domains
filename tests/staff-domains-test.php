@@ -76,12 +76,12 @@ try {
         $expected=array_map(fn($d)=>$d->id,$included);sort($expected);
         same($expected,DomainQueries::status(Domain::query(),$groups)->orderBy('id')->pluck('id')->all(),'SQL status selection matches exact native filter membership');
     }
-    same(['Under review','Import not confirmed · Check open invoices.'],[DomainFacts::status($pending)['label'],DomainFacts::statusLine(DomainFacts::status($pending))],'Pending import needs staff action');
+    same(['Under review','Import not confirmed. Check open invoices.'],[DomainFacts::status($pending)['label'],DomainFacts::statusLine(DomainFacts::status($pending))],'Pending import needs staff action');
 } finally {DB::rollBack();}
 DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>null]);
 $acquisition=$active->operations()->sole();$storedState=$acquisition->state;
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'needs_review']);
-foreach(['held'=>'Transfer on hold · Not sent. Open request #'.$acquisition->id.'.','uncertain'=>'Transfer not confirmed · Registrar has not confirmed the result. Open request #'.$acquisition->id.'.'] as $shown=>$reason){
+foreach(['held'=>'Transfer on hold. Not sent. Check request #'.$acquisition->id.'.','uncertain'=>'Transfer not confirmed. Registrar has not confirmed the result. Check request #'.$acquisition->id.'.'] as $shown=>$reason){
     DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$shown]);
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$active]);
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','pending_transfer'])->assertCanNotSeeTableRecords([$active]);
@@ -102,14 +102,14 @@ foreach (['history_limit'=>'Missing: saved record history needs a fresh read. Us
     'records_unavailable'=>"Sync stopped: couldn't read DNS records.",'unmapped_reason_code'=>'Sync stopped: DNS record check failed.'] as $reason=>$label) {
     $recordService::hold($active->fresh(),$reason,new DateTimeImmutable('2026-10-18T12:00:00Z'));
     $alert=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id]);
-    $alert->assertSee($label)->assertSee('Open request #'.$requestId)->assertSeeHtml('href="'.e($requestUrl).'"')->assertDontSee('unmapped_reason_code')->assertDontSee('Resume sync')->assertSet('data',[]);
-    $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Open request #'.$requestId.'"]');
+    $alert->assertSee($label)->assertSee('Check request #'.$requestId)->assertSeeHtml('href="'.e($requestUrl).'"')->assertDontSee('unmapped_reason_code')->assertDontSee('Resume sync')->assertSet('data',[]);
+    $markup=new DOMDocument;@$markup->loadHTML($alert->html());$links=(new DOMXPath($markup))->query('//a[normalize-space(.)="Check request #'.$requestId.'"]');
     same(1,$links->length,'Record notice has its own request link');
     same($requestUrl,$links->item(0)->getAttribute('href'),'Request link targets current bound request');
     expect(!str_contains(json_encode($alert->snapshot),'record_hold'),'Encrypted hold is absent from public state');
 }
 $op=$active->operations()->sole();DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation+1]);
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped: DNS record check failed.')->assertDontSee('Open request #');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Sync stopped: DNS record check failed.')->assertDontSee('Check request #');
 DB::table('domains_operations')->where('id',$op->id)->update(['authority_generation'=>$active->authority_generation]);
 $copy=$active->fresh();$p=$copy->observation;$p['record_hold']['identity']['generation']=0;$copy->update(['observation'=>$p]);
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Sync stopped');
@@ -152,7 +152,7 @@ foreach ([['status',['under_review'],[$held,$long],[$active]],['server_id','2',[
 DB::table('domains_operations')->where('domain_id',$long->id)->update(['state'=>'uncertain']);
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
 same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::attention(Domain::query(),['uncertain'])->pluck('id')->all(),'Unconfirmed transfer query');
-same(['Under review','Transfer not confirmed · Old registrar needs approval. Open request #'.$long->operations()->sole()->id.'.'],[DomainFacts::status($long->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($long->fresh()))],'Unconfirmed transfer keeps its saved reason');
+same(['Under review','Transfer not confirmed. Old registrar needs approval. Check request #'.$long->operations()->sole()->id.'.'],[DomainFacts::status($long->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($long->fresh()))],'Unconfirmed transfer keeps its saved reason');
 // Rejected paid obligations remain visible even when a credit retry failed.
 $review=$long->operations()->sole();
 DB::table('domains_operations')->where('id',$review->id)->update(['state'=>'rejected','funding_basis'=>'paid_invoice','safe_code'=>'transfer_code_timeout']);
@@ -162,7 +162,7 @@ same(['No credit added','credit'],[RequestFacts::for($review)['refund'],RequestF
 same([$long->id],\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::creditReview(Domain::query())->pluck('id')->all(),'Credit review query');
 // A failed request reads Failed for customer and staff. The step points at the failed request.
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['failed'])->assertCanSeeTableRecords([$long]);
-same('Request failed. Open request #'.$review->id.'.',DomainFacts::status($long->fresh())['step'],'Failed request step on a pending transfer');
+same('Request failed. Check request #'.$review->id.'.',DomainFacts::status($long->fresh())['step'],'Failed request step on a pending transfer');
 $review->funding=['refund'=>null]; expect(!RefundCandidates::matches($review,$review->funding),'Even null credit marker excludes uncredited interpretation');
 $review->funding=[]; $review->safe_code='transfer_provider_rejected'; expect(!RefundCandidates::matches($review,[]),'Sent rejection is not an unsent credit candidate');
 DB::table('domains_operations')->where('id',$review->id)->update(['safe_code'=>'transfer_provider_rejected']);

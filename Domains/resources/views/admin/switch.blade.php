@@ -3,7 +3,7 @@
     $click = isset($action) && ! $action->isDisabled() ? $action->getLivewireClickHandler() : null;
     $colors = \Illuminate\Support\Arr::toCssClasses(\Filament\Support\get_component_color_classes(\Filament\Support\View\Components\ToggleComponent::class, $on ? 'success' : 'gray'));
 @endphp
-<span style="display:inline-flex;align-items:center;gap:.5rem">
+<span class="domains-switch" style="display:inline-flex;align-items:center;gap:.5rem">
     <button type="button" role="switch" aria-checked="{{ $on ? 'true' : 'false' }}" @if ($label !== '') aria-label="{{ $label }}" @endif
         @if ($click) wire:click="{{ $click }}" wire:loading.attr="disabled" @else disabled @endif
         class="fi-toggle {{ $on ? 'fi-toggle-on' : 'fi-toggle-off' }} {{ $colors }}">

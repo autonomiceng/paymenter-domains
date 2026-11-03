@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\{Auth,Blade,Log};
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\{Locked,Url};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,SellTable,SettingsActions,Staff,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,SellTable,SettingsActions,Staff,StatusMark,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,SellRow};
@@ -317,7 +317,7 @@ class WhatYouSell extends Page implements HasTable
                 TextColumn::make('pricing')->label('Pricing')->visible($costs)->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow $record)=>$this->reads()->pricing($record)),
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(SellRow $record)=>$this->reads()->status($record)['label'])
-                    ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])
+                    ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(SellRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
                     ->description(fn(SellRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(SellRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
                     ->url(fn(SellRow $record)=>isset($this->reads()->status($record)['open'])?TldResource::getUrl('index'):null),
             ])

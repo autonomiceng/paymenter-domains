@@ -9,7 +9,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries, Labels, RequestFacts, Staff};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainQueries, Labels, RequestFacts, Staff, StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 /** History: registrar requests, staff renewal changes and customer auto-renew changes, newest first. */
@@ -32,7 +32,8 @@ class RequestsRelationManager extends RelationManager
                 ->description(fn($state)=>$state===Missing::LABEL?RequestFacts::NO_TIME:null),
             TextColumn::make('event')->label('Event')->state(fn($record)=>$row($record)['event'])->description(fn($record)=>$row($record)['sub'])->wrap()
                 ->extraAttributes(['style'=>'min-width:14rem;max-width:32rem;overflow-wrap:anywhere']),
-            TextColumn::make('status')->label('Status')->badge()->state(fn($record)=>$row($record)['status']['label']??null)->color(fn($record)=>$row($record)['status']['tone']??'gray'),
+            TextColumn::make('status')->label('Status')->badge()->state(fn($record)=>$row($record)['status']['label']??null)->color(fn($record)=>$row($record)['status']['tone']??'gray')
+                ->extraAttributes(fn($record)=>StatusMark::attributes($row($record)['status']['tone']??'gray',$record instanceof Operation?'request-'.$record->id:null)),
             TextColumn::make('by')->label('By')->state(fn($record)=>$row($record)['by'])->color('gray'),
         ])->recordAction(null)->recordUrl(fn($record)=>$record instanceof Operation?OperationResource::getUrl('view',['record'=>$record]):null)
             ->emptyStateHeading('No history yet')->emptyStateDescription(null)->paginated([10,25,50])->defaultPaginationPageOption(10);

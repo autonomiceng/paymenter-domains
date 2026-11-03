@@ -35,11 +35,11 @@ $pending=\Paymenter\Extensions\Servers\Domains\Admin\Resources\PendingAdoptionRe
 assertDomainNameWraps($pending->record($records[$uncertain->id])->toEmbeddedHtml(),$uncertain->domain,'Adoption pending list');
 same('&lt;b&gt;.<wbr>x-<wbr>y',$pending->formatState('<b>.x-y')->toHtml(),'Adoption pending list escapes the name before adding line breaks');
 assertDomainNameWraps(Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$uncertain->id])->instance()->getHeading()->toHtml(),$uncertain->domain,'Domain page title','title');
-foreach([[$held,'Transfer on hold · Old registrar needs approval. Open request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Transfer not confirmed · Old registrar needs approval. Open request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Check the domain and its requests.']] as [$domain,$reason]){
+foreach([[$held,'Transfer on hold. Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[$uncertain,'Transfer not confirmed. Old registrar needs approval. Check request #'.$uncertain->operations()->sole()->id.'.'],[$active,'Check the domain and its requests.']] as [$domain,$reason]){
     $record=$records[$domain->id];$column=$columns['status']->record($record);
     same('Under review',$column->getState(),'Held, uncertain and stored review share one status');
     same('warning',$column->getColor($column->getState()),'Under review tone');
-    same($reason,$column->getDescriptionBelow(),'The next step sits under the badge');
+    same($reason,$columns['note']->record($record)->getState(),'The next step sits in the note');
     same(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($domain->fresh()),\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::status($record),'Batched list status matches the page');
     same(null,$column->getTooltip(),'No tooltip: the reason is visible');
     same(OwnedDomains::acquisition($record->operations,$record)?->id,$record->latestAcquisition?->id,'Batch matches customer acquisition lookup');
@@ -58,10 +58,10 @@ $copy=$base->replicate();$copy->operation_key='synthetic-resolved';$copy->state=
 $resolved=Livewire::actingAs($viewer)->test(ListDomains::class)->instance();
 $record=$resolved->getTableRecords()->keyBy('id')[$held->id];
 $column=$resolved->getTable()->getColumn('status')->record($record);
-same(['Under review','Check the domain and its requests.'],[$column->getState(),$column->getDescriptionBelow()],'Resolved latest acquisition never revives an older hold');
+same(['Under review','Check the domain and its requests.'],[$column->getState(),$resolved->getTable()->getColumn('note')->record($record)->getState()],'Resolved latest acquisition never revives an older hold');
 // Fallback descriptions preserve retained rows when native records are missing.
 DB::table('domains_domains')->where('id',$held->id)->update(['user_id'=>999999,'server_id'=>999999]);
-$fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSeeText($held->domain)->assertSee('Missing')->assertDontSee('#999999');
+$fallback=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSeeText($held->domain)->assertDontSee('#999999');
 $record=$fallback->instance()->getTableRecords()->keyBy('id')[$held->id];$columns=$fallback->instance()->getTable()->getColumns();
 same([null,'Missing'],[$columns['domain']->record($record)->getDescriptionBelow(),$columns['server_id']->record($record)->getState()],'Missing customer and registrar account keep the row');
 // Age grammar and exact staff copy; frozen timestamps avoid dependence on fixture business clocks.
