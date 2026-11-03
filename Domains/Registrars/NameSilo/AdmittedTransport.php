@@ -31,10 +31,10 @@ final class AdmittedTransport implements DeadlineTransport
     public static function feature(string $command): string
     {
         return match($command){
-            'getAccountBalance','getPrices','checkRegisterAvailability','checkTransferAvailability','getDomainInfo','checkTransferStatus','listOrders','orderDetails','contactList','listRegisteredNameServers'=>'catalogue',
+            'getAccountBalance','getPrices','checkRegisterAvailability','checkTransferAvailability','getDomainInfo','checkTransferStatus','listOrders','orderDetails','contactList','listRegisteredNameServers','dnsListRecords'=>'catalogue',
             'registerDomain'=>'registration','transferDomain'=>'transfer','renewDomain'=>'renewal',
             'contactAdd','contactDomainAssociate','changeNameServers','domainLock','domainUnlock','addPrivacy','removePrivacy','removeAutoRenewal','retrieveAuthCode',
-            'addRegisteredNameServer','modifyRegisteredNameServer','deleteRegisteredNameServer'=>'management',
+            'addRegisteredNameServer','modifyRegisteredNameServer','deleteRegisteredNameServer','dnsAddRecord','dnsUpdateRecord','dnsDeleteRecord'=>'management',
             default=>throw new LiveReservationLimit,
         };
     }

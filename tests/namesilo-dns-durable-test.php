@@ -1,7 +1,11 @@
 <?php
 // Synthetic provider adapter through durable management. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require __DIR__.'/bootstrap.php';
+$transferEnvironment=\Paymenter\Extensions\Servers\Domains\Data\Environment::Live;
 require __DIR__.'/Support/management-namesilo.php';
+$legacyTransferExchange=$exchange;$exchange=static fn($o,$cmd,$p,$t)=>$legacyTransferExchange(str_replace('https://www.namesilo.com','https://ote.namesilo.com',$o),$cmd,$p,$t);
+$legacyManagementExchange=$managementExchange;$managementExchange=static fn($o,$cmd,$p,$t)=>$legacyManagementExchange(str_replace('https://www.namesilo.com','https://ote.namesilo.com',$o),$cmd,$p,$t);
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestOrigin,Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DnsManagement,Dns};
@@ -84,4 +88,26 @@ foreach([false,true] as $partial) {
 $management->run($op->id,$driver);same('held',$op->fresh()->state,'Changed provider preimage refuses before send');
 $fresh=$submit($d,$driver,'dns',['records'=>[$want]]);expect($fresh->id!==$op->id,'Fresh ordinary save replaces a failed unsent preparation');
 Cache::flush();same('succeeded',$management->run($fresh->id,$driver)->state,'New snapshot permits the intended edit');same(['dnsUpdateRecord'],$wire->writes,'Unsent preparation cannot duplicate a mutation');
+// Genuine admitted physical handoff, with namespace cURL fakes and no sockets.
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\AdmittedTransport;
+foreach(['dnsListRecords'=>'catalogue','dnsAddRecord'=>'management','dnsUpdateRecord'=>'management','dnsDeleteRecord'=>'management'] as $command=>$feature) {
+    $actual=null;try{$actual=AdmittedTransport::feature($command);}catch(\Paymenter\Extensions\Servers\Domains\Services\LiveReservationLimit){}
+    same($feature,$actual,'DNS physical admission classifies each child and inventory read');
+}
+require __DIR__.'/Support/namesilo-write-wire.php';
+\Paymenter\Extensions\Servers\Domains\Services\LiveReservationSchema::install();
+[$d]=$setup('dns-physical',[$a,$caa]);$wire->next=0;
+$transport=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\nsWriteTransport($binding,$clock);
+$driver=new DnsManagement($binding,$transport->exchange());$driver->useReservation($transport->reservation);
+$GLOBALS['nsReply']=static fn($cmd,$p)=>$dnsExchange('https://www.namesilo.com/'.$ms->route,$cmd,$p,25000);
+$usage=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\nsUsage($binding);
+$financial=static fn()=>array_map(fn($t)=>DB::table($t)->orderBy('id')->get()->toJson(),['invoices','invoice_items','invoice_transactions','credits','jobs','failed_jobs']);$money=$financial();
+$op=$submit($d,$driver,'dns',['records'=>[$want,$add]]);$first=$d->operations()->where('action','dns')->orderBy('id')->first();$GLOBALS['nsOperation']=$first->id;
+$ms->route='apibatch';$wire->fault='lost';$management->run($op->id,$driver,RequestOrigin::Background);same('uncertain',$first->fresh()->state,'Physical lost reply retains its original consumed grant');
+$wire->fault='';$driver=new DnsManagement($binding,$transport->exchange());$driver->useReservation($transport->reservation);
+$management->run($op->id,$driver,RequestOrigin::Background);same('succeeded',$first->fresh()->state,'Physical recovery reads the exact independent changed inventory');
+Cache::flush();$GLOBALS['nsOperation']=$op->id;same('succeeded',$management->run($op->id,$driver,RequestOrigin::Background)->state,'Final DNS child consumes its separately sealed physical grant');
+same(['dnsUpdateRecord','dnsAddRecord'],array_values(array_filter($GLOBALS['nsPhysical'],fn($cmd)=>AdmittedTransport::feature($cmd)==='management')),'Exactly two physical mutations, no replay');
+$after=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\nsUsage($binding);same($usage['used']+12,$after['used'],'Every physical inventory/ownership read and mutation is accounted once');same($usage['spend_micros'],$after['spend_micros'],'DNS grants spend no money');same($money,$financial(),'DNS sequence does not create invoices, credits or another queue');
+$physical=$GLOBALS['nsPhysical'];$management->run($op->id,$driver,RequestOrigin::Background);same($physical,$GLOBALS['nsPhysical'],'No physical completion replay');
 $nativeSuccessful=true;echo "Dormant DNS durable execution passed\n";
