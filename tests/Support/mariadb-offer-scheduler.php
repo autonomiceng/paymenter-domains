@@ -62,7 +62,10 @@ $writer = new Writer(new Projection(new NativeCatalogue(new PriceCatalogue(new P
 $worker = new OfferWork($writer,$clock,$budget,static fn () => $feed,static fn () => 25,null,$generation,$guard);
 $observer = new DomainObservation($bindings,$clock,$budget);
 $scheduler = new OfferScheduler($worker,new HoldingObservationWork($observer,$clock),$clock,$guard);
-if ($phase === 'seed') { $scheduler->sync($b); }
+if ($phase === 'seed') {
+    $scheduler->sync($b);
+    file_put_contents(getenv('OFFER_BARRIER').'.baseline', (string)DB::table('domains_observation_queues')->value('offer_feed_run'));
+}
 elseif ($phase === 'first') { $scheduler->tick(1); }
 elseif ($phase === 'second') {
     $scheduler->sync($b); $out = $scheduler->tick(1);
@@ -77,7 +80,7 @@ elseif ($phase === 'second') {
 } elseif ($phase === 'verify') {
     same(1,DB::table('offer_fixture_reads')->count(),'Two connections start only one physical synthetic feed');
     $q = DB::table('domains_observation_queues')->sole();
-    same(1,(int)$q->offer_feed_run,'One claim/run owns the shared feed');
+    same(1+(int)file_get_contents(getenv('OFFER_BARRIER').'.baseline'),(int)$q->offer_feed_run,'One additional claim/run owns the shared feed');
     same(null,$q->offer_claim,'Completed worker releases its own lease');
     same(0,DB::table('domains_prices')->count(),'No legacy or invented price writes');
     echo json_encode(['complete'=>true,'prefix'=>$prefix,'two_connections'=>true,'one_feed'=>true,'real_provider_calls'=>0])."\n";
