@@ -35,38 +35,29 @@ expect(!str_contains($plain,'NameSilo · default pricing · new orders'),'List: 
 $list->assertDontSee('Price sync failed');$clean($list->html(),'List synced');
 
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
-// The first render needs a section button, even while More is closed.
+// Edit prices is one button, at the top of the page. The prices section has no copy of it.
 $query=static function(DOMDocument $dom,string $path): DOMNodeList {
     $nodes=(new DOMXPath($dom))->query($path);
     if(!$nodes instanceof DOMNodeList){throw new RuntimeException('Bad XPath: '.$path);}
     return $nodes;
 };
-$priceButtons=static function(string $html)use($query): DOMNodeList {
+$editButtons=static function(string $html)use($query): DOMNodeList {
     $dom=new DOMDocument();@$dom->loadHTML($html);
-    return $query($dom,'//section[header//h2[normalize-space(.)="Prices by registrar account"]]/header//button[normalize-space(.)="Edit prices"]');
+    return $query($dom,'//button[not(contains(@class,"fi-dropdown-list-item"))][normalize-space(.)="Edit prices"]');
 };
-$shortcut=$priceButtons($page->html());
-same(1,$shortcut->length,'First load shows one Edit prices button in the prices section');
-$button=$shortcut->item(0);
-if(!$button instanceof DOMElement||!$button->ownerDocument instanceof DOMDocument){throw new RuntimeException('Section shortcut is not an element');}
-for($node=$button;$node instanceof DOMElement;$node=$node->parentNode){
-    expect(!$node->hasAttribute('hidden')&&!$node->hasAttribute('x-cloak')&&!$node->hasAttribute('x-show')
-        &&$node->getAttribute('aria-hidden')!=='true'&&!str_contains($node->getAttribute('class'),'fi-dropdown-panel')
-        &&!preg_match('/display\s*:\s*none/i',$node->getAttribute('style')),'Section shortcut is outside hidden menu content');
-}
+$buttons=$editButtons($page->html());
+same(1,$buttons->length,'The TLD page shows one Edit prices button');
+$button=$buttons->item(0);
+if(!$button instanceof DOMElement||!$button->ownerDocument instanceof DOMDocument){throw new RuntimeException('Edit prices is not an element');}
+same(0,$query($button->ownerDocument,'//section//button[normalize-space(.)="Edit prices"]')->length,'The prices section has no Edit prices copy');
 $click=$button->getAttribute('wire:click');
-expect((bool)preg_match("/^mountAction\\('override'(?:,|\\))/",$click),'Shortcut mounts the shared Edit prices action');
-$menu=$query($button->ownerDocument,'//button[not(ancestor::section)][not(contains(@class,"fi-dropdown-list-item"))][normalize-space(.)="Edit prices"]');
-same(1,$menu->length,'Edit prices is the main page button');
-$item=$menu->item(0);
-same($click,$item instanceof DOMElement?$item->getAttribute('wire:click'):null,'Section and main button open the same form');
-// Click the rendered shortcut: send exactly the call its wire:click makes.
-expect((bool)preg_match("/^mountAction\\('([A-Za-z_]+)', (\\{.*?\\}), JSON\\.parse\\('(.*)'\\)\\)$/s",$click,$call),'Shortcut click is a plain mountAction call');
+// Click the rendered button: send exactly the call its wire:click makes.
+expect((bool)preg_match("/^mountAction\\('([A-Za-z_]+)', (\\{.*?\\}), JSON\\.parse\\('(.*)'\\)\\)$/s",$click,$call),'Edit prices click is a plain mountAction call');
 $context=json_decode((string)json_decode('"'.$call[3].'"'),true,flags:JSON_THROW_ON_ERROR);
 $page->call('mountAction',$call[1],json_decode($call[2],true,flags:JSON_THROW_ON_ERROR),$context)
     ->assertSet('mountedActions.0.name','override')->assertSet('mountedActions.0.context',['recordKey'=>(string)$enom->id])
     ->assertActionDataSet(['pricing'=>'default']);
-same('Save and publish',$page->instance()->getMountedAction()->getModalSubmitActionLabel(),'Shortcut opens the current pricing form');
+same('Save and publish',$page->instance()->getMountedAction()->getModalSubmitActionLabel(),'Edit prices opens the current pricing form');
 $page->unmountAction();
 foreach([
     array_values(array_diff($permissions,[Review::permission('override'),Review::permission('remove_override')])),
@@ -74,7 +65,7 @@ foreach([
 ] as $withoutPrices){
     $restricted=staffUser($withoutPrices);
     $hidden=Livewire::actingAs($restricted)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertActionHidden('override');
-    same(0,$priceButtons($hidden->html())->length,'Missing price-edit or publish grants hides the section shortcut');
+    same(0,$editButtons($hidden->html())->length,'Missing price-edit or publish grants hides Edit prices');
 }
 Auth::setUser($u);
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');

@@ -18,7 +18,7 @@ class ViewTld extends ViewRecord
 {
     protected static string $resource=TldResource::class;
     public string $reviewStamp='';
-    /** Page names for the shared settings actions. Edit prices is the main button and is on the prices section.
+    /** Page names for the shared settings actions. Edit prices is the main button, in the page head.
      * Default pricing is edited on the registrar account page, and saving prices publishes them. */
     private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Open in What you sell'];
     public function mount(int|string $record): void
@@ -117,13 +117,11 @@ class ViewTld extends ViewRecord
             ($old?'<div style="color:rgb(217 119 6)">At least '.TldFacts::SYNC_WARN_DAYS.' days ago. Sync prices to get current costs.</div>':'').'<div>'.e($rule).'</div>'),$old?'warning':null);
         if(($old||$synced===null)&&$syncNow){$last->hint($syncNow);}
         $sync[]=$last;
-        $override=$this->getAction('override',false);
         return $schema->components([
             Grid::make(['default'=>1,'lg'=>2])->columnSpanFull()->schema([
                 Section::make('Sales')->schema($sales)->columnSpan(1),
                 Section::make('Price sync')->schema($sync)->columnSpan(1)]),
-            // A copy renders as a button here; the menu keeps its own item view.
-            Section::make('Prices by registrar account')->afterHeader($override?->isVisible()?new HtmlString((clone $override)->button()->color('gray')->toHtml()):null)
+            Section::make('Prices by registrar account')
                 ->schema([TextEntry::make('prices')->label('Prices by registrar account')->hiddenLabel()->state(fn()=>TldFacts::accountsTable($t,$grants))->html()])->columnSpanFull(),
             Section::make('History')
                 ->schema([TextEntry::make('history')->label('History')->hiddenLabel()->state(fn()=>TldFacts::historyTable(TldFacts::history((int)$t->server_id,(int)$t->id)))->html()])->columnSpanFull(),
