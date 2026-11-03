@@ -18,8 +18,8 @@ final class CallerPorts implements Catalogue
     private readonly Writer $writer;
     private readonly OfferReader $reader;
 
-    public function __construct(Projection $projection, Clock $clock, AccountBindings $bindings,
-        \Closure $authorize, \Closure $featureReady, ?int $actorId = null)
+    public function __construct(Projection $projection, private readonly Clock $clock, private readonly AccountBindings $bindings,
+        private readonly \Closure $authorize, private readonly \Closure $featureReady, ?int $actorId = null)
     {
         $ready = static function (AccountBinding $binding, Server $server, Account $account, ?Query $query = null) use ($bindings, $featureReady): bool {
             try {
@@ -45,5 +45,17 @@ final class CallerPorts implements Catalogue
     { return $this->reader->loadBatch($queries, $context, $lock); }
 
     public function displayBatch(array $queries): array
-    { return $this->reader->displayBatch($queries); }
+    {
+        // Base credential/processing proof is shared only inside this one unlocked display load.
+        // Feature acceptance remains action-specific; strict receipt/locked readers never use this cache.
+        $checked = [];
+        $ready = function (AccountBinding $b, Server $server, Account $account, Query $q) use (&$checked): bool {
+            if (!array_key_exists($b->serverId, $checked)) {
+                try { $this->bindings->requireOfferAccount($b, $server, $account); $checked[$b->serverId] = true; }
+                catch (\DomainException) { $checked[$b->serverId] = false; }
+            }
+            return $checked[$b->serverId] && ($this->featureReady)($b, $q->action) === true;
+        };
+        return (new OfferReader($this->clock, $this->authorize, $ready))->displayBatch($queries);
+    }
 }
