@@ -118,6 +118,7 @@ final class ProfileContactOperations
     private function matches(ProfileOperation $row,Operation $op,int $owner): void
     {
         if($row->operation_id!==(int)$op->id||$row->user_id!==$owner||$row->server_id!==$this->binding->serverId
+            ||$op->server_id!==$row->server_id||$op->registrar_key!=='namesilo'
             ||$row->account_fingerprint!==$this->binding->fingerprint||$op->account_fingerprint!==$row->account_fingerprint
             ||$row->authority_generation!==$op->authority_generation||$row->payload_digest!==OperationClaims::payloadDigest($op)
             ||($row->attempt['parent_claim']??null)!==($op->attempt['claim_key']??null)){throw new \DomainException('Profile operation authority changed.');}

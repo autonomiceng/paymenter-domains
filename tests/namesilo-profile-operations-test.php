@@ -64,6 +64,8 @@ foreach(['ok','unsent','lost','readfail','cap'] as $case){
         commerceReject(fn()=>ProfileContactOperation::writing(fn()=>$row->update(['attempt'=>array_replace($row->attempt,['provider_id'=>'999999'])])));
         $row->refresh();commerceReject(fn()=>ProfileContactOperation::writing(fn()=>$row->update(['user_id'=>$row->user_id+1])));
         $other=clone $op;$other->payload=[...$op->payload,'privacy'=>true];expect(!$profiles->hasProof($other),'Payload cannot adopt another profile proof');
+        $other=clone $op;$other->server_id++;expect(!$profiles->hasProof($other),'Another server cannot adopt the retained handle');
+        $other=clone $op;$other->registrar_key='enom';expect(!$profiles->hasProof($other),'Another registrar cannot adopt the retained handle');
         $clock->instant=$clock->now()->modify('-121 seconds');
     }elseif($case==='readfail'){
         $mode='ok';$profiles=$makeProfiles();$profiles->prepare($op,$context());same('verified',$row->fresh()->state,'Restart resumes known ID readback');same($before+1,$writes,'Restart does not repeat creation');
@@ -74,6 +76,15 @@ foreach(['ok','unsent','lost','readfail','cap'] as $case){
         same($case==='lost'?'unknown':'definitely_unsent',$row->attempt['execution'],'No response is not local unsent proof');
     }
 }
+// Simulate a worker ending after committing its seal, before retaining any response identity.
+$op=$claim('profile-sealed-placeholder.com');$grants->cap=true;$refuse(fn()=>$makeProfiles()->prepare($op,$context()));$grants->cap=false;
+$row=ProfileContactOperation::where('operation_id',$op->id)->sole();
+ProfileContactOperation::writing(fn()=>$row->update(['state'=>'sealed','attempt'=>[...$row->attempt,'seal'=>'sealed','send_state'=>'possibly_sent',
+    'worker_key'=>bin2hex(random_bytes(16)),'lease_until'=>$clock->now()->modify('+30 seconds')->format(DATE_ATOM)]]));
+$before=$writes;$refuse(fn()=>$makeProfiles()->prepare($op,$context()));same('sealed',$row->fresh()->state,'Other worker cannot classify an active send as its own unsent grant');
+$clock->instant=$clock->now()->modify('+31 seconds');$refuse(fn()=>$makeProfiles()->prepare($op,$context()));
+same('uncertain',$row->fresh()->state,'Expired worker without identity remains uncertain');same($before,$writes,'Worker expiry never authorizes another contactAdd');
+$clock->instant=$clock->now()->modify('-31 seconds');
 // Current parent authority is rechecked before allocating any profile ledger entry.
 $op=$claim('profile-drift-placeholder.com');$op->fresh()->update(['policy'=>[...$op->policy,'synthetic_drift'=>true]]);
 try{$makeProfiles()->prepare($op,$context());throw new LogicException('Expected parent authority refusal');}catch(\Paymenter\Extensions\Servers\Domains\Services\ProfileAuthorityMismatch){}
