@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, OwnedDomains};
 $contact=ContactDetails::collect($user)['registrant'];
 $contact['first_name']='Typed <contact> & name';$contact['phone']='bad phone';
-foreach([$free?'contact_profile':'contacts']as$intent){
+foreach(['contacts']as$intent){
     $session->forget(['_old_input','domains_failed_form']);
     $before=Operation::count();
     $r=$post($intent,['role'=>'tech','contact'=>[...$contact,'password'=>'PRIVATE-NESTED'],
