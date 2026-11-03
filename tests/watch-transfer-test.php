@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\{WatchTransferControll
 use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{WatchTransferPolicy,WatchTransfer,WatchTransferStrings,DomainSummaries,Storefront,CheckoutEligibility,TransferPrecheck,Rdap,CartAdmission};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+// This fixture exercises retained legacy commerce, rather than new-install activation.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 config(['settings.company_name'=>'Example Hosting']);
 config(['domains.watch_transfer.enabled'=>true]);$f=noticeFixture();extract($f);extract(commerceFixture(true,static fn()=>null));$clock=new FakeClock($now);$at=$now->getTimestamp();
 DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);noticeRegistry($f,$at,45);
