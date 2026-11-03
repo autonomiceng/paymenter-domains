@@ -8,7 +8,7 @@ require __DIR__.'/Support/native-commerce.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, OfferState};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
-expect(class_exists(Capabilities::class), 'Independent current capability facts adapter required');
+expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Capabilities.php'), 'Independent current capability facts adapter required');
 require __DIR__.'/Support/offer-commerce.php';
 extract(offerCommerceFixture());
 $allowed = true;

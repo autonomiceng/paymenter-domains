@@ -54,9 +54,10 @@ final class Capabilities
         sort($out, SORT_STRING); return $out;
     }
     public function holder(AccountBinding $b, string $name): RenewalPrice
-    { return $this->ports->loadBatch([new Query($b, [$name], 'renew')], Context::Holder)[0][0]->renewal(); }
+    { ($this->authorize)(new Query($b, [$name], 'renew'), Context::Holder); return $this->ports->loadBatch([new Query($b, [$name], 'renew')], Context::Holder)[0][0]->renewal(); }
     public function cost(AccountBinding $b, string $name): ?Cost
     {
+        ($this->authorize)(new Query($b, [$name], 'renew'), Context::Holder);
         $row = $this->ports->loadBatch([new Query($b, [$name], 'renew')], Context::Holder)[0][0];
         return $this->current($row->observation());
     }
