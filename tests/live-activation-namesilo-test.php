@@ -61,6 +61,19 @@ foreach(['registration','renewal','transfer'] as $feature){
     $changed=new \Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance($binding,'UTC',61,86400,'namesilo_'.$feature.'_v1');
     $denied(fn()=>$engine->requireHistory($changed),'TEST or changed history cannot overwrite Live evidence');
 }
+$runtimeProblem='NameSilo runtime revision Missing. Ask your site admin to install the admitted runtime.';
+$readiness=static fn()=>$engine->problems($a,['registration'=>true],static function():void {});
+$readyProblems=$readiness();$runtimeProblems=[];
+expect(!in_array($runtimeProblem,$readyProblems,true),'A valid runtime revision has no readiness problem');
+foreach([null,'invalid revision'] as $invalid){
+    config(['domains.namesilo_live.runtime_revision'=>$invalid]);
+    $runtimeProblems[]=array_values(array_diff($readiness(),$readyProblems));
+    try{$engine->receiptFor($binding);throw new LogicException('Invalid runtime revision must refuse a receipt');}
+    catch(DomainException $e){same($runtimeProblem,$e->getMessage(),'Readiness and receipt use the same runtime revision problem');}
+}
+same([[$runtimeProblem],[$runtimeProblem]],$runtimeProblems,'Missing and malformed runtime revisions appear in readiness');
+config(['domains.namesilo_live.runtime_revision'=>'OFFLINE-v1']);
+same($readyProblems,$readiness(),'Restoring a valid runtime revision restores readiness');
 $saveReceipt=static function()use($engine,$binding,$server):void {
     $server->settings()->updateOrCreate(['key'=>LiveActivation::KEY],['encrypted'=>true,'type'=>'string',
         'value'=>json_encode([...$engine->receiptFor($binding),'registration'=>true],JSON_THROW_ON_ERROR)]);

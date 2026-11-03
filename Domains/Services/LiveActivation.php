@@ -104,6 +104,7 @@ final class LiveActivation
         if(Missing::supportUrl()===null){$missing[]='Support contact Missing. Turn tickets on or ask your site admin to set a support link; Paymenter has no other support contact setting.';}
         $b=CatalogueAcceptances::binding($a);$now=app(Clock::class)->now();
         $check(function()use($b):void {$this->provider->account($b);});
+        $check(function()use($b):void {$this->provider->receiptContext($b);});
         if(!app(AccountBindings::class)->configurationAvailable((int)$a->server_id)){$missing[]='API connection Missing. Use Connect account to verify the saved credentials and site.';}
         $check(function()use($a,$b,$features):void {
             if(!$this->provider->enabled($b,'catalogue')){throw new \DomainException('Live setup Missing. Ask your site admin to enable Live catalogue reads for this account.');}
