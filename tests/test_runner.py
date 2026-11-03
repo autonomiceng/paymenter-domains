@@ -21,7 +21,9 @@ runner = importlib.util.module_from_spec(spec); spec.loader.exec_module(runner)
 
 
 class InstalledPhaseTests(unittest.TestCase):
-    def phase_failure(self, scenario, target, *, setup=0, earlier=0, expires=None, verify=0):
+    def phase_failure(
+        self, scenario, target, *, setup=0, earlier=0, expires=None, verify=0
+    ):
         spec = importlib.util.spec_from_file_location('installed_phase_limits', ROOT/'tests/test_installed_package.py')
         installed = importlib.util.module_from_spec(spec); spec.loader.exec_module(installed)
         clock, calls, errors = [1000.0], [], []
@@ -29,6 +31,7 @@ class InstalledPhaseTests(unittest.TestCase):
             clock[0] += seconds
         with tempfile.TemporaryDirectory() as temp:
             fixture = Path(temp)/'fixture'; (fixture/'bootstrap/cache').mkdir(parents=True)
+            (fixture/'vendor').mkdir()
             (fixture/'.domains-fixture.json').write_text('{}')
             def build_package(source, output):
                 output.mkdir(); (output/'fixture.zip').write_bytes(b'offline archive boundary')

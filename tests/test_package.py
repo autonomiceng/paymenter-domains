@@ -8,14 +8,106 @@ import contextlib
 import io
 import json
 import sys
+import os
 from unittest import mock
 import shutil
 import stat
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT/'scripts'))
+import installed_fixture
+import native
+import test_native
 spec = importlib.util.spec_from_file_location('domains_build', ROOT/'scripts/build.py')
 builder = importlib.util.module_from_spec(spec); spec.loader.exec_module(builder)
+
+
+class InstalledFixtureTests(unittest.TestCase):
+    def fixture(self, root):
+        fixture = root / "fixture"
+        (fixture / "vendor").mkdir(parents=True)
+        (fixture / "vendor/autoload.php").write_text("<?php // synthetic dependency")
+        (fixture / "app").mkdir()
+        (fixture / "app/state").write_text("pristine")
+        return fixture
+
+    def test_scenarios_share_vendor_but_never_mutable_app_or_database(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(Path(temporary))
+            for scenario in ("one", "two"):
+                with installed_fixture.application(fixture, scenario) as (root, app):
+                    self.assertTrue((app / "vendor").is_symlink())
+                    self.assertTrue(
+                        (app / "vendor/autoload.php").samefile(
+                            fixture / "vendor/autoload.php"
+                        )
+                    )
+                    self.assertEqual((app / "app/state").read_text(), "pristine")
+                    self.assertFalse((root / "scenario.sqlite").exists())
+                    (app / "app/state").write_text("changed")
+                    (root / "scenario.sqlite").touch()
+                self.assertFalse(root.exists())
+            self.assertEqual((fixture / "app/state").read_text(), "pristine")
+
+    def test_shared_vendor_mutation_is_refused_even_after_scenario_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = self.fixture(Path(temporary))
+            with self.assertRaisesRegex(RuntimeError, "changed shared vendor"):
+                with installed_fixture.application(fixture, "mutation") as (_, app):
+                    (app / "vendor/autoload.php").write_text("<?php // changed")
+                    raise ValueError("scenario failed")
+
+    def test_package_cache_reuses_verified_bytes_and_invalidates_source_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "Domains"
+            shutil.copytree(ROOT / "Domains", source)
+            fixture = self.fixture(root)
+            with mock.patch.dict(
+                os.environ, {"PAYMENTER_TEST_FIXTURE": str(fixture)}
+            ), mock.patch.object(
+                installed_fixture.build, "build", wraps=installed_fixture.build.build
+            ) as build:
+                first = installed_fixture.package(source, root / "first")
+                second = installed_fixture.package(source, root / "second")
+                self.assertEqual(first, second)
+                self.assertEqual(build.call_count, 1)
+                self.assertEqual(
+                    (root / "first").resolve(), (root / "second").resolve()
+                )
+                entry = source / "Domains.php"
+                entry.write_text(entry.read_text() + "\n// Changed source fixture.\n")
+                changed = installed_fixture.package(source, root / "changed")
+                self.assertEqual(build.call_count, 2)
+                self.assertNotEqual(first["archive_sha256"], changed["archive_sha256"])
+                (root / "first" / first["archive"]).write_bytes(b"corrupt cached ZIP")
+                entry.write_text(
+                    entry.read_text().removesuffix("\n// Changed source fixture.\n")
+                )
+                with self.assertRaises(
+                    (ValueError, installed_fixture.build.zipfile.BadZipFile)
+                ):
+                    installed_fixture.package(source, root / "refused")
+
+    def test_serial_installed_fixture_borrows_verified_vendor_and_detects_changes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source"
+            source.mkdir()
+            git, lock = test_native.NativeGuardTests().fixture(source)
+            copy = Path(temp) / "copy"
+            with mock.patch.object(native, "git", side_effect=git), mock.patch.object(
+                native, "LOCK_SHA256", lock
+            ):
+                snapshot = native.prepare(source, copy, share_vendor=True)
+                self.assertTrue((copy / "vendor").is_symlink())
+                self.assertEqual((copy / "vendor").resolve(), source / "vendor")
+                self.assertEqual(native.verify(source)[1], snapshot)
+                (copy / "config/app.php").write_text("<?php // scenario-local")
+                self.assertEqual(native.verify(source)[1], snapshot)
+                (copy / "vendor/autoload.php").write_text("<?php // forbidden mutation")
+                self.assertNotEqual(native.verify(source)[1], snapshot)
+
 
 class PackageTests(unittest.TestCase):
     def test_synthetic_package_is_reproducible_with_verified_member_manifest(self):
@@ -376,6 +468,7 @@ class PackageTests(unittest.TestCase):
             (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
             (source/'Registrars').mkdir(); (source/'Registrars/sample.private.php').write_text('<?php')
             with self.assertRaises(ValueError): builder.runtime_members(source)
+
 
 if __name__ == '__main__':
     unittest.main()

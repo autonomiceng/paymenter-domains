@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 import zipfile
 import stat
@@ -16,6 +15,7 @@ import stat
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'scripts'))
 import build
+import installed_fixture
 
 # Previous local runtime before the additive public-suffix schema; no released
 # older version is implied. Source is pinned, with explicit unreleased schema
@@ -47,7 +47,7 @@ def previous_build(root, revision=PREVIOUS, *, legacy=True, name='previous'):
         anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
         assert old.count(anchor) == 1, 'Pinned observation fixture changed'
         observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
-    return build.build(previous_source/'Domains', root/name)
+    return installed_fixture.package(previous_source/'Domains', root/name)
 
 
 def refuse_unsafe_archives(root, current):
@@ -78,42 +78,49 @@ def main(scenario):
         raise ValueError('Unknown installed package scenario')
     began = time.monotonic()
     # Keep scenario limits above the measured identity and management costs.
-    scenario_timeout = 110 if scenario == 'held' else 90 if scenario == 'enom-test-management' else None
-    scenario_deadline = began + scenario_timeout if scenario_timeout is not None else None
-    fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
-    if not (fixture/'.domains-fixture.json').is_file():
-        raise ValueError('Runner-created pristine copy required')
-    memory_wait_started = time.monotonic()
-    for attempt in range(7):
-        available = int(next(line.split()[1] for line in Path('/proc/meminfo').read_text().splitlines() if line.startswith('MemAvailable:')))
-        if available >= 1_572_864:
-            break
-        if attempt == 6:
-            raise RuntimeError('At least 1.5 GiB MemAvailable is required for installed package acceptance')
-        time.sleep(10)
-    print(json.dumps({'timing': 'memory_wait', 'scenario': scenario,
-                      'seconds': round(time.monotonic() - memory_wait_started, 3)}), flush=True)
-    print(f'Installed fixture MemAvailable: {available} kB', flush=True)
-    with tempfile.TemporaryDirectory(prefix=f'domains-installed-{scenario}-', dir=fixture.parent) as temporary:
+    scenario_timeout = (
+        110
+        if scenario == "held"
+        else 90 if scenario == "enom-test-management" else None
+    )
+    scenario_deadline = (
+        began + scenario_timeout if scenario_timeout is not None else None
+    )
+    fixture = Path(os.environ["PAYMENTER_TEST_FIXTURE"])
+    if not (fixture / ".domains-fixture.json").is_file():
+        raise ValueError("Runner-created pristine copy required")
+    # A real native ZIP install and fresh PHP boots are essential here; a stub
+    # cannot prove upload discovery, migrations, retained data or installed paths.
+    # Composer inputs/builds are shared; each scenario still owns its DB and app.
+    with installed_fixture.application(fixture, scenario) as (root, app):
         setup_started = time.monotonic()
-        root = Path(temporary)
-        app = root/'paymenter'
-        shutil.copytree(fixture, app, ignore=shutil.ignore_patterns('*.sqlite', 'domains-editor-routes.php'))
-        installed = app/'extensions/Servers/Domains'
+        installed = app / "extensions/Servers/Domains"
         if installed.is_symlink():
             installed.unlink()
         elif installed.exists():
             shutil.rmtree(installed)
-        for path in (app/'bootstrap/cache').glob('*.php'):
+        for path in (app / "bootstrap/cache").glob("*.php"):
             path.unlink()
-        current = build.build(ROOT/'Domains', root/'current')
-        print(json.dumps({'timing': 'fixture_setup', 'scenario': scenario,
-                          'seconds': round(time.monotonic() - setup_started, 3)}), flush=True)
-        evidence = {'installed_package': True, 'scenario': scenario,
-                    'zip_sha256': current['archive_sha256'], 'real_provider_calls': 0}
+        current = installed_fixture.package(ROOT / "Domains", root / "current")
+        print(
+            json.dumps(
+                {
+                    "timing": "fixture_setup",
+                    "scenario": scenario,
+                    "seconds": round(time.monotonic() - setup_started, 3),
+                }
+            ),
+            flush=True,
+        )
+        evidence = {
+            "installed_package": True,
+            "scenario": scenario,
+            "zip_sha256": current["archive_sha256"],
+            "real_provider_calls": 0,
+        }
         previous = None
         baseline_migrations = None
-        if scenario == 'held':
+        if scenario == "held":
             refuse_unsafe_archives(root, current)
             evidence['unsafe_archives_refused'] = 3
         elif scenario == 'upgrade':
