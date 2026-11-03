@@ -109,7 +109,7 @@ final class Writer implements Catalogue
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 if (!$command instanceof Edit || $command->kind !== 'retail') { $this->publishPrices($offer, $d, $now); }
                 $prices = UpgradeComparison::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
-                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b), true);
+                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), true);
                 $this->projection->write($offer, $snapshot, $now, $native);
                 $offer->catalogue_published_revision = OfferState::json($snapshot->revision);
                 // Raw update: dormant staging does not invoke active legacy model observers.

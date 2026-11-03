@@ -417,7 +417,8 @@
     "tests/offer-window-interruption-test.php",
     "tests/offer-legacy-mutex-test.php",
     "tests/offer-ports-test.php",
-    "tests/offer-reader-batch-test.php"
+    "tests/offer-reader-batch-test.php",
+    "tests/caller-ports-test.php"
   ],
   "ui": [],
   "runner": [
