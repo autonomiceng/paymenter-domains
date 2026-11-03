@@ -145,7 +145,7 @@ foreach(['test','live'] as $mode){
     $featureRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($siloAccount,['label'=>'Active','reason'=>null]),null,'label');
     same(['Not available yet',null],[$featureRows['DNS, nameservers and contacts']['value'],$featureRows['DNS, nameservers and contacts']['action']],$mode.' NameSilo Enom-only control');
     same(['Off','renewals'],[$featureRows['Renewals']['value'],$featureRows['Renewals']['action']],$mode.' NameSilo Renewals has its own switch');
-    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Not available yet')
+    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Not available yet')->assertSeeInOrder(['WHOIS privacy','Free when supported by the TLD.'])
         ->assertActionDoesNotExist(setupAction($mode.'_renewal',(int)$silo->server_id))->assertActionDoesNotExist(setupAction($mode.'_management',(int)$silo->server_id));
 }
 DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>'test']);
