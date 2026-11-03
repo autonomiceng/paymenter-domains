@@ -202,7 +202,7 @@ class RegistrarAccount extends Page
         $requests=RegistrarFacts::requests((int)$s->id);
         try { $url=OperationResource::getUrl('index',['filters'=>['server_id'=>['values'=>[(string)$s->id]]]]); } catch (\Throwable) { $url=null; }
         $rows[]=[...self::fact('Registrar requests',(string)$requests['total'],$requests['review']>0?$requests['review'].' '.($requests['review']===1?'needs':'need').' review':null),'buttons'=>[Sheet::link('view_requests','View requests',$url)]];
-        if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact('API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
+        if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact($a->environment==='live'?'API calls, today (UTC)':'API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
         return $rows;
     }
 }
