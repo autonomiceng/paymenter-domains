@@ -34,6 +34,9 @@ same(20, $records['records'][2]['mx_pref'], 'MX distance has proven preference m
 same($fixtures[3]['value'], $records['records'][3]['address'], 'TXT whitespace, quoting and URLs survive readback');
 same('0:issue:ca.example.com', $records['records'][4]['address'], 'CAA value survives without an edit mapping');
 same(25, $records['records'][5]['distance'], 'SRV distance is retained without interpreting priority');
+same(5, $records['records'][5]['weight'], 'Documented SRV weight is parsed');
+same(443, $records['records'][5]['port'], 'Documented SRV port is parsed');
+same('sip.example.com.', $records['records'][5]['target'], 'Documented SRV target is normalized');
 same(false, $records['records'][5]['priority_proven'], 'SRV priority is explicitly unproven');
 expect(!isset($records['records'][5]['priority']), 'No invented SRV priority');
 same(['state' => 'complete', 'records' => []], Dns::inventory($body(['resource_record' => []]), 'example.com'), 'Explicit empty list is complete');
