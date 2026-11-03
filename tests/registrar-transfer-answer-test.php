@@ -54,7 +54,7 @@ same(null,$refunds->creditRejected($op->id),'Recovery never returns a second pay
 commerceReject(fn()=>RefundProof::requireUnsent($op,$op->domain));
 commerceReject(fn()=>$op->update(['attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent']]));
 commerceReject(fn()=>$op->fresh()->update(['policy'=>array_diff_key($op->policy,['enom_answer'=>true])]));
-$engine->execute($op->id);same($writes,$state->calls,'Closure never repeats transferDomain');
+$writes=$state->calls;$engine->execute($op->id);same($writes,$state->calls,'Closure never repeats transferDomain');
 // A charged rejection also needs the same explicit support finality and settled refund.
 $charged=$rejected('support-charged',true);$settings->run($review($charged),$answer($charged),$clock->now());
 expect(TransferRejections::proved($charged->fresh(),$charged->domain->fresh()),'A failed charged order closes through support rather than guessed empty history');
