@@ -57,7 +57,7 @@ final class AdoptionReader
             'provider_domain_id' => $code === 'ready' ? $facts['provider_id'] : null,
             'source_expiry' => $before['expected_expiry'], 'expiry' => $expiry ? ['value' => $expiry->value, 'precision' => $expiry->precision->value, 'timezone' => $expiry->timezone, 'source' => $expiry->source] : null,
             'auto_renew' => $facts['auto_renew'] ?? null, 'ordinary' => $facts['ordinary'] ?? null, 'hold' => $facts['registrar_hold'] ?? null,
-            'redemption' => $facts['redemption'] ?? null, 'read_started_at' => $observed->format(DATE_ATOM), 'read_ended_at' => $this->clock->now()->format(DATE_ATOM),
+            'redemption' => $facts['redemption'] ?? null, 'settings' => $facts['settings'] ?? null, 'read_started_at' => $observed->format(DATE_ATOM), 'read_ended_at' => $this->clock->now()->format(DATE_ATOM),
             'capture_digest' => $captureDigest, 'intent_digest' => $intentDigest,
             'permission_snapshot' => [Staff::VIEW => true, Staff::ADOPT_PREVIEW => true],
             'command_set_version' => $facts['command_set_version'] ?? null, 'credential_revision' => $before['stamps']['settings'], 'revisions' => $before['stamps'],
