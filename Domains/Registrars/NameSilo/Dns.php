@@ -146,9 +146,27 @@ final class Dns
     private static function withoutRootDot(string $name): string
     { return str_ends_with($name, '.') ? substr($name, 0, -1) : $name; }
 
+    /** JSON object duplicates would otherwise silently erase records, IDs or completeness metadata. */
+    private static function uniqueKeys(#[\SensitiveParameter] string $body): void
+    {
+        preg_match_all('/"(?:[^"\\\\]|\\\\.)*"|[{}\[\]]/s', $body, $tokens, PREG_OFFSET_CAPTURE);
+        $stack = [];
+        foreach ($tokens[0] as [$token, $offset]) {
+            if ($token === '{' || $token === '[') { $stack[] = []; }
+            elseif ($token === '}' || $token === ']') { array_pop($stack); }
+            elseif ($stack && preg_match('/\G\s*:/', $body, $unused, 0, $offset + strlen($token))) {
+                $key = json_decode($token, true, 24, JSON_THROW_ON_ERROR);
+                $top = count($stack) - 1;
+                if (isset($stack[$top][$key])) { throw new \DomainException; }
+                $stack[$top][$key] = true;
+            }
+        }
+    }
+
     private static function reply(#[\SensitiveParameter] string $body, string $operation): array
     {
         if (strlen($body) > 1048576) { throw new \DomainException; }
+        self::uniqueKeys($body);
         $data = json_decode($body, true, 24, JSON_THROW_ON_ERROR);
         if (!is_array($data) || ($data['request']['operation'] ?? null) !== $operation
             || !is_array($data['reply'] ?? null) || !in_array($data['reply']['code'] ?? null, [300, '300'], true)
