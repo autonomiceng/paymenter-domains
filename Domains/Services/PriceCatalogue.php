@@ -2,7 +2,7 @@
 // Cost refresh/publication adapted from Enom 444f31c Services/Catalogue.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate};
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -186,6 +186,11 @@ final class PriceCatalogue
      */
     public function renewal(int $serverId, string $fingerprint, string $tld, string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): RenewalPrice
     {
+        return CallerRouting::legacy(fn () => $this->legacyRenewal($serverId, $fingerprint, $tld, $currency, $now, $lock, $locked));
+    }
+
+    private function legacyRenewal(int $serverId, string $fingerprint, string $tld, string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): RenewalPrice
+    {
         if ($lock && (DB::transactionLevel() !== 1 || !$locked || (int) $locked->server_id !== $serverId
             || $locked->account_fingerprint !== $fingerprint || $locked->tld !== $tld)) { throw new \LogicException('Locked holding TLD required.'); }
         $query = Price::where(['server_id' => $serverId, 'account_fingerprint' => $fingerprint, 'tld' => $tld,
@@ -207,6 +212,12 @@ final class PriceCatalogue
      * lock=true requires caller-held server, account, policy and TLD locks in storage.md order.
      */
     public function current(int $serverId, string $fingerprint, string $tld, string $action, int $term,
+        string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): PriceSnapshot
+    {
+        return CallerRouting::legacy(fn () => $this->legacyCurrent($serverId, $fingerprint, $tld, $action, $term, $currency, $now, $lock, $locked));
+    }
+
+    private function legacyCurrent(int $serverId, string $fingerprint, string $tld, string $action, int $term,
         string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): PriceSnapshot
     {
         if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Price locks require an outer transaction.'); }

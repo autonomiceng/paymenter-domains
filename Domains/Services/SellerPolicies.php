@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate};
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -70,6 +70,11 @@ final class SellerPolicies
     /** Unlocked display lookup only. Every line is rechecked in admit. */
     public function selection(string $tld, string $action, int $term, \DateTimeImmutable $now): SaleSelection
     {
+        return CallerRouting::legacy(fn () => $this->legacySelection($tld, $action, $term, $now));
+    }
+
+    private function legacySelection(string $tld, string $action, int $term, \DateTimeImmutable $now): SaleSelection
+    {
         $policy = SalesPolicy::where('tld', $tld)->firstOrFail();
         $this->requireAction($policy, $action, $term);
         $account = $this->account($policy->server_id, false);
@@ -85,6 +90,11 @@ final class SellerPolicies
 
     /** One display invocation only. Account validation is shared across its selected endings, never admission. */
     public function displayCatalogues(array $endings): array
+    {
+        return CallerRouting::legacy(fn () => $this->legacyDisplayCatalogues($endings));
+    }
+
+    private function legacyDisplayCatalogues(array $endings): array
     {
         $policies = SalesPolicy::whereIn('tld', $endings)->get();
         $tlds = Tld::whereIn('server_id', $policies->pluck('server_id')->filter()->unique())
@@ -112,6 +122,11 @@ final class SellerPolicies
      * @param non-empty-list<SaleSelection> $lines @return list<\Paymenter\Extensions\Servers\Domains\Data\PriceSnapshot> input order
      */
     public function admit(array $lines, \DateTimeImmutable $now): array
+    {
+        return CallerRouting::legacy(fn () => $this->legacyAdmit($lines, $now));
+    }
+
+    private function legacyAdmit(array $lines, \DateTimeImmutable $now): array
     {
         if (DB::transactionLevel() === 0) { throw new \LogicException('Admission joins the native checkout transaction.'); }
         if ($lines === [] || !array_is_list($lines)) { throw new \DomainException('Domain cart lines required.'); }

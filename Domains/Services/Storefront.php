@@ -8,15 +8,25 @@ use Paymenter\Extensions\Servers\Domains\Data\{Action, CanonicalName, Dispositio
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, SalesPolicy, Tld};
 
 /** Explicit customer projection. No model, seller, cost, provider text or read evidence reaches Blade. */
-final class Storefront
+class Storefront
 {
+    /** Fixed legacy route. No production composition selects the dormant adapter. */
+    protected function catalogue(): ?AcquisitionOffers
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => null); }
+
     public function __construct(private readonly SellerPolicies $sellers, private readonly PriceCatalogue $prices,
         private readonly NativeCatalogue $native, private readonly AccountBindings $bindings,
         private readonly CheckoutEligibility $eligibility, private readonly Clock $clock) {}
 
+    private function reader(?array $endings = null): StorefrontCatalogueRead
+    { return new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings, $this->catalogue()); }
+
+    private function cache(): StorefrontCatalogueCache
+    { $offers = $this->catalogue(); return new StorefrontCatalogueCache($this->clock, $offers ? $offers->cacheFence(...) : null); }
+
     public function endings(): array
     {
-        return (new StorefrontCatalogueCache($this->clock))->remember(function (): array {
+        return $this->cache()->remember(function (): array {
             $rows = $this->catalogueRows(); $tests = $this->testEndings($rows);
             return array_map(static fn ($row) => [...$row, 'testEnvironment' => in_array($row['tld'], $tests, true)], $rows);
         });
@@ -25,13 +35,13 @@ final class Storefront
     /** Display-only existence check with the same warm projection and eligibility as endings(). */
     public function hasTransferOffers(): bool
     {
-        $rows = (new StorefrontCatalogueCache($this->clock))->cachedRows();
+        $rows = $this->cache()->cachedRows();
         if ($rows !== null) {
             foreach ($rows as $row) { if ($row['transfer'] !== null) { return true; } }
             return false;
         }
         $endings = SalesPolicy::where('transfer_enabled', true)->orderBy('tld')->pluck('tld')->all();
-        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings);
+        $read = $this->reader($endings);
         foreach ($endings as $ending) {
             try { $read->offer($ending, 'transfer', 1); return true; }
             catch (\Throwable) { /* A held ending does not rule out a later transfer offer. */ }
@@ -43,7 +53,7 @@ final class Storefront
     public function offeredTransferEndings(array $names): array
     {
         $endings = PolicyEndings::transferEnabled($names);
-        $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings); $offered = [];
+        $read = $this->reader($endings); $offered = [];
         foreach ($endings as $ending) {
             try { $read->offer($ending, 'transfer', 1); $offered[] = $ending; }
             catch (\Throwable) { /* An unavailable public offer has no entry link. */ }
@@ -54,7 +64,7 @@ final class Storefront
     private function catalogueRows(): array
     {
         $endings = SalesPolicy::orderBy('tld')->pluck('tld')->all();
-        $rows = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock, $endings);
+        $rows = []; $read = $this->reader($endings);
         foreach ($endings as $ending) {
             $register = $transfer = $chosen = null; $terms = [];
             foreach (range(1, 10) as $term) {
@@ -93,7 +103,7 @@ final class Storefront
         $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken',
             'testEnvironment' => $this->testEndings([['tld' => $ending]]) !== []];
         if (Domain::where('reservation_name', $name)->exists()) { return $base; }
-        $offers = []; $read = new StorefrontCatalogueRead($this->sellers, $this->native, $this->clock);
+        $offers = []; $read = $this->reader();
         foreach (range(1, 10) as $term) {
             try { $offers[$term] = $read->offer($ending, 'register', $term); } catch (\Throwable) {}
         }
@@ -108,6 +118,7 @@ final class Storefront
         $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
         $r = $driver->availability(new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1), $context);
         $driver->binding()->requireMatch($r->binding);
+        $this->catalogue()?->validate($selection);
         if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) { return [...$base, 'status' => 'error']; }
         if ($r->evidence()->premium === true) { return [...$base, 'status' => 'premium']; }
         if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return [...$base, 'status' => 'error']; }
@@ -129,6 +140,7 @@ final class Storefront
     /** Server-only resolution; links and forms never carry native identities. Cart admission rechecks independently. */
     public function offer(string $ending, string $action, int $term): array
     {
+        if ($offers = $this->catalogue()) { return $offers->offer($ending, $action, $term); }
         $s = $this->sellers->selection($ending, $action, $term, $this->clock->now());
         $tld = Tld::where(['server_id' => $s->serverId, 'tld' => $ending, 'account_fingerprint' => $s->fingerprint])->firstOrFail();
         $product = $this->native->product($tld, $action);

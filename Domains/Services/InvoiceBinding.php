@@ -74,10 +74,10 @@ final class InvoiceBinding
         // All price/annual projections precede every domain lock, for the ENTIRE batch.
         foreach ($lines as $line) {
             $s = $line['snapshot'];
-            $tld = Tld::whereKey($line['mapping']['tld']->id)->lockForUpdate()->firstOrFail();
+            $tld = $line['contact_tld'] ?? Tld::whereKey($line['mapping']['tld']->id)->lockForUpdate()->firstOrFail();
             try { OrderContact::capture($order->user, $tld); }
             catch (ContactValidation $error) { throw new \App\Exceptions\DisplayException('Check your domain contact details before payment: '.implode(', ', $error->labels()).'.'); }
-            $renew = $this->prices->current($s->serverId, $s->fingerprint, $s->tld, 'renew', 1, 'USD', $this->clock->now(), true, $tld);
+            $renew = $line['renewal_snapshot'] ?? $this->prices->current($s->serverId, $s->fingerprint, $s->tld, 'renew', 1, 'USD', $this->clock->now(), true, $tld);
             $product = Product::findOrFail($line['product_id']); $annual = $this->native->annualPlan($product);
             $price = new \App\Classes\Price(['price' => $renew->retail, 'currency' => $order->currency],
                 apply_exclusive_tax: true, tax: \App\Classes\Settings::tax($order->user));
@@ -118,7 +118,8 @@ final class InvoiceBinding
         $checkout = [...$line['retail'], 'name' => $line['name'], 'user_id' => (int) $service->user_id, 'order_id' => (int) $service->order_id,
             'service_id' => (int) $service->id, 'product_id' => (int) $line['product_id'], 'plan_id' => (int) $line['plan_id'],
             'annual_plan_id' => (int) $line['annual_plan_id'], 'annual_price' => $line['annual_price'],
-            'invoice_id' => (int) $invoice->id, 'invoice_item_id' => (int) $item->id, 'term' => $s->term, 'action' => $s->action, 'currency' => 'USD'];
+            'invoice_id' => (int) $invoice->id, 'invoice_item_id' => (int) $item->id, 'term' => $s->term, 'action' => $s->action, 'currency' => 'USD',
+            ...($line['selection']->catalogue === null ? [] : ['catalogue' => get_object_vars($line['selection'])])];
         $domain = DomainReservations::reserve(['service_id' => $service->id, 'user_id' => $service->user_id,
             'domain' => $line['name'], 'server_id' => $s->serverId, 'registrar_key' => $s->registrar,
             'account_fingerprint' => $s->fingerprint, 'authority_generation' => 1, 'status' => $s->action === 'register' ? 'registration_pending' : 'transfer_pending',

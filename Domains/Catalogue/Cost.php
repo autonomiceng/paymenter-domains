@@ -13,7 +13,7 @@ final readonly class Cost
     public function __construct(public string $action, public int $term, public bool $enabled,
         ?string $amount, public CostUnit $sourceUnit, public string $source,
         public \DateTimeImmutable $observedAt, public \DateTimeImmutable $freshUntil,
-        public string $currency = 'USD')
+        public string $currency = 'USD', bool $normalized = false)
     {
         if (!in_array($action, ['register', 'renew', 'transfer'], true) || $term < 1 || $term > 10
             || ($action !== 'register' && $term !== 1) || $currency !== 'USD'
@@ -22,7 +22,7 @@ final readonly class Cost
             throw new \InvalidArgumentException('Invalid exact-term cost observation.');
         }
         $total = $amount === null ? null : PricingRule::decimal(
-            PricingRule::units($amount) * ($sourceUnit === CostUnit::Annual ? $term : 1), 4);
+            PricingRule::units($amount) * ($sourceUnit === CostUnit::Annual && !$normalized ? $term : 1), 4);
         if ($total !== null) { PricingRule::units($total); }
         $this->total = $total;
     }

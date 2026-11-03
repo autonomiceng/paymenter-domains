@@ -10,8 +10,12 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, SaleSelection};
 
 /** One batch in native Order Creating, after ALL native user/coupon/product locks. Dormant until slice 39. */
-final class CartAdmission
+class CartAdmission
 {
+    /** Fixed legacy route. No production composition selects the dormant adapter. */
+    protected function catalogue(): ?AcquisitionOffers
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => null); }
+
     private ?Order $order = null;
     private array $lines = [];
     public function __construct(private readonly NativeCatalogue $native, private readonly SellerPolicies $sellers,
@@ -64,7 +68,8 @@ final class CartAdmission
         foreach ($item->cart->items()->where('id', '!=', $item->id ?? 0)->get() as $other) {
             if (($other->checkout_config['domain'] ?? null) === $name && $this->native->mapping($other->product)) { throw new \DomainException('Domain already in cart.'); }
         }
-        $selected = $this->sellers->selection($mapping['tld']->tld, $mapping['action'], $mapping['term'], $this->clock->now());
+        $selected = $this->catalogue()?->selection($mapping['tld']->tld, $mapping['action'], $mapping['term'])
+            ?? $this->sellers->selection($mapping['tld']->tld, $mapping['action'], $mapping['term'], $this->clock->now());
         if ($selected->serverId !== (int) $product->server_id || $selected->fingerprint !== $mapping['tld']->account_fingerprint) {
             throw new \DomainException('Registrar changed. Search again.');
         }
@@ -86,7 +91,8 @@ final class CartAdmission
             $mapping = $this->native->mapping($product, $item->plan);
             if (!$mapping || $mapping['action'] !== 'register') { continue; }
             $this->validate($item, $product); $name = $this->name($item, $mapping);
-            $selected = $this->sellers->selection($mapping['tld']->tld, 'register', $mapping['term'], $this->clock->now());
+            $selected = $this->catalogue()?->selection($mapping['tld']->tld, 'register', $mapping['term'])
+                ?? $this->sellers->selection($mapping['tld']->tld, 'register', $mapping['term'], $this->clock->now());
             if ($selected->serverId !== (int) $product->server_id || $selected->fingerprint !== $mapping['tld']->account_fingerprint) {
                 throw new \DomainException('Registrar changed.');
             }
@@ -135,21 +141,21 @@ final class CartAdmission
         $tlds = [];
         foreach (NativeCart::items() as $item) {
             $mapping = $this->native->mapping($item->product, $item->plan);
-            if ($mapping) { $tlds[$mapping['tld']->id] = $mapping['tld']; }
+            if ($mapping) { $tlds[$mapping['tld']->id] = $this->catalogue()?->contactTld($mapping['tld']) ?? $mapping['tld']; }
         }
         return array_values($tlds);
     }
 
     private function admit(Order $order): void
     {
-        $cart = NativeCart::get(); $lines = $selections = $names = [];
+        $cart = NativeCart::get(); $lines = $selections = $names = []; $legacy = $this->catalogue() === null;
         // Use the SAME cached native items which checkout just locked; never reload a different batch here.
         foreach ($cart->items as $item) {
             $product = Product::findOrFail($item->product_id);
             if (!$this->native->mapping($product)) { continue; }
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
             $binding = CatalogueAcceptances::binding($account);
-            if (EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::sellable($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::accepted($binding))) {
+            if ($legacy && EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::sellable($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::accepted($binding))) {
                 throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test domains can’t be ordered. Remove them to check out.');
             }
             if (DB::transactionLevel() !== 1 || $this->order || (int) Auth::id() !== (int) $order->user_id
@@ -157,7 +163,7 @@ final class CartAdmission
                 throw new \DomainException('Domain checkout requires its native transaction and owner.');
             }
             $mapping = $this->validate($item, $product);
-            if ($mapping['action'] !== 'register' && EnomTestRegistration::sellable($binding) && !EnomTestTransfer::accepted($binding)) {
+            if ($legacy && $mapping['action'] !== 'register' && EnomTestRegistration::sellable($binding) && !EnomTestTransfer::accepted($binding)) {
                 throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test transfers can’t be ordered yet. Remove them to check out.');
             }
             $name = $this->name($item, $mapping);
@@ -177,7 +183,9 @@ final class CartAdmission
         // Native checkout already locked this user before coupons and products.
         NativeUserDeletion::requireOwner((int)$order->user_id);
         // Exactly one call for the whole checkout. Any exception aborts the native outer transaction.
-        $snapshots = $this->sellers->admit($selections, $this->clock->now());
+        $offers = $this->catalogue();
+        $batch = $offers?->admit($selections);
+        $snapshots = $batch === null ? $this->sellers->admit($selections, $this->clock->now()) : array_column($batch, 'snapshot');
         foreach ($lines as $index => &$line) {
             $snapshot = $snapshots[$index]; $item = $cart->items->firstWhere('id', $line['item_id']);
             $price = $item->plan()->firstOrFail()->prices()->where('currency_code', 'USD')->sole();
@@ -188,6 +196,10 @@ final class CartAdmission
             }
             $this->requireCheck((string) $item->checkout_config['domains_check'], $line['name'], $this->identity($item), $line['mapping']['action'], true);
             $line['snapshot'] = $snapshot;
+            if ($batch !== null) {
+                $line['renewal_snapshot'] = $batch[$index]['renewal'];
+                $line['contact_tld'] = $offers->contactTld($line['mapping']['tld']);
+            }
         } unset($line);
         $this->order = $order; $this->lines = $lines;
     }

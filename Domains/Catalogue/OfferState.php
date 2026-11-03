@@ -22,8 +22,8 @@ final class OfferState
     }
     public static function cost(array $v): Cost
     {
-        return new Cost($v['action'], $v['term'], $v['enabled'], $v['total'], CostUnit::TermTotal,
-            $v['source'], new \DateTimeImmutable($v['observed_at']), new \DateTimeImmutable($v['fresh_until']), $v['currency']);
+        return new Cost($v['action'], $v['term'], $v['enabled'], $v['total'], CostUnit::from($v['source_unit'] ?? 'term_total'),
+            $v['source'], new \DateTimeImmutable($v['observed_at']), new \DateTimeImmutable($v['fresh_until']), $v['currency'], normalized: true);
     }
     public static function encodeCost(Cost $c): array
     {

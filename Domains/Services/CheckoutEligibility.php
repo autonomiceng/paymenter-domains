@@ -8,8 +8,12 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Query, RequestBudget, RequestContext, RequestOrigin, SaleSelection};
 
 /** Short-lived server-side read evidence. A receipt never replaces locked seller admission. */
-final class CheckoutEligibility
+class CheckoutEligibility
 {
+    /** Fixed legacy route. No production composition selects the dormant adapter. */
+    protected function catalogue(): ?AcquisitionOffers
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => null); }
+
     // Reserve time for the remaining batch, pacing waits and native lock acquisition.
     private const REFRESH_HEADROOM_SECONDS = 60;
     private bool $comparisonSeen = false;
@@ -81,6 +85,7 @@ final class CheckoutEligibility
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Eligibility reads require an unlocked cart.'); }
         if (!in_array($selection->action, ['register', 'transfer'], true)) { throw new \DomainException('Acquisition unavailable.'); }
+        $this->catalogue()?->validate($selection);
         $driver = $this->bindings->reader($selection->serverId);
         if ($driver->binding()->fingerprint !== $selection->fingerprint) { throw new \DomainException('Eligibility account changed.'); }
         $price = \Paymenter\Extensions\Servers\Domains\Models\Price::findOrFail($selection->priceId);
@@ -106,6 +111,7 @@ final class CheckoutEligibility
             throw new \DomainException('Transfer eligibility remains unverified.');
         }
         if ($this->comparisonName === $name) { ($this->comparisonGuard)();$this->comparisonSeen=true; }
+        $this->catalogue()?->validate($selection);
         $token = bin2hex(random_bytes(32));
         Cache::put('domains.checkout.'.$token, ['retail' => $retail, 'comparison' => $comparison, 'transfer' => $transfer, 'identity' => $identity, 'selection' => get_object_vars($selection),
             'name' => $name, 'observed' => $started->getTimestamp(), 'expires' => $started->modify('+5 minutes')->getTimestamp()], 300);
@@ -122,6 +128,7 @@ final class CheckoutEligibility
         if ($receipt['expires'] <= $now) { throw new CheckoutCheckExpired; }
         if (($receipt['comparison'] ?? false) && !WatchTransferPolicy::eligible($receipt['transfer'] ?? [], $now)) { throw new \DomainException('Refresh the comparison.'); }
         $s = new SaleSelection(...$receipt['selection']);
+        if ($locked) { $this->catalogue()?->validate($s, DB::transactionLevel() > 0); }
         if ($locked) {
             // Admission already owns this price lock. Revisions may advance at unchanged retail;
             // a changed amount requires a new customer check, even if native relations were reloaded.
