@@ -84,7 +84,7 @@ final class DomainManagement
             // A claimed/sealed write owns the setting, even if an older release queued a newer unsent choice.
             $unsent=fn($peer)=>!ManagementSequence::started($peer,$l['operations']) && ManagementEvidence::idle($peer) && !$peer->invoice_id && ($peer->attempt['seal']??'absent')==='absent';
             $keep=$pending->first(fn($peer)=>!$unsent($peer))
-                ?? $pending->first(fn($peer)=>$peer->action===$action && ($peer->policy['management']['input']??null)===$clean);
+                ?? $pending->first(fn($peer)=>$peer->action===$action && !ManagementSequence::unsent($peer,$l['operations']) && ($peer->policy['management']['input']??null)===$clean);
             foreach ($pending as $peer) {
                 if ($peer->id===$keep?->id || !$unsent($peer)) { continue; }
                 ManagementSequence::retirePrerequisite($peer,$l['operations'],(int)$actor->id,$this->clock->now());

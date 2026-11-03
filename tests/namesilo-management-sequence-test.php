@@ -1,7 +1,11 @@
 <?php
 // Synthetic management contacts through the genuine durable engine. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require __DIR__.'/bootstrap.php';
+use Paymenter\Extensions\Servers\Domains\Data\Environment;
+$transferEnvironment=Environment::Live;
 require __DIR__.'/Support/management-namesilo.php';
+$legacyTransferExchange=$exchange;$exchange=static fn($origin,$cmd,$p,$ms)=>$legacyTransferExchange(str_replace('https://www.namesilo.com','https://ote.namesilo.com',$origin),$cmd,$p,$ms);
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Management;
 
@@ -76,4 +80,30 @@ foreach(['owner','profile'] as $drift){
     try{$management->run($op->id,$driver);}catch(DomainException){}
     same(['contactAdd'],array_column($writes(),0),'Drift cannot associate a profile');
 }
+// A sealed but unconsumed prerequisite is replaced, never replayed, by an ordinary fresh save.
+require __DIR__.'/Support/namesilo-write-wire.php';
+\Paymenter\Extensions\Servers\Domains\Services\LiveReservationSchema::install();
+[$d,,$original]=$holding('proven-unsent');$ms->route='apibatch';
+$transport=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\nsWriteTransport($binding,$clock);
+$driver=new Management($binding,$transport->exchange());$driver->useReservation($transport->reservation);
+$GLOBALS['nsReply']=static fn($cmd,$p)=>$managementExchange('https://ote.namesilo.com/apibatch',$cmd,$p,25000);
+$input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];$old=$submit($d,$driver,'contacts',$input);
+$child=$d->operations()->where('action','contact_profile')->sole();$GLOBALS['nsOperation']=$child->id;
+config(['domains.provider_send_guard'=>static function():void {
+    if((\Paymenter\Extensions\Servers\Domains\Models\Operation::findOrFail($GLOBALS['nsOperation'])->attempt['seal']??null)==='sealed'){throw new RuntimeException('Synthetic prewire refusal');}
+}]);
+$management->run($old->id,$driver,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);$child->refresh();
+same(['held','management_definitely_unsent'],[$child->state,$child->safe_code],'The prerequisite retains exact unconsumed grant proof');
+$evidence=$child->attempt;same('sealed',$evidence['seal'],'The failed prerequisite keeps its seal');
+config(['domains.provider_send_guard'=>null]);Cache::flush();
+$fresh=$submit($d,$driver,'contacts',$input);
+expect($fresh->id!==$old->id,'A fresh ordinary save replaces a proven-unsent pair even for identical details');
+same(['rejected','rejected'],[$old->fresh()->state,$child->fresh()->state],'Replacement closes both old operations');
+same($evidence,array_diff_key($child->fresh()->attempt,['management_terminal'=>true]),'Retirement keeps every original seal and proof field');
+$newChild=$d->operations()->where('action','contact_profile')->orderByDesc('id')->first();$GLOBALS['nsOperation']=$newChild->id;
+$management->run($fresh->id,$driver,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);Cache::flush();$GLOBALS['nsOperation']=$fresh->id;
+same('succeeded',$management->run($fresh->id,$driver,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background)->state,'Fresh contact save completes automatically');
+$physical=$GLOBALS['nsPhysical'];$management->run($old->id,$driver);$management->run($child->id,$driver);
+same($physical,$GLOBALS['nsPhysical'],'The old child and parent never replay');
+same(['contactAdd','contactDomainAssociate'],array_values(array_filter($physical,fn($c)=>\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\AdmittedTransport::feature($c)!=='catalogue')),'Exactly one creation and association are physically dispatched');
 $nativeSuccessful=true;echo "NameSilo management normalization and automatic contact sequence passed.\n";

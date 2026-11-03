@@ -26,18 +26,24 @@ final class ManagementSequence
     public static function started(Operation $op, $operations): bool
     {
         $key=$op->policy['management']['prerequisite']['key']??null;
-        return is_string($key) && ($operations->firstWhere('operation_key',$key)?->attempt??[])!==[];
+        return is_string($key) && ($operations->firstWhere('operation_key',$key)?->attempt??[])!==[] && !self::unsent($op,$operations);
     }
-    /** Retiring an untouched request also closes its untouched prerequisite, under the holding lock. */
+    /** Only the retained unconsumed-grant proof permits replacement after sealing. */
+    public static function unsent(Operation $parent, $operations): bool
+    {
+        $step=$operations->firstWhere('operation_key',$parent->policy['management']['prerequisite']['key']??null);
+        return $step && $step->safe_code==='management_definitely_unsent' && ($step->attempt['management_unsent']??false)===true && ManagementEvidence::idle($step);
+    }
+    /** Close an untouched or proven-unsent prerequisite under the holding lock, retaining its seal. */
     public static function retirePrerequisite(Operation $parent, $operations, int $actor, \DateTimeImmutable $at): void
     {
         $key=$parent->policy['management']['prerequisite']['key']??null;
         if (!is_string($key)) { return; }
         $step=$operations->firstWhere('operation_key',$key);
-        if (!$step || ($step->attempt??[])!==[]) { throw new \DomainException('Management sequence already started.'); }
+        if (!$step || self::started($parent,$operations)) { throw new \DomainException('Management sequence already started.'); }
         self::pair($parent,$step);
         $step->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
-            'attempt'=>['seal'=>'absent','send_state'=>'definitely_unsent','management_terminal'=>['actor_id'=>$actor,'at'=>$at->format(DATE_ATOM)]]]);
+            'attempt'=>[...($step->attempt??[]),'seal'=>$step->attempt['seal']??'absent','send_state'=>$step->attempt['send_state']??'definitely_unsent','management_terminal'=>['actor_id'=>$actor,'at'=>$at->format(DATE_ATOM)]]]);
     }
     /** Enter the predecessor through the same engine. Unknown sealed work is only read, never sent again. */
     public static function prepare(int $id, DomainManagement $engine, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $now, int $interactiveSeconds): bool
