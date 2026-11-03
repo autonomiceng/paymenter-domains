@@ -168,7 +168,7 @@ class PackageTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'Development or private files'):
                         builder.main()
 
-    def test_staged_catalogue_builds_but_unlisted_unreferenced_roots_fail(self):
+    def test_catalogue_requires_actual_runtime_reachability(self):
         with tempfile.TemporaryDirectory(prefix='domains-staged-runtime-') as temp:
             root = Path(temp)
             source = root/'Domains'; source.mkdir()
@@ -176,8 +176,14 @@ class PackageTests(unittest.TestCase):
             (source/'LICENSE').write_bytes((ROOT/'LICENSE').read_bytes())
             (source/'Catalogue').mkdir()
             (source/'Catalogue/Offer.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Catalogue;')
+            with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'):
+                builder.build(source, root/'dormant')
+            (source/'Domains.php').write_text("<?php #[ExtensionMeta(version: '0.1.0')] use Paymenter\\Extensions\\Servers\\Domains\\Catalogue\\Offer;")
             receipt = builder.build(source, root/'staged')
             self.assertIn('Domains/Catalogue/Offer.php', receipt['members'])
+            _, actual = builder.runtime_members(ROOT/'Domains')
+            for name in ['CallerRouting', 'UpgradeGate', 'Writer', 'OfferScheduler']:
+                self.assertIn('Domains/Catalogue/'+name+'.php', actual)
             (source/'Unlisted').mkdir()
             (source/'Unlisted/Offer.php').write_text('<?php namespace Paymenter\\Extensions\\Servers\\Domains\\Unlisted;')
             with self.assertRaisesRegex(ValueError, 'outside the extension runtime layout'):
