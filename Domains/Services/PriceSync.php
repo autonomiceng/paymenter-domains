@@ -137,9 +137,9 @@ final class PriceSync
             }
         }
         foreach ($synced as $e) {
-            app(SellerPolicies::class)->initialize($e);
+            app(SellerPolicies::class)->initialize($e, $generation);
             // Checkout takes the new cost; only lines that can no longer sell (no cost, below cost) are removed.
-            TestCatalogue::withdrawCarts($binding, $e, true);
+            TestCatalogue::withdrawCarts($binding, $e, true, $generation);
         }
         // Manual batches resolve a retained failure once every accepted term has current cost evidence.
         if ($review !== null && $ending === null && $only === null && $failed === [] && ($deferred === [] || $this->currentCosts($accepted, $clock))) { $this->outcome($account, null,$generation); }
