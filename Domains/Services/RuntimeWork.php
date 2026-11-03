@@ -61,7 +61,7 @@ final readonly class RuntimeWork
         if(!$operationsOnly){
             foreach(Account::where(fn($q)=>$q->whereNotIn('server_id',DB::table('domains_reminder_schedules')->select('server_id'))
                 ->orWhereNotIn('server_id',DB::table('domains_observation_queues')->select('server_id')))->orderBy('server_id')->limit(8)->get() as $a){
-                $this->attempt('enrollment',function()use($a):void {ReminderSchedules::enroll((int)$a->server_id);app(ObservationWork::class)->enroll((int)$a->server_id);},(int)$a->server_id);
+                $this->attempt('enrollment',function()use($a):void {ReminderSchedules::enroll((int)$a->server_id);Runtime::observations()->enroll((int)$a->server_id);},(int)$a->server_id);
             }
         }
         foreach(Account::whereNotIn('server_id',DB::table('domains_runtime_turns')->select('server_id'))->orderBy('server_id')->limit(8)->get() as $a){
@@ -100,6 +100,7 @@ final readonly class RuntimeWork
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
             $tldCursor=(int)$row->tld_cursor;
             $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
+                if(($scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed())!==null){$scheduler->wake(CatalogueAcceptances::binding($a));return;}
                 $catalogue=TestCatalogue::enabled(CatalogueAcceptances::binding($a));
                 foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->keepCurrent($t,$this->clock->now(),$catalogue),(int)$t->id);}
                 // Complete the scan despite individual failures; wrapping retries every retained TLD.

@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
 use Illuminate\Support\Facades\{DB,Log};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffAlert};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -40,7 +40,9 @@ final class PriceFill
     /** A deferred or failed run waits for the next day too: retrying each tick could spend our send limit. */
     public function daily(Account $account): void
     {
-        OperationClaims::outside();$generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
+        OperationClaims::outside();
+        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
+        $generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
         $now=$this->clock->now()->getTimestamp();$due=$now-self::EVERY_SECONDS;
         $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
         DB::transaction(static function()use($binding,$key,$generation):void {
@@ -61,7 +63,9 @@ final class PriceFill
     /** Sync prices. Returns the saved TLD count, including retained rows without prices; 0 when a newer read took over. */
     public function run(Account $account): int
     {
-        OperationClaims::outside();$generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
+        OperationClaims::outside();
+        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account));return 0;}
+        $generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
         $reader=$this->reader($binding)??throw new \DomainException('TEST catalogue reads are unavailable.');
         return $this->fill($binding,$reader,RequestOrigin::Interactive);
     }
