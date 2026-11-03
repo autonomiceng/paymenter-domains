@@ -56,7 +56,7 @@ foreach (Review::LABELS as $code => $label) {
     expect(str_contains(html_entity_decode(strip_tags($rendered[$code])), $shown), 'Native rendered refusal label: '.$code);
     expect(!str_contains($rendered[$code], 'synthetic-secret'), 'Refusal rendering contains no credential');
 }
-$page->review = (new Review('ready', [...$details, 'environment' => 'live', 'test_only' => false]))->jsonSerialize();
+$page->review = (new Review('ready', [...$details, 'environment' => 'live', 'test_only' => false, 'do_not_renew' => false]))->jsonSerialize();
 $rendered['live-ready'] = $page->infolist(Schema::make($page))->toHtml();
 expect(str_contains(strip_tags($rendered['live-ready']), 'Live') && str_contains(strip_tags($rendered['live-ready']), Review::LABELS['ready']), 'Synthetic live badge and eligible result rendered');
 expect(!str_contains(strip_tags($rendered['live-ready']), 'This is a test account'), 'Live preview has no test note');
@@ -100,6 +100,19 @@ DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['
 $view->callAction('preview', data: ['reason' => 'New reason for unavailable account', 'do_not_renew' => false])->assertHasNoActionErrors();
 same('New reason for unavailable account', $view->instance()->reviewReason, 'Early refusal cannot retain a previous reason');
 same('account_unconfirmed', $view->instance()->review['code'], 'Unavailable account label is specific');
+$accountRefusalHtml = $view->html();
+$page->review = (new Review('read_failed'))->jsonSerialize();
+$readRefusalHtml = $page->infolist(Schema::make($page))->toHtml();
+$unconfirmedRenewal = 'Renewal not confirmed yet. Run Check to see if this domain can renew here.';
+$normalRenewal = 'Renewal stays on. Normal invoices apply. If the domain is already due, an invoice may go out right away.';
+$renewalFailures = [];
+foreach (['unchecked Enom page' => $initialHtml, 'early account refusal' => $accountRefusalHtml, 'early read refusal' => $readRefusalHtml] as $case => $renderedHtml) {
+    $text = html_entity_decode(strip_tags($renderedHtml), ENT_QUOTES | ENT_HTML5);
+    if (!str_contains($text, $unconfirmedRenewal) || str_contains($text, $normalRenewal)) { $renewalFailures[] = $case; }
+}
+same(['eligible' => true, 'reason' => null], $details['renewal_eligibility'], 'Enom readback explicitly allows renewal');
+if (!str_contains(html_entity_decode(strip_tags($rendered['live-ready']), ENT_QUOTES | ENT_HTML5), $normalRenewal)) { $renewalFailures[] = 'explicitly eligible Enom result'; }
+same([], $renewalFailures, 'Renewal wording needs positive eligibility: '.implode(', ', $renewalFailures));
 DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['environment' => $bindingRow->environment]);
 new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id, str_repeat('é', 500));
 new \Paymenter\Extensions\Servers\Domains\Data\Adoption\StaffContext($staff->id, ' é ');

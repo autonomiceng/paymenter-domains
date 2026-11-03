@@ -30,8 +30,12 @@ $server->settings()->where('key','domains_transfer_endings')->update(['value'=>'
 $server->settings()->where('key','domains_transfer_endings')->update(['value'=>'com']);
 foreach([null,[['name'=>'unaccepted']]]as$schema){$tlds[0]->update(['registry_fields'=>$schema]);commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));}$tlds[0]->update(['registry_fields'=>[]]);
 foreach(['example.net','sub.example.com','xn--abc.com']as$name){commerceReject(fn()=>$eligibility->observe($name,$s,[1]));}
-$ns=App\Models\Server::find($tlds[1]->server_id);$ns->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
+$ns=App\Models\Server::find($tlds[1]->server_id);
 $sellers->change('com',2,$ns->id,true,true,$now);$nsSelection=$sellers->selection('com','transfer',1,$now);
+same([60,60],TransferPrecheck::rules($nsSelection),'NameSilo seller offer needs no Enom-only fallback acceptance');
+$nsEndings=$ns->settings()->create(['key'=>'domains_transfer_endings','value'=>'net']);
+commerceReject(fn()=>TransferPrecheck::rules($nsSelection));
+$nsEndings->update(['value'=>'com']);
 $wire=new class implements Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DeadlineTransport {
     public function send($environment,$context,$request,#[SensitiveParameter] string $apiKey): Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse {throw new LogicException('Deadline required');}
     public function sendWithin($environment,$context,$request,#[SensitiveParameter] string $apiKey,int $timeoutMs): Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse {

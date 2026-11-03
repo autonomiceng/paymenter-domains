@@ -16,8 +16,9 @@ final readonly class TransferPrecheck
         $settings = Server::findOrFail($s->serverId)->settings()->whereIn('key',
             ['domains_transfer_endings', 'domains_transfer_creation_lock_days', 'domains_transfer_previous_lock_days'])->when($locked, static fn ($q) => $q->lockForUpdate())->get()->keyBy('key');
         $endings = $settings->get('domains_transfer_endings')?->value;
-        // A saved list narrows transfers. Without one, What you sell decides.
-        $open = is_string($endings) ? array_map('trim', explode(',', $endings)) : EnomTestTransfer::endings($s->serverId);
+        // A saved list narrows transfers. NameSilo otherwise uses the validated seller offer.
+        $open = is_string($endings) ? array_map('trim', explode(',', $endings))
+            : ($s->registrar === 'namesilo' ? [$s->tld] : EnomTestTransfer::endings($s->serverId));
         $schema = $s->catalogue === null ? $tld->registry_fields
             : \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tld->catalogue_facts)?->registryFields;
         if (!in_array($s->registrar, ['enom', 'namesilo'], true) || $s->action !== 'transfer' || $s->term !== 1

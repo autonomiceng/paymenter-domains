@@ -46,7 +46,9 @@ final class ReconciliationEvidence
             $dispatch, $end, expectedCharge: $cost ? new Money($cost['amount'], $cost['currency']) : null,
             seal: DispatchSeal::Sealed, providerReference: $ref, expectedExpiry: $op->expected_expires_at ? new DateEvidence($op->expected_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'original_expected') : null,
             beforeExpiry: in_array($op->action, ['renew', 'transfer'], true) && ($op->base_expires_at || ($a['transfer_admission']['base_expiry'] ?? null)) ? new DateEvidence($op->action === 'transfer' ? $a['transfer_admission']['base_expiry'] : $op->base_expires_at->format('Y-m-d'), ExpiryPrecision::Date, 'acquisition_base') : null, executionFacts: $execution, historyAcceptance: $execution && $ref !== null ? null : HistoryAcceptances::load($binding, $query->action), transferReference: $op->action === 'transfer' ? ($a['evidence']['transferReference'] ?? null) : null,
-            expectedPrivacy: $op->action === 'transfer' && is_bool($a['transfer_admission']['privacy'] ?? null) ? $a['transfer_admission']['privacy'] : null);
+            expectedPrivacy: $op->action === 'transfer' && is_bool($a['transfer_admission']['privacy'] ?? null) ? $a['transfer_admission']['privacy'] : null,
+            supportedOrderDate: $binding->registrarKey==='namesilo'&&($answer['outcome']??null)==='accepted'
+                ?new DateEvidence($answer['processed_at'],ExpiryPrecision::Instant,'namesilo_support_order',(new \DateTimeImmutable($answer['processed_at']))->getTimezone()->getName()):null);
     }
     /** Exactly one charged original order AND owned full-term expiry; neither read alone is completion. */
     public static function completion(AttemptEvidence $attempt, Evidence $facts, \DateTimeImmutable $now): ?array

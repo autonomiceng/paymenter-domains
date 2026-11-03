@@ -90,7 +90,7 @@ class ViewOperation extends ViewRecord
     {
         $op=$this->getRecord(); $grants=Staff::requireView(); $facts=RequestFacts::for($op,$grants); $components=[];
         // Nothing else on the page says why this request has stopped moving.
-        $notice=RequestFacts::notice($op,$facts)??($this->getAction('enom_answer',false)?->isVisible()?['title'=>'Only Enom can confirm this result.','body'=>'Ask Enom to check this attempt, then enter its answer.','tone'=>'warning']:null);
+        $notice=RequestFacts::notice($op,$facts)??($this->getAction('enom_answer',false)?->isVisible()?['title'=>'Only '.($op->registrar_key==='namesilo'?'NameSilo':'Enom').' can confirm this result.','body'=>'Ask the registrar to check this attempt, then enter its answer.','tone'=>'warning']:null);
         if ($notice) { $components[]=$this->notice($notice); }
         $account=RequestFacts::account($op);
         $setup=self::url(fn()=>RegistrarFacts::accountUrl((int)$op->server_id));

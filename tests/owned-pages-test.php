@@ -29,7 +29,8 @@ foreach ([0,1] as $i) {
         foreach([$d->id,999999]as$id){try{$controller->$page($request($other),$id);expect(false,'Foreign and missing locator refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}}
     }
     $d->update(['status'=>'active']); $d->service->update(['status'=>'active']); $active=$owners->present($d->fresh());
-    same([],$active->management,'An unresolved acquisition offers no management form'); expect($active->changesUnavailable,'Unavailable changes get a neutral notice');
+    // Read-only DNS guidance may remain visible; an unresolved acquisition must offer no actions.
+    same([],array_filter($active->management,static fn(array $section):bool=>!empty($section['actions'])),'An unresolved acquisition offers no management form'); expect($active->changesUnavailable,'Unavailable changes get a neutral notice');
     $d->update(['status'=>'transfer_pending']);
     $d->update(['observation'=>['corrections'=>[['section'=>'contacts','state'=>'readback_confirmed_awaiting_review','profile_id'=>'PRIVATE','operation_key'=>$op->operation_key],['section'=>'nameservers','state'=>'closed']]]]);
     $html=$controller->show($request($user),$d->id)->render();
