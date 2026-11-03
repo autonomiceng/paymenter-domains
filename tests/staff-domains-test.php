@@ -33,7 +33,7 @@ foreach (range(0,15) as $mask) {
     $page=Livewire::actingAs($user)->test(ListDomains::class);
     if (!$view) { $page->assertForbidden(); continue; }
     $page->assertCanSeeTableRecords([$held,$active,$long])->assertSeeHtml('domains-name-cell');
-    staffTableStandard($page,'Search domain or customer',['domain','customer','note','server_id']);
+    staffTableStandard($page,'Search domain or customer',['domain','customer','note','server_id']);staffRowsStandard($page,['server_id']);
     $page=Livewire::actingAs($user)->test(ViewDomain::class,['record'=>$held->id]);
     $page->assertSuccessful()->assertSee('Registration')->assertSee('Billing')->assertSet('data',[]);
     $activity=Livewire::actingAs($user)->test(RequestsRelationManager::class,['ownerRecord'=>$held,'pageClass'=>ViewDomain::class]);

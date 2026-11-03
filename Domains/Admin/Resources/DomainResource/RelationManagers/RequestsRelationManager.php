@@ -19,7 +19,7 @@ class RequestsRelationManager extends RelationManager
     {
         Staff::requireView();
         $domain=$this->getOwnerRecord();
-        return HistoryTable::apply($table,fn()=>self::rows($domain))->heading(null)->emptyStateHeading('No history yet')->recordAction(null);
+        return HistoryTable::apply($table,fn()=>self::rows($domain),'No history yet')->heading(null)->recordAction(null);
     }
     /** @return list<array{time:?string,change:string,reason:?string,by:string,url:?string}> */
     private static function rows(Domain $domain): array

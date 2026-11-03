@@ -43,7 +43,7 @@ same('Customer #'.$uid,$column($list,'customer')->record($watch)->getState(),'Cu
 foreach(['status'=>'Status','customer'=>'Customer','expiry'=>'Expires within'] as $name=>$label){same($label,$filter($list,$name)->getLabel(),'Filter '.$name);}
 same(null,$filter($list,'attention'),'Attention filter merged into Status');same(null,$filter($list,'drift'),'Drift filter merged into Status');same(null,$filter($list,'state'),'State filter merged into Status');
 same(['monitoring'=>'Monitoring','problem'=>'Problem found','paused'=>'Paused','stopped'=>'Stopped'],$filter($list,'status')->getOptions(),'Status filter options');
-Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','paused')->assertCountTableRecords(0)->assertSee('No monitored domains');
+Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','paused')->assertCountTableRecords(0)->assertSee('No monitored domains match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Turn on monitoring on a hosting product.');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('customer',['customer'=>(string)$uid])->assertCanSeeTableRecords([$watch]);
 
 // Checked: nameservers moved away and expiry within 30 days is Problem found with the reason.
@@ -55,6 +55,8 @@ same('Problem found',$column($list,'status')->record($record)->getState(),'Probl
 same('Expires in '.$days.' days',$column($list,'note')->record($record)->getState(),'Reason in the Note column');
 same('Other',$column($list,'delegation.dns')->record($record)->getState(),'Nameservers elsewhere read Other');
 expect($column($list,'last_check')->record($record)->getState()!=='Missing','Last check has a time');
+expect(str_contains((string)$column($list,'last_check')->record($record)->formatState($column($list,'last_check')->getState()),'data-domains-time'),'Last check shows in the viewer time');
+same(null,$column($list,'expiry')->record($record)->getDescriptionBelow(),'Expires is one value; the days left are in Note');
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','problem')->assertCanSeeTableRecords([$record]);
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','monitoring')->assertCanNotSeeTableRecords([$record]);
 
@@ -209,7 +211,9 @@ foreach(['Mira','mira-filter@example.test'] as $term){$searchCustomer($term)->as
 DB::rollBack();Auth::setUser($manager);
 
 // DNS templates.
-$templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');
+$templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');staffRowsStandard($templates);
+$ns=$templates->instance()->getTable()->getColumn('nameservers');same([true,2],[$ns->canWrap(),$ns->getLineClamp()],'Nameservers wrap to 2 lines');
+same(['No DNS templates','Add one with Add DNS template.'],[$templates->instance()->getTable()->getEmptyStateHeading(),$templates->instance()->getTable()->getEmptyStateDescription()],'No templates says how to add one');
 same('DNS templates',$templates->instance()->getTitle(),'Templates title');same('A DNS template sets the nameservers for new domains and is what monitoring checks them against.',$templates->instance()->getSubheading(),'Templates say what they are for');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
 same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');

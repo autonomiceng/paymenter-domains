@@ -9,7 +9,7 @@ use Filament\Support\Enums\FontFamily;
 use Filament\Tables\Filters\{Filter, SelectFilter};
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\{Builder, Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount,OneLine, Staff, StaffDomainInputs, StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{DemoTag, DomainFacts, DomainQueries, EmptyTable, NavigationCount,OneLine, Staff, StaffDomainInputs, StatusMark, TableColumns};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{AdoptDomain, AdoptionPreview, ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain};
@@ -51,8 +51,8 @@ class DomainResource extends Resource
     public static function table(Table $table): Table
     {
         EmptyTable::apply($table,'No domains yet','They show here after a customer orders one.','No domains match');
-        return $table->modifyQueryUsing(fn (Builder $query) => $query
-            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition']))->columns([
+        return TableColumns::choose($table->modifyQueryUsing(fn (Builder $query) => $query
+            ->with(['user:id,first_name,last_name,email', 'server:id,name', 'latestAcquisition'])),[
             DemoTag::apply(OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono),OneLine::NAME)),
             OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn(Domain $record)=>$record->user?(trim($record->user->first_name.' '.$record->user->last_name)?:$record->user->email):null)
                 ->searchable(query:fn(Builder $query,string $search)=>self::customerSearch($query,$search)),OneLine::SHORT),
@@ -75,10 +75,9 @@ class DomainResource extends Resource
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn($state)=>$state===Missing::LABEL?DomainFacts::UNREADABLE_RENEWAL:null)),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar')->state(fn(Domain $record)=>$record->server?$record->server->name.' #'.$record->server_id:Missing::LABEL)
-                ->toggleable(isToggledHiddenByDefault:true)
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?'Registrar account not found. Check Registrars.':(self::REGISTRARS[$record->registrar_key]??null))),
-        ])->filters([
+        ],['server_id'])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options(self::statusOptions())
                 ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
             SelectFilter::make('server_id')->label('Registrar account')->options(function(): array {

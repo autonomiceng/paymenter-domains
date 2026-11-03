@@ -61,7 +61,7 @@ foreach([['active',null,true],['grace',null,true],['cancelled',null,false],['exp
 }
 DB::table('domains_domains')->where('id',$id)->update(['status'=>$d->status,'provenance'=>$d->provenance]);
 Livewire::actingAs($owner)->test(ListManagedDns::class)->assertForbidden();
-staffTableStandard(Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d),'Search domain',['domain','user.email']);
+staffTableStandard($setup=Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d),'Search domain',['domain','user.email']);staffRowsStandard($setup);
 app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),true,fn()=>$time->now));
 $dnsPermission=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('new_domain_dns');
 foreach([[] , [Staff::POLICY], [$dnsPermission], [Staff::POLICY,$dnsPermission]]as$extra){

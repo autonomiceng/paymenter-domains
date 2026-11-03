@@ -9,7 +9,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\{Blade,DB,Schema};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,CatalogueAcceptances,EnomLive,EnomTestSendLimit,NameSiloSandbox,PriceSync,RegistrarBalances};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -60,12 +60,6 @@ final class RegistrarFacts
     { return $account!==null&&$status['label']!==AccountStatus::SET['not_connected'][0]; }
     public static function mode(?Account $account): ?string
     { return $account?($account->environment==='live'?'Live':'Test'):null; }
-    /** "Enom, 2 domains" */
-    public static function summary(Server $server, ?Account $account): string
-    {
-        $n=Domain::where('server_id',$server->id)->count();
-        return ($account?TldFacts::registrar($account->registrar_key).', ':'').$n.' '.($n===1?'domain':'domains');
-    }
     /** @return array{value:?string,checked:?string,low:bool,cause:?string,due:string,without_cost:int,funds:?string} */
     public static function balance(Account $account): array
     {

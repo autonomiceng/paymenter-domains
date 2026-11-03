@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Filament\Tables\{Columns\TextColumn, Filters\SelectFilter, Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,NavigationCount,OneLine,OperationQueries,RequestFacts,Staff,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,Labels,NavigationCount,OneLine,OperationQueries,RequestFacts,Staff,StatusMark,TableColumns};
 use Paymenter\Extensions\Servers\Domains\Presentation\{Missing,RequestStatus};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
@@ -46,7 +46,7 @@ class OperationResource extends Resource
         $statuses=array_map(fn($status)=>$status[0],RequestFacts::STATUSES); $servers=\App\Models\Server::pluck('name','id')->all();
         $off=Account::where('processing_enabled',false)->pluck('server_id')->all();
         EmptyTable::apply($table,'No registrar requests','Requests show here when a customer orders a domain.','No requests match');
-        return $table->columns([
+        return TableColumns::choose($table,[
             TextColumn::make('id')->label('Request')->formatStateUsing(fn($state)=>'Request #'.$state)->sortable()
                 ->suffix(fn(Operation $record)=>self::demo($record)?DemoData::tag(inline:true):null),
             OneLine::apply(TextColumn::make('domain.domain')->label('Domain')->searchable()->fontFamily('mono'),OneLine::NAME),
@@ -56,8 +56,8 @@ class OperationResource extends Resource
                 ->formatStateUsing(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['label']),
             OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off)))),
             TextColumn::make('created_at')->label('Created')->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($state->getTimestamp()))->sortable()->visibleFrom('lg'),
-            TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
-                ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.'),
+            OneLine::apply(TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
+                ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.')),
         ])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options($statuses)
                 ->query(fn(Builder $query,array $data)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status($query,$data['values']??[])),
