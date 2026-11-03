@@ -232,10 +232,13 @@ $worker->tick(2); $worker->tick(2);
 same('ready', $worker->status($b, 'suffixab')['state'], 'A cold hint made during provider reads survives buffered-work saves');
 
 // A later queue generation or an account rebind during reads exposes no new observations.
+$wire->extra = 61;
+expect(!Tld::where('server_id', $b->serverId)->where('tld', 'suffixci')->exists(), 'The superseded feed fixture includes a new suffix');
 $clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
 $oldRevision = $read()->revision; $lastGood = $worker->status($b)['succeeded_at'];
 $wire->during = static function ($command) use ($q): void { if ($command === ReadCommand::Tlds) { $q->increment('offer_feed_run'); } };
-$worker->tick(2); $wire->during = null;
+$worker->tick(2); $wire->during = null; $wire->extra = 60;
+same(false, Tld::where('server_id', $b->serverId)->where('tld', 'suffixci')->exists(), 'Superseded feed cannot insert a newly discovered suffix');
 expect($oldRevision->matches($read()->revision), 'Superseded feed cannot apply or publish observations');
 same($lastGood, $worker->status($b)['succeeded_at'], 'Superseded feed cannot acknowledge success');
 $q->update(['offer_claim' => null, 'offer_lease' => 0]);
