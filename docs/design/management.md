@@ -214,8 +214,11 @@ NameSilo uses one contact Save. The same transaction freezes a prerequisite prof
 and its association request. Each enters the existing engine with its own deadline, current
 authority checks, reservation and sealed one-write grant; only one operation runs per entry.
 The next worker entry continues the association after verified creation, without another owner
-or staff action. Untouched replacement retires both operations; started prerequisites prevent
-replacement. Existing correction/profile operations remain compatible.
+or staff action. Untouched replacement retires both operations. A proven unconsumed prerequisite
+grant also permits a fresh ordinary save, closing the old pair while preserving its seal and
+evidence. Sent or possibly sent creation cannot be replaced or replayed. Existing correction/profile
+operations remain compatible. Shared owner/staff progress shows verified creation awaiting
+application, amber support guidance for a lost creation ID, and association readback separately.
 
 Profile readback reuses the registration verifier: exact returned ID, non-default profile,
 owner-bound retained proof, exact contact fields and documented US/CA phone equivalence.

@@ -29,7 +29,7 @@
 @if (!$paused && $cap === 'nameservers' && ($section['current'] ?? []))
 <span class="domains-mono">{{ $section['current'][0] }}</span>@foreach (array_slice($section['current'], 1) as $server) <span class="domains-sub domains-mono">{{ $server }}</span>@endforeach
 @endif
-<span @class(['domains-sub' => !$paused && $cap === 'nameservers' && ($section['current'] ?? [])]) role="status" data-management-pending="{{ $cap }}" data-operation="{{ $section['progress']['id'] }}">{{ $section['progress']['text'] }}</span>
+<span @class(['domains-tone-text-warn' => ($section['progress']['tone'] ?? null) === 'warning', 'domains-sub' => !$paused && $cap === 'nameservers' && ($section['current'] ?? [])]) role="status" data-management-pending="{{ $cap }}" data-operation="{{ $section['progress']['id'] }}">{{ $section['progress']['text'] }}</span>
 </span>
 @else
 @if ($paused)
