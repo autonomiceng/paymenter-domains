@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Install
 // financial rows are the converter's persistence contract. Registrar fixtures are entirely fake.
 $migrator = app(Migrator::class);
 $files = $migrator->getMigrationFiles([dirname(__DIR__).'/Domains/database/migrations']);
-// Retain the schema from before conversion and its later worker migration.
+// Start before both additive offer migrations; installation applies their actual ordered history.
 unset($files[OfferSchema::MIGRATION], $files[OfferWorkSchema::MIGRATION]);
 $migrator->runPending($files, ['force' => true]);
 extract(commerceFixture());
