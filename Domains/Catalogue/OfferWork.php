@@ -27,7 +27,7 @@ final class OfferWork
             $work = OfferState::decode($row->offer_work);
             $claimed = (int) $row->offer_lease > $this->at();
             if ($claimed && ($work['feed_claim'] ?? null) === $row->offer_claim) { return; }
-            if (!empty($work['pending']) || ($work['tries'] ?? 0) > 0) { return; }
+            if (($work['tries'] ?? 0) > 0 || (!empty($work['pending']) && $origin !== RequestOrigin::Interactive)) { return; }
             $work['feed_due'] = $origin === RequestOrigin::Interactive ? $this->at() : ($work['feed_due'] ?? $this->at());
             if (!isset($work['origin']) || $origin === RequestOrigin::Interactive) { $work['origin'] = $origin->value; }
             if ($claimed) { $work['feed_hint'] = true; }

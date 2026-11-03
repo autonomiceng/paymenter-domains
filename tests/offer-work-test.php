@@ -93,9 +93,16 @@ $worker->requestFacts($b, 'org'); $worker->sync($b);
 $before = count($wire->calls); $worker->tick(1);
 same(5, count($wire->calls) - $before, 'A large account still has one fixed-size feed read group');
 same(8, $worker->status($b)['remaining'], 'Only 25 observations apply in one account turn');
-$before = count($wire->calls); $worker->tick(1);
+$wire->during = static function ($command) use ($worker, $b): void {
+    if ($command === ReadCommand::TldInfo) { $worker->sync($b); }
+};
+$before = count($wire->calls); $worker->tick(1); $wire->during = null;
 same(2, count($wire->calls) - $before, 'A pending feed batch cannot starve requested facts');
 same(0, $worker->status($b)['remaining'], 'Saved feed observations drain without rereading prices');
+$before = count($wire->calls); $worker->tick(1);
+same(5, count($wire->calls) - $before, 'Manual Sync during buffer drain starts one feed after the buffer empties');
+$worker->tick(1);
+same(5, count($wire->calls) - $before, 'Manual Sync during buffer drain is consumed once');
 // Failed cold reads do not erase known facts, and repeated search hints cannot reset backoff.
 $worker->requestFacts($b, 'suffixaa'); $wire->fail = ReadCommand::TldInfo;
 $before = count($wire->calls); $worker->tick(1);
