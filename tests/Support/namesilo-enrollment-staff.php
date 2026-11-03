@@ -89,7 +89,8 @@ foreach($s->settings()->whereIn('key',[NameSiloSandbox::KEY,'domains_credentials
 }
 $facts=json_decode($s->settings()->where('key',NameSiloSandbox::KEY)->sole()->value,true);
 same(false,$facts['provider_confirmed_account'],'Stored ownership disclaimer');same(true,$facts['authenticated_ote_key'],'Stored authentication fact');same(hash('sha256','synthetic-ote-key'),$facts['key_fingerprint'],'Fixed key fingerprint');
-$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('API connection')->assertSee('Connected')->assertDontSee('Verified')->assertDontSee('OTE only')->assertDontSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
+same('matched',$bindings->configurationStatus($s->id),'Enrolled sandbox API connection remains matched');
+$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSeeInOrder(['API connection','OK'])->assertDontSee('Verified')->assertDontSee('OTE only')->assertDontSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
 $configurePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('configure',$s))->assertActionMounted($action('configure',$s));
 same("NameSilo accounts can't be connected with API credentials.",$configurePage->instance()->getMountedAction()->getModalDescription(),'NameSilo identity refusal remains unchanged');
 $configurePage->setActionData(['registrar'=>'enom']);same(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::description('configure'),$configurePage->instance()->getMountedAction()->getModalDescription(),'Changing registrar updates description');

@@ -28,8 +28,8 @@ def hashes(root):
                 if entry.is_dir(follow_symlinks=False):
                     pending.append((entry.path, name+'/'))
                 elif entry.is_file(follow_symlinks=False):
-                    with open(entry.path, 'rb') as handle:
-                        result[name] = hashlib.sha256(handle.read()).hexdigest()
+                    with open(entry.path, "rb") as handle:
+                        result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
     # Preserve relative Path component ordering without allocating Path objects.
     return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
 
@@ -107,19 +107,35 @@ def verify(source, *, fixture_snapshot=None):
     return members, snapshot
 
 
-def prepare(source, destination):
+def prepare(source, destination, *, share_vendor=False):
     members, before = verify(source)
     destination.mkdir(mode=0o700)
     for name, payload in members.items():
-        path = destination/name
+        path = destination / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload)
-    shutil.copytree(Path(source)/'vendor', destination/'vendor')
+    if share_vendor:
+        # Focused serial installed tests only read Composer's pinned dependencies.
+        # Keep verifying the complete source/vendor inventory before and after the
+        # run, but avoid another 27,000-file copy (including development tools).
+        (destination / "vendor").symlink_to(
+            Path(source) / "vendor", target_is_directory=True
+        )
+    else:
+        shutil.copytree(Path(source) / "vendor", destination / "vendor")
     # Discard upstream cache placeholders; all generated app files belong to this fixture.
-    shutil.rmtree(destination/'bootstrap/cache', ignore_errors=True)
-    for area in ['bootstrap/cache', 'storage/framework/cache', 'storage/framework/sessions', 'storage/framework/views', 'storage/logs']:
-        (destination/area).mkdir(parents=True, exist_ok=True)
-    (destination/'.domains-fixture.json').write_text(json.dumps({'commit': COMMIT, 'composer_lock_sha256': LOCK_SHA256}))
+    shutil.rmtree(destination / "bootstrap/cache", ignore_errors=True)
+    for area in [
+        "bootstrap/cache",
+        "storage/framework/cache",
+        "storage/framework/sessions",
+        "storage/framework/views",
+        "storage/logs",
+    ]:
+        (destination / area).mkdir(parents=True, exist_ok=True)
+    (destination / ".domains-fixture.json").write_text(
+        json.dumps({"commit": COMMIT, "composer_lock_sha256": LOCK_SHA256})
+    )
     if verify(source)[1] != before:
         raise RuntimeError('Dependency changed while copying the fixture.')
     return before

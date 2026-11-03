@@ -615,8 +615,16 @@ def main():
             if not source:
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
-            with timing('native_fixture', timings):
-                snapshot = native.prepare(source, fixture)
+            with timing("native_fixture", timings):
+                shared = (
+                    args.jobs == 1
+                    and requested
+                    and all(
+                        Path(path).name.startswith("test_installed_")
+                        for path in requested
+                    )
+                )
+                snapshot = native.prepare(source, fixture, share_vendor=bool(shared))
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:
