@@ -405,8 +405,10 @@ final class SettingsActions
         try{
             $account=Account::where('server_id',$server)->sole();$t=Tld::findOrFail($tld);
             $catalogue=StaffCatalogue::routed();
-            if($catalogue!==null){$facts=$catalogue->page(collect([$t]))[$t->id]['facts'];$row=$facts&&$facts->fresh(now()->toDateTimeImmutable())?[...$facts->terms,'registry'=>$facts->registryFields===[],'renewal_safe'=>$facts->renewalSafe]:[];}
-            else{$row=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account))->endings[$t->tld]??[];}
+            if($catalogue!==null){$facts=$catalogue->page(collect([$t]))[$t->id]['facts'];$safe=$catalogue->restorable($t);$register=$safe['register']?$facts->terms['register']:[];
+                $bounds=[...$register,$catalogue->setting($t,'min_years'),$catalogue->setting($t,'max_years')];
+                return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),'register_allowed'=>$safe['register'],'transfer_allowed'=>$safe['transfer']];}
+            $row=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account))->endings[$t->tld]??[];
             $register=array_values(array_filter($row['register']??[],'is_int'));$renewable=in_array(1,$row['renew']??[],true)&&($row['registry']??false)&&($row['renewal_safe']??false);
             $bounds=[...$register,$t->min_years,$t->max_years];
             return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),

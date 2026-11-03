@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Native fixture is needed to render the real Filament table and its paginator and permission checks.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -56,6 +57,13 @@ $component->searchTable('')->filterTable('no_cost');same(598,$component->instanc
 $component->removeTableFilter('no_cost')->filterTable('country');same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
 // The installed legacy presenter still reports the fixture's unreadable saved credentials.
 \Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee('Needs a price sync')->assertSee('Ask your site admin to check the encryption key.');
+// Mixed valid/missing batch results must reach the existing page failure notification.
+$writes=new class($native,$sellers,$bindings) extends \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$writes->commands=$commands;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,$writes);
+session()->forget('filament.notifications');
+$m=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class,'write');
+$editable=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->instance();$m->invoke($editable,['choices'=>['com'=>'skip','missing'=>'skip']]);
+expect(collect(session('filament.notifications',[]))->contains(fn($n)=>$n['title']==="Couldn't save"&&str_contains($n['body'],'.missing')),'Page must report the missing row as well as saving its valid sibling');
+same(false,\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent)['sell'],'Valid sibling remains saved when reporting missing row');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);$redacted=$source->page(collect([$t->fresh()]));
 foreach($redacted[$t->id]['prices'] as $price){expect(!array_key_exists('cost',$price),'Revoked cost permission redacts snapshot');}
 $plain=new SellTable([$binding->serverId=>$binding],1,false,static fn()=>[],false,$source);

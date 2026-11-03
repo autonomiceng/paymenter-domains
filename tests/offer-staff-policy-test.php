@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Native fixture verifies reviewed writes, native identity stability and the durable local queue together.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/staff-tlds.php';
 use App\Models\{Product,Server};

@@ -148,7 +148,7 @@ class WhatYouSell extends Page implements HasTable
     {
         if(!$this->canEdit()){return;}
         $server=(int)$this->account;$actor=(int)Auth::id();
-        try{app(StaffSettingsWrites::class)->run(new Review($actor,$server,null,'acceptance',Review::ticket($actor,$server,null,'acceptance',$this->reviewStamp),''),['sell'=>$sell]);}
+        try{$summary=app(StaffSettingsWrites::class)->run(new Review($actor,$server,null,'acceptance',Review::ticket($actor,$server,null,'acceptance',$this->reviewStamp),''),['sell'=>$sell]);}
         catch(\Throwable $error){
             if(!$error instanceof \DomainException&&!$error instanceof \InvalidArgumentException){Log::warning('Domains what you sell save failed.',['exception_class'=>$error::class]);}
             $stale=$error instanceof \DomainException&&$error->getMessage()==='Settings changed. Reload this page.';
@@ -159,6 +159,7 @@ class WhatYouSell extends Page implements HasTable
         $this->reload();
         Notification::make()->success()->title('Saved')->body('Sales start as prices arrive, once orders are on.')
             ->actions([Action::make('open_account')->label('Open registrar account')->link()->url(RegistrarAccount::getUrl(['account'=>$server]))])->send();
+        foreach($summary['failures']??[] as $ending=>$message){Notification::make()->danger()->title("Couldn't save")->body('.'.$ending.': '.SettingsActions::refusal(new \DomainException($message),'acceptance',[],$server))->send();}
     }
     /** The same fill the schedule runs. Sends reads only, keeps the last good rows if one fails. */
     public function syncNow(): void
