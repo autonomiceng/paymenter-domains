@@ -224,6 +224,7 @@
     "tests/reminder-form-test.php",
     "tests/runtime-install-test.php",
     "tests/fresh-offer-install-test.php",
+    "tests/fresh-offer-recovery-test.php",
     "tests/staff-audit-upgrade-test.php",
     "tests/runtime-presenter-test.php",
     "tests/runtime-notices-test.php",

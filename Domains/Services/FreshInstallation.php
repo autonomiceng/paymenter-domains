@@ -94,6 +94,10 @@ final class FreshInstallation
         }
     }
 
+    /** Partial DDL is repairable only inside the owning lifecycle invocation, never by retained installers. */
+    public static function recovering(): bool
+    { if (self::$owner === null) { return false; } self::$owner->check(); return true; }
+
     /** Capability check: only the current lifecycle invocation can complete its proven durable intent. */
     public function check(): array
     {

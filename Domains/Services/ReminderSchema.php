@@ -32,7 +32,7 @@ final class ReminderSchema
     public static function install():void
     {
         $present=array_filter(array_keys(self::definitions()),fn($name)=>Schema::hasTable($name));
-        if($present&&count($present)!==count(self::definitions())){throw new \RuntimeException('Partial retained reminder schema.');}
+        if(($present&&count($present)!==count(self::definitions())) && !FreshInstallation::recovering()){throw new \RuntimeException('Partial retained reminder schema.');}
         foreach(self::definitions() as $name=>$definition){
             if(Schema::hasTable($name)){SchemaVerifier::verify($name,$definition);}else{Schema::create($name,$definition);}
         }

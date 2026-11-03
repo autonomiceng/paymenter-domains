@@ -34,10 +34,11 @@ final class WatchDnsSchema
     public static function install(): void
     {
         $present = array_map(Schema::hasTable(...), self::tables());
-        if (in_array(true, $present, true) && in_array(false, $present, true)) { throw new \RuntimeException('Partial retained DNS schema.'); }
-        if (!$present[0]) {
-            Schema::create(self::tables()[0], self::profiles(...)); Schema::create(self::tables()[1], self::observations(...)); Schema::create(self::tables()[2], self::work(...));
-        }
+        if ((in_array(true, $present, true) && in_array(false, $present, true)) && !FreshInstallation::recovering()) { throw new \RuntimeException('Partial retained DNS schema.'); }
+        if (!$present[0]) { Schema::create(self::tables()[0], self::profiles(...)); }
+        if (!$present[1]) { Schema::create(self::tables()[1], self::observations(...)); }
+        if (!$present[2]) { Schema::create(self::tables()[2], self::work(...)); }
+
         self::verify();
     }
     public static function verify(): void

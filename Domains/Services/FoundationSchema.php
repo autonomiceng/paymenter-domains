@@ -14,7 +14,7 @@ final class FoundationSchema
     public static function install(bool $legacyServiceIndex = false): void
     {
         $present = array_filter(self::TABLES, static fn (string $table): bool => Schema::hasTable($table));
-        if ($present !== [] && count($present) !== count(self::TABLES)) {
+        if (($present !== [] && count($present) !== count(self::TABLES)) && !FreshInstallation::recovering()) {
             throw new \RuntimeException('Partial retained Domains schema; restore and verify history before reinstall.');
         }
         self::table('domains_domains', function (Blueprint $table) {
