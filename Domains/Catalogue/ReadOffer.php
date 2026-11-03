@@ -14,6 +14,13 @@ final readonly class ReadOffer implements \JsonSerializable
     public function observation(): ?Cost
     { return $this->row?->catalogue_observation === null ? null : OfferState::cost(OfferState::decode($this->row->catalogue_observation)); }
 
+    /** Staff display only: saved retail remains visible when the offer cannot be purchased. */
+    public function staffRetail(): ?string
+    {
+        if ($this->context !== Context::Staff) { throw new \LogicException('Staff snapshot required.'); }
+        return UpgradeEvidence::money($this->row?->retail, 2);
+    }
+
     public function price(): PriceSnapshot
     {
         $d = $this->decision; $p = $this->row;

@@ -16,6 +16,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,MissingEntry,RegistrarFacts,Sheet,Staff,StatusMark,TldFacts,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewTld extends ViewRecord
@@ -59,6 +60,7 @@ class ViewTld extends ViewRecord
     {
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
         $acceptedSales=static function()use($server,$t):array {
+            if(($catalogue=StaffCatalogue::routed())!==null){return $catalogue->restorable($t);}
             $a=Account::where('server_id',$server)->sole();
             $accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a))->endings[$t->tld]??[];
             return ['register'=>!empty($accepted['register']),'transfer'=>!empty($accepted['transfer'])];
@@ -68,6 +70,7 @@ class ViewTld extends ViewRecord
             ->visible(function()use($t,$acceptedSales):bool {
                 if(!Staff::can(Staff::POLICY)||!Staff::can(Review::permission('tld_settings'))){return false;}
                 try{$accepted=$acceptedSales();}catch(\Throwable){$accepted=['register'=>false,'transfer'=>false];}
+                if(($catalogue=StaffCatalogue::routed())!==null){return !$catalogue->setting($t,'enabled')||!$catalogue->setting($t,'renew')||(!$catalogue->setting($t,'register')&&$accepted['register'])||(!$catalogue->setting($t,'transfer')&&$accepted['transfer']);}
                 return !$t->enabled||!$t->renew_enabled||(!$t->register_enabled&&$accepted['register'])||(!$t->transfer_enabled&&$accepted['transfer']);
             })
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)auth()->id(),$server,$id,'tld_settings',$this->reviewStamp))])
@@ -75,7 +78,8 @@ class ViewTld extends ViewRecord
                 $input=[];
                 try{
                     $t=$this->getRecord()->fresh();
-                    $input=['min_years'=>$t->min_years,'max_years'=>$t->max_years,'enabled'=>true,'renew'=>true,...$acceptedSales(),'verified'=>true];
+                    $catalogue=StaffCatalogue::routed();
+                    $input=['min_years'=>$catalogue?->setting($t,'min_years')??$t->min_years,'max_years'=>$catalogue?->setting($t,'max_years')??$t->max_years,'enabled'=>true,'renew'=>true,...$acceptedSales(),'verified'=>true];
                     if(!$input['register']&&!$input['transfer']){throw new \DomainException('Acquisition acceptance unavailable.');}
                     app(StaffSettingsWrites::class)->run(new Review((int)auth()->id(),$server,$id,'tld_settings',(string)($data['review_key']??''),'Restored sales from the TLD page.'),$input);
                     Notification::make()->success()->title('Change recorded')->send();

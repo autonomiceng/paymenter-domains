@@ -44,7 +44,8 @@ foreach([1,3] as $years){
         $page=preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1);
         writeRenderArtifact($out.'/what-you-sell-'.$years.'-year-'.$mode.'.html',$page);
     }
-    expect(str_contains($html,'domains-sell-left'),'Left-out line in render');expect(str_contains($html,'list this TLD'),'Blocked row reason in render');
+    $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert above the toolbar in render');expect(str_contains($html,'list this TLD'),'Blocked row reason in render');
     expect($years===3?str_contains($html,'To add one, open the TLD page and use Edit prices.'):str_contains($html,'This price is below registrar cost.'),'Loss and Missing in render');
 }
 echo "Native What you sell rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;

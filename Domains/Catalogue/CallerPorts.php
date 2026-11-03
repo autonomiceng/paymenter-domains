@@ -44,7 +44,9 @@ final class CallerPorts implements Catalogue
     public function loadBatch(array $queries, Context $context, bool $lock = false): array
     { return $this->reader->loadBatch($queries, $context, $lock); }
 
-    public function displayBatch(array $queries): array
+    public function displayBatch(array $queries): array { return $this->display($queries, Context::Public); }
+    public function staffBatch(array $queries): array { return $this->display($queries, Context::Staff); }
+    private function display(array $queries, Context $context): array
     {
         // Base credential/processing proof is shared only inside this one unlocked display load.
         // Feature acceptance remains action-specific; strict receipt/locked readers never use this cache.
@@ -56,6 +58,6 @@ final class CallerPorts implements Catalogue
             }
             return $checked[$b->serverId] && ($this->featureReady)($b, $q->action) === true;
         };
-        return (new OfferReader($this->clock, $this->authorize, $ready))->displayBatch($queries);
+        return (new OfferReader($this->clock, $this->authorize, $ready))->displayBatch($queries, $context);
     }
 }

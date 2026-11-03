@@ -15,14 +15,14 @@ final readonly class Edit implements Command
         public ?string $retail = null, public array $actions = [])
     { CanonicalName::parse('example.'.$ending, [$ending]); }
 
-    public static function defaults(AccountBinding $b, string $tld, Intent $intent, array $rule): self
+    public static function defaults(AccountBinding $b, string $tld, Intent $intent): self
     {
         if ($intent->sell !== null || $intent->longest !== null || $intent->transfers !== null || $intent->stops !== []) {
             throw new \InvalidArgumentException('Defaults cannot contain offer overrides.');
         }
-        return new self($b, $tld, 'defaults', $intent, PricingRule::validate($rule));
+        return new self($b, $tld, 'defaults', $intent);
     }
-    /** Null pricing rule removes the offer rule and inherits the account rule. */
+    /** Null pricing rule removes the offer rule and inherits the business default. */
     public static function override(AccountBinding $b, string $tld, Intent $intent, ?array $rule = null): self
     { return new self($b, $tld, 'override', $intent, $rule === null ? null : PricingRule::validate($rule)); }
     /** The binding is the new seller; an empty action list deselects the ending. */
@@ -38,6 +38,7 @@ final readonly class Edit implements Command
         if (PricingRule::units($retail, 2) < 1) { throw new \InvalidArgumentException('Positive renewal retail required.'); }
         return new self($b, $tld, 'retail', retail: PricingRule::decimal(PricingRule::units($retail, 2)));
     }
+    public static function requestSync(AccountBinding $b, string $tld): self { return new self($b, $tld, 'sync'); }
     public static function republish(AccountBinding $b, string $tld): self { return new self($b, $tld, 'republish'); }
     public function binding(): AccountBinding { return $this->account; }
     public function tld(): string { return $this->ending; }

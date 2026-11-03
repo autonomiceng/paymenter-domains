@@ -86,6 +86,9 @@
     "tests/native-catalogue-test.php",
     "tests/cart-admission-test.php",
     "tests/offer-commerce-test.php",
+    "tests/offer-staff-test.php",
+    "tests/offer-staff-reads-test.php",
+    "tests/offer-staff-policy-test.php",
     "tests/offer-pay-check-test.php",
     "tests/offer-cache-test.php",
     "tests/checkout-refresh-test.php",
@@ -441,6 +444,7 @@
     "tests/namesilo-profile-wire-test.php",
     "tests/namesilo-runtime-renewal-test.php",
     "tests/namesilo-runtime-management-test.php",
+    "tests/offer-global-pricing-test.php",
     "tests/offer-upgrade-generation-test.php"
   ],
   "ui": [],

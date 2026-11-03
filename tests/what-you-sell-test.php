@@ -92,7 +92,7 @@ expect(str_contains(Livewire::actingAs($staff)->test(WhatYouSell::class)->instan
 expect(str_contains(Livewire::actingAs($staff)->test(ListTlds::class)->instance()->getTable()->getFiltersApplyAction()->getAlpineClickHandler(),'close()'),'One hook closes it on every table');
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSee('Prices from')->assertSee(Carbon\CarbonImmutable::createFromTimestamp((int)PriceFill::last($binding)->filled_at)->format('M j, Y, g:i A T'))
     ->assertSee('.com')->assertSee('.org')->assertSee('.com.au')->assertSee('.trading')->assertSee('No cost yet')->assertCanNotSeeTableRecords([$row('xyz'),$row('adult')])
-    ->assertSee('8.95')->assertSee('Prices in USD for 1 year.')->assertDontSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
+    ->assertSee('8.95')->assertDontSee('Prices in USD for 1 year.')->assertDontSee('USD 8.95')->assertSee('1-year cost')->assertSee('Profit');
 same(0,$calls()-$before,'Opening a full page sends nothing');
 // The summary counts what is for sale, the title stays the section's, and no head button competes with the row buttons.
 $sale=static fn(SellRow $r,CatalogueAcceptance $accepted)=>SellRule::decide($r,SellRule::read($binding,$accepted))==='sell'&&in_array(1,$accepted->endings[$r->tld]['register']??[],true);
@@ -374,8 +374,12 @@ $page->assertSee('What you sell')->assertDontSee('Choose what you sell')->assert
 expect(!in_array('acceptance',staffSetupActions(),true),'The dialog is no longer a setup action');
 
 // A saved TLD with prices that cannot sell says why, and links to where it is fixed.
-app(PriceSync::class)->run(Account::where('server_id',$old->id)->sole(),app(Clock::class),null);Tld::where(['server_id'=>$old->id,'tld'=>'org'])->sole()->update(['enabled'=>false]);
-Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$old->id])->assertSee('Stopped by staff. Open TLDs &amp; pricing',false)->assertSeeHtml('href="'.e(ListTlds::getUrl()).'"');
+app(PriceSync::class)->run(Account::where('server_id',$old->id)->sole(),app(Clock::class),null);
+$stopped=Tld::where(['server_id'=>$old->id,'tld'=>'org'])->sole();$stopped->update(['enabled'=>false]);
+$statusPage=Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$old->id]);
+$statusRow=collect($statusPage->instance()->getTableRecords()->items())->firstWhere('tld','org');
+$statusColumn=$statusPage->instance()->getTable()->getColumn('status')->record($statusRow);
+same(['Stopped by staff. Open .org',TldResource::getUrl('view',['record'=>$stopped->id])],[$statusColumn->getDescriptionBelow(),$statusColumn->getUrl()],'Status names and opens its own TLD');
 
 // The whole list: 616 rows stay fast and fit our own limits, on a save and on a page load.
 $rows=array_fill_keys(array_slice(array_merge(...array_map(static fn(string $a)=>array_map(static fn(string $b)=>'t'.$a.$b,range('a','z')),range('a','z'))),0,616),['9.00','9.00','9.00']);

@@ -28,12 +28,13 @@ final class SellTable
     /** @param array<int,AccountBinding> $bindings by server
      * @param \Closure():array<SellRow> $page the rows on screen
      * @param bool $projected the page did not run SellRule::ensure, so rows show as ensure would save them, with no write */
-    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false) {}
+    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false,private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null) {}
     /** The registrar's list plus saved TLDs it no longer has, so a price with no sales row still shows.
      * Those rows stay read-only and carry the negated TLD id: a write here would add a sales row. Hidden TLDs show only when already saved.
      * The cast gives the id number affinity, so SQLite matches Filament's string keys. */
     public function rows(?string $focus): Builder
     {
+        if($this->catalogue!==null){return $this->catalogue->rows($this->bindings,$focus);}
         if($this->bindings===[]){return SellRow::query()->whereRaw('1=0');}
         $table=SellTableSchema::ROWS;$hidden=EndingChoices::hiddenList();
         $listed=DB::table($table)->select(self::COLUMNS)->selectRaw('1 as listed')->where(function($any)use($hidden,$table){
@@ -76,7 +77,7 @@ final class SellTable
     /** A row as SellRule::ensure would save it: before any rule is saved, a TLD the account sells reads as Sell with its accepted terms. */
     private function effective(SellRow $row): SellRow
     {
-        if(!$this->projected||$row->choice!==null){return $row;}
+        if($this->catalogue!==null||!$this->projected||$row->choice!==null){return $row;}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;
         if($sold===null||$sold['register']===[]||($this->ruleSaved[$server]??=SellRule::saved($this->bindings[$server])!==null)){return $row;}
         return $this->legacy[self::key($row)]??=(clone $row)->forceFill(['choice'=>'sell','longest'=>max($sold['register']),'transfer'=>$sold['transfer']!==[]]);
@@ -89,6 +90,7 @@ final class SellTable
     }
     public function rule(int $server): array
     {
+        if($this->catalogue!==null){return $this->rules[$server]??=$this->catalogue->rule($server);}
         if(isset($this->rules[$server])){return $this->rules[$server];}
         $binding=$this->bindings[$server];
         try{$accepted=CatalogueAcceptances::load($binding);}catch(\DomainException){$accepted=null;}
@@ -97,12 +99,16 @@ final class SellTable
     /** Why this row can't be saved, or null when it can. */
     public function blocked(SellRow $row): ?string
     {
+        if($this->catalogue!==null){return EndingChoices::hidden($row->tld)?'This TLD is hidden.':null;}
         if(!$row->listed){return "The registrar doesn't list this TLD.";}
         return EndingChoices::hidden($row->tld)&&!isset($this->accepted((int)$row->server_id)[$row->tld])?'This TLD is hidden.':null;
     }
     /** @return array{label:string,tone:string,next?:string,open?:bool} */
     public function status(SellRow $row): array
     {
+        if($this->catalogue!==null){$facts=$this->facts()[self::key($row)]??[];
+            if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
+            $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];return ['label'=>$s['label'],'tone'=>$s['tone'],...($s['reason']===null?[]:['next'=>$s['reason'].'. Open .'.$row->tld,'open'=>true])];}
         $row=$this->effective($row);
         if(!$row->listed){return ['label'=>'Not for sale','tone'=>'gray'];}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;$rule=$this->rule($server);
@@ -118,7 +124,7 @@ final class SellTable
             'limit'=>['label'=>$this->costs?'Over the cost limit':'Not for sale','tone'=>'gray'],
             'waiting'=>$waiting,
             default=>$sold===null?($row->high_cost===null?$waiting:['label'=>'Waiting for prices','tone'=>'warning','next'=>'The next price sync adds it. Check orders under Registrars'])
-                :(($sales=$this->sales($row))===null?$waiting:['label'=>$sales['label'],'tone'=>$sales['tone']??'gray',...(($sales['reason']??null)===null?[]:['next'=>$sales['reason'].'. Open TLDs & pricing','open'=>true])]),
+                :(($sales=$this->sales($row))===null?$waiting:['label'=>$sales['label'],'tone'=>$sales['tone']??'gray',...(($sales['reason']??null)===null?[]:['next'=>$sales['reason'].'. Open .'.$row->tld,'open'=>true])]),
         };
     }
     /** Sale state for the rows on screen, read once. Null when no prices are saved for it yet. */
@@ -130,9 +136,13 @@ final class SellTable
     private function facts(): array
     {
         if($this->saleFacts!==null){return $this->saleFacts;}
-        $tlds=Tld::whereIn('server_id',array_keys($this->bindings))->whereIn('tld',array_map(fn(SellRow $row)=>$row->tld,($this->page)()))->get()
-            ->filter(fn(Tld $t)=>$t->account_fingerprint===$this->bindings[(int)$t->server_id]->fingerprint);
-        $this->rowTlds=$tlds->keyBy(fn(Tld $t)=>$t->server_id.':'.$t->tld)->all();$page=TldFacts::page($tlds);
+        $pairs=collect(($this->page)())->groupBy('server_id');
+        $tlds=Tld::where(function($q)use($pairs):void {
+            $q->whereRaw('1=0');
+            foreach($pairs as $server=>$rows){if(isset($this->bindings[$server])){$q->orWhere(fn($one)=>$one->where('server_id',$server)
+                ->where('account_fingerprint',$this->bindings[$server]->fingerprint)->whereIn('tld',$rows->pluck('tld')));}}
+        })->get();
+        $this->rowTlds=$tlds->keyBy(fn(Tld $t)=>$t->server_id.':'.$t->tld)->all();$page=$this->catalogue?->page($tlds)??TldFacts::page($tlds);
         return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->server_id.':'.$t->tld=>$page[$t->id]])->all();
     }
     /** The saved TLD behind a row, for its own page. A row nothing is saved for yet has none. */
@@ -158,7 +168,9 @@ final class SellTable
     /** The saved prices for this view. Staff without costs never read them. */
     public function saved(): array
     {
+        if($this->catalogue!==null&&!Staff::requireView()->costs){return ['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];}
         if($this->savedRead!==null){return $this->savedRead;}
+        if($this->catalogue!==null){$this->facts();return $this->savedRead=$this->costs?$this->catalogue->matrix(collect($this->rowTlds),$this->years):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];}
         return $this->savedRead=$this->costs&&$this->bindings!==[]?app(PriceList::class)->read($this->years,'all',$this->scope()):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];
     }
     public function scope(): ?int {return count($this->bindings)===1?array_key_first($this->bindings):null;}
@@ -191,6 +203,7 @@ final class SellTable
     public function pricing(SellRow $row): string {return $this->savedRow($row)['pricing']??'Default';}
     public function terms(SellRow $row): string
     {
+        if($this->catalogue!==null){$this->facts();$row=(clone $row)->forceFill(['longest'=>$this->saleFacts[self::key($row)]['intent']['longest']??null]);}
         $row=$this->effective($row);$longest=$row->longest??$this->rule((int)$row->server_id)['years'];
         return 'Up to '.$longest.' '.($longest===1?'year':'years').($row->longest===null?', default':'');
     }
@@ -199,8 +212,10 @@ final class SellTable
      * @return array{text:?string,tone:?string,hint:?string,mark:bool} */
     public function cell(SellRow $row,string $action,string $field): array
     {
+        if($this->catalogue!==null&&!Staff::requireView()->costs){return self::cellOf(null);}
         $saved=$this->savedRow($row);
-        if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the line above the rows.");}
+        if($this->catalogue!==null){return $this->savedCell($saved['prices'][$action]??null,$field,'sold');}
+        if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
         $prices=$saved['prices'][$action]??null;
         if($action==='register'&&$this->years===1&&$row->listed){
             if(($prices['price']??null)===null&&$row->register_cost!==null){return $this->registerCell($row,$field);}

@@ -23,10 +23,11 @@ final class StaffSettingsReview
     private array $input=[];
     /** Snapshot after this review's last synced TLD; null until one is written. */
     private ?string $synced=null;
+    private ?\Closure $catalogueStamp=null;
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
+    { $this->input=array_intersect_key($data,array_flip(['dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','retained_annual_retail','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
-        public readonly string $action,private readonly string $ticket,public readonly string $reason) {}
+        public readonly string $action,private readonly string $ticket,public readonly string $reason,private readonly ?\Closure $current=null) {}
     /** Syncing prices, saving what you sell, DNS template selection and testing the connection ask no reason; the audit still records who, when and what. */
     public const NO_REASON=['import','acceptance','new_domain_dns','probe'];
     /** Saving these publishes prices, so they also need the publish permission. */
@@ -42,6 +43,7 @@ final class StaffSettingsReview
     {return Server::where('extension','Domains')->orderBy('id')->pluck('id');}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
     {
+        if(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()!==null){return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($serverId,$tldId);}
         if($serverId===self::ALL_ACCOUNTS){return hash('sha256',json_encode([BusinessSetting::stamp($lock),self::domainServers()->map(fn($id)=>self::stamp($id,null,$lock))->all()],JSON_THROW_ON_ERROR));}
         $read=static fn($q)=>($lock?$q->lockForUpdate():$q)->get();
         $s=$read(Server::whereKey($serverId))->firstOrFail();
@@ -75,26 +77,29 @@ final class StaffSettingsReview
         Server::whereIn('id',$ids)->orderBy('id')->lockForUpdate()->get();
         Account::whereIn('server_id',$ids)->orderBy('server_id')->lockForUpdate()->get();
     }
-    public function check(bool $inFlight=false): void
+    public function check(bool $inFlight=false,?\Closure $catalogueStamp=null): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
-        UpgradeGate::legacy();
-        // Disabled accounts read the same rule, so a business-wide review is not refused for one of them. The stamp locks every account.
+        if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{UpgradeGate::legacy();}}
+        $this->catalogueStamp=$catalogueStamp;
         if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}
-        else{$this->lockOne();}
+        elseif($catalogueStamp===null){$this->lockOne();}
+        else{$server=Server::whereKey($this->serverId)->lockForUpdate()->firstOrFail();if($server->extension!=='Domains'||!$server->enabled){throw new \DomainException('Registrar unavailable.');}}
+        if($catalogueStamp===null){
         if($this->tldId&&!Tld::where(['id'=>$this->tldId,'server_id'=>$this->serverId])->lockForUpdate()->first()){throw new \DomainException('TLD account changed.');}
+        }
         try{$t=json_decode(Crypt::decryptString($this->ticket),true,8,JSON_THROW_ON_ERROR);}catch(\Throwable){throw new \DomainException('Invalid review key.');}
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
             ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
             ||($this->action==='activate'&&EnomLiveActivation::enabling(Account::where('server_id',$this->serverId)->sole(),$this->input)&&($t['ready']??null)!==EnomLiveActivation::stamp(Account::where('server_id',$this->serverId)->sole(),true))
-            ||!hash_equals($this->synced??$t['stamp'],($this->action==='acceptance'&&str_starts_with($t['stamp'],'sell:')?SellRule::stamp($this->serverId):self::stamp($this->serverId,$this->tldId,true)))){throw new \DomainException('Settings changed. Reload this page.');}
+            ||!hash_equals($this->synced??$t['stamp'],($catalogueStamp!==null?$catalogueStamp():($this->action==='acceptance'&&str_starts_with($t['stamp'],'sell:')?SellRule::stamp($this->serverId):self::stamp($this->serverId,$this->tldId,true))))){throw new \DomainException('Settings changed. Reload this page.');}
         // The account mutex serializes checks; the primary key also prevents duplicate claims.
         $keys=DB::table(self::KEYS)->where('server_id',$this->serverId)->where('review_key',$t['key']);
         $used=(clone $keys)->lockForUpdate()->exists();
         if($inFlight&&(!$used||$this->verified!==$t)){throw new \DomainException('Verified in-flight review required.');}
         if($used&&!$inFlight){throw new \DomainException('Review key used.');}
         if(!$used){DB::table(self::KEYS)->insert(['server_id'=>$this->serverId,'review_key'=>$t['key'],'expires_at'=>$t['until']]);}
-        $this->verified=$t;$this->before=$this->state($this->serverId,$this->tldId);
+        $this->verified=$t;$this->before=$catalogueStamp!==null?['snapshot'=>$catalogueStamp()]:$this->state($this->serverId,$this->tldId);
     }
     /** One account's rows, in mutex order. */
     private function lockOne(): void
@@ -132,7 +137,7 @@ final class StaffSettingsReview
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $entry=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->state($this->serverId,$this->tldId)];
+            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)];
         // History is read per account, so a business-wide change is written to each one, disabled accounts too.
         foreach($this->serverId===self::ALL_ACCOUNTS?self::domainServers():[$this->serverId] as $id){self::append(Server::whereKey($id)->lockForUpdate()->firstOrFail(),$entry);}
         // One sync writes TLD after TLD under one review: the next TLD checks against this run's own last write.

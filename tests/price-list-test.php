@@ -103,7 +103,7 @@ same($matrix['rows'][0]['formula'],$values[17],'CSV includes visible explanation
 same(['Register est. profit','Renew est. profit','Transfer est. profit'],[$records[0][7],$records[0][11],$records[0][15]],'CSV profit headers match the table');
 $page->assertCountTableRecords(1);$shown=$page->instance()->getTableRecords()->items()[0];
 foreach(['register','renew','transfer'] as $index=>$action){foreach(['cost','price','profit'] as $offset=>$field){$page->assertTableColumnStateSet($action.'_'.$field,$values[5+$index*4+$offset],$shown);}}
-$page->assertTableColumnStateSet('account_name',$values[1],$shown)->assertTableColumnStateSet('pricing',$values[3],$shown)->assertSee('Prices in USD for 1 year.');
+$page->assertTableColumnStateSet('account_name',$values[1],$shown)->assertTableColumnStateSet('pricing',$values[3],$shown)->assertSee('The table shows saved prices.');
 $page->assertSee($values[17])->assertSee($values[18].' per payment.');
 // Red Profit carries its reason on hover. Price and Cost stay plain.
 $cell=fn(string $name,$record)=>$page->instance()->getTable()->getColumn($name)->record($record);
@@ -113,7 +113,7 @@ same(null,$cell('renew_price',$shown)->getColor(null),'Only Profit goes red');
 $dom=new DOMDocument();@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
 same($values[17],$xpath->evaluate('normalize-space(//*[@data-price-explanation]//code[@data-price-formula])'),'Formula shown as a code line');
 same('Custom pricing for .com',$xpath->evaluate('normalize-space(//*[@data-price-pricing])'),'Panel names the TLD with custom pricing');
-same(4,(int)$xpath->evaluate('count(//dl[@data-price-notes]/dt)'),'Panel notes are a short list');
+same(5,(int)$xpath->evaluate('count(//dl[@data-price-notes]/dt)'),'Panel notes include the moved Off explanation');
 Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertDontSee('Price list');expect(str_contains(TldResource::getUrl('price-list'),'/price-list'),'The old address keeps its route');
 Livewire::actingAs($u)->test(PriceListPage::class)->assertRedirect(WhatYouSell::getUrl());
 // All accounts reads every account and saves none.
@@ -135,7 +135,7 @@ expect(!$one->instance()->getTable()->getColumn('account_name')->isVisible(),'On
 // Past 1 year only saved totals show: Off when not sold that long, Missing with its step when sold and not saved.
 $sells=SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole();
 $binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
-$three=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',3)->assertSee('3-year cost')->assertSee('Saved prices in USD for 3 years')
+$three=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',3)->assertSee('3-year cost')->assertSee('No price is saved for this many years.')
     ->assertTableColumnStateSet('register_price','23.40',$sells)->assertTableColumnStateSet('renew_price','Off',$sells)->assertTableColumnStateSet('transfer_cost','Off',$sells);
 $off=$three->instance()->getTable()->getColumn('renew_cost')->record($three->instance()->getTableRecord((string)$sells->id));same(['Off','gray'],[$off->getState(),$off->getColor(null)],'Off is muted, not an alarm');
 $accepted=CatalogueAcceptances::load($binding);$longer=$accepted->endings;$longer['com']['register']=array_values(array_unique([...$longer['com']['register'],2]));sort($longer['com']['register']);CatalogueAcceptances::save($binding,$accepted->revision,$longer);

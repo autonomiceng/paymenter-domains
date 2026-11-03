@@ -33,18 +33,22 @@ final class TldFacts
     /** One server-only snapshot per row/render; never retain across requests or use as write authority.
      * Each row: action, term, retail (null when missing), flags (below_cost, cost_missing, not_offered, price_missing, needs_sync, unpublished),
      * fresh, observed and until; cost only with the costs permission. */
-    public static function snapshot(Tld $tld, ?StaffGrants $grants = null): array
+    public static function snapshot(Tld $tld, ?StaffGrants $grants = null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue = null): array
     {
+        $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+        if($catalogue!==null){return $catalogue->page(collect([$tld]))[$tld->id];}
         $grants ??= Staff::requireView();
         try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
         try{$ruleHash=self::ruleHash((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld));}catch(\Throwable){$ruleHash=null;}
         $saved=Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get();
         return self::build($tld,$grants,$accepted,$ruleHash,$saved,static fn():?int=>self::sellerId($tld->tld));
     }
-    /** snapshot() for a page of TLD rows in a fixed number of reads: accounts and acceptances once per account, default
-     * pricing and the card fee once; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
-    public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null): array
+    /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per
+     * account, including card fees; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
+    public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue = null): array
     {
+        $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+        if($catalogue!==null){return $catalogue->page($tlds);}
         $grants ??= Staff::requireView();
         if($tlds->isEmpty()){return [];}
         $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();
@@ -95,6 +99,7 @@ final class TldFacts
     /** "Default pricing", "Fixed price" or "Custom markup" for a TLD row. */
     public static function pricing(Tld $t): string
     {
+        if(($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){return !$catalogue->own($t)?'Default pricing':($catalogue->pricing((int)$t->server_id,$t)['mode']==='fixed'?'Fixed price':'Custom markup');}
         if($t->use_default_rule){return 'Default pricing';}
         if($t->pricing_mode!=='fixed'){return 'Custom markup';}
         try{return (new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($t)['mode']==='fixed'?'Fixed price':'Custom markup';}catch(\Throwable){return 'Custom markup';}
@@ -113,6 +118,7 @@ final class TldFacts
     /** "1 year", "3 years" or "1 to 3 years". */
     public static function terms(Tld $t): string
     {
+        if(($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){$t=(clone $t)->forceFill(['min_years'=>$catalogue->setting($t,'min_years'),'max_years'=>$catalogue->setting($t,'max_years')]);}
         $years=static fn(int $n):string=>$n.' '.($n===1?'year':'years');
         return $t->min_years===$t->max_years?$years((int)$t->min_years):$t->min_years.' to '.$years((int)$t->max_years);
     }
@@ -147,7 +153,7 @@ final class TldFacts
                 default=>self::missing('Use Edit prices.'),
             };
             // Sync never fills a price for sales that are off.
-            $transfer=$first('transfer');$transfer=!$row->transfer_enabled&&($transfer['retail']??null)===null?'Off':$price($transfer);
+            $transfer=$first('transfer');$catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$transfer=!($catalogue?->setting($row,'transfer')??$row->transfer_enabled)&&($transfer['retail']??null)===null?'Off':$price($transfer);
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
@@ -296,6 +302,8 @@ final class TldFacts
     /** Latest saved price time for an account, the time of its last good sync. */
     public static function lastPrices(int $serverId): ?\Carbon\CarbonImmutable
     {
+        $catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+        if($catalogue!==null){$at=$catalogue->progress($serverId)['succeeded_at']??null;return $at===null?null:\Carbon\CarbonImmutable::createFromTimestamp((int)$at);}
         $at=Price::where('server_id',$serverId)->max('observed_at');
         return $at===null?null:\Carbon\CarbonImmutable::parse($at)->utc();
     }
@@ -303,6 +311,7 @@ final class TldFacts
      * Returns the plain cause and the failure time (null when the stored failure has no time). */
     public static function syncFailure(int $serverId, ?\Carbon\CarbonImmutable $lastPrices = null): ?array
     {
+        if(($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){$s=$catalogue->progress($serverId);return empty($s['failure'])?null:['cause'=>self::syncCause($s['failure']),'at'=>isset($s['failed_at'])?gmdate('M j, Y H:i',(int)$s['failed_at']).' UTC':null];}
         $row=self::queue($serverId);$facts=self::refreshFacts($serverId,$row);
         if($facts===null){return null;}
         try{$at=isset($facts['at'])&&is_string($facts['at'])?\Carbon\CarbonImmutable::parse($facts['at'])->utc():null;}catch(\Throwable){$at=null;}

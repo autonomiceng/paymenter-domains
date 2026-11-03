@@ -3,6 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\User;
+use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
 use Paymenter\Extensions\Servers\Domains\Services\StaffReason;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Checkbox,Hidden,Radio,Select,Textarea,TextInput};
@@ -95,7 +96,7 @@ final class SettingsActions
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)))];
             if(in_array($name,['default_pricing','override'],true)){
                 // Saving writes rule and fee together. The form shows only the rule's own fields, so no fee may swap them for the built-in rule.
-                $rule=self::cached(static function()use($tld,$name){try{return $tld&&$name==='override'?(new PricingRules)->rule(Tld::findOrFail($tld)):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
+                $rule=self::cached(static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(StaffCatalogue::routed()?->pricing($server,Tld::findOrFail($tld))??(new PricingRules)->rule(Tld::findOrFail($tld))):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
                 $default=self::cached(static function(){try{return (new PricingRules)->defaultRule();}catch(\Throwable){return null;}});
                 $own=static fn($get)=>$name!=='override'||$get('pricing')!=='default';
                 if($name==='override'){
@@ -104,7 +105,7 @@ final class SettingsActions
                     $fields[]=Radio::make('pricing')->hiddenLabel()->live()->required()
                         ->options(fn()=>array_filter(['default'=>'Use Default pricing ('.($default()===null?'not readable':PricingRule::describe($default())).')','custom'=>'Set prices for this TLD only'],
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
-                        ->default(fn()=>((Tld::find($tld)?->use_default_rule??true)&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
+                        ->default(fn()=>((StaffCatalogue::routed()!==null?!StaffCatalogue::routed()->own(Tld::findOrFail($tld)):(Tld::find($tld)?->use_default_rule??true))&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
                 $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost','fixed'=>'Set my own price'])->required()->live()->default(fn()=>$rule()['mode'])->visible($own);
                 $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup'])->required()->maxLength(12)->live(debounce:500)
@@ -147,7 +148,7 @@ final class SettingsActions
                 $years=static function(string $bound)use($allowed):int{$a=$allowed();return $a===null?($bound==='min'?1:10):$a[$bound];};
                 $fields[]=\Filament\Schemas\Components\Text::make(fn()=>($a=$allowed())===null?'':($a['register']===[]?'This account is not set up to sell new .'.$a['ending'].' registrations. Change sales under What you sell.':'This account is set up to sell .'.$a['ending'].' for '.self::years($a['register']).'. Change years under What you sell.'))->key('allowed')->visible(fn()=>$allowed()!==null);
                 foreach(['min_years'=>'Minimum registration years','max_years'=>'Maximum registration years'] as $key=>$label){
-                    $field=TextInput::make($key)->label($label)->integer()->minValue(fn()=>$years('min'))->maxValue(fn()=>$years('max'))->required()->default(fn()=>Tld::findOrFail($tld)->$key)
+                    $field=TextInput::make($key)->label($label)->integer()->minValue(fn()=>$years('min'))->maxValue(fn()=>$years('max'))->required()->default(fn()=>StaffCatalogue::routed()?->setting(Tld::findOrFail($tld),$key)??Tld::findOrFail($tld)->$key)
                         ->validationMessages(['min'=>fn()=>'Pick from '.$years('min').' to '.$years('max').'.','max'=>fn()=>'Pick from '.$years('min').' to '.$years('max').'.']);
                     // A failed rule keeps the dialog and its input open.
                     if($key==='max_years'){$field->rules([fn(\Filament\Schemas\Components\Utilities\Get $get)=>static function(string $attribute,mixed $value,\Closure $fail)use($get,$years):void{
@@ -157,7 +158,7 @@ final class SettingsActions
                 }
                 foreach(['enabled'=>'For sale','register'=>'Allow registrations','transfer'=>'Allow transfers','renew'=>'Allow renewals'] as $key=>$label){
                     $column=match($key){'enabled'=>'enabled',default=>$key.'_enabled'};
-                    $field=Checkbox::make($key)->label($label)->default(fn()=>Tld::findOrFail($tld)->$column);
+                    $field=Checkbox::make($key)->label($label)->default(fn()=>StaffCatalogue::routed()?->setting(Tld::findOrFail($tld),$key)??Tld::findOrFail($tld)->$column);
                     if(in_array($key,['register','transfer'],true)){
                         $refused=static fn()=>($a=$allowed())!==null&&!$a[$key.'_allowed']&&!Tld::findOrFail($tld)->$column;
                         $field->disabled($refused)->helperText(fn()=>$refused()?($key==='register'?'Registrations':'Transfers').' are not set up for .'.$allowed()['ending'].' on this account. Change sales under What you sell.':null);
@@ -237,7 +238,7 @@ final class SettingsActions
     {
         $text=self::description('import');
         try{
-            $account=Account::where('server_id',$server)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);
+            $account=Account::where('server_id',$server)->sole();if(StaffCatalogue::routed()!==null){return $text;}$binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);
             $accepted=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);$today=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday($binding);
             // Sync never adds TLDs, so say which ones it covers and where more are added.
             $endings=array_map(fn($e)=>'.'.$e,array_keys($accepted->endings));$count=count($endings);
@@ -269,7 +270,7 @@ final class SettingsActions
     /** Sync needs an account whose price list we can read. */
     public static function syncOffered(?Account $account): bool
     {
-        try{return $account!==null&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));}
+        try{if(($catalogue=StaffCatalogue::routed())!==null){return $account!==null&&$catalogue->readable(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));}return $account!==null&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));}
         catch(\Throwable){return false;}
     }
     public static function syncAll(int $server,bool $named=false): Action
@@ -281,7 +282,7 @@ final class SettingsActions
             ->schema([Hidden::make('review_key')])
             ->action(function(#[\SensitiveParameter] array $data,$livewire)use($server){
                 try{
-                    \Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),$server,(string)($data['review_key']??''));
+                    if(StaffCatalogue::routed()!==null){app(StaffSettingsWrites::class)->run(new Review((int)Auth::id(),$server,null,'import',(string)($data['review_key']??''),''),[]);}else{\Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices::enqueue((int)Auth::id(),$server,(string)($data['review_key']??''));}
                     Notification::make()->success()->title('Price sync queued')->body('You can keep working. The result will appear in your notifications.')->send();
                 }catch(\Throwable $error){
                     if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains price sync failed.',['exception_class'=>$error::class]);}
@@ -295,7 +296,7 @@ final class SettingsActions
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         $now=now()->toDateTimeImmutable();
-        try{$rows=PriceCatalogue::preview($t,$rule,$now);}catch(\Throwable){$rows=[];}
+        try{$rows=StaffCatalogue::routed()?->preview($t,$rule)??PriceCatalogue::preview($t,$rule,$now);}catch(\Throwable){$rows=[];}
         if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No costs yet. Use Sync prices on the TLD list first. Saving now changes nothing.</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
@@ -318,8 +319,11 @@ final class SettingsActions
     private static function reach(): array
     {
         $off=\App\Models\Server::where('extension','Domains')->where('enabled',false)->whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id');
-        $tlds=TldFacts::bound(Tld::query())->whereNotIn('server_id',$off->keys())->where(fn($q)=>$q->where('use_default_rule',true)->orWhere('pricing_mode','markup_fee_percent'))->orderBy('tld')->get();
-        $followers=$tlds->where('use_default_rule',true);
+        $converted=StaffCatalogue::routed()!==null;
+        $tlds=TldFacts::bound(Tld::query())->whereNotIn('server_id',$off->keys())->orderBy('tld')->get();
+        $own=static fn(Tld $t)=>$converted?\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::own($t):($t->use_default_rule?null:(new PricingRules)->rule($t));
+        $tlds=$tlds->filter(fn($t)=>($rule=$own($t))===null||$rule['mode']==='markup_fee_percent');
+        $followers=$tlds->filter(fn($t)=>$own($t)===null);
         $prices=\Paymenter\Extensions\Servers\Domains\Models\Price::whereIn('server_id',$followers->pluck('server_id')->unique())->whereIn('tld',$followers->pluck('tld')->unique())->where('currency','USD')->orderBy('id')->get()
             ->groupBy(fn($p)=>$p->server_id.':'.$p->registrar_key.':'.$p->account_fingerprint.':'.$p->tld);
         $now=now()->toDateTimeImmutable();
@@ -412,6 +416,10 @@ final class SettingsActions
     {
         try{
             $account=Account::where('server_id',$server)->sole();$t=Tld::findOrFail($tld);
+            $catalogue=StaffCatalogue::routed();
+            if($catalogue!==null){$facts=$catalogue->page(collect([$t]))[$t->id]['facts'];$safe=$catalogue->restorable($t);$register=$safe['register']?$facts->terms['register']:[];
+                $bounds=[...$register,$catalogue->setting($t,'min_years'),$catalogue->setting($t,'max_years')];
+                return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),'register_allowed'=>$safe['register'],'transfer_allowed'=>$safe['transfer']];}
             $row=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account))->endings[$t->tld]??[];
             $register=array_values(array_filter($row['register']??[],'is_int'));$renewable=in_array(1,$row['renew']??[],true)&&($row['registry']??false)&&($row['renewal_safe']??false);
             $bounds=[...$register,$t->min_years,$t->max_years];
