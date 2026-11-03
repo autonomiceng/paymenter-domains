@@ -56,16 +56,21 @@ ordinary nor late renewal admits them. There is no restore writer.
 
 **Edit prices** is the blue button at the top of the TLD page. Its **More** menu holds **Change registrar**,
 **Open in What you sell**, where terms are bulk edited, and **Restore sales** when a sale is turned off. **Edit prices**
-offers the account default or prices for that TLD only, shows the formula in words
+offers Default pricing or prices for that TLD only, shows the formula in words
+
 and previews register, renew and transfer for each sold term (cost, current price,
 price after saving, below-cost rows flagged). Saving publishes at once through the
 same publish path and price revisions: below-cost registration and transfer terms
 are held, below-cost renewals are still billed, both alert staff, and issued invoices
 keep their prices. Missing or stale costs refuse the save and change nothing.
 
-**Edit default pricing** lives on the registrar account page. Its dialog names the
-TLDs that use the default; saving publishes each of them and reports any it could not
-publish. Enom catalogue accounts, TEST and live, publish only when staff save; other
+**Default pricing** sits on the What you sell header, the same in All and one-account
+views, and holds the one default rule and card fee for the whole business. Saving writes
+both in one transaction, then publishes account by account, each on its own: the result
+names any account that failed and saving again republishes it. TLDs already on the rule
+stay as they are. A disabled account reads the same rule, so publish skips it, the dialog
+says so, and its prices catch up once it is back on. The review, stamp and history use
+`StaffSettingsReview::ALL_ACCOUNTS`, and every account's history records the save. Enom catalogue accounts, TEST and live, publish only when staff save; other
 accounts also republish in the background after each price sync. Choosing the account
 default in **Edit prices** runs the `remove_override` review; the `publish` review
 stays server-side with no button. Because saving publishes, both dialogs also need the
@@ -73,8 +78,9 @@ publish permission.
 
 ## Card fee and saved prices
 
-**Card fee** sits beside default pricing on each account. It starts at 2.9% + $0.30
-per payment. Changes need the card-fee and publish permissions and keep an audit row.
+**Card fee** is part of Default pricing, one for the whole business. It starts at 2.9% + $0.30
+per payment. Saving needs the default rule, card-fee and publish permissions and keeps an
+audit row on every account.
 Only TLDs using **Add a percentage to cost and card fee** get new prices after a fee
 change; other rules and published prices stay unchanged. Failed publications are named.
 

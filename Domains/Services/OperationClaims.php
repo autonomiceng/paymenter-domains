@@ -203,10 +203,10 @@ final class OperationClaims
     }
 
     /** Post-read/write bookkeeping needs only domain -> ordered operations, never financial authority again. */
-    public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null, ?Money $holdCost = null): Operation
+    public function finish(Operation $claimed, ?DriverResult $result = null, ?string $holdReason = null, ?Money $holdCost = null, bool $locallyUnsent = false): Operation
     {
         self::outside();
-        return DB::transaction(function () use ($claimed, $result, $holdReason, $holdCost): Operation {
+        return DB::transaction(function () use ($claimed, $result, $holdReason, $holdCost, $locallyUnsent): Operation {
             $domain = Domain::whereKey($claimed->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $claimed->domain_id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $claimed->id);
@@ -216,11 +216,13 @@ final class OperationClaims
                 && $op->state === 'uncertain' && $op->safe_code === 'stale_claim';
             if (!self::sameClaim($op, $claimed) && !$late) { return $op; }
             $expired = $late || !$op->lease_expires_at || $op->lease_expires_at <= $this->clock->now();
+            $unsent=$sealed&&!array_key_exists('execution',$op->attempt)&&$locallyUnsent&&$op->registrar_key==='namesilo'&&in_array($op->action,['register','transfer'],true)
+                &&$result?->jsonSerialize()===['disposition'=>'rejected','send_state'=>'definitely_unsent','reason'=>'unsent','discrepancies'=>[]];
             $attempt = $op->attempt;
             if ($sealed && !array_key_exists('execution', $attempt)) {
                 // Recorded null is intentional and distinct from absent pre-send execution.
                 $attempt['execution'] = $result?->jsonSerialize();
-                if ($result) {
+                if ($result&&!$unsent) {
                     // Evidence is the bounded neutral fact graph, never a provider response or contact payload.
                     $attempt['evidence'] = json_decode(json_encode($result->evidence(), JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
                     $attempt['charge'] = $attempt['evidence']['charge'];
@@ -230,8 +232,8 @@ final class OperationClaims
             // Ack/rejection still require action-specific correlation/completion in 21/22. No refund/release here.
             $op->attempt = $attempt;
             $completion = !$expired && $sealed && $result ? RegistrationCompletion::record($op, $domain, $result) : null;
-            $op->update(array_replace(['attempt' => $attempt, 'state' => ($sealed || $expired) ? 'uncertain' : 'held',
-                'safe_code' => $expired ? 'stale_claim' : ($sealed ? 'reconciliation_required' : ($holdReason ?? 'pre_send_interrupted')), 'lease_expires_at' => null], $completion ?? []));
+            $op->update(array_replace(['attempt' => $attempt, 'state' => $unsent?'held':(($sealed || $expired) ? 'uncertain' : 'held'),
+                'safe_code' => $unsent?'acquisition_definitely_unsent':($expired ? 'stale_claim' : ($sealed ? 'reconciliation_required' : ($holdReason ?? 'pre_send_interrupted'))), 'lease_expires_at' => null], $completion ?? []));
             if(BalanceRetries::candidate($op)){BalanceRetries::held($op,$this->clock->now(),$holdCost);}
             return $op;
         });
@@ -403,14 +405,18 @@ final class OperationClaims
 
     /** Authorizes nonmonetary fresh profile creation for this live, funded, unsealed claim only. */
     public function profileAuthority(Operation $claimed): array
+    { return $this->withProfileAuthority($claimed,static fn($binding,$owner)=>[$binding,$owner]); }
+
+    /** Ledger locks follow the same funded parent locks; the callback must perform no I/O. */
+    public function withProfileAuthority(Operation $claimed,\Closure $work): mixed
     {
-        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed): array {
+        return $this->locked((int) $claimed->id, function ($op, $domain, $all, $funding, $server, $account) use ($claimed,$work): mixed {
             [$binding] = $this->validate($op, $domain, $all, $funding, $server, $account);
             if (!self::sameEvidence($op, $claimed)) { throw new ProfileAuthorityMismatch('Operation evidence changed.'); }
             ContactSetup::requireReady($op);
             if (!self::sameClaim($op, $claimed) || !self::unsealed($op) || $op->lease_expires_at <= $this->clock->now()
                 || self::payloadDigest($op) !== self::payloadDigest($claimed)) { throw new ProfileAuthorityMismatch('Profile claim unavailable.'); }
-            return [$binding, (int) $domain->user_id];
+            return $work($binding, (int) $domain->user_id);
         });
     }
 

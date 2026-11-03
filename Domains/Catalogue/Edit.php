@@ -12,17 +12,17 @@ final readonly class Edit implements Command
 {
     private function __construct(private AccountBinding $account, private string $ending,
         public string $kind, public ?Intent $intent = null, public ?array $rule = null,
-        public ?string $retail = null, public array $actions = [], public ?array $fee = null)
+        public ?string $retail = null, public array $actions = [])
     { CanonicalName::parse('example.'.$ending, [$ending]); }
 
-    public static function defaults(AccountBinding $b, string $tld, Intent $intent, array $rule, ?array $fee = null): self
+    public static function defaults(AccountBinding $b, string $tld, Intent $intent): self
     {
         if ($intent->sell !== null || $intent->longest !== null || $intent->transfers !== null || $intent->stops !== []) {
             throw new \InvalidArgumentException('Defaults cannot contain offer overrides.');
         }
-        return new self($b, $tld, 'defaults', $intent, PricingRule::validate($rule), fee: $fee === null ? null : \Paymenter\Extensions\Servers\Domains\Services\CardFee::validate($fee));
+        return new self($b, $tld, 'defaults', $intent);
     }
-    /** Null pricing rule removes the offer rule and inherits the account rule. */
+    /** Null pricing rule removes the offer rule and inherits the business default. */
     public static function override(AccountBinding $b, string $tld, Intent $intent, ?array $rule = null): self
     { return new self($b, $tld, 'override', $intent, $rule === null ? null : PricingRule::validate($rule)); }
     /** The binding is the new seller; an empty action list deselects the ending. */

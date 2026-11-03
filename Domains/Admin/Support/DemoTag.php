@@ -21,7 +21,7 @@ final class DemoTag
     public static function banner(): string
     {
         if (!DemoData::present()) { return ''; }
-        return '<div role="note" style="margin-bottom:1rem;padding:.5rem .75rem;border:1px solid rgb(251 146 60 / .55);border-radius:.5rem;background:rgb(251 146 60 / .10);font-size:.875rem">'
+        return '<div role="note" class="domains-demo-banner">'
             .e(DemoData::BANNER).'</div>';
     }
     public static function boot(): void

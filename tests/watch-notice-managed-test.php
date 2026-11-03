@@ -19,6 +19,7 @@ $f=managedFixture(skipA3:true,beforeConfirm:function(array $f)use(&$prior,&$fail
     same('uncertain',DB::table('domains_watch_deliveries')->where('channel','app')->value('state'),'Prior app uncertain');
 });extract($f);$uid=(int)$owner->id;
 expect($signals->enqueue($d->id,$uid,$time->now),'Relink accepted');same('suppressed',$prior->fresh()->state,'Old portal notice suppressed at relink');
+managedPlatformChoice($f);
 same([], $planner->plan('managed',$d->id,$uid,$time->now),'Predecessor evidence cannot create managed notice');
 $fake->answers['example.com|NS']=managedNs('ns.external.test');expect($signals->observe($d->id,$uid,'delegation'),'First independent managed mismatch');
 same([], $planner->plan('managed',$d->id,$uid,$time->now+1),'First mismatch does not borrow watch confirmation');

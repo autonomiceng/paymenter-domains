@@ -27,6 +27,41 @@ function staffUser(array $permissions): App\Models\User
     return App\Models\User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'staff-'.App\Models\User::count().'@example.test',
         'password'=>'synthetic-password','role_id'=>$role->id]);
 }
+/** The table standard: one pager of 25 (50 or 100), a search that says what it searches, one-line cells, money on the right. */
+function staffTableStandard(mixed $page, ?string $search, array $oneLine=[], array $money=[]): void
+{
+    $table=$page->instance()->getTable(); $name=$page->instance()::class;
+    same([25,50,100],array_values($table->getPaginationPageOptions()),$name.': paging 25, 50, 100');
+    same(25,(int)$table->getDefaultPaginationPageOption(),$name.': 25 per page');
+    if ($search!==null) { same($search,$table->getSearchPlaceholder(),$name.': search says what it searches'); }
+    foreach ($oneLine as $column) { expect(($c=$table->getColumn($column))!==null&&!$c->canWrap(),$name.': '.$column.' stays on one line'); }
+    foreach ($money as $column) { $a=$table->getColumn($column)?->getAlignment(); same('end',$a instanceof BackedEnum?$a->value:$a,$name.': '.$column.' is right aligned'); }
+}
+/** Staff rows on an owned table: no line under a value (a description sits beside it), at most 2 row actions, money never cut.
+ * Over 4 columns, a Columns button where every column but the first can be hidden; $hidden start hidden. */
+function staffRowsStandard(mixed $page, array $hidden=[], array $money=[]): void
+{
+    $instance=$page->instance(); $table=$instance->getTable(); $name=$instance::class; $columns=$table->getColumns();
+    if (count($columns)>4) {
+        $identity=array_key_first($columns);
+        expect(!$columns[$identity]->isToggleable(),$name.': '.$identity.' names the row, so Columns keeps it');
+        foreach (array_slice($columns,1,preserve_keys:true) as $key=>$column) { expect($column->isToggleable(),$name.': Columns can hide '.$key); }
+        same($hidden,array_keys(array_filter($columns,fn($c)=>$c->isToggleable()&&$c->isToggledHiddenByDefault())),$name.': hidden at first');
+        same('Columns',$table->getColumnManagerTriggerAction()->getLabel(),$name.': the button says Columns');
+    } else { expect(!$table->hasToggleableColumns(),$name.': 4 columns or fewer need no Columns button'); }
+    expect(count($table->getRecordActions())<=2,$name.': at most 2 row actions');
+    $records=$instance->getTableRecords(); expect(count($records)>0,$name.': rows to check');
+    foreach ($records as $record) {
+        foreach ($columns as $key=>$column) {
+            $column->record($record); $class=(string)($column->getExtraAttributes()['class']??'');
+            if ($column->getDescriptionBelow()!==null||$column->getDescriptionAbove()!==null) { expect(str_contains($class,'domains-line'),$name.': '.$key.' keeps its description on the same line'); }
+        }
+    }
+    foreach ($money as $key) {
+        $column=$table->getColumn($key); $class=(string)($column->getExtraAttributes()['class']??'');
+        expect(str_contains($class,'domains-money')&&!str_contains($class,'domains-line')&&!str_contains($class,'domains-cut'),$name.': '.$key.' money is never cut');
+    }
+}
 function staffData(bool $ordinaryCompleted = false): array
 {
     \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install();
@@ -60,5 +95,5 @@ function staffData(bool $ordinaryCompleted = false): array
 function setupAction(string $action,int $server): string|\Filament\Actions\Testing\TestAction
 {
     return in_array($action,['configure','enroll_sandbox'],true)?$action.'_'.$server
-        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent(($action==='new_domain_dns'?'domain_settings_':'account_').$server,'content');
+        :\Filament\Actions\Testing\TestAction::make($action.'_'.$server)->schemaComponent('account_'.$server,'content');
 }

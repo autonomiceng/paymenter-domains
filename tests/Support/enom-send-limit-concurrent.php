@@ -15,7 +15,11 @@ DB::disconnect();config(['database.connections.sqlite.database'=>$path,'database
 app()->instance(Clock::class,new FakeClock(new DateTimeImmutable('2026-10-28T12:00:00Z')));
 config(['domains.enom_test_sends_per_day'=>(int)(getenv('LIMIT_DAY')?:3),'domains.enom_test_sends_per_minute'=>(int)(getenv('LIMIT_MINUTE')?:100)]);
 $mode=$argv[1];
-if($mode==='setup'){EnomTestSendLimitSchema::install();echo "OK\n";}
+if($mode==='setup'){
+    // The login limit reads native settings; a missing table correctly fails closed.
+    (require $fixture.'/database/migrations/2024_02_15_122225_create_settings_table.php')->up();
+    EnomTestSendLimitSchema::install();echo "OK\n";
+}
 elseif($mode==='admit'){
     // All workers admit at one shared moment; a late one would admit alone and hide a missing lock.
     expect(microtime(true)<(float)getenv('LIMIT_START'),'Worker was ready before the shared start');

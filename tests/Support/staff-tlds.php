@@ -32,13 +32,27 @@ function tldRefusal(callable $call,string $message): void
 function staffSetupActions(): array
 {
     return ['new_domain_dns','configure','probe','import','processing','enroll_sandbox',
-        'test_renewal','test_transfer','test_management','live_renewal','live_management','live_transfer','late_renewal','renewal_billing','unpaid_hold','default_rule','card_fee'];
+        'test_renewal','test_transfer','test_management','live_renewal','live_management','live_transfer','late_renewal','renewal_billing','unpaid_hold'];
 }
 
-/** No TLD/settings button: request answers belong to requests; price publication/defaults are choices in Edit prices. */
+/** No TLD/settings button: request answers belong to requests; price publication/defaults are choices in Edit prices; Default pricing lives on What you sell. */
 function staffNoButtonActions(): array
 {
-    return ['call_limits','activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review'];
+    return ['call_limits','activate','enom_answer','publish','remove_override','acceptance','history','delivery_review','alert_review','default_pricing','default_rule','card_fee'];
+}
+
+/** The Default pricing dialog sends rule and fee together; a test names only what it changes. */
+function pricingForm(array $form=[],?array $fee=null): array
+{
+    $fee??=\Paymenter\Extensions\Servers\Domains\Services\CardFee::read();$rule=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule(false,$fee);
+    return ['mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up'],'fixed_register'=>$rule['fixed']['register'],'fixed_renew'=>$rule['fixed']['renew'],'fixed_transfer'=>$rule['fixed']['transfer'],
+        'fee_percent'=>$fee['percent'],'fee_fixed'=>$fee['fixed'],...$form];
+}
+
+function pricingReview(int $actor,string $reason='Update prices for these TLDs'): \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview
+{
+    $all=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;
+    return new $all($actor,$all::ALL_ACCOUNTS,null,'default_pricing',$all::ticket($actor,$all::ALL_ACCOUNTS,null,'default_pricing',$all::stamp($all::ALL_ACCOUNTS,null)),$reason);
 }
 
 /** Pin the engine clock, as staff actions read it for cost freshness. */

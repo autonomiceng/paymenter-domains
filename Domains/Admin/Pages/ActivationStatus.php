@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
 use Filament\Pages\Page;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-/** Old address of Activation status. Go-live facts now show in each account's Setup checklist on Registrars. */
+/** Old address of Activation status. Go-live facts now show in each account's System checks on Registrars. */
 class ActivationStatus extends Page
 {
     protected static ?string $slug='domains-activation-status';

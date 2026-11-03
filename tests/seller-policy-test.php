@@ -201,8 +201,11 @@ same(5, $p->revision, 'Disabling seller advances policy');
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
 same('7.99', $holder->renewal($domain, 'USD', $now)->retail, 'No seller does not alter holder renewal');
 // Below-cost renewal remains eligible; one held register term does not hide another valid term.
-$rules = new PricingRules;
-$rules->saveDefaultRule(1, ['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',
+// The default is shared, so the second account keeps a sellable price for the rows below with its own rule.
+$second = Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail();
+$second->update(['use_default_rule' => false, 'pricing_mode' => 'markup_percent', 'markup' => '30.00', 'round_up' => 'none']);
+$prices->republish($second);
+saveDefaultRule(['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',
     'fixed' => ['register' => '7.00', 'renew' => '1.00', 'transfer' => '7.00']], $prices->republish(...));
 $prices->sync(1, static fn (): array => [$rate('register', 1, '10.00')]);
 $p = $sellers->change('com', 5, 1, true, false, $now);

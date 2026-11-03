@@ -3,5 +3,5 @@
 @php($anchor = isset($helpText) ? null : \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS[$id])
 <span class="domains-help" data-help>
 <button type="button" class="domains-help-btn" aria-expanded="false" aria-controls="help-{{ $id }}" aria-label="About {{ $label }}">?</button>
-<span id="help-{{ $id }}" class="domains-help-pop">@isset($helpText){{ $helpText }}@else{{ \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SUMMARIES[$anchor] }} <a class="domains-a" href="{{ route('domains.help') }}#{{ $anchor }}">Learn more<span class="domains-sr"> about {{ $label }}</span></a>@endisset</span>
+<span id="help-{{ $id }}" class="domains-help-pop">@isset($helpText){{ $helpText }}@else{{ \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::summary($anchor) }} <a class="domains-a" href="{{ route('domains.help') }}#{{ $anchor }}">Learn more<span class="domains-sr"> about {{ $label }}</span></a>@endisset</span>
 </span>

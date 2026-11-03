@@ -55,12 +55,12 @@ final class TldFacts
         if($tlds->isEmpty()){return [];}
         $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();
         $accounts=Account::whereIn('server_id',$servers)->orderBy('id')->get()->groupBy('server_id')->map->first();
-        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];$defaults=[];$fees=[];
+        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];
+        // An invalid snapshot fails fee rules without retrying the setting for every row.
+        try{$fee=CardFee::read();}catch(\Throwable){$fee=[];}
+        try{$default=$tlds->contains(fn(Tld $t)=>$t->use_default_rule)?self::ruleHash($rules->defaultRule(false,$fee)):null;}catch(\Throwable){$default=null;}
         foreach($servers as $id){
             try{$accepted[$id]=CatalogueAcceptances::load(CatalogueAcceptances::binding($accounts[$id]??throw new \DomainException));}catch(\Throwable){$accepted[$id]=null;}
-            // An invalid snapshot fails fee rules without retrying the setting for every row.
-            try{$fees[$id]=CardFee::read($id);}catch(\Throwable){$fees[$id]=[];}
-            try{$defaults[$id]=$tlds->contains(fn(Tld $t)=>(int)$t->server_id===$id&&$t->use_default_rule)?self::ruleHash($rules->defaultRule($id,false,$fees[$id])):null;}catch(\Throwable){$defaults[$id]=null;}
         }
         $key=static fn($row)=>(int)$row->server_id.'|'.$row->account_fingerprint.'|'.$row->tld;
         $prices=Price::whereIn('server_id',$servers)->whereIn('tld',$names)->orderBy('action')->orderBy('term')->get()->groupBy($key);
@@ -69,7 +69,7 @@ final class TldFacts
             ->selectRaw('server_id, tld, account_fingerprint, count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy($key);
         $out=[];
         foreach($tlds as $t){
-            if($t->use_default_rule){$hash=$defaults[(int)$t->server_id];}else{try{$hash=self::ruleHash($rules->rule($t,false,$fees[(int)$t->server_id]));}catch(\Throwable){$hash=null;}}
+            if($t->use_default_rule){$hash=$default;}else{try{$hash=self::ruleHash($rules->rule($t,false,$fee));}catch(\Throwable){$hash=null;}}
             $seller=isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null;
             $out[$t->id]=[...self::build($t,$grants,$accepted[(int)$t->server_id],$hash,$prices[$key($t)]??collect(),static fn():?int=>$seller),
                 'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0),'demo'=>DemoData::is($accounts[(int)$t->server_id]??null),'pricing'=>self::legacyPricing($t)];
@@ -131,11 +131,11 @@ final class TldFacts
     }
     private const DANGER='fi-color fi-color-danger fi-text-color-600 dark:fi-text-color-400';
     private static function missing(string $cause): string
-    { return '<span class="'.self::DANGER.'" style="font-weight:500">'.e(\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL).'</span><div style="font-size:.75rem;opacity:.75">'.e($cause).'</div>'; }
+    { return '<span class="domains-strong '.self::DANGER.'">'.e(\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL).'</span><div class="domains-small">'.e($cause).'</div>'; }
     private static function notOffered(): string
-    { return '<span style="opacity:.75">'.e(self::NOT_OFFERED).'</span>'; }
+    { return '<span class="domains-quiet">'.e(self::NOT_OFFERED).'</span>'; }
     private static function cell(string $html, bool $nowrap = true): string
-    { return '<td style="padding:8px 12px;vertical-align:top'.($nowrap?';white-space:nowrap':'').'">'.$html.'</td>'; }
+    { return '<td'.($nowrap?' class="domains-nowrap"':'').'>'.$html.'</td>'; }
     /** Prices by registrar account: one row per account that sells this TLD. */
     public static function accountsTable(Tld $t, StaffGrants $grants): HtmlString
     {
@@ -143,10 +143,10 @@ final class TldFacts
         if($rows->isEmpty()){return new HtmlString('No prices yet');}
         $facts=self::page($rows,$grants);
         $head=['Account','Pricing','Registration','Renewal','Transfer',...($grants->costs?['Cost']:[]),'Domains'];
-        $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
+        $html='<div class="domains-table-wrap"><table class="domains-table"><thead><tr>';
         foreach($head as $label){
             $cell=$label==='Cost'?HelpHint::beside(e($label),'Registrations and transfers below cost are held. Renewals are billed.','About cost')->toHtml():e($label);
-            $html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.$cell.'</th>';
+            $html.='<th scope="col">'.$cell.'</th>';
         }
         $html.='</tr></thead><tbody>';
         foreach($rows as $row){
@@ -163,36 +163,23 @@ final class TldFacts
             $transfer=$first('transfer');$catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$transfer=!($catalogue?->setting($row,'transfer')??$row->transfer_enabled)&&($transfer['retail']??null)===null?'Off':$price($transfer);
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
-                .($fact['seller']===(int)$row->server_id?' <span style="margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap">New orders</span>':'');
-            $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell($account,false).self::cell(e(self::pricing($row)))
+                .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
+            $html.='<tr>'.self::cell($account,false).self::cell(e(self::pricing($row)))
                 .self::cell($price($first('register'))).self::cell($price(self::renewal($prices))).self::cell($transfer);
             if($grants->costs){
                 $renew=self::renewal($prices);$note=self::costNote($renew);
                 $html.=self::cell(($renew['cost']??null)===null?(in_array('not_offered',$renew['flags']??[],true)?self::notOffered():self::missing('Use Sync prices on the TLD list.'))
-                    :($note?'<span class="'.self::DANGER.'">'.e($renew['cost']).'</span><div class="'.self::DANGER.'" style="font-size:.75rem">'.e($note).'</div>':e($renew['cost'])));
+                    :($note?'<span class="'.self::DANGER.'">'.e($renew['cost']).'</span><div class="domains-small '.self::DANGER.'">'.e($note).'</div>':e($renew['cost'])));
             }
             $html.=self::cell(e((string)$fact['holders'])).'</tr>';
         }
         return new HtmlString($html.'</tbody></table></div>');
     }
-    /** History as a table: time, change with its reason below, and who made it. */
-    public static function historyTable(?array $rows): HtmlString
-    {
-        if($rows===null){return new HtmlString(e(DomainFacts::UNREADABLE));}
-        if(!$rows){return new HtmlString('No changes yet');}
-        $html='<div style="max-width:100%;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.875rem"><thead><tr>';
-        foreach(['Time','Change','By'] as $label){$html.='<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">'.e($label).'</th>';}
-        $html.='</tr></thead><tbody>';
-        foreach($rows as $r){
-            $html.='<tr style="border-top:1px solid rgb(127 127 127 / .2)">'.self::cell(view('domains::partials.moment',['at'=>$r['time'],'fallback'=>$r['time']])->render()).self::cell(e($r['change']).($r['reason']!==''?'<div style="font-size:.75rem;opacity:.75;overflow-wrap:anywhere">'.e($r['reason']).'</div>':''),false).self::cell(e($r['by'])).'</tr>';
-        }
-        return new HtmlString($html.'</tbody></table></div>');
-    }
     public static function acceptance(Account $a): string
     {
-        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.' · '.$count.' '.($count===1?'TLD':'TLDs');
-            return self::ordersNeedSave($a,$accepted)?$text.' · Save What you sell to take orders':$text;}
-        catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.' · new sales held. Open What you sell and save it.';}
+        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.', '.$count.' '.($count===1?'TLD':'TLDs');
+            return self::ordersNeedSave($a,$accepted)?$text.'. Save What you sell to take orders':$text;}
+        catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.'. New sales held. Open What you sell and save it.';}
     }
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
     public static function ordersNeedSave(Account $a,\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted): bool
@@ -236,7 +223,7 @@ final class TldFacts
         }
     }
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
-    private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to the account default',
+    private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Edit default pricing'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to Default pricing',
         'Select seller'=>'Registrar for new orders changed','Change registrar for new orders'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
         'Review lifecycle facts'=>'Grace and redemption changed','Sync TLD prices'=>'Prices synced'];
     /** Large edits omit detail maps; older entries also omit whether the default changed. Neither proves a TLD was unaffected. */
@@ -255,7 +242,7 @@ final class TldFacts
                     if($r['tld_id']){return $r['tld_id']===$tldId;}
                     if($r['action']==='Sync TLD prices'){return is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true));}
                     if($r['action']==='Edit what you sell'){return is_string($ending)&&(self::unknownSalesScope($r['input'])||isset($r['input']['rows'][$ending])||array_key_exists($ending,(array)($r['input']['changes']??[]))||($r['input']['rule_changed']??false));}
-                    return in_array($r['action'],['Edit card fee','Edit default rule','Publish prices'],true);
+                    return in_array($r['action'],['Edit card fee','Edit default rule','Edit default pricing','Publish prices'],true);
                 });
             }
             // One row per sync, not one per TLD it wrote.
@@ -288,7 +275,7 @@ final class TldFacts
                 $phase=(string)$r['phase'];
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->toIso8601String();}catch(\Throwable){$at=(string)$r['at'];}
-                return ['time'=>$at,'change'=>$change,'reason'=>implode(' · ',[...$detail,...($r['reason']===''?[]:[(string)$r['reason']])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
+                return ['time'=>$at,'change'=>$change,'reason'=>implode('. ',[...$detail,...($r['reason']===''?[]:[(string)$r['reason']])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
             },array_reverse(array_values($rows)));
         }catch(\Throwable){return null;}
     }
@@ -339,8 +326,14 @@ final class TldFacts
             $last=$lastPrices??self::lastPrices($serverId);
             if($at===null||($last!==null&&$last>=$at)){return null;}
         }
-        $cause=self::syncCause($facts['code']);
-        if($facts['code']==='catalogue_call_capacity'){
+        return ['cause'=>self::currentCause($serverId,$facts['code']),'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
+    }
+    /** The plain cause for a failure code. A call-capacity failure names the calls needed and left when we know them.
+     * The TLD list and the staff alert use the same words; the alert keeps the numbers from when it fired. */
+    public static function currentCause(int $serverId, ?string $code): string
+    {
+        $cause=self::syncCause($code);
+        if($code==='catalogue_call_capacity'){
             // Retain the failed sync, but show capacity under today's saved cap without a provider read.
             try{
                 $binding=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
@@ -358,7 +351,7 @@ final class TldFacts
                 }
             }catch(\Throwable){} // Missing acceptance or usage keeps the original failure and its next step.
         }
-        return ['cause'=>$cause,'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
+        return $cause;
     }
     private static function queue(int $serverId): ?object
     {
