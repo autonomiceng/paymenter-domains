@@ -36,9 +36,9 @@ final readonly class ReadOffer implements \JsonSerializable
     public function costPrice(\DateTimeImmutable $now): PriceSnapshot
     {
         $p=$this->row;$c=$this->observation();$retail=UpgradeEvidence::money($p?->retail,2);
-        if($this->context!==Context::Holder||!$p||!$c?->enabled||!$c->fresh($now)||$retail===null){throw new \DomainException('No current normalized cost.');}
+        if($this->context!==Context::Holder||!$p||!$c?->enabled||!$c->fresh($now)||$retail===null||$c->action!==$this->decision->action||$c->term!==$this->decision->term||$c->currency!==$p->currency){throw new \DomainException('No current normalized cost.');}
         return new PriceSnapshot((int)$p->id,(int)$p->revision,$this->binding->serverId,$this->binding->registrarKey,$this->binding->fingerprint,
-            $this->decision->tld,$c->action,$c->term,$c->currency,$c->total,$retail,$c->source,$c->observedAt,$c->freshUntil);
+            $this->decision->tld,$c->action,$c->term,$c->currency,$c->total,$retail,$c->source,$c->observedAt,$c->freshUntil,$this->decision->warning);
     }
 
     public function renewal(): RenewalPrice
