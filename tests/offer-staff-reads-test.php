@@ -31,6 +31,17 @@ $key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommand
 $commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Synthetic below cost'),['mode'=>'fixed','fixed_register'=>'2.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
 $below=$source->matrix(collect([$t->fresh()]),1,'below_cost');same('2.00',$below['rows'][0]['prices']['register']['price'],'Below-cost filter keeps the exact saved staff retail');commerceReject(fn()=>$storefront->offer('com','register',1));
 $key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id));$commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Restore synthetic price'),['mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
+// All accounts + No cost yet: 25 displayed pairs must not expand into 5 x 25 snapshots.
+$multi=[];$multiPage=[];$identity=$t->fresh()->getRawOriginal();unset($identity['id']);$rate=(array)DB::table('domains_prices')->where('server_id',$binding->serverId)->where('action','register')->where('term',1)->first();unset($rate['id']);
+for($a=0;$a<5;$a++){
+    $server=Server::create(['name'=>'Synthetic page account '.$a,'type'=>'server','extension'=>'Domains','enabled'=>true]);
+    $b=$bindings->configure($server->id,'enom',\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,['token'=>'page-account-'.$a]);$multi[$server->id]=$b;
+    for($i=0;$i<25;$i++){$name='page'.chr(97+$i);$pair=['server_id'=>$b->serverId,'registrar_key'=>$b->registrarKey,'account_fingerprint'=>$b->fingerprint,'tld'=>$name];DB::table('domains_tlds')->insert([...$identity,...$pair]);if($a>0){DB::table('domains_prices')->insert([...$rate,...$pair]);}}
+}
+$multiTable=new SellTable($multi,1,true,static function()use(&$multiPage){return $multiPage;},true,$source);
+$multiPager=$multiTable->rows(null)->whereNull('register_cost')->orderBy('tld')->paginate(25);$multiPage=$multiPager->items();same(25,$multiPager->total(),'No-cost filter displays only the one account without costs');
+foreach($multiPage as $row){$multiTable->status($row);expect($multiTable->tldId($row)!==null,'Each displayed pair retains its own converted identity');}
+same(25,count($multiTable->saved()['rows']),'Bounded saved-price snapshot contains only the displayed account/ending pairs');
 $seed=$t->fresh()->getRawOriginal();unset($seed['id']);$batch=[];
 for($i=0;$i<598;$i++){$batch[]=[...$seed,'tld'=>'scale'.chr(97+intdiv($i,26)).chr(97+$i%26)];}
 foreach(array_chunk($batch,100) as $chunk){DB::table('domains_tlds')->insert($chunk);}

@@ -134,8 +134,12 @@ final class SellTable
     private function facts(): array
     {
         if($this->saleFacts!==null){return $this->saleFacts;}
-        $tlds=Tld::whereIn('server_id',array_keys($this->bindings))->whereIn('tld',array_map(fn(SellRow $row)=>$row->tld,($this->page)()))->get()
-            ->filter(fn(Tld $t)=>$t->account_fingerprint===$this->bindings[(int)$t->server_id]->fingerprint);
+        $pairs=collect(($this->page)())->groupBy('server_id');
+        $tlds=Tld::where(function($q)use($pairs):void {
+            $q->whereRaw('1=0');
+            foreach($pairs as $server=>$rows){if(isset($this->bindings[$server])){$q->orWhere(fn($one)=>$one->where('server_id',$server)
+                ->where('account_fingerprint',$this->bindings[$server]->fingerprint)->whereIn('tld',$rows->pluck('tld')));}}
+        })->get();
         $this->rowTlds=$tlds->keyBy(fn(Tld $t)=>$t->server_id.':'.$t->tld)->all();$page=$this->catalogue?->page($tlds)??TldFacts::page($tlds);
         return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->server_id.':'.$t->tld=>$page[$t->id]])->all();
     }
