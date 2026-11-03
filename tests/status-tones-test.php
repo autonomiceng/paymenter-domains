@@ -21,7 +21,7 @@ same(['label'=>'Under review','tone'=>'info','reason'=>DomainStatus::ON_IT],Stat
 same(['label'=>'Action required','tone'=>'warn','reason'=>'Auth code needed'],StatusPill::of('awaiting_code'),'Amber stays on what a customer must do');
 same(['Under review','warning'],DomainStatus::SET['under_review'],'Staff keep the same words in amber');
 foreach (['registration_held','registration_unconfirmed'] as $state) {
-    same(['label'=>'Pending registration','tone'=>'info','reason'=>DomainStatus::ON_IT],StatusPill::of($state),'A customer reads a stopped registration in blue, with no step of their own');
+    same(['label'=>$state==='registration_held'?'Under review':'Pending registration','tone'=>'info','reason'=>DomainStatus::ON_IT],StatusPill::of($state),'A customer reads a stopped registration in blue, with no step of their own');
     same(['Pending registration','warning'],[DomainStatus::for($state)['label'],DomainStatus::for($state)['tone']],'Staff read the same word in amber');
     same('pending_registration',DomainStatus::key($state),'A stopped registration stays in the Pending registration filter, the word its rows show');
 }

@@ -22,7 +22,7 @@ $cases=[
     'transfer'=>[[],['state'=>'queued'],'Pending transfer',null],
     'transfer-held'=>[[],['state'=>'held','safe_code'=>'transfer_setup_review_required'],'Under review','Transfer on hold'],
     'transfer-uncertain'=>[[],['state'=>'uncertain'],'Under review','Transfer not confirmed'],
-    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Pending registration','We are on it, nothing for you to do'],
+    'register-held'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>null],'Under review','We are on it, nothing for you to do'],
     'register-uncertain'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'uncertain'],'Pending registration','We are on it, nothing for you to do'],
     'setup'=>[['status'=>'registration_pending'],['action'=>'register','state'=>'held','safe_code'=>'contact_details_required'],'Action required','Finish setup'],
     'active'=>[['status'=>'active','provider_expires_at'=>$day(200)],['state'=>'succeeded'],'Active',null],

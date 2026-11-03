@@ -20,7 +20,7 @@ final readonly class OwnedDomainController
         // One list: registered domains and the domains your hosting uses. Status depends on the order, renewal stops
         // and expiry, not only the status column, so chips, filters and sorting work on resolved rows.
         $rows=(new DomainSummaries())->listed($request->user(),now('UTC')->getTimestamp());
-        $key=fn($row)=>$row->statusState===null?null:DomainStatus::key($row->statusState);
+        $key=fn($row)=>$row->statusState===null?null:\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::key($row->statusState);
         // Cancelled domains stay out of the way until the Cancelled chip asks for them.
         $shown=array_filter($rows,fn($row)=>$key($row)!=='cancelled');
         $filterCounts=[''=>count($shown),...array_count_values(array_filter(array_map($key,array_values($rows))))];
