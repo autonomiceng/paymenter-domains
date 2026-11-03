@@ -39,8 +39,9 @@ final class RegistrarFactories
             });
         return true;
     }
+    /** Enom uses these suffixes for read/reconciliation parsing. Sending has separate fresh-fact gates. */
     private static function endings(AccountBinding $b): array
-    { return ($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) ? $caps->endings($b) : array_keys(CatalogueAcceptances::load($b)->endings); }
+    { return ($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) ? $caps->identities($b) : array_keys(CatalogueAcceptances::load($b)->endings); }
     public static function install(RegistrarRegistry $registry, ?AccountVerifier $enom = null, ?AccountVerifier $namesilo = null): void
     {
         if ($enom) {

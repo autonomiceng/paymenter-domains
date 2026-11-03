@@ -53,6 +53,18 @@ final class Capabilities
             });
         sort($out, SORT_STRING); return $out;
     }
+    /** Enom's read parser needs retained identities even when spending support is unknown.
+     * This list grants no action, term or send authority and never copies accepted capabilities. */
+    public function identities(AccountBinding $b): array
+    {
+        $out=[];
+        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
+            ->orderBy('id')->chunkById(100,function($rows)use($b,&$out):void {
+                ($this->authorize)(new Query($b,$rows->pluck('tld')->all(),'renew'),Context::Holder);
+                foreach($rows as $t){$this->identity($b,$t->tld,$t);$out[]=$t->tld;}
+            });
+        sort($out,SORT_STRING);return $out;
+    }
     public function holder(AccountBinding $b, string $name): RenewalPrice
     { ($this->authorize)(new Query($b, [$name], 'renew'), Context::Holder); return $this->ports->loadBatch([new Query($b, [$name], 'renew')], Context::Holder)[0][0]->renewal(); }
     public function cost(AccountBinding $b, string $name): ?Cost
