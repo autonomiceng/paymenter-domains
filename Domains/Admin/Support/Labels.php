@@ -20,10 +20,10 @@ final class Labels
             default => 'Auto Pay: result missing',
         };
     }
-    /** Saved request status and cause. RequestFacts::reason adds what is true now. */
-    public static function requestStatus(\Paymenter\Extensions\Servers\Domains\Models\Operation $op): array
+    /** Saved request status and cause. RequestFacts::reason adds what is true now. $ordersOff: Orders are off for this request's account. */
+    public static function requestStatus(\Paymenter\Extensions\Servers\Domains\Models\Operation $op, bool $ordersOff=false): array
     {
-        $status=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::for(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::closed($op->state,$op->safe_code)?'disposed':$op->state);
+        $status=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::for(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff));
         if (($due=\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::early($op))!==null) { $status['reason']=\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::earlyRenewal($due); }
         if ($op->safe_code!==null && isset(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES[$op->state])) { $status['reason']=self::operationReason($op); }
         return $status;

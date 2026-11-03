@@ -17,8 +17,9 @@ final class DomainStatus
     public const LATE = 'Contact support to check whether it can still be renewed';
     /** A stopped registration needs nothing from the customer. Staff get their step instead. */
     public const ON_IT = 'We are on it, nothing for you to do';
-    /** A stopped registration reads like its request for everyone, and stays under Pending registration in filters. state => [label, tone] */
-    public const STOPPED = ['registration_held' => RequestStatus::SET['on_hold'], 'registration_unconfirmed' => RequestStatus::SET['under_review']];
+    /** A stopped registration keeps the Pending registration word for everyone, so the tab and its rows agree (approved mock).
+     * The hold shows in the reason line: staff read their step, customers read ON_IT. Staff must act, so it is amber. state => tone */
+    public const STOPPED = ['registration_held' => 'warning', 'registration_unconfirmed' => 'warning'];
     /** Internal state => [status key, default reason line]. Domain status column values, request states seen on a domain,
      * watch findings, and derived states: renewal_off_expiring (auto-renew off, expiry within 30 days),
      * active_no_expiry (active without a confirmed expiry) and setup_required (held until the customer finishes setup). */
@@ -38,8 +39,8 @@ final class DomainStatus
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $reason = null): array
     {
-        [$label, $tone] = self::STOPPED[$state] ?? self::SET[self::key($state)];
-        return ['label' => $label, 'tone' => $tone, 'reason' => $reason ?? (self::STATES[$state] ?? [null, self::ON_IT])[1]];
+        [$label, $tone] = self::SET[self::key($state)];
+        return ['label' => $label, 'tone' => self::STOPPED[$state] ?? $tone, 'reason' => $reason ?? (self::STATES[$state] ?? [null, self::ON_IT])[1]];
     }
     /** The SET key a state belongs to; unknown states count as under_review. */
     public static function key(?string $state): string { return (self::STATES[$state] ?? ['under_review'])[0]; }

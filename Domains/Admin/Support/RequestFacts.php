@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, CatalogueAcceptances, EnomTestManagement, EnomTestRegistration, ManagementEvidence, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, CatalogueAcceptances, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
@@ -143,12 +143,21 @@ final class RequestFacts
         try { return ($op->state==='held'||$op->state==='queued'&&$ordersOff?self::readyMessage($op):null)??Labels::requestStatus($op)['reason']; }
         catch (\Throwable) { return Labels::requestStatus($op)['reason']; }
     }
-    /** A request's status. Orders off stop all queued work, so a queued request is On hold wherever it shows, not In progress. Lists pass $ordersOff as for reason(). */
-    public static function status(Operation $op, bool $ordersOff=true): array
+    /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
+     * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
+     * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
+    /** Staff alone name a registration stopped here On hold; setup still waits on the customer. */
+    public const STATUSES = [...RequestStatus::SET, 'on_hold'=>['On hold','warning']];
+    public static function heldRegistration(Operation $op, bool $ordersOff=false): bool
+    { return $op->action==='register' && RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'; }
+    public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
     {
-        $status=[...Labels::requestStatus($op),'reason'=>self::reason($op,$ordersOff)];
-        if ($op->state!=='queued'||!$ordersOff||!str_ends_with((string)$status['reason'],self::ORDERS_OFF)) { return $status; }
-        return [...RequestStatus::for('held'),'reason'=>$status['reason']];
+        $d??=$op->relationLoaded('domain')?$op->domain:null;
+        $off=$ordersOff&&$op->state==='queued'&&OperationQueries::ordersOff($op);
+        $status=[...Labels::requestStatus($op,$off),'reason'=>self::reason($op,$ordersOff)];
+        try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
+        if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
+        return self::heldRegistration($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string

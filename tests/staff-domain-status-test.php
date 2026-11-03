@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource, Operat
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, DomainQueries, Labels, RequestFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
-use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
+use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, RequestStatus};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagementCorrections, ObligationAlerts};
 staffPanel(); [, $seed]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
@@ -38,7 +38,7 @@ $d=$row('active','register','succeeded',null,730,['operation_review','renewal_un
 $cases['walk: active with a saved correction review']=[$d,'active','Active','Registrar request needs a check. Check the request.'];
 foreach (['walk: paid registration held for staff (1)','walk: paid registration held for staff (2)'] as $name) {
     $d=$row('registration_pending','register','held','staff_review_required',120,['operation_review']);
-    $cases[$name]=[$d,'pending_registration','On hold','Put on hold by staff. '.$req($d)];
+    $cases[$name]=[$d,'on_hold','On hold','Put on hold by staff. '.$req($d)];
 }
 $d=$row('registration_pending','register','cancelled');
 $cases['walk: old cancelled request on a pending domain']=[$d,'pending_registration','Pending registration','Request cancelled, order still open. Cancel the order to release the name. '.$req($d)];
@@ -50,9 +50,9 @@ $cases['auth code']=[$row('transfer_pending','transfer','awaiting_code'),'action
 $d=$row('registration_pending','register','held','nameservers_required');
 $cases['nameservers hold']=[$d,'action_required','Action required','Finish setup. Not sent: nameservers missing. '.$req($d)];
 $d=$row('transfer_pending','transfer','held','transfer_needs_action');
-$cases['held transfer']=[$d,'under_review','On hold','Old registrar needs approval. '.$req($d)];
+$cases['held transfer']=[$d,'under_review','Under review','Old registrar needs approval. '.$req($d)];
 $d=$row('registration_pending','register','uncertain');
-$cases['unconfirmed registration']=[$d,'pending_registration','Under review','Registrar has not confirmed the result. '.$req($d)];
+$cases['unconfirmed registration']=[$d,'pending_registration','Pending registration','Registrar has not confirmed the result. '.$req($d)];
 $cases['queued registration']=[$row('registration_pending','register','queued'),'pending_registration','Pending registration','Registration in progress. Nothing to do yet.'];
 $cases['running transfer']=[$row('transfer_pending','transfer','running'),'pending_transfer','Pending transfer','Transfer in progress. Nothing to do yet.'];
 $cases['queued with an alert']=[$row('registration_pending','register','queued',null,120,['unknown_cost']),'pending_registration','Pending registration',"Cost missing. Check the registrar account's price."];
@@ -66,8 +66,8 @@ $cases['redemption']=[$row('redemption','transfer','succeeded',null,-40),'redemp
 $cases['rejected']=[$row('registration_rejected','register','rejected','preflight_failed'),'failed','Failed','Registration did not finish.'];
 $cases['credited order']=[$row('registration_rejected','register','rejected','refund_approved',funding:['refund'=>['to'=>'account_credit']]),'cancelled','Cancelled','Order cancelled.'];
 $cases['cancelled order']=[$row('cancelled','register','disposed','acquisition_cancelled_unpaid'),'cancelled','Cancelled',null];
-$waiting=$row('something_new','nameservers','queued');$cases['unknown status with a request waiting']=[$waiting,'under_review','In progress','Nameservers in progress. Nothing to do yet.'];
-$stuck=$row('something_new','nameservers','held','management_unconfirmed');$cases['unknown status reads as the request in the way']=[$stuck,'under_review','On hold','Registrar has not confirmed the result. Check request #'.$stuck->operations()->sole()->id.'.'];
+$waiting=$row('something_new','nameservers','queued');$cases['unknown status with a request waiting']=[$waiting,'under_review','Under review','Nameservers in progress. Nothing to do yet.'];
+$stuck=$row('something_new','nameservers','held','management_unconfirmed');$cases['unknown status keeps the customer word, then the request']=[$stuck,'under_review','Under review','Registrar has not confirmed the result. Check request #'.$stuck->operations()->sole()->id.'.'];
 $unknown=$row('something_new','transfer','succeeded');$cases['unknown status']=[$unknown,'under_review','Under review','Status missing. Check request #'.$unknown->latestAcquisition->id.'.'];
 // An order reads as it does for the customer once its invoice is known. Paid orders keep only what the customer still owes.
 $invoiced=static function(Domain $d, string $status, ?int $owner=null): Domain {
@@ -156,6 +156,10 @@ foreach ($cases as $name=>[$d,$key,$label,$step]) {
     if ([$status['label'],$line]!==[$label,$step]) { $wrong[]=$name.': domain page shows "'.implode(' / ',array_filter([$status['label'],$line])).'", want the same as the list'; }
     $members[$key][]=$d->id;
 }
+// One head word: for every status, staff read the customer's word and add their detail in the step.
+$heads=[]; foreach ($cases as $name=>[$d]) { $s=DomainFacts::status($d->fresh()); $customer=$s['key']==='on_hold'?'On hold':DomainStatus::SET[$s['key']][0]; if ($s['label']!==$customer) { $heads[]=$name.': staff "'.$s['label'].'", customer "'.$customer.'"'; } }
+same([],$heads,'Customers and staff read one head word for every status');
+same('warning',DomainFacts::status($cases['held transfer'][0]->fresh())['tone'],'A held transfer is a staff job, so staff read it in amber');
 // The amber note is for staff jobs only.
 same([true,false],array_map(fn(string $name)=>DomainFacts::status($cases[$name][0]->fresh())['act'],['walk: paid registration held for staff (1)','unpaid invoice']),'A staff job gets the mark, waiting on the customer does not');
 same(false,isset(DomainFacts::for($cases['past expiry'][0]->fresh())['Next invoice']),'An expired domain has no next invoice to chase');
@@ -247,7 +251,7 @@ same([],$wrong,'Every row has one status and one next step');
 expect(!isset($columns['alert']),'No separate alert column: the next step is under the status');
 // The filter offers the customer's words.
 same(['active'=>'Active','pending_registration'=>'Pending registration','pending_transfer'=>'Pending transfer','awaiting_payment'=>'Awaiting payment','action_required'=>'Action required','under_review'=>'Under review',
-    'expired'=>'Expired','redemption'=>'Redemption','failed'=>'Failed','cancelled'=>'Cancelled'],DomainResource::statusOptions(),'Status filter set');
+    'expired'=>'Expired','redemption'=>'Redemption','failed'=>'Failed','cancelled'=>'Cancelled','on_hold'=>'On hold'],DomainResource::statusOptions(),'Status filter set');
 foreach (array_keys(DomainResource::statusOptions()) as $key) {
     $expected=$members[$key]??[]; sort($expected);
     same($expected,$ids($key),'Status filter matches the rows: '.$key);
@@ -285,16 +289,23 @@ $ended=$row('cancelled','register','disposed'); $ended->forceFill(['renewal_poli
 $live=$row('active','transfer','succeeded'); $live->forceFill(['renewal_policy'=>$pausedPolicy])->saveQuietly();
 expect(!str_contains((string)DomainFacts::for($ended->fresh())['Registrar']['sub'],'orders paused'),'Cancelled domain has no paused orders');
 expect(str_contains((string)DomainFacts::for($live->fresh())['Registrar']['sub'],'orders paused'),'Live domain keeps the pause');
-// Orders off: one state reads one way on the list, the heading and the request, because each reads the whole request.
+// Orders off: the list and the heading read the customer's word, then the request's reason. The request reads the same word.
 $offTransfer=$row('transfer_pending','transfer','held','processing'); $offChange=$row('something_new','nameservers','queued');
 Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>false]);
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
 $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()->getTableRecords()->keyBy('id');
 foreach ([$offTransfer,$offChange] as $d) {
     $op=$d->operations()->sole(); $line=RequestFacts::status($op); $status=DomainFacts::status($d->fresh());
-    same('On hold',$line['label'],'The request reads On hold');
-    $read=[$line['label'],rtrim((string)$line['reason'],'.').'. Check request #'.$op->id.'.'];
-    same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading reads as its request');
+    same('Under review',$line['label'],'The request reads its domain\'s word');
+    $read=['Under review',rtrim((string)$line['reason'],'.').'. Check request #'.$op->id.'.'];
+    same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading keeps the customer word, then the request');
     same($read,[$columns['status']->record($records[$d->id])->getState(),$columns['note']->record($records[$d->id])->getState()],'The list reads as its request');
 }
+// POL-held: staff registration holds differ from customer presentation, including the request filter.
+$pol=$row('registration_pending','register','held','staff_review_required'); $polOp=$pol->operations()->sole();
+same(['On hold','warning'],array_values(array_intersect_key(RequestFacts::status($polOp),array_flip(['label','tone']))),'Staff request is On hold in amber');
+same(['On hold','warning'],[DomainFacts::status($pol)['label'],DomainFacts::status($pol)['tone']],'Staff domain is On hold in amber');
+same(['Under review','info'],array_slice(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of('registration_held')),0,2),'Customer domain stays Under review in blue');
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($polOp->id)->exists(),'Staff On hold filter includes registration hold');
+expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($polOp->id)->exists(),'Staff Under review filter excludes registration hold');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

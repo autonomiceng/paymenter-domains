@@ -22,7 +22,7 @@ $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 [$heldOp,$doneOp,$longOp]=Operation::orderBy('id')->get()->all();
 
 // Request status set, short reason lines that keep the real cause, and new type names.
-same(['On hold','warning',"Not sent: couldn't load the registrar account's settings"],
+same(['Under review','warning',"Not sent: couldn't load the registrar account's settings"],
     array_values(Labels::requestStatus(new Operation(['state'=>'held','safe_code'=>'configuration_unavailable']))),'Held request keeps its real cause');
 same(['Under review','warning','Registrar has not confirmed the result'],array_values(Labels::requestStatus(new Operation(['state'=>'uncertain']))),'Unconfirmed request');
 same(['In progress','info',null],array_values(Labels::requestStatus(new Operation(['state'=>'running']))),'Sending is In progress');
@@ -48,13 +48,13 @@ same(['recheck'=>'Check status','resume_reads'=>'Check status','resume_observati
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['created_at'=>'2026-10-20 15:05:00']);
 $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful()
     ->assertSee('Request #'.$heldOp->id)->assertSeeHtml('2026-10-20T15:05:00+00:00')->assertSee('Synthetic registrar')
-    ->assertSee('On hold')->assertSee('Old registrar needs approval')->assertSee('Registrar account')->assertSee('Note')->assertSeeHtml('placeholder="Search domain"')
+    ->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee('Registrar account')->assertSee('Note')->assertSeeHtml('placeholder="Search domain"')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
 same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
 staffTableStandard($list,'Search domain',['domain.domain','state','note']);
 $filter=static function(string $name,array $value){$p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable($name,$value);
     return $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters');};
-$filter('status',['on_hold'])->assertCanSeeTableRecords([$heldOp,$longOp])->assertCanNotSeeTableRecords([$doneOp]);
+$filter('status',['under_review'])->assertCanSeeTableRecords([$heldOp,$longOp])->assertCanNotSeeTableRecords([$doneOp]);
 $filter('status',['completed'])->assertCanSeeTableRecords([$doneOp])->assertCountTableRecords(1);
 $filter('action',['transfer'])->assertCountTableRecords(3);
 $filter('server_id',[$active->server_id])->assertCanSeeTableRecords([$doneOp])->assertCountTableRecords(1);
@@ -63,7 +63,7 @@ $filter('server_id',[$active->server_id])->assertCanSeeTableRecords([$doneOp])->
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['safe_code'=>'configuration_unavailable','attempt'=>null]);
 $manager=staffUser([Staff::VIEW,'admin.domains.manage',...array_map(StaffOperationReview::permission(...),array_keys(StaffOperationReview::ACTIONS))]); Auth::setUser($manager);
 $page=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSuccessful();
-expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp->id)&&str_contains($page->instance()->getSubheading()->toHtml(),'On hold'),'The line under the heading carries the request state');
+expect(str_contains((string)$page->instance()->getHeading(),'Request #'.$heldOp->id)&&str_contains($page->instance()->getSubheading()->toHtml(),'Under review'),'The line under the heading carries the request state');
 same([Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource::getUrl()=>'Registrar requests','Request #'.$heldOp->id],$page->instance()->getBreadcrumbs(),'Breadcrumbs');
 // Retained expiry and actual charge in this display fixture cannot prove an unsent acquisition.
 $page->assertSee("Not sent: couldn't load the registrar account's settings.")->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$heldOp->server_id])))->assertDontSee('Release hold')->assertSee('Details')->assertSee('History')
@@ -182,18 +182,58 @@ same($title,$line($unsent),'Held and never sent reads Not sent');
 same($title,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unsent,$unsent->domain,true)['status']['reason'],'The rail reads the same');
 $sealed=(clone $unsent)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);
 same('Registrar has not confirmed the result',$line($sealed),'Only a change that may have gone out is unknown');
+same('Under review',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()]),$unsent->domain,true)['status']['label'],'A change the registrar has not read back reads Under review on the rail, as in customer History');
+same('Under review',RequestFacts::status((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()])->setRelation('domain',$unsent->domain))['label'],'The request list and page read it the same');
 $failedUnsent=(clone $unsent)->forceFill(['state'=>'rejected']);
 same($title,$line($failedUnsent),'A failed change that never went out says so');
 same('We couldn’t make this change.',$line((clone $sealed)->forceFill(['state'=>'rejected'])),'A failed row never says the result is unknown');
-// Orders off stop all queued work, so a queued request reads On hold on its page, in the list and on the domain's rail.
+// Orders off stop all queued work. A queued request that waits on them is held for staff: it reads Under review, as its domain does, on its page, in the list and on the rail, with the hold in its reason.
 $queued=$heldOp->fresh()->forceFill(['state'=>'queued','safe_code'=>null,'invoice_id'=>null,'funding_basis'=>'non_billable_management']);
 $orders=Paymenter\Extensions\Servers\Domains\Models\Account::where('account_fingerprint',$heldOp->account_fingerprint);
 $orders->update(['processing_enabled'=>true]);
 same('In progress',RequestFacts::status($queued)['label'],'Queued with Orders on is moving');
 $orders->update(['processing_enabled'=>false]);
-same(['On hold','warning','Not sent. Orders are off for this account.'],array_values(RequestFacts::status($queued)),'Queued with Orders off is stopped');
-same('On hold',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($queued,$heldOp->domain,true)['status']['label'],'The rail reads the same');
+// One map: for every request kind, a request in a state its domain also has reads the domain's word, on the page and list (RequestFacts) and on the rail.
+$words=[]; $domainWord=fn(string $state)=>Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::for($state)['label'];
+foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_purchase','dns'] as $kind){
+    foreach(array_keys(Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::STATES) as $state){
+        if(!isset(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::STATES[$state])){continue;}
+        $op=$heldOp->fresh()->forceFill(['action'=>$kind,'state'=>$state]);
+        foreach(['page'=>RequestFacts::status($op,true,$heldOp->domain)['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
+            if($word!==($kind==='register'&&$state==='held'?'On hold':$domainWord($state))){$words[]="$kind $state ($where): request \"$word\", domain \"{$domainWord($state)}\"";}
+        }
+    }
+    $op=(clone $queued)->forceFill(['action'=>$kind]);
+    if(($word=RequestFacts::status($op)['label'])!==($kind==='register'?'On hold':$domainWord('held'))){$words[]="$kind queued, Orders off: request \"$word\", domain \"{$domainWord('held')}\"";}
+}
+same([],$words,'A request reads the same word as its domain for the same state, for every kind');
+same(['Under review','warning','Not sent. Orders are off for this account.'],array_values(RequestFacts::status($queued)),'Queued with Orders off reads Under review, amber, with the hold');
+same('Under review',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($queued,$heldOp->domain,true)['status']['label'],'The rail reads the same');
 same('In progress',RequestFacts::status($queued,false)['label'],'A list that knows Orders are on skips the check');
+// The Status filter reads the same map: a queued request on an account with Orders off is in Under review, not In progress.
+DB::table('domains_operations')->where('id',$queued->id)->update(['state'=>'queued','safe_code'=>null]);
+$filter('status',['under_review'])->assertCanSeeTableRecords([$queued]);
+$filter('status',['in_progress'])->assertCanNotSeeTableRecords([$queued]);
+$orders->update(['processing_enabled'=>true]);
+$filter('status',['in_progress'])->assertCanSeeTableRecords([$queued]);
+$filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
+// Held for setup reads Action required, as its domain does, with the next step it already shows.
+$setup=[]; $next=[];
+foreach(['register','transfer','renew','nameservers','contacts','lock','privacy_purchase','dns'] as $kind){
+    foreach(['contact_details_required','nameservers_required'] as $code){
+        $op=$heldOp->fresh()->forceFill(['action'=>$kind,'state'=>'held','safe_code'=>$code]);
+        $page=RequestFacts::status($op,true,$heldOp->domain);
+        foreach(['page'=>$page['label'],'rail'=>Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($op,$heldOp->domain,true)['status']['label']] as $where=>$word){
+            if($word!==$domainWord('setup_required')){$setup[]="$kind $code ($where): request \"$word\", domain \"{$domainWord('setup_required')}\"";}
+        }
+        if(!is_string($page['reason'])||$page['reason']===''||$page['reason']==='Status missing'){$next[]="$kind $code";}
+    }
+}
+same([],$setup,'A request held for setup reads Action required, as its domain does, for every kind');
+same([],$next,'A request held for setup keeps its next step');
+DB::table('domains_operations')->where('id',$queued->id)->update(['state'=>'held','safe_code'=>'contact_details_required']);
+$filter('status',['action_required'])->assertCanSeeTableRecords([$queued]);
+$filter('status',['under_review'])->assertCanNotSeeTableRecords([$queued]);
 // Unreadable saved data: one notice with its fix, never an "unavailable" value.
 DB::table('domains_operations')->where('id',$longOp->id)->update(['policy'=>'not-encrypted']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$longOp->id])->assertSee("Can't read saved data. Ask your site admin to check the encryption key.")->assertDontSee('unavailable');

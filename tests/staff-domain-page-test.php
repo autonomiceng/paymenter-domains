@@ -178,7 +178,7 @@ DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires
 // An inactive domain's renewal timing is not Missing: the rows do not apply.
 $pending=DomainFacts::for($held);
 expect(!isset($pending['Next invoice'])&&!isset($pending['Expires']),'Pending transfer hides expiry and next invoice');
-same(['On hold','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
+same(['Under review','Old registrar needs approval. Check request #'.$held->operations()->sole()->id.'.'],[DomainFacts::status($held)['label'],DomainFacts::statusLine(DomainFacts::status($held))],'Held transfer pill and next step');
 same([null,'Customer account not found. Check the Users page.'],[$value($held,'Customer'),$sub($held,'Customer')],'Deleted customer is Missing with its cause');
 
 // Renewal settings.
@@ -349,7 +349,7 @@ foreach(['Unconfirmed','See Registrar requests','Payment review','Customer #','S
 $filter=static function($page,string $name,mixed $value){$page->filterTable($name,$value);return $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters');};
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$held,$long])->assertCanNotSeeTableRecords([$active]);
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active'])->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);
-same(array_keys(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),array_keys(DomainResource::statusOptions()),'Status filter has the customer statuses');
+same([...array_keys(Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::SET),'on_hold'],array_keys(DomainResource::statusOptions()),'Staff status filter includes held registration');
 // Import shows only when it can finish: switched on, and the role holds every permission the import needs.
 $full=[Staff::VIEW,Staff::ADOPT_PREVIEW,Staff::ADOPT,'admin.domains.manage','admin.services.update'];$importer=staffUser($full);
 config(['domains.adoption.enabled'=>false]);

@@ -69,7 +69,7 @@ final class DomainPage
         };
         return ['missing' => false, 'tone' => $days <= 0 ? 'bad' : ($days <= 30 ? 'warn' : null), 'note' => $note];
     }
-    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
+    /** Next invoice: the current renewal invoice's state (Due + Pay invoice, Paid, Under review in blue while we check it, or Missing with its cause and fix), else the day the next invoice goes out, the same date staff see. Null when it does not apply. */
     public static function nextInvoice(OwnedDomain $d, ?DomainSummary $s, ?string $support): ?array
     {
         $state = $d->renewNow['status'] ?? (isset($d->renewNow['invoice']) ? 'pending' : null) ?? $d->renewalInvoice['state'] ?? null;
@@ -80,7 +80,7 @@ final class DomainPage
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => 'Paid'],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
-            $state !== null => ['missing' => true, 'cause' => 'Renewal being checked', 'fix' => $contact],
+            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked. '.Missing::NO_ACTION],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
             $s?->renewalIssueAt !== null => ['value' => self::date($s->renewalIssueAt)],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
@@ -97,6 +97,17 @@ final class DomainPage
         if ($open) { return null; }
         $setup = $d->actions['setup'] ?? null;
         return ['missing' => true, 'fix' => $setup && ($d->transfer['phase'] ?? null) === 'cutoff' && ($d->setup['contacts'] ?? false) ? ['label' => 'Update details', 'url' => $setup] : Missing::support($support)];
+    }
+    /** The tone of a word in History: what ended well, what broke, what is the customer's to do, and what is still ours. */
+    public static function stepTone(string $word): string
+    {
+        return match ($word) {
+            'Completed', 'Paid' => 'ok',
+            'Failed' => 'bad',
+            'Unpaid', 'Action required' => 'warn',
+            'Cancelled' => 'muted',
+            default => 'info',
+        };
     }
     public static function date(string $date): string
     {

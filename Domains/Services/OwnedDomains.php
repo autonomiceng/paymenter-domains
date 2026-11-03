@@ -151,16 +151,11 @@ final readonly class OwnedDomains
         foreach ($entries as $entry) {
             try {
                 if (($late=RenewalCycles::lateNote($entry))!==null) { $progress[]=['label'=>'Renewal','state'=>'Cancelled','date'=>$entry->updated_at?->toIso8601String(),'note'=>$late]; continue; }
-                if (!isset($entry->policy['management']) || isset($entry->policy['management']['correction'])) { continue; }
+                $key=ManagementProgress::statusKey($entry,$d);
                 $label=self::CHANGES[$entry->action]??null;
-                if (!$label) { continue; }
-                // Request status labels; a result counts only once the registrar's readback confirms it.
-                $resolved=ManagementEvidence::resolved($entry,$d);
-                $state=match (true) {
-                    in_array($entry->state,['succeeded','rejected'],true) && !$resolved => 'Under review',
-                    $entry->state==='held' && $entry->safe_code==='enom_test_management_call_cap' && $resolved => 'Failed',
-                    default => RequestStatus::for(RequestStatus::closed($entry->state,$entry->safe_code)?'disposed':$entry->state)['label'],
-                };
+                if ($key===null || !$label) { continue; }
+                // The same word staff read on the domain's Activity rail.
+                $state=RequestStatus::SET[$key][0];
                 $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
                     'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null,'setting'=>ManagementProgress::setting($entry->action)];
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
@@ -258,7 +253,7 @@ final readonly class OwnedDomains
             $invoiceIds = \Paymenter\Extensions\Servers\Domains\Models\HistoryLink::where('domain_id', $d->id)->where('user_id', $d->user_id)->pluck('invoice_id');
             // Dated by the last successful payment for a paid invoice, else by its issue date.
             $history = Invoice::whereKey($invoiceIds)->where('user_id', $d->user_id)->withMax(['transactions as succeeded_at' => fn ($q) => $q->where('status', 'succeeded')], 'created_at')->orderBy('id')->get()
-                ->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => ucfirst($i->status), 'url' => route('invoices.show', $i),
+                ->map(fn ($i) => ['number' => $i->number ?? (string) $i->id, 'status' => $i->status === 'pending' ? 'Unpaid' : ucfirst($i->status), 'url' => route('invoices.show', $i),
                     'date' => substr((string) ($i->status === 'paid' && $i->succeeded_at ? $i->succeeded_at : $i->created_at), 0, 10)])->all();
         }
         $test=Account::where('server_id',$d->server_id)->value('environment')==='test';

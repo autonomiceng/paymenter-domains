@@ -48,6 +48,8 @@ app()->instance(OwnerPorts::class,$ports);app()->instance(OwnedDomains::class,$o
 $before=$state->calls;$controller->status($request,$d->id);same($before,$state->calls,'Polling never calls the registrar');
 $html=$controller->show($request,$d->id)->render();
 expect(str_contains($html,'data-management-pending="lock"'),'Reload keeps the pending control');
+expect(str_contains($html,'<li class="domains-row domains-row--pending" id="lock">'),'The waiting row carries the pending tint');
+expect(!str_contains($html,'<li class="domains-row domains-row--pending" id="nameservers">'),'Only the waiting row is tinted');
 expect(!str_contains($html,'id="form-lock"'),'The unfinished setting has no second change control');
 $foreign=Request::create('/');$foreign->setUserResolver(fn()=>commerceUser());
 try{$controller->status($foreign,$d->id);expect(false,'Foreign status must fail');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}

@@ -82,11 +82,11 @@ try {
 DB::table('domains_domains')->where('id',$active->id)->update(['provenance'=>null]);
 $acquisition=$active->operations()->sole();$storedState=$acquisition->state;
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'needs_review']);
-foreach(['held'=>['On hold','Not sent. Check request #'.$acquisition->id.'.'],'uncertain'=>['Under review','Registrar has not confirmed the result. Check request #'.$acquisition->id.'.']] as $shown=>$read){
+foreach(['held'=>['Under review','Not sent. Check request #'.$acquisition->id.'.'],'uncertain'=>['Under review','Registrar has not confirmed the result. Check request #'.$acquisition->id.'.']] as $shown=>$read){
     DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>$shown]);
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$active]);
     staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['active','pending_transfer'])->assertCanNotSeeTableRecords([$active]);
-    same($read,[DomainFacts::status($active->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($active->fresh()))],'Latest acquisition reads as its request');
+    same($read,[DomainFacts::status($active->fresh())['label'],DomainFacts::statusLine(DomainFacts::status($active->fresh()))],'Latest acquisition: the customer word, then its request');
 }
 DB::table('domains_operations')->where('id',$acquisition->id)->update(['state'=>'succeeded']);
 staffFilter(Livewire::actingAs($viewer)->test(ListDomains::class),'status',['under_review'])->assertCanSeeTableRecords([$active]);
@@ -285,7 +285,8 @@ $excluded=[
     'DnsResolverSettings.php'=>['dns_rcode_'], // DNS response prefix, formatted locally.
     'DomainManagement.php'=>['owner_request','staff_correction','nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
         'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
-    'ManagementProgress.php'=>['contacts','dns','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update'], // Grouped setting/action names, not emitted reasons.
+    'ManagementProgress.php'=>['contacts','dns','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update','under_review','failed','disposed'], // Grouped settings and status keys.
+
     'ManagedPublicEnrollment.php'=>['managed_enrollment'],
     'ManagedDnsSetup.php'=>['external','platform'], // DNS intent values, not staff reason codes.
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.

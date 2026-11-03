@@ -45,20 +45,20 @@ same($pill('Action required','warning','Not using Example nameservers'),DomainSt
 
 // 2.2 Registrar request.
 // Only the customer can pay, so staff see a wait, not an action.
-same(['Awaiting payment','Action required','In progress','On hold','Under review','Completed','Failed','Cancelled'],array_column(RequestStatus::SET,0),'Request labels');
-same(['info','warning','info','warning','warning','success','danger','gray'],array_column(RequestStatus::SET,1),'Request tones');
+same(['Awaiting payment','Action required','In progress','Under review','Completed','Failed','Cancelled'],array_column(RequestStatus::SET,0),'Request labels');
+same(['info','warning','info','warning','success','danger','gray'],array_column(RequestStatus::SET,1),'Request tones');
 foreach ([
     'awaiting_payment'=>$pill('Awaiting payment','info','Customer has not paid the invoice. Not sent yet.'),
     'awaiting_code'=>$pill('Action required','warning','Auth code needed'),
     'queued'=>$pill('In progress','info'), 'running'=>$pill('In progress','info'), 'pending'=>$pill('In progress','info'),
-    'held'=>$pill('On hold','warning','Not sent'),
+    'held'=>$pill('Under review','warning','Not sent'),
     'uncertain'=>$pill('Under review','warning','Registrar has not confirmed the result'),
     'succeeded'=>$pill('Completed','success'),
     'rejected'=>$pill('Failed','danger'),
     'disposed'=>$pill('Cancelled','gray'),
     'something_new'=>$pill('Under review','warning','Status missing'),
 ] as $state=>$expected) { same($expected,RequestStatus::for($state),'Request state '.$state); }
-same($pill('On hold','warning',"Not sent: couldn't load the registrar account's settings"),
+same($pill('Under review','warning',"Not sent: couldn't load the registrar account's settings"),
     RequestStatus::for('held',"couldn't load the registrar account's settings"),'Held reason keeps the real cause');
 same($pill('Failed','danger','Registrar rejected the transfer'),RequestStatus::for('rejected','Registrar rejected the transfer'),'Rejected shows the registrar reason');
 same($pill('Under review','warning','Status missing'),RequestStatus::for(null),'No request state is Under review with the cause');

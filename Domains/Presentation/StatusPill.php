@@ -15,8 +15,12 @@ final class StatusPill
     public static function of(?string $state, ?string $reason = null): array
     {
         $status = DomainStatus::for($state, $reason);
+        if ($state==='registration_held') { $status['label']='Under review'; }
         return [...$status, 'tone' => self::CUSTOMER[(string) $state] ?? self::CUSTOMER[DomainStatus::key($state)] ?? self::TONES[$status['tone']]];
     }
+    /** The customer filter groups a staff-held registration under its visible word. */
+    public static function key(?string $state): string
+    { return $state==='registration_held'?'under_review':DomainStatus::key($state); }
     /** @return array{label:string,tone:string,reason:?string}|null */
     public static function summary(DomainSummary $s): ?array
     { return $s->statusState === null ? null : self::of($s->statusState, $s->statusReason); }

@@ -107,7 +107,7 @@ class DomainResource extends Resource
         });
     }
     /** The domain statuses, in DomainStatus order. */
-    public static function statusOptions(): array { return array_map(fn(array $s)=>$s[0],DomainStatus::SET); }
+    public static function statusOptions(): array { return [...array_map(fn(array $s)=>$s[0],DomainStatus::SET),'on_hold'=>'On hold']; }
     private const REGISTRARS=['enom'=>'Enom','namesilo'=>'NameSilo'];
     /** Auto-renew stops and sync state per rendered page of records, keyed by domain id: one batch of reads per page. */
     private static ?\WeakMap $rows=null;

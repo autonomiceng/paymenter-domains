@@ -67,7 +67,7 @@ Each domain has an owner (registrant) and admin, tech and billing contacts. You 
 
 - Use details you can be reached at. Registries can suspend domains with false contact details.
 - Changing the owner's name, organization or email may need email verification, and can block transfers for 60 days.
-- Some registrars apply contact changes in two steps. Send the new details first. Once they are approved, open Edit contacts again to use them.
+- Some registrars apply contact changes in two steps. Send the new details first. Once they are approved, open Edit on Contacts again to use them.
 
 ## Auto-renew
 
