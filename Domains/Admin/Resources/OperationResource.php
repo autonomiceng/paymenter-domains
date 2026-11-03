@@ -43,7 +43,7 @@ class OperationResource extends Resource
     public static function table(Table $table): Table
     {
         Staff::requireView();
-        $statuses=array_map(fn($status)=>$status[0],RequestStatus::SET); $servers=\App\Models\Server::pluck('name','id')->all();
+        $statuses=array_map(fn($status)=>$status[0],RequestFacts::STATUSES); $servers=\App\Models\Server::pluck('name','id')->all();
         $off=Account::where('processing_enabled',false)->pluck('server_id')->all();
         EmptyTable::apply($table,'No registrar requests','Requests show here when a customer orders a domain.','No requests match');
         return $table->columns([

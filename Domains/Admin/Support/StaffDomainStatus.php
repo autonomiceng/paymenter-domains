@@ -57,6 +57,9 @@ final class StaffDomainStatus
         } elseif ($unknown && $step === self::CHECK) {
             [$step, $request] = [$op ? 'Status missing.'.self::check($op->id) : 'Status missing. Check the domain at the registrar.', $op?->id];
         }
+        if ($op && in_array($d->status,self::ACQUIRING,true) && RequestFacts::heldRegistration($op, $state==='registration_held')) {
+            $shared=[...$shared,'label'=>'On hold','tone'=>'warning'];
+        }
         return [...self::forStaff($shared), 'step' => $step, 'request' => $request, 'act' => $act, 'alert' => $named];
     }
     /** Late money is checked first by the caller, so it takes the step. */

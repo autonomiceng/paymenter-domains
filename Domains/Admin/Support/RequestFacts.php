@@ -146,6 +146,10 @@ final class RequestFacts
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
      * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
      * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
+    /** Staff alone name a registration stopped here On hold; setup still waits on the customer. */
+    public const STATUSES = [...RequestStatus::SET, 'on_hold'=>['On hold','warning']];
+    public static function heldRegistration(Operation $op, bool $ordersOff=false): bool
+    { return $op->action==='register' && RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'; }
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
     {
         $d??=$op->relationLoaded('domain')?$op->domain:null;
@@ -153,7 +157,7 @@ final class RequestFacts
         $status=[...Labels::requestStatus($op,$off),'reason'=>self::reason($op,$ordersOff)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
-        return $status;
+        return self::heldRegistration($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string

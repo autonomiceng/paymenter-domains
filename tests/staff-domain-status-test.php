@@ -38,7 +38,7 @@ $d=$row('active','register','succeeded',null,730,['operation_review','renewal_un
 $cases['walk: active with a saved correction review']=[$d,'active','Active','Registrar request needs a check. Check the request.'];
 foreach (['walk: paid registration held for staff (1)','walk: paid registration held for staff (2)'] as $name) {
     $d=$row('registration_pending','register','held','staff_review_required',120,['operation_review']);
-    $cases[$name]=[$d,'pending_registration','Pending registration','Put on hold by staff. '.$req($d)];
+    $cases[$name]=[$d,'pending_registration','On hold','Put on hold by staff. '.$req($d)];
 }
 $d=$row('registration_pending','register','cancelled');
 $cases['walk: old cancelled request on a pending domain']=[$d,'pending_registration','Pending registration','Request cancelled, order still open. Cancel the order to release the name. '.$req($d)];
@@ -301,4 +301,12 @@ foreach ([$offTransfer,$offChange] as $d) {
     same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading keeps the customer word, then the request');
     same($read,[$columns['status']->record($records[$d->id])->getState(),$columns['note']->record($records[$d->id])->getState()],'The list reads as its request');
 }
+// POL-held: staff registration holds differ from customer presentation, including the request filter.
+$pol=$row('registration_pending','register','held','staff_review_required'); $polOp=$pol->operations()->sole();
+same(['On hold','warning'],array_values(array_intersect_key(RequestFacts::status($polOp),array_flip(['label','tone']))),'Staff request is On hold in amber');
+same(['On hold','warning'],[DomainFacts::status($pol)['label'],DomainFacts::status($pol)['tone']],'Staff domain is On hold in amber');
+same(['Under review','info'],array_slice(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::for('registration_held')),0,2),'Customer domain stays Under review in blue');
+same(['Under review','info'],array_slice(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::for('held')),0,2),'Customer request stays Under review in blue');
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($polOp->id)->exists(),'Staff On hold filter includes registration hold');
+expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($polOp->id)->exists(),'Staff Under review filter excludes registration hold');
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";

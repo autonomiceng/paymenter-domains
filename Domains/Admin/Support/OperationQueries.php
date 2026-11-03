@@ -21,7 +21,10 @@ final class OperationQueries
     {
         if (!$keys) { return $q; }
         $in=fn(string $state)=>in_array(RequestStatus::key($state),$keys,true);
-        return $q->where(function($q) use ($in) {
+        return $q->where(function($q) use ($in,$keys) {
+            if (in_array('on_hold',$keys,true)) { $q->orWhere(fn($held)=>self::heldRegistration($held)); }
+            $q->orWhere(function($q) use ($in) {
+            $q->whereNot(fn($held)=>self::heldRegistration($held))->where(function($q) use ($in) {
             foreach (array_keys(RequestStatus::STATES) as $state) {
                 if (!$in($state)) { continue; }
                 $q->orWhere(function($q) use ($state) {
@@ -30,7 +33,16 @@ final class OperationQueries
                 });
             }
             foreach (RequestStatus::READS_AS as $as=>$rule) { if ($in($as)) { $q->orWhere(fn($q)=>self::readsAs($q,$rule)); } }
+            });
+            });
         });
+    }
+    /** SQL form of RequestFacts::heldRegistration, including queued registrations stopped by Orders off. */
+    private static function heldRegistration(Builder $q): Builder
+    {
+        return $q->where('action','register')->where(fn($q)=>$q
+            ->where(fn($q)=>$q->where('state','held')->where(fn($q)=>$q->whereNull('safe_code')->orWhereNotIn('safe_code',RequestStatus::SETUP_CODES)))
+            ->orWhere(fn($q)=>self::whereOrdersOff($q->where('state','queued'))));
     }
     /** Orders are off for the request's own account. The word (RequestFacts::status) and the filter (whereOrdersOff) use this one rule. */
     public static function ordersOff(Operation $op): bool
