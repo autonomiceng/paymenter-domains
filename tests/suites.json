@@ -427,7 +427,9 @@
     "tests/caller-ports-test.php",
     "tests/offer-capabilities-test.php",
     "tests/offer-holder-consumers-test.php",
-    "tests/offer-readiness-test.php"
+    "tests/offer-readiness-test.php",
+    "tests/offer-frozen-renewal-test.php",
+    "tests/offer-frozen-transfer-test.php"
   ],
   "ui": [],
   "runner": [
