@@ -307,6 +307,33 @@ final class AccountBindings
             },$managementAccepted,$testManagement);
     }
 
+    /** Local offer fence, including same-identity credential rotation. Never resolves a reader. */
+    public function offerCredentialRevision(AccountBinding $expected): string
+    {
+        $server = $this->server($expected->serverId);
+        $account = Account::where('server_id', $expected->serverId)->sole();
+        $expected->requireMatch($this->binding($account));
+        $credentials = $this->configuration($account, true, $server);
+        if ($expected->registrarKey === 'namesilo') {
+            // #387 owns local enrollment and its opaque, persisted revision. No inferred fallback.
+            if (!method_exists($this, 'credentialRevision')) { throw new \DomainException('Offer credential revision dependency unavailable.'); }
+            return $this->credentialRevision($expected);
+        }
+        return $this->digest($expected, $credentials);
+    }
+
+    /** Only the private offer transport receives plaintext, freshly checked before each physical read. */
+    public function offerCredentials(AccountBinding $expected, #[\SensitiveParameter] string $revision): array
+    {
+        if (!hash_equals($revision, $this->offerCredentialRevision($expected))) { throw new \DomainException('Offer credentials changed.'); }
+        $account = Account::where('server_id', $expected->serverId)->sole();
+        $expected->requireMatch($this->binding($account));
+        $credentials = $this->configuration($account, true);
+        // A rotation between the two local reads must not bind new credentials to an old feed.
+        if (!hash_equals($revision, $this->offerCredentialRevision($expected))) { throw new \DomainException('Offer credentials changed.'); }
+        return $credentials;
+    }
+
     /** Local credential/site validation only; never resolves a provider reader or sends a request. */
     public function configurationAvailable(int $serverId): bool
     { return $this->configurationStatus($serverId) === 'matched'; }

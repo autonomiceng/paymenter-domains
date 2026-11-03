@@ -415,7 +415,8 @@
     "tests/management-glue-namesilo-test.php",
     "tests/menu-registrars-quiet-test.php",
     "tests/offer-window-interruption-test.php",
-    "tests/offer-legacy-mutex-test.php"
+    "tests/offer-legacy-mutex-test.php",
+    "tests/offer-ports-test.php"
   ],
   "ui": [],
   "runner": [
