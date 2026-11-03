@@ -58,6 +58,7 @@ class PayCheck
     /** Stops payment for a temporary Live opt-out; closes an unavailable name. Null lets payment go. */
     public function stop(Invoice $invoice): ?array
     {
+        if ($offers = $this->catalogue()) { return $this->catalogueStop($invoice, $offers); }
         try{
             $moneyMoving=self::moneyMoving((int)$invoice->id);
             $deadline=$this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');
@@ -70,6 +71,45 @@ class PayCheck
         }catch(\Throwable $e){Log::warning('Domains pay check skipped.',['invoice_id'=>$invoice->id,'exception_class'=>$e::class]);}
         return null;
     }
+    /** Local evidence fails closed; provider unknown keeps the retained paid-preflight behavior. */
+    private function catalogueStop(Invoice $invoice, AcquisitionOffers $offers): ?array
+    {
+        if ($invoice->fresh()?->status !== 'pending' || self::moneyMoving((int)$invoice->id)) { return null; }
+        $ops = $this->orders($invoice)->filter(fn ($op) => in_array($op->state, self::OPEN, true));
+        if ($ops->isEmpty()) { return null; }
+        $unavailable = ['why' => 'unavailable', 'text' => 'Domains can’t be ordered right now. Please try again later.'];
+        try {
+            $selections = $ops->map(static function ($op) {
+                $receipt = $op->policy['checkout']['catalogue'] ?? throw new \DomainException('No catalogue receipt.');
+                $s = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$receipt);
+                if ($s->serverId !== (int)$op->server_id || $s->fingerprint !== $op->account_fingerprint
+                    || $s->action !== $op->action || $s->term !== (int)$op->term || $s->tld !== $op->domain->tld) {
+                    throw new \DomainException('Frozen catalogue binding changed.');
+                }
+                return $s;
+            })->values()->all();
+            foreach ($selections as $s) { $offers->validate($s); }
+            $deadline = $this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');
+            foreach ($ops->values() as $i => $op) {
+                $stamp = hash('sha256', json_encode(get_object_vars($selections[$i]), JSON_THROW_ON_ERROR));
+                $answer = $this->answer($op, $deadline, $stamp);
+                // A cached clear/taken answer has exactly the same local post-read guard.
+                foreach ($selections as $s) { $offers->validate($s); }
+                if (in_array($answer, [self::CLEAR, self::UNKNOWN], true)) { continue; }
+                $notice = self::notice($answer, $op->domain->domain);
+                $guard = static function () use ($offers, $selections): void {
+                    try { $offers->admit($selections); }
+                    catch (\Throwable) { throw new \RuntimeException('Local catalogue evidence changed.'); }
+                };
+                $closed = app(AcquisitionRetirement::class)->closeUnpaid((int)$invoice->id, $notice, $guard);
+                if (!in_array($op->domain->domain, $closed['also'], true)) { return $unavailable; }
+                return [...$notice, ...$closed, 'name' => $op->domain->domain,
+                    'also' => array_values(array_diff($closed['also'], [$op->domain->domain]))];
+            }
+            return null;
+        } catch (\Throwable) { return $unavailable; }
+    }
+
     private function orders(Invoice $invoice): Collection
     {
         if($invoice->status!=='pending'){return collect();}
@@ -89,9 +129,9 @@ class PayCheck
     public static function moneyMoving(int $invoice): bool
     {return InvoiceTransaction::where('invoice_id',$invoice)->whereIn('status',[PaymentStatus::Succeeded,PaymentStatus::Processing])->exists();}
     /** One read per order per minute. Unknown is cached too, so a registrar outage costs each click nothing. */
-    private function answer(Operation $op,\DateTimeImmutable $deadline): string
+    private function answer(Operation $op,\DateTimeImmutable $deadline, ?string $stamp = null): string
     {
-        $key='domains.pay-check.'.$op->id;
+        $key='domains.pay-check.'.$op->id.($stamp === null ? '' : ':'.$stamp);
         $cached=fn()=>Cache::get($key);
         $read=function()use($key,$op,$deadline,$cached):string {
             $known=$cached();if(is_string($known)){return $known;}

@@ -30,14 +30,14 @@ final readonly class AcquisitionRetirement
     }
     /** Closes every unsent order on one unpaid invoice. Issued lines cannot change, so any other items move to a new invoice.
      * A refused order keeps its name and goes to staff: the proof found something only a person can judge. */
-    public function closeUnpaid(int $invoiceId,array $notice): array
+    public function closeUnpaid(int $invoiceId,array $notice,?\Closure $catalogueGuard=null): array
     {
         OperationClaims::outside();$reissued=null;$names=[];
         foreach(Operation::where('invoice_id',$invoiceId)->whereIn('action',['register','transfer'])->orderBy('id')->pluck('domain_id') as $id){
             $seed=Domain::findOrFail($id);
             try{
-                $moved=DB::transaction(function()use($seed,$notice,$reissued):?int {
-                    $l=HoldingLocks::take($seed,null,foreignInvoices:true);$op=UnpaidAcquisitionProof::require($l);
+                $moved=DB::transaction(function()use($seed,$notice,$reissued,$catalogueGuard):?int {
+                    $l=HoldingLocks::take($seed,null,foreignInvoices:true,beforeCatalogue:$catalogueGuard);$op=UnpaidAcquisitionProof::require($l);
                     $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
                     $new=$invoice->status==='pending'?self::reissue($invoice,$l)?->id:$reissued;
                     $this->close($l,$op,null,$notice['text'].' '.$notice['link'],['notice'=>$notice,'reissued_invoice'=>$new]);
