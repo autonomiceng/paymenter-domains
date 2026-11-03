@@ -15,7 +15,9 @@ facts silently. Only complete inventory can be a sequence preimage.
 
 Rows use shared `name`, `type`, `address`, `mx_pref`, plus `record_id` and `ttl`.
 Owners are relative (`@` for apex); CNAME/MX targets have a root dot. TXT bytes and
-CAA wire text are retained. SRV retains its wire value and distance, with parsed
+CAA wire text are retained. CAA requires a flag/tag/value triplet, with an unsigned
+8-bit flag, alphanumeric tag and nonempty value (which can contain colons); malformed
+CAA prevents completeness while valid siblings survive. SRV retains its wire value and distance, with parsed
 weight/port/target and `priority_proven: false`; distance is never mapped to
 priority. CAA/SRV builders remain unavailable. Unknown types cannot produce a
 complete inventory. These server-side facts are not public DTOs or log content.

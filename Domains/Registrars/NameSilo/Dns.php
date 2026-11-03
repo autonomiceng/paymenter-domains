@@ -154,6 +154,13 @@ final class Dns
             return $target.'.';
         }
         if ($value === '') { throw new \DomainException('Missing DNS value.'); }
+        if ($type === 'CAA') {
+            $parts = explode(':', $value, 3);
+            if (count($parts) !== 3 || !preg_match('/^[a-zA-Z0-9]+$/D', $parts[1]) || $parts[2] === '') {
+                throw new \DomainException('Invalid CAA triplet.');
+            }
+            self::integer($parts[0], 255);
+        }
         return $value; // Preserve CAA/SRV wire text without inventing an edit mapping.
     }
 

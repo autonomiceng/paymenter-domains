@@ -60,4 +60,22 @@ foreach ([$add, $update, $delete, DnsMapping::listRecords('example.com')] as $ma
     catch (TypeError) {}
 }
 same(0, $transport->calls, 'Dormant primitives enable no sends');
+// A malformed CAA sibling cannot certify a complete preimage or discard valid siblings.
+foreach (['not-a-caa-triplet', '0:issue', '0::ca.example.com', ':issue:ca.example.com',
+    'bad:issue:ca.example.com', '256:issue:ca.example.com', '0:issue:'] as $value) {
+    $caa = array_replace($readback, ['record_id' => 'caa', 'type' => 'CAA', 'value' => $value]);
+    $inventory = Dns::inventory($body('dnsListRecords', ['resource_record' => [$readback, $caa]]), 'example.com');
+    same('partial', $inventory['state'], 'Malformed CAA prevents a complete inventory');
+    same([['name' => '@', 'type' => 'A', 'address' => '192.0.2.1', 'mx_pref' => 10, 'record_id' => 'newB2', 'ttl' => 300]],
+        $inventory['records'], 'Valid siblings survive malformed CAA without changing their values, IDs or TTL');
+    same('unknown', Dns::inventory($body('dnsListRecords', ['resource_record' => [$caa]]), 'example.com')['state'],
+        'A malformed CAA alone cannot prove a complete preimage');
+}
+foreach (['0:issue:ca.example.com', '0:iodef:mailto:dns@example.com',
+    '128:issuewild:ca.example.com; accounturi=https://ca.example.com/accounts/123'] as $value) {
+    $caa = array_replace($readback, ['record_id' => 'caa', 'type' => 'CAA', 'value' => $value]);
+    $inventory = Dns::inventory($body('dnsListRecords', ['resource_record' => [$caa]]), 'example.com');
+    same('complete', $inventory['state'], 'Documented CAA triplet permits colons inside its value');
+    same($value, $inventory['records'][0]['address'], 'CAA validation preserves original bytes');
+}
 echo "NameSilo DNS acknowledgement/readback checks passed\n";
