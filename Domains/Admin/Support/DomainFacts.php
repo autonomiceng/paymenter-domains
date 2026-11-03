@@ -91,6 +91,12 @@ final class DomainFacts
                 $count=isset($records['dns'])?count($records['dns']):null;
                 $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??'Use Sync now to read DNS records.'):implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
             }
+            if ($d->registrar_key==='namesilo') {
+                try { $off=app(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class)->forDomain($d)->capabilities()->get('dns')->support!==\Paymenter\Extensions\Servers\Domains\Data\Support::Supported; } catch (\Throwable) { $off=false; }
+                $count=isset($records['dns'])?count($records['dns'])+count($records['dns_fixed']):null;
+                if ($count!==null) { $f['DNS records']=self::fact($count.' '.($count===1?'record':'records'),sub:'As of '.($sections['dns']['at']??'')); }
+                elseif ($off) { $f['DNS records']=self::fact('Not available',sub:OwnedDomains::DNS_OFF); }
+            }
             $glue=$records['glue']??[];
             if ($glue) {
                 $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);

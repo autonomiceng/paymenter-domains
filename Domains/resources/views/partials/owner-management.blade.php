@@ -55,8 +55,11 @@
 </form>
 @endcomponent
 @endif
+@elseif ($section['unavailable'] ?? false)
+<span class="domains-row__v"><span class="domains-muted">Not available</span> <span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::DNS_OFF }} Contact support for a change.</span></span>
 @elseif (in_array($cap, ['dns', 'srv']))
-<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ count($records) }} {{ count($records) === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of {{ $section['asOf'] }}</span>@endif@endif</span>
+@php $total = $records === null ? 0 : count($records) + count($section['fixed'] ?? []); @endphp
+<span class="domains-row__v">@if ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'fix' => null, 'stack' => true])@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of {{ $section['asOf'] }}</span>@endif@endif</span>
 @if ($records !== null && $section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-dns')@endcomponent

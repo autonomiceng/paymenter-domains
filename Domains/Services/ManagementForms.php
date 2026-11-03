@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm;
 use App\Models\User;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** The one path from a change form to the request queue, for owner and staff alike. */
@@ -42,6 +43,9 @@ final readonly class ManagementForms
             default=>false,
         };
         if ($risky&&($p['confirmed']??null)!=='1') { throw new OwnerConfirmRequired; }
+        if ($action==='dns'&&$d->registrar_key==='namesilo') {
+            $payload=DnsForm::payload(OwnerRecords::nameSilo($d)??throw new \DomainException('Current records required.'),$payload['records'],$payload['record_sources'],$payload['preimage_digest']);
+        }
         $engine=Runtime::management($d,$this->management); $driver=$this->ports->forDomain($d);
         $op=$engine->request($actor,(int)$d->id,$action,$payload,$nonce,$driver,recordIdentity:$records?ObservationRecords::identity($d):null);
         if (in_array($action,['lock','nameservers','contacts','contact_profile','dns','srv','auth_code_email'],true)) { ManagementStart::afterResponse($op,$engine,$driver); }

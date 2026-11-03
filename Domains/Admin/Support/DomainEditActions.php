@@ -8,6 +8,7 @@ use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\{Auth,Log};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactValidation,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
 /** Staff edits on the domain page: the owner's form path and every check it runs, credited to the staff member. */
 final class DomainEditActions
@@ -21,6 +22,7 @@ final class DomainEditActions
         'Management lifecycle held.'=>'This domain or its service is not active, or orders are paused. Fix that, then try again.',
         'Management permission required.'=>"You don't have permission to change domains.",
         'Current records required.'=>'This changed after you opened it. Reload the page and try again.',
+        'DNS records changed.'=>'The records changed at the registrar, so nothing was sent. Reload the page and try again.',
         'DNS tools disabled.'=>'DNS tools are off for this registrar account. Turn them on in Registrars, then try again.',
         'Management capability unsupported.'=>"This registrar doesn't support this change.",
     ];
@@ -82,14 +84,14 @@ final class DomainEditActions
     }
     private static function records(Domain $d, string $kind, string $label, array $m): Action
     {
-        $fields=$kind==='dns'?[TextInput::make('name')->label('Host'),Select::make('type')->label('Type')->options(self::DNS_TYPES),TextInput::make('address')->label('Value'),TextInput::make('mx_pref')->label('MX priority')]
+        $fields=$kind==='dns'?[TextInput::make('name')->label('Host'),Select::make('type')->label('Type')->options(isset($m['types'])?array_intersect_key(self::DNS_TYPES,array_flip($m['types'])):self::DNS_TYPES),TextInput::make('address')->label('Value'),TextInput::make('mx_pref')->label('MX priority')]
             :[TextInput::make('service')->label('Service'),TextInput::make('protocol')->label('Protocol'),TextInput::make('priority')->label('Priority'),TextInput::make('weight')->label('Weight'),TextInput::make('port')->label('Port'),TextInput::make('target')->label('Target')];
         // A row's source is its place in the saved list, so the registrar's record ids stay server-side.
         $rows=array_map(fn(array $row,int $i)=>[...$row,'_source'=>(string)$i],$m['records'],array_keys($m['records']));
         return self::edit($d,$kind,$label,$m['label'],[Repeater::make('records')->hiddenLabel()->schema([...$fields,Hidden::make('_source')])->columns(count($fields))->defaultItems(0)->maxItems(50)->addActionLabel('Add record'),Hidden::make('preimage_digest')],
             fn(array $data)=>['records'=>array_map(fn(array $row)=>array_map(fn($value)=>(string)($value??''),$row),array_values($data['records']??[])),'preimage_digest'=>$data['preimage_digest']],
             // Queued, a stale list would only fail later at the registrar's read. Staff can reload now.
-            ManagementForms::RECORDS_RISK.' Saving replaces the list.',['records'=>$rows],modal:'5xl',bound:['preimage_digest'=>$m['digest']]);
+            implode(' ',[ManagementForms::RECORDS_RISK.' Saving replaces the list.',...DnsForm::notes($m['fixed']??[])]),['records'=>$rows],modal:'5xl',bound:['preimage_digest'=>$m['digest']]);
     }
     /** The form holds everything fixed at open, because this action rebuilds from current state at save. Bound fields must still match at save. A replayed save finds its request first, so a finished form returns it instead of a stale refusal. */
     private static function edit(Domain $d, string $name, string $label, string $heading, array $form, \Closure $input, ?string $risk, array $fill=[], string $submit='Save', string $modal='lg', array $bound=[]): Action
