@@ -57,8 +57,6 @@ foreach ([
     writeRenderArtifact($out.'/label-'.$case.'.html', view('domains::partials.client-script')->render());
 }
 
-echo "Rendered shared client script, all seven including views, and company-name cases.\n";
-
 // Render real contact fields so the client check covers both initial suggestions and country changes.
 $contacts = [];
 foreach (['US', 'CA', 'GB', 'AU', ''] as $country) {
@@ -75,3 +73,4 @@ foreach (['US', 'CA', 'GB', 'AU', ''] as $country) {
 writeRenderArtifact($out.'/contact-suggestions.json', json_encode($contacts, JSON_THROW_ON_ERROR));
 
 $nativeSuccessful = true;
+echo "Rendered shared client script, all seven including views, company-name cases and contact suggestions.\n";
