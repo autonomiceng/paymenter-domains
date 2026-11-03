@@ -34,19 +34,23 @@ $ports->apply(new FactsObserved($b, 'com', new Facts(['register' => [1, 3], 'ren
 $ports->apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)), $rev());
 $ports->apply(Edit::seller($b, 'com', ['register', 'transfer']), $rev());
 // The persisted normalized total retains the original annual source unit and original age.
-$clock->time = $now->modify('+1 minute');
+$clock->instant = $now->modify('+1 minute');
 $ports->apply(new FeedObserved($b, 'com', [new Cost('register', 3, true, '7.0000', CostUnit::Annual,
-    'synthetic_annual', $clock->time, $clock->time->modify('+1 day'))]), $rev());
+    'synthetic_annual', $clock->instant, $clock->instant->modify('+1 day'))]), $rev());
 $loaded = $ports->loadBatch([$query], Context::Public)[0][0]; $price = $loaded->price();
 $row = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'com')->where('action', 'register')->where('term', 3)->sole();
 same([(int) $row->id, (int) $row->revision, '21.0000', '27.30', 'synthetic_annual'],
     [$price->id, $price->revision, $price->wholesale, $price->retail, $price->source], 'Price DTO uses real row identity and exact normalized term total');
-same($clock->time->format(DATE_ATOM), $price->observedAt->format(DATE_ATOM), 'Mapping does not freshen observation age');
-same($clock->time->modify('+1 day')->format(DATE_ATOM), $price->freshUntil->format(DATE_ATOM), 'Mapping preserves original expiry');
+same($clock->instant->format(DATE_ATOM), $price->observedAt->format(DATE_ATOM), 'Mapping does not freshen observation age');
+same($clock->instant->modify('+1 day')->format(DATE_ATOM), $price->freshUntil->format(DATE_ATOM), 'Mapping preserves original expiry');
 same(CostUnit::Annual, $loaded->observation()->sourceUnit, 'Original unit survives normalized persistence');
 $public = json_encode($loaded, JSON_THROW_ON_ERROR);
 expect(!str_contains($public, '21.0000') && !str_contains($public, $b->fingerprint) && !str_contains($public, 'synthetic_annual'), 'Public JSON carries neither cost nor private evidence');
 commerceReject(fn () => serialize($loaded));
+$clock->instant = $now->modify('+3 days');
+same(false, $ports->readOffers($query, Context::Public)[0]->available, 'Stale observations close public acquisition');
+same('10.40', $ports->loadBatch([$holder], Context::Holder)[0][0]->renewal()->retail, 'Stale observations retain holder retail');
+$clock->instant = $now->modify('+1 minute');
 $feature = false;
 same(false, $ports->readOffers($query, Context::Public)[0]->available, 'Local feature revocation closes acquisition without a price-summary recursion');
 $feature = true;

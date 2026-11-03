@@ -43,6 +43,7 @@ $out = $reader->readBatch($queries, Context::Public);
 same([false, false, true], [$out[0][0]->available, $out[0][1]->available, $out[1][0]->available], 'Mixed accounts, missing offers and exact terms preserve input order');
 same('23.40', $out[1][0]->retail, 'Three-year total is not an annual or another-account fallback');
 same(null, $out[1][0]->staffCost, 'Public results redact costs');
+same(false, $reader->readBatch([new Query($b, ['com'], 'register', 2)], Context::Public)[0][0]->available, 'Absent exact-term price cannot borrow a different term');
 same('unavailable', $out[0][0]->reason, 'Public results redact specific seller reasons');
 same('seller_changed', $reader->readBatch([$queries[0]], Context::Staff)[0][0]->reason, 'Authorized staff sees local refusal');
 $allowed = false;
@@ -67,7 +68,8 @@ foreach (['offer', 'defaults', 'selection', 'publication'] as $axis) {
 commerceReject(fn () => $reader->readBatch($queries, Context::Locked));
 $trace = []; $record = false;
 DB::listen(static function ($q) use (&$trace, &$record): void { if ($record) { $trace[] = strtolower($q->sql); } });
-DB::transaction(function () use ($reader, $b, $n, $rev, &$trace, &$record, &$checked): void {
+DB::transaction(function () use ($reader, $native, $tlds, $b, $n, $rev, &$trace, &$record, &$checked): void {
+    (new Projection($native))->lock($tlds);
     $expected = $rev($b); $checked = []; $trace = []; $record = true;
     $out = $reader->readBatch([new Query($n, ['com'], 'register'), new Query($b, ['com'], 'register', 3, expected: ['com' => $expected])], Context::Locked);
     $record = false;
