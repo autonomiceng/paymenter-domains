@@ -16,6 +16,7 @@
     "tests/transfer-status-test.php",
     "tests/psl-transport-test.php",
     "tests/adoption-enom-test.php",
+    "tests/adoption-namesilo-test.php",
     "tests/dns-reader-test.php",
     "tests/dns-signals-test.php",
     "tests/public-registry-test.php",
