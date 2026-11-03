@@ -68,8 +68,20 @@ Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(Regist
 Livewire::actingAs(staffUser([]))->test(RegistrarSetup::class)->assertForbidden();
 // List page.
 $list=Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSuccessful()->assertSee('Registrars')->assertActionDoesNotExist('add_account')->assertSee('Accounts');
-staffTableStandard($list,'Search account',['name'],['balance','due']);
-foreach(['Account','Mode','Status','Balance','Due in 30 days','Enom test account','Enom, 1 domain','NameSilo, 0 domains','Test','Active','USD 7.99','Low balance','USD 8.00',
+staffTableStandard($list,'Search account',['name','note'],['balance','due']);
+staffRowsStandard($list,['checked','domains'],['balance','due']);
+// One line per account: the reason, a missing balance's cause and a low balance go in Note, each with its step.
+$rows=$list->instance()->getTableRecords()->keyBy('id');$cell=fn(string $column,int $id)=>$list->instance()->getTable()->getColumn($column)->record($rows[$id]);
+same('Low balance. Add funds.',$cell('note',$enom->server_id)->getState(),'Low balance says to add funds');
+same('warn',$cell('note',$enom->server_id)->getExtraAttributes()['data-beco-tone']??null,'Low balance is a job');
+same('Not checked yet. Use Check balance.',$cell('note',$silo->server_id)->getState(),'A Missing balance has its step in Note');
+same('Off in Paymenter.',$cell('note',$off->id)->getState(),'The status reason is in Note');
+same([null,null],[$cell('note',$empty->id)->getState(),$cell('note',$empty->id)->getExtraAttributes()['data-beco-tone']??null],'Nothing to say, no Note');
+same(['Enom','1','NameSilo','0'],[$cell('registrar',$enom->server_id)->getState(),(string)$cell('domains',$enom->server_id)->getState(),$cell('registrar',$silo->server_id)->getState(),(string)$cell('domains',$silo->server_id)->getState()],'Registrar and domain count have columns');
+expect(str_contains((string)$cell('checked',$enom->server_id)->formatState($cell('checked',$enom->server_id)->getState()),'data-domains-time'),'Balance checked shows in the viewer time');
+// No accounts yet says how to add one; a search that hides every account says so.
+Livewire::actingAs($staff)->test(RegistrarSetup::class)->searchTable('no-such-account')->assertSee('No accounts match')->assertDontSee('Add one to start selling domains.');
+foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Active','USD 7.99','Low balance','USD 8.00',
     'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
 foreach(['https://ote.namesilo.com/cart/add-funds','https://cp.enom.com/','noopener noreferrer',RegistrarAccount::getUrl(['account'=>$enom->server_id]),RegistrarAccount::getUrl(['account'=>$silo->server_id])] as $needle){
@@ -117,7 +129,8 @@ $history=Livewire::actingAs($admin)->test(RegistrarHistory::class,['account'=>$e
 foreach(['Time','Change','Detail','By','Sales settings changed','Reviewed &lt;strong&gt;catalogue&lt;/strong&gt;'] as $needle){
     expect(str_contains($history->html(),$needle),'History tab renders readable escaped rows: '.$needle);
 }
-$history->searchTable('no such change')->assertDontSee('Sales settings changed');
+$history->searchTable('no such change')->assertDontSee('Sales settings changed')->assertSee('No changes match')->assertDontSee('Changes show here');
+same('Changes show here as they happen.',Livewire::actingAs($admin)->test(RegistrarHistory::class,['account'=>$silo->server_id])->assertSee('No changes yet')->instance()->getTable()->getEmptyStateDescription(),'An empty history says what fills it');
 // Dialog help is a button keyboard users can reach, and a click can't open another action over the dialog.
 $dialog=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->mountAction(setupAction('configure',(int)$enom->server_id));
 expect(preg_match('/<button\b[^>]*x-tooltip[^>]*>/s',$dialog->instance()->getSchema($dialog->instance()->getMountedActionSchemaName())->toHtml(),$help)===1,'Dialog help renders as a button with a tooltip');

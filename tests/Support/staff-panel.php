@@ -37,6 +37,31 @@ function staffTableStandard(mixed $page, ?string $search, array $oneLine=[], arr
     foreach ($oneLine as $column) { expect(($c=$table->getColumn($column))!==null&&!$c->canWrap(),$name.': '.$column.' stays on one line'); }
     foreach ($money as $column) { $a=$table->getColumn($column)?->getAlignment(); same('end',$a instanceof BackedEnum?$a->value:$a,$name.': '.$column.' is right aligned'); }
 }
+/** Staff rows on an owned table: no line under a value (a description sits beside it), at most 2 row actions, money never cut.
+ * Over 4 columns, a Columns button where every column but the first can be hidden; $hidden start hidden. */
+function staffRowsStandard(mixed $page, array $hidden=[], array $money=[]): void
+{
+    $instance=$page->instance(); $table=$instance->getTable(); $name=$instance::class; $columns=$table->getColumns();
+    if (count($columns)>4) {
+        $identity=array_key_first($columns);
+        expect(!$columns[$identity]->isToggleable(),$name.': '.$identity.' names the row, so Columns keeps it');
+        foreach (array_slice($columns,1,preserve_keys:true) as $key=>$column) { expect($column->isToggleable(),$name.': Columns can hide '.$key); }
+        same($hidden,array_keys(array_filter($columns,fn($c)=>$c->isToggleable()&&$c->isToggledHiddenByDefault())),$name.': hidden at first');
+        same('Columns',$table->getColumnManagerTriggerAction()->getLabel(),$name.': the button says Columns');
+    } else { expect(!$table->hasToggleableColumns(),$name.': 4 columns or fewer need no Columns button'); }
+    expect(count($table->getRecordActions())<=2,$name.': at most 2 row actions');
+    $records=$instance->getTableRecords(); expect(count($records)>0,$name.': rows to check');
+    foreach ($records as $record) {
+        foreach ($columns as $key=>$column) {
+            $column->record($record); $class=(string)($column->getExtraAttributes()['class']??'');
+            if ($column->getDescriptionBelow()!==null||$column->getDescriptionAbove()!==null) { expect(str_contains($class,'domains-line'),$name.': '.$key.' keeps its description on the same line'); }
+        }
+    }
+    foreach ($money as $key) {
+        $column=$table->getColumn($key); $class=(string)($column->getExtraAttributes()['class']??'');
+        expect(str_contains($class,'domains-money')&&!str_contains($class,'domains-line')&&!str_contains($class,'domains-cut'),$name.': '.$key.' money is never cut');
+    }
+}
 function staffData(bool $ordinaryCompleted = false): array
 {
     \Paymenter\Extensions\Servers\Domains\Services\FoundationSchema::install();\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install();

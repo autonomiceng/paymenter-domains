@@ -47,7 +47,7 @@ final class WatchFacts
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
     {
         $fresh=$s?->freshness??[];$at=max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)]);
-        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return self::fact($at?self::date($at):($w->state==='active'?null:''),cause:self::DECRYPT);}
+        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return [...self::fact($at?self::date($at):($w->state==='active'?null:''),cause:self::DECRYPT),'at'=>$at];}
         if(!$at){return self::fact(null,cause:Missing::fills('after the next check'));}
         $failed=$w->work->firstWhere('kind','expiry')?->safe_code;$failed=$failed!==null && !in_array($failed,['ready','rotation','no_coverage','not_registered','rate_limited','budget_exhausted','target_changed'],true);
         // A paused or stopped name reads as stale in every summary, so its saved failure still counts and it has no next check.
@@ -55,8 +55,8 @@ final class WatchFacts
         $partial=array_filter($fresh,fn($f)=>$f['checkedAt']!==null && $f['partial'] && (!$f['stale']||!$running));
         $stale=$running?array_filter($fresh,fn($f)=>$f['stale']):[];
         $retry=$running?' Checks retry automatically.':($w->state==='paused'?' Resume monitoring to check again.':'');
-        return self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),
-            $failed||$partial?'danger':null);
+        return [...self::fact(self::date($at),$failed?'Registry lookup failed.'.$retry:($partial?'Some checks failed.'.$retry:($stale?'Some results are waiting for the next check.':null)),
+            $failed||$partial?'danger':null),'at'=>$at];
     }
     public static function expires(?DomainSummary $s,array $keys,bool $active): array
     {

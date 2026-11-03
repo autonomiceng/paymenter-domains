@@ -12,10 +12,14 @@ use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 final class HistoryTable
 {
     /** @param \Closure():?array $read Null means the saved history can't be read. */
-    public static function apply(Table $table,\Closure $read): Table
+    public static function apply(Table $table,\Closure $read,string $empty='No changes yet'): Table
     {
         $saved=false;$read=function()use(&$saved,$read):?array {return $saved===false?($saved=$read()):$saved;};
-        return $table->searchable()->searchPlaceholder('Search changes')->defaultSort('time','desc')->emptyStateHeading(fn()=>$read()===null?DomainFacts::UNREADABLE:'No changes yet')
+        // Unreadable history says so. Otherwise an empty one says what fills it, and a search or filter that hid every row says that.
+        $hidden=fn($livewire)=>filled($livewire->getTableSearch())||$livewire->getTable()->isFiltered();
+        return $table->searchable()->searchPlaceholder('Search changes')->defaultSort('time','desc')
+            ->emptyStateHeading(fn($livewire)=>$read()===null?DomainFacts::UNREADABLE:($hidden($livewire)?'No changes match':$empty))
+            ->emptyStateDescription(fn($livewire)=>$read()===null||$hidden($livewire)?null:'Changes show here as they happen.')
             ->records(function(?string $search,?string $sortDirection,array $filters,int $page,int $recordsPerPage)use($read): LengthAwarePaginator {
                 $rows=collect($read()??[])
                     ->filter(fn(array $r)=>blank($search)||Str::contains($r['change'].' '.$r['reason'].' '.$r['by'],$search,true))
@@ -25,12 +29,12 @@ final class HistoryTable
             })
             ->filters([SelectFilter::make('by')->label('By')->options(fn()=>collect($read()??[])->pluck('by','by')->filter()->sort()->all())])
             ->columns([
-                TextColumn::make('time')->label('Time')->sortable()->default(Missing::LABEL)
+                OneLine::apply(TextColumn::make('time')->label('Time')->sortable()->default(Missing::LABEL)
                     ->formatStateUsing(fn(string $state)=>$state===Missing::LABEL?$state:Sheet::moment($state))
                     ->color(fn($state)=>$state===Missing::LABEL?Missing::color(RequestFacts::NO_TIME):'gray')->icon(fn($state)=>$state===Missing::LABEL?Missing::icon(RequestFacts::NO_TIME):null)
-                    ->description(fn($state)=>$state===Missing::LABEL?RequestFacts::NO_TIME:null),
-                TextColumn::make('change')->label('Change'),
-                TextColumn::make('reason')->label('Detail')->wrap()->lineClamp(2)->placeholder('None'),
+                    ->description(fn($state)=>$state===Missing::LABEL?RequestFacts::NO_TIME:null)),
+                OneLine::apply(TextColumn::make('change')->label('Change'),OneLine::SHORT),
+                OneLine::apply(TextColumn::make('reason')->label('Detail')->placeholder('None')),
                 TextColumn::make('by')->label('By'),
             ])->recordUrl(fn(array $record)=>$record['url']??null)->paginated([25,50,100])->defaultPaginationPageOption(25);
     }
