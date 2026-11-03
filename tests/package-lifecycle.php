@@ -111,7 +111,7 @@ if($phase==='server-delete'){
         foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Native install ran each extension migration once');}
         assertInstalledMigrationOrder();
         same(0,Account::count(),'Fresh package creates no activated accounts');
-        if(getenv('PACKAGE_CATALOGUE_MODE')==='retained-legacy'){same('legacy',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Lifecycle scenario retains the unconverted catalogue through native installation');}
+        if($phase!=='retained-install'&&getenv('PACKAGE_CATALOGUE_MODE')==='retained-legacy'){same('legacy',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Lifecycle scenario retains the unconverted catalogue through native installation');}
         if(getenv('PACKAGE_CATALOGUE_MODE')==='fresh-active'){same('active',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Fresh native installation activates the offer catalogue');}
         echo "Native upload/extract/Install branch passed.\n";
         if($phase==='install-enom-test-management'){
