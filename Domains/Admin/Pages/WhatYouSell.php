@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\{Auth,Blade,Log};
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\{Locked,Url};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{HelpHint,SellTable,SettingsActions,Staff,StatusMark,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,HelpHint,SellTable,SettingsActions,Staff,StatusMark,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,SellRow};
@@ -233,12 +233,13 @@ class WhatYouSell extends Page implements HasTable
     private static function showFilter(mixed $value): ?string {return is_string($value)&&$value!=='all'&&isset(PriceList::FILTERS[$value])?$value:null;}
     public function content(Schema $schema): Schema
     {
-        Staff::requireView();
+        Staff::requireView();$components=CatalogueSalesNotice::components();
         if($this->bindings()===[]){
+            if($components!==[]){return $schema->components($components);}
             return $schema->components([Callout::make('Connect a registrar account first')->warning()->columnSpanFull()
                 ->footer(new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">Open Registrars</x-filament::button>',['url'=>RegistrarSetup::getUrl()])))]);
         }
-        $components=[];$all=$this->account===self::ALL;$button=static fn(string $label,string $url)=>new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">{{ $label }}</x-filament::button>',['url'=>$url,'label'=>$label]));
+        $all=$this->account===self::ALL;$button=static fn(string $label,string $url)=>new HtmlString(Blade::render('<x-filament::button tag="a" :href="$url" color="gray" size="sm">{{ $label }}</x-filament::button>',['url'=>$url,'label'=>$label]));
         // All accounts warns for each account that needs it, by name, with a way to that account.
         foreach($all?$this->bindings():array_filter([(int)$this->account=>$this->binding()]) as $server=>$binding){
             $name=$this->accounts()[$server]??'Registrar account #'.$server;

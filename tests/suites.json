@@ -235,6 +235,7 @@
     "tests/reminder-form-test.php",
     "tests/runtime-install-test.php",
     "tests/fresh-offer-install-test.php",
+    "tests/ns-fresh-missing-test.php",
     "tests/fresh-offer-recovery-test.php",
     "tests/fresh-offer-refusal-test.php",
     "tests/staff-audit-upgrade-test.php",

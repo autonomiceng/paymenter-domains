@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,EmptyTable,OneLine,RegistrarFacts,Sheet,Staff,StaffDomainStatus,StatusMark,TableColumns,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,DomainFacts,EmptyTable,OneLine,RegistrarFacts,Sheet,Staff,StaffDomainStatus,StatusMark,TableColumns,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
@@ -47,7 +47,7 @@ class RegistrarSetup extends Page implements HasTable
     }
     public function content(Schema $schema): Schema
     {
-        Staff::requireView();$components=[];
+        Staff::requireView();$components=CatalogueSalesNotice::components();
         if ($missing=ContactDetails::missingRequiredProperties()) {
             $open=self::resourceUrl(\App\Admin\Resources\CustomPropertyResource::class,'index');
             $components[]=Callout::make("Customers can't enter ".implode(', ',$missing).' in Account. Add them as custom properties.')->warning()->columnSpanFull()
