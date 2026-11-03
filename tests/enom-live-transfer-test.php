@@ -151,4 +151,21 @@ try {
     same(500,(int)$ledger->value('used'),'Refused background reservation spends no checkout headroom');
 }finally{$budget->release($binding,$origin,$token);}
 EnomLiveCalls::reserve($binding);same(501,(int)$ledger->value('used'),'Checkout retains its allowance after the background scope throws');
+// Price readiness uses the same entry time as the other activation checks, even across its age boundary.
+$activation=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::class;
+$entry=$clock->now();$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole();
+DB::table('domains_prices')->where('server_id',$server->id)->where('action','renew')
+    ->update(['observed_at'=>$entry->modify('-172799 seconds')->format('Y-m-d H:i:s')]);
+$missingPrice=static fn(array $problems):bool=>(bool)array_filter($problems,static fn(string $problem):bool=>str_starts_with($problem,'Costs and prices Missing.'));
+$ready=$activation::problems($account,['renewal'=>true]);
+expect(!$missingPrice($ready),'Renewal price at age 172799 seconds is ready');
+$clock->at=$entry->modify('+1 second');
+expect($missingPrice($activation::problems($account,['renewal'=>true])),'Renewal price at age 172800 seconds is missing');
+$advancing=new class($entry) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {
+    public function __construct(private DateTimeImmutable $at) {}
+    public function now():DateTimeImmutable {$at=$this->at;$this->at=$this->at->modify('+1 second');return $at;}
+};
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$advancing);
+try{same($ready,$activation::problems($account,['renewal'=>true]),'Advancing clock preserves the activation-entry price readiness');}
+finally{app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);$clock->at=$entry;}
 echo "Live transfer gates, one guarded send and opt-out recovery passed without sockets.\n";$nativeSuccessful=true;

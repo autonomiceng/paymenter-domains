@@ -130,7 +130,7 @@ same($issued,$ledger(),'Off duplicate creates nothing');$setting('domains_manual
 $cycleStates=['pending'=>['state'=>'awaiting_payment','result'=>['invoice'=>route('invoices.show',$invoice)],'heading'=>'Pay invoice'],
     'paid'=>['state'=>'pending','result'=>['status'=>'paid'],'heading'=>'Updates when the renewal completes'],
     'cancelled'=>['state'=>'awaiting_payment','result'=>['status'=>'cancelled'],'heading'=>'Invoice cancelled'],
-    'held'=>['state'=>'held','result'=>['status'=>'review'],'heading'=>'Renewal being checked']];
+    'held'=>['state'=>'held','result'=>['status'=>'review'],'heading'=>'Renewal being checked. No action needed.']];
 foreach(['manual','stop','service','domain','cutoff','calendar'] as $gate){
     $rawDomain=$d->fresh()->getRawOriginal();$rawService=$d->service->fresh()->getRawOriginal();$savedTime=$clock->instant;
     if($gate==='manual'){$setting('domains_manual_renewals_enabled',false);}
@@ -197,7 +197,7 @@ foreach(['processing','auto_pay_uncertain','pending','uncertain','retireable','c
     foreach([1,2] as $pass){
         $label=$case.':'.$pass;$html=$page($d);
         $expiryExpected[$label]=[['status'=>$expected],$expected==='cancelled'?1:0,$expected==='review'?1:0];
-        $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),substr_count($html,'>Renewal being checked<')];
+        $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),substr_count($html,'>Renewal being checked. No action needed.<')];
         expect(!str_contains($html,'Pay invoice')&&!str_contains($html,'Create invoice'),'Expired '.$label.' offers no billing action');
         same($unchanged,$ledger(),'Repeated expired '.$label.' presentation preserves all evidence');
     }
@@ -246,7 +246,7 @@ $shows=static function(array $texts,string $label)use($page,$d):void {$html=$pag
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);same(['status'=>'paid'],$cycle(),'Paid cycle shows payment received');
 $shows(['Paid','Updates when the renewal completes'],'Paid page');
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'held']);
-same(['status'=>'review'],$cycle(),'Held cycle shows review');$shows(['Renewal being checked','Contact support'],'Review page');
+same(['status'=>'review'],$cycle(),'Held cycle shows review');$shows(['Under review','Renewal being checked. No action needed.'],'Review page');
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment']);DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);$cancelled=$ledger();
 same(['status'=>'cancelled'],$cycle(),'Cancelled invoice shows its status');$shows(['Invoice cancelled','Contact support'],'Cancelled page');
 $refused($d,['years'=>'2'],OwnerRenewalController::CANCELLED);same($cancelled,$ledger(),'Cancelled cycle request creates no invoice');

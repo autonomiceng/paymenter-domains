@@ -47,14 +47,17 @@ $card->delete();same(false,$owners->present($d->fresh())->autoPay,'A removed car
 $d->service->update(['billing_agreement_id'=>null]);$card->forceDelete();App\Models\Gateway::whereKey($gateway->id)->delete();
 same([],$owners->present($d->fresh(),false)->autoRenew,'Read-only presentation hides switch');
 $save($d,true);same(0,$audit(),'Legacy On is idempotent without a write');
-$html=$page($d);foreach(['form="form-auto-renew" class="domains-a domains-linkbtn">Turn off</button>','Turn off auto-renew?','>Turn off auto-renew<',$d->domain.' expires on Oct 18, 2027 unless you renew it.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
+$html=$page($d);foreach(['form="form-auto-renew" class="domains-a domains-linkbtn">Turn off</button>','Turn off renewal invoices?','>Turn off renewal invoices<',$d->domain.' expires on Oct 18, 2027 unless you renew it. This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$d->domain.'.','name="confirmed"','name="_token"'] as $text){expect(str_contains($html,$text),'Switch renders '.$text);}
+// Without a known expiry date the warning still says the domain expires unless renewed.
+$undated=view('domains::partials.owner-auto-renew',['keys'=>['auto-renew'=>'key'],'domain'=>(object)['name'=>$d->domain,'expiry'=>null,'autoRenew'=>['url'=>'/auto-renew','enabled'=>true],'actions'=>['show'=>'/domain']]])->render();
+expect(str_contains($undated,$d->domain.' expires unless you renew it. This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$d->domain.'.'),'Undated switch warns the domain expires');
 $stale=$req($d,['enabled'=>'0','confirmed'=>'1']);$controller->save($stale,$d->id);
 try{$controller->save($stale,$d->id);expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Consumed key rejected');}
 $save($d,false);same(1,$audit(),'Repeated Off adds no audit');
 $dto=$owners->present($d->fresh());same(['Off','owner',false],[$dto->renewal,$dto->renewalOff,$dto->autoRenew['enabled']??null],'Owner Off is distinct and reversible');
 expect(isset($dto->renewNow['url']),'Owner Off still offers manual renewal');
 $html=$page($d);expect(str_contains($html,'<span class="domains-sub">Cancels Oct 18, 2027</span>')&&str_contains($html,'>Renew now</a>')&&!str_contains($html,'Auto-renew is off'),'Off shows the cancel date and Renew now, with no notice');
-expect(str_contains($html,'form="form-auto-renew" class="domains-a domains-linkbtn">Turn on</button>')&&!str_contains($html,'Turn off auto-renew?'),'Off shows On switch');
+expect(str_contains($html,'form="form-auto-renew" class="domains-a domains-linkbtn">Turn on</button>')&&!str_contains($html,'Turn off renewal invoices?'),'Off shows On switch');
 // The owner notice offers renewal through the day before expiry.
 $clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');
 expect(isset($owners->present($d->fresh())->renewNow['url']),'Owner Off offers renewal one day before expiry');
@@ -113,7 +116,7 @@ foreach(['staff','cancellation'] as $stop){
     expect($session->get('errors')?->has('auto-renew')===true,'Hard stop returns safe HTTP error');
     same(false,$held->fresh()->renewal_policy['owner_auto_renew'],'Refused HTTP toggle changes nothing');
     $html=$page($held);expect(!str_contains($html,'form-auto-renew')&&!str_contains($html,'Turn off auto-renew'),'Hard stop hides switch HTML: '.$stop);
-    expect(preg_match('~<dt>Auto-renew .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$html)===1&&str_contains($html,'<span class="domains-sub">Cancels '),'Hard stop shows Off with Contact support and the cancel date: '.$stop);
+    expect(preg_match('~<dt>Renewal invoices .*?</dt><dd><span class="domains-card__v">Off</span> <span class="domains-row__a domains-card__a"><a class="domains-a" href="[^"]+">Contact support</a></span></dd>~s',$html)===1&&str_contains($html,'<span class="domains-sub">Cancels '),'Hard stop shows Off with Contact support and the cancel date: '.$stop);
     $cancel?->delete();
 }
 // All switch lifecycle refusals are checked at the write, independently of presentation.
@@ -135,7 +138,7 @@ foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-
     elseif($day>='2027-10-11'){same(range(1,9),$owners->present($calendar->fresh())->renewNow['terms']??null,'After due the same multi-year terms are offered');}
 }
 staffPanel();Auth::login(staffUser([Staff::VIEW]));$save($d,false);
-$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['Invoice #'.$next->id,'Awaiting payment']],[[$facts['Auto-renew']['value'],$facts['Auto-renew']['sub']],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
+$facts=DomainFacts::for($d->fresh());same([['Off','Turned off by customer'],['Invoice #'.$next->id,'Awaiting payment']],[[$facts['Renewal invoices']['value'],$facts['Renewal invoices']['sub']],[$facts['Open invoice']['value'],$facts['Open invoice']['sub']]],'Staff distinguishes owner Off; issued invoices stay payable');
 Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])
     ->assertSee('Auto-renew turned off')->assertSee(trim($user->first_name.' '.$user->last_name)?:'Customer');
 // Staff can add a hard stop while the owner's reversible switch is Off.
@@ -173,7 +176,7 @@ $preference->set($user,$auditDomain->id,false);same(false,$auditDomain->fresh()-
 $raw=DB::table('domains_watch_audit')->where('event','owner_auto_renew')->first()->data;expect(!str_contains($raw,'enabled'),'Audit details encrypted');
 DB::table('domains_watch_audit')->where('subject_type','domain')->where('subject_id',$d->id)->where('event','owner_auto_renew')->update(['data'=>'invalid ciphertext']);
 Auth::login($staffActor);
-same(['Off','Turned off by customer'],[DomainFacts::for($d->fresh())['Auto-renew']['value'],DomainFacts::for($d->fresh())['Auto-renew']['sub']],'Unreadable audit does not break staff facts');
+same(['Off','Turned off by customer. They can still renew by hand or turn it back on. Stop renewal blocks both.'],[DomainFacts::for($d->fresh())['Renewal invoices']['value'],DomainFacts::for($d->fresh())['Renewal invoices']['sub']],'Unreadable audit does not break staff facts');
 $native=\Livewire\Livewire::actingAs($staffActor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
 $native->assertSuccessful()->assertSee('Billing');
 \Livewire\Livewire::actingAs($staffActor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager::class,['ownerRecord'=>$d->fresh(),'pageClass'=>Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class])

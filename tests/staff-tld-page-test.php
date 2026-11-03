@@ -26,13 +26,14 @@ $clean=static function(string $html,string $where)use($text,$banned):void {
 $renew=static fn($t)=>'USD '.PriceCatalogue::retail(Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->value('retail'));
 
 // Prices synced: one row per registrar account, the account that takes new orders is marked.
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds);same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds)->assertSeeHtml('data-beco-record="tld-'.$tlds[0]->id.'"');same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
 same('TLDs from What you sell. Open one for its prices.',$list->instance()->getSubheading(),'The TLDs page says its job in one head line.');$list->assertSee('TLDs from What you sell.');
+staffTableStandard($list,'Search TLD',['tld','account','note'],['renewal','cost']);
 foreach(['Registrar account','Renewal price','Cost','Domains','Status','Enom TEST identity check','OFFLINE DEMO NameSilo (synthetic)',
-    'Enom · default pricing · new orders','NameSilo · default pricing','For sale','USD 8.00',$renew($enom)] as $see){$list->assertSee($see);}
+    'Enom, default pricing, new orders','NameSilo, default pricing','For sale','USD 8.00',$renew($enom)] as $see){$list->assertSee($see);}
 $plain=$text($list->html());
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'List: Demo tag after the demo account name');
-expect(!str_contains($plain,'NameSilo · default pricing · new orders'),'List: only the selected account takes new orders');
+expect(!str_contains($plain,'NameSilo, default pricing, new orders'),'List: only the selected account takes new orders');
 $list->assertDontSee('Price sync failed');$clean($list->html(),'List synced');
 
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful();
@@ -97,9 +98,9 @@ foreach([1,2] as $i){
     foreach(Price::where('server_id',$enom->server_id)->get() as $price){$saved=$price->getRawOriginal();unset($saved['id']);DB::table('domains_prices')->insert([...$saved,...$binding]);}
 }
 [$detail,$fourAccounts]=$detailRead($grants);
-// Default-rule validation checks one account per server, in addition to the shared account read.
-same(3,$twoAccounts['domains_accounts'],'Two accounts use one shared read and two default-rule checks');
-same(5,$fourAccounts['domains_accounts'],'Four accounts use one shared read and four default-rule checks, with no demo-tag reads');
+// The default rule is one row for the business, so more accounts add no account reads.
+same(1,$twoAccounts['domains_accounts'],'Two accounts use one shared read');
+same(1,$fourAccounts['domains_accounts'],'Four accounts use one shared read, with no default-rule or demo-tag reads');
 unset($twoAccounts['domains_accounts'],$fourAccounts['domains_accounts']);
 same($twoAccounts,$fourAccounts,'Price, holder and seller reads stay fixed across detail accounts');
 foreach($fourAccounts as $table=>$count){same(1,$count,'One detail query for '.$table);}
@@ -113,7 +114,7 @@ foreach($all as $i=>$row){
 }
 $viewerGrants=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants::current();
 Auth::setUser(staffUser([Staff::VIEW]));$withoutCosts=Staff::requireView();Auth::setUser($u);
-[$hidden]=$detailRead($withoutCosts);expect(!str_contains($hidden,'<th scope="col" style="padding:8px 12px;text-align:left;white-space:nowrap;font-weight:500">Cost'),'Supplied grants hide cost even when current staff may read it');
+[$hidden]=$detailRead($withoutCosts);expect(!str_contains($hidden,'<th scope="col">Cost'),'Supplied grants hide cost even when current staff may read it');
 [$shown]=$detailRead($viewerGrants);expect(str_contains($shown,'Registrations and transfers below cost are held.'),'Supplied cost grant keeps cost help');
 DB::rollBack();
 
@@ -125,10 +126,10 @@ $cause="Couldn't load the registrar account's settings";
 same(['cause'=>$cause,'at'=>'Oct 18, 2026 13:05 UTC'],TldFacts::syncFailure($enom->server_id),'Stored failure code becomes its cause');
 same('Sync failed: '.$cause,TldFacts::refreshState($enom->server_id),'Refresh state names the cause');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
-    ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check: '.$cause.'.')->assertSee('New sales stop when saved costs reach 48 hours old.')->assertSee('Open Registrars');
+    ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('New sales stop when saved costs reach 48 hours old.')->assertSee('Open Registrars');
 $clean($list->html(),'List sync failed');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('Sync failed')->assertSee($cause.' · Oct 18, 2026 13:05 UTC')->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Prices last synced')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
+    ->assertSee('Sync failed')->assertSee($cause.'.')->assertSeeHtml('datetime="2026-10-18T13:05:00+00:00"')->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Prices last synced')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
 $clean($page->html(),'TLD page sync failed');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Sync failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>'read_unavailable','catalogue_audit'=>'[]']);
@@ -164,7 +165,7 @@ Carbon\Carbon::setTestNow($now);
 
 // Below cost: red Cost with its reason, and the TLD is not for sale.
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
-$rules->saveDefaultRule($enom->server_id,['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
+saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],$prices->republish(...));
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost')->assertSee('USD 1.00');
 $clean($list->html(),'List below cost');

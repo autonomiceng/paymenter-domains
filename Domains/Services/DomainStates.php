@@ -11,8 +11,6 @@ final class DomainStates
 {
     /** Auto-renew off turns Active into Action required this many days before expiry. */
     public const WINDOW = 30;
-    /** Held acquisition codes the customer clears by finishing setup. */
-    private const SETUP = ['contact_details_required', 'nameservers_required'];
     /** @return array{0:string,1:?string} */
     public static function managed(Domain $d, ?Operation $op, string $today, bool $renewalOff): array
     {
@@ -21,9 +19,9 @@ final class DomainStates
             $register = $op->action === 'register';
             $state = match (true) {
                 in_array($op->state, ['awaiting_payment', 'awaiting_code'], true) => [$op->state, null],
-                $op->state === 'held' && in_array($op->safe_code, self::SETUP, true) => ['setup_required', null],
-                $op->state === 'held' => $register ? ['registration_pending', null] : ['held', 'Transfer on hold'],
-                $op->state === 'uncertain' => $register ? ['registration_pending', null] : ['uncertain', 'Transfer not confirmed'],
+                \Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::readsAs($op->state, $op->safe_code) === 'setup_required' => ['setup_required', null],
+                $op->state === 'held' => $register ? ['registration_held', null] : ['held', 'Transfer on hold'],
+                $op->state === 'uncertain' => $register ? ['registration_unconfirmed', null] : ['uncertain', 'Transfer not confirmed'],
                 default => null,
             };
             if ($state) { return $state; }

@@ -24,7 +24,6 @@ final class ApiCallLimitAction
         return Action::make('call_limits_'.$server)->label('Edit')->color('gray')
             ->visible(fn()=>Staff::can(Staff::POLICY)&&Staff::can(Review::permission('call_limits'))&&$account->registrar_key==='enom')
             ->modalHeading('Edit our call limits')->modalSubmitActionLabel('Save')
-            ->modalFooterActions(fn(Action $action)=>[$action->getModalCancelAction(),$action->getModalSubmitAction()])
             ->modalDescription('These limits are shared by every connection using this login. Lowering a limit below current usage stops further calls until usage falls below it. Calls already sent keep their results.')
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,null,'call_limits',$stamp)),
                 // Filament's numeric state cast returns floats, even after integer validation.

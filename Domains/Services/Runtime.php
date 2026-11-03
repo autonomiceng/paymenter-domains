@@ -53,12 +53,12 @@ final class Runtime
         View::addNamespace('domains',dirname(__DIR__).'/resources/views');HostingDomainRow::boot();
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
         app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();
-        NativeCancellation::boot();AcquisitionRetirement::boot();PayCheck::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\SellToolbar::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\TableMenus::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\DemoTag::boot();
+        NativeCancellation::boot();AcquisitionRetirement::boot();PayCheck::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\SellToolbar::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\TableMenus::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\DemoTag::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffStyles::boot();
         \Illuminate\Console\Application::starting(static fn($console)=>$console->resolve(\Paymenter\Extensions\Servers\Domains\Console\ClearNativeExpiry::class));
-        app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
+        app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\DialogFooter::boot();
         Event::listen('permissions',fn()=>Staff::permissions());
         Event::listen('navigation',fn()=>['name'=>'Domains','url'=>route('domains.domains.search'),'icon'=>'ri-global','priority'=>12,'spa'=>false,
-            'children'=>[['name'=>'Register a domain','url'=>route('domains.domains.search'),'spa'=>false],['name'=>'Domain prices','url'=>route('domains.domains.pricing'),'spa'=>false]]]);
+            'children'=>[['name'=>'Register a domain','url'=>route('domains.domains.search'),'spa'=>false],['name'=>'Transfer a domain','url'=>route('domains.domains.transfer'),'spa'=>false],['name'=>'Domain prices','url'=>route('domains.domains.pricing'),'spa'=>false]]]);
         Event::listen('navigation.dashboard',fn()=>['name'=>'Domains','url'=>route('domains.domains.index'),'icon'=>'ri-global','priority'=>12,'spa'=>false]);
         foreach(['Domain','Operation'] as $model){Gate::policy('Paymenter\\Extensions\\Servers\\Domains\\Models\\'.$model,'Paymenter\\Extensions\\Servers\\Domains\\Policies\\'.$model.'Policy');}
         NativePaidHooks::boot();

@@ -1,0 +1,80 @@
+<?php
+// Adapted from Enom 444f31c RequestsRelationManager; MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use App\Models\User;
+use Illuminate\Support\HtmlString;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
+/** One domain's history: registrar requests, staff releases and renewal changes, and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
+final class DomainHistory
+{
+    private const HOLDINGS = ['stop' => 'Renewal stopped', 'resume' => 'Renewal resumed', 'reprice' => 'Renewal price updated', 'resume_observation' => 'Sync resumed'];
+    /** @return list<Operation|array> */
+    public static function entries(Domain $domain): array
+    {
+        $rows=DomainQueries::operations($domain)->orderByDesc('id')->get()->all();
+        foreach ($rows as $op) {
+            try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }
+            if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
+            foreach ($history as $i=>$action) {
+                if (!is_array($action)||($action['action']??null)!=='release'||($action['phase']??null)!=='completed') { continue; }
+                $rows[]=['__key'=>'release-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>'Hold released',
+                    'sub'=>null,'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
+            }
+        }
+        $holdings=[]; $audits=[];
+        try { $holdings=$domain->renewal_policy['staff_holdings']??[]; } catch (\Throwable) {}
+        $holdings=is_array($holdings)&&array_is_list($holdings)?array_filter($holdings,'is_array'):[];
+        try { $audits=WatchAudit::query()->where('subject_type','domain')->where('subject_id',$domain->id)->where('event','owner_auto_renew')->orderByDesc('id')->limit(100)->get(); }
+        catch (\Throwable) { $audits=collect(); }
+        $ids=array_unique(array_filter([...array_map(fn(array $h)=>is_int($h['actor_id']??null)?$h['actor_id']:null,$holdings),...$audits->pluck('actor_id')->all()]));
+        $names=$ids?User::query()->whereIn('id',$ids)->get(['id','first_name','last_name'])->mapWithKeys(fn(User $u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)])->all():[];
+        foreach (array_values($holdings) as $i=>$h) {
+            $rows[]=['__key'=>'holding-'.$i,'time'=>self::at($h['at']??null),'event'=>self::HOLDINGS[$h['action']??'']??'Renewal changed',
+                'sub'=>is_string($h['reason']??null)&&$h['reason']!==(StaffOperationReview::ACTIONS[$h['action']??'']??null)?$h['reason']:null,'status'=>null,'by'=>$names[$h['actor_id']??0]??'Staff'];
+        }
+        foreach ($audits as $a) {
+            $enabled=null; try { $enabled=$a->data['enabled']??null; } catch (\Throwable) {}
+            $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
+                'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
+        }
+        $at=fn(Operation|array $r)=>($r instanceof Operation?$r->created_at:$r['time'])?->getTimestamp()??PHP_INT_MIN;
+        usort($rows,fn($a,$b)=>$at($b)<=>$at($a));
+        return $rows;
+    }
+    public static function ordersOff(Domain $domain): bool
+    { return !Account::where('server_id',$domain->server_id)->value('processing_enabled'); }
+    /** @return array{time:?\DateTimeInterface,event:string,sub:?string,status:?array,by:string} */
+    public static function row(Operation|array $entry, Domain $domain, bool $ordersOff): array
+    {
+        if (is_array($entry)) { return $entry; }
+        return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
+            'sub'=>RequestFacts::reason($entry,$ordersOff),
+            'status'=>RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];
+    }
+    /** The newest entries as Sheet::trace steps: the reason, then when and who. */
+    public static function steps(Domain $domain, array $entries): array
+    {
+        $off=self::ordersOff($domain);
+        return array_map(function(Operation|array $entry) use($domain,$off): array {
+            $row=self::row($entry,$domain,$off);
+            return Sheet::event($row['event'],$row['sub']?StaffDomainStatus::sentence($row['sub']):null,$row['time']?->getTimestamp(),$row['by'],$row['status']['tone']??'gray',$row['status']['label']??null);
+        },$entries);
+    }
+    /** A management request names who asked for it. Everything else runs on its own. */
+    private static function requester(Operation $op, Domain $domain): string
+    {
+        try { $managed=isset($op->policy['management']); } catch (\Throwable) { return 'System'; }
+        if (!$managed) { return 'System'; }
+        if ((int)$op->authorized_by===(int)$domain->user_id) { return 'Customer'; }
+        $id=(int)$op->authorized_by;
+        return once(fn()=>trim((string)User::query()->whereKey($id)->get(['first_name','last_name'])->first()?->name)?:'Staff');
+    }
+    private static function at(mixed $value): ?\DateTimeImmutable
+    {
+        if (!is_string($value)||str_contains($value,"\0")) { return null; }
+        try { return new \DateTimeImmutable($value); } catch (\Throwable) { return null; }
+    }
+}

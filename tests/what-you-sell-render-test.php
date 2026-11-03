@@ -15,7 +15,7 @@ Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domai
 [$first,$second]=$tlds;
 App\Models\Server::whereKey($first->server_id)->update(['name'=>'Enom account']);
 App\Models\Server::whereKey($second->server_id)->update(['name'=>'NameSilo account']);
-App\Models\Server::findOrFail($first->server_id)->settings()->updateOrCreate(['key'=>'domains_pricing_default_rule'],['type'=>'array','encrypted'=>false,
+App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,
     'value'=>['mode'=>'markup_fee_percent','markup'=>'5','round_up'=>'ending_99']]);
 $prices->republish($first);
 DB::table('domains_tlds')->where('id',$second->id)->update(['use_default_rule'=>false,'pricing_mode'=>'fixed','round_up'=>'none',

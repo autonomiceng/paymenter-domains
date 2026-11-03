@@ -15,10 +15,12 @@ use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
 Carbon::setTestNow('2026-11-02 18:00:00');
 staffPanel(); [$released, , $unreleased]=staffData();
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
+$held=[];$renewals=[];
 foreach ([$released, $unreleased] as $d) {
+    $held[$d->id]=(int)$d->operations()->sole()->id;
     $op=$d->operations()->sole()->replicate()->fill(['action'=>'renew','operation_key'=>'held-alert-'.$d->id,
         'base_expires_at'=>$d->provider_expires_at,'state'=>'queued','attempt'=>[],'policy'=>[]]);
-    $op->save();
+    $op->save(); $renewals[$d->id]=(int)$op->id;
     $policy=$op->policy;
     if ($d->id===$released->id) {
         $policy['staff_actions']=[['action'=>'release','phase'=>'completed','at'=>now()->toAtomString()]];
@@ -32,14 +34,19 @@ $page=Livewire::actingAs($viewer)->test(ListDomains::class)->filterTable('alerts
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')->assertSuccessful();
 $filtered=$page->instance()->getTableRecords()->pluck('id')->sort()->values()->all();
 $cause=DomainFacts::alertCause('held_obligation');
+// One Check request #N link at a time (#405): the head names one held request, and the held renewal waits in the rail.
 $details=[];
 foreach ([$released, $unreleased] as $d) {
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html();
-    $details[]=str_contains(html_entity_decode(strip_tags($html),ENT_QUOTES),$cause);
+    $text=preg_replace('/\s+/',' ',html_entity_decode(strip_tags($html),ENT_QUOTES)); preg_match_all('/>Check request #(\d+)</',$html,$links);
+    $links=array_map('intval',$links[1]);
+    $details[]=$d->id===$released->id
+        ?['held alert'=>str_contains($text,$cause)||in_array($renewals[$d->id],$links,true)]
+        :['links'=>$links,'renewal held in rail'=>str_contains($text,'Request #'.$renewals[$d->id].' Renewal Under review')];
 }
 $actual=[$badge,$filtered,$details];
-same(['1',[$unreleased->id],[false,true]],$actual,
-    'A released queued renewal hold counts nowhere; an unreleased review appears in the badge, filter and detail: '.json_encode($actual));
+same(['1',[$unreleased->id],[['held alert'=>false],['links'=>[$held[$unreleased->id]],'renewal held in rail'=>true]]],$actual,
+    'A released queued renewal hold counts nowhere; an unreleased one is in the badge and filter, its page links one held request and lists the renewal in the rail: '.json_encode($actual));
 // The read rule preserves the alert history, and the existing minute cache still avoids repeated count queries.
 same(2,DB::table('domains_obligation_alerts')->whereNull('resolved_at')->count(),'Read paths retain both alert rows');
 DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();

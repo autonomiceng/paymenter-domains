@@ -49,3 +49,13 @@ function managedNs(string $host='ns.platform.test',int $ttl=300): DnsAnswer
 { return DnsAnswer::rrset(new DnsQuery('example.com','NS'),[['host'=>'example.com','class'=>'IN','type'=>'NS','target'=>$host,'ttl'=>$ttl]]); }
 function managedDue(int $id,int $now,string $kind='delegation'): void
 { DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('kind',$kind)->update(['due_at'=>$now,'backoff_until'=>null]); }
+
+/** Confirmation and notice scenarios compare a platform choice, not unknown imported intent. */
+function managedPlatformChoice(array $f): void
+{
+    extract($f);
+    DB::transaction(static function()use($d,$profile,$staff,$time):void {
+        $config=Paymenter\Extensions\Servers\Domains\Models\ManagedPublicConfig::findOrFail($d->id);
+        Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::assign($config,$profile,'platform',$staff->id,'staff_choice',$time->now);
+    });
+}

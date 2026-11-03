@@ -8,23 +8,35 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{DomainStatus, Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObligationAlerts, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalReplacements, RenewalStop};
+use Paymenter\Extensions\Servers\Domains\Services\{BillingCalendar, DomainStates, ObligationAlerts, ObservationProjection, ObservationRecords, ObservationWork, OwnedDomains, OwnerRecords, RenewalReplacements, RenewalStop, StaffHoldingReview, StaffOperationReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Request-local allowlisted projection. Never cache across actors, call providers or serialize models.
- * Each fact is ['value'=>string|list<string>|null,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool].
+ * Each fact is ['value'=>string|list<string>|null,'sub'=>?string,'url'=>?string,'tone'=>?string,'help'=>?string,'demo'=>bool], and 'at' (a timestamp) on a time the page shows in the viewer's zone.
  * A null value is Missing; a row that does not apply is absent. */
 final class DomainFacts
 {
-    public const REGISTRATION=['Expires','Registrar','In registrar account','Contacts','Nameservers','Glue records','DNS records','Transfer lock','WHOIS privacy','Registrar auto-renew','Last sync'];
-    public const BILLING=['Customer','Service','Auto-renew','Renewal price','Next invoice','Open invoice'];
+    /** The page's sections and their rows, in order. */
+    public const SECTIONS=['Registration'=>['Expires','Registrar','In registrar account','Transfer lock','WHOIS privacy','Email auth code','Registrar auto-renew','Last sync','Open alerts'],
+        'Renewal'=>['Renewal invoices','Renewal price','Next invoice','Open invoice'],
+        'Contacts and DNS'=>['Contacts','Nameservers','Glue records','DNS records'],
+        'Billing'=>['Customer','Service']];
+    /** Rows that open another page, and what their link says. */
+    public const LINKS=['Registrar'=>'Open registrar','Open invoice'=>'Open invoice','Customer'=>'Open customer','Service'=>'Open service'];
     public static function help(): array
     {
         $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
         return ['Transfer lock'=>'Registrar lock that blocks transfers to another registrar.',
-            'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.'];
+            'Registrar auto-renew'=>"The registrar's own auto-renew. Keep it off: ".($company !== '' ? $company.' renews' : 'we renew').' after the customer pays.',
+            'Renewal invoices'=>($company !== '' ? $company.' sends' : 'We send').' a renewal invoice before this domain expires. Auto Pay is a separate setting.'];
+    }
+    /** Why the registrar's own auto-renew reads Off. */
+    private static function registrarRenewOff(): string
+    {
+        $company = \Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
+        return 'Off on purpose. '.($company !== '' ? $company.' renews' : 'We renew').' the domain after the invoice is paid, so you are never charged by the registrar directly.';
     }
     /** Open alerts by kind: the row each concerns and its tone. ObligationAlerts::LABELS has the words. The row keeps its value; with no value it is Missing.
-     * Payment activity after the order closed shows in the status and the page notice instead. */
+     * Payment activity after the order closed shows in the status and the page head instead. */
     public const ALERTS=[
         'unknown_expiry'=>['Expires','danger'],
         'transfer_watch_relink'=>['Registrar','warning'],
@@ -39,17 +51,19 @@ final class DomainFacts
         'unknown_price'=>['Renewal price','danger'],
         'unknown_cost'=>['Renewal price','danger'],
         'below_cost'=>['Renewal price','danger'],
-        'renewal_unpaid'=>['Auto-renew','warning'],
-        'held_obligation'=>['Auto-renew','warning'],
-        'invalid_invoice'=>['Auto-renew','warning'],
-        'credit_notice_overdue'=>['Auto-renew','warning'],
-        'schedule_binding'=>['Auto-renew','warning'],
-        'delivery_uncertain'=>['Auto-renew','warning'],
-        'template_failed'=>['Auto-renew','warning'],
-        'reminder_failed'=>['Auto-renew','warning'],
+        'renewal_unpaid'=>['Renewal invoices','warning'],
+        'held_obligation'=>['Renewal invoices','warning'],
+        'invalid_invoice'=>['Renewal invoices','warning'],
+        'credit_notice_overdue'=>['Renewal invoices','warning'],
+        'schedule_binding'=>['Renewal invoices','warning'],
+        'delivery_uncertain'=>['Renewal invoices','warning'],
+        'template_failed'=>['Renewal invoices','warning'],
+        'reminder_failed'=>['Renewal invoices','warning'],
         'missing_obligation'=>['Next invoice','danger'],
         'missing_execution'=>['Next invoice','danger'],
     ];
+    private const OWNER_OFF='Turned off by customer';
+    public const NO_ACCOUNT='Registrar account not found. Check Registrars.';
     public const UNREADABLE="Can't read saved data. Ask your site admin to check the encryption key.";
     public const UNREADABLE_RENEWAL="Can't read renewal settings. Ask your site admin to check the encryption key.";
     /** Statuses where the registration exists, so its dates and registrar settings apply. */
@@ -71,16 +85,16 @@ final class DomainFacts
         }
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
         $f['Registrar']=$account&&$registrar ? self::fact(\App\Models\Server::whereKey($d->server_id)->value('name')??$registrar,
-            sub:implode(' · ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
-                $paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false)?'orders paused':null])),
+            sub:implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
+                !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?'orders paused':null])),
             url:self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id)),
-            demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':'Registrar account not found. Check Registrars.');
+            demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':self::NO_ACCOUNT);
         if ($registered && $observation!==null) {
             $facts=$observation['facts']??null;
             $facts=is_array($facts)&&ObservationProjection::matches($d,$facts)?$facts:[];
             $unread=self::unread($d,$sync);
             $f['In registrar account']=self::fact(ObservationRecords::held($d)&&($observation['record_hold']['reason']??null)==='ownership_drift'?'No':self::flag($facts['owned']??null,'Yes','No'),sub:isset($facts['owned'])?null:$unread);
-            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?'Add them with Edit':'Ask the customer to add them on the domain page'); }
+            try { $contact=OwnedDomains::owner(OwnedDomains::contacts($d)); $none=$pending?self::unread($d,$sync):(Staff::can('admin.domains.manage')?self::ADD_CONTACTS:'Ask the customer to add them on the domain page'); }
             catch (\Throwable) { $contact=null; $none=self::UNREADABLE; }
             $f['Contacts']=self::fact($contact['name']??null,sub:$contact['email']??$none);
             $nameservers=OwnedDomains::storedNameservers($d);
@@ -89,7 +103,8 @@ final class DomainFacts
             catch (\Illuminate\Contracts\Encryption\DecryptException) { $sections=$records=[]; }
             if ($d->registrar_key==='enom'&&filter_var($d->server?->settings()->where('key','domains_dns_tools')->value('value'),FILTER_VALIDATE_BOOLEAN)) {
                 $count=isset($records['dns'])?count($records['dns']):null;
-                $f['DNS records']=self::fact($count===null?null:$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??'Use Sync now to read DNS records.'):implode(' · ',array_filter([isset($records['srv'])?count($records['srv']).' SRV':null,isset($records['dns'])?'As of '.($sections['dns']['at']??''):null])));
+                $f['DNS records']=self::fact($count===null?(ObservationRecords::limitNotice($d)===null?'Not read yet':null):$count.' '.($count===1?'record':'records'),sub:$count===null?(ObservationRecords::limitNotice($d)??(Staff::can('admin.domains.manage')?'Use Sync now to read them.':null)):(empty($records['srv'])?null:count($records['srv']).' SRV '.(count($records['srv'])===1?'record':'records').'.'));
+                if ($count!==null) { $f['DNS records']['asOf']=$sections['dns']['at']??null; }
             }
             if ($d->registrar_key==='namesilo') {
                 try { $off=app(\Paymenter\Extensions\Servers\Domains\Services\OwnerPorts::class)->forDomain($d)->capabilities()->get('dns')->support!==\Paymenter\Extensions\Servers\Domains\Data\Support::Supported; } catch (\Throwable) { $off=false; }
@@ -102,20 +117,23 @@ final class DomainFacts
             if ($glue) {
                 $warnings=\Paymenter\Extensions\Servers\Domains\Services\GlueDrift::warnings($d,known:$sections['known_glue']??[]);
                 $at=\Paymenter\Extensions\Servers\Domains\Services\GlueRecords::asOf($d,$sections);
-                $f['Glue records']=self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',array_filter([$at?'As of '.$at:null,...$warnings])),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.');
+                $f['Glue records']=[...self::fact(array_map(fn($row)=>$row['host'].' '.$row['ip'],$glue),sub:implode(' ',$warnings?[self::differs(count($warnings),count(array_unique(array_column($glue,'host')))),...$warnings]:[]),tone:$warnings?'warning':null,help:'Needed when nameservers are named under this domain.'),'asOf'=>$at?:null];
             }
             $locked=OwnedDomains::storedFlag($d,'lock','locked');
             $f['Transfer lock']=self::fact(self::flag($locked),sub:$locked!==null?null:$unread,help:self::help()['Transfer lock']);
+            // Enom's privacy is not sold, so its row shows only on a domain that already has it. Other registrars keep theirs.
             $privacy=OwnedDomains::storedFlag($d,'privacy','privacy');
-            $f['WHOIS privacy']=self::fact(self::flag($privacy),sub:$privacy!==null?null:$unread);
-            $f['Registrar auto-renew']=self::fact(self::flag($facts['auto_renew']??null),sub:isset($facts['auto_renew'])?null:$unread,help:self::help()['Registrar auto-renew']);
+            if ($d->registrar_key!=='enom'||$privacy===true) { $f['WHOIS privacy']=self::fact(self::flag($privacy),sub:$privacy!==null?null:$unread); }
+            $renews=$facts['auto_renew']??null;
+            $f['Registrar auto-renew']=self::fact(self::flag($renews),sub:match($renews) {null=>$unread,false=>self::registrarRenewOff(),default=>null},help:$renews?self::help()['Registrar auto-renew']:null);
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
-        if ($registered||$job||$d->last_synced_at) { $f['Last sync']=match(true) {
+        // An ended domain won't sync again, so it keeps its last read and shows no row without one.
+        if (($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
             $paused=>self::fact('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
             $sync==='failed'=>self::fact('Sync failed',sub:(int)$job->tries.' attempt'.((int)$job->tries===1?'':'s').'. Stopped until resumed.',tone:'danger'),
-            default=>self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
-                sub:$job&&$job->claim!==null&&$job->lease_until>time()?($d->last_synced_at?'Syncing now':Missing::fills('when this sync finishes')):($d->last_synced_at?null:Missing::fills('within a day'))),
+            default=>['at'=>$d->last_synced_at?->getTimestamp(),...self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
+                sub:$job&&$job->claim!==null&&$job->lease_until>time()?($d->last_synced_at?'Syncing now':Missing::fills('when this sync finishes')):($d->last_synced_at?null:Missing::fills('within a day')))],
         }; }
         $user=$d->user;
         $f['Customer']=$user?self::fact(trim($user->first_name.' '.$user->last_name)?:$user->email,sub:$user->email,
@@ -128,8 +146,8 @@ final class DomainFacts
             $cancel=$renewal&&$renewal['cancel']->contains('service_id',$d->service_id);
             $off=match(true) {$renewal===null=>null,RenewalStop::adopted($renewal)=>'Set at import',$pending=>'Until import',
                 RenewalStop::blocksExisting($renewal)=>'Service cancellation pending',$cancel=>'Cancels at period end',
-                (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>'Turned off by customer',default=>null};
-            $f['Auto-renew']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL):self::fact($off?'Off':'On',sub:$off);
+                (bool)($policy['renewals_stopped']??false)=>'Stopped by staff',RenewalStop::ownerOff($renewal)=>self::ownerOff(),default=>null};
+            $f['Renewal invoices']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal invoices']):self::fact($off?'Off':'On',sub:$off,help:self::help()['Renewal invoices']);
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
             if (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
@@ -141,17 +159,23 @@ final class DomainFacts
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. */
     public static function alertCause(string $code): string
-    { return ObligationAlerts::LABELS[$code]??'Domain alert needs review.'; }
-    /** Puts each cause under its row, collecting causes without a row for the page's top notice. */
+    { return $code==='observation_review'&&!self::canResume()?'Sync stopped. '.self::ASK_RESUME:ObligationAlerts::LABELS[$code]??'Domain alert needs review.'; }
+    /** Puts each cause under its row, collecting causes without a row on the Open alerts row. */
     private static function alerts(Domain $d, array $f): array
     {
-        // The page notice already names a held order, so its review alert would only repeat it in other words.
-        $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:null;
-        $rows=array_filter(StaffDomainInputs::for([$d])[$d->id]['alerts'],fn(array $a)=>!($a['code']==='operation_review'&&$a['request']===$named&&$named!==null));
+        // The head names a held order, or the top alert when no notice takes its place, so a review alert on a row would only repeat them.
+        $inputs=StaffDomainInputs::for([$d])[$d->id]; $status=self::status($d,$inputs);
+        $notice=self::notice($d);
+        $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:(in_array($status['alert'],['operation_review','held_obligation'],true)&&($notice===null||($notice['resume']??false))?$status['request']:null);
+        // One link at a time: another held request stays in the rail, and the head names it once this one clears.
+        $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$named!==null&&($a['request']===$named||$named===$status['request'])));
         foreach (array_unique(array_column($rows,'code')) as $code) {
-            // Late payment already has a status reason and its own notice.
+            // Late payment already has a status reason and says so in the head.
             if ($code==='acquisition_late_money') { continue; }
             [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code);
+            // The row sends staff to the same place the head would.
+            $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
+            if ($request!==null) { $cause=str_replace('Check the request','Check request #'.$request,$cause); }
             if (!isset($f[$row])) {
                 $notice=$f['Open alerts']??self::fact([],tone:$tone);
                 $notice['value']=array_values(array_unique([...$notice['value'],$cause]));
@@ -160,8 +184,12 @@ final class DomainFacts
                 continue;
             }
             $fact=$f[$row];
-            $fact['sub']=implode(' · ',array_unique(array_filter([$fact['sub'],$cause])));
-            $fact['tone']=$fact['tone']==='danger'?'danger':$tone;
+            // The Last sync row already says it stopped, beside the button.
+            if ($code==='observation_review'&&str_ends_with((string)$fact['sub'],'Stopped until resumed.')) { continue; }
+            if ($fact['sub']!==null&&$fact['sub']!==$cause) { $fact['plain']??=StaffDomainStatus::sentence($fact['sub']); }
+            $fact['sub']=$fact['sub']===null||$fact['sub']===$cause?$cause:StaffDomainStatus::sentence($fact['sub']).' '.$cause;
+            $fact['tone']=$fact['tone']==='danger'?'danger':$tone; $fact['alert']=true;
+            if ($request!==null) { $fact['request']=$request; }
             $f[$row]=$fact;
         }
         // A failed customer monitoring alert: why, and what to do. The staff alert links here.
@@ -181,33 +209,106 @@ final class DomainFacts
         [$state,$reason]=OwnedDomains::orderStatus(DomainStates::managed($d,$op,gmdate('Y-m-d'),(bool)$inputs['off']),$d,$order);
         $shared=['key'=>DomainStatus::key($state),...DomainStatus::for($state,$reason)];
         if ($inputs['late']) { return StaffDomainStatus::late($shared); }
-        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal']);
+        return StaffDomainStatus::for($shared,$state,$d,$op,$inputs['alerts'],$inputs['renewal'],$inputs['waiting']);
     }
-    /** The line under the status: its reason, then the staff step. */
+    /** The list's status tone. A stopped sync or a missing registrar account is a job for staff, as in the domain's head. */
+    public static function listTone(array $status, ?string $sync, bool $noAccount=false): string
+    { return $status['tone']==='success'&&($sync==='failed'||$noAccount)?'warning':$status['tone']; }
+    /** The status reason, then the staff step, as sentences. */
     public static function statusLine(array $status): ?string
-    { return implode(' · ',array_filter([$status['reason'],$status['step']]))?:null; }
+    { return implode(' ',array_map(StaffDomainStatus::sentence(...),array_filter([$status['reason'],$status['step']])))?:null; }
+    /** The Note in the Domains list: the status line, or what a sync problem needs. A stopped sync is amber (listTone), so the note always says it. $act: staff have a job here.
+     * The Registrar column is hidden by default, so a missing registrar account leads the note.
+     * @return array{text:?string,act:bool} */
+    public static function note(array $status, ?string $sync, bool $noAccount=false): array
+    {
+        if ($noAccount) { $note=self::note($status,$sync); return ['text'=>trim(self::NO_ACCOUNT.' '.$note['text']),'act'=>true]; }
+        $line=self::statusLine($status);
+        if ($line!==null) { return $sync==='failed'&&!str_contains($line,'Sync ')?['text'=>'Sync stopped. '.$line,'act'=>true]:['text'=>$line,'act'=>$status['act']]; }
+        return match($sync) { 'failed'=>['text'=>'Sync failed. '.(self::canResume()?'Use Resume sync on the domain.':self::ASK_RESUME),'act'=>true],'paused'=>['text'=>'Sync paused.','act'=>false],default=>['text'=>null,'act'=>false] };
+    }
     /** The request a status step names, when this panel can open it. */
     public static function requestUrl(array $status): ?string
     { return $status['request']?self::url(fn()=>OperationResource::getUrl('view',['record'=>$status['request']])):null; }
-    /** The status line, with its "Open request #N." as a link. */
-    public static function stepHtml(array $status): string|HtmlString|null
+    /** The status line, with its "Check request #N." as a link and a mark when staff have a job here. */
+    public static function stepHtml(array $status, bool $mark=true): string|HtmlString|null
     {
-        $line=self::statusLine($status); $open='Open request #'.$status['request'].'.'; $url=self::requestUrl($status);
-        if (!$url||!str_ends_with((string)$line,$open)) { return $line; }
-        return new HtmlString(e(substr($line,0,-strlen($open))).'<a href="'.e($url).'" style="text-decoration:underline">'.e($open).'</a>');
+        $line=self::statusLine($status); $label='Check request #'.$status['request']; $check=$label.'.'; $url=self::requestUrl($status);
+        if ($line===null) { return null; }
+        $linked=$url&&str_ends_with($line,$check);
+        if (!$linked&&!($status['act']&&$mark)) { return $line; }
+        $html=new HtmlString($linked?e(substr($line,0,-strlen($check))).self::requestLink($url,$label).'.':e($line));
+        return $status['act']&&$mark?StatusMark::act($html):$html;
     }
-    /** The one page notice: the most urgent cause and its fix. */
+    /** The head of a domain a request is holding: the link first, then what it holds, said once for the page. */
+    public static function holdHtml(int $request, bool $mark=true): HtmlString
+    {
+        $url=self::requestUrl(['request'=>$request]); $label='Check request #'.$request;
+        $html=new HtmlString(($url?self::requestLink($url,$label):e($label)).' Changes are on hold until it is checked.');
+        return $mark?StatusMark::act($html):$html;
+    }
+    /** A row's words with its "Check request #N" as a link, when this panel can open it. */
+    public static function linkRequest(string|HtmlString $words, int $request): string|HtmlString
+    {
+        $url=self::requestUrl(['request'=>$request]); $label='Check request #'.$request;
+        if (!$url) { return $words; }
+        return new HtmlString(str_replace($label,self::requestLink($url,$label),$words instanceof HtmlString?$words->toHtml():e($words)));
+    }
+    /** The page's one status line: the notice, else the hold, else the status step, under one mark.
+     * Active can't stay green over a stopped sync or rows that need work. An amber or red state is already the mark, so its words get none of their own.
+     * $held is the request holding changes. It comes first, then the request the status names, and no request names none.
+     * @return array{tone:string,step:string|HtmlString|null} */
+    public static function head(Domain $d, array $status, array $facts, ?int $held=null): array
+    {
+        $notice=self::notice($d); $request=self::headRequest($d,$status,$held,$notice);
+        if (($notice['resume']??false)&&$request) { $notice['link']=['label'=>'Check request #'.$request,'url'=>self::requestUrl(['request'=>$request])]; }
+        $missing=array_filter($facts,fn(array $fact)=>$fact['value']===null&&!Missing::needsNothing($fact['sub']));
+        $tone=$status['tone']==='success'&&(($notice['resume']??false)||$missing!==[])?'warning':$status['tone'];
+        $mark=!in_array($tone,['warning','danger'],true);
+        $step=match(true) { $notice!==null=>self::noticeHtml($notice,$mark),$held!==null=>self::holdHtml($held,$mark),default=>self::stepHtml($status,$mark) };
+        return ['tone'=>$tone,'step'=>$step??($missing!==[]?'Some details are Missing. Each row says what to do.':null)];
+    }
+    public const ADD_CONTACTS='Add them with Edit';
+    /** While changes are on hold, Contacts' Missing says what comes before Edit, not just Edit. */
+    public static function whileHeld(array $facts, ?string $first): array
+    {
+        if (($facts['Contacts']['sub']??null)===self::ADD_CONTACTS) { $facts['Contacts']['sub']=($first??'Wait until changes are back on').', then add them with Edit.'; }
+        return $facts;
+    }
+    /** The one request the head names, or null. A notice names one only beside Resume sync. Rows name no other (withProgress). */
+    public static function headRequest(Domain $d, array $status, ?int $held=null, ?array $notice=null): ?int
+    {
+        $notice??=self::notice($d);
+        return $notice===null||($notice['resume']??false)?$held??$status['request']:null;
+    }
+    /** A notice in the head line: its words, then its links. */
+    private static function noticeHtml(array $notice, bool $mark): HtmlString
+    {
+        $links=array_filter([$notice['action']??null,$notice['link']??null],fn(?array $link)=>$link!==null&&$link['url']!==null);
+        $html=new HtmlString(e(implode(' ',array_filter([$notice['title'],$notice['body']??null]))).implode('',array_map(fn(array $link)=>' '.self::requestLink($link['url'],$link['label']).'.',$links)));
+        return $mark?StatusMark::act($html):$html;
+    }
+    /** A link to a request, in the text around it. */
+    public static function requestLink(string $url, string $label): string
+    { return '<a class="fi-link domains-link" href="'.e($url).'">'.e($label).'</a>'; }
+    /** A Note cell is already the link, since a table row can't hold another one. Its step leads, so a cut note still shows it,
+     * and just has to look like a link. */
+    public static function noteStep(string $note, array $status): string|HtmlString
+    {
+        $label='Check request #'.$status['request']; $check=$label.'.';
+        if (!self::requestUrl($status)||!str_ends_with($note,$check)) { return $note; }
+        return new HtmlString('<span class="domains-link">'.e($label).'</span>. '.e(rtrim(substr($note,0,-strlen($check)))));
+    }
+    /** The most urgent cause and its fix, said in the head line. */
     public static function notice(Domain $d): ?array
     {
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
-        $request=DomainQueries::operations($d)->orderByDesc('id')->value('id');
-        $requestLink=$request?['label'=>'Open request #'.$request,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$request]))]:null;
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'tone'=>'warning','resume'=>true,'link'=>$requestLink]; }
+        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::restart($d),'tone'=>'warning','resume'=>true]; }
         if (AcquisitionPaymentReview::count($d)>0) {
             $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
                 ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
@@ -222,13 +323,13 @@ final class DomainFacts
             return ['title'=>'Imported after the invoice date. No renewal invoice was issued.','tone'=>'warning',
                 'action'=>['label'=>'Open service','url'=>self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$d->service_id]))]];
         }
-        if (!self::account($d)) { return ['title'=>'Registrar account not found. Check Registrars.','tone'=>'warning']; }
+        if (!self::account($d)) { return ['title'=>self::NO_ACCOUNT,'tone'=>'warning']; }
         $op=$d->latestAcquisition;
         if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)) {
             $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code)),'.');
             $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.(preg_match('/\A(?:Enom|NameSilo)\b/',$cause)?$cause:lcfirst($cause))).'.':' not confirmed by the registrar.');
             try{$title=RequestFacts::readyMessage($op)??$title;}catch(\Throwable){}
-            return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Open request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
+            return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
         }
         return null;
     }
@@ -245,19 +346,35 @@ final class DomainFacts
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }
     }
-    /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list.
+    /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list. Nothing syncs on an ended domain, so it has neither.
      * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account. */
     public static function sync(Domain $d, ?Account $account=null, ?bool $stopped=null, bool $accountLoaded=false): ?string
     {
+        if (self::ended($d)) { return null; }
         if(!$accountLoaded){$account??=self::account($d);}
         return $account&&DemoData::syncPaused($d,$account)?'paused':(($stopped??ObservationWork::stopped($d))?'failed':null);
     }
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string
     {
-        return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync failed. Use Resume sync.',
+        return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync failed. '.(self::canResume()?'Use Resume sync.':self::ASK_RESUME),
             default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
     }
+    private const ASK_RESUME='Ask staff who can resume sync.';
+    /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */
+    private static function restart(Domain $d): string
+    {
+        if (ObservationWork::currentId($d)!==null) { return self::canResume()?'Use Resume sync below.':self::ASK_RESUME; }
+        return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';
+    }
+    private static function canResume(): bool { return Staff::can(StaffOperationReview::permission('resume_observation')); }
+    /** The customer's own Off still lets them renew by hand or turn it back on. A staff stop blocks both, so its red button says what is left to stop. */
+    private static function ownerOff(): string
+    {
+        return self::OWNER_OFF.(Staff::can('admin.domains.manage')&&Staff::can(StaffHoldingReview::permission('stop'))?'. They can still renew by hand or turn it back on. Stop renewal blocks both.':'');
+    }
+    /** The domain sits on a registrar's test account. */
+    public static function test(Domain $d): bool { return self::account($d)?->environment==='test'; }
     private static function account(Domain $d): ?Account
     {
         return Account::where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->where('account_fingerprint',$d->account_fingerprint)->first();
@@ -289,6 +406,24 @@ final class DomainFacts
     /** Links to pages the current panel may not register resolve to no link. */
     private static function url(\Closure $make): ?string { try { return $make(); } catch (\Throwable) { return null; } }
     private static function flag(mixed $value, string $on='On', string $off='Off'): ?string { return is_bool($value)?($value?$on:$off):null; }
+    /** Progress takes its own line under a row's words, so Contacts keeps its email; a Missing cause gives way to it. A settled or replaced result says nothing.
+     * A stopped change reads its request's line, never the sentence written for the customer. It names its request only when that is $named, the one the head names (headRequest),
+     * so the page sends staff to one request, and to none when none needs them. */
+    public static function withProgress(array $facts, array $progress, ?int $named=null): array
+    {
+        foreach (['Contacts'=>'contacts','Nameservers'=>'nameservers','Transfer lock'=>'lock','DNS records'=>'dns','Email auth code'=>'auth_code_email'] as $label=>$setting) {
+            $row=$progress[$setting]??null;
+            if (!isset($facts[$label])||$row===null||($row['settled']??false)||($row['replaced']??false)) { continue; }
+            $stopped=isset($row['outcome']); $request=$stopped&&$row['id']===$named?$row['id']:null;
+            $text=$stopped?StaffDomainStatus::sentence($row['outcome']).($request===null?'':' Check request #'.$request.'.'):$row['text'];
+            if ($facts[$label]['value']===null) { $facts[$label]['sub']=$text; continue; }
+            $facts[$label]['progress']=['text'=>$text,'request'=>$request,'waiting'=>(bool)($row['pending']??false)];
+        }
+        return $facts;
+    }
+    /** A count above the glue detail: "1 of 2 differs." */
+    public static function differs(int $count, int $of): string
+    { return $count.' of '.max($count,$of).' '.($count===1?'differs':'differ').'.'; }
     private static function fact(string|array|null $value, ?string $sub=null, ?string $url=null, ?string $tone=null, ?string $help=null, bool $demo=false): array
     { return ['value'=>$value===''?null:$value,'sub'=>$sub===''?null:$sub,'url'=>$url,'tone'=>$tone,'help'=>$help,'demo'=>$demo]; }
 }

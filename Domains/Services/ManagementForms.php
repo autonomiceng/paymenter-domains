@@ -4,7 +4,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm;
 use App\Models\User;
+use Paymenter\Extensions\Servers\Domains\Data\PrivacyMode;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
+use Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility;
 /** The one path from a change form to the request queue, for owner and staff alike. */
 final readonly class ManagementForms
 {
@@ -19,6 +21,10 @@ final readonly class ManagementForms
     { return $d->operations()->where('operation_key','manage:'.$d->id.':'.$nonce)->where('action',$action)->where('authorized_by',$actor->id)->exists(); }
     public function submit(User $actor, Domain $d, string $action, #[\SensitiveParameter] array $p, string $nonce): void
     {
+        // Paid-service toggles and renewals require an existing subscription at the driver; new offerings stay closed.
+        if (!PrivacyVisibility::SHOWN && ($action==='privacy_purchase' || $action==='privacy_enable' && $this->ports->forDomain($d)->capabilities()->privacy!==PrivacyMode::Paid)) {
+            throw new OwnerFormValidation(['privacy']);
+        }
         $records=in_array($action,['dns','srv'],true);
         $current=$records?(OwnerRecords::forDomain($d)[$action]??throw new \DomainException('Current records required.')):null;
         $payload=match($action) {
