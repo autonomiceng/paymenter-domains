@@ -13,10 +13,10 @@ final class SellerPolicies
 {
     public function __construct(private readonly PriceCatalogue $prices, private readonly AccountBindings $bindings) {}
 
-    public function initialize(string $tld): SalesPolicy
+    public function initialize(string $tld, ?int $generation = null): SalesPolicy
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Initialization owns its policy lock order.'); }
-        $generation=UpgradeGate::legacy();
+        $generation=UpgradeGate::legacy($generation);
         CanonicalName::parse('example.'.$tld, [$tld]);
         return DB::transaction(static function () use ($tld,$generation): SalesPolicy {
             UpgradeGate::lockLegacy($generation);
