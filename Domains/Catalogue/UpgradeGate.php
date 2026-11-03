@@ -125,7 +125,7 @@ final class UpgradeGate
             foreach ($accounts as $account) {
                 $value = $account->getRawOriginal();
                 foreach (OfferSchema::COLUMNS['domains_accounts'] ?? [] as $column => $_) { unset($value[$column]); }
-                $server = UpgradeComparison::read(DB::table('servers'))->where('id', $account->server_id)->firstOrFail();
+                $server = UpgradeComparison::read(DB::table((new Server)->getTable()))->where('id', $account->server_id)->firstOrFail();
                 $settings = UpgradeComparison::read(DB::table('settings'))->where('settingable_type', (new Server)->getMorphClass())
                     ->where('settingable_id', $account->server_id)->orderBy('id')->get();
                 hash_update($hash, json_encode([$value, $server, $settings], JSON_THROW_ON_ERROR)."\n"); $count++;

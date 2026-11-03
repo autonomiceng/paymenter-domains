@@ -41,7 +41,7 @@ $price=DB::table('domains_prices')->where('server_id',$t->server_id)->first();
 $changed('domains_prices',$price->id,'wholesale','999.00','Changed retained cost refuses');
 $product=$native->product($t,'register');$changed('products',$product->id,'name','Changed native identity','Changed native graph refuses');
 $changed('domains_accounts',$account->id,'processing_enabled',!$account->processing_enabled,'Changed account processing refuses');
-$changed('servers',$account->server_id,'enabled',false,'Disabled account refuses');
+$changed((new App\Models\Server)->getTable(),$account->server_id,'enabled',false,'Disabled account refuses');
 $secret=DB::table('settings')->where('settingable_id',$account->server_id)->where('key','domains_credentials')->first();
 $changed('settings',$secret->id,'value','synthetic altered ciphertext','Same-identity credential change refuses');
 $queue=DB::table('domains_observation_queues')->where('server_id',$t->server_id)->first();
