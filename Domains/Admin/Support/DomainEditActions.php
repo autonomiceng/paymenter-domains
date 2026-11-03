@@ -9,6 +9,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\{Auth,Log};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm;
 use Paymenter\Extensions\Servers\Domains\Services\{ContactValidation,DomainManagement,ManagementForms,OwnedDomains,OwnerFormValidation,ManagementProgress};
 /** Staff edits on the domain page: the owner's form path and every check it runs, credited to the staff member. */
 final class DomainEditActions
@@ -22,6 +23,7 @@ final class DomainEditActions
         'Management lifecycle held.'=>'This domain or its service is not active, or orders are paused. Fix that, then try again.',
         'Management permission required.'=>"You don't have permission to change domains.",
         'Current records required.'=>'This changed after you opened it. Reload the page and try again.',
+        'DNS records changed.'=>'The records changed at the registrar, so nothing was sent. Reload the page and try again.',
         'DNS tools disabled.'=>'DNS tools are off for this registrar account. Turn them on in Registrars, then try again.',
         'Management capability unsupported.'=>"This registrar doesn't support this change.",
     ];
@@ -86,30 +88,27 @@ final class DomainEditActions
         return self::edit($d,'lock',self::lockLabel($state),$state===false?'Turn on transfer lock?':'Turn off transfer lock?',$form,
             fn(array $data)=>['locked'=>(string)($data['locked']??'')],$state===false?null:ManagementForms::lockRisk($d->domain),$state===null?[]:['locked'=>$state?'0':'1'],bound:['opened'=>json_encode($state)]);
     }
-    /** @return list<Action> Staged registrars take new details first, then use them once approved. */
+    /** @return list<Action> One save freezes all contact steps for either registrar. */
     private static function contacts(Domain $d, array $m): array
     {
+        if (!isset($m['actions']['contacts'])) { return []; }
         $form=array_map(fn(string $field)=>TextInput::make($field)->label(self::CONTACT[$field])->maxLength($m['limits'][$field]),array_keys($m['limits']));
-        $staged=$m['staged']; $approved=$staged?$m['approved']:null; $keep=[];
-        if ($approved && isset($m['actions']['contacts'])) { $keep[]=self::edit($d,'contacts','Use the approved details','Use the approved details?',[Hidden::make('approved')],fn(array $data)=>(array)json_decode((string)($data['approved']??''),true),
-            'Step 2 of 2: apply the approved details for '.trim(($approved['contact']['first_name']??'').' '.($approved['contact']['last_name']??'')).'.',bound:['approved'=>json_encode($approved)]); }
-        if (!isset($m['actions'][$staged?'contact_profile':'contacts'])) { return $keep; }
-        return [...$keep,self::edit($d,$staged?'contact_profile':'contacts','Edit','Edit contacts',[...$form,Hidden::make('opened_contacts_digest')],
+        return [self::edit($d,'contacts','Edit','Edit contacts',[...$form,Hidden::make('opened_contacts_digest')],
             fn(array $data)=>['role'=>'all','contact'=>array_map(fn($value)=>(string)($value??''),array_intersect_key($data,$m['limits']))],
-            ($staged?'Step 1 of 2: we send the new details for approval. ':'').'We use these details for every contact on this domain. '.ManagementForms::CONTACTS_RISK,
-            array_intersect_key($m['saved'],$m['limits']),$staged?'Send for approval':'Save',
+            'We use these details for every contact on this domain. '.ManagementForms::CONTACTS_RISK,
+            array_intersect_key($m['saved'],$m['limits']),'Save',
             bound:['opened_contacts_digest'=>$m['digest']])];
     }
     private static function records(Domain $d, string $kind, string $label, array $m): Action
     {
-        $fields=$kind==='dns'?[TextInput::make('name')->label('Host'),Select::make('type')->label('Type')->options(self::DNS_TYPES),TextInput::make('address')->label('Value'),TextInput::make('mx_pref')->label('MX priority')]
+        $fields=$kind==='dns'?[TextInput::make('name')->label('Host'),Select::make('type')->label('Type')->options(isset($m['types'])?array_intersect_key(self::DNS_TYPES,array_flip($m['types'])):self::DNS_TYPES),TextInput::make('address')->label('Value'),TextInput::make('mx_pref')->label('MX priority')]
             :[TextInput::make('service')->label('Service'),TextInput::make('protocol')->label('Protocol'),TextInput::make('priority')->label('Priority'),TextInput::make('weight')->label('Weight'),TextInput::make('port')->label('Port'),TextInput::make('target')->label('Target')];
         // A row's source is its place in the saved list, so the registrar's record ids stay server-side.
         $rows=array_map(fn(array $row,int $i)=>[...$row,'_source'=>(string)$i],$m['records'],array_keys($m['records']));
         return self::edit($d,$kind,$label,$m['label'],[Repeater::make('records')->hiddenLabel()->schema([...$fields,Hidden::make('_source')])->columns(count($fields))->defaultItems(0)->maxItems(50)->addActionLabel('Add record'),Hidden::make('preimage_digest')],
             fn(array $data)=>['records'=>array_map(fn(array $row)=>array_map(fn($value)=>(string)($value??''),$row),array_values($data['records']??[])),'preimage_digest'=>$data['preimage_digest']],
             // Queued, a stale list would only fail later at the registrar's read. Staff can reload now.
-            ManagementForms::RECORDS_RISK.' Saving replaces the list.',['records'=>$rows],modal:'5xl',bound:['preimage_digest'=>$m['digest']]);
+            implode(' ',[ManagementForms::RECORDS_RISK.' Saving replaces the list.',...DnsForm::notes($m['fixed']??[])]),['records'=>$rows],modal:'5xl',bound:['preimage_digest'=>$m['digest']]);
     }
     /** The form holds everything fixed at open, because this action rebuilds from current state at save. Bound fields must still match at save. A replayed save finds its request first, so a finished form returns it instead of a stale refusal. */
     private static function edit(Domain $d, string $name, string $label, string $heading, array $form, \Closure $input, ?string $risk, array $fill=[], string $submit='Save', string $modal='lg', array $bound=[]): Action

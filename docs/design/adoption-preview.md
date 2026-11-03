@@ -1,7 +1,7 @@
 # Adoption preview boundary
 
 Adoption remains disabled. Preview evidence is never a holding, payment, dispatch
-permission or renewal anchor. NameSilo adoption remains unavailable.
+permission or renewal anchor. NameSilo imports remain dormant until an admitted composition is installed.
 
 The shared preview depends on `Contracts/AdoptionSource`, selected through the registrar's
 explicit import factory. `AccountBindings` rechecks the binding, current credentials and
@@ -15,7 +15,7 @@ ordinary-domain proof and renewal off; it does not infer these from a TLD price 
 missing reference. Local timestamps without a proven zone refuse. Null references do
 not collide with other null references; present references still enforce identity checks.
 Mapping and confirmation retain the chosen registrar and the existing native lock order,
-replay checks and local-only commit. This interface does not enable NameSilo imports.
+replay checks and local-only commit. This interface alone does not enable NameSilo imports. See [NameSilo import](namesilo-import.md) for the dormant adapter and its renewal restriction.
 
 Enom adoption v1 reads only GetDomainInfo, GetDomainExp, GetRenew and GetExtendInfo.
 A narrow enum and a transport check enforce that list independently of the general

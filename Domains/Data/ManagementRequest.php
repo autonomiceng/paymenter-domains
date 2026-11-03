@@ -6,9 +6,11 @@ namespace Paymenter\Extensions\Servers\Domains\Data;
 final readonly class ManagementRequest
 {
     private \SensitiveParameterValue $data;
+    private \SensitiveParameterValue $sequenceData;
     public function __construct(public AccountBinding $binding, public string $key, public string $name,
-        public string $action, #[\SensitiveParameter] array $payload, public ?string $providerId = null, public ?string $orderId = null, public ?string $profileId = null, public ?int $domainId = null)
-    { $this->data = new \SensitiveParameterValue(json_decode(json_encode($payload, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR)); }
+        public string $action, #[\SensitiveParameter] array $payload, public ?string $providerId = null, public ?string $orderId = null, public ?string $profileId = null, public ?int $domainId = null, #[\SensitiveParameter] ?array $sequence = null)
+    { $this->sequenceData = new \SensitiveParameterValue($sequence); $this->data = new \SensitiveParameterValue(json_decode(json_encode($payload, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR)); }
+    public function sequence(): ?array { return $this->sequenceData->getValue(); }
     public function payload(): array { return $this->data->getValue(); }
     public function __debugInfo(): array { return ['action' => $this->action]; }
     public function __serialize(): never { throw new \LogicException('Management requests are server-only.'); }

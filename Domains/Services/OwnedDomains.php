@@ -7,12 +7,14 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, PrivacyMode, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, NativeIntent, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain, RequestStatus, StatusPill};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ManagementProfiles;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Dns;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
 {
     /** Enom's default nameservers, shown when an owner chooses them. The request itself sends UseDNS=default. */
     public const DEFAULT_NAMESERVERS=['dns1.name-services.com','dns2.name-services.com','dns3.name-services.com','dns4.name-services.com','dns5.name-services.com'];
+    /** Owner and staff see the same reason and next step while records can't be changed here. */
+    public const DNS_OFF='You can’t change DNS records here yet. Contact support for a change.';
     /** History change label for each management request action. */
     private const CHANGES = ['nameservers'=>'Nameservers','contacts'=>'Contacts','contact_profile'=>'Contacts','lock'=>'Transfer lock',
         'privacy_enable'=>'WHOIS privacy','privacy_disable'=>'WHOIS privacy','privacy_purchase'=>'WHOIS privacy','privacy_renew'=>'WHOIS privacy',
@@ -174,6 +176,7 @@ final readonly class OwnedDomains
         if ($forms) {
             $labels=['glue'=>'Glue records','nameservers'=>'Nameservers','contacts'=>'Contacts','lock'=>'Transfer lock','privacy'=>'WHOIS privacy','auto_renew_off'=>'Renewal settings','auth_code_email'=>'Auth code'];
             if ($d->registrar_key==='enom') { $labels+=['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DNSSEC','glue'=>'Glue records']; }
+            if ($d->registrar_key==='namesilo') { $labels+=['dns'=>'DNS records']; }
             foreach ($labels as $cap=>$label) {
                 $supported=self::supported($d,$caps,$cap);
                 if ($policy!==null && ($cap!=='contacts'||$contacts!==null) && $supported && !RenewalStop::blocksExisting($renewalState) && !($policy['automatic_spend_paused']??false)) { $management[$cap]=['label'=>$label]; }
@@ -200,14 +203,18 @@ final readonly class OwnedDomains
             foreach ($management as &$section) { $section['recordCheckHeld']=$recordCheckHeld; } unset($section);
             foreach (['dns','srv','ds','glue'] as $kind) {
                 if (isset($management[$kind])) { $management[$kind]['records']=$records[$kind]??null; $management[$kind]['asOf']=$kind==='glue'?GlueRecords::asOf($d,$sections):($sections[$kind]['at']??null); if ($kind==='glue') { $management[$kind]['ipv4Only']=$d->registrar_key==='namesilo'; $management[$kind]['warnings']=GlueDrift::warnings($d,known:$sections['known_glue']??[]); } }
-                if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])) { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
+                if (isset($management[$kind])&&in_array($kind,['dns','srv'],true)&&isset($records[$kind])&&$d->registrar_key==='enom') { $management[$kind]['digest']=ManagementPayload::digest($records[$kind],$kind); }
+            }
+            // NameSilo: standard rows are editable, others are shown as read; the digest covers the whole saved list.
+            if (isset($management['dns'])&&$d->registrar_key==='namesilo') {
+                $management['dns']=['fixed'=>$records['dns_fixed']??[],'digest'=>$records['dns_digest']??null,'types'=>Dns::STANDARD,'sources'=>true]+$management['dns'];
             }
         }
         $renewal=$policy!==null&&$d->status==='active'?(RenewalStop::stopped($renewalState)?'Off':'On'):''; $price=null;
         try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
         foreach ($management as $key=>&$section) {
             $section['url']=route('domains.domains.manage',[$d->id,$key]); $section['actions']=[];
-            $intents=match($key) { 'contacts'=>$section['staged']?['contact_profile','contacts']:['contacts'],
+            $intents=match($key) { 'contacts'=>['contacts'],
                 'ds'=>['ds_add','ds_delete'],'glue'=>['glue_add','glue_update','glue_delete'],
                 'privacy'=>['privacy_enable','privacy_disable',...(!$section['free']&&$section['price']?['privacy_purchase','privacy_renew']:[])],default=>[$key] };
             foreach ($intents as $form) { $section['actions'][$form]=route('domains.domains.manage',[$d->id,$form]); }
@@ -219,6 +226,10 @@ final readonly class OwnedDomains
             try { $allowed=Runtime::management($d,$this->engine)?->available($d->service->user,$d,$this->ports->forDomain($d),$all,$refused)??[]; } catch (\Throwable) { $allowed=[]; }
             foreach ($management as $key=>&$section) { $section['actions']=array_intersect_key($section['actions'],array_flip($allowed)); if (!$section['actions'] && !isset($progressBySetting[ManagementProgress::setting($key)])) { unset($management[$key]); } } unset($section);
             $unavailable=!array_filter($management,fn($section)=>$section['actions']) && !array_filter($progressBySetting,fn($row)=>$row['pending']);
+        }
+        if ($forms && $caps && $d->registrar_key==='namesilo' && $d->status==='active' && !isset($management['dns']) && $caps->get('dns')->support!==Support::Supported) {
+            try { $read=ObservationProjection::sections($d);$saved=OwnerRecords::forDomain($d,$read); } catch (\Throwable) { $read=$saved=[]; }
+            $management['dns']=['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>$saved['dns']??null,'fixed'=>$saved['dns_fixed']??[],'asOf'=>isset($saved['dns'])?($read['dns']['at']??null):null];
         }
         foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; $section['progress']=($row['settled']??false)?null:self::askUs($row,(bool)$section['actions']); } unset($section);
         // Try again only where the customer can make the change; otherwise they ask us.
@@ -282,8 +293,7 @@ final readonly class OwnedDomains
     private static function contactForm(Domain $d, array $saved): array
     {
         $staged = $d->registrar_key === 'namesilo';
-        try { $approved = $staged ? ManagementProfiles::approved($d) : null; } catch (\Throwable) { $approved = null; }
-        return ['staged' => $staged, 'limits' => ContactDetails::limits($d->registrar_key), 'saved' => $saved['registrant'] ?? [], 'approved' => $approved];
+        return ['staged' => $staged, 'limits' => ContactDetails::limits($d->registrar_key), 'saved' => $saved['registrant'] ?? []];
     }
     /** The owner's name and email from contacts(), or null. */
     public static function owner(array $contacts): ?array
