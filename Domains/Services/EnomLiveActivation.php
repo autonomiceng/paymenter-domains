@@ -23,7 +23,7 @@ final class EnomLiveActivation
     /** Configuration outside server settings must also make a displayed review stale. No secrets enter the ticket or audit. */
     public static function stamp(Account $a,bool $balance=false): string
     {
-        return hash('sha256',json_encode([config('domains.enom_live'),config('domains.enom_identity.environment'),config('app.url'),Missing::supportUrl(),
+        return hash('sha256',json_encode([\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()?->stamp($a),config('domains.enom_live'),config('domains.enom_identity.environment'),config('app.url'),Missing::supportUrl(),
             config('cache.default'),config('cache.stores.'.config('cache.default').'.driver'),config('session.driver'),config('queue.default'),
             config('queue.connections.'.config('queue.default')),Currency::where('code','USD')->pluck('code')->all(),
             $balance?self::balance($a):null,$balance?self::workerReady():null],JSON_THROW_ON_ERROR));
@@ -155,6 +155,11 @@ final class EnomLiveActivation
     /** Strict by default. Only the display supplies a failure list to continue after a bad action/term. No price writes. */
     private static function prices(Account $a,AccountBinding $b,array $features,\DateTimeImmutable $now,?array &$failures=null): array
     {
+        if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()) {
+            $r=$offers->review($a,$features,DB::transactionLevel()>0);
+            if($failures!==null){$failures=$r['failures'];} elseif($r['missing']!==null){throw new \DomainException($r['missing']);}
+            return $r['costs'];
+        }
         try{
             $lock=DB::transactionLevel()>0;$accepted=CatalogueAcceptances::load($b,$lock);$rows=[];$counts=['registration'=>0,'transfer'=>0];$rules=new PricingRules;$prices=new PriceCatalogue($rules);
             // Display snapshot only. Activate still takes the original independent locking reads below.

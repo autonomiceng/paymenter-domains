@@ -535,6 +535,8 @@ final class OperationClaims
             $account = Account::where('server_id', $route->server_id)->lockForUpdate()->firstOrFail();
             // Lock credentials before domain/operation rows (same server mutex as rotation).
             $server->settings()->orderBy('id')->lockForUpdate()->get();
+            $catalogueTld = \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed() === null ? null
+                : \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $route->server_id)->where('tld', $holding->tld)->lockForUpdate()->first();
             $domain = Domain::whereKey($route->domain_id)->lockForUpdate()->firstOrFail();
             $all = Operation::where('domain_id', $domain->id)->orderBy('id')->lockForUpdate()->get();
             $op = $all->firstWhere('id', $route->id);
@@ -543,6 +545,7 @@ final class OperationClaims
                 throw new \DomainException('Claim route changed.');
             }
             if ($domain->adoptionPending()) { throw new \DomainException('Registration verification required.'); }
+            $op->setRelation('catalogue_tld', $catalogueTld);
             return $callback($op, $domain, $all, $funding, $server, $account, $staff);
         });
     }

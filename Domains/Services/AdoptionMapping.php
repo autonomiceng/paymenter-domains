@@ -83,9 +83,11 @@ final class AdoptionMapping
             throw new \DomainException('unresolved_debt');
         }
         try {
+            if ($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) { $caps->requireRenewal($binding,$tld->tld,$lock ? $tld : null); } else {
             $accepted = CatalogueAcceptances::load($binding, $lock !== null);
             $ending = $accepted->endings[$tld->tld] ?? null;
             if (!$tld->renew_enabled || !$ending || !$ending['renewal_safe'] || !in_array(1, $ending['renew'], true)) { throw new \DomainException; }
+            }
             $retail = $this->prices->renewal($binding->serverId, $binding->fingerprint, $tld->tld, 'USD', $this->clock->now(), $lock !== null, $lock ? $tld : null);
             $gross = NativeDomainGuard::gross($retail->retail, $l['tax']);
         } catch (\Throwable) { throw new \DomainException('price_unconfirmed'); }

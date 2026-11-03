@@ -16,7 +16,8 @@ final readonly class WriteAcceptance
     public function __construct(private AccountBinding $binding, private bool $usdBalance = false,
         private bool $batchRoute = false, private int $intervalSeconds = 0,
         private RegistrationProfiles|\Closure|null $profileProofCheck = null,
-        private ?\Closure $protocolAcceptanceCheck = null) {}
+        private ?\Closure $protocolAcceptanceCheck = null,
+        private ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $catalogue = null) {}
     public function usesProfiles(RegistrationProfiles $profiles): bool { return $this->profileProofCheck === $profiles; }
     public function requireCurrent(AccountBinding $binding, Query $query, Operation $op, bool $lock = false, bool $profile = true): Capability
     {
@@ -25,17 +26,27 @@ final readonly class WriteAcceptance
             throw new WriteHeld('write_acceptance_required');
         }
         if ($this->protocolAcceptanceCheck && ($this->protocolAcceptanceCheck)($binding,$lock,$query)!==true) { throw new WriteHeld('write_acceptance_required'); }
+        if ($caps = $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
+            try {
+                $t = $lock ? ($op->relationLoaded('catalogue_tld') ? $op->getRelation('catalogue_tld') : throw new \DomainException('Locked capability snapshot required.')) : null;
+                $name = $t?->tld ?? $op->domain->tld;
+                CanonicalName::parse($query->name, [$name]);
+                $terms = $caps->requireOrder($binding, $name, $query->action->value, $query->years, $t);
+            } catch (\Throwable) { throw new WriteHeld('order_not_supported'); }
+        } else {
         $accepted = CatalogueAcceptances::load($binding, $lock);
         $parts = CanonicalName::parse($query->name, array_keys($accepted->endings));
         $row = $accepted->endings[$parts['tld']];
         if (!in_array($query->years, $row[$query->action->value], true) || $row['renew'] !== [1] || !$row['renewal_safe'] || !$row['registry']) {
             throw new WriteHeld('order_not_supported');
         }
+        $terms = $row[$query->action->value];
+        }
         if ($profile && $binding->registrarKey === 'namesilo' && !($this->profileProofCheck instanceof RegistrationProfiles
             ? $this->profileProofCheck->hasProof($op) : ($this->profileProofCheck && ($this->profileProofCheck)($op) === true))) {
             throw new WriteHeld('contact_profile_proof_required');
         }
-        return new Capability(Support::Supported, $row[$query->action->value]);
+        return new Capability(Support::Supported, $terms);
     }
     /** Reserve a local account slot without waiting or holding a database lock over I/O. */
     public function reserve(AccountBinding $binding): void

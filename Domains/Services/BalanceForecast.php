@@ -6,12 +6,13 @@ use App\Models\{Invoice,Server,ServiceCancellation};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Price};
 final class BalanceForecast
 {
-    public static function for(Account $account, \DateTimeImmutable $now): array
+    public static function for(Account $account, \DateTimeImmutable $now, ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $catalogue=null): array
     {
         $total='0.000000';$unknown=0;$count=0;$unreadable=0;
         $settings=Server::find($account->server_id)?->settings()->whereIn('key',['domains_issue_days','domains_due_days'])->get();
         try{$timing=$settings?BillingCalendar::timing($settings):null;}catch(\Throwable){$timing=null;}
-        $rates=Price::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
+        $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
+        $rates=$catalogue ? $catalogue->costs(CatalogueAcceptances::binding($account)) : Price::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
             ->where('action','renew')->where('currency','USD')->get();
         Domain::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
             ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->chunkById(100,function($domains)use($rates,$now,$timing,&$total,&$unknown,&$count,&$unreadable):void {
@@ -81,6 +82,7 @@ final class BalanceForecast
     private static function cost($rates,string $tld,int $years,\DateTimeImmutable $now): ?string
     {
         if($years<1||$years>10){return null;}
+        if(is_array($rates)){ $annual=$rates[$tld]??null; return $annual?->total===null?null:PricingRule::decimal(PricingRule::units($annual->total)*$years,4); }
         $p=$rates->first(fn($p)=>$p->tld===$tld&&(int)$p->term===$years);
         if(!$p||$p->wholesale===null||$p->unit!=='term_total'||!$p->observed_at||$p->observed_at>$now||!$p->fresh_until){return null;}
         try{$amount=PriceCatalogue::cost($p->wholesale);}catch(\Throwable){return null;}

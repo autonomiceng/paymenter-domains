@@ -61,6 +61,17 @@ final class Capabilities
         $row = $this->ports->loadBatch([new Query($b, [$name], 'renew')], Context::Holder)[0][0];
         return $this->current($row->observation());
     }
+    /** Forecast only; normalized annual observations remain estimates, never dispatch grants. */
+    public function costs(AccountBinding $b): array
+    {
+        $out=[];
+        Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
+            ->orderBy('id')->chunkById(100,function($rows)use($b,&$out):void {
+                $q=new Query($b,$rows->pluck('tld')->all(),'renew'); ($this->authorize)($q,Context::Holder);
+                foreach($this->ports->loadBatch([$q],Context::Holder)[0] as $row){$out[$row->decision->tld]=$this->current($row->observation());}
+            });
+        return $out;
+    }
     /** Already locked holding/adoption snapshot. No policy/account/TLD query is allowed here. */
     public function holding(AccountBinding $b, Tld $t, iterable $prices): array
     {

@@ -47,6 +47,7 @@ final class EnomTestTransfer
     {
         try{
             $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$serverId)->sole());
+            if ($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) { return self::accepted($b)?$caps->endings($b,'transfer'):[]; }
             return self::accepted($b)?array_map('strval',array_keys(array_filter(CatalogueAcceptances::load($b)->endings,static fn(array $row)=>$row['transfer']!==[]))):[];
         }catch(\Throwable){return [];}
     }
