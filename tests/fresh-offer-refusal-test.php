@@ -14,6 +14,20 @@ $legacy = static function (string $why): void {
     same('legacy', UpgradeGate::routeState()['state'], $why.' cannot take the fresh shortcut');
     same(0, Setting::where('key',UpgradeGate::KEY)->whereNull('settingable_type')->count(), $why.' cannot create an initialization intent');
 };
+// Soft-deleted server identity is still durable installation history.
+$extensionId = DB::table('extensions')->insertGetId(['name'=>'Retained deleted Domains','type'=>'server',
+    'extension'=>'Domains','enabled'=>false,'deleted_at'=>'2026-01-01 00:00:00']);
+$extension = (array) DB::table('extensions')->where('id',$extensionId)->sole();
+try { $entry->installed(); } catch (DomainException) {}
+$legacy('Deleted Domains server identity');
+same($extension, (array) DB::table('extensions')->where('id',$extensionId)->sole(), 'Deleted identity evidence is preserved');
+DB::table('extensions')->where('id',$extensionId)->delete();
+$payload = json_encode(['displayName'=>'Paymenter\\Extensions\\Servers\\Domains\\Jobs\\SyncPrices']);
+$jobId = DB::table('jobs')->insertGetId(['queue'=>'default','payload'=>$payload,'attempts'=>0,'available_at'=>1,'created_at'=>1]);
+try { $entry->installed(); } catch (DomainException) {}
+$legacy('Queued Domains work');
+same($payload, DB::table('jobs')->where('id',$jobId)->value('payload'), 'Queued work remains intact');
+DB::table('jobs')->where('id',$jobId)->delete();
 // Retained orphan settings include scoped rows whose key happens to match the global gate.
 foreach ([['key'=>'domains_catalogue_acceptance_orphan'],
     ['key'=>UpgradeGate::KEY,'settingable_type'=>'server','settingable_id'=>999]] as $attributes) {

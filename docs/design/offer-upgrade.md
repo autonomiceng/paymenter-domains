@@ -130,7 +130,7 @@ SQLite fixture results do not establish installed MySQL concurrency or provider 
 ## New installations
 
 The extension install/upgrade lifecycle automatically activates only a proven-new Domains installation:
-no Domains tables, migration history, global or scoped settings, server identity or notification templates.
+no Domains tables, migration history, global or scoped settings, server identity (including deleted records), queued/failed Domains work or notification templates.
 Unrelated Paymenter customers, hosting and financial records do not prevent a new Domains install.
 An old empty installation, holding-only storage, orphan settings or partial history cannot take this shortcut.
 Retained installations keep the maintenance procedure above, including authenticated operator activation.

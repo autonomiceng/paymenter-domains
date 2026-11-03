@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use App\Models\{Server, Setting, NotificationTemplate};
+use App\Models\{Setting, NotificationTemplate};
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Support\Facades\{Cache, DB, Schema};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, OfferState, UpgradeGate};
@@ -94,12 +94,13 @@ final class FreshInstallation
 
     private static function empty(bool $new = false): void
     {
-        if (Server::where('extension','Domains')->exists()
+        if (DB::table('extensions')->where('extension','Domains')->lockForUpdate()->exists()
             || Setting::where('key','like','domains%')->where(static fn ($q) => $q->where('key','!=',UpgradeGate::KEY)
                 ->orWhereNotNull('settingable_type')->orWhereNotNull('settingable_id'))->exists()
             || $new && NotificationTemplate::where('key','like','domains%')->exists()) {
             throw new \DomainException('Retained Domains settings or identity refuse fresh initialization. Restore and verify installation history.');
         }
+        if ($new) { self::work(); }
         foreach (self::tables() as $table) {
             $query = DB::table($table)->lockForUpdate();
             if ($table === 'domains_psl_status') {
@@ -110,6 +111,21 @@ final class FreshInstallation
                     }
                 }
             } elseif ($query->exists()) { throw new \DomainException('Domains initialization is no longer empty. Keep it paused and investigate.'); }
+        }
+    }
+
+    private static function work(): void
+    {
+        $namespace = 'Paymenter\\Extensions\\Servers\\Domains\\';
+        $escaped = str_replace('\\', '\\\\', $namespace);
+        foreach (['jobs','failed_jobs'] as $table) {
+            DB::table($table)->orderBy('id')->lockForUpdate()->chunk(250, static function ($rows) use ($namespace, $escaped): void {
+                foreach ($rows as $row) {
+                    if (stripos($row->payload,$namespace) !== false || stripos($row->payload,$escaped) !== false) {
+                        throw new \DomainException('Retained Domains queued work refuses fresh initialization. Preserve it and restore installation history.');
+                    }
+                }
+            });
         }
     }
 
@@ -126,6 +142,7 @@ final class FreshInstallation
             throw new \DomainException('Domains initialization intent changed.');
         }
         self::empty();
+        if ($complete) { self::work(); }
         if ($complete && (self::manifest() !== $this->manifest
             || array_diff(array_keys(self::files()), DB::table('migrations')->orderBy('id')->lockForUpdate()->pluck('migration')->all()))) {
             throw new \DomainException('Domains initialization source or migration history changed.');

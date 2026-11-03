@@ -17,6 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 final class UpgradeGate
 {
     public const KEY = 'domains_offer_upgrade';
+    private static ?\WeakMap $retained = null;
 
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key', self::KEY); }
@@ -45,9 +46,16 @@ final class UpgradeGate
     public static function initializationState(): array { return self::state(); }
     private static function executable(array $state): array
     {
-        if ($state['state'] === 'initializing' || $state['state'] === 'legacy' && $state['generation'] === 0
-            && !Schema::hasTable('domains_accounts') && FreshInstallation::uninstalled()) {
-            throw new \DomainException('Domains initialization is incomplete. Retry installation before processing.');
+        if ($state['state'] === 'initializing') { throw new \DomainException('Domains initialization is incomplete. Retry installation before processing.'); }
+        if ($state['state'] === 'legacy' && $state['generation'] === 0) {
+            // Cache only positive retained-install evidence, never mode or generation authority.
+            self::$retained ??= new \WeakMap; $connection = DB::connection();
+            if (!isset(self::$retained[$connection])) {
+                if (!Schema::hasTable('domains_accounts') && FreshInstallation::uninstalled()) {
+                    throw new \DomainException('Domains initialization is incomplete. Retry installation before processing.');
+                }
+                self::$retained[$connection] = true;
+            }
         }
         return $state;
     }
