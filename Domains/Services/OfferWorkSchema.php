@@ -11,7 +11,6 @@ final class OfferWorkSchema
 {
     public const MIGRATION = '2026_11_02_000049_add_offer_work';
     private const COLUMNS = [
-        'domains_tlds' => ['offer_facts_due' => 'time', 'offer_facts_work' => 'json'],
         'domains_observation_queues' => ['offer_work' => 'json', 'offer_claim' => 'hash', 'offer_lease' => 'revision', 'offer_turn' => 'revision'],
     ];
     public static function retained(Blueprint $table, string $name): void
@@ -25,7 +24,6 @@ final class OfferWorkSchema
         match ($type) {
             'json' => $t->json($name)->nullable(),
             'hash' => $t->string($name, 64)->nullable(),
-            'time' => $t->unsignedBigInteger($name)->nullable(),
             'revision' => $t->unsignedBigInteger($name)->default(0),
         };
     }

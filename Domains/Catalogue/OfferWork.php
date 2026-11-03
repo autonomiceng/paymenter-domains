@@ -43,27 +43,28 @@ final class OfferWork
         new Query($binding, [$tld], 'register');
         $this->editQueue($binding, function ($q, $row) use ($binding, $tld): void {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail();
-            $this->offerBinding($binding, $t);
+            $this->offerBinding($binding, $t); $work = OfferState::decode($row->offer_work);
+            if (isset($work['facts'][$tld])) { return; }
+            if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
             $facts = OfferState::facts($t->catalogue_facts);
-            if ($t->offer_facts_due !== null) { return; }
-            DB::table('domains_tlds')->where('id', $t->id)->update([
-                'offer_facts_due' => $facts && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()]);
-        }, $tld);
+            $work['facts'][$tld] = ['due_at' => $facts && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
+            $q->update(['offer_work' => OfferState::json($work)]);
+        });
     }
 
     /** Safe local status; no cost, credentials, raw error or acceptance-list copies. */
     public function status(AccountBinding $binding, ?string $tld = null): array
     {
         $this->account($binding);
+        $row = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->where('account_fingerprint', $binding->fingerprint)->first();
+        $work = OfferState::decode($row?->offer_work);
         if ($tld !== null) {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
-            $state = OfferState::decode($t->offer_facts_work); $facts = OfferState::facts($t->catalogue_facts);
-            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : ($t->offer_facts_due === null ? 'unknown' : (!empty($state['failure']) ? 'retrying' : 'queued')),
-                'due_at' => $t->offer_facts_due === null ? null : (int) $t->offer_facts_due];
+            $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
+            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : (!$state ? 'unknown' : (!empty($state['failure']) ? 'retrying' : 'queued')),
+                'due_at' => $state['due_at'] ?? null];
         }
-        $row = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->where('account_fingerprint', $binding->fingerprint)->first();
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }
-        $work = OfferState::decode($row->offer_work);
         return ['state' => (int) $row->offer_lease > $this->at() ? 'running' : (!empty($work['pending']) || ($work['feed_due'] ?? 0) <= $this->at() ? 'queued' : (!empty($row->offer_feed_failure) ? 'retrying' : 'ready')),
             'tried_at' => $row->offer_feed_tried_at, 'succeeded_at' => $row->offer_feed_succeeded_at,
             'failed_at' => $row->offer_feed_failed_at, 'failure' => $row->offer_feed_failure,
@@ -104,15 +105,14 @@ final class OfferWork
         $writer = $this->writer->withGuard($guard); $work = OfferState::decode($job->offer_work);
         try {
             $this->republish($writer, $b, $work);
-            $t = Tld::where('server_id', $server)->where('account_fingerprint', $b->fingerprint)
-                    ->whereNotNull('offer_facts_due')->where('offer_facts_due', '<=', $this->at())->orderBy('offer_facts_due')->orderBy('id')->first();
+            $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
-                if ($t) { $this->facts($writer, $b, $job, $t); }
+                if ($t) { $this->facts($writer, $b, $t, $work); }
                 $this->drain($writer, $b, $work);
             } else {
                 $due = ($work['feed_due'] ?? PHP_INT_MAX) <= $this->at();
                 if ($t && (!$due || ($work['last'] ?? '') === 'feed')) {
-                    $work['last'] = 'facts'; $this->facts($writer, $b, $job, $t);
+                    $work['last'] = 'facts'; $this->facts($writer, $b, $t, $work);
                 } elseif ($due) {
                     $work['last'] = 'feed'; $this->prices($b, $job, $work, $guard);
                     // Durable buffer precedes per-offer writes; a crash can resume without rereading.
@@ -124,7 +124,7 @@ final class OfferWork
             return 'worked';
         } catch (\Throwable $error) {
             // Keep a durable pending buffer on local writer failure; never repeat its provider feed.
-            $this->save($b, $job, ['offer_claim' => null, 'offer_lease' => 0]);
+            $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_claim' => null, 'offer_lease' => 0]);
             throw $error;
         }
     }
@@ -153,18 +153,18 @@ final class OfferWork
         }
     }
 
-    private function facts(Writer $writer, AccountBinding $b, object $job, Tld $t): void
+    private function facts(Writer $writer, AccountBinding $b, string $tld, array &$work): void
     {
-        $state = OfferState::decode($t->offer_facts_work);
+        $state = $work['facts'][$tld];
         try {
             $feed = ($this->feed)($b); $calls = $feed->factsReads();
             if ($calls === 0) { throw new \DomainException('Offer facts are unverified.'); }
-            $command = $this->read($b, RequestOrigin::Background, $calls, function ($context) use ($feed, $t, &$state) {
-                $state['tried_at'] = $this->at(); return $feed->facts($t->tld, $context);
+            $command = $this->read($b, RequestOrigin::Background, $calls, function ($context) use ($feed, $tld, &$state) {
+                $state['tried_at'] = $this->at(); return $feed->facts($tld, $context);
             });
             $b->requireMatch($command->binding());
-            if ($command->tld() !== $t->tld) { throw new \DomainException('Facts ending changed.'); }
-            $writer->apply($command, $this->revision($b, $t->tld));
+            if ($command->tld() !== $tld) { throw new \DomainException('Facts ending changed.'); }
+            $writer->apply($command, $this->revision($b, $tld));
             $state['succeeded_at'] = $this->at(); $state['failure'] = null; $state['tries'] = 0;
             $due = max($this->at() + 120, $command->facts->freshUntil->getTimestamp());
         } catch (ReadDeferred|EnomTestCallLimit) { $due = $this->at() + 120; }
@@ -172,11 +172,18 @@ final class OfferWork
             $state['tries'] = ($state['tries'] ?? 0) + 1; $state['failed_at'] = $this->at(); $state['failure'] = ReadFailure::code($error);
             $due = $this->at() + $this->backoff($state['tries']);
         }
-        $this->editQueue($b, function () use ($b, $job, $t, $state, $due): void {
-            $this->current($b, $job);
-            DB::table('domains_tlds')->where('id', $t->id)->where('account_fingerprint', $b->fingerprint)
-                ->update(['offer_facts_work' => OfferState::json($state), 'offer_facts_due' => $due]);
-        }, $t->tld);
+        $work['facts'][$tld] = [...$state, 'due_at' => $due];
+    }
+
+    private function nextFacts(array $work): ?string
+    {
+        $ending = null; $due = PHP_INT_MAX;
+        foreach ($work['facts'] ?? [] as $tld => $state) {
+            if ($state['due_at'] <= $this->at() && ($state['due_at'] < $due || $state['due_at'] === $due && strcmp($tld, $ending ?? '') < 0)) {
+                $ending = $tld; $due = $state['due_at'];
+            }
+        }
+        return $ending;
     }
 
     private function read(AccountBinding $b, RequestOrigin $origin, int $calls, \Closure $read): mixed
@@ -228,13 +235,12 @@ final class OfferWork
             throw new \DomainException('Offer binding or conversion changed.');
         }
     }
-    private function editQueue(AccountBinding $b, \Closure $edit, ?string $tld = null): void
+    private function editQueue(AccountBinding $b, \Closure $edit): void
     {
         $this->outside();
-        DB::transaction(function () use ($b, $edit, $tld): void {
+        DB::transaction(function () use ($b, $edit): void {
             Server::whereKey($b->serverId)->lockForUpdate()->firstOrFail();
             Account::where('server_id', $b->serverId)->lockForUpdate()->sole(); $this->account($b);
-            if ($tld !== null) { Tld::where('server_id', $b->serverId)->where('tld', $tld)->lockForUpdate()->firstOrFail(); }
             DB::table('domains_observation_queues')->insertOrIgnore(['server_id' => $b->serverId, 'account_fingerprint' => $b->fingerprint,
                 'offer_queue_created' => true]);
             $q = DB::table('domains_observation_queues')->where('server_id', $b->serverId);
@@ -255,7 +261,14 @@ final class OfferWork
     }
     private function save(AccountBinding $b, object $job, array $values): void
     {
-        $this->editQueue($b, function ($q) use ($b, $job, $values): void { $this->current($b, $job); $q->update($values); });
+        $this->editQueue($b, function ($q) use ($b, $job, $values): void { $this->current($b, $job);
+            if (isset($values['offer_work'])) {
+                // Hints may arrive outside locks while the provider read is in flight.
+                $stored = OfferState::decode((clone $q)->value('offer_work')); $next = OfferState::decode($values['offer_work']);
+                $next['facts'] = [...($stored['facts'] ?? []), ...($next['facts'] ?? [])];
+                $values['offer_work'] = OfferState::json($next);
+            }
+            $q->update($values); });
     }
     private function backoff(int $tries): int { return [120, 600, 3600, 21600][min(3, $tries - 1)]; }
     private function at(): int { return $this->clock->now()->getTimestamp(); }

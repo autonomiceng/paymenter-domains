@@ -6,14 +6,16 @@ require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/accounts.php';
 
-use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, OfferWork, Projection, Query, UpgradeConversion, Writer};
+use Illuminate\Support\Facades\{DB, Schema};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, FeedObserved, Intent, OfferWork, Projection, Query, UpgradeConversion, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OfferFeed};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, Installation};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client as NsClient, Driver as NsDriver, OfferFeed as NsFeed};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as NsEnvironment, RegistrarRequest, RequestContext as NsContext, TransportResponse};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, Installation, OfferWorkSchema, PricingRule};
 
 // Real SQLite queue/writer/projection is needed for durable claims, restart and scoped publication.
 // Only the wire and clock are fake; no provider runtime or active scheduler is registered.
@@ -36,7 +38,7 @@ $wire = new class implements Transport {
     {
         expect(DB::transactionLevel() === 0, 'Every provider read happens outside database locks');
         $this->calls[] = $command;
-        if ($this->during) { ($this->during)(); }
+        if ($this->during) { ($this->during)($command); }
         if ($this->fail === $command) { throw new RuntimeException('Synthetic wire failure with private body'); }
         $header = '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done>';
         if ($command === ReadCommand::Tlds) {
@@ -51,7 +53,20 @@ $wire = new class implements Transport {
     }
 };
 $writer = new Writer(new Projection($native), $clock, static function (): void {}, static fn () => true);
-$factory = static fn ($binding) => new OfferFeed(new Driver(new Client($binding, Account::where('server_id', $binding->serverId)->sole()->stable_identity, 'placeholder-key', $wire), ['com', 'org', 'co.uk']));
+$nsWire = new class implements DeadlineTransport {
+    public int $calls = 0;
+    public function send(NsEnvironment $environment, NsContext $context, RegistrarRequest $request, string $apiKey): TransportResponse
+    { throw new LogicException('Deadline required.'); }
+    public function sendWithin(NsEnvironment $environment, NsContext $context, RegistrarRequest $request, string $apiKey, int $timeoutMs): TransportResponse
+    {
+        expect(DB::transactionLevel() === 0, 'NameSilo provider reads also happen outside locks'); $this->calls++;
+        return new TransportResponse(200, json_encode(['request' => ['operation' => 'getPrices', 'ip' => '192.0.2.1'],
+            'reply' => ['code' => 300, 'detail' => 'synthetic', 'com' => ['registration' => '7.00', 'renew' => '8.00', 'transfer' => '9.00']]], JSON_THROW_ON_ERROR));
+    }
+};
+$factory = static fn ($binding) => $binding->registrarKey === 'namesilo'
+    ? new NsFeed(new NsDriver(new NsClient($binding, 'placeholder-key', $nsWire), clock: $clock))
+    : new OfferFeed(new Driver(new Client($binding, Account::where('server_id', $binding->serverId)->sole()->stable_identity, 'placeholder-key', $wire), ['com', 'org', 'co.uk']));
 $allowance = 25;
 $worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory,
     static function () use (&$allowance): int { return $allowance; });
@@ -93,5 +108,97 @@ $success = $worker->status($b, 'suffixaa');
 same('ready', $success['state'], 'Automatic retry recovers without a staff step');
 same($failure['failed_at'], $success['failed_at'], 'A success does not rewrite failure age');
 same($clock->now()->getTimestamp(), $success['succeeded_at'], 'A success is dated separately');
+same(false, Schema::hasColumn('domains_tlds', 'offer_facts_work'), 'Queue owns fact attempts; the offer stores only independently aged observations');
+
+// Local rule fan-out shares the worker without consuming any provider allowance.
+$read = static fn ($binding = null, $tld = 'com') => $writer->readOffers(new Query($binding ?? $b, [$tld], 'register'), Context::Staff)[0];
+$writer->apply(Edit::defaults($b, 'com', new Intent(defaultSell: true), PricingRule::DEFAULT), $read()->revision);
+same('publication_pending', $read()->reason, 'Changed defaults fence old publication immediately');
+$before = count($wire->calls); $worker->wake($b); $worker->tick(1); $worker->tick(1);
+expect($read()->reason !== 'publication_pending', 'Bounded local rotation clears publication fences');
+same($before, count($wire->calls), 'Rule fan-out needs no registrar reads');
+
+// Failed feeds retain independently aged facts and the last successful run.
+$factBytes = Tld::where('server_id', $b->serverId)->where('tld', 'co.uk')->value('catalogue_facts');
+$lastGood = $worker->status($b)['succeeded_at']; $clock->time = $clock->time->modify('+61 seconds');
+$wire->fail = ReadCommand::RetailPricing; $worker->sync($b); $worker->tick(1);
+$feedFailure = $worker->status($b);
+same('retrying', $feedFailure['state'], 'A feed failure exposes its automatic retry');
+same($lastGood, $feedFailure['succeeded_at'], 'Feed failure retains the previous success timestamp');
+$before = count($wire->calls); $worker->sync($b); $worker->tick(1);
+same($before, count($wire->calls), 'Manual Sync coalesces with a scheduled failure retry');
+$wire->fail = null; $clock->time = $clock->time->modify('+121 seconds'); $worker->tick(1); $worker->tick(1);
+same($feedFailure['failed_at'], $worker->status($b)['failed_at'], 'Feed recovery preserves failure age');
+same($factBytes, Tld::where('server_id', $b->serverId)->where('tld', 'co.uk')->value('catalogue_facts'), 'Feed retries never refresh metadata age');
+
+// Our allowance refuses unsent work while another account can use its own smaller group.
+$clock->time = $clock->time->modify('+61 seconds'); $allowance = 0; $before = count($wire->calls);
+$tried = $worker->status($b)['tried_at']; $worker->sync($b); $worker->tick(1);
+same($before, count($wire->calls), 'No physical read starts without whole-group daily headroom');
+same($tried, $worker->status($b)['tried_at'], 'Unsent capacity deferral does not invent an attempt');
+$allowance = 1; $worker->sync($n); $worker->tick(1);
+same(1, $nsWire->calls, 'Fair account rotation services the one-read NameSilo feed while Enom waits');
+$worker->requestFacts($n, 'com'); $worker->tick(2);
+same(1, $nsWire->calls, 'Unknown NameSilo facts never create a per-TLD price read');
+same('retrying', $worker->status($n, 'com')['state'], 'Unverified facts remain unavailable with a bounded retry');
+$allowance = 25; $clock->time = $clock->time->modify('+121 seconds'); $worker->tick(2); $worker->tick(2);
+same($before + 5, count($wire->calls), 'Deferred unsent work resumes with one feed, without a new staff action');
+
+// Success age expires independently. Only lazily requested suffixes get cold reads.
+$clock->time = $clock->time->modify('+31 days');
+$costBytes = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'com')->orderBy('id')->get()->toJson();
+$before = count($wire->calls); $worker->tick(2);
+same(2, count($wire->calls) - $before, 'Expired requested facts use two reads before the next due account feed');
+same($costBytes, DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', 'com')->orderBy('id')->get()->toJson(), 'Fact renewal cannot freshen costs');
+$worker->tick(2); $worker->tick(2); $worker->tick(2);
+$before = count($wire->calls); $worker->tick(2);
+same($before, count($wire->calls), 'Unrequested discovered suffixes do not trigger a metadata sweep');
+
+// Simulate process loss after a durable feed buffer, then reconstruct the worker.
+$clock->time = $clock->time->modify('+61 seconds'); $wire->extra = 60;
+$worker->sync($b); $worker->tick(2);
+same(38, $worker->status($b)['remaining'], 'A large feed saves the work beyond its bounded turn');
+$q = DB::table('domains_observation_queues')->where('server_id', $b->serverId);
+$q->update(['offer_claim' => str_repeat('a', 32), 'offer_lease' => $clock->now()->getTimestamp() + 300]);
+$before = count($wire->calls); $worker->tick(2);
+same(38, $worker->status($b)['remaining'], 'An unexpired crashed claim is not stolen');
+$clock->time = $clock->time->modify('+301 seconds');
+$worker = new OfferWork($writer, $clock, new AccountReadBudget($clock, 25), $factory,
+    static function () use (&$allowance): int { return $allowance; });
+$worker->tick(2); same(13, $worker->status($b)['remaining'], 'Restart advances only one bounded buffer batch');
+$worker->tick(2); same(0, $worker->status($b)['remaining'], 'The restarted worker finishes its durable buffer');
+same($before, count($wire->calls), 'Crash recovery does not repeat a completed provider feed');
+
+// A later queue generation or an account rebind during reads exposes no new observations.
+$clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
+$oldRevision = $read()->revision; $lastGood = $worker->status($b)['succeeded_at'];
+$wire->during = static function ($command) use ($q): void { if ($command === ReadCommand::Tlds) { $q->increment('offer_feed_run'); } };
+$worker->tick(2); $wire->during = null;
+expect($oldRevision->matches($read()->revision), 'Superseded feed cannot apply or publish observations');
+same($lastGood, $worker->status($b)['succeeded_at'], 'Superseded feed cannot acknowledge success');
+$q->update(['offer_claim' => null, 'offer_lease' => 0]);
+$worker->sync($b);
+$wire->during = static function ($command) use ($b): void {
+    if ($command === ReadCommand::Tlds) { DB::table('domains_accounts')->where('server_id', $b->serverId)->update(['account_fingerprint' => str_repeat('0', 64)]); }
+};
+$worker->tick(2); $wire->during = null;
+DB::table('domains_accounts')->where('server_id', $b->serverId)->update(['account_fingerprint' => $b->fingerprint]);
+expect($oldRevision->matches($read()->revision), 'Rebinding during reads cannot save observations to the former account');
+$q->update(['offer_claim' => null, 'offer_lease' => 0]);
+
+// The queue fence is also checked under writer locks, including new unpriced discovery.
+$guarded = $writer->withGuard(static function (): void {
+    expect(DB::transactionLevel() > 0, 'Queue guard is rechecked in the writer transaction');
+    throw new DomainException('Synthetic superseded writer.');
+});
+commerceReject(static fn () => $guarded->apply(new FeedObserved($b, 'freshsuffix', []), $read($b, 'freshsuffix')->revision));
+same(false, Tld::where('server_id', $b->serverId)->where('tld', 'freshsuffix')->exists(), 'Late generation refusal rolls back discovery too');
+
+// Upgrade an actual retained B2 schema, preserving all catalogue/native identities.
+$ids = Tld::orderBy('id')->pluck('id')->all();
+Schema::table('domains_observation_queues', static fn ($t) => $t->dropColumn(['offer_work', 'offer_claim', 'offer_lease', 'offer_turn']));
+DB::table('migrations')->where('migration', OfferWorkSchema::MIGRATION)->delete();
+(new Installation)->install(); (new Installation)->install();
+same($ids, Tld::orderBy('id')->pluck('id')->all(), 'Retained upgrade and repeated install preserve offer IDs');
 $nativeSuccessful = true;
 echo "Dormant offer queue and lazy facts checks passed.\n";
