@@ -67,6 +67,7 @@ $actor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIE
 \Illuminate\Support\Facades\Auth::setUser($actor);
 $staff=new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock);
 $a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$binding->serverId)->sole();
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $rows=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($a,['label'=>'Connected'],$staff);
 $row=collect($rows)->firstWhere('label','What you sell');
 same(\Paymenter\Extensions\Servers\Domains\Presentation\TldNames::summary(['net']),$row['value'],'What you sell excludes a stopped deselected ending beside an available sibling');
