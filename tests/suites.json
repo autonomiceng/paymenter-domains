@@ -77,6 +77,7 @@
     "tests/offer-work-test.php",
     "tests/seller-policy-test.php",
     "tests/namesilo-pricing-test.php",
+    "tests/namesilo-installed-quote-test.php",
     "tests/catalogue-sync-test.php",
     "tests/native-catalogue-test.php",
     "tests/cart-admission-test.php",
@@ -400,6 +401,9 @@
     "tests/namesilo-admitted-transport-test.php",
     "tests/offer-feed-budget-test.php",
     "tests/namesilo-runtime-read-test.php",
+    "tests/namesilo-runtime-purchase-test.php",
+    "tests/namesilo-profile-operations-test.php",
+    "tests/namesilo-profile-wire-test.php",
     "tests/enom-send-limit-upgrade-test.php",
     "tests/enom-send-limit-unsent-writes-test.php",
     "tests/enom-send-limit-unsent-purchase-test.php",
@@ -413,7 +417,9 @@
     "tests/transfer-watch-recovery-test.php",
     "tests/sell-automation-test.php",
     "tests/management-glue-namesilo-test.php",
-    "tests/menu-registrars-quiet-test.php"
+    "tests/menu-registrars-quiet-test.php",
+    "tests/namesilo-runtime-renewal-test.php",
+    "tests/namesilo-runtime-management-test.php"
   ],
   "ui": [],
   "runner": [
