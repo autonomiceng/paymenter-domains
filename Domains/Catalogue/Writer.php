@@ -18,7 +18,9 @@ final class Writer implements Catalogue
 
     /** Queue generation is checked again under the writer locks, before mutations. */
     public function withGuard(\Closure $current): self
-    { return new self($this->projection, $this->clock, $this->authorize, $this->ready, $this->actorId, $current); }
+    { return new self($this->projection, $this->clock, $this->authorize, $this->ready, $this->actorId, function () use ($current): void {
+        if ($this->current) { ($this->current)(); } $current();
+    }); }
 
     public function readOffers(Query $query, Context $context): array
     { return (new OfferReader($this->clock, $this->authorize, $this->ready))->readOffers($query, $context); }
@@ -150,6 +152,7 @@ final class Writer implements Catalogue
             foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->sole(); }
             if (!isset($accounts[$binding->serverId])) { throw new \DomainException('Seller offer missing.'); }
             $binding->requireMatch(CatalogueAcceptances::binding($accounts[$binding->serverId]));
+            if ($this->current) { ($this->current)(); }
             $policy = DB::table('domains_sales_policies')->where('tld', $name)->lockForUpdate()->first();
             $created = false;
             if (!$seeds[0]->exists && !Tld::where('server_id', $binding->serverId)->where('tld', $name)->exists()) {
