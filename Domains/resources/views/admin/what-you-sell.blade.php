@@ -39,6 +39,8 @@
         .domains-sell-table .fi-ta-row.fi-selected>.fi-ta-selection-cell,.domains-sell-table .fi-ta-row.fi-selected>.domains-sell-pin{background:var(--gray-50)}
         .dark .domains-sell-table .fi-ta-row.fi-selected>.fi-ta-selection-cell,.dark .domains-sell-table .fi-ta-row.fi-selected>.domains-sell-pin{background:linear-gradient(#ffffff0d,#ffffff0d),var(--beco-card,var(--gray-900))}
         .domains-sell-table .fi-ta-selection-cell{width:3rem;min-width:3rem}.domains-sell-table .fi-ta-selection-cell + .domains-sell-pin{left:3rem}
+        /* The line under a ticked row is drawn behind the pinned cells, where it is the same color as their tint, so they draw their own. A cell's line wins over the row's. */
+        .dark .domains-sell-table .fi-ta-row.fi-selected:not(:last-child)>:is(.fi-ta-selection-cell,.domains-sell-pin){border-bottom:1px solid color-mix(in srgb,white 10%,var(--beco-card,var(--gray-900)))}
         @media(max-width:40rem){
             .domains-sell-note{padding-inline:12px}.domains-price-help dl{grid-template-columns:minmax(0,1fr)}
             /* The account and year choices share a row, and search and the buttons wrap below, so nothing is cut. */
