@@ -31,7 +31,7 @@ $user=commerceUser();$cart=commerceCart($user);$offer=$storefront->offer('com','
 commerceAdd($cart,$offer['product'],'staff-edited-placeholder.com');$admission->refresh();commerceCheckout($user,$cart);
 same([1,1,1],[Order::count(),Invoice::count(),Operation::count()],'Reviewed price reaches refreshed cart and locked native checkout');
 same('12.00',Operation::first()->policy['price']['retail'],'Order freezes the reviewed exact retail');
-$state=static fn()=>[StaffCommands::stamp($binding->serverId,$id),count(Review::historyRows(Server::find($binding->serverId))),DB::table(Review::KEYS)->count(),$native->display(Tld::find($id))];
+$state=static fn()=>[StaffCommands::stamp($binding->serverId,$id),count(Review::historyRows(Server::find($binding->serverId))),DB::table(Review::KEYS)->count(),json_encode($native->display(Tld::find($id)),JSON_THROW_ON_ERROR)];
 $before=$state();
 try{$staff->run($r,$rule);expect(false,'Consumed review refused');}catch(DomainException){}
 same($before,$state(),'Consumed review has no intent, native, audit or key write');
