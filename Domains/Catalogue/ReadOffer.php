@@ -28,7 +28,7 @@ final readonly class ReadOffer implements \JsonSerializable
     public function renewal(): RenewalPrice
     {
         $d = $this->decision;
-        if (!$d->available || $d->action !== 'renew' || $d->term !== 1) { throw new \DomainException('No retained annual retail.'); }
+        if ($this->context !== Context::Holder || !$d->available || $d->action !== 'renew' || $d->term !== 1) { throw new \DomainException('No retained annual retail.'); }
         return new RenewalPrice($this->row === null ? null : (int) $this->row->id,
             $this->row === null ? null : (int) $this->row->revision, $d->retail, 'USD', $d->warning !== null, $d->warning);
     }
