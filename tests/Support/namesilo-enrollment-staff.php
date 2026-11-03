@@ -15,6 +15,8 @@ ini_set('zend.exception_ignore_args','0');$GLOBALS['enrollmentCalls']=0;
 $empty=new RegistrarRegistry;config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);
 same(false,NameSiloSandbox::bootstrap($empty),'Enrollment defaults off');foreach(['true',1] as $truthy){config(['domains.namesilo_sandbox_enrollment.enabled'=>$truthy]);same(false,NameSiloSandbox::enabled(),'Only explicit boolean opt-in');}config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);same([],$empty->keys(),'No default reader');
 config(['domains.namesilo_sandbox_enrollment.enabled'=>true]);
+// Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 same(['namesilo'],app(RegistrarRegistry::class)->keys(),'Production boot composes sandbox only');
 $bindings=app(AccountBindings::class);$writes=app(StaffSettingsWrites::class);

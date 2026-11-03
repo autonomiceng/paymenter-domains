@@ -15,6 +15,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolic
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,CatalogueSync,EnomTestSendLimit,NativeCatalogue,PriceFill,PriceSync,SellAutomation,SellRule,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,
     'domains.enom_test_sends_per_day'=>10000,'domains.enom_test_sends_per_minute'=>100000]);
+// Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 tldPanel();$staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);

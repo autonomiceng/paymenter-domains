@@ -10,6 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,IdentityRefused,RegistrarRegistry,Runtime,RuntimePorts,StaffSettingsReview as Review,StaffSettingsWrites};
 require_once __DIR__.'/staff-tlds.php';
 config(['domains.enom_identity.environment'=>'test']);
+// Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();
 (new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 same(['enom'],app(RegistrarRegistry::class)->keys(),'Production boot registers only Enom identity');

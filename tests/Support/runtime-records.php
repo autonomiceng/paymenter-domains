@@ -2,6 +2,8 @@
 // Installed native runtime with synthetic account-bound ports. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require dirname(__DIR__).'/native-app.php';
+// Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new \Paymenter\Extensions\Servers\Domains\Domains)->installed();
 $fixtureActivation=static fn()=>null;
 require __DIR__.'/owner-records.php';
