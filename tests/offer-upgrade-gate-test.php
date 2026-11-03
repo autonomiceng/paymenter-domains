@@ -6,7 +6,7 @@ require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/accounts.php';
 
-use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Server, Service, Setting};
+use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Service, Setting};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{UpgradeGate, UpgradeComparison};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
