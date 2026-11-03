@@ -87,6 +87,7 @@ final class DomainManagement
                 ?? $pending->first(fn($peer)=>$peer->action===$action && ($peer->policy['management']['input']??null)===$clean);
             foreach ($pending as $peer) {
                 if ($peer->id===$keep?->id || !$unsent($peer)) { continue; }
+                ManagementSequence::retirePrerequisite($peer,$l['operations'],(int)$actor->id,$this->clock->now());
                 $peer->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$this->clock->now(),
                     'attempt'=>[...($peer->attempt??[]),'seal'=>'absent','send_state'=>'definitely_unsent',
                         'management_terminal'=>['actor_id'=>(int)$actor->id,'at'=>$this->clock->now()->format(DATE_ATOM)]]]);
@@ -122,6 +123,7 @@ final class DomainManagement
                 $invoice->update(['status'=>'cancelled']);
             }
             $at=$this->clock->now();$terminal=$op->invoice_id?PrivacyRetirement::terminal($op,$l['domain'],(int)$actor->id,$at):['actor_id'=>(int)$actor->id,'at'=>$at->format(DATE_ATOM)];
+            ManagementSequence::retirePrerequisite($op,$l['operations'],(int)$actor->id,$at);
             $op->update(['state'=>'rejected','safe_code'=>'management_retired','completed_at'=>$at,
                 'attempt'=>[...($op->attempt??[]),'seal'=>$op->attempt['seal']??'absent','send_state'=>'definitely_unsent','management_terminal'=>$terminal]]);return $op;
         });

@@ -32,4 +32,11 @@ $association=end($ms->calls);$sent=array_values(array_filter($ms->calls,fn($c)=>
 same(['domain','technical'],array_keys($sent),'Only the selected role is associated');
 same($op->id,$management->request($user,$d->id,'contacts',$input,$nonce,$driver)->id,'Request replay keeps the original sequence');
 $management->run($op->id,$driver);same(2,count($writes()),'Completed sequence cannot replay either mutation');
+// Replacing an untouched request retires its unstarted prerequisite as well.
+[$d,$driver,$original]=$holding('replace-unstarted');$input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];
+$first=$submit($d,$driver,'contacts',$input);$other=$input;$other['contact']['first_name']='Bea';
+$second=$submit($d,$driver,'contacts',$other);
+same('rejected',$first->fresh()->state,'A newer unsent choice retires the old request');
+$stages=$d->operations()->where('action','contact_profile')->orderBy('id')->get();
+same('rejected',$stages->first()->state,'The replaced prerequisite cannot remain queued');
 $nativeSuccessful=true;echo "NameSilo management normalization and automatic contact sequence passed.\n";

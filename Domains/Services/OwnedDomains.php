@@ -7,7 +7,6 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{PrivacyMode, Support};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, NativeIntent, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain, RequestStatus, StatusPill};
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ManagementProfiles;
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 final readonly class OwnedDomains
 {
@@ -200,7 +199,7 @@ final readonly class OwnedDomains
         try { if($service?->currency_code==='USD'){$price=Storefront::money(RetailLine::decimal($service->price));} } catch(\Throwable){}
         foreach ($management as $key=>&$section) {
             $section['url']=route('domains.domains.manage',[$d->id,$key]); $section['actions']=[];
-            $intents=match($key) { 'contacts'=>$section['staged']?['contact_profile','contacts']:['contacts'],
+            $intents=match($key) { 'contacts'=>['contacts'],
                 'ds'=>['ds_add','ds_delete'],'glue'=>['glue_add','glue_update','glue_delete'],
                 'privacy'=>['privacy_enable','privacy_disable',...(!$section['free']&&$section['price']?['privacy_purchase','privacy_renew']:[])],default=>[$key] };
             foreach ($intents as $form) { $section['actions'][$form]=route('domains.domains.manage',[$d->id,$form]); }
@@ -272,8 +271,7 @@ final readonly class OwnedDomains
     private static function contactForm(Domain $d, array $saved): array
     {
         $staged = $d->registrar_key === 'namesilo';
-        try { $approved = $staged ? ManagementProfiles::approved($d) : null; } catch (\Throwable) { $approved = null; }
-        return ['staged' => $staged, 'limits' => ContactDetails::limits($d->registrar_key), 'saved' => $saved['registrant'] ?? [], 'approved' => $approved];
+        return ['staged' => $staged, 'limits' => ContactDetails::limits($d->registrar_key), 'saved' => $saved['registrant'] ?? []];
     }
     /** The owner's name and email from contacts(), or null. */
     public static function owner(array $contacts): ?array

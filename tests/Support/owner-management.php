@@ -96,7 +96,7 @@ foreach([['lock',['locked'=>'0','confirmed'=>'0']],['lock',['locked'=>'0']],['na
 expect(str_contains($response->getContent(),'Email the auth code?'),'Confirm step names the concrete action');
 // Provider-specific contact errors come from real engine validation, before any request is created.
 $invalidContact=$registrant;$invalidContact['country']='US';$invalidContact['state_province']='';$invalidContact['first_name']=str_repeat('x',$free?33:256);
-$editing=$free?'contact_profile':'contacts';$before=Operation::count();$r=$post($editing,['role'=>'all','contact'=>$invalidContact]);$controller->manage($r,$d->id,$editing);
+$editing='contacts';$before=Operation::count();$r=$post($editing,['role'=>'all','contact'=>$invalidContact]);$controller->manage($r,$d->id,$editing);
 same($before,Operation::count(),'Invalid provider contact fields create no operation');
 $contactMessages=['state_province'=>$free?'For the US or Canada, enter the 2-letter state or province code. For other countries, enter its name.':'Enter your state or province for the US, Canada or Australia.','first_name'=>'Enter your first name. Use '.($free?32:255).' or fewer characters. Accented and non-Latin letters count as 2 or more.'];
 app('view')->share('errors',$session->get('errors'));$contactDom=storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render());

@@ -112,27 +112,16 @@
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Edit contacts</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])
 @php
-    // Staged registrars take new details first, then use them once approved: one form at a time.
-    $approved = $failed === ($section['actions']['contact_profile'] ?? null) || request()->boolean('new') ? null : $section['approved'];
-    $action = $section['staged'] && !$approved ? 'contact_profile' : 'contacts';
+    $action = 'contacts';
     $contactFailed = $failed === $section['actions'][$action];
 @endphp
 <form method="POST" action="{{ $section['actions'][$action] }}" class="domains-owner-form">
 @include('domains::partials.form-key')
-@if ($approved)
-<p class="domains-hint">Step 2 of 2: apply the approved details.</p>
-<p>{{ trim(($approved['contact']['first_name'] ?? '').' '.($approved['contact']['last_name'] ?? '')) }} <span class="domains-sub">{{ $approved['contact']['email_address'] ?? '' }}</span></p>
-<input type="hidden" name="role" value="{{ $approved['role'] }}">
-@foreach ($approved['contact'] as $field => $fieldValue)<input type="hidden" name="contact[{{ $field }}]" value="{{ $fieldValue }}">@endforeach
-<div class="domains-buttons"><button type="submit" class="domains-btn domains-btn--primary">Use the approved details</button> <a class="domains-a" href="{{ $show }}?edit={{ $cap }}&new=1#edit-{{ $cap }}">Enter other details</a></div>
-@else
-@if ($section['staged'])<p class="domains-hint">Step 1 of 2: we send the new details for approval.</p>@endif
 @if (!$section['saved'])<p class="domains-hint">Enter the full details. We replace what's saved.</p>@endif
 <p class="domains-hint">We use these details for every contact on this domain.</p>
 @include('domains::partials.contact', ['prefix' => 'contact', 'values' => $section['saved'], 'useOld' => $contactFailed, 'errors' => $contactFailed ? $errors : new \Illuminate\Support\ViewErrorBag, 'idPrefix' => $action, 'section' => 'owner-'.$action, 'stateRequired' => $section['staged'], 'limits' => $section['limits'] ?? null])
 <p class="domains-hint">{{ \Paymenter\Extensions\Servers\Domains\Services\ManagementForms::CONTACTS_RISK }}</p>
-<div class="domains-buttons"><button type="submit" class="domains-btn domains-btn--primary">{{ $section['staged'] ? 'Send for approval' : 'Save' }}</button></div>
-@endif
+<div class="domains-buttons"><button type="submit" class="domains-btn domains-btn--primary">Save</button></div>
 </form>
 @endcomponent
 @endif
