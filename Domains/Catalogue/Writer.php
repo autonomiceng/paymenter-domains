@@ -121,7 +121,7 @@ final class Writer implements Catalogue
             }
             $result = OfferState::revision($target, $defaults, $policy);
             $this->audit($servers[$binding->serverId], $command, $revision, $result, $now);
-            $this->afterCommit($scopes);
+            $this->afterCommit($scopes, !($command instanceof FeedObserved));
             return $result;
         });
     }
@@ -209,9 +209,11 @@ final class Writer implements Catalogue
                     : ['facts' => OfferState::decode(OfferState::encodeFacts($command->facts))])]);
     }
 
-    private function afterCommit(array $scopes): void
+    private function afterCommit(array $scopes, bool $withdraw = true): void
     {
+        // A cost observation must preserve the line for receipt refresh and visible total review.
         StorefrontCatalogueCache::invalidateAfterCommit();
+        if (!$withdraw) { return; }
         DB::afterCommit(static function () use ($scopes): void {
             $tlds = DB::table('domains_tlds')->where(static function ($q) use ($scopes): void {
                 foreach ($scopes as $id => $ending) {

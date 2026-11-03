@@ -102,21 +102,19 @@ Illuminate\Support\Once::flush();
 $page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 expect($cart->items()->count() === 1, 'Refresh fixture retains one real cart item');
 expect($page->get('total') !== null, 'Mounted refresh fixture has a visible total');
-$debug = []; Livewire\Livewire::listen('call', static function ($component, $method) use (&$debug): void { if ($method === 'checkout') { $c = App\Classes\Cart::getOnce(); $debug[] = [request()->cookie('cart'), $c->id, $c->items->count()]; } });
 $clock->instant = $now->modify('+6 minutes'); $before = $reads->calls;
 $q = new Query($binding, ['com'], 'register', 3);
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
     new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register', 3, true, '21.0000',
         Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+1 day'))
 ]), $ports->readOffers($q, Context::Staff)[0]->revision);
+expect($cart->items()->whereKey($line->id)->exists(), 'Cost observation retains the actual cart line for total review');
 $counts = [Order::count(), Invoice::count(), Operation::count()];
-app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts, [Order::count(), Invoice::count(), Operation::count()], 'Changed total stops the first checkout click');
 $notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
-expect(str_contains($notice, 'Review the total'), 'Changed-total notice: '.$notice.' '.json_encode([$cart->id, $cart->ulid, $debug]));
+expect(str_contains($notice, 'Review the total'), 'Changed-total notice: '.$notice);
 same($before + 1, $reads->calls, 'Stale five-minute receipt costs one unlocked read');
-app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts[2] + 1, Operation::count(), 'Second click accepts the visible new total');
 same('27.30', Operation::latest('id')->first()->policy['price']['retail'], 'Only the new obligation freezes the new total');
