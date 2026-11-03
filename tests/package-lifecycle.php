@@ -95,22 +95,23 @@ if($phase==='server-delete'){
     // The extension's separate uninstall hook also promises retained history.
     App\Helpers\ExtensionHelper::call($server,'uninstalled',mayFail:true);assertRetained($receipt);
     echo "Native disabled/delete refused and uninstall hook retained data.\n";
-}elseif(in_array($phase,['install','install-enom-test-management','upload','reinstall'],true)){
+}elseif(in_array($phase,['retained-install','install','install-enom-test-management','upload','reinstall'],true)){
     Illuminate\Support\Carbon::setTestNow(TEMPLATE_UPGRADE_AT);
-    if(in_array($phase,['install','install-enom-test-management','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
+    if(in_array($phase,['retained-install','install','install-enom-test-management','reinstall'],true)){expect(!is_dir(base_path('extensions/Servers/Domains')),'Native Install branch requires absent runtime files');}
     $zip=(string)getenv('PACKAGE_ZIP');expect(is_file($zip),'Verified upload copy exists');
     $installStarted=hrtime(true);
     same('server',app(App\Services\Extensions\UploadExtensionService::class)->handle($zip),'Native uploader classifies and installs server extension');
     $traceTiming('zip_install',$installStarted);
     expect(!file_exists($zip),'Native uploader consumed upload');
     expect(is_file(base_path('extensions/Servers/Domains/manifest.json')),'Native extraction retained embedded manifest');
-    if(in_array($phase,['install','install-enom-test-management'],true)){
+    if(in_array($phase,['retained-install','install','install-enom-test-management'],true)){
         // Upstream commands catch exceptions: assert schema and migration history directly.
         app(Installation::class)->verify();
         same((int)getenv('PACKAGE_MIGRATIONS'),count(glob(base_path('extensions/Servers/Domains/database/migrations/*.php'))),'Installed migration inventory');
         foreach(glob(base_path('extensions/Servers/Domains/database/migrations/*.php')) as $migration){same(1,DB::table('migrations')->where('migration',basename($migration,'.php'))->count(),'Native install ran each extension migration once');}
         assertInstalledMigrationOrder();
         same(0,Account::count(),'Fresh package creates no activated accounts');
+        if(getenv('PACKAGE_CATALOGUE_MODE')==='retained-legacy'){same('legacy',Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Lifecycle scenario retains the unconverted catalogue through native installation');}
         echo "Native upload/extract/Install branch passed.\n";
         if($phase==='install-enom-test-management'){
             $setupStarted=hrtime(true);

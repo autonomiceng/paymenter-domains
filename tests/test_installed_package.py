@@ -1,5 +1,5 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
-"""Shared installed-package scenarios; direct execution covers default-held registration."""
+"""Installed lifecycle scenarios use a retained legacy install; fresh checks new-install mode."""
 import io
 import json
 import os
@@ -21,10 +21,12 @@ import build
 # older version is implied. Source is pinned, with explicit unreleased schema
 # fixture adjustments below; superseded declarations have no upgrade path.
 PREVIOUS = 'e7881cf404e934e1cc84931ab9036e84804b8b61'
+# Last C6 runtime before fresh lifecycle activation; a real native installation, not a gate edit.
+RETAINED = 'e2d48467b37cd17ec56cd0774ef6550ca54c150d'
 
 
-def previous_build(root, revision=PREVIOUS, *, legacy=True):
-    previous_source = root/'previous-source'; previous_source.mkdir()
+def previous_build(root, revision=PREVIOUS, *, legacy=True, name='previous'):
+    previous_source = root/(name+'-source'); previous_source.mkdir()
     archive = subprocess.check_output(['git', 'archive', revision, 'Domains'], cwd=ROOT)
     with tarfile.open(fileobj=io.BytesIO(archive)) as source:
         for member in source:
@@ -45,7 +47,7 @@ def previous_build(root, revision=PREVIOUS, *, legacy=True):
         anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
         assert old.count(anchor) == 1, 'Pinned observation fixture changed'
         observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
-    return build.build(previous_source/'Domains', root/'previous')
+    return build.build(previous_source/'Domains', root/name)
 
 
 def refuse_unsafe_archives(root, current):
@@ -130,6 +132,13 @@ def main(scenario):
             print('Runtime-selected baseline: '+revision+('; no Domains diff; still running' if unchanged else '; Domains differ'), flush=True)
             evidence.update(previous_revision=revision, previous_fixture_adjustments=[],
                             previous_zip_sha256=previous['archive_sha256'], no_domains_diff=unchanged)
+        # Checkout/provider/lifecycle scenarios intentionally model an existing installation
+        # that has not converted. Install the pinned old ZIP natively, then retain its
+        # database/history while replacing runtime files with the requested package.
+        retained_package = None
+        if scenario not in ('fresh', 'upgrade'):
+            retained_package = previous_build(root, RETAINED, legacy=False, name='retained')
+        evidence['catalogue_mode'] = 'fresh-active' if scenario == 'fresh' else 'retained-legacy'
         current_migrations = len(list((ROOT/'Domains/database/migrations').glob('*.php')))
         first, count = 'current', current_migrations
         if scenario in ('upgrade', 'previous'):
@@ -140,7 +149,8 @@ def main(scenario):
         migrations = root/(scenario+'-migrations.json')
         env = dict(os.environ, PAYMENTER_TEST_FIXTURE=str(app), PACKAGE_DATABASE=str(database),
                    PACKAGE_RETAINED=str(retained), PACKAGE_MIGRATION_RECEIPT=str(migrations), PACKAGE_MIGRATIONS=str(count),
-                   PACKAGE_STANDING_UPGRADE='1' if scenario == 'previous' else '')
+                   PACKAGE_STANDING_UPGRADE='1' if scenario == 'previous' else '',
+                   PACKAGE_CATALOGUE_MODE=evidence['catalogue_mode'])
         def phase(name, package=None, worker=None):
             phase_started = time.monotonic()
             package_seconds = 0.0
@@ -151,7 +161,7 @@ def main(scenario):
                 run_env['PACKAGE_RACE_WORKER'] = str(worker)
             if package:
                 package_started = time.monotonic()
-                receipt = current if package == 'current' else previous
+                receipt = {'current': current, 'previous': previous, 'retained': retained_package}[package]
                 original = root/package/receipt['archive']
                 build.verify(original, receipt)
                 upload = root/'upload'/receipt['archive']; upload.parent.mkdir(exist_ok=True)
@@ -176,6 +186,11 @@ def main(scenario):
                 print(json.dumps({'timing': 'phase_finish', 'scenario': scenario, 'phase': name,
                                   'seconds': round(time.monotonic() - phase_started, 3),
                                   'package_seconds': round(package_seconds, 3)}), flush=True)
+        if retained_package is not None:
+            env['PACKAGE_MIGRATIONS'] = str(len(list((root/'retained-source/Domains/database/migrations').glob('*.php'))))
+            phase('retained-install', 'retained')
+            shutil.rmtree(installed)
+            env['PACKAGE_MIGRATIONS'] = str(count)
         if scenario == 'enom-test-management':
             phase('install-enom-test-management', first)
         else:
