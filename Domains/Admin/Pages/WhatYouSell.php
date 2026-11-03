@@ -228,14 +228,6 @@ class WhatYouSell extends Page implements HasTable
     private function show(): ?string {return self::showFilter($this->getTableFilterState('show')['value']??null);}
     /** A saved Show value this page no longer offers reads as no Show filter, so the page still opens. */
     private static function showFilter(mixed $value): ?string {return is_string($value)&&$value!=='all'&&isset(PriceList::FILTERS[$value])?$value:null;}
-    /** What the table's words mean, said once under the toolbar so cells stay plain numbers. */
-    public function tableNote(): ?string
-    {
-        if(!$this->canSeeCosts()||$this->bindings()===[]){return null;}
-        if(($years=$this->years())>1){return 'Saved prices in USD for '.$years.' years, never worked out from the 1-year price. Missing: no price is saved, hover over it for the next step. Off: not sold this long.'.($this->canEdit()?' To sell it longer, tick the row and use Edit selected.':'');}
-        $more=array_intersect_key($this->getTable()->getVisibleColumns(),['renew_cost'=>1,'renew_price'=>1,'renew_profit'=>1,'transfer_cost'=>1,'transfer_price'=>1,'transfer_profit'=>1])!==[];
-        return 'Prices in USD for 1 year. Gray prices are estimates: nothing is saved for that TLD yet.'.($more?' Off means that sale is turned off, or the TLD is not for sale.':'');
-    }
     public function content(Schema $schema): Schema
     {
         Staff::requireView();
@@ -259,6 +251,13 @@ class WhatYouSell extends Page implements HasTable
                         .($readerFailed?'Check the registrar account.':($all?'Show this account and use Sync prices to see what stopped the read.':'Use Sync prices to see what stopped the read.')))
                     ->footer($all&&!$readerFailed?$button('Show this account',self::getUrl(['account'=>$server])):null);
             }
+        }
+        $saved=$this->savedPrices();
+        foreach($saved['warnings'] as $warning){
+            $one=count($warning['tlds'])===1?collect($saved['skipped'])->first(fn($row)=>$row['server_id']===$warning['server_id']&&$row['tld']===$warning['tlds'][0]):null;
+            $components[]=Callout::make('Prices left out')->warning()->columnSpanFull()
+                ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
+                ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
         }
         return $schema->components([...$components,EmbeddedTable::make()]);
     }

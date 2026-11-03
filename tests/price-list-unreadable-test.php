@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Native fixture renders real Filament callouts, toolbar hooks and linked row cells.
 require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
 use Illuminate\Support\Facades\{Auth,DB,View};
 use Livewire\Livewire;
@@ -81,7 +82,9 @@ foreach($cases as $case){
     same("= <Bad & account>: ".$reason.'. '.count($ids).' TLDs left out: '.$labels.'. To fix, open = <Bad & account> under Registrars and use '.$repair.'.',$warningText,'Warning gives the exact grouped count, TLDs and repair location');
     same(count($ids),(int)$xpath->evaluate('count(//*[@data-price-omission]//*[@data-omitted-tld])'),'Page identifies every omitted TLD once');
     $page->assertCountTableRecords(count($matrix['rows'])+count($matrix['skipped']));
-    expect(strpos($html,'class="domains-sell-note domains-sell-left"')>strpos($html,'fi-ta-header-toolbar')&&strpos($html,'data-price-omission')<strpos($html,'<table'),'Warning sits inside the table surface, above the rows');
+    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');
+    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert is above the toolbar');
+    expect(!str_contains($html,'Prices in USD for')&&!str_contains($html,'Saved prices in USD for'),'No repeated currency/years note between toolbar and rows');
     $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out; see above.');
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
@@ -93,7 +96,11 @@ $matrix=$service->read();same([$custom->id],array_column($matrix['skipped'],'id'
 // One left-out TLD among readable rows is not why an amount filter is empty.
 Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$custom->server_id)->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('see above')->assertDontSee('use Sync prices');
 same('custom_rule',$matrix['skipped'][0]['cause'],'Custom failure retains its own repair cause');
-Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
+$page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
+$dom=new DOMDocument;@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
+same('Open .org',$xpath->evaluate('normalize-space(//a[@href="'.\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$custom->id]).'"][ancestor::*[contains(@class,"fi-sc-callout")]])'),'Single-TLD omission alert opens its saved TLD');
+$record=collect($page->instance()->getTableRecords()->items())->firstWhere('tld','org');
+same("Its pricing can't be read. See the alert above.",$page->instance()->getTable()->getColumn('register_price')->record($record)->getTooltip(),'Left-out cell points to the alert');
 $records=$csvRows($service->csv());same("Left out: custom pricing can't be read",$records[4][8],'CSV gives the custom repair cause');
 $watch=false;
 same([],$writes,'Service, page and export change no saved data');

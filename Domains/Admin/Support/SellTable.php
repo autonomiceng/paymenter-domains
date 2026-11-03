@@ -215,7 +215,7 @@ final class SellTable
         if($this->catalogue!==null&&!Staff::requireView()->costs){return self::cellOf(null);}
         $saved=$this->savedRow($row);
         if($this->catalogue!==null){return $this->savedCell($saved['prices'][$action]??null,$field,'sold');}
-        if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the line above the rows.");}
+        if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
         $prices=$saved['prices'][$action]??null;
         if($action==='register'&&$this->years===1&&$row->listed){
             if(($prices['price']??null)===null&&$row->register_cost!==null){return $this->registerCell($row,$field);}

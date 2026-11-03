@@ -2,12 +2,10 @@
     <style>
         .domains-sell{display:grid;gap:1.5rem}
         .domains-sell-add{display:flex;gap:.75rem;align-items:center;max-width:24rem}.domains-sell-add .fi-input-wrp{flex:1}
-        .domains-sell-left{display:flex;gap:.5rem;align-items:flex-start;color:inherit}.domains-sell-left-mark{flex:none;width:1rem;height:1rem;margin-block-start:.125rem;color:var(--warning-500)}
         .domains-sell-table{--domains-sell-edge:20px;--domains-sell-rule:var(--beco-line-soft,var(--gray-200))}.dark .domains-sell-table{--domains-sell-rule:var(--beco-line-soft,#ffffff14)}
         /* What the skin's table head says for a plain cell, for the Register, Renew and Transfer cells above it. */
         .domains-sell-table .fi-ta-header-group-cell{padding:8px 20px;border-width:0 0 1px 1px;border-style:solid;border-color:var(--domains-sell-rule);color:var(--beco-fg-2,var(--gray-400));font-size:13px;font-weight:400;line-height:20px}.domains-sell-table .fi-ta-header-cell{border:0}.domains-sell-table thead .fi-ta-selection-cell{padding-block:8px;text-align:start}
         .domains-sell-choices{display:flex;flex-wrap:wrap;gap:.5rem}
-        .domains-sell-note{padding:.5rem 20px;font-size:.8125rem;color:var(--gray-500)}.dark .domains-sell-note{color:var(--gray-400)}
         .domains-price-help{display:grid;gap:1rem;font-size:.875rem}
         .domains-price-help h3{font-weight:600}
         .domains-price-help dl{display:grid;grid-template-columns:minmax(8rem,12rem) minmax(0,1fr);gap:.5rem 1rem}
@@ -43,7 +41,7 @@
         .dark .domains-sell-table .fi-ta-row.fi-selected:has(+.fi-ta-row.fi-selected)>td{border-bottom:1px solid color-mix(in srgb,white 5%,color-mix(in srgb,white 5%,var(--beco-card,var(--gray-900))))}
         .dark .domains-sell-table .fi-ta-row:is(.fi-selected:has(+.fi-ta-row:not(.fi-selected)),:not(.fi-selected):has(+.fi-ta-row.fi-selected))>td{border-bottom:1px solid color-mix(in srgb,white 5%,var(--beco-card,var(--gray-900)))}
         @media(max-width:40rem){
-            .domains-sell-note{padding-inline:12px}.domains-price-help dl{grid-template-columns:minmax(0,1fr)}
+            .domains-price-help dl{grid-template-columns:minmax(0,1fr)}
             /* The account and year choices share a row, and search and the buttons wrap below, so nothing is cut. */
             .domains-sell-table .fi-ta-header-toolbar>div:last-child{flex-wrap:wrap;width:100%;row-gap:.75rem}.domains-sell-table .fi-ta-header-toolbar>.fi-ta-actions:not(:has(>:not([style*="display: none"]))){display:none}
             .domains-sell-choices{flex:1 0 100%;flex-wrap:nowrap}.domains-sell-choices .fi-input-wrp{flex:1 1 auto;min-width:0}
