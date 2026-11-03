@@ -114,6 +114,7 @@ final class FoundationSchema
             $table->json('registry_fields')->nullable();
             $table->timestamps();
             $table->unique(['server_id', 'tld']);
+            OfferSchema::retained($table, 'domains_tlds');
         });
         self::table('domains_accounts', function (Blueprint $table) {
             $table->id(); self::binding($table);
@@ -124,6 +125,7 @@ final class FoundationSchema
             $table->string('live_site', 255)->nullable();
             $table->boolean('processing_enabled')->default(false);
             $table->timestamps();
+            OfferSchema::retained($table, 'domains_accounts');
         });
         self::table('domains_prices', function (Blueprint $table) {
             $table->id(); self::binding($table);
@@ -137,6 +139,7 @@ final class FoundationSchema
             $table->json('eligibility')->nullable(); $table->string('hold_reason', 64)->nullable();
             $table->timestamps();
             $table->unique(['server_id', 'tld', 'action', 'term', 'currency'], $table->getTable().'_price_unique');
+            OfferSchema::retained($table, 'domains_prices');
         });
     }
 

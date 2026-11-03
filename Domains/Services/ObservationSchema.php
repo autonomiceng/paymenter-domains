@@ -22,6 +22,7 @@ final class ObservationSchema
                 $t->string('catalogue_hold',32)->nullable(); $t->unsignedInteger('catalogue_resumes')->default(0); $t->text('catalogue_audit')->nullable();
                 $t->unsignedBigInteger('cursor')->default(0); $t->unsignedBigInteger('turn')->default(0);
                 foreach (['refund','timeout'] as $kind) { $t->unsignedBigInteger($kind.'_cursor')->default(0); $t->unsignedBigInteger($kind.'_turn')->default(0); }
+                OfferSchema::retained($t, 'domains_observation_queues');
             },
             'domains_observation_work' => static function (Blueprint $t): void {
                 $t->id(); $t->unsignedBigInteger('server_id'); $t->string('account_fingerprint',64);

@@ -60,6 +60,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $unavailable($make(['publishedRevision' => null]), 'publication_pending');
     $unavailable($make(['publishedRevision' => new Revision(6, 3, 2)]), 'publication_pending');
     $unavailable($make(['publishedRevision' => new Revision(7, 2, 2)]), 'publication_pending');
+    $unavailable($make(['publishedRevision' => new Revision(7, 3, 1)]), 'publication_pending');
     $other = new AccountBinding($registrar, 2, Environment::Test, 'synthetic-other-account');
     $unavailable($make(['seller' => $other]), 'seller_changed');
     $unavailable($make(['sellerActions' => []]), 'seller_changed');
