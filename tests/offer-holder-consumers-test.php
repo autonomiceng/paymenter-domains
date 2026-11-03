@@ -41,7 +41,7 @@ foreach([
     try{$call();$refused[$case]=false;}catch(DomainException|LogicException $error){$refused[$case]=true;}
 }
 same(['ending'=>true,'fingerprint'=>true,'registrar'=>true,'transaction'=>true],$refused,'Holder preserves requested ending, fingerprint, registrar and locked transaction');
-$preparedPrices=new PaymenterExtensionsServersDomainsServicesPriceCatalogue(new PaymenterExtensionsServersDomainsServicesPricingRules,$caps);
+$preparedPrices=new \Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules,$caps);
 commerceReject(fn()=>DB::transaction(fn()=>$preparedPrices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$clock->now(),true,$other)));
 commerceReject(fn()=>$preparedPrices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$clock->now(),true,$locked));
 same('10.40',$preparedPrices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$clock->now())->retail,'Prepared direct catalogue keeps retained holder retail');
