@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Intent, Query
 use Paymenter\Extensions\Servers\Domains\Services\{Storefront, StorefrontCatalogueCache};
 expect(method_exists(Storefront::class, 'catalogue'), 'Public cache needs a dormant offer route and activation/credential namespace');
 require __DIR__.'/Support/offer-commerce.php';
-extract(offerCommerceFixture());
+$fixture = offerCommerceFixture(); extract($fixture);
 $legacy = new StorefrontCatalogueCache($clock);
 $legacy->remember(static fn () => [['legacy' => true]]);
 $cache = new StorefrontCatalogueCache($clock, $offers->cacheFence(...)); $renders = 0;
@@ -42,5 +42,24 @@ $clock->instant = $now->modify('+62 seconds');
 $cache->remember(static function () use ($gate): array { $gate->pause(); $gate->resume(); return [['raced' => true]]; });
 same(null, $cache->cachedRows(), 'Racing render is not cached in either generation');
 same([['render' => 8]], $cache->remember($render), 'Next request renders under current generation');
+// Real public rendering must isolate one unavailable selected account on cold AND warm caches.
+[$secondBinding] = offerCommerceSecond($fixture);
+foreach (['disabled', 'credential'] as $failure) {
+    Illuminate\Support\Facades\Cache::flush();
+    same(['com', 'net'], array_column($storefront->endings(), 'tld'), 'Both healthy sellers render before '.$failure);
+    $server = App\Models\Server::findOrFail($secondBinding->serverId);
+    $proof = $server->settings()->where('key', 'domains_verified_credentials')->sole();
+    $raw = $proof->getRawOriginal('value');
+    if ($failure === 'disabled') { $server->update(['enabled' => false]); }
+    else { DB::table('settings')->where('id', $proof->id)->update(['value' => 'invalid-synthetic-proof']); }
+    foreach (['warm', 'cold'] as $temperature) {
+        if ($temperature === 'cold') { Illuminate\Support\Facades\Cache::flush(); }
+        same(['com'], array_column($storefront->endings(), 'tld'), $temperature.': healthy seller survives '.$failure);
+        expect($storefront->hasTransferOffers(), 'Healthy transfer remains linked after '.$failure);
+    }
+    if ($failure === 'disabled') { $server->update(['enabled' => true]); }
+    else { DB::table('settings')->where('id', $proof->id)->update(['value' => $raw]); }
+    same(['com', 'net'], array_column($storefront->endings(), 'tld'), 'Restored account changes the namespace again');
+}
 $nativeSuccessful = true;
 echo "Offer cache: ok\n";

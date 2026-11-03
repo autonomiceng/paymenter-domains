@@ -113,7 +113,8 @@ final class AcquisitionOffers
     {
         $credentials = []; $ids = SalesPolicy::pluck('server_id')->filter()->unique()->all();
         foreach (Account::whereIn('server_id', $ids)->orderBy('server_id')->get() as $account) {
-            $credentials[] = $this->bindings->offerCredentialRevision(CatalogueAcceptances::binding($account));
+            try { $credentials[] = $this->bindings->offerCredentialRevision(CatalogueAcceptances::binding($account)); }
+            catch (\Throwable) { $credentials[] = 'unavailable:'.$account->server_id; }
         }
         $rows = []; $servers = (new \App\Models\Server)->getTable();
         foreach (['domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices', $servers, 'settings'] as $table) {
