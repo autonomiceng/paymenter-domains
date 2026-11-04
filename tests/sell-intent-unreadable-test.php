@@ -40,5 +40,16 @@ foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(
     $page->callTableBulkAction('edit',[$broken->id],['choice'=>'sell'])->assertNotified("Couldn't save");
     same($before,StaffCommands::stamp($binding->serverId),'Bulk save refuses the broken TLD without writing it');
 }
+// Select-all can exceed the command's 25-TLD review boundary; refuse before entering the write.
+$ids=[];
+for($i=0;$i<26;$i++){$copy=$tlds[0]->fresh()->replicate();$copy->tld='bulk'.chr(97+$i);$copy->save();$ids[]=$copy->id;}
+$before=StaffCommands::stamp($binding->serverId);
+$page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId]);
+$page->callTableBulkAction('edit',$ids,['choice'=>'skip'])->assertNotified(\Filament\Notifications\Notification::make()->warning()
+    ->title('Pick at most 25 TLDs')->body('Select 25 or fewer TLDs, then try again.'));
+same($before,StaffCommands::stamp($binding->serverId),'Oversized selection never changes intent, prices or audit');
+$page->callTableBulkAction('edit',array_slice($ids,0,25),['choice'=>'skip'])->assertNotified('Saved');
+foreach(array_slice($ids,0,25) as $id){same(false,OfferState::decode(\Paymenter\Extensions\Servers\Domains\Models\Tld::find($id)->catalogue_intent)['sell'],'Exactly 25 selected TLDs save');}
+same(true,OfferState::decode(\Paymenter\Extensions\Servers\Domains\Models\Tld::find($ids[25])->catalogue_intent)['sell'],'Unselected TLD keeps its choice');
 same(0,$reads->calls,'Page reads and refused saves make no provider calls');
 echo "What you sell isolates unreadable intent, names the TLD and refuses its save.\n";$nativeSuccessful=true;
