@@ -46,7 +46,7 @@ final class Runtime
     }
     public static function initialManagedRecordObservations(): void { self::observations()->tick(1); }
     public static function observations(): ObservationWork|\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler
-    { return \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed() ?? app(ObservationWork::class); }
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed() ?? throw new \DomainException(OfferUpgrade::MESSAGE); }
     public static function limiter(): ?ReadLimiter {return app()->bound(self::class)?app(ReadLimiter::class):null;}
     public static function management(\Paymenter\Extensions\Servers\Domains\Models\Domain $d,?DomainManagement $fallback): ?DomainManagement
     {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}

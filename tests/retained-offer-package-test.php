@@ -37,4 +37,12 @@ foreach([
  catch(DomainException $e){same(Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,$e->getMessage(),'Legacy policy entry points name the bridge');}
 }
 same($before,retainedOfferObligations(),'Retired policy reads preserve obligations');
+foreach([
+ fn()=>Paymenter\Extensions\Servers\Domains\Services\Runtime::observations(),
+ fn()=>app(Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->enroll($binding->serverId),
+] as $trigger){
+ try{$trigger();throw new LogicException('Final package reached retired catalogue producer');}
+ catch(DomainException $e){same(Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,$e->getMessage(),'Retired triggers name the bridge');}
+}
+same($before,retainedOfferObligations(),'Retired producers cannot mutate retained work');
 $nativeSuccessful=true;

@@ -55,14 +55,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
                 else{$scheduler->sync(AccountBindings::binding($account), expectedGeneration:$this->upgradeGeneration);}
                 $this->notice('Price sync queued','The account worker will refresh prices. Check sync progress on What you sell.');return;
             }
-            UpgradeGate::legacy($this->upgradeGeneration);
-            if($this->reviewKey===null){
-                $count=app(PriceFill::class)->run($account,$this->upgradeGeneration);
-                $this->notice($count===0?'Another price read is running':'Prices updated',$count===0?'Its prices will appear when it finishes. Refresh What you sell.':'Saved '.$count.' TLDs, including retained rows without new prices. Refresh What you sell to see the prices.');
-            }else{
-                $result=app(StaffSettingsWrites::class)->run(new Review($this->actor,$this->server,null,'import',$this->reviewKey,''),[]);
-                $this->notice('Prices synced',SettingsActions::syncSummary($result));
-            }
+            throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
         }catch(\Throwable $error){
             if(!$error instanceof \DomainException){Log::warning('Domains queued price sync failed.',['exception_class'=>$error::class]);}
             $this->notice("Couldn't sync prices",SettingsActions::refusal($error,'import',[],$this->server));
