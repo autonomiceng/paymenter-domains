@@ -53,7 +53,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         if ($environment === Environment::Live) { $bindings->confirmLiveSite($server->id, rtrim(config('app.url'), '/')); }
         $bindings->setProcessing($server->id, true, $activation ?? syntheticActivation());
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
-            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3, ...($active?['catalogue_converted'=>true]:[])]);
+            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3, ...($active?['catalogue_converted'=>true,'registry_fields'=>[]]:[])]);
         $terms = $key === 'enom' ? [1, 3] : [1];
         if($active){
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$ending],'register');
@@ -92,12 +92,17 @@ function commerceReject(callable $call): void
 }
 
 /** Independent synthetic provider support, with an explicit age for financial fixture preparation. */
-function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until): void
+function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until,?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts $ports=null): void
 {
     foreach(Tld::where('catalogue_converted',true)->get() as $t){
         $terms=$t->registrar_key==='enom'?[1,3]:[1];
         Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>
             \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
                 ['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$until))]);
+        if($ports!==null){
+            $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
+            $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$t->tld],'register');
+            $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::republish($b,$t->tld),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+        }
     }
 }
