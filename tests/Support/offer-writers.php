@@ -62,7 +62,7 @@ function activeFixtureAdmission($native,$sellers,$eligibility,$clock): \Paymente
 function activeFixtureStops(object $owner,Tld $t,array $stops): void
 {
     $ports=activeFixturePorts($owner);$b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
-    $raw=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent);$raw['stops']=$stops;
+    $raw=array_intersect_key(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent),get_object_vars(new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent));$raw['stops']=$stops;
     $q=new Query($b,[$t->tld],'register');
     $ports->apply(Edit::override($b,$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(...$raw)),$ports->readOffers($q,Context::Staff)[0]->revision);
 }

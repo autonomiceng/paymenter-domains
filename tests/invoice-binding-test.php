@@ -12,11 +12,11 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligib
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture(true)); $clock = new FakeClock($now);
 $admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock); $admission->boot();
-$binder = new InvoiceBinding($admission, $native, $prices, $clock); $binder->boot(); $binder->boot();
+$binder = new InvoiceBinding($admission, $native, $prices, $clock); $binder->boot(); $binder->boot();app()->instance(InvoiceBinding::class,$binder);
 $user = commerceUser(); $cart = commerceCart($user); $product = $native->product($tlds[0], 'register');
 $originalPlan = $product->plans()->where('billing_period', 3)->sole()->id;
 commerceAdd($cart, $product, placeholderComFixtureName('three-placeholder.com'), 3); commerceAdd($cart, $product, placeholderComFixtureName('one-placeholder.com'));
-$hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting'); commerceCheckout($user, $cart);
+$hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting');$checkout=commerceCheckout($user, $cart);$checkout->assertHasNoErrors();
 same(1, Order::count(), 'Native order and all bindings commit together'); same(1, Invoice::count(), 'One shared native invoice');
 same(2, Domain::count(), 'Two global holdings bound'); same(2, Operation::count(), 'Two synchronous operations');
 $op = Operation::orderBy('id')->firstOrFail(); $domain = $op->domain; $service = $domain->service; $item = InvoiceItem::findOrFail($op->invoice_item_id);

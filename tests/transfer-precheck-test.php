@@ -28,7 +28,12 @@ commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));$setting->upda
 commerceReject(fn()=>$eligibility->require($token,'example.com',[1]));$setting->update(['value'=>'60']);
 $server->settings()->where('key','domains_transfer_endings')->update(['value'=>'net']);commerceReject(fn()=>$eligibility->require($token,'example.com',[1]));
 $server->settings()->where('key','domains_transfer_endings')->update(['value'=>'com']);
-foreach([null,[['name'=>'unaccepted']]]as$schema){$tlds[0]->update(['registry_fields'=>$schema]);commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));}$tlds[0]->update(['registry_fields'=>[]]);
+$registry=static function(?array $schema)use($ports,$tlds):void {
+    $t=$tlds[0]->fresh();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
+    $f=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($t->catalogue_facts);$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
+    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($b,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(...array_replace(get_object_vars($f),['registryFields'=>$schema]))),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+};
+foreach([null,[['name'=>'unaccepted']]]as$schema){$registry($schema);commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));}$registry([]);$s=$sellers->selection('com','transfer',1,$now);
 foreach(['example.net','sub.example.com','xn--abc.com']as$name){commerceReject(fn()=>$eligibility->observe($name,$s,[1]));}
 $ns=App\Models\Server::find($tlds[1]->server_id);
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$ns->id,true,true,$now);$nsSelection=$sellers->selection('com','transfer',1,$now);
