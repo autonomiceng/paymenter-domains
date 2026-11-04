@@ -53,8 +53,10 @@ $registry = new RegistrarRegistry;
 $verify = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
 $registry->register('enom', ['token'], $verify, fn ($binding, $c) => new Driver(new Client($binding, 'account-enom', $c['token'], $wire), [$fixtureEnding ?? 'com']));
 $readBindings = new AccountBindings($registry); $reconcile = new OperationReconciliation($claims, $readBindings, $clock);
-$prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use ($new, $claims, $preflight, $clock, $observation) {
+$caps??=null;
+$prepare = static function (string $name, string $mode = 'accepted', ?\Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence $nameservers = null) use ($new, $claims, $preflight, $clock, $observation,$caps) {
     $clock->instant = new DateTimeImmutable('2026-10-18T12:00:00Z');
+    if($caps!==null){activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'));}
     $op = $new($name); [$claimed, $domain, $binding] = $claims->claim($op->id);
     if ($mode === 'preseal') { $clock->instant = $clock->now()->modify('+60 seconds'); }
     $ctx = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+300 seconds'), new RequestBudget(10), $clock);

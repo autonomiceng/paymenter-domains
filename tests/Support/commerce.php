@@ -90,3 +90,14 @@ function commerceReject(callable $call): void
     try { $call(); expect(false, 'Expected commerce refusal'); }
     catch (DomainException|InvalidArgumentException|LogicException|Illuminate\Database\Eloquent\ModelNotFoundException|Illuminate\Database\MultipleRecordsFoundException $e) { }
 }
+
+/** Independent synthetic provider support, with an explicit age for financial fixture preparation. */
+function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until): void
+{
+    foreach(Tld::where('catalogue_converted',true)->get() as $t){
+        $terms=$t->registrar_key==='enom'?[1,3]:[1];
+        Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>
+            \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+                ['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$until))]);
+    }
+}

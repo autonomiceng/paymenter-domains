@@ -55,6 +55,7 @@ $readBindings=new AccountBindings($registry); $reconcile=new OperationReconcilia
 $prepare=static function($name)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
     DB::table('domains_read_budgets')->delete(); // Each synthetic transfer starts an independent account-minute scenario.
     $clock->instant=$now; $state->rdapUnknown=false; $state->mode=''; $op=$newTransfer($name); $makeTransfer(); $r=$engine->execute($op->id);
+    expect(isset($r->attempt['evidence']['transferReference']),'Synthetic transfer held: '.$r->state.' / '.$r->safe_code);
     same('7001',$r->attempt['evidence']['transferReference'],'Transfer ID retained separately'); same(null,$r->provider_order_id,'Transfer ID never billing OrderID');
     HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'enom_transfer_v1'));
     $observe->name=$name; $observe->fault=''; $observe->calls=[]; $clock->instant=$now->modify('+6 minutes'); return $r;
