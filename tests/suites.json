@@ -465,6 +465,7 @@
     "tests/retained-offer-admission-test.php",
     "tests/retained-offer-package-test.php",
     "tests/offer-sync-facts-test.php",
+    "tests/offer-contract-admission-test.php",
     "tests/offer-store-cleanup-test.php",
     "tests/offer-store-prefix-test.php",
     "tests/catalogue-test.php"
