@@ -51,10 +51,7 @@ $store=static function(array $credentials,array $facts)use($save,$binding):void 
 };
 $store($credentials,$facts);
 config(['domains.namesilo_live.accounts'=>[$identity=>['fingerprint'=>$binding->fingerprint,'currency'=>'USD','balance_funding'=>true,'daily_call_cap'=>100,'daily_spend_limit_usd'=>'20.00']]]);
-CatalogueAcceptances::save($binding,0,[
-    'com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true],
-    'net'=>['register'=>[],'renew'=>[],'transfer'=>[],'registry'=>true,'renewal_safe'=>true],
-]);
+
 // Keep synthetic money as decimal strings, including while constructing the fake wire envelope.
 $GLOBALS['runtimeWire']=['calls'=>[],'options'=>[],'fail'=>false,'fixtures'=>[
     'getPrices'=>['reply'=>['code'=>300,'detail'=>'success','com'=>['registration'=>'12.34','transfer'=>'12.35','renew'=>'12.36'],'net'=>['registration'=>'13.34','transfer'=>'13.35','renew'=>'13.36']]],
@@ -89,8 +86,8 @@ same('/api/getAccountBalance',$GLOBALS['runtimeWire']['calls'][0][0],'Interactiv
 $domain=$reader->readDomain('example.com',$context())->evidence()->domain;
 same('example.com',$domain?->name,'Daily reader retains exact holding');same(true,$domain?->owned,'Daily reader retains ownership');
 same('/apibatch/getDomainInfo',$GLOBALS['runtimeWire']['calls'][1][0],'Daily reads use apibatch');
-same('12.34',$reader->quote(new Query('example.com',Action::Register,1),$context())->evidence()->quote?->cost->amount,'Accepted annual account prices remain exact');
-same(['used'=>3,'spend_micros'=>0],$usage(),'Each physical read counted once, no spend');
+same(null,$reader->quote(new Query('example.com',Action::Register,1),$context())->evidence()->quote?->cost->amount,'Live quotes stay closed until active Live capability is implemented; TEST catalogue coverage is namesilo-test-catalogue-test');
+same(['used'=>2,'spend_micros'=>0],$usage(),'Each physical read counted once, no spend');
 // A provider price cannot borrow annual acceptance from a different ending.
 $before=count($GLOBALS['runtimeWire']['calls']);$beforeUsage=$usage();
 $refused=$reader->quote(new Query('example.net',Action::Register,1),$context());

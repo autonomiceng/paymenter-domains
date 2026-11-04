@@ -57,11 +57,11 @@ $offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new 
 $offerCaps=new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($offerPorts,$clock,static fn()=>null);
 $prices=new \Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules,$offerCaps,$offerPorts);
 $native=new \Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue($prices);
-$query=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');$revision=fn()=>$offerPorts->readOffers($query,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$query=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');$offerRevision=fn()=>$offerPorts->readOffers($query,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
 $costs=[];foreach(['register','renew','transfer'] as $action){$costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($action,1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+1 day'));}
-$offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',$costs),$revision());
-$offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'))),$revision());
-$offerPorts->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,transfers:true)),$revision());
+$offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',$costs),$offerRevision());
+$offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'))),$offerRevision());
+$offerPorts->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,transfers:true)),$offerRevision());
 $tld=Tld::where('server_id',$server->id)->sole();$product=$native->product($tld,'register');$plan=$native->annualPlan($product);
 $order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
 // Retained service predates installation; seed it without checkout events.
