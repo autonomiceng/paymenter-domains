@@ -475,7 +475,8 @@
     "tests/enom-purchase-failure-test.php",
     "tests/registration-send-deadline-test.php",
     "tests/lost-reply-status-test.php",
-    "tests/retained-offer-admission-test.php"
+    "tests/retained-offer-admission-test.php",
+    "tests/retained-offer-package-test.php"
   ],
   "ui": [],
   "runner": [
