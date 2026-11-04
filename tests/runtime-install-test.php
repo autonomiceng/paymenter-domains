@@ -10,9 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimePorts,RuntimeSchema,ReminderSchedules,AccountBindings,NativePresenter,StaffSettingsReview as Review,StaffSettingsWrites,NativeCatalogue,NativeServerGuard};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 // Start through the authentic current fresh initializer before exercising retained lifecycle.
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-$entry=new Domains([]);$entry->installed();
-foreach(Installation::SCHEMAS as $schema){$schema::verify();}
+$entry=new Domains([]);$entry->installed(); // The native entry performs fresh initialization and verifies every schema.
 // A preview installation already recorded the index migration before glue was included.
 $legacy=new \Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>999,'service_id'=>999,'server_id'=>999,
     'registrar_key'=>'enom','account_fingerprint'=>str_repeat('a',64),'authority_generation'=>1,'operation_key'=>'retained-glue',
