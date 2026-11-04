@@ -61,6 +61,18 @@ $proof=['terms'=>['register'=>[1],'renew'=>[1],'transfer'=>[1]],'registry_fields
     'observed_at'=>$now->format(DATE_ATOM),'fresh_until'=>$now->modify('+1 day')->format(DATE_ATOM)];
 $evidence=['fingerprint'=>$binding->fingerprint,'credential_revision'=>$bindings->credentialRevision($binding),'facts'=>['com'=>$proof]];
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
+$refuses=static function(callable $work):void {try{$work();}catch(\Throwable){return;}throw new \RuntimeException('Expected refusal.');};
+foreach([
+    ['facts.com.terms.register',[1,2]],['facts.com.observed_at',$now->modify('+1 hour')->format(DATE_ATOM)],
+    ['facts.com.fresh_until',$now->format(DATE_ATOM)],['facts.com.registry_fields',null],
+    ['credential_revision','wrong-revision'],['fingerprint','wrong-binding'],
+] as [$key,$value]){
+    $broken=$evidence;\Illuminate\Support\Arr::set($broken,$key,$value);
+    config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$broken]]);
+    $refuses(fn()=>TestCatalogueFacts::read($binding,$evidence['credential_revision'],'com',$clock));
+}
+config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
+
 $scheduler->requestFacts($binding,'com');$scheduler->tick(1);
 $offer=$storefront->offer('com','register',1);
 same(['$13.00','$15.60'],[$offer['price'],$offer['renew']],'Installed public route prices annual registration and retained renewal');
@@ -82,7 +94,6 @@ $op=Operation::sole();same('namesilo',$op->registrar_key,'Checkout freezes the s
 same('13.00',$op->policy['price']['retail'],'Invoice retains the admitted price');
 $before=count($GLOBALS['nsCatalogueCalls']);auth()->login($staff);
 config(['domains.namesilo_test.registration'=>false]);
-$refuses=static function(callable $work):void {try{$work();}catch(\Throwable){return;}throw new \RuntimeException('Expected refusal.');};
 $refuses(fn()=>DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selection']],$now)));
 config(['domains.namesilo_test.registration'=>true]);
 $refuses(fn()=>$storefront->offer('com','register',2));$refuses(fn()=>$storefront->offer('net','register',1));
@@ -93,4 +104,9 @@ $ctx=new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify
 $refuses(fn()=>$offerPorts->feed($binding)->facts('com',$ctx));
 same($saved,Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts,'Expired protocol evidence cannot be redated by prices');
 same($before,count($GLOBALS['nsCatalogueCalls']),'Withdrawal, unsupported terms and stale evidence never send');
+$clock->instant=$now;
+$writes->run($review('configure'),['registrar'=>'namesilo','environment'=>'test','credentials'=>['api_key'=>'synthetic-next-key']]);
+expect(!TestCatalogueFacts::current($binding),'Rotation invalidates the former evidence binding');
+$refuses(fn()=>DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selection']],$now)));
+same($before,count($GLOBALS['nsCatalogueCalls']),'Rotated-key sale refusal performs no provider work');
 $nativeSuccessful=true;

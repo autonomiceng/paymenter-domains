@@ -17,7 +17,7 @@ function curl_exec($h): bool {
     same('/apibatch/getAccountBalance',$url['path'],'Runtime reads use their declared batch route');
     same(0,\Illuminate\Support\Facades\DB::transactionLevel(),'Physical TEST reads stay outside locks');
     $GLOBALS['testRuntimeCalls']=($GLOBALS['testRuntimeCalls']??0)+1;
-    $body=json_encode(['request'=>['operation'=>'getAccountBalance'],'reply'=>['code'=>300,'balance'=>'123.45']]);
+    $body=json_encode(['request'=>['operation'=>'getAccountBalance'],'reply'=>['code'=>300,'detail'=>'success','balance'=>'123.45']]);
     return ($o[CURLOPT_WRITEFUNCTION])($h,$body)===strlen($body);
 }
 $binding=CatalogueAcceptances::binding($account->fresh());$ports=app(RuntimePorts::class);
@@ -28,7 +28,7 @@ CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'tra
 $bindings=app(AccountBindings::class);$clock=app(Clock::class);
 $reader=$bindings->reader($binding->serverId);
 $context=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+120 seconds'),new RequestBudget(5),$clock);
-$reader->balance($context());same(1,$GLOBALS['testRuntimeCalls'],'Built-in read factory reaches the admitted TEST wire');
+same('123.45',$reader->balance($context())->evidence()->balance?->amount,'Installed TEST reader returns exact normalized funds');same(1,$GLOBALS['testRuntimeCalls'],'Built-in read factory reaches the admitted TEST wire');
 $ledger=new LiveReservations(new TestReservationPolicy,Environment::Test);
 same(1,$ledger->usage($binding)['used'],'TEST reads reserve their separate daily budget');
 $refuses=static function(callable $work):void {try{$work();}catch(\Throwable){return;}throw new \RuntimeException('Expected refusal.');};
@@ -39,6 +39,10 @@ $before=$GLOBALS['testRuntimeCalls'];$reader->balance($context());same($before,$
 config(['domains.namesilo_test.catalogue'=>true]);
 $writes->run($review('processing'),['enabled'=>false,'confirmed'=>true]);
 expect(!$account->fresh()->processing_enabled,'Reviewed Orders Off remains available');
+config(['cache.default'=>'array']);
+$refuses(fn()=>$writes->run($review('processing'),['enabled'=>true,'confirmed'=>true]));
+expect(!$account->fresh()->processing_enabled,'Orders cannot bypass the shared-worker prerequisite');
+config(['cache.default'=>'database']);
 expect($ports->accepted($account->fresh()),'Processing pause preserves the read and reconciliation runtime');
 $refuses(fn()=>(new AdmittedTransport($binding,static fn()=>['api_key'=>'synthetic-ote-key']))->exchange()('https://www.namesilo.com/apibatch','getAccountBalance',[],1000));
 same($before,$GLOBALS['testRuntimeCalls'],'A TEST handle cannot select a Live origin');
