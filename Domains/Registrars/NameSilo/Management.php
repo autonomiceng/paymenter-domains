@@ -2,7 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
+use Paymenter\Extensions\Servers\Domains\Catalogue\OfferState;
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, ManagementProtocol};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Capabilities, Capability, ManagementRequest, ManagementResult, PrivacyMode, RequestContext, RequestOrigin, Support};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails, ManagementPayload, RegistrationProfiles, RegistryInputs};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Tld};
@@ -48,7 +49,11 @@ class Management extends ManagementProtocol
     {
         $d = Domain::whereKey($domainId)->where('account_fingerprint', $this->binding->fingerprint)->where('domain', $name)->sole();
         $tld = Tld::where('server_id', $this->binding->serverId)->where('tld', $d->tld)->sole();
-        if ($tld->account_fingerprint !== $this->binding->fingerprint || !RegistryInputs::supported('namesilo', $d->tld, $tld->registry_fields)) {
+        $facts = OfferState::facts($tld->catalogue_facts);
+        if (!$tld->catalogue_converted || $tld->registrar_key !== $this->binding->registrarKey
+            || $tld->account_fingerprint !== $this->binding->fingerprint || !$facts
+            || !$facts->fresh(app(Clock::class)->now())
+            || !RegistryInputs::supported('namesilo', $d->tld, $facts->registryFields)) {
             throw new \DomainException('Registry contact schema unsupported.');
         }
     }
