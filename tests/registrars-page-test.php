@@ -29,6 +29,15 @@ Illuminate\Support\Facades\Event::listen(App\Events\Invoice\GeneratePdf::class,s
     $event->setPdfFromContent("%PDF-1.4\n% Synthetic registrar-page invoice attachment.\n%%EOF\n");
 });
 $user=commerceUser();$product=$native->product($tlds[0],'register');
+// This page fixture needs real checkout, not a separate credit-checkbox render. Livewire's
+// native update batches that property and the checkout call, as one browser request does.
+$checkout=static function(App\Models\Cart $cart)use($user){
+    Illuminate\Support\Once::flush();
+    $params=$user->properties()->whereIn('key',['address','city','zip','country','phone'])->distinct()->count('key')===5
+        ? [] : [['contact'=>commerceOrderContact($user),'save_account'=>false]];
+    return Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)
+        ->update(calls:[['method'=>'checkout','params'=>$params,'path'=>'']],updates:['use_credits'=>false]);
+};
 // The balance forecast needs real service/domain bindings; native checkout exercises the admission and invoice hooks.
 // Synthetic offer composition keeps registrar deployment and physical sends outside this page fixture.
 $eligibility=new class($bindings,$clock) extends \Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility {
@@ -42,7 +51,7 @@ $admission=new class($native,$sellers,$eligibility,$clock) extends \Paymenter\Ex
 $invoiceBinding=new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($admission,$native,$prices,$clock);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);$invoiceBinding->boot();
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('registrars-due-placeholder.com'));
-commerceCheckout($user,$cart)->assertHasNoErrors();gc_collect_cycles();gc_mem_caches();
+$checkout($cart)->assertHasNoErrors();gc_collect_cycles();gc_mem_caches();
 $service=App\Models\Service::where('user_id',$user->id)->sole();$service->update(['status'=>'active']);
 // One renewal due within 30 days at registrar cost 8.00; the balance is one cent short.
 $domain=Domain::where('service_id',$service->id)->sole();
@@ -96,8 +105,10 @@ same('Off in Paymenter.',$cell('note',$off->id)->getState(),'The status reason i
 same([null,null],[$cell('note',$empty->id)->getState(),$cell('note',$empty->id)->getExtraAttributes()['data-beco-tone']??null],'Nothing to say, no Note');
 same(['Enom','1','NameSilo','0'],[$cell('registrar',$enom->server_id)->getState(),(string)$cell('domains',$enom->server_id)->getState(),$cell('registrar',$silo->server_id)->getState(),(string)$cell('domains',$silo->server_id)->getState()],'Registrar and domain count have columns');
 expect(str_contains((string)$cell('checked',$enom->server_id)->formatState($cell('checked',$enom->server_id)->getState()),'data-domains-time'),'Balance checked shows in the viewer time');
+// Each read-only filter case hydrates its own copy of the same initial native page.
+// This keeps filters independent and tests every real request without remounting an unchanged list.
 // No accounts yet says how to add one; a search that hides every account says so.
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->searchTable('no-such-account')->assertSee('No accounts match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Add one to start selling domains.');
+(clone $list)->searchTable('no-such-account')->assertSee('No accounts match')->assertSee('Clear the search or filters to see all rows.')->assertDontSee('Add one to start selling domains.');
 foreach(['Account','Registrar','Mode','Status','Note','Balance','Due in 30 days','Enom test account','Test','Active','USD 7.99','Low balance','USD 8.00',
     'Missing','Not checked yet','Add funds','Not connected','Connect','Off in Paymenter','Demo NameSilo','Demo'] as $needle){$list->assertSee($needle);}
 $html=$list->html();
@@ -108,10 +119,10 @@ foreach(['Registrar setup','Registrar balances','Server #','Unknown','Viewing us
 $missing=ContactDetails::missingRequiredProperties();
 if($missing){$list->assertSee("Customers can't enter")->assertSee('Add them as custom properties.')->assertSee('Open custom properties');}
 // Search and filters work on this short list too.
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Search account')->searchTable('Spare')->assertSee('Spare account')->assertDontSee('Old account');
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('registrar','namesilo')->assertSee('Demo NameSilo')->assertDontSee('Enom test account')->assertDontSee('Spare account');
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('mode','live')->assertDontSee('Enom test account');
-Livewire::actingAs($staff)->test(RegistrarSetup::class)->filterTable('status','Not connected')->assertSee('Spare account')->assertDontSee('Enom test account');
+(clone $list)->assertSee('Search account')->searchTable('Spare')->assertSee('Spare account')->assertDontSee('Old account');
+(clone $list)->filterTable('registrar','namesilo')->assertSee('Demo NameSilo')->assertDontSee('Enom test account')->assertDontSee('Spare account');
+(clone $list)->filterTable('mode','live')->assertDontSee('Enom test account');
+(clone $list)->filterTable('status','Not connected')->assertSee('Spare account')->assertDontSee('Enom test account');
 // Native create permission and a usable route are both required.
 $creator=staffUser([Staff::VIEW,'admin.servers.create']);
 $routes=app('router')->getRoutes();$withoutCreate=new Illuminate\Routing\RouteCollection;
@@ -324,7 +335,7 @@ $siloQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($siloBindin
 $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($siloBinding,'com',['register','transfer']),
     $ports->readOffers($siloQuery,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $siloCart=commerceCart($user);commerceAdd($siloCart,$native->product($tlds[1],'register'),placeholderComFixtureName('registrars-held-placeholder.com'));
-commerceCheckout($user,$siloCart)->assertHasNoErrors();gc_collect_cycles();gc_mem_caches();
+$checkout($siloCart)->assertHasNoErrors();gc_collect_cycles();gc_mem_caches();
 $siloDomain=Domain::where('domain',placeholderComFixtureName('registrars-held-placeholder.com'))->sole();
 $siloService=$siloDomain->service;$siloService->update(['status'=>'active']);
 $held=Paymenter\Extensions\Servers\Domains\Models\Operation::where('service_id',$siloService->id)->sole();
@@ -372,6 +383,7 @@ foreach(['test','live'] as $mode){
     $page->assertSee('Restore the API connection first.');
     same(1,\Paymenter\Extensions\Servers\Domains\Services\BalanceForecast::for(Account::findOrFail($enom->id),$clock->now())['unknown'],'Unreadable identity keeps the due renewal cost unknown');
 }
+unset($page);gc_collect_cycles();gc_mem_caches();
 // A live fingerprint must match the restored identity and live environment.
 DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=>$savedIdentity,'account_fingerprint'=>$liveBinding->fingerprint,
     'identity_fingerprint'=>hash('sha256',json_encode(['enom','live',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
@@ -401,18 +413,19 @@ $assertActivate=function(string $state)use($bindings,$enom,$liveBinding,$activat
     expect(str_starts_with($orders['cause'],'Orders are paused. Use Activate to check setup and turn on Orders.'),$state.' activation sends Live Orders to Activate');
     Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to check setup and turn on Orders.');
 };
-$assertActivate('Missing');
+$assertActivate('Missing');gc_collect_cycles();gc_mem_caches();
 $activation=App\Models\Server::findOrFail($enom->server_id)->settings()->firstOrNew(['key'=>$activationClass::KEY]);
 $activation->encrypted=true;$activation->type='string';$activation->value=json_encode(['fingerprint'=>$liveBinding->fingerprint,'site'=>$site,
     'evidence'=>hash('sha256',json_encode($liveEvidence,JSON_THROW_ON_ERROR))],JSON_THROW_ON_ERROR);$activation->save();
 expect($activationClass::current($liveBinding),'The saved activation matches current evidence');
 expect(str_starts_with($checklist()['Orders']['cause'],'Orders are paused. Check setup, then turn on Orders.'),'Current activation keeps the normal Orders next step');
 config(['domains.enom_live.accounts.'.$enom->stable_identity.'.evidence.sha256'=>str_repeat('b',64)]);
-$assertActivate('Stale');$activation->delete();
+$assertActivate('Stale');gc_collect_cycles();gc_mem_caches();$activation->delete();
 same(['Off','Paused until setup is approved. Use Activate to see what is missing.',null],[$checklist()['Renewals']['value'],explode(' 1 managed domain',$checklist()['Renewals']['cause'])[0],$checklist()['Renewals']['action']],'Live turn-on is not a switch');
 $page=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSee('Use Activate to see what is missing.')->assertActionDoesNotExist(setupAction('live_renewal',(int)$enom->server_id));
 Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::setup((int)$enom->server_id,$page->instance()->reviewStamp,'live_renewal')->getActionFunction()([],$page->instance());
 same(0,App\Models\Server::findOrFail($enom->server_id)->settings()->where('key','domains_enom_live_renewal')->count(),'A Live switch with empty form data creates no acceptance');
+unset($page);gc_collect_cycles();gc_mem_caches();
 DB::table('domains_accounts')->where('id',$enom->id)->update(['environment'=>'test','live_site'=>null,'account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint,
     'identity_fingerprint'=>hash('sha256',json_encode(['enom','test',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint]);

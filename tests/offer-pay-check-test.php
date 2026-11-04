@@ -13,7 +13,6 @@ use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, Native
 expect(method_exists(PayCheck::class, 'catalogue'), 'PayCheck needs a dormant local offer fence before trusting its minute cache');
 require __DIR__.'/Support/offer-commerce.php';
 extract(offerCommerceFixture());
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $invoiceBinding);
 $pay = new class($bindings, $clock) extends PayCheck { use OfferCommerceRoute; };
 $pay->fixtureOffers = $offers;
 $user = commerceUser(); $public = $storefront->offer('com', 'register', 1);
@@ -29,7 +28,6 @@ $op->update(['state'=>'held']);same('unavailable',$pay->stop($invoice)['why']??n
 // Restore public selling, then use the same native fixture for unsent/frozen payment behavior.
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true)),
     $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision);
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $invoiceBinding);
 NativeIntentSchema::install(); ReminderSchema::install(); NativeIdentity::boot(); NativeCancellation::boot();
 app()->instance(AcquisitionRetirement::class, new AcquisitionRetirement($clock));
 $live = (object)['available' => true, 'reads' => 0, 'duringRead' => null];

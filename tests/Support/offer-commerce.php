@@ -32,7 +32,7 @@ function offerCommerceFixture(): array
     $eligibility->fixtureOffers = $offers;
     $admission = new class($native, $sellers, $eligibility, $clock) extends CartAdmission { use OfferCommerceRoute; };
     $admission->fixtureOffers = $offers; $admission->boot();
-    $invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); $invoiceBinding->boot();
+    $invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); app()->instance(InvoiceBinding::class,$invoiceBinding); $invoiceBinding->boot();
     $storefront = new class($sellers, $prices, $native, $bindings, $eligibility, $clock) extends Storefront { use OfferCommerceRoute; };
     $storefront->fixtureOffers = $offers;
     return compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds', 'reads', 'clock', 'ports', 'binding',

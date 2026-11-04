@@ -1,6 +1,8 @@
 <?php
 // Installed owner management composition, offline only; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Setup checkout has finished; discard its cyclic forms before the native management assertions.
+$automaticManagementGc=gc_enabled();gc_collect_cycles();gc_mem_caches();gc_disable();
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRegistration, EnomTestManagement as Policy, EnomTestSendLimit, EnomTestSendLimitSchema, RuntimePorts, RuntimeWork, OwnedDomains, OwnerRecords, ObservationRecords, DomainObservation, Refunds};
@@ -76,4 +78,5 @@ $reset();$op=$ask('nameservers',['nameservers'=>['ns7.example.com','ns8.example.
 $GLOBALS['enomWire']['during']=static function($p):void {if($p['Command']==='ModifyNS'){$GLOBALS['enomWire']['timeout']=true;}};$run($op);same('uncertain',$op->fresh()->state,'Lost write reply stays uncertain');same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($p)=>$p['Command']==='ModifyNS')),'One lost-reply write');
 same($beforeMoney,$money(),'All management and uncertainty preserve native money');expect(!str_contains(json_encode($op->fresh()),'TEST-SECRET-TOKEN'),'Model serialization redacts secrets');
 file_put_contents($receipt.'.management',json_encode(['operation'=>$op->id,'money'=>$money()],JSON_THROW_ON_ERROR));
+if($automaticManagementGc){gc_enable();}
 $nativeSuccessful=true;echo "Installed TEST management acceptance, cap, inventory and uncertain readback passed.\n";
