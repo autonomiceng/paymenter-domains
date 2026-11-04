@@ -74,6 +74,11 @@ config(['settings.credits_auto_use'=>false]);$billing=new DomainBilling($heldBin
 $renew=Operation::where('invoice_id',$invoice->id)->sole();DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 App\Models\InvoiceTransaction::create(['invoice_id'=>$invoice->id,'amount'=>$renew->amount,'fee'=>'0.00','status'=>'succeeded']);
 $clock->at=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();resetWire(['timeout'=>true]);
+require_once __DIR__.'/installed-offer-evidence.php';
+activeFixtureClock($sellers)->instant=$clock->now();
+Illuminate\Support\Facades\Auth::setUser(App\Models\User::where('email','fixture-enrollment@example.test')->sole());
+installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
+
 $renewalResult=$held['renewal']->run($renew->id,$held['renewal_writer']);
 same('uncertain',$renewalResult->state,'Renewal timeout after send stays uncertain: '.json_encode([$renewalResult->safe_code,array_column($GLOBALS['enomWire']['forms'],'Command')]));
 same(['Extend'],array_column($GLOBALS['enomWire']['forms'],'Command'),'One genuine renewal monetary send');

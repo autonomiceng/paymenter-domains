@@ -15,3 +15,11 @@ function installedOfferEvidence($binding,$clock,bool $transfer=false): Tld
     $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1],'renew'=>[1],'transfer'=>$transfer?[1]:[]],[],true,false,false,'synthetic',$at,$until)),$revision());
     return Tld::where('server_id',$binding->serverId)->where('tld','com')->sole();
 }
+
+/** Independent renewal-support premise for financial cases advancing to the following year. */
+function installedRenewalFacts($binding,DateTimeImmutable $observedAt,DateTimeImmutable $until): void
+{
+    $ports=CallerPorts::routed();$query=new Query($binding,['com'],'renew');
+    $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[],'renew'=>[1],'transfer'=>[]],[],true,false,false,'independent_synthetic_annual_support',$observedAt,$until)),
+        $ports->readOffers($query,Context::Staff)[0]->revision);
+}

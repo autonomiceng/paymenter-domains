@@ -39,8 +39,9 @@ try{$write('test_renewal',['accept'=>true]);throw new LogicException('Independen
 $write('test_renewal',['accept'=>true,'verified'=>true]);expect(EnomTestRenewal::accepted($binding),'Audited account-bound TEST renewal review accepted');
 $saved=App\Models\Server::find($server->id)->settings()->where('key',EnomTestRenewal::KEY)->sole();expect($saved->encrypted,'Renewal review stored encrypted');
 expect(!EnomTestRenewal::accepted(new Paymenter\Extensions\Servers\Domains\Data\AccountBinding('enom',$binding->serverId,Paymenter\Extensions\Servers\Domains\Data\Environment::Test,'foreign-uid')),'Accepted fingerprint cannot cross accounts');
-$make=static function($domain)use($clock,$bindings,$user,$server):Operation {
+$make=static function($domain)use($clock,$bindings,$user,$server,$staff,$binding):Operation {
     $clock->at=new DateTimeImmutable('2027-09-27T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
+    Auth::setUser($staff);installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
     $billing=new DomainBilling($bindings,app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);
     $invoice=$billing->invoice($domain->id,$user);same($invoice->id,$billing->invoice($domain->id,$user)->id,'One obligation per cycle');
     $op=Operation::where('invoice_id',$invoice->id)->sole();App\Helpers\ExtensionHelper::addProcessingPayment($invoice->id,null,$op->amount,'0.00','annual-'.$op->id);

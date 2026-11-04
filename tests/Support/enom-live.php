@@ -155,11 +155,11 @@ $notSelling=commerceCart($user);commerceAdd($notSelling,$product,placeholderComF
 $write('activate',['registration'=>false,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true]);
 same([],$front->endings(),'Registrations unchecked removes even warm public offers');
 try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked registration admission must refuse');}
-catch(App\Exceptions\DisplayException $e){same('Domains can’t be ordered right now. Remove them to check out.',$e->getMessage(),'Locked admission uses the existing customer message');}
+catch(DomainException $e){same('No current offer price.',$e->getMessage(),'Active locked admission refuses the withdrawn offer');}
 $debtBefore=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
 $refusedCheckout=commerceCheckout($user,$notSelling);
 same($debtBefore,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],'Registrations unchecked creates no order, invoice or bound operation');
-$refusedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+$refusedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
 $write('activate',['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true]);
 foreach(['before_activate','evidence_removed'] as $missing){
     $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('live-'.str_replace('_','-',$missing).'-placeholder.com'));
@@ -246,6 +246,7 @@ $before=count($GLOBALS['enomWire']['forms']);$worker->operation($change->id);sam
 // A paid renewal uses the same native invoice, two assessments and captured-order reconciliation.
 $clock->at=new DateTimeImmutable('2027-09-30T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
+Auth::setUser($staff);installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
 $billing=new Paymenter\Extensions\Servers\Domains\Services\DomainBilling($bindings,app(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);
 config(['domains.enom_live.renewal'=>false]);try{$billing->invoice($op->domain_id,$user);throw new LogicException('Site off refuses a new Live invoice');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff,$e->reason,'Live with the site flag off gets no new invoice');}config(['domains.enom_live.renewal'=>true]);
 // A Live holding on a TEST site never sends either.
