@@ -20,6 +20,9 @@ foreach(['legacy','paused'] as $mode){
     try{OfferUpgrade::requireCompatible();throw new LogicException('Unconverted retained upgrade accepted');}
     catch(DomainException $e){expect(str_contains($e->getMessage(),'bridge 0.1.0 at 891124421645'),'Refusal names the exact bridge to install first');}
     same($before,UpgradeComparison::capture(),'Unconverted refusal writes nothing');
+    try{(new Domains)->upgraded('0.1.0');throw new LogicException('Lifecycle accepted unconverted retained upgrade');}
+    catch(DomainException $e){expect(str_contains($e->getMessage(),'bridge 0.1.0 at 891124421645'),'Lifecycle names the required bridge');}
+    same($before,UpgradeComparison::capture(),'Lifecycle refusal precedes extension mutations');
 }
 $setting->value=$active;$setting->save();OfferUpgrade::requireCompatible();
 $nativeSuccessful=true;
