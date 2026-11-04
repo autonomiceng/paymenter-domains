@@ -9,10 +9,11 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffGrants,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule};
 
-/** Bounded Staff snapshots over converted identities; no shadow rows, legacy costs or render writes. */
+/** Bounded Staff snapshots over converted identities; recovery only hints the existing read queue. */
 final class StaffCatalogue
 {
     public static function routed(): ?self { return CallerRouting::resolve(self::class); }
@@ -36,6 +37,64 @@ final class StaffCatalogue
             }
         });
         return ['count'=>$count,'highest'=>$highest,'filled'=>$this->progress($server)['succeeded_at']??null];
+    }
+    /** Staff-only recovery hints. Enqueue on the retained worker; never resolve a feed or change sale intent. */
+    public function nextSteps(Collection $tlds,array $rows,string $action,int $term): array
+    {
+        Staff::requireView();$out=[];
+        foreach($tlds as $t){$key=$t->server_id.':'.$t->tld;$out[$key]=$this->nextStep($t,$rows[$key]['offers']??[],$action,$term);}
+        return $out;
+    }
+    private function nextStep(Tld $t,array $offers,string $action,int $term): array
+    {
+        $offer=$offers[$action.':'.$term]??null;$reason=$offer?->decision->reason;$now=$this->clock->now();
+        $names=['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'];
+        $step=static fn(string $state,string $next,?string $open=null)=>compact('state','next','open');
+        $missing=static fn(string $next,?string $open='tld')=>$step('missing',$next,$open);
+        $waiting=static fn(array $s)=>$step('checking',isset($s['due_at'])&&empty($s['remaining'])?'Next check '.gmdate('M j, Y H:i',$s['due_at']).' UTC.':'Queued for the next background run.');
+        if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
+        if(in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)){return $step('off','Stopped in What you sell.');}
+        if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
+        $binding=static fn()=>AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
+        if($reason==='publication_pending'&&$this->work){$this->work->wake($binding());return $waiting([]);}
+        try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
+        $human=null;
+        if(!$facts||!$facts->fresh($now)){
+            if(!$this->work||!$this->readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
+            $this->work->requestFacts($b,$t->tld);$status=$this->work->status($b,$t->tld);
+            if($status['state']!=='unsupported'){return $waiting($status);}
+            $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
+        }
+        if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)){return $step('off','Not offered by this registrar for this term.');}
+        if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)){return $step('off','This registrar does not offer annual renewal for this TLD.');}
+        if($reason==='unsupported_facts'){$human=$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null);}
+        foreach(array_unique(['renew:1',$action.':'.$term]) as $key){
+            $cost=$offers[$key]??null;$observation=$cost?->observation();
+            if($observation&&!$observation->enabled){return $step('off','Not offered by this registrar for this term.');}
+            if(!$observation||!$observation->fresh($now)||$cost->staffRetail()===null
+                ||$key==='renew:1'&&OfferState::money($t->catalogue_retained_annual_retail,2)===null){
+                if($observation?->fresh($now)){
+                    $quote=Retail::quote($observation,Pricing::rule($t));
+                    if($quote===null||PricingRule::units($quote,2)<1){return $missing('Set a positive '.$names[$observation->action].' price in Edit prices on .'.$t->tld.'.');}
+                }
+                if(!$this->work||!$this->readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
+                $status=$this->work->status($b);
+                if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])){
+                    [$needed,$years]=explode(':',$key);$name=$names[$needed];
+                    return $missing('Ask the registrar for a '.$years.'-year '.$name.' cost for .'.$t->tld.'.',null);
+                }
+                $this->work->sync($b,RequestOrigin::Background);
+                return $waiting($this->work->status($b));
+            }
+        }
+        if($human!==null){return $human;}
+        return match($reason){
+            'seller_changed'=>$missing('Choose the registrar in More on .'.$t->tld.'.'),
+            'below_cost'=>$missing('Raise the price in Edit prices on .'.$t->tld.'.'),
+            'cost_limit'=>$missing('Change the cost limit under Default for new TLDs in What you sell.',null),
+            'unpublished_price'=>$missing('Set a positive '.$names[$action].' price in Edit prices on .'.$t->tld.'.'),
+            default=>$step('ready',''),
+        };
     }
     /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
     public function preview(Tld $t,array $rule): array
@@ -133,7 +192,7 @@ final class StaffCatalogue
             $register=collect($all)->first(fn($o)=>$o->decision->action==='register'&&$o->decision->available);
             $transfer=$all['transfer:1']??null;$chosen=$register??($transfer?->decision->available?$transfer:null);
             $reason=(in_array('register',$raw['stops']??[],true)?$transfer?->decision->reason:($all['register:1']->decision->reason??null))??'unknown_facts';
-            $label=match($reason){'staff_stopped','staff_term_stopped'=>'Stopped by staff','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing',default=>TldFacts::NEEDS_SYNC};
+            $label=match($reason){'staff_stopped','staff_term_stopped'=>'Stopped by staff','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>'Checking registrar terms','unsupported_facts'=>'Registrar requirements need checking','unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
             try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}
             $out[$t->id]=['prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
