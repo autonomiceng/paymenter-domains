@@ -12,7 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Tld
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainReservations, FoundationSchema, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-FoundationSchema::install();
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
 $reject = static function (callable $call): void {
     try { $call(); expect(false, 'Binding safety refusal escaped'); }
     catch (DomainException|InvalidArgumentException|Illuminate\Database\QueryException|LogicException $e) { /* expected */ }
