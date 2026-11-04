@@ -31,11 +31,15 @@ final readonly class ReadOffer implements \JsonSerializable
             $this->row, $this->context, $this->freshness, orderCost: $costs[$q->action.':'.$q->term] ?? null);
     }
 
+    /** Server-only native list fence; saved retail alone never grants a purchase. */
+    public function listedRetail(): ?string
+    { return OfferState::money($this->row?->retail, 2); }
+
     /** Staff display only: saved retail remains visible when the offer cannot be purchased. */
     public function staffRetail(): ?string
     {
         if ($this->context !== Context::Staff) { throw new \LogicException('Staff snapshot required.'); }
-        return OfferState::money($this->row?->retail, 2);
+        return $this->listedRetail();
     }
 
     public function price(): PriceSnapshot
