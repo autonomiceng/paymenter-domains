@@ -10,7 +10,7 @@
 <div class="container mt-14 mb-10"><div class="domains">
 @include('domains::partials.styles')
 <div class="domains-head"><h1 class="domains-title">Domains</h1>
-@if ($total > 0)<div class="domains-row">@if ($transfersOffered ?? false)<a class="domains-btn domains-btn--secondary" href="{{ route('domains.domains.transfer') }}">Transfer a domain</a>@endif<a class="domains-btn domains-btn--primary" href="{{ route('domains.domains.search') }}">Register a domain</a></div>@endif</div>
+@if ($total > 0)<div class="domains-row domains-head-actions">@if ($transfersOffered ?? false)<a class="domains-btn domains-btn--secondary" href="{{ route('domains.domains.transfer') }}">Transfer a domain</a>@endif<a class="domains-btn domains-btn--primary" href="{{ route('domains.domains.search') }}">Register a domain</a></div>@endif</div>
 @include('domains::partials.notices')
 @if ($total === 0)
 <section class="domains-panel" aria-label="Your domains">
