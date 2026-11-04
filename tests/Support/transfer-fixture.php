@@ -31,7 +31,7 @@ if(isset($offers)){
     require_once __DIR__.'/offer-commerce.php';
     $eligibility=new class($bindings,$clock,$checkoutTransfer) extends CheckoutEligibility {use OfferCommerceRoute;};$eligibility->fixtureOffers=$offers;
     $admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {use OfferCommerceRoute;};$admission->fixtureOffers=$offers;
-}else{$admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,$checkoutTransfer),$clock);}
+}else{$admission = activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock,$checkoutTransfer),$clock);}
 $invoiceBinding = new InvoiceBinding($admission,$native,$prices,$clock);
 app()->instance(CartAdmission::class,$admission); app()->instance(InvoiceBinding::class,$invoiceBinding);
 $admission->boot(); $invoiceBinding->boot();

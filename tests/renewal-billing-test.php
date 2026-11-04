@@ -33,7 +33,7 @@ commerceReject(fn () => $billing->invoice($d->id, $user)); // independent manual
 $setting('domains_billing_enabled', false); $setting('domains_manual_renewals_enabled', true);
 commerceReject(fn () => $billing->invoice($d->id, commerceUser()));
 // Seller and sales flags do not change holder retail; emergency spending pauses block new debt.
-activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
 $tlds[0]->update(['enabled' => false, 'register_enabled' => false, 'renew_enabled' => false]);
 $bindings->setProcessing($server->id, false);
 $clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z');
@@ -123,7 +123,7 @@ same((array) $frozen, (array) DB::table('invoice_items')->where('invoice_id', $r
 // A separate real completed domain exercises scheduled issue and bill+alert below wholesale.
 $bindings->setProcessing($server->id, true, syntheticActivation());
 $tld->update(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true]); activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
-activeFixtureSeller($sellers,'com', 3, $server->id, true, true, $now);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $server->id, true, true, $now);
 Carbon\Carbon::setTestNow(); Carbon\CarbonImmutable::setTestNow();
 [$next] = $prepare(placeholderComFixtureName('billing-below-placeholder.com')); same('succeeded', $reconcile->run($next->id)->state, 'Second real anchor completed');
 $clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z'); $setting('domains_billing_enabled', true);

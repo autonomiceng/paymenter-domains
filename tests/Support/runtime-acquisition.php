@@ -24,7 +24,7 @@ if(getenv('PACKAGE_PHASE')==='enom-exchange'){require __DIR__.'/runtime-enom-exc
 foreach([AccountBindings::class=>$bindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
 $offline=static fn()=>throw new LogicException('No exchange supplied to this fixture');
 $checkoutCheck=new TransferPrecheck(new Rdap($offline));
-$admission=new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,$checkoutCheck),$clock);
+$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock,$checkoutCheck),$clock);
 app()->instance(CartAdmission::class,$admission);
 app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
 (new Paymenter\Extensions\Servers\Domains\Domains)->boot();

@@ -78,7 +78,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $first=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
         $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($first,[$ending],'register');
         $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($first,$ending,['register','transfer']),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
-        foreach([$prices,$sellers,$native] as $owner){activeFixturePorts($owner,$ports,$clock);}
+        foreach([$prices,$sellers,$native,$bindings] as $owner){activeFixturePorts($owner,$ports,$clock);activeFixtureOffers($owner,$offers);}
         return compact('bindings','prices','sellers','native','now','tlds','reads','clock','ports','caps','offers');
     }
     return compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds', 'reads');

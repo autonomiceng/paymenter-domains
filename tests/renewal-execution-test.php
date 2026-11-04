@@ -12,7 +12,7 @@ $tx = $invoice->transactions()->sole(); commerceReject(fn () => $tx->update(['am
 $oldId = $tx->id; $tx->id += 999; commerceReject(fn () => $tx->delete()); $tx->id = $oldId;
 $before = serialize(DB::table('invoices')->get()); $items = serialize(DB::table('invoice_items')->get());
 $settings = $product->server->settings(); $settings->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => false, 'type' => 'boolean']);
-activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $now);
 $tlds[0]->update(['enabled' => false, 'renew_enabled' => false]);
 same('pending', $engine->run($op->id, $writer)->state, 'Late paid obligation survives preferences, seller, sales flags and stale retail');
 same(1, $state->writes, 'One renewal write'); same(12, count($state->calls), 'Initial and final full read sequences, single reservation');

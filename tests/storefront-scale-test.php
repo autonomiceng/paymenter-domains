@@ -85,7 +85,7 @@ DB::table('domains_tlds')->update(['catalogue_facts' => Paymenter\Extensions\Ser
 $ports = new Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),
     $clock, $bindings, static fn () => null, static fn () => true);
 $offers = new Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers($ports, $bindings, $native);
-$store = new class($sellers, $prices, $native, $bindings, new CheckoutEligibility($bindings, $clock), $clock) extends Storefront { use OfferCommerceRoute; };
+$store = new class($sellers, $prices, $native, $bindings, activeFixtureEligibility($bindings, $clock), $clock) extends Storefront { use OfferCommerceRoute; };
 $store->fixtureOffers = $offers;
 
 app()->instance(Storefront::class, $store); app()->instance(Clock::class, $clock);

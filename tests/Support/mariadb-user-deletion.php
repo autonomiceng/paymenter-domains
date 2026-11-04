@@ -64,7 +64,7 @@ foreach(['enom','namesilo']as$key){$registry->register($key,['token'],$verifier,
 });}
 $bindings=new AccountBindings($registry);$prices=new PriceCatalogue(new PricingRules);$native=new NativeCatalogue($prices);$sellers=new SellerPolicies($prices,$bindings);
 foreach([RegistrarRegistry::class=>$registry,AccountBindings::class=>$bindings,PriceCatalogue::class=>$prices,NativeCatalogue::class=>$native,SellerPolicies::class=>$sellers,\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class=>$clock]as$class=>$instance){app()->instance($class,$instance);}
-$admission=new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock),$clock);$admission->boot();app()->instance(CartAdmission::class,$admission);
+$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock),$clock);$admission->boot();app()->instance(CartAdmission::class,$admission);
 $binder=new InvoiceBinding($admission,$native,$prices,$clock);app()->instance(InvoiceBinding::class,$binder);$binder->boot();
 NativeIdentity::boot();(new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 // Rebuild the same synthetic credential contract in each native process.

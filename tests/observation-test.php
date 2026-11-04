@@ -8,7 +8,7 @@ ObservationSchema::install(); $budget=new AccountReadBudget($clock); $observer=n
 [$d,$driver,$original]=$holding(placeholderComFixtureName('observed-old-holder-placeholder.com'));
 $original=$original->fresh(); $before=$original->getAttributes(); $anchor=$d->renewal_policy; $expiry=$d->provider_expires_at; $revision=$d->confirmed_revision;
 same('pending',$d->observation['followup']['state'],'Acquisition atomically seeds durable follow-up');
-activeFixtureSeller($sellers,'com',2,$tlds[1]->server_id,true,true,$clock->now()); $bindings->setProcessing($d->server_id,false);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$tlds[1]->server_id,true,true,$clock->now()); $bindings->setProcessing($d->server_id,false);
 same('refreshed',$observer->run($d->id),'Old holder reads its account after seller switch and spending pause');
 same($before,$original->fresh()->getAttributes(),'Observation does not edit original attempt or finance');
 same($anchor,$d->fresh()->renewal_policy,'Observation never changes billing anchor');same($expiry->format('Y-m-d'),$d->fresh()->provider_expires_at->format('Y-m-d'),'Confirmed expiry retained');same($revision,$d->fresh()->confirmed_revision,'Revision retained');
@@ -78,7 +78,7 @@ DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$
 $state->during=function()use($work,$d,$job,$priorTries){same('read_deferred',$work->tick(1)[$d->server_id],'Observation yields during management preparation');same($priorTries,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Busy authority spends no observation try');};
 same('succeeded',$management->run($race->id,$driver)->state,'Live management claim consumes and sends after deferred observation');
 // Exhausted pre-acquisition history cannot suppress a new completed-acquisition phase.
-$bindings->setProcessing($d->server_id, true, syntheticActivation());$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);activeFixtureSeller($sellers,'com',3,$d->server_id,true,true,$now);[$pending]=$prepare(placeholderComFixtureName('followup-after-exhaustion-placeholder.com'));$pendingDomain=$pending->domain()->firstOrFail();$work->tick(1);
+$bindings->setProcessing($d->server_id, true, syntheticActivation());$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$d->server_id,true,true,$now);[$pending]=$prepare(placeholderComFixtureName('followup-after-exhaustion-placeholder.com'));$pendingDomain=$pending->domain()->firstOrFail();$work->tick(1);
 $pendingJob=DB::table('domains_observation_work')->where('domain_id',$pendingDomain->id)->sole();DB::table('domains_observation_work')->where('id',$pendingJob->id)->update(['safe_code'=>'budget_exhausted','tries'=>5]);
 same('succeeded',$reconcile->run($pending->id)->state,'Actual completion after pending work exhausted');
 for($i=0;$i<3;$i++){$clock->instant=$clock->now()->modify('+301 seconds');(new ObservationWork($observer,$clock,$budget))->tick(1);}

@@ -15,7 +15,7 @@ Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, stati
     if ($diverge) { App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
 });
 $transfers = new TransferPrecheck(new Rdap(static fn () => throw new RuntimeException('Synthetic offline lookup')));
-$adapter = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transfers), $clock); $adapter->boot(); $adapter->boot();
+$adapter = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock, $transfers), $clock); $adapter->boot(); $adapter->boot();
 $user = commerceUser(); $cart = commerceCart($user); $product = $native->product($tlds[0], 'register');
 same('domain', $adapter->fields($product)[0]['name'], 'Neutral native domain checkout field');
 $beforeFields=$reads->calls;
@@ -50,18 +50,18 @@ Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerc
 same(3, Order::count(), 'Expired eligibility refreshes without sending the customer back');
 same($beforeReads + 1, $reads->calls, 'Expired check costs one unlocked registrar read');
 same($stock - 1, $hosting->fresh()->stock, 'Mixed checkout continues normally');
-$refreshed = (new CheckoutEligibility($bindings, $clock))->refresh($line->checkout_config['domains_check'], $line->checkout_config['domain'], $sellers->selection('com', 'register', 1, $clock->now()), [(int)$cart->id, (int)$line->product_id, (int)$line->plan_id]);
+$refreshed = (activeFixtureEligibility($bindings, $clock))->refresh($line->checkout_config['domains_check'], $line->checkout_config['domain'], $sellers->selection('com', 'register', 1, $clock->now()), [(int)$cart->id, (int)$line->product_id, (int)$line->plan_id]);
 // Two requests can still hold the expired token. Both must join the already refreshed read.
-foreach ([new CheckoutEligibility($bindings, $clock), new CheckoutEligibility($bindings, $clock)] as $otherTab) {
+foreach ([activeFixtureEligibility($bindings, $clock), activeFixtureEligibility($bindings, $clock)] as $otherTab) {
     same($refreshed, $otherTab->refresh($line->checkout_config['domains_check'], $line->checkout_config['domain'], $sellers->selection('com', 'register', 1, $clock->now()), [(int)$cart->id, (int)$line->product_id, (int)$line->plan_id]), 'Stale tabs coalesce on the same receipt');
 }
 same($beforeReads + 1, $reads->calls, 'Repeated requests cost no extra registrar reads');
 
 $clock->instant = $now; $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('seller-change-placeholder.com'));
-activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $now); commerceCheckout($user, $cart);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $now); commerceCheckout($user, $cart);
 same(3, Order::count(), 'Seller switch invalidates old link and receipt');
 commerceReject(static fn () => commerceAdd(commerceCart($user), $product, placeholderComFixtureName('old-link-placeholder.com')));
-activeFixtureSeller($sellers,'com', 3, $tlds[0]->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[0]->server_id, true, true, $now);
 $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('quantity-placeholder.com'));
 foreach ([['quantity' => 2], ['quantity' => 1.5], ['checkout_config' => ['domain' => ['bad']]], ['config_options' => [['option_id' => 1]]]] as $bad) {
     commerceReject(static function () use ($line, $bad): void { $copy = $line->fresh(); $copy->fill($bad)->save(); });

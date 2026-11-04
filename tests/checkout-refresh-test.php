@@ -45,14 +45,14 @@ $registry->register('namesilo', ['token'], new class implements AccountVerifier 
     public function verify(Environment $environment, array $credentials): string { return $credentials['token']; }
 }, fn($b, $credentials) => new Driver(new Client($b, $credentials['token'], $wire), [], $clock));
 $bindings = new AccountBindings($registry); $sellers = new SellerPolicies($prices, $bindings);
-activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
 $limiter = new AccountReadBudget($clock);
 app()->instance(Runtime::class, new Runtime); app()->instance(ReadLimiter::class, $limiter);
 $expireDuringAdmission = false;
 Event::listen(App\Events\Order\Creating::class, static function () use (&$expireDuringAdmission, $clock): void {
     if ($expireDuringAdmission) { $clock->advance(301); }
 });
-$adapter = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock), $clock); $adapter->boot();
+$adapter = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock); $adapter->boot();
 $user = commerceUser(); $product = $native->product($tlds[1], 'register');
 $mount = static function ($cart) use ($user) {
     Illuminate\Support\Once::flush();

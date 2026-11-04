@@ -32,7 +32,7 @@ foreach([[],[Staff::COSTS],[Staff::VIEW],[Staff::VIEW,Staff::COSTS]] as $permiss
 }
 $u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);
 // Renewal-off feedback must distinguish a disabled switch from missing retained prices.
-$clock=new FakeClock($now);$store=new Storefront($sellers,$prices,$native,$bindings,new CheckoutEligibility($bindings,$clock),$clock);
+$clock=new FakeClock($now);$store=new Storefront($sellers,$prices,$native,$bindings,activeFixtureEligibility($bindings,$clock),$clock);
 $savedPrices=static fn()=>DB::table('domains_prices')->where('server_id',$t->server_id)->orderBy('id')->get()->map(fn($p)=>(array)$p)->all();
 $retained=$savedPrices();same(4,count($retained),'Current renewal, transfer and both registration terms retained');
 foreach($retained as $p){

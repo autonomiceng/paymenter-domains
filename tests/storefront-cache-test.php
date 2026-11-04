@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligib
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 extract(commerceFixture(true)); $clock = new FakeClock($now);
-$eligibility = new CheckoutEligibility($bindings, $clock);
+$eligibility = activeFixtureEligibility($bindings, $clock);
 $store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $measure = static function (Closure $read): array {
     DB::enableQueryLog(); DB::flushQueryLog();
@@ -85,7 +85,7 @@ $nativePrice->update(['price' => '20.00']); $clock->instant = $now->modify('+60 
 same('$20.00', $store->endings()[0]['register'], 'Restored native price appears after the TTL');
 
 // Native cart admission and checkout independently refuse stale or withdrawn prices while display stays warm.
-$adapter = new CartAdmission($native, $sellers, $eligibility, $clock); $adapter->boot();
+$adapter = activeFixtureAdmission($native, $sellers, $eligibility, $clock); $adapter->boot();
 $user = commerceUser(); $cart = commerceCart($user); commerceAdd($cart, $product, placeholderComFixtureName('cached-checkout-placeholder.com'));
 $nativePrice->update(['price' => '19.00']);
 same('$20.00', $store->endings()[0]['register'], 'Admission refusal is exercised against a warm stale display');

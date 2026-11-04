@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, HistoryAcceptances, OperationReconciliation, RegistrarRegistry};
-activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
 $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[1], 'register'), 'native-history-placeholder.com'); commerceCheckout($user, $cart);
 $op = Domain::where('domain', 'native-history-placeholder.com')->sole()->operations()->sole();
 Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);

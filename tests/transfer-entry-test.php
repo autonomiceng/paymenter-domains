@@ -5,7 +5,7 @@ require __DIR__.'/Support/owned.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,StorefrontController};
 use Paymenter\Extensions\Servers\Domains\Services\{Storefront,CheckoutEligibility};
-$store=new Storefront($sellers,$prices,$native,$bindings,new CheckoutEligibility($bindings,$clock),$clock);
+$store=new Storefront($sellers,$prices,$native,$bindings,activeFixtureEligibility($bindings,$clock),$clock);
 app()->instance(Storefront::class,$store);
 $controller=new OwnedDomainController($owners);$search=new StorefrontController($store);
 $request=Request::create('/domains','GET');$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());

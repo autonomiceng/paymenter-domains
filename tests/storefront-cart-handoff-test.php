@@ -24,10 +24,10 @@ $registry->register('enom', ['token'], new class implements AccountVerifier {
     public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
 }, static fn ($binding, $credentials) => new Driver(new Client($binding, $credentials['token'], 'synthetic'), ['com']));
 $bindings = new AccountBindings($registry); app()->instance(Clock::class, $clock);
-$eligibility = new CheckoutEligibility($bindings, $clock);
+$eligibility = activeFixtureEligibility($bindings, $clock);
 $store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $controller = new StorefrontController($store); storefrontViews();
-(new CartAdmission($native, $sellers, $eligibility, $clock))->boot();
+(activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
 EnomTestSendLimitSchema::install(); config(['domains.enom_test_sends_per_day' => 200, 'domains.enom_test_sends_per_minute' => 100000]);
 $logger = new class extends Psr\Log\AbstractLogger {
     public array $warnings = [];

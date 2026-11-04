@@ -19,7 +19,7 @@ $fixtureEnding = 'test';
 extract(commerceFixture(true, ending: $fixtureEnding)); ContactProfileSchema::install(); ContactProfileSchema::verify();
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000003_create_domains_contact_profiles.php';
 $migration->down(); ContactProfileSchema::verify();
-$clock = new FakeClock($now); $admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock), $clock);
+$clock = new FakeClock($now); $admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock);
 $admission->boot(); (new InvoiceBinding($admission, $native, $prices, $clock))->boot();
 $user = commerceUser(); $user->update(['email' => 'contact@example.com']); $other = commerceUser();
 $staff = commerceUser(); $role = Role::create(['name' => 'Domain manager', 'permissions' => ['admin.domains.manage']]); $staff->update(['role_id' => $role->id]);

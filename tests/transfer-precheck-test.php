@@ -12,7 +12,7 @@ $rdap=new Rdap(static function($url)use(&$calls,&$status){$calls++;same(0,Illumi
         ?['services'=>[[['com'],['https://rdap.example.com/']]]]
         :['objectClassName'=>'domain','ldhName'=>'example.com','status'=>['active'],'events'=>[
             ['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-01-01T00:00:00Z']]])];});
-$eligibility=new CheckoutEligibility($bindings,$clock,new TransferPrecheck($rdap));
+$eligibility=activeFixtureEligibility($bindings,$clock,new TransferPrecheck($rdap));
 $s=$sellers->selection('com','transfer',1,$now);$server=App\Models\Server::find($s->serverId);
 commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));same(0,$calls,'No lookup without explicit allowlist');
 $server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
@@ -31,7 +31,7 @@ $server->settings()->where('key','domains_transfer_endings')->update(['value'=>'
 foreach([null,[['name'=>'unaccepted']]]as$schema){$tlds[0]->update(['registry_fields'=>$schema]);commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));}$tlds[0]->update(['registry_fields'=>[]]);
 foreach(['example.net','sub.example.com','xn--abc.com']as$name){commerceReject(fn()=>$eligibility->observe($name,$s,[1]));}
 $ns=App\Models\Server::find($tlds[1]->server_id);
-activeFixtureSeller($sellers,'com',2,$ns->id,true,true,$now);$nsSelection=$sellers->selection('com','transfer',1,$now);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$ns->id,true,true,$now);$nsSelection=$sellers->selection('com','transfer',1,$now);
 same([60,60],TransferPrecheck::rules($nsSelection),'NameSilo seller offer needs no Enom-only fallback acceptance');
 $nsEndings=$ns->settings()->create(['key'=>'domains_transfer_endings','value'=>'net']);
 commerceReject(fn()=>TransferPrecheck::rules($nsSelection));

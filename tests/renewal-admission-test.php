@@ -108,7 +108,7 @@ foreach ([new RenewalRequest($domain->id, 2, 1, '2027-10-18', '456'), new Renewa
 }
 DB::transaction(function () use ($service, $request): void { commerceReject(fn () => $service->check($request())); });
 // The non-selling holding account keeps renewal authority independently of all new-sale flags.
-activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
 $tlds[0]->update(['enabled' => false, 'register_enabled' => false, 'transfer_enabled' => false, 'renew_enabled' => false]);
 same(RenewalCode::Admitted, $check()->code, 'Seller/flags withdrawal cannot strand holder');
 $clock->instant = new DateTimeImmutable('2027-10-18T11:59:59Z'); same(RenewalStatus::Ordinary, $check()->status, 'Precise expiry instant selects ordinary');

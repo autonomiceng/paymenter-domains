@@ -39,3 +39,30 @@ function activeFixtureRepublish(object $owner,Tld|int $ending,?DateTimeImmutable
     $q=new Query($b,[$t->tld],'register');
     $ports->apply(Edit::republish($b,$t->tld),$ports->readOffers($q,Context::Staff)[0]->revision);
 }
+
+function activeFixtureOffers(object $owner,?\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers $register=null): \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers
+{
+    static $offers;$offers??=new WeakMap;if($register!==null){$offers[$owner]=$register;}
+    return $offers[$owner]??throw new LogicException('Explicit active fixture offers required');
+}
+function activeFixtureEligibility($bindings,$clock,$transfers=null): \Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility
+{
+    $port=new class($bindings,$clock,$transfers) extends \Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility {
+        public \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers $fixtureOffers;
+        protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers {return $this->fixtureOffers;}
+    };$port->fixtureOffers=activeFixtureOffers($bindings);return $port;
+}
+function activeFixtureAdmission($native,$sellers,$eligibility,$clock): \Paymenter\Extensions\Servers\Domains\Services\CartAdmission
+{
+    $port=new class($native,$sellers,$eligibility,$clock) extends \Paymenter\Extensions\Servers\Domains\Services\CartAdmission {
+        public \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers $fixtureOffers;
+        protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers {return $this->fixtureOffers;}
+    };$port->fixtureOffers=activeFixtureOffers($sellers);return $port;
+}
+function activeFixtureStops(object $owner,Tld $t,array $stops): void
+{
+    $ports=activeFixturePorts($owner);$b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
+    $raw=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent);$raw['stops']=$stops;
+    $q=new Query($b,[$t->tld],'register');
+    $ports->apply(Edit::override($b,$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(...$raw)),$ports->readOffers($q,Context::Staff)[0]->revision);
+}

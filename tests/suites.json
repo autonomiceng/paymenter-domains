@@ -466,7 +466,8 @@
     "tests/retained-offer-package-test.php",
     "tests/offer-sync-facts-test.php",
     "tests/offer-store-cleanup-test.php",
-    "tests/offer-store-prefix-test.php"
+    "tests/offer-store-prefix-test.php",
+    "tests/catalogue-test.php"
   ],
   "ui": [],
   "runner": [
