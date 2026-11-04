@@ -103,6 +103,8 @@ Illuminate\Support\Facades\Auth::setUser($full);
 expect(Paymenter\Extensions\Servers\Domains\Admin\Support\LiveActivationAction::offered($a->fresh()),'NameSilo has the same reviewed Activate entry point');
 $summary=Paymenter\Extensions\Servers\Domains\Admin\Support\LiveActivationAction::summary($a->fresh())->toHtml();
 expect(str_contains($summary,'NameSilo takes domain costs')&&!str_contains($summary,'Enom'),'Activation summary uses this registrar and its readiness gates');
+expect(str_contains($summary,'Renewals also enable scheduled invoices and customer early renewals.')&&!str_contains($summary,'Late renewal has a separate account switch.'),
+    'NameSilo activation explains renewal billing without offering an unsupported late-renewal switch');
 $panel=Filament\Facades\Filament::getCurrentPanel();
 $pages=[Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class];$panel->pages($pages);
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});

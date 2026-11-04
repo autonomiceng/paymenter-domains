@@ -180,7 +180,7 @@ final class EnomLiveActivation
         $limits=$provider==='Enom'?EnomLiveCalls::facts($b):'Our daily call and spending limits are set by your site admin.';
         $details[]='Balance '.($balance?->amount??'Missing: use Check balance').' '.($balance?->currency??'USD').'. '.$limits;
         $billing=RenewalBillingSettings::read((int)$a->server_id);
-        $details[]='Renewal invoices '.$billing['issue_days'].' days before expiry, due '.$billing['due_days'].' days before. Renewals also enable scheduled invoices and customer early renewals. Late renewal has a separate account switch.';
+        $details[]='Renewal invoices '.$billing['issue_days'].' days before expiry, due '.$billing['due_days'].' days before. Renewals also enable scheduled invoices and customer early renewals.'.($provider==='Enom'?' Late renewal has a separate account switch.':'');
         $review=self::priceReview($a,$b,$features,app(Clock::class)->now());$costs=$review['costs'];$missing=$review['missing'];
         $counts=['register'=>0,'transfer'=>0,'renew'=>0];$min=$max=null;$exceptions=[];
         foreach($costs as $row){
