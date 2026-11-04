@@ -1,5 +1,29 @@
 # Offer upgrade staging (B2)
 
+## Required bridge upgrade before policy/store cleanup
+
+Retained demo and production installations use two package upgrades. First install Domains bridge
+`0.1.0` pinned to commit `89112442164558c4ab61ff32f210d1b102605112` and its verified package digest.
+The version string alone is not a package pin. Keep that package available for recovery and older installations.
+Follow the checked quiet-window procedure below on the bridge: stop/drain writers, snapshot, pause,
+capture every account, convert bounded batches, repeat, compare, and authenticate the one activation.
+Keep identities, annual holder retail and all paid/pending/uncertain obligations unchanged.
+
+Only after its valid active receipt is persisted may the policy/store cleanup package replace the bridge.
+The deployment tools call `Services\OfferUpgrade::requireCompatible()` using the candidate source before
+replacing installed package bytes. It is read-only: an unconverted retained installation refuses with
+the bridge version/commit to install first. No automatic conversion, active-state seeding or schema reset.
+On the cleanup package, the extension lifecycle also refuses before extension-owned mutations.
+
+Paymenter's native ZIP uploader replaces files before the upgrade hook and does not propagate its failure
+reliably. It is not a supported direct legacy-to-cleanup upgrade route. Use the deployment tools' preflight
+and staged package promotion; no Paymenter core changes. Preserve the original package on refusal.
+Before activation the bridge can resume legacy work under maintenance. After activation use a forward fix
+or a coordinated full restore accounting for subsequent financial activity.
+
+The final cleanup package removes the converter and obsolete current-state stores. This runbook does not
+authorize any demo/production deployment or provider request; those remain separately controlled operations.
+
 This is dormant preparation. Installation adds nullable/defaulted fields; it never converts data,
 publishes products, activates an account or switches a caller. No legacy store is dropped. B4 owns
 the writer/projection and B6 owns the checked quiet window and activation. There is no dual writer.
