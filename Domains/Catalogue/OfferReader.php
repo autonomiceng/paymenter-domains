@@ -79,7 +79,8 @@ final class OfferReader
         };
         $tlds = $fetch(OfferState::query('domains_tlds')->where($scope)->orderBy('id'))->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
         $prices = $fetch(OfferState::query('domains_prices')->where($scope)->orderBy('id'))->get()->groupBy(static fn ($p) => $p->server_id.':'.$p->tld);
-        if ($display) { return $this->displayRows($queries, $servers, $accounts, $defaults, $policies, $tlds, $prices, $context); }
+        $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccounts($ids);
+        if ($display) { return $this->displayRows($queries, $servers, $accounts, $defaults, $policies, $tlds, $prices, $context, $freshness); }
         $result = []; $evaluator = new Evaluator; $now = $this->clock->now();
         foreach ($queries as $i => $query) {
             $binding = $query->binding; $d = $defaults[$binding->serverId]; $batch = [];
@@ -92,22 +93,23 @@ final class OfferReader
                     }
                 }
                 if ($tld === null) {
+                    $snapshot = null;
                     $decision = new Decision($name, $query->action, $query->term, false, null,
                         new Revision(0, $d['_revision'] ?? 0, (int) ($policy?->revision ?? 0)), 'unavailable');
                 } else {
                     if (!$tld->catalogue_converted) { throw new \DomainException('Offer conversion changed.'); }
-                    $snapshot = OfferState::snapshot($binding, $tld, $d, $policy, $rows, $readiness[$i]);
+                    $snapshot = OfferState::snapshot($binding, $tld, $d, $policy, $rows, $readiness[$i], freshness: $freshness[$binding->serverId]);
                     $decision = $evaluator->evaluate($snapshot, $query, $context, $now);
                 }
                 $price = $rows->first(static fn ($p) => $p->action === $query->action && (int) $p->term === $query->term && $p->currency === $query->currency);
-                $batch[] = new ReadOffer($decision, $binding, $price, $context);
+                $batch[] = new ReadOffer($decision, $binding, $price, $context, $freshness[$binding->serverId], $snapshot ?? null, $query);
             }
             $result[] = $batch;
         }
         return $result;
     }
 
-    private function displayRows(array $queries, $servers, $accounts, array $defaults, $policies, $tlds, $prices, Context $context): array
+    private function displayRows(array $queries, $servers, $accounts, array $defaults, $policies, $tlds, $prices, Context $context, array $freshness): array
     {
         $result = []; $ready = []; $evaluator = new Evaluator; $now = $this->clock->now();
         foreach ($queries as $query) {
@@ -125,12 +127,12 @@ final class OfferReader
                         $key = $id.':'.$action;
                         $ready[$key] ??= $servers[$id]->enabled && $servers[$id]->extension === 'Domains'
                             && ($this->ready)($b, $servers[$id], $accounts[$id], $seed, $context);
-                        $snapshot = OfferState::snapshot($b, $tld, $defaults[$id], $policies[$name] ?? null, $rows, $ready[$key]);
+                        $snapshot = OfferState::snapshot($b, $tld, $defaults[$id], $policies[$name] ?? null, $rows, $ready[$key], freshness: $freshness[$id]);
                         foreach ($action === 'register' ? range(1, 10) : [1] as $term) {
                             $q = new Query($b, [$name], $action, $term); ($this->authorize)($q, $context);
                             $d = $evaluator->evaluate($snapshot, $q, $context, $now);
                             $row = $rows->first(static fn ($p) => $p->action === $action && (int)$p->term === $term && $p->currency === 'USD');
-                            $batch[$name][$action.':'.$term] = new ReadOffer($d, $b, $row, $context);
+                            $batch[$name][$action.':'.$term] = new ReadOffer($d, $b, $row, $context, $freshness[$id]);
                         }
                     }
                 } catch (\Throwable) { $batch[$name] = []; } // One malformed ending cannot poison its siblings.

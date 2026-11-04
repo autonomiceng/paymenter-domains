@@ -65,10 +65,10 @@ final class Projection
                 $plan = $plans->first() ?? $product->plans()->create(['name' => $term.' '.($term === 1 ? 'year' : 'years'),
                     'type' => 'recurring', 'billing_period' => $term, 'billing_unit' => 'year']);
                 $this->native->mapping($product, $plan);
-                $plan->sort = isset($available[$term]) ? $term : 100 + $term;
+                // Closure is enforced by offer admission. Preserve retained native price IDs and amounts.
+                if (!isset($available[$term])) { continue; }
+                $plan->sort = $term;
                 if ($plan->isDirty()) { $plan->save(); }
-                $plan->prices()->whereNot('currency_code', 'USD')->delete();
-                if (!isset($available[$term])) { $plan->prices()->delete(); continue; }
                 $rows = $plan->prices()->select('*')->selectRaw('CAST(price AS CHAR) AS price, CAST(setup_fee AS CHAR) AS setup_fee')->where('currency_code', 'USD')->get();
                 if ($rows->count() > 1) { throw new \DomainException('Duplicate domain price.'); }
                 $price = $rows->first() ?? $plan->prices()->make(['currency_code' => 'USD']);

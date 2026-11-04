@@ -72,7 +72,7 @@ final class OfferState
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
     { return new Revision((int) $tld->catalogue_revision, $defaults['_revision'] ?? 0, (int) ($policy?->revision ?? 0)); }
     public static function snapshot(AccountBinding $binding, object $tld, array $defaults, ?object $policy,
-        iterable $prices, bool $ready, bool $publishing = false): Snapshot
+        iterable $prices, bool $ready, bool $publishing = false, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness = null): Snapshot
     {
         $raw = self::decode($tld->catalogue_intent); $intent = [];
         foreach (get_object_vars(new Intent) as $key => $unused) { if (array_key_exists($key, $raw)) { $intent[$key] = $raw[$key]; } }
@@ -80,9 +80,10 @@ final class OfferState
             if (array_key_exists($key, $defaults)) { $intent[$key] = $defaults[$key]; }
         }
         $costs = $retail = [];
+        $freshness ??= \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($binding->serverId);
         foreach ($prices as $p) {
             if ($p->catalogue_observation === null || $p->currency !== 'USD') { continue; }
-            $c = self::cost(self::decode($p->catalogue_observation)); $costs[] = $c;
+            $c = $freshness->cost(self::cost(self::decode($p->catalogue_observation))); $costs[] = $c;
             if ($p->retail !== null) { $retail[$c->key()] = OfferState::money($p->retail, 2) ?? throw new \DomainException('Invalid published retail.'); }
         }
         $revision = self::revision($tld, $defaults, $policy);

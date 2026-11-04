@@ -104,7 +104,7 @@ final class Capabilities
             if ($p->action !== 'renew' || (int)$p->term !== 1 || $p->currency !== 'USD') { continue; }
             if ($row !== null) { throw new \DomainException('Duplicate holding cost.'); }
             $row = $p;
-            if ($p->catalogue_observation !== null) { $cost = $this->current(OfferState::cost(OfferState::decode($p->catalogue_observation))); }
+            if ($p->catalogue_observation !== null) { $cost = $this->current(\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($b->serverId)->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)))); }
         }
         $value = OfferState::money($t->catalogue_retained_annual_retail, 2);
         $retail = $value !== null && \Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($value) > 0

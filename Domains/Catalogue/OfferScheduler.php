@@ -20,7 +20,7 @@ final class OfferScheduler
     { $this->offers->wake(AccountBindings::binding(Account::where('server_id', $server)->sole())); }
     public function sync(AccountBinding $b, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void { $this->offers->sync($b, $origin, $expectedGeneration); }
     public function wake(AccountBinding $b): void { $this->offers->wake($b); }
-    public function requestFacts(AccountBinding $b, string $tld): void { $this->offers->requestFacts($b, $tld); }
+    public function requestFacts(AccountBinding $b, string $tld): void { $this->offers->requestSoldFacts($b, $tld); }
     public function status(AccountBinding $b, ?string $tld = null): array { return $this->offers->status($b, $tld); }
     public function resume(int $id, string $reason, StaffOperationReview|\Paymenter\Extensions\Servers\Domains\Services\StaffSyncReview|null $review = null): void
     { $this->holdings->resume($id, $reason, $review, $this->current); }
