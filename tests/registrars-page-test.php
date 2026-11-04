@@ -326,7 +326,7 @@ foreach(['test','live'] as $mode){
     foreach(['live_renewal','live_management'] as $name){
         $page->assertActionDoesNotExist(setupAction($name,(int)$enom->server_id));
     }
-    $page->assertSee('Restore the saved account identity first.');
+    $page->assertSee('Restore the API connection first.');
 }
 // A live fingerprint must match the restored identity and live environment.
 DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=>$savedIdentity,'account_fingerprint'=>$liveBinding->fingerprint,
@@ -334,7 +334,7 @@ DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=
 same(Environment::Live,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->environment,'Healthy inverse uses a valid live binding');
 same($liveBinding->fingerprint,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->fingerprint,'Healthy inverse fingerprint matches live identity');
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>$liveBinding->fingerprint]);
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->assertDontSee('Restore the saved account identity first.');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->assertDontSee('Restore the API connection first.');
 // Unavailable features explain themselves; Transfers names the deployment setting needed to enable its switch.
 $checklist=fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::findOrFail($enom->id),['label'=>'Active','reason'=>null]),null,'label');
 $noKeys=function()use($checklist,$enom){foreach([...array_values($checklist()),...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals((int)$enom->server_id),...array_merge(...array_values(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system())),Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::runtime(Account::findOrFail($enom->id))] as $row){

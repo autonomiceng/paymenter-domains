@@ -28,6 +28,7 @@ final class NameSiloFeatureSettings
     {return hash('sha256',json_encode(Server::findOrFail($b->serverId)->settings()->whereIn('key',array_map(static fn($f)=>'domains_namesilo_'.$f,['renewal','management','transfer']))->orderBy('key')->pluck('value','key')->all(),JSON_THROW_ON_ERROR));}
     public static function review(StaffSettingsReview $r,array $data,string $feature): void
     {
+        if(!in_array($feature,['renewal','management','transfer'],true)||!in_array($r->action,['test_'.$feature,'live_'.$feature,'activate'],true)){throw new \DomainException('NameSilo feature review required.');}
         $r->local(static function()use($r,$data,$feature):void {
             $b=CatalogueAcceptances::binding(Account::where('server_id',$r->serverId)->sole());$on=($data['accept']??false)===true;
             $live=$b->environment===Environment::Live;
