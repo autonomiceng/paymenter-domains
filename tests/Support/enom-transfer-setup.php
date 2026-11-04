@@ -37,7 +37,8 @@ $write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid
 if(isset($transferConfigured)){$transferConfigured();}
 $write('probe');
 require_once __DIR__.'/installed-offer-evidence.php';
-$tld=installedOfferEvidence($binding,$clock,true);
+// Independent synthetic annual prices/support cover this fixture's seven-day transfer watch.
+$tld=installedOfferEvidence($binding,$clock,true,7);
 if($transferEnvironment==='test'){config(['domains.enom_writes.renewal'=>true]);$write('test_renewal',['accept'=>true,'verified'=>true]);}
 $write('acceptance',['sell'=>['terms'=>['com'=>['longest'=>1,'transfer'=>true]]]]);
 // Default pricing is a business-wide setting, so Paymenter reloads its settings after the next request; keep the shop currency in the table as a real install does.

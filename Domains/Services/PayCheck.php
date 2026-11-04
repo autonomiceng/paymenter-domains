@@ -75,7 +75,7 @@ class PayCheck
     private function catalogueStop(Invoice $invoice, AcquisitionOffers $offers): ?array
     {
         if ($invoice->fresh()?->status !== 'pending' || self::moneyMoving((int)$invoice->id)) { return null; }
-        $ops = $this->orders($invoice)->filter(fn ($op) => in_array($op->state, self::OPEN, true));
+        $ops = $this->orders($invoice);
         if ($ops->isEmpty()) { return null; }
         $unavailable = ['why' => 'unavailable', 'text' => 'Domains can’t be ordered right now. Please try again later.'];
         try {
@@ -91,6 +91,7 @@ class PayCheck
             foreach ($selections as $s) { $offers->validate($s); }
             $deadline = $this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');
             foreach ($ops->values() as $i => $op) {
+                if (!in_array($op->state, self::OPEN, true)) { continue; }
                 $stamp = hash('sha256', json_encode(get_object_vars($selections[$i]), JSON_THROW_ON_ERROR));
                 $answer = $this->answer($op, $deadline, $stamp);
                 // A cached clear/taken answer has exactly the same local post-read guard.

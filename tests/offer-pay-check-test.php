@@ -54,6 +54,8 @@ $new = static function ($name) use ($user, $public): Operation {
     $cart = commerceCart($user); commerceAdd($cart, $public['product'], $name); commerceCheckout($user, $cart);
     return Operation::latest('id')->firstOrFail();
 };
+$held = $new('held-current-placeholder.com');$held->update(['state'=>'held']);$heldInvoice=Invoice::findOrFail($held->invoice_id);$heldReads=$live->reads;
+same(null,$pay->stop($heldInvoice),'Current unsent held invoice does not trigger provider payment reads');same($heldReads,$live->reads,'Held current check is local only');
 $op = $new('cache-minute-placeholder.com'); $invoice = Invoice::findOrFail($op->invoice_id);
 Cache::put('domains.pay-check.'.$op->id, 'taken', 60); $live->available = true;
 same(null, $pay->stop($invoice), 'Old minute cache cannot manufacture a taken answer in the new namespace');
