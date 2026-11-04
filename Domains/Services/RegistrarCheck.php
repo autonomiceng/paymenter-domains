@@ -63,8 +63,18 @@ final class RegistrarCheck
     private static function answerWords(array $check): array
     {
         $registrar = ($check['registrar'] ?? null) === 'Enom' ? 'Enom' : 'NameSilo';
-        $after = (new \DateTimeImmutable('@'.(int)($check['answer_after'] ?? 0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT';
+        $after = self::answerAfter($check);
         return ['title'=>$registrar.' has not answered yet','body'=>'Ask '.$registrar.' to check this attempt. You can record '.$registrar.'’s answer after '.$after.'.'];
+    }
+    private static function answerAfter(array $check): string
+    { return (new \DateTimeImmutable('@'.(int)($check['answer_after'] ?? 0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT'; }
+    /** Customers wait for our registrar check; recording the answer is a staff task. */
+    public static function forCustomer(Operation $op): array
+    {
+        $check = $op->policy['status_check'] ?? null;
+        if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::for($op); }
+        $kind = $op->action === 'transfer' ? 'transfer' : 'registration';
+        return ['title'=>ucfirst($kind).' pending','body'=>'We’re confirming this '.$kind.' with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.self::answerAfter($check).'.','tone'=>'info'];
     }
     public static function for(Operation $op): array { return self::words($op->policy['status_check'] ?? null, $op->state === 'succeeded'); }
 }
