@@ -185,7 +185,7 @@ foreach ([172799=>true,172800=>false] as $age=>$allowed) {
 }
 Livewire\Livewire::withQueryParams([]);$clock->instant=$now;
 // Products\Checkout registered the runtime above; wire its invoice hooks to this partial fixture's adapter and clock.
-$binder=new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($adapter,$native,$prices,$clock);
+$binder=$invoiceBinding;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$binder);$binder->boot();
 // The real stock theme has no order-contact form: its no-argument button needs an account repair path.
 // Native rendering, notifications and invoice rollback cannot be proved with a service-only unit fixture.
