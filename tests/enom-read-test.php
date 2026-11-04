@@ -40,6 +40,21 @@ foreach([$preview,new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Enom
     same($calls,count($wire->calls),'Wrapper admission itself makes no provider request');
 }
 
+// Acquisition follow-on renewal is an account/TLD quote for a name not owned yet.
+// Ordinary renewalAssessment must keep its owned-domain semantics.
+foreach ([$driver, $preview, new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomTestReconciliationReader($preview, $driver)] as $reader) {
+    expect($reader instanceof \Paymenter\Extensions\Servers\Domains\Contracts\AcquisitionPriceReader,
+        'Installed Enom readers need a bounded acquisition price port');
+    $wire->payloads['ProductPrice'] = '<ProductPrice><ProductEnabled>true</ProductEnabled><Price>8.0000</Price></ProductPrice>';
+    $before = count($wire->calls); $query = new Query('unowned-placeholder.com', Action::Renew, 1);
+    $quote = $reader->acquisitionQuote($query, $context(1));
+    same(Disposition::Accepted, $quote->disposition, 'Unowned-name follow-on renewal has an account price');
+    same('8.0000', $quote->evidence()->quote->cost->amount, 'Renewal account quote retains exact cost');
+    expect($query->matches($quote->evidence()->quote->query), 'Follow-on quote retains exact name/action/term');
+    same([[ReadCommand::ProductPrice, ['TLD' => 'com', 'ProductType' => 16, 'Years' => 1]]], array_slice($wire->calls, $before),
+        'One bounded product-price read; no domain ownership or renewal assessment calls');
+}
+
 foreach (['0' => '0.00', '1,234.50' => '1234.50', '12.3' => '12.3', '999,999,999,999,999,999.99'=>'999999999999999999.99'] as $input => $amount) {
     $wire->payloads['Balance'] = '<AvailableBalance>'.$input.'</AvailableBalance>';
     $result = $driver->balance($context()); same($amount, $result->evidence()->balance?->amount, 'Source grouped USD balance exact');

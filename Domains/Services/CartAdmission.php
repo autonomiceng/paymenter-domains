@@ -91,14 +91,24 @@ class CartAdmission
             $mapping = $this->native->mapping($product, $item->plan);
             if (!$mapping || $mapping['action'] !== 'register') { continue; }
             $this->validate($item, $product); $name = $this->name($item, $mapping);
-            $selected = $this->catalogue()?->selection($mapping['tld']->tld, 'register', $mapping['term'])
-                ?? $this->sellers->selection($mapping['tld']->tld, 'register', $mapping['term'], $this->clock->now());
-            if ($selected->serverId !== (int) $product->server_id || $selected->fingerprint !== $mapping['tld']->account_fingerprint) {
-                throw new \DomainException('Registrar changed.');
-            }
             $config = $item->checkout_config;
             while (true) {
-                try { $token = $this->eligibility->refresh((string) ($config['domains_check'] ?? ''), $name, $selected, $this->identity($item), $batch); break; }
+                try {
+                    $offers = $this->catalogue();
+                    $selected = $offers?->checkoutSelection($name, $mapping['tld']->tld, $mapping['term'],
+                        $this->eligibility->previous((string) ($config['domains_check'] ?? ''), $name, $this->identity($item)), $batch,
+                        (int) $product->server_id, $mapping['tld']->account_fingerprint)
+                        ?? $this->sellers->selection($mapping['tld']->tld, 'register', $mapping['term'], $this->clock->now());
+                    if ($selected->serverId !== (int) $product->server_id || $selected->fingerprint !== $mapping['tld']->account_fingerprint) {
+                        throw new \DomainException('Registrar changed.');
+                    }
+                    $token = $this->eligibility->refresh((string) ($config['domains_check'] ?? ''), $name, $selected, $this->identity($item), $batch);
+                    if (isset($selected->catalogue['order_quote'])) {
+                        // In-memory native plan only: native tax/coupon/invoice arithmetic stays intact.
+                        $item->plan->prices->where('currency_code', 'USD')->sole()->price = $selected->catalogue['retail'];
+                    }
+                    break;
+                }
                 catch (ReadDeferred $e) {
                     $delay = $e->retryAfterMicros;
                     if ($delay === null) { throw $e; }
@@ -190,7 +200,8 @@ class CartAdmission
             $snapshot = $snapshots[$index]; $item = $cart->items->firstWhere('id', $line['item_id']);
             $price = $item->plan()->firstOrFail()->prices()->where('currency_code', 'USD')->sole();
             $cached = $item->plan->prices->where('currency_code', 'USD')->sole();
-            if (RetailLine::decimal($price->price) !== $snapshot->retail || RetailLine::decimal($price->setup_fee) !== '0.00'
+            $listed = $offers?->listedRetail($line['selection']) ?? $snapshot->retail;
+            if (RetailLine::decimal($price->price) !== $listed || RetailLine::decimal($price->setup_fee) !== '0.00'
                 || RetailLine::decimal($cached->price) !== $snapshot->retail || RetailLine::decimal($cached->setup_fee) !== '0.00') {
                 throw new \DomainException('Native list price changed; refresh checkout.');
             }

@@ -88,6 +88,7 @@
     "tests/native-catalogue-test.php",
     "tests/cart-admission-test.php",
     "tests/offer-commerce-test.php",
+    "tests/checkout-order-quote-test.php",
     "tests/offer-staff-test.php",
     "tests/offer-staff-reads-test.php",
     "tests/offer-installed-staff-test.php",

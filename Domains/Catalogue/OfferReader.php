@@ -93,6 +93,7 @@ final class OfferReader
                     }
                 }
                 if ($tld === null) {
+                    $snapshot = null;
                     $decision = new Decision($name, $query->action, $query->term, false, null,
                         new Revision(0, $d['_revision'] ?? 0, (int) ($policy?->revision ?? 0)), 'unavailable');
                 } else {
@@ -101,7 +102,7 @@ final class OfferReader
                     $decision = $evaluator->evaluate($snapshot, $query, $context, $now);
                 }
                 $price = $rows->first(static fn ($p) => $p->action === $query->action && (int) $p->term === $query->term && $p->currency === $query->currency);
-                $batch[] = new ReadOffer($decision, $binding, $price, $context, $freshness[$binding->serverId]);
+                $batch[] = new ReadOffer($decision, $binding, $price, $context, $freshness[$binding->serverId], $snapshot ?? null, $query);
             }
             $result[] = $batch;
         }

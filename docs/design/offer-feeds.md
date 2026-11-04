@@ -37,6 +37,13 @@ rotation finds unknown/expired metadata. Discovery alone never queues the whole 
 Turning sales off stops those automatic facts reads; original send caps and read-group budgets stay.
 Native price rows survive unavailable offers; the evaluator and admission still refuse purchases.
 
+Registration checkout automatically re-quotes stale daily prices for the exact name, term and
+selected account. `AcquisitionOffers` applies the current staff pricing rule and rechecks the
+ordinary sale guards with temporary order evidence; neither daily nor native list prices change.
+An unchanged total continues on the same click. A changed total uses the existing cart review
+notice and next-click confirmation. Unreadable, below-cost and over-ceiling quotes stay blocked.
+Pending invoices recheck expired order quotes without changing frozen amounts or cost ceilings.
+
 B5 owns queue start/generation, policy selection, daily allowance/headroom and context construction.
 `AccountReadBudget::reserve` atomically reserves a complete local group with one shared account
 lease; `FeedReadBudget` uses its slots without counting again and releases the lease in `finish()`.
