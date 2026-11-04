@@ -9,9 +9,11 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 /** Independently dated OTE protocol evidence, not metadata inferred from account prices or old flags. */
 final class TestCatalogueFacts
 {
-    public static function current(AccountBinding $binding): bool
+    /** Sale authority requires this TLD's complete, still-current evidence, not just its account header. */
+    public static function current(AccountBinding $binding,string $tld,?Facts $cached,Clock $clock): bool
     {
-        try {self::account($binding,app(AccountBindings::class)->credentialRevision($binding));return true;}
+        try {return $cached!==null&&$cached==self::read($binding,
+            app(AccountBindings::class)->credentialRevision($binding),$tld,$clock);}
         catch(\Throwable){return false;}
     }
     private static function account(AccountBinding $binding,string $revision): array

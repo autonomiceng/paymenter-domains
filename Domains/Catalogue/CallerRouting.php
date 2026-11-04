@@ -88,8 +88,7 @@ final class CallerRouting
         if (!self::supportsSales($b->registrarKey)) { return false; }
         if ($b->registrarKey === 'namesilo') {
             $feature = match ($action) { 'register'=>'registration','renew'=>'renewal','transfer'=>'transfer',null=>null,default=>'unsupported' };
-            return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($b,$feature)
-                &&($action===null||\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts::current($b));
+            return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($b,$feature);
         }
         return match ($action) {
             'register' => $setup ? EnomTestRegistration::enabled($b) : EnomTestRegistration::sellable($b),

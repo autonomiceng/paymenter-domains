@@ -79,6 +79,22 @@ same(['$13.00','$15.60'],[$offer['price'],$offer['renew']],'Installed public rou
 expect($storefront->hasTransferOffers(),'NameSilo annual transfers follow the same seller and price gates');
 $readiness=OfferReadiness::routed()->review($account->fresh(),['registration'=>true,'transfer'=>true]);
 same(null,$readiness['missing'],'Neutral activation readiness accepts supported NameSilo prices');
+$saleFailures=[];
+$saleRefuses=static function(callable $work,string $label)use(&$saleFailures):void {
+    try{$work();}catch(\DomainException){return;}$saleFailures[]=$label;
+};
+$before=count($GLOBALS['nsCatalogueCalls']);
+$saved=Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts;
+$withdrawn=$evidence;unset($withdrawn['facts']['com']);
+config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$withdrawn]]);
+$refuses(fn()=>TestCatalogueFacts::read($binding,$evidence['credential_revision'],'com',$clock));
+$saleRefuses(fn()=>$storefront->offer('com','register',1),'Withdrawn TLD evidence must refuse public offers');
+$saleRefuses(fn()=>DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selection']],$clock->now())),
+    'Withdrawn TLD evidence must refuse locked admission');
+same($before,count($GLOBALS['nsCatalogueCalls']),'Withdrawn TLD evidence refusal never sends');
+same($saved,Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts,
+    'Withdrawing evidence preserves the original cached observation');
+config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
 $before=count($GLOBALS['nsCatalogueCalls']);
 $locked=DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selection']],$now));
 same('13.00',$locked[0]->retail,'Locked seller admission uses the same exact annual retail');
@@ -106,7 +122,22 @@ same($saved,Tld::where('server_id',$binding->serverId)->where('tld','com')->sole
 same($before,count($GLOBALS['nsCatalogueCalls']),'Withdrawal, unsupported terms and stale evidence never send');
 $clock->instant=$now;
 $writes->run($review('configure'),['registrar'=>'namesilo','environment'=>'test','credentials'=>['api_key'=>'synthetic-next-key']]);
-expect(!TestCatalogueFacts::current($binding),'Rotation invalidates the former evidence binding');
+$refuses(fn()=>TestCatalogueFacts::read($binding,$evidence['credential_revision'],'com',$clock));
 $refuses(fn()=>DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selection']],$now)));
 same($before,count($GLOBALS['nsCatalogueCalls']),'Rotated-key sale refusal performs no provider work');
+$next=['fingerprint'=>$binding->fingerprint,'credential_revision'=>$bindings->credentialRevision($binding),'facts'=>[]];
+config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$next]]);
+$writes->run($review('processing'),['enabled'=>true,'confirmed'=>true]);
+$refuses(fn()=>TestCatalogueFacts::read($binding,$next['credential_revision'],'com',$clock));
+$rotatedSelection=$offer['selection'];
+$saleRefuses(static function()use($storefront,&$rotatedSelection):void {
+    $rotatedSelection=$storefront->offer('com','register',1)['selection'];
+},'Replacement credential header without TLD facts must refuse public offers');
+$saleRefuses(fn()=>DB::transaction(fn()=>app(SellerPolicies::class)->admit([$rotatedSelection],$clock->now())),
+    'Replacement credential header without TLD facts must refuse locked admission');
+same($before,count($GLOBALS['nsCatalogueCalls']),'Replacement evidence refusal performs no provider work');
+same($saved,Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts,
+    'Rotation and replacement evidence preserve the original cached observation');
+foreach($saleFailures as $failure){fwrite(STDERR,$failure.PHP_EOL);}
+same([],$saleFailures,'Current TLD evidence is required by public and locked sales');
 $nativeSuccessful=true;
