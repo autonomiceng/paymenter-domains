@@ -39,7 +39,7 @@ same('succeeded',$completed->state,'Captured renewal uses the same provider-loca
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($completed,$d->fresh(),$b),'Renewal local proof remains usable for the next cycle');
 // Hiding a TLD stops new sales only. Names already held keep renewing.
 config(['domains.hidden_endings'=>['com']]);
-same([],fixtureOfferFacts($b)->endings['com']['register'],'Hidden TLD takes no new registrations');
+same('staff_stopped',$ports->readOffers(new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register'),\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->decision->reason,'Hidden TLD takes no new registrations');
 same($d->domain,$authority->capture(new RenewalRequest($d->id,1,2,'2028-10-18','456'))[1],'Hidden TLD keeps renewing');
 config(['domains.hidden_endings'=>[]]);
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-transient-placeholder.com')); [$engine,$writer,$completion]=$compose($b);
