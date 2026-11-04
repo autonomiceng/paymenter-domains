@@ -12,6 +12,20 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,CostU
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,BalanceSchema,EnomTestRegistration,EnomTestSendLimitSchema,RegistrarRegistry,DomainOperations,HistoryAcceptances,OperationClaims,RegistrationPreflight,RenewalAuthority,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
+// These independent recovery cases span days; arrange dated synthetic facts/costs for that window.
+$fixtureBinding=AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
+$clock->instant=$clock->now()->modify('+1 second');
+$fixtureQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($fixtureBinding,['com'],'register');
+$fixtureRevision=fn()=>$ports->readOffers($fixtureQuery,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$fixtureFacts=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tlds[0]->fresh()->catalogue_facts);
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($fixtureBinding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+    $fixtureFacts->terms,[] ,true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+30 days'))),$fixtureRevision());
+$fixtureCosts=[];
+foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$fixtureBinding->serverId)->get() as $rate){
+    $c=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($rate->catalogue_observation));
+    $fixtureCosts[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($c->action,$c->term,$c->enabled,$c->total,$c->sourceUnit,$c->source,$clock->now(),$clock->now()->modify('+30 days'),normalized:true);
+}
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($fixtureBinding,'com',$fixtureCosts),$fixtureRevision());
 EnomTestSendLimitSchema::install();BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));
 // The registrar edge only: the page, service and balance row are real.
