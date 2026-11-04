@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities,CallerPorts,Cal
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,CatalogueAcceptances,InvoiceBinding,PricingRule,RuntimePorts,SellerPolicies,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,InvoiceBinding,PricingRule,RuntimePorts,SellerPolicies,Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(CallerRouting::supportsSales('namesilo'),'Installed catalogue routes NameSilo sales through neutral gates');
 \Illuminate\Support\Facades\Schema::create('cache',static function($t):void {
@@ -43,12 +43,10 @@ Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00
 Category::create(['name'=>'Domains','slug'=>'domains']);
 Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
     ['type'=>'array','encrypted'=>false,'value'=>PricingRule::DEFAULT]);
-auth()->login($staff);$binding=CatalogueAcceptances::binding($account->fresh());$bindings=app(AccountBindings::class);
+auth()->login($staff);$binding=AccountBindings::binding($account->fresh());$bindings=app(AccountBindings::class);
+same('active',UpgradeGate::routeState()['state'],'Real fresh installation has already activated current catalogue');
 // This commerce fixture needs a reviewed renewal path, including both billing switches.
 $writes->run($review('test_renewal'),['accept'=>true,'verified'=>true]);
-$gate=new UpgradeGate;$gate->pause();$capture=$gate->capture();
-do{$converted=$gate->batch($binding,$capture);}while(!$converted['complete']);
-$gate->activate($capture);
 $ports=CallerPorts::routed();$scheduler=OfferScheduler::routed();$storefront=app(Storefront::class);
 $offerPorts=new OfferPorts($bindings,$clock);same(25,$offerPorts->allowance($binding,RequestOrigin::Background),'NameSilo TEST shares catalogue headroom');
 $scheduler->sync($binding);$scheduler->tick(1);

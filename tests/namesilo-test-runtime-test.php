@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/namesilo-test-activation-test.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,RequestBudget,RequestContext,RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,LiveReservationLimit,LiveReservations,RuntimePorts,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,LiveReservationLimit,LiveReservations,RuntimePorts,StaffSettingsWrites};
 function curl_init(): object {return new \stdClass;}
 function curl_setopt_array($h,array $options): bool {$GLOBALS['testRuntimeOptions']=array_replace($GLOBALS['testRuntimeOptions']??[],$options);return true;}
 function curl_getinfo($h,int $option): int {return 200;}
@@ -20,11 +20,10 @@ function curl_exec($h): bool {
     $body=json_encode(['request'=>['operation'=>'getAccountBalance'],'reply'=>['code'=>300,'detail'=>'success','balance'=>'123.45']]);
     return ($o[CURLOPT_WRITEFUNCTION])($h,$body)===strlen($body);
 }
-$binding=CatalogueAcceptances::binding($account->fresh());$ports=app(RuntimePorts::class);
+$binding=AccountBindings::binding($account->fresh());$ports=app(RuntimePorts::class);
 expect($ports->accepted($account->fresh()),'Installed composition includes genuine acquisition, renewal and management engines');
 same(['register'=>true,'transfer'=>true],$ports->acquisitionGates($account->fresh()),'TEST acquisition gates are installed');
 same(null,$GLOBALS['testRuntimeCalls']??null,'Local activation and composition never send');
-CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
 $bindings=app(AccountBindings::class);$clock=app(Clock::class);
 $reader=$bindings->reader($binding->serverId);
 $context=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+120 seconds'),new RequestBudget(5),$clock);
