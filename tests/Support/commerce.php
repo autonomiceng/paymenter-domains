@@ -15,6 +15,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class); }
+
     // Active fixtures already ran every schema and verification through the native installer.
     if (!$active) {
         FoundationSchema::install(); SalesPolicySchema::install();
@@ -95,7 +96,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
 }
 function commerceReject(callable $call): void
 {
-    try { $call(); expect(false, 'Expected commerce refusal'); }
+    try { $call(); $caller=debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,1)[0];expect(false,'Expected commerce refusal at '.basename($caller['file']).':'.$caller['line']); }
     catch (DomainException|InvalidArgumentException|LogicException|Illuminate\Database\Eloquent\ModelNotFoundException|Illuminate\Database\MultipleRecordsFoundException $e) { }
 }
 

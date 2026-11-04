@@ -75,6 +75,6 @@ commerceReject(static fn () => $native->product($enom, 'register'));
 same($before, [$hosting->fresh()->getAttributes(), $hostingPlan->fresh()->getAttributes(), $hostingPlan->prices()->sole()->getAttributes()], 'Reserved-slug collision leaves hosting unchanged');
 DB::table('prices')->where('plan_id',$hostingPlan->id)->delete();DB::table('plans')->where('id',$hostingPlan->id)->delete();DB::table('products')->where('id',$hosting->id)->delete();
 Server::findOrFail($enom->server_id)->update(['enabled' => false]);
-commerceReject(static fn () => activeFixtureRepublish($native,$enom->id, $now));
+activeFixtureRepublish($native,$enom->id,$now);same(0,$registration->plans()->whereHas('prices')->count(),'Disabled account withdraws every native acquisition price');
 $nativeSuccessful = true;
 echo "Permanent native products, exact terms, annual plans and publication refusals passed.\n";
