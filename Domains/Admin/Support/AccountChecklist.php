@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,TldReso
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
     RenewalBillingSettings,RuntimePorts,WatchWork,CardFee,PricingRules,PricingRule};
 /** Rows for a registrar account's sections and System checks.
  * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value.

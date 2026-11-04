@@ -3,8 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AttemptEvidence, Capabilities, CatalogueAcceptance, CatalogueFreshness, DriverResult, Query, ReconciliationResult, RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, AttemptEvidence, Capabilities, CatalogueFreshness, DriverResult, Query, ReconciliationResult, RequestContext};
 
 /** Preview composition exposes only catalogue reads and availability; no holding/reconciliation reads. */
 final readonly class CataloguePreview implements \Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver

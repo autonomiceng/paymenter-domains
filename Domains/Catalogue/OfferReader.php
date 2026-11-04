@@ -8,7 +8,6 @@ use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 
 /** Local loader. Authorization and readiness callbacks must never resolve a provider.
  * Locked batches join checkout AFTER all native item/product/plan/price locks. */

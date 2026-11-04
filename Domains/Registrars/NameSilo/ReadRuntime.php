@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Services\{OperationClaims};
 /** Dormant installed reader assembly; no registration, feature acceptance or write authority by construction. */
 final class ReadRuntime
 {

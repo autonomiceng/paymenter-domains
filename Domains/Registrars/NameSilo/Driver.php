@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, RegistrarDriver};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CatalogueAcceptance, CostUnit, DateEvidence, Disposition,
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CostUnit, DateEvidence, Disposition,
     DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult,
     RejectionBasis, RenewalStatus, RequestContext, ResultReason, SendState, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};

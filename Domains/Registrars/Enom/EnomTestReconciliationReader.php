@@ -2,8 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
-use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,CatalogueAcceptance,CatalogueFreshness,Capabilities,DriverResult,Environment,Query,ReconciliationResult,RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,CatalogueFreshness,Capabilities,DriverResult,Environment,Query,ReconciliationResult,RequestContext};
 /** Built-in reader permits sealed-attempt reconciliation while ordinary domain polling stays closed. */
 final readonly class EnomTestReconciliationReader implements \Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver
 {

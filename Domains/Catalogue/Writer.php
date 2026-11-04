@@ -8,7 +8,7 @@ use App\Models\{CartItem, Product, Server};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, PricingRules, PricingRule, StaffSettingsReview, StorefrontCatalogueCache};
+use Paymenter\Extensions\Servers\Domains\Services\{ PricingRules, PricingRule, StaffSettingsReview, StorefrontCatalogueCache};
 
 /** Dormant single writer. Never registered or called by an active path before checked cutover.
  * Callbacks authorize server-side commands/contexts and check LOCAL readiness, without provider I/O. */

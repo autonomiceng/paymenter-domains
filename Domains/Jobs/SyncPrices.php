@@ -12,7 +12,7 @@ use Illuminate\Queue\{InteractsWithQueue,SerializesModels};
 use Illuminate\Support\Facades\{Log,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,PriceFill,PriceSync,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 /** Manual price reads use the worker, just like scheduled reads, so the staff page stays usable. */
 final class SyncPrices implements ShouldQueue,ShouldBeUnique
 {
