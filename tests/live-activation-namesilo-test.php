@@ -5,6 +5,8 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\Server;
+use Illuminate\Support\Facades\DB;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Context,Cost,Facts,OfferReadiness,OfferState,Query,UpgradeGate};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,CredentialAuthenticator};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment,SystemClock};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -97,4 +99,65 @@ $bindings->configure($server->id,'namesilo',Environment::Live,['api_key'=>'place
 expect(!$engine->current($binding),'Credential rotation invalidates the receipt while preserving lineage');
 expect($stamp!==$engine->stamp($a),'Credential rotation also makes a displayed activation review stale');
 echo "NameSilo local activation evidence and stale-receipt policy passed without registrar transport.\n";
+staffPanel();
+$full=staffUser(array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()));
+Illuminate\Support\Facades\Auth::setUser($full);
+expect(Paymenter\Extensions\Servers\Domains\Admin\Support\LiveActivationAction::offered($a->fresh()),'NameSilo has the same reviewed Activate entry point');
+$summary=Paymenter\Extensions\Servers\Domains\Admin\Support\LiveActivationAction::summary($a->fresh())->toHtml();
+expect(str_contains($summary,'NameSilo takes domain costs')&&!str_contains($summary,'Enom'),'Activation summary uses this registrar and its readiness gates');
+expect(str_contains($summary,'Renewals also enable scheduled invoices and customer early renewals.')&&!str_contains($summary,'Late renewal has a separate account switch.'),
+    'NameSilo activation explains renewal billing without offering an unsupported late-renewal switch');
+$panel=Filament\Facades\Filament::getCurrentPanel();
+$pages=[Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class];$panel->pages($pages);
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel,$pages){foreach($pages as $page){$page::registerRoutes($panel);}});
+app('router')->getRoutes()->refreshNameLookups();
+$action=Filament\Actions\Testing\TestAction::make('activate_live')->schemaComponent('account_'.$server->id.'.live_sales','content');
+$page=Livewire\Livewire::actingAs($full)->test($pages[0],['account'=>$server->id])->mountAction($action)->assertActionMounted($action);
+$page->callMountedAction()->assertNotified('Could not activate');
+expect(!$a->fresh()->processing_enabled,'Missing installed runtime and prices keep Live spending closed');
+// Native installed routing is required: a unit reader cannot exercise CallerRouting's setup gates.
+// OFFLINE price/fact rows model setup only; no Live runtime, activation or provider send is installed.
+Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
+$gate=new UpgradeGate;$gate->pause();$capture=$gate->capture();
+do{$converted=$gate->batch($binding,$capture);}while(!$converted['complete']);
+$gate->activate($capture);
+$server->settings()->where('key',LiveActivation::KEY)->delete();
+expect(!$engine->current($binding),'Setup review starts without an activation receipt');
+$now=app(Clock::class)->now();
+$key=['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>'com'];
+DB::table('domains_tlds')->insert([...$key,'catalogue_converted'=>true,'catalogue_revision'=>1,
+    'catalogue_intent'=>OfferState::json(['sell'=>true,'longest'=>1,'transfers'=>true]),
+    'catalogue_published_revision'=>OfferState::json(['offer'=>1,'defaults'=>0,'selection'=>1]),
+    'catalogue_retained_annual_retail'=>'13.00',
+    'catalogue_facts'=>OfferState::encodeFacts(new Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,
+        'offline_synthetic_setup',$now,$now->modify('+1 day')))]);
+DB::table('domains_sales_policies')->insert([...$key,'revision'=>1,'register_enabled'=>true,'transfer_enabled'=>true]);
+foreach(['register','renew','transfer'] as $action){
+    $cost=new Cost($action,1,true,'8.0000',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,
+        'offline_synthetic_setup',$now,$now->modify('+1 day'));
+    DB::table('domains_prices')->insert([...$key,'action'=>$action,'term'=>1,'currency'=>'USD','retail'=>'13.00',
+        'unit'=>'term_total','source'=>$cost->source,'observed_at'=>$now->format('Y-m-d H:i:s'),
+        'catalogue_observation'=>OfferState::json(OfferState::encodeCost($cost))]);
+}
+// Isolate feature readiness from the separately tested Orders precondition; always restore Orders Off.
+DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
+try{
+    $ready=OfferReadiness::routed();$features=['registration'=>false,'renewal'=>true,'transfer'=>true];
+    $review=$ready->review($a->fresh(),$features);
+    same(null,$review['missing'],'Live NameSilo renewal and transfer setup prices do not require an activation receipt');
+    same(['transfer','renew'],array_column($review['costs'],'action'),'Setup reviews both transfer and renewal prices');
+    same($review,DB::transaction(fn()=>$ready->review($a->fresh(),$features,true)),
+        'Locked activation price readiness uses the same receipt-independent feature gates');
+    foreach(['renew','transfer'] as $action){
+        expect(!CallerPorts::routed()->loadBatch([new Query($binding,['com'],$action)],Context::Staff)[0][0]->decision->available,
+            'Receipt-independent setup grants no '.$action.' sales permission');
+    }
+    foreach(['renewal','transfer'] as $feature){
+        config(['domains.namesilo_live.'.$feature=>false]);
+        expect($ready->review($a->fresh(),$features)['missing']!==null,'Deployment Off still refuses '.$feature.' setup');
+        config(['domains.namesilo_live.'.$feature=>true]);
+    }
+    expect($ready->review($a->fresh(),['registration'=>true])['missing']!==null,'Live registration stays outside the TEST-only sales gate');
+    expect(!$engine->current($binding),'Reading setup prices never creates an activation receipt');
+}finally{DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);}
 $nativeSuccessful=true;

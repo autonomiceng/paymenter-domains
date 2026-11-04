@@ -18,12 +18,12 @@ final class RuntimePorts
     public function registered(Account $account): bool
     {
         if(isset($this->factories[$account->account_fingerprint])){return true;}
-        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(CatalogueAcceptances::binding($account))||EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||(EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestManagement::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)))||EnomTestRegistration::recoveryEnabled(CatalogueAcceptances::binding($account));}catch(\Throwable){return false;}
+        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(CatalogueAcceptances::binding($account))||($account->registrar_key==='enom'&&(EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||(EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestManagement::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)))||EnomTestRegistration::recoveryEnabled(CatalogueAcceptances::binding($account))));}catch(\Throwable){return false;}
     }
     private function composition(Account $account): array
     {
         $binding=CatalogueAcceptances::binding($account);
-        $factory=$this->factories[$account->account_fingerprint]??((EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding))||EnomTestRegistration::recoveryEnabled($binding))?EnomTestRegistration::factory($binding):null)
+        $factory=$this->factories[$account->account_fingerprint]??(($binding->registrarKey==='enom')&&(EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding))||EnomTestRegistration::recoveryEnabled($binding))?EnomTestRegistration::factory($binding):null)
             ??(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($binding)?\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::factory($binding):null)
             ??throw new \DomainException('Runtime provider acceptance is required.');
         $ports=$factory(CatalogueAcceptances::binding($account));

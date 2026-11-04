@@ -20,7 +20,7 @@ class Domains extends Server
     public function getConfig($values = []): array
     {
         Runtime::register();app(Services\NativeServerGuard::class)->boot();
-        return [['name'=>Services\NameSiloAccountGuard::EXPECTED,'type'=>'text','label'=>'Expected default contact email (NameSilo)','encrypted'=>true,'description'=>'Paid NameSilo requests pause unless this matches the default contact.'],['name'=>'domains_setup_note','type'=>'placeholder','label'=>'Connect accounts and choose TLDs in Domains → Registrars. Staff who can edit servers can see saved credentials.']];
+        return [['name'=>'domains_setup_note','type'=>'placeholder','label'=>'Connect accounts and choose TLDs in Domains → Registrars. Staff who can edit servers can see saved credentials.']];
     }
     public function getProductConfig($values = []): array { return []; }
     public function getCheckoutConfig($product, $values = [], $settings = []): array

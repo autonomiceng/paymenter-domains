@@ -159,37 +159,17 @@ $html=$page->html();
 foreach(['Catalogue acceptance','Account binding','Worker cadence','Native server settings','Registrar setup','(defaults)','Read capacity','Runtime account','Notification safety',
     'Verify identity','Read balance','Enable processing','Pause processing','Missing Paymenter records','Transfer watch relinks','Start after payment','Change recorded','Confirm'] as $needle){
     expect(!str_contains($html,$needle),'Account page never shows: '.$needle);}
-// Enom-only controls explain their scope for both NameSilo modes.
+// Legacy fixtures have no authenticated local NameSilo runtime. They cannot acquire send permission.
+$siloAccount=Account::where('server_id',$silo->server_id)->sole();$siloServer=(int)$silo->server_id;
+$siloRows=static fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($siloAccount->fresh(),['label'=>'Active','reason'=>null]),null,'label');
 foreach(['test','live'] as $mode){
-    $siloAccount=Account::where('server_id',$silo->server_id)->sole();DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>$mode]);$siloAccount->refresh();
-    $featureRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($siloAccount,['label'=>'Active','reason'=>null]),null,'label');
-    same(['Not available yet',null],[$featureRows['DNS, nameservers and contacts']['value'],$featureRows['DNS, nameservers and contacts']['action']],$mode.' NameSilo Enom-only control');
-    same(['Off','renewals'],[$featureRows['Renewals']['value'],$featureRows['Renewals']['action']],$mode.' NameSilo Renewals has its own switch');
-    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Not available yet')->assertSeeInOrder(['WHOIS privacy','Free when supported by the TLD.'])
-        ->assertActionDoesNotExist(setupAction($mode.'_renewal',(int)$silo->server_id))->assertActionDoesNotExist(setupAction($mode.'_management',(int)$silo->server_id));
+    DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>$mode]);
+    $rows=$siloRows();
+    same(['Not available yet',null],[$rows['DNS, nameservers and contacts']['value'],$rows['DNS, nameservers and contacts']['action']],$mode.' without admitted runtime stays closed');
+    same(['Not available yet',null],[$rows['Renewals']['value'],$rows['Renewals']['action']],$mode.' without sending cannot enable billing');
+    Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Free when supported by the TLD.')->assertSee('Late renewal is not offered for NameSilo.');
 }
 DB::table('domains_accounts')->where('id',$siloAccount->id)->update(['environment'=>'test']);
-// NameSilo's one Renewals switch is its two billing flags: one audited click, no Enom send permission.
-$siloServer=(int)$silo->server_id;$siloRenewals=setupAction('renewals',$siloServer);$siloFlags=static fn()=>array_values(array_intersect_key(RenewalBillingSettings::read($siloServer),['scheduled'=>1,'manual'=>1]));
-$siloRows=static fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($siloAccount->fresh(),['label'=>'Active','reason'=>null]),null,'label');
-$siloEarly=static fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($siloServer),null,'label')['Customer can renew early'];
-$siloClick=static function(string $warning)use($admin,$silo,$siloRenewals):void {
-    $click=Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$silo->server_id])->mountAction($siloRenewals);
-    same($warning,$click->instance()->getMountedAction()->getModalDescription(),'NameSilo Renewals popup says what happens');$click->callMountedAction();
-};
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist(setupAction('renewals',(int)$enom->server_id));
-$siloClick('Customers start getting renewal invoices and can renew early.');
-same([true,true],$siloFlags(),'NameSilo On sets both billing flags');same(['On','renewals'],[$siloRows()['Renewals']['value'],$siloRows()['Renewals']['action']],'NameSilo row shows the saved state');
-same(['On','renew_early'],[$siloEarly()['value'],$siloEarly()['action']],'NameSilo early renewal follows Renewals');
-same(0,App\Models\Server::findOrFail($siloServer)->settings()->whereIn('key',[Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY,'domains_enom_live_renewal'])->count(),'NameSilo writes no Enom send permission');
-$siloAudit=array_values(array_filter(StaffSettingsReview::historyRows(App\Models\Server::findOrFail($siloServer)),fn($r)=>$r['action']==='Edit renewal schedule'))[0];
-same([$admin->id,false,true,true],[$siloAudit['actor_id'],$siloAudit['before']['renewal_billing']['scheduled'],$siloAudit['after']['renewal_billing']['scheduled'],$siloAudit['after']['renewal_billing']['manual']],'One audit entry covers both flags');
-// Either flag alone still reads On, so staff can always stop an account left half on.
-RenewalBillingSettings::save(new StaffSettingsReview($admin->id,$siloServer,null,'renewal_billing',StaffSettingsReview::ticket($admin->id,$siloServer,null,'renewal_billing',StaffSettingsReview::stamp($siloServer,null)),'Leave one flag on for this check'),['scheduled'=>false,'manual'=>true,'issue_days'=>21,'due_days'=>7,'confirmed'=>true]);
-same('On',$siloRows()['Renewals']['value'],'One flag on reads On');
-$siloClick('New renewal invoices stop. Issued invoices stay payable. Paid renewals still go to the registrar.');
-same([false,false],$siloFlags(),'NameSilo Off clears both flags');same(['Off','renewals'],[$siloRows()['Renewals']['value'],$siloRows()['Renewals']['action']],'NameSilo can turn back on');
-same(['Needs Renewals on.',null,null],[$siloEarly()['value'],$siloEarly()['action'],$siloEarly()['cause']],'NameSilo early renewal needs Renewals, with no switch to show');
 
 $reminderQuery=DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id);$savedReminder=(array)(clone $reminderQuery)->sole();$reminderQuery->update(['enabled'=>true]);
 foreach([[[1],'1 day before, 1 day after'],[[0],'0 days before, 0 days after'],[[2],'2 days before, 2 days after'],[[1,2],'2 and 1 days before, 1 and 2 days after'],[[],null]] as [$days,$expected]){
@@ -346,7 +326,7 @@ foreach(['test','live'] as $mode){
     foreach(['live_renewal','live_management'] as $name){
         $page->assertActionDoesNotExist(setupAction($name,(int)$enom->server_id));
     }
-    $page->assertSee('Restore the saved account identity first.');
+    $page->assertSee('Restore the API connection first.');
 }
 // A live fingerprint must match the restored identity and live environment.
 DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=>$savedIdentity,'account_fingerprint'=>$liveBinding->fingerprint,
@@ -354,7 +334,7 @@ DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=
 same(Environment::Live,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->environment,'Healthy inverse uses a valid live binding');
 same($liveBinding->fingerprint,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->fingerprint,'Healthy inverse fingerprint matches live identity');
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>$liveBinding->fingerprint]);
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->assertDontSee('Restore the saved account identity first.');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->assertDontSee('Restore the API connection first.');
 // Unavailable features explain themselves; Transfers names the deployment setting needed to enable its switch.
 $checklist=fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::findOrFail($enom->id),['label'=>'Active','reason'=>null]),null,'label');
 $noKeys=function()use($checklist,$enom){foreach([...array_values($checklist()),...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals((int)$enom->server_id),...array_merge(...array_values(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system())),Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::runtime(Account::findOrFail($enom->id))] as $row){
@@ -405,8 +385,7 @@ foreach(['Renewals'=>'test_renewal','DNS, nameservers and contacts'=>'test_manag
     expect(str_contains(strtolower($offRows[$label]['cause']??''),'paused')&&str_contains(strtolower($offRows[$label]['cause']??''),'turn on'),$label.' explains the pause and next step');
     same('warning',$offRows[$label]['tone'],$label.' warns about managed domains');
 }
-$billing=$siloRows()['Renewals'];
-expect(str_contains($billing['cause'],'Billing is paused')&&str_contains($billing['cause'],'site admin')&&str_contains($billing['help'],'billing only'), 'NameSilo explains billing and the sending setup');
+same('Not available yet',$siloRows()['Renewals']['value'],'Legacy NameSilo cannot enable renewal billing without sending');
 $siloLive=App\Models\Server::create(['name'=>'Synthetic Live NameSilo','extension'=>'Domains','type'=>'server','enabled'=>true]);
 $bindings->configure((int)$siloLive->id,'namesilo',Environment::Live,['token'=>'synthetic-live-namesilo-orders']);
 same('site_unbound',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo starts without a confirmed site');
@@ -416,7 +395,7 @@ Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$siloLive->
 DB::table('domains_accounts')->where('server_id',$siloLive->id)->update(['live_site'=>$site]);
 same('matched',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo credentials and saved site match');
 $siloLiveRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::where('server_id',$siloLive->id)->sole(),['label'=>'Active','reason'=>null]),null,'label');
-same('Orders are paused. Check setup, then turn on Orders.',$siloLiveRows['Orders']['cause'],'Live NameSilo Orders never asks for Enom activation');
+same('Orders are paused. Use Activate to check setup and turn on Orders.',$siloLiveRows['Orders']['cause'],'Live NameSilo uses the shared Activate review');
 foreach(['invoices','customer credit','Auto Pay','paid renewals'] as $effect){expect(str_contains($offRows['Renewals']['help'],$effect),'Renewals explains '.$effect);}
 $testBinding=CatalogueAcceptances::binding(Account::findOrFail($enom->id));
 $review=new StaffSettingsReview($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::ticket($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::stamp((int)$enom->server_id,null)),'Approve test renewal setup');

@@ -67,7 +67,6 @@ $deferred->update(['payload'=>$deferred->payload+['nameservers'=>['ns1.provider.
 $registration->query=Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($deferred,$deferred->domain);
 assertNameSiloDeferredGuard($deferred,$claims,$engine,$clock,$guard,static function()use(&$paidCount){return $paidCount;});
 $field=array_values(array_filter((new \Paymenter\Extensions\Servers\Domains\Domains)->getConfig(),fn($f)=>$f['name']==='domains_namesilo_expected_default_contact_email'));
-same(1,count($field),'Native admin extension config exposes the expected contact setting');
-same('Expected default contact email (NameSilo)',$field[0]['label'],'Staff can identify the setting');
+same(0,count($field),'Native account setup no longer prompts for a default-contact identity ceremony');
 echo "NameSilo account registration refusal matrix passed.\n";
 $nativeSuccessful=true;

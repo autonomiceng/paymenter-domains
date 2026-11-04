@@ -44,6 +44,8 @@ Category::create(['name'=>'Domains','slug'=>'domains']);
 Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
     ['type'=>'array','encrypted'=>false,'value'=>PricingRule::DEFAULT]);
 auth()->login($staff);$binding=CatalogueAcceptances::binding($account->fresh());$bindings=app(AccountBindings::class);
+// This commerce fixture needs a reviewed renewal path, including both billing switches.
+$writes->run($review('test_renewal'),['accept'=>true,'verified'=>true]);
 $gate=new UpgradeGate;$gate->pause();$capture=$gate->capture();
 do{$converted=$gate->batch($binding,$capture);}while(!$converted['complete']);
 $gate->activate($capture);
@@ -128,7 +130,14 @@ same('13.00',$locked[0]->retail,'Locked seller admission uses the same exact ann
 same($before,count($GLOBALS['nsCatalogueCalls']),'Local readiness and locked sale admission never send');
 $checklist=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Connected','reason'=>null]);
 $rows=array_column($checklist,null,'label');same('On, follows Orders',$rows['Registrations']['value'],'Checklist registrations follow the installed TEST engine');
-same('On',$rows['Transfers']['value'],'Checklist accepts installed TEST transfer gate');
+same('On',$rows['Transfers (experimental)']['value'],'Checklist accepts installed TEST transfer gate');
+$summary=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::summary($account->fresh(),['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>true]);
+same([1,1,1],array_values($summary['counts']),'Shared activation summary reads each retained NS16 action');
+same(1,$summary['tlds'],'Shared activation summary counts the offered TLD once');
+same('Cost + 30%',$rows['Customer pays']['value'],'Shared pricing summary uses the current default rule');
+same('Used by 1 TLD',$rows['Customer pays']['cause'],'Shared pricing summary counts retained catalogue defaults');
+same('.com',$rows['What you sell']['value'],'Checklist uses the current installed NS16 TLD selection');
+expect(!str_contains(json_encode($offer,JSON_THROW_ON_ERROR),'experimental'),'Customer offer carries no staff Experimental label');
 app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
 $user=commerceUser();$cart=commerceCart($user);commerceAdd($cart,$offer['product'],'ns16-checkout-placeholder.com');
 commerceCheckout($user,$cart);
