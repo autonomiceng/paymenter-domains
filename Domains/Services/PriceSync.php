@@ -100,11 +100,11 @@ final class PriceSync
         $generation ??= UpgradeGate::generation();
         if(($scheduler=OfferScheduler::routed())!==null){
             UpgradeGate::active($generation);
-            $scheduler->sync(CatalogueAcceptances::binding($account),$review?RequestOrigin::Interactive:RequestOrigin::Background);
+            $scheduler->sync(AccountBindings::binding($account),$review?RequestOrigin::Interactive:RequestOrigin::Background);
             return ['synced'=>[],'failed'=>[],'deferred'=>[],'queued'=>true];
         }
         $generation=UpgradeGate::legacy($generation);
-        $binding = CatalogueAcceptances::binding($account);
+        $binding = AccountBindings::binding($account);
         if (!TestCatalogue::enabled($binding)) { throw new \DomainException('TEST catalogue reads are unavailable.'); }
         if ($review === null) { SellAutomation::refresh($account, $clock->now(), $generation); }
         $accepted = CatalogueAcceptances::load($binding);
@@ -177,9 +177,9 @@ final class PriceSync
     {
         OperationClaims::outside();
         $generation=UpgradeGate::generation();
-        if(($scheduler=OfferScheduler::routed())!==null){UpgradeGate::active($generation);$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
+        if(($scheduler=OfferScheduler::routed())!==null){UpgradeGate::active($generation);$scheduler->sync(AccountBindings::binding($account),RequestOrigin::Background);return;}
         $generation=UpgradeGate::legacy($generation);
-        $binding = CatalogueAcceptances::binding($account);
+        $binding = AccountBindings::binding($account);
         if (!TestCatalogue::enabled($binding) || !Schema::hasTable('domains_observation_queues')) { return; }
         SellAutomation::refresh($account, $this->clock->now(), $generation);
         $accepted = CatalogueAcceptances::load($binding);

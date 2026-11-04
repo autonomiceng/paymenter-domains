@@ -21,7 +21,7 @@ final readonly class RegistrarBalances
     public function daily(Account $account): void
     {
         OperationClaims::outside();
-        $binding=CatalogueAcceptances::binding($account);
+        $binding=AccountBindings::binding($account);
         // TEST remains manual-only. Live reads need the reviewed account/site deployment, not a write opt-in.
         if(TestCatalogue::testDeployment($binding)||($account->registrar_key==='enom'&&$account->environment==='live'&&!EnomLive::enabled($binding,'catalogue'))){return;}
         if(!Schema::hasTable(BalanceSchema::TABLE)){return;}
@@ -44,7 +44,7 @@ final readonly class RegistrarBalances
     {
         return DB::transaction(function()use($account,$field,$seconds):?int {
             $a=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
-            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($a));
+            AccountBindings::binding($account)->requireMatch(AccountBindings::binding($a));
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint);
             $row=(clone $q)->lockForUpdate()->first();$now=$this->clock->now()->getTimestamp();
             $live=$a->registrar_key==='enom'&&$a->environment==='live';
@@ -57,7 +57,7 @@ final readonly class RegistrarBalances
     }
     private function read(Account $account,string $source,RequestOrigin $origin): string
     {
-        $binding=CatalogueAcceptances::binding($account);
+        $binding=AccountBindings::binding($account);
         try{$balanceOnly=($account->registrar_key==='namesilo'&&NameSiloSandbox::enrolled($account))||EnomLive::enabled($binding,'catalogue');
             $reader=$this->bindings->reader((int)$account->server_id,$balanceOnly);$binding->requireMatch($reader->binding());
             if ($reader instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview) { throw new \DomainException('Use the reviewed staff balance probe.'); }}
@@ -105,7 +105,7 @@ final readonly class RegistrarBalances
         if(!Schema::hasTable(BalanceAlertSchema::TABLE)){return;}
         DB::transaction(function()use($account):void {
             $current=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
-            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
+            AccountBindings::binding($account)->requireMatch(AccountBindings::binding($current));
             $balance=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)->lockForUpdate()->firstOrFail();
             $q=DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
             $row=(clone$q)->lockForUpdate()->first();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
@@ -124,7 +124,7 @@ final readonly class RegistrarBalances
             ->whereNotNull('pending_day')->where('retry_at','<=',$this->clock->now()->getTimestamp())->exists()){return;}
         $pending=DB::transaction(function()use($account):?array {
             $current=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
-            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
+            AccountBindings::binding($account)->requireMatch(AccountBindings::binding($current));
             $balance=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)->lockForUpdate()->first();
             $q=DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
             $row=(clone$q)->lockForUpdate()->first();$now=$this->clock->now()->getTimestamp();
@@ -137,7 +137,7 @@ final readonly class RegistrarBalances
         if($pending===null){return;}
         try{
             $current=Account::where('server_id',$account->server_id)->sole();
-            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
+            AccountBindings::binding($account)->requireMatch(AccountBindings::binding($current));
             if(!self::facts($current,$this->clock->now())['low']||$this->notify($current,$pending)){
                 DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
                     ->where('pending_day',$pending['day'])->where('claim',$pending['token'])->update(['pending_day'=>null,'claim'=>null]);
@@ -150,7 +150,7 @@ final readonly class RegistrarBalances
     {
         return DB::transaction(function()use($account,$pending):bool {
             $current=Account::where('server_id',$account->server_id)->lockForUpdate()->sole();
-            CatalogueAcceptances::binding($account)->requireMatch(CatalogueAcceptances::binding($current));
+            AccountBindings::binding($account)->requireMatch(AccountBindings::binding($current));
             $q=DB::table(BalanceSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint);
             $r=(clone$q)->lockForUpdate()->firstOrFail();$day=$this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');
             $alert=DB::table(BalanceAlertSchema::TABLE)->where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)->lockForUpdate()->first();

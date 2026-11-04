@@ -191,7 +191,7 @@ final class PriceCatalogue
     {
         if ($caps = $this->offers ?? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) {
             if ($currency !== 'USD') { throw new \DomainException('USD holder retail required.'); }
-            $b = CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());
+            $b = AccountBindings::binding(Account::where('server_id',$serverId)->sole());
             if ($b->fingerprint !== $fingerprint) { throw new \DomainException('Holder binding changed.'); }
             return $caps->holder($b,$tld,$lock ? ($locked ?? throw new \LogicException('Locked holding TLD required.')) : null);
         }
@@ -225,7 +225,7 @@ final class PriceCatalogue
     {
         if($ports=$this->catalogue()){
             if($lock&&(DB::transactionLevel()===0||!$locked||(int)$locked->server_id!==$serverId||$locked->tld!==$tld||$locked->account_fingerprint!==$fingerprint)){throw new \LogicException('Locked price validation requires its caller-held TLD.');}
-            $b=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());
+            $b=AccountBindings::binding(Account::where('server_id',$serverId)->sole());
             if($b->fingerprint!==$fingerprint){throw new \DomainException('Price account binding changed.');}
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$tld],$action,$term,$currency);
             return $ports->loadBatch([$q],\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Holder,$lock)[0][0]->costPrice($now);

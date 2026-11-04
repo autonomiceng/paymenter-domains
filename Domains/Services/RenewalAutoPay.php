@@ -83,7 +83,7 @@ final readonly class RenewalAutoPay
     {
         if(isset($op->policy['renewal']['late'])||$op->action!=='renew'||!in_array($op->state,['awaiting_payment','queued'],true)||!RenewalCycles::registrarVirgin($op)
             ||!RenewalBillingSettings::read((int)$op->server_id,$lock)['scheduled']
-            ||EnomTestRenewal::holdsInvoices(CatalogueAcceptances::binding($l['account']))
+            ||EnomTestRenewal::holdsInvoices(AccountBindings::binding($l['account']))
             ||$l['service']->subscription_id||($l['domain']->renewal_policy['automatic_spend_paused']??false)){return null;}
         app(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account'],!$lock);
         RenewalFunding::requireAuthority($op,$l);
@@ -111,7 +111,7 @@ final readonly class RenewalAutoPay
     {
         $s = $l['service']; $d = $l['domain'];
         $reason = match (true) {
-            LateRenewalQuote::deadline($op) !== null && (!EnomLateRenewal::accepted(CatalogueAcceptances::binding($l['account'])) || LateRenewalQuote::deadline($op) <= $this->clock->now()->modify('+25 seconds')) => 'late_renewal_closed',
+            LateRenewalQuote::deadline($op) !== null && (!EnomLateRenewal::accepted(AccountBindings::binding($l['account'])) || LateRenewalQuote::deadline($op) <= $this->clock->now()->modify('+25 seconds')) => 'late_renewal_closed',
             !$scheduled => 'manual_renewal',
             $op->currency !== 'USD' || $invoice->currency_code !== 'USD' || $s->currency_code !== 'USD' => 'currency',
             $s->status !== 'active' => 'service_inactive',

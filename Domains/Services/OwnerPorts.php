@@ -12,7 +12,7 @@ final readonly class OwnerPorts
     {
         if (!in_array($domain->registrar_key,['enom','namesilo'],true)) { throw new \DomainException('Unsupported owner setup.'); }
         $account = Account::where('server_id', $domain->server_id)->firstOrFail();
-        $binding = CatalogueAcceptances::binding($account);
+        $binding = AccountBindings::binding($account);
         if ($binding->fingerprint !== $domain->account_fingerprint || $binding->registrarKey !== $domain->registrar_key) { throw new \DomainException('Holding changed.'); }
         $port = $this->factory ? ($this->factory)($binding) : null;
         if (!$port instanceof ManagementProtocol || !$port->bindsTo($binding) || !$port->capabilities()->binding->matches($binding)) { throw new \DomainException('Management unavailable.'); }

@@ -122,7 +122,7 @@ class PayCheck
         if($op->registrar_key!=='enom'){return false;}
         $account=Account::where('server_id',$op->server_id)->first();
         if($account?->environment!=='live'){return false;}
-        try{$b=CatalogueAcceptances::binding($account);return $b->fingerprint!==$op->account_fingerprint||!($op->action==='transfer'?EnomTestTransfer::accepted($b):EnomTestRegistration::sellable($b));}
+        try{$b=AccountBindings::binding($account);return $b->fingerprint!==$op->account_fingerprint||!($op->action==='transfer'?EnomTestTransfer::accepted($b):EnomTestRegistration::sellable($b));}
         catch(\Throwable){return true;}
     }
     /** A processing row is a bank debit in flight. It is not money yet, but it can become money. */

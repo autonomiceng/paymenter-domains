@@ -32,12 +32,7 @@ final class UpgradeEvidence
     }
 
     public static function money(mixed $value, int $scale): ?string
-    {
-        if (!is_string($value) && !is_int($value)) { return null; }
-        $value = str_contains((string) $value, '.') ? rtrim(rtrim((string) $value, '0'), '.') : (string) $value;
-        try { return PricingRule::decimal(PricingRule::units($value, $scale), $scale); }
-        catch (\InvalidArgumentException) { return null; }
-    }
+    { return OfferState::money($value, $scale); }
 
     /** @return array{costs:array,retained:?string,issues:array} */
     public static function prices(array $prices, ?object $row, ?object $tld): array
@@ -104,8 +99,5 @@ final class UpgradeEvidence
     }
 
     public static function json(mixed $value): array
-    {
-        if (is_array($value)) { return $value; }
-        return $value === null ? [] : json_decode($value, true, 32, JSON_THROW_ON_ERROR);
-    }
+    { return OfferState::decode($value); }
 }

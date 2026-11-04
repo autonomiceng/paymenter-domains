@@ -18,23 +18,23 @@ final class RuntimePorts
     public function registered(Account $account): bool
     {
         if(isset($this->factories[$account->account_fingerprint])){return true;}
-        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(CatalogueAcceptances::binding($account))||($account->registrar_key==='enom'&&(EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||(EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestManagement::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)))||EnomTestRegistration::recoveryEnabled(CatalogueAcceptances::binding($account))));}catch(\Throwable){return false;}
+        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(AccountBindings::binding($account))||($account->registrar_key==='enom'&&(EnomTestRegistration::enabled(AccountBindings::binding($account))||(EnomTestRenewal::enabled(AccountBindings::binding($account))||EnomTestManagement::enabled(AccountBindings::binding($account))||EnomTestTransfer::enabled(AccountBindings::binding($account)))||EnomTestRegistration::recoveryEnabled(AccountBindings::binding($account))));}catch(\Throwable){return false;}
     }
     private function composition(Account $account): array
     {
-        $binding=CatalogueAcceptances::binding($account);
+        $binding=AccountBindings::binding($account);
         $factory=$this->factories[$account->account_fingerprint]??(($binding->registrarKey==='enom')&&(EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding))||EnomTestRegistration::recoveryEnabled($binding))?EnomTestRegistration::factory($binding):null)
             ??(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($binding)?\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::factory($binding):null)
             ??throw new \DomainException('Runtime provider acceptance is required.');
-        $ports=$factory(CatalogueAcceptances::binding($account));
+        $ports=$factory(AccountBindings::binding($account));
         foreach(self::TYPES as $key=>$type){if(!($ports[$key]??null) instanceof $type){throw new \DomainException('Incomplete runtime composition.');}}
-        $ports['acquisition']->requireBinding(CatalogueAcceptances::binding($account));
-        if(!$ports['management_protocol']->bindsTo(CatalogueAcceptances::binding($account))){throw new \DomainException('Runtime management binding changed.');}
+        $ports['acquisition']->requireBinding(AccountBindings::binding($account));
+        if(!$ports['management_protocol']->bindsTo(AccountBindings::binding($account))){throw new \DomainException('Runtime management binding changed.');}
         return $ports;
     }
     public function accepted(Account $account): bool {try{$this->composition($account);return true;}catch(\Throwable){return false;}}
     public function recordDiscoveryAccepted(Account $account): bool
-    { return $this->accepted($account)&&(isset($this->factories[$account->account_fingerprint])||(!TestCatalogue::testDeployment(CatalogueAcceptances::binding($account))&&!EnomLive::deployment(CatalogueAcceptances::binding($account)))||EnomTestManagement::accepted(CatalogueAcceptances::binding($account))); }
+    { return $this->accepted($account)&&(isset($this->factories[$account->account_fingerprint])||(!TestCatalogue::testDeployment(AccountBindings::binding($account))&&!EnomLive::deployment(AccountBindings::binding($account)))||EnomTestManagement::accepted(AccountBindings::binding($account))); }
     /** Local composition and feature facts only; these never confer processing or provider acceptance. */
     public function acquisitionGates(Account $account): array
     {
@@ -42,9 +42,9 @@ final class RuntimePorts
         catch (\Throwable) { return ['register'=>null,'transfer'=>null]; }
     }
     public function management(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): \Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol
-    { $a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(CatalogueAcceptances::binding($a));return $this->composition($a)['management_protocol']; }
+    { $a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(AccountBindings::binding($a));return $this->composition($a)['management_protocol']; }
     public function managementEngine(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): DomainManagement
-    {$a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(CatalogueAcceptances::binding($a));return $this->composition($a)['management'];}
+    {$a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(AccountBindings::binding($a));return $this->composition($a)['management'];}
     public function corrections(Domain $domain): void
     {
         $a=Account::where('server_id',$domain->server_id)->firstOrFail();

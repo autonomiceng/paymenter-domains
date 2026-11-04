@@ -50,7 +50,7 @@ final class StaffHoldingReview
             if(array_filter($history,fn($r)=>($r['key']??null)===$t['key'])){throw new \DomainException('Review key used.');}
             $before=self::state($l);
             if($action!=='stop'){
-                $binding=CatalogueAcceptances::binding($l['account']);$acquisitions=$l['operations']->whereIn('action',['register','transfer']);
+                $binding=AccountBindings::binding($l['account']);$acquisitions=$l['operations']->whereIn('action',['register','transfer']);
                 $anchor=$l['operations']->firstWhere('operation_key',$d->renewal_policy['billing_anchor']['operation_key']??null);
                 if($s->status!=='active'||!$anchor||!RenewalAuthority::completed($anchor,$d,$binding)||$acquisitions->contains(fn($op)=>$op->state!=='succeeded'||!RenewalAuthority::resolved($op,$d,$binding))
                     ||$l['cancel']->where('service_id',$s->id)->contains(fn($r)=>!($r instanceof \App\Models\ServiceCancellation)||$r->type!=='end_of_period')){

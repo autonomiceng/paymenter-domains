@@ -12,7 +12,7 @@ final class SellAutomation
 {
     public static function enabled(Account $a): bool
     {
-        $b=CatalogueAcceptances::binding($a);
+        $b=AccountBindings::binding($a);
         // Activate requires prepared prices and a seller. This grants local preparation, never spending.
         return ($a->processing_enabled||$b->environment===Environment::Live)&&SellRule::saved($b)!==null
             &&TestCatalogue::enabled($b)&&EnomTestRegistration::enabled($b);
@@ -32,7 +32,7 @@ final class SellAutomation
     public static function priceReads(Account $a,CatalogueAcceptance $accepted,\DateTimeImmutable $now): CatalogueAcceptance
     {
         if(!self::enabled($a)){return $accepted;}
-        $b=CatalogueAcceptances::binding($a);$accepted->binding->requireMatch($b);$endings=$accepted->endings;
+        $b=AccountBindings::binding($a);$accepted->binding->requireMatch($b);$endings=$accepted->endings;
         foreach(SellRule::changes(SellRule::rows($b)->get()->filter(static fn(SellRow $row)=>self::priced($row,$now)),SellRule::saved($b),[]) as $tld=>$change){
             $endings[$tld]=['register'=>$change['terms'],'renew'=>[1],'transfer'=>$change['transfer']?[1]:[],'registry'=>true,'renewal_safe'=>true];
         }
@@ -51,7 +51,7 @@ final class SellAutomation
             $s=Server::whereKey($seed->server_id)->lockForUpdate()->firstOrFail();
             $a=Account::where('server_id',$seed->server_id)->lockForUpdate()->sole();
             UpgradeGate::legacy($generation);
-            $b=CatalogueAcceptances::binding($a);if($b->fingerprint!==$seed->account_fingerprint){throw new \DomainException('Catalogue binding mismatch.');}
+            $b=AccountBindings::binding($a);if($b->fingerprint!==$seed->account_fingerprint){throw new \DomainException('Catalogue binding mismatch.');}
             $active=self::enabled($a);if(SellRule::saved($b)===null){return;}
             app(AccountBindings::class)->requireReadableLocked($s,$a);
             // Missing is a new catalogue; a corrupt saved acceptance needs repair, never replacement by inference.
@@ -100,7 +100,7 @@ final class SellAutomation
     /** Called in the native publication transaction after its server/account/policy/TLD prefix. */
     public static function publishLocked(Server $s,Account $a,Tld $t,SalesPolicy $policy,PriceCatalogue $prices,\DateTimeImmutable $now,bool $hasProducts,bool $behind): bool
     {
-        $b=CatalogueAcceptances::binding($a);
+        $b=AccountBindings::binding($a);
         if(!self::enabled($a)||($row=self::row($b,$t->tld,$now))===null){return false;}
         app(AccountBindings::class)->requireReadableLocked($s,$a);
         $before=['register'=>$t->register_enabled,'transfer'=>$t->transfer_enabled,'seller'=>$policy->server_id,'seller_revision'=>$policy->revision];

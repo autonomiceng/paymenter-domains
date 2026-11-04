@@ -342,7 +342,7 @@ final class Writer implements Catalogue
             catch (\InvalidArgumentException) { $retail = null; }
             if ($cost->action === 'renew') {
                 if ($retail !== null && PricingRule::units($retail, 2) > 0 && $cost->fresh($now)) { $tld->catalogue_retained_annual_retail = $retail; }
-                else { $retail = UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2); }
+                else { $retail = OfferState::money($tld->catalogue_retained_annual_retail, 2); }
             }
             $values = ['wholesale' => $cost->total, 'retail' => $retail, 'unit' => 'term_total', 'source' => $cost->source,
                 'observed_at' => $cost->observedAt->format('Y-m-d H:i:s'), 'fresh_until' => $cost->freshUntil->format('Y-m-d H:i:s'),

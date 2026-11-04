@@ -9,7 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffGrants,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,SellRow,Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,PriceList,PricingRule};
 
 /** Bounded Staff snapshots over converted identities; no shadow rows, legacy costs or render writes. */
@@ -65,7 +65,7 @@ final class StaffCatalogue
             ->selectRaw("case json_extract($intent, '$.sell') when true then 'sell' when false then 'skip' else null end as choice")
             ->selectRaw("json_extract($intent, '$.longest') as longest,json_extract($intent, '$.transfers') as transfer")
             ->selectRaw(($costs?'cast('.$extract.' as decimal(18,4))':'null').' as register_cost');
-        return SellRow::query()->fromSub($q,'domains_sell_rows')->when($focus!==null,fn($q)=>$q->where('tld',$focus));
+        return OfferRow::query()->fromSub($q,'domains_offer_rows')->when($focus!==null,fn($q)=>$q->where('tld',$focus));
     }
     public function restorable(Tld $t): array
     {
@@ -125,7 +125,7 @@ final class StaffCatalogue
                 if(!$cost||$cost->total===null){$flags[]='cost_missing';}
                 if(!$cost?->fresh($this->clock->now())){$flags[]='cost_old';}
                 $retail=$offer->staffRetail();
-                if($decision->action==='renew'&&$decision->term===1){$retail=UpgradeEvidence::money($t->catalogue_retained_annual_retail,2);}
+                if($decision->action==='renew'&&$decision->term===1){$retail=OfferState::money($t->catalogue_retained_annual_retail,2);}
                 $prices[]=['action'=>$decision->action,'term'=>$decision->term,'retail'=>$retail===null?null:TldFacts::money($retail),
                     'flags'=>$flags,'synced'=>$cost!==null,'observed'=>$cost?->observedAt,
                     ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money($cost->total,4)]:[])];
@@ -164,7 +164,7 @@ final class StaffCatalogue
                 $row=[...$identity,'prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
                 foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$cost=$offer?->observation()?->total;$price=$offer?->staffRetail();
-                    if($action==='renew'&&$years===1){$price=UpgradeEvidence::money($t->catalogue_retained_annual_retail,2);}
+                    if($action==='renew'&&$years===1){$price=OfferState::money($t->catalogue_retained_annual_retail,2);}
                     $profit=$price!==null&&$cost!==null?CardFee::profit($price,$cost,$fee):null;$under=$price!==null&&$cost!==null&&!PricingRule::covers($price,$cost);$loses=$profit!==null&&str_starts_with($profit,'-');$below|=$under;$loss|=$loses;
                     $row['prices'][$action]=['price'=>$price,'cost'=>$cost,'profit'=>$profit,'revision'=>$offer?->decision->revision->offer,'below_cost'=>$under,'loses_money'=>$loses,
                         'status'=>$price===null?($action==='transfer'&&!($s['intent']['transfers']??$s['defaults']['defaultTransfers']??false)?PriceList::TRANSFERS_OFF:'Missing'):($cost===null?'Cost missing':($under?'Below cost':($loses?'Loses money after card fee':'')))];}

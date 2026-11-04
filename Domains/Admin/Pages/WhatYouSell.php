@@ -22,7 +22,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,HelpHint,SellTable,SettingsActions,Staff,StatusMark,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CanonicalName};
-use Paymenter\Extensions\Servers\Domains\Models\{Account,SellRow};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,OfferRow,SellRow};
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EndingChoices,PriceFill,PriceList,SellRule,StaffSettingsReview as Review,StaffSettingsWrites};
 /** What you sell: the rule and the TLD table. Reads only our own table. Only the fill reads from a registrar. */
 class WhatYouSell extends Page implements HasTable
@@ -215,7 +215,7 @@ class WhatYouSell extends Page implements HasTable
         if(($catalogue=$this->catalogue())!==null){$snapshot=$catalogue->summary($binding->serverId,$this->years());}
         // For sale means the rule picks it and the account has accepted a registration this long. Renewals or transfers alone are not a sale.
         if(!isset($snapshot)){$accepted=$this->reads()->accepted($binding->serverId);$years=$this->years();
-        $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow $row)=>SellRule::decide($row,$this->rule())==='sell'&&in_array($years,$accepted[$row->tld]['register']??[],true));
+        $wanted=SellRule::rows($binding)->get()->filter(fn(SellRow|OfferRow $row)=>SellRule::decide($row,$this->rule())==='sell'&&in_array($years,$accepted[$row->tld]['register']??[],true));
         }
         $count=$snapshot['count']??$wanted->count();$highest=$snapshot['highest']??(isset($wanted)?$wanted->max('high_cost'):null);
         $summary=$count.' '.($count===1?'TLD':'TLDs').' for sale.';
@@ -228,7 +228,7 @@ class WhatYouSell extends Page implements HasTable
     public function savedPrices(): array {return $this->reads()->saved();}
     public function explanations(): array {return $this->canSeeCosts()?$this->reads()->explanations($this->held()):[];}
     /** @return list<string> server:tld keys of every row the table holds, on every page */
-    private function held(): array {return $this->getFilteredTableQuery()->get(['server_id','tld'])->map(fn(SellRow $row)=>SellTable::key($row))->all();}
+    private function held(): array {return $this->getFilteredTableQuery()->get(['server_id','tld'])->map(fn(SellRow|OfferRow $row)=>SellTable::key($row))->all();}
     private function show(): ?string {return self::showFilter($this->getTableFilterState('show')['value']??null);}
     /** A saved Show value this page no longer offers reads as no Show filter, so the page still opens. */
     private static function showFilter(mixed $value): ?string {return is_string($value)&&$value!=='all'&&isset(PriceList::FILTERS[$value])?$value:null;}
@@ -278,10 +278,10 @@ class WhatYouSell extends Page implements HasTable
     /** Cost, Price and Profit for one sale. Renew and Transfer start off so the page stays one screen wide. */
     private function moneyGroup(string $action): ColumnGroup
     {
-        $cell=fn(SellRow $record,string $field)=>$this->reads()->cell($record,$action,$field);
+        $cell=fn(SellRow|OfferRow $record,string $field)=>$this->reads()->cell($record,$action,$field);
         $column=fn(string $field,string|\Closure $label)=>TextColumn::make($action.'_'.$field)->label($label)->alignEnd()->extraHeaderAttributes(['class'=>'domains-sell-'.$action])->extraCellAttributes(['class'=>'domains-sell-'.$action])->visible(fn()=>$this->canSeeCosts())->toggleable(isToggledHiddenByDefault:$action!=='register')
-            ->state(fn(SellRow $record)=>$cell($record,$field)['text'])->color(fn(SellRow $record)=>$cell($record,$field)['tone'])->tooltip(fn(SellRow $record)=>$cell($record,$field)['hint'])
-            ->badge(fn(SellRow $record)=>$cell($record,$field)['mark'])->extraAttributes(fn(SellRow $record)=>$cell($record,$field)['mark']?['data-beco-tone'=>'err']:[]);
+            ->state(fn(SellRow|OfferRow $record)=>$cell($record,$field)['text'])->color(fn(SellRow|OfferRow $record)=>$cell($record,$field)['tone'])->tooltip(fn(SellRow|OfferRow $record)=>$cell($record,$field)['hint'])
+            ->badge(fn(SellRow|OfferRow $record)=>$cell($record,$field)['mark'])->extraAttributes(fn(SellRow|OfferRow $record)=>$cell($record,$field)['mark']?['data-beco-tone'=>'err']:[]);
         return ColumnGroup::make(PriceList::ACTIONS[$action],[
             $column('cost',$action==='register'?fn()=>$this->years().'-year cost':'Cost')->sortable(fn()=>$action==='register'&&$this->years()===1),
             $column('price','Price'),
@@ -289,7 +289,7 @@ class WhatYouSell extends Page implements HasTable
         ])->alignCenter();
     }
     /** Bulk edit's fields. With one TLD they say what that TLD has now, since this is also how a single row is edited. */
-    private function editFields(?SellRow $one): array
+    private function editFields(SellRow|OfferRow|null $one): array
     {
         $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=$one?->longest??$rule['years']??null;$transfer=$one?->transfer??$rule['transfers']??null;
         $keep=static fn(?string $now)=>[self::KEEP=>$now===null?'Leave as is':'Leave as is ('.$now.')'];
@@ -323,24 +323,24 @@ class WhatYouSell extends Page implements HasTable
             ])
             ->columns([
                 TextColumn::make('tld')->label('TLD')->extraCellAttributes(['class'=>'domains-sell-pin'])->extraHeaderAttributes(['class'=>'domains-sell-pin'])->weight('medium')->fontFamily('mono')->sortable()->formatStateUsing(fn(string $state)=>'.'.$state)
-                    ->url(fn(SellRow $record)=>($id=$this->reads()->tldId($record))===null?null:TldResource::getUrl('view',['record'=>$id]))->color(fn(SellRow $record)=>$this->reads()->tldId($record)===null?null:'primary')
+                    ->url(fn(SellRow|OfferRow $record)=>($id=$this->reads()->tldId($record))===null?null:TldResource::getUrl('view',['record'=>$id]))->color(fn(SellRow|OfferRow $record)=>$this->reads()->tldId($record)===null?null:'primary')
                     ->searchable(query:fn($query,string $search)=>$query->where('tld','like','%'.strtolower(ltrim(trim($search),'.')).'%')),
-                TextColumn::make('account_name')->label('Account')->visible(fn()=>$this->account===self::ALL)->state(fn(SellRow $record)=>$this->accounts()[(int)$record->server_id]??null),
-                TextColumn::make('terms')->label('Terms')->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow $record)=>$this->reads()->terms($record)),
-                TextColumn::make('pricing')->label('Pricing')->visible($costs)->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow $record)=>$this->reads()->pricing($record)),
+                TextColumn::make('account_name')->label('Account')->visible(fn()=>$this->account===self::ALL)->state(fn(SellRow|OfferRow $record)=>$this->accounts()[(int)$record->server_id]??null),
+                TextColumn::make('terms')->label('Terms')->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow|OfferRow $record)=>$this->reads()->terms($record)),
+                TextColumn::make('pricing')->label('Pricing')->visible($costs)->toggleable(isToggledHiddenByDefault:true)->state(fn(SellRow|OfferRow $record)=>$this->reads()->pricing($record)),
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
-                TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(SellRow $record)=>$this->reads()->status($record)['label'])
-                    ->color(fn(SellRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(SellRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
-                    ->description(fn(SellRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(SellRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
-                    ->url(fn(SellRow $record)=>isset($this->reads()->status($record)['open'])&&($id=$this->reads()->tldId($record))!==null?TldResource::getUrl('view',['record'=>$id]):null),
+                TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(SellRow|OfferRow $record)=>$this->reads()->status($record)['label'])
+                    ->color(fn(SellRow|OfferRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(SellRow|OfferRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
+                    ->description(fn(SellRow|OfferRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(SellRow|OfferRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
+                    ->url(fn(SellRow|OfferRow $record)=>isset($this->reads()->status($record)['open'])&&($id=$this->reads()->tldId($record))!==null?TldResource::getUrl('view',['record'=>$id]):null),
             ])
-            ->checkIfRecordIsSelectableUsing(fn(SellRow $record)=>$this->reads()->blocked($record)===null)
+            ->checkIfRecordIsSelectableUsing(fn(SellRow|OfferRow $record)=>$this->reads()->blocked($record)===null)
             ->toolbarActions([
                 // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
                 BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
                     ->modalHeading(fn($records)=>$records->count()===1?'Edit .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save')->modalFooterActions(self::cancelFirst())->modalWidth('md')
                     ->schema(fn($records)=>$this->editFields($records->count()===1?$records->first():null))
-                    ->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(SellRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
+                    ->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(SellRow|OfferRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
             ]);
     }
 }

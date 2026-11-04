@@ -172,22 +172,22 @@ final class StaffSettingsReview
         $a=Account::where('server_id',$server)->lockForUpdate()->first();$t=$tld?Tld::whereKey($tld)->lockForUpdate()->first():null;
         $rules=new PricingRules;
         try{$rule=$t?$rules->rule($t,true):$rules->defaultRule(true);}catch(\Throwable){$rule='unavailable';}
-        try{$acceptance=$a?CatalogueAcceptances::load(CatalogueAcceptances::binding($a),true):null;$accepted=$acceptance?->endings;}catch(\Throwable){$acceptance=null;$accepted='unavailable';}
+        try{$acceptance=$a?CatalogueAcceptances::load(AccountBindings::binding($a),true):null;$accepted=$acceptance?->endings;}catch(\Throwable){$acceptance=null;$accepted='unavailable';}
         $live=null;
         if($a?->environment==='live'){
-            try{$b=CatalogueAcceptances::binding($a);$live=['current'=>EnomLiveActivation::current($b),'registration'=>EnomLiveActivation::registrationAccepted($b),'renewal'=>EnomTestRenewal::accepted($b),'management'=>EnomTestManagement::accepted($b),'transfer'=>EnomTestTransfer::accepted($b)];}
+            try{$b=AccountBindings::binding($a);$live=['current'=>EnomLiveActivation::current($b),'registration'=>EnomLiveActivation::registrationAccepted($b),'renewal'=>EnomTestRenewal::accepted($b),'management'=>EnomTestManagement::accepted($b),'transfer'=>EnomTestTransfer::accepted($b)];}
             catch(\Throwable){$live='unavailable';}
         }
         return [...($this->action==='new_domain_dns'?['dns_template'=>NewDomainDns::profile($server)?->id]:[]),'server_id'=>$server,'binding'=>$a?->account_fingerprint,'processing'=>$a?->processing_enabled,'tld_id'=>$tld,
             'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'acceptance_revision'=>$acceptance?->revision,'acceptance'=>is_array($accepted)?['count'=>count($accepted),'changes'=>$this->input['changes']??null,'terms'=>array_intersect_key($accepted,$this->input['changes']??[])]:$accepted,
-            'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(CatalogueAcceptances::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
+            'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(AccountBindings::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),
             ...(in_array($this->action,['activate','renewal_billing','test_renewal','live_renewal'],true)?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
             ...($this->action==='call_limits'?['call_limits'=>$a?ApiCallLimits::forAccount($a):null]:[]),
             ...($this->action==='unpaid_hold'?['unpaid_hold'=>UnpaidHoldSetting::minutes($server)]:[]),
             'live_activation'=>$live,
-            ...($this->action==='late_renewal'?['late_renewal'=>$a?EnomLateRenewal::stored(CatalogueAcceptances::binding($a)):false]:[]),
+            ...($this->action==='late_renewal'?['late_renewal'=>$a?EnomLateRenewal::stored(AccountBindings::binding($a)):false]:[]),
             'snapshot'=>self::stamp($server,$tld,true)];
     }
     /** Outcome audit grants no authority; retain it even if permissions or the saved state changed during I/O. */

@@ -18,7 +18,7 @@ final readonly class ReadOffer implements \JsonSerializable
     public function staffRetail(): ?string
     {
         if ($this->context !== Context::Staff) { throw new \LogicException('Staff snapshot required.'); }
-        return UpgradeEvidence::money($this->row?->retail, 2);
+        return OfferState::money($this->row?->retail, 2);
     }
 
     public function price(): PriceSnapshot
@@ -35,7 +35,7 @@ final readonly class ReadOffer implements \JsonSerializable
     /** Normalized prospective cost only; holder processing does not inherit public sale intent. */
     public function costPrice(\DateTimeImmutable $now): PriceSnapshot
     {
-        $p=$this->row;$c=$this->observation();$retail=UpgradeEvidence::money($p?->retail,2);
+        $p=$this->row;$c=$this->observation();$retail=OfferState::money($p?->retail,2);
         if($this->context!==Context::Holder||!$p||!$c?->enabled||!$c->fresh($now)||$retail===null||$c->action!==$this->decision->action||$c->term!==$this->decision->term||$c->currency!==$p->currency){throw new \DomainException('No current normalized cost.');}
         return new PriceSnapshot((int)$p->id,(int)$p->revision,$this->binding->serverId,$this->binding->registrarKey,$this->binding->fingerprint,
             $this->decision->tld,$c->action,$c->term,$c->currency,$c->total,$retail,$c->source,$c->observedAt,$c->freshUntil,$this->decision->warning);

@@ -71,7 +71,7 @@ final class OfferReadiness
                                 if(!$observation?->enabled||!$observation->fresh($this->clock->now())){throw new \DomainException('Current cost missing.');}
                                 if($action==='renew'){
                                     $this->capabilities->requireRenewal($b,$t->tld,$lock?$t:null);
-                                    $retail=UpgradeEvidence::money($t->catalogue_retained_annual_retail,2);
+                                    $retail=OfferState::money($t->catalogue_retained_annual_retail,2);
                                     if($retail===null||PricingRule::minor($retail)<=0){throw new \DomainException('Annual retail missing.');}
                                     $renew=null;
                                 }else{$p=$row->price();$retail=$p->retail;$renew=$rows['renew:1']->price();$counts[$feature]++;}

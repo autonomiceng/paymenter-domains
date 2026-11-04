@@ -17,7 +17,7 @@ final class RenewalExecution
     {
         $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
         $op=Operation::findOrFail($id);$a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->first();
-        try{$b=$a?CatalogueAcceptances::binding($a):null;}catch(\Throwable){$b=null;}
+        try{$b=$a?AccountBindings::binding($a):null;}catch(\Throwable){$b=null;}
         return $b&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
     }
     private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
@@ -96,7 +96,7 @@ final class RenewalExecution
                     $reason = $error instanceof RenewalRefused ? $error->reason : ($error instanceof ReadDeferred?RenewalCode::Rate:RenewalCode::Changed);
                     $retry = in_array($reason, [RenewalCode::Rate, RenewalCode::Reads, RenewalCode::Balance, RenewalCode::Changed, RenewalCode::Acceptance], true);
                     $policy = $op->policy; unset($policy['renewal_admission']); $op->update(['policy' => $policy]);
-                    $cap=EnomTestRenewal::enabled(CatalogueAcceptances::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
+                    $cap=EnomTestRenewal::enabled(AccountBindings::binding($l['account']))&&($error instanceof EnomTestCallLimit||EnomTestCalls::refusedSince($refusals));
                     $guard=$error instanceof WriteHeld&&$error->reason==='namesilo_account_guard';
                     if($reason===RenewalCode::Balance&&($until=($ready??$first)->renewalUntil)!==null){
                         $op->update(['policy'=>[...$op->policy,'funds_wait_until'=>$op->policy['funds_wait_until']??$until->format(DATE_ATOM)]]);
@@ -145,7 +145,7 @@ final class RenewalExecution
         $this->configured($l);
         if (($deadline=LateRenewalQuote::deadline($op)) !== null) {
             if ($deadline <= $this->clock->now()->modify('+25 seconds')) { throw new RenewalRefused(RenewalCode::Grace); }
-            if (!EnomLateRenewal::accepted(CatalogueAcceptances::binding($l['account']))) { throw new RenewalHold(EnomLateRenewal::PAUSED, 'Late renewal Off for this account.'); }
+            if (!EnomLateRenewal::accepted(AccountBindings::binding($l['account']))) { throw new RenewalHold(EnomLateRenewal::PAUSED, 'Late renewal Off for this account.'); }
         }
         if ($l['domain']->renewal_policy['automatic_spend_paused'] ?? false) { throw new RenewalHold('renewal_spend_paused', 'Renewal spending paused.'); }
         if ($op->expected_expires_at > $this->clock->now()->modify('+10 years')) { throw new \DomainException('Renewal term too long.'); }
@@ -155,7 +155,7 @@ final class RenewalExecution
     {
         try {
             $this->features->requireEnabled(Action::Renew); $this->bindings->requireProcessingLocked($l['server'], $l['account']);
-            $this->accepted->requireCurrent(CatalogueAcceptances::binding($l['account']));
+            $this->accepted->requireCurrent(AccountBindings::binding($l['account']));
         } catch (\Throwable $error) { throw new RenewalRefused(RenewalCode::Acceptance); }
     }
     private function hasPayment(Operation $op): bool

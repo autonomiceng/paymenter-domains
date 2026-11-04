@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
-use Paymenter\Extensions\Servers\Domains\Models\{SellRow,Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{OfferRow,SellRow,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EndingChoices,PriceList,PricingRule,PricingRules,SellRule,SellTableSchema};
 /** The rows What you sell shows and what each one says. One request only: a page reads an account once, not per cell. */
 final class SellTable
@@ -75,7 +75,7 @@ final class SellTable
         return $out;
     }
     /** A row as SellRule::ensure would save it: before any rule is saved, a TLD the account sells reads as Sell with its accepted terms. */
-    private function effective(SellRow $row): SellRow
+    private function effective(SellRow|OfferRow $row): SellRow|OfferRow
     {
         if($this->catalogue!==null||!$this->projected||$row->choice!==null){return $row;}
         $server=(int)$row->server_id;$sold=$this->accepted($server)[$row->tld]??null;
@@ -97,14 +97,14 @@ final class SellTable
         return $this->rules[$server]=SellRule::read($binding,$accepted);
     }
     /** Why this row can't be saved, or null when it can. */
-    public function blocked(SellRow $row): ?string
+    public function blocked(SellRow|OfferRow $row): ?string
     {
         if($this->catalogue!==null){return EndingChoices::hidden($row->tld)?'This TLD is hidden.':null;}
         if(!$row->listed){return "The registrar doesn't list this TLD.";}
         return EndingChoices::hidden($row->tld)&&!isset($this->accepted((int)$row->server_id)[$row->tld])?'This TLD is hidden.':null;
     }
     /** @return array{label:string,tone:string,next?:string,open?:bool} */
-    public function status(SellRow $row): array
+    public function status(SellRow|OfferRow $row): array
     {
         if($this->catalogue!==null){$facts=$this->facts()[self::key($row)]??[];
             if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
@@ -128,7 +128,7 @@ final class SellTable
         };
     }
     /** Sale state for the rows on screen, read once. Null when no prices are saved for it yet. */
-    private function sales(SellRow $row): ?array
+    private function sales(SellRow|OfferRow $row): ?array
     {
         $facts=$this->facts()[self::key($row)]??null;
         return $facts===null||$facts['prices']===[]?null:$facts['sales'];
@@ -146,13 +146,13 @@ final class SellTable
         return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->server_id.':'.$t->tld=>$page[$t->id]])->all();
     }
     /** The saved TLD behind a row, for its own page. A row nothing is saved for yet has none. */
-    public function tldId(SellRow $row): ?int
+    public function tldId(SellRow|OfferRow $row): ?int
     {
         $this->facts();$tld=$this->rowTlds[self::key($row)]??null;
         return $tld===null?null:(int)$tld->id;
     }
     /** @return array{0:?string,1:?string,2?:?string} estimated price, profit and why the price is a loss, from the saved rule. Only for a row with no saved price. */
-    private function numbers(SellRow $row): array
+    private function numbers(SellRow|OfferRow $row): array
     {
         $key=self::key($row);
         if(isset($this->rowNumbers[$key])){return $this->rowNumbers[$key];}
@@ -174,7 +174,7 @@ final class SellTable
         return $this->savedRead=$this->costs&&$this->bindings!==[]?app(PriceList::class)->read($this->years,'all',$this->scope()):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];
     }
     public function scope(): ?int {return count($this->bindings)===1?array_key_first($this->bindings):null;}
-    private function savedRow(SellRow $row): ?array
+    private function savedRow(SellRow|OfferRow $row): ?array
     {
         $this->savedRows??=collect([...$this->saved()['rows'],...$this->saved()['skipped']])->keyBy(fn(array $r)=>$r['server_id'].':'.ltrim($r['tld'],'.'))->all();
         return $this->savedRows[self::key($row)]??null;
@@ -200,8 +200,8 @@ final class SellTable
     {
         return $this->kept($filter)['skipped']!==[]&&(in_array($filter,['default','own'],true)||$this->saved()['rows']===[]);
     }
-    public function pricing(SellRow $row): string {return $this->savedRow($row)['pricing']??'Default';}
-    public function terms(SellRow $row): string
+    public function pricing(SellRow|OfferRow $row): string {return $this->savedRow($row)['pricing']??'Default';}
+    public function terms(SellRow|OfferRow $row): string
     {
         if($this->catalogue!==null){$this->facts();$row=(clone $row)->forceFill(['longest'=>$this->saleFacts[self::key($row)]['intent']['longest']??null]);}
         $row=$this->effective($row);$longest=$row->longest??$this->rule((int)$row->server_id)['years'];
@@ -210,7 +210,7 @@ final class SellTable
     /** One money cell. A saved price wins, even one a failed publish left on an old rule: its loss stays red and Below cost reads this same price.
      * Register at 1 year shows the live cost and an estimate only when nothing is saved.
      * @return array{text:?string,tone:?string,hint:?string,mark:bool} */
-    public function cell(SellRow $row,string $action,string $field): array
+    public function cell(SellRow|OfferRow $row,string $action,string $field): array
     {
         if($this->catalogue!==null&&!Staff::requireView()->costs){return self::cellOf(null);}
         $saved=$this->savedRow($row);
@@ -223,7 +223,7 @@ final class SellTable
         }
         return $this->savedCell($prices,$field,$this->selling($row,$action));
     }
-    private function registerCell(SellRow $row,string $field): array
+    private function registerCell(SellRow|OfferRow $row,string $field): array
     {
         [$price,$profit,$loss]=$this->numbers($row)+[2=>null];
         if($field==='cost'){return self::cellOf(Str::after((string)TldFacts::money((string)$row->register_cost,4),'USD '),null,$row->read_at===null?null:'Prices from '.self::time((int)$row->read_at));}
@@ -242,7 +242,7 @@ final class SellTable
         return self::missing($field==='cost'?'Use Sync prices.':'To add one, open the TLD page and use Edit prices.');
     }
     /** sold: an accepted term. filling: the next sync accepts it. off: not sold this long, or at all. */
-    private function selling(SellRow $row,string $action): string
+    private function selling(SellRow|OfferRow $row,string $action): string
     {
         $row=$this->effective($row);
         if(!$row->listed){return 'off';}
@@ -257,5 +257,5 @@ final class SellTable
     private static function missing(string $step): array {return ['text'=>'Missing','tone'=>'danger','hint'=>$step,'mark'=>true];}
     private static function loss(bool $below,bool $loses): ?string {return $below?'This price is below registrar cost.':($loses?'This price loses money after the card fee.':null);}
     public static function time(int $at): string {return gmdate('M j, Y H:i',$at).' UTC';}
-    public static function key(SellRow $row): string {return $row->server_id.':'.$row->tld;}
+    public static function key(SellRow|OfferRow $row): string {return $row->server_id.':'.$row->tld;}
 }

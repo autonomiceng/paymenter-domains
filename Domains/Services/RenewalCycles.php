@@ -171,7 +171,7 @@ final readonly class RenewalCycles
                 || !preg_match('/^[a-z][a-z0-9_]{0,63}$/D', $reason) || $cap->currency !== 'USD' || WriteMoney::compare($cap->amount, '0.00') <= 0) {
                 throw new \DomainException('Audited complimentary funding required.');
             }
-            $d = $l['domain']; $s = $l['service']; $binding = CatalogueAcceptances::binding($l['account']);
+            $d = $l['domain']; $s = $l['service']; $binding = AccountBindings::binding($l['account']);
             $this->bindings->requireProcessingLocked($l['server'], $l['account']);
             if ($years < 1 || $years > 10 || $d->provider_expires_at?->addYearsNoOverflow($years) > $this->clock->now()->modify('+10 years')
                 || $s->status !== 'active' || RenewalStop::blocksRenewal($l) || ($d->renewal_policy['automatic_spend_paused'] ?? false)) { throw new \DomainException('Complimentary lifecycle unavailable.'); }

@@ -64,7 +64,7 @@ final class SellerPolicies
             $policy->fill(['server_id' => $serverId, 'registrar_key' => $account?->registrar_key, 'account_fingerprint' => $account?->account_fingerprint,
                 'register_enabled' => $register, 'transfer_enabled' => $transfer, 'revision' => $policy->revision + 1]);
             SalesPolicy::withPolicyWrite(static fn () => $policy->save());
-            if ($previous) { TestCatalogue::withdrawCarts(CatalogueAcceptances::binding($previous), $tld); }
+            if ($previous) { TestCatalogue::withdrawCarts(AccountBindings::binding($previous), $tld); }
             $review?->record();
             return $policy;
         });
@@ -83,7 +83,7 @@ final class SellerPolicies
         $policy = SalesPolicy::where('tld', $tld)->firstOrFail();
         $this->requireAction($policy, $action, $term);
         $account = $this->account($policy->server_id, false);
-        self::requireSale(CatalogueAcceptances::binding($account), $action);
+        self::requireSale(AccountBindings::binding($account), $action);
         $catalogue = $this->tld($account, $tld, false);
         $this->requireTld($catalogue, $action, $term);
         PublicationEligibility::require($catalogue, $action, $term);
@@ -152,7 +152,7 @@ final class SellerPolicies
         foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->firstOrFail(); }
         UpgradeGate::legacy();
         foreach ($ids as $id) {
-            $binding = CatalogueAcceptances::binding($accounts[$id]);
+            $binding = AccountBindings::binding($accounts[$id]);
             foreach ($lines as $line) { if ($line->serverId === $id) { self::requireSale($binding, $line->action); } }
             $hasNonRegistration = array_filter($lines, static fn (SaleSelection $line): bool => $line->serverId === $id && $line->action !== 'register');
             if (EnomTestRegistration::sellable($binding) && !$hasNonRegistration) {
@@ -222,7 +222,7 @@ final class SellerPolicies
         if ($lock) { $accountQuery->lockForUpdate(); }
         $account = $accountQuery->firstOrFail();
         if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Seller server is disabled.'); }
-        if (TestCatalogue::enabled(CatalogueAcceptances::binding($account))) {
+        if (TestCatalogue::enabled(AccountBindings::binding($account))) {
             if ($lock) { $this->bindings->requireReadableLocked($server, $account); }
             elseif (!$this->bindings->configurationAvailable($serverId)) { throw new \DomainException('Catalogue account unavailable.'); }
             return $account;

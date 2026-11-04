@@ -49,7 +49,7 @@ final class Runtime
     { return \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed() ?? app(ObservationWork::class); }
     public static function limiter(): ?ReadLimiter {return app()->bound(self::class)?app(ReadLimiter::class):null;}
     public static function management(\Paymenter\Extensions\Servers\Domains\Models\Domain $d,?DomainManagement $fallback): ?DomainManagement
-    {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}
+    {if(!app()->bound(self::class)){return $fallback;}return app(RuntimePorts::class)->managementEngine(AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->firstOrFail()));}
     public function boot(): void
     {
         ConversionGate::requireComplete();if($this->booted){return;}$this->booted=true;

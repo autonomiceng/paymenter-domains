@@ -59,8 +59,7 @@ final class StaffCommands
         foreach($names as $name){if(!$rows->contains('tld',$name)){$failed[$name]='Converted TLD required.';}}
         if($defaults){
             $intent=$this->intent($d);
-            $v=\Paymenter\Extensions\Servers\Domains\Services\SellRule::validate($sell['rule']);
-            $intent=new Intent($v['mode']!=='only',$v['years'],$v['transfers'],$v['max_cost']);
+            $intent=Intent::fromRule($sell['rule']);
             $command=Edit::defaults($binding,$rows->first()->tld,$intent);
             $entries[]=[$command,$this->revision($rows->first(),$d)];
         }

@@ -16,7 +16,7 @@ final class ActivationEvidence implements LiveActivationEvidence
         if($binding->registrarKey!=='namesilo'||$binding->environment!==Environment::Test
             ||config('domains.namesilo_account.environment')!=='test'){throw new \DomainException('TEST NameSilo account required.');}
         $account=Account::where('server_id',$binding->serverId)->sole();
-        $binding->requireMatch(CatalogueAcceptances::binding($account));
+        $binding->requireMatch(AccountBindings::binding($account));
         app(AccountBindings::class)->credentialRevision($binding);
         return $account;
     }

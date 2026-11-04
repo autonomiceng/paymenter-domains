@@ -46,7 +46,7 @@ class RegistrarAnswers
                 ||$op->account_fingerprint!==$l['account']->account_fingerprint||$op->account_fingerprint!==$d->account_fingerprint
                 ||$op->authority_generation!==$d->authority_generation){throw new \DomainException('This request changed. Reload the page and select it again.');}
             app(AccountBindings::class)->requireReadableLocked($l['server'],$l['account']);
-            $attempt=ReconciliationEvidence::attempt($op,$d,CatalogueAcceptances::binding($l['account']));
+            $attempt=ReconciliationEvidence::attempt($op,$d,AccountBindings::binding($l['account']));
             if($op->action!=='transfer'&&($attempt->providerReference!==null||$attempt->executionFacts!==null)&&!$attempt->executionFacts?->capturedUnknown()
                 &&!($op->registrar_key==='namesilo'&&$attempt->providerReference===null)){throw new \DomainException('This request already has a registrar order. Check that order instead.');}
             $outcome=$input['outcome']??null;$reference=trim((string)($input['order_reference']??''));

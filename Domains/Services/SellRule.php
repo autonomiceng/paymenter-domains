@@ -38,10 +38,9 @@ final class SellRule
     }
     public static function validate(array $rule): array
     {
-        $years=$rule['years']??null;$cost=$rule['max_cost']??null;$cost=$cost===null||$cost===''?null:PricingRule::wholesale((string)$cost);
-        if(!in_array($rule['mode']??null,self::MODES,true)||!is_int($years)||$years<1||$years>10||!is_bool($rule['transfers']??null)
-            ||(($rule['max_cost']??'')!==''&&$cost===null)){throw new \InvalidArgumentException('Invalid sell rule.');}
-        return ['mode'=>$rule['mode'],'max_cost'=>$cost,'years'=>$years,'transfers'=>$rule['transfers']];
+        $intent = \Paymenter\Extensions\Servers\Domains\Catalogue\Intent::fromRule($rule);
+        return ['mode' => $rule['mode'], 'max_cost' => $intent->maxAnnualCost,
+            'years' => $intent->defaultLongest, 'transfers' => $intent->defaultTransfers];
     }
     /** Every accepted TLD has a row. Until a rule is saved, rows copy what the account already sells. */
     public static function ensure(AccountBinding $binding,?CatalogueAcceptance $accepted): void
@@ -49,7 +48,7 @@ final class SellRule
         $generation=UpgradeGate::legacy();
         DB::transaction(static function()use($binding,$accepted,$generation):void {
             UpgradeGate::lockLegacy($generation,$binding->serverId);
-            $binding->requireMatch(CatalogueAcceptances::binding(Account::where('server_id',$binding->serverId)->sole()));
+            $binding->requireMatch(AccountBindings::binding(Account::where('server_id',$binding->serverId)->sole()));
             if($accepted===null||$accepted->endings===[]){return;}
             $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
             DB::table(SellTableSchema::ROWS)->insertOrIgnore(array_map(static fn(string $tld)=>[...$key,'tld'=>$tld],array_keys($accepted->endings)));

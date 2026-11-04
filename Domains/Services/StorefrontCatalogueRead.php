@@ -42,7 +42,7 @@ final class StorefrontCatalogueRead
             $this->endings[$ending] = null;
             $this->prepare($ending);
             [$policy, $account, $tld] = $this->catalogues[$ending] ?? throw new \DomainException('Offer unavailable.');
-            $binding = CatalogueAcceptances::binding($account);
+            $binding = AccountBindings::binding($account);
             // Each account can have hundreds of endings; share its acceptance within this display snapshot.
             $accepted = $this->acceptances[$binding->serverId.':'.$binding->fingerprint] ??= CatalogueAcceptances::load($binding);
             $rules = new PricingRules; $serverId = $policy->server_id;
