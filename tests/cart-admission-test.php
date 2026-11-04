@@ -148,8 +148,9 @@ Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSecon
 Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(6, Order::count(), 'Retry after a temporary check failure completes checkout');
 Illuminate\Support\Carbon::setTestNow();
+// Independent transfer/age scenarios start with a known two-day synthetic observation window.
 // Transfer expiry row: retry cannot refresh it, so the notice must lead to a working cart edit.
-$clock->instant = $now;
+$clock->instant = $now;activeCommerceFacts($now,$now->modify('+2 days'),$ports);
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $cart = commerceCart($user); $transfer = $native->product($tlds[0], 'transfer');
 $line = commerceAdd($cart, $transfer, placeholderComFixtureName('expired-transfer-placeholder.com'));

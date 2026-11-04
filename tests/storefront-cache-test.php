@@ -25,7 +25,7 @@ same($healthy,$storefront->endings(),'Real active publication restores next disp
 $product=$native->product($t->fresh(),'register');$price=$product->plans()->where('billing_period',1)->sole()->prices()->sole();
 $raw=$price->getRawOriginal('price');DB::table('prices')->where('id',$price->id)->update(['price'=>'99.00']);
 $clock->instant=$now->modify('+29 seconds');same($healthy,$storefront->endings(),'Native edit may lag for less than thirty seconds');
-$clock->instant=$now->modify('+30 seconds');$expired=$storefront->endings();same([3],$expired[0]['terms'],'Exact TTL expiry removes only the corrupt native term');same('$23.40',$expired[0]['register'],'Healthy three-year native mapping remains visible');
+$clock->instant=$now->modify('+30 seconds');$expired=$storefront->endings();same([3],$expired[0]['terms'],'Exact TTL expiry removes only the corrupt native term');same(null,$expired[0]['register'],'Corrupt annual mapping has no public annual price');same('$23.40',$expired[0]['price'],'Healthy three-year native mapping remains visible');
 DB::table('prices')->where('id',$price->id)->update(['price'=>$raw]);$clock->instant=$now->modify('+60 seconds');
 same($healthy,$storefront->endings(),'Next display rechecks repaired native price');
 $root=Cache::getFacadeRoot();$committed=false;Cache::swap(new class(new Illuminate\Cache\ArrayStore) extends Illuminate\Cache\Repository {
