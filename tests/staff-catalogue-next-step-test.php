@@ -37,6 +37,13 @@ function nextTable(): array
     $page=[];$table=new SellTable([$binding->serverId=>$binding],1,true,static function()use(&$page){return $page;},false,$source);
     $page=$table->rows('com')->get()->all();return [$table,$page[0]];
 }
+$GLOBALS['nextStepSource']=$source;
+class NextStepStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell
+{
+    protected function catalogue():?StaffCatalogue{return $GLOBALS['nextStepSource'];}
+    public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding {return \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$this->account)->sole());}
+}
+\Livewire\Livewire::component('next-step-staff-page',NextStepStaffPage::class);
 $failures=[];
 try {
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
@@ -83,7 +90,7 @@ $reset();$clearPrice();
 DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>'0.00']);
 $intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
 [$table,$row]=nextTable();$status=$table->status($row);
-same('Set a positive registration price in Edit prices on .com.',$status['next'],'A saved zero price names the staff choice and its page');same(true,$status['open'],'The staff price choice links to the TLD page');
+same('Set a positive registration price in Edit prices on .com.',$status['next'],'A saved zero price names the staff choice and its page');same('tld',$status['open'],'The staff price choice links to the TLD page');
 same('0.00',$table->cell($row,'register','price')['text'],'Saved prices remain visible while staff correct them');
 
 } catch (Throwable $error) {$failures[]='Case 4: '.$error->getMessage();}
@@ -177,20 +184,74 @@ same($now->getTimestamp(),$work->status($binding)['due_at'],'Missing retained re
 // Render the actual staff cell. Visible descriptions and real links cannot be proved by a helper-only assertion.
 
 } catch (Throwable $error) {$failures[]='Case 16: '.$error->getMessage();}
+// Review probe A/B: an unreadable saved rule is a staff edit, never automatic recovery.
+foreach([false,true] as $pending){
+try {
+$reset();$clearPrice();
+$intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;
+$intent['pricing_rule']=['mode'=>'bogus','round_up'=>'none','markup'=>'0','fixed'=>[]];
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
+if($pending){DB::table('domains_tlds')->where('id',$t->id)->increment('catalogue_revision');}
+[$table,$row]=nextTable();
+same('Left out',$table->cell($row,'register','price')['text'],'Unreadable pricing remains Left out in money cells');
+$status=$table->status($row);
+same('Fix the pricing rule in Edit prices on .com.',$status['next'],'Unreadable pricing asks for the saved rule to be fixed');
+expect($status['label']!=='Checking','A saved staff rule cannot be repaired by repeated publication');
+same(null,$work->status($binding)['due_at'],'Unreadable pricing does not queue a provider price read');
+$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->assertSee('Left out')->html();
+$dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+$url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);
+expect($xpath->query('//td[contains(@class,"domains-sell-status")]//a[@href="'.$url.'" and contains(.,"Fix the pricing rule in Edit prices on .com.")]')->length===1,'The table renders the invalid row with its visible Edit prices step and TLD link');
+} catch (Throwable $error) {$failures[]='Unreadable rule '.($pending?'pending':'current').': '.$error->getMessage();}
+}
 try {
 $reset();$clearPrice();$readable=false;
-$GLOBALS['nextStepSource']=$source;
-class NextStepStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell
-{
-    protected function catalogue():?StaffCatalogue{return $GLOBALS['nextStepSource'];}
-    public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding {return \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$this->account)->sole());}
-}
-\Livewire\Livewire::component('next-step-staff-page',NextStepStaffPage::class);
+$intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
 $html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->assertSee('Missing')->html();
 $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
 expect($xpath->query('//*[contains(@class,"description") and contains(.,"Check account setup on Registrar account.")]')->length>0,'The next step is visible beside Missing, outside its tooltip');
 $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$binding->serverId]);
 expect($xpath->query('//a[@href="'.$url.'" and contains(.,"Missing")]')->length>0,'Missing links to the account page that fixes setup');
+expect($xpath->query('//td[contains(@class,"domains-sell-status")]//a[@href="'.$url.'" and contains(.,"Check account setup on Registrar account.")]')->length===1,'The Status setup step links to Registrar account, like the money cell');
+} catch (Throwable $error) {$failures[]='Account status link: '.$error->getMessage();}
+// Review probe C: exercise the actual Status anchors, including deliberate absence of a link.
+foreach(['cost limit','registrar cost','registrar terms','registrar requirements','price choice'] as $scenario){
+try {
+$reset();$intent=OfferState::decode($original['catalogue_intent']);$intent['transfers']=false;
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
+$open=null;$url=null;
+switch($scenario){
+case 'cost limit':
+    $d=OfferState::decode($defaults);$d['maxAnnualCost']='1.0000';DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json($d)]);
+    $next='Change the cost limit under Default for new TLDs in What you sell.';break;
+case 'registrar cost':
+    DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->delete();
+    $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp()]);
+    $next='Ask the registrar for a 1-year registration cost for .com.';break;
+case 'registrar terms':
+    DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
+    $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'due_at'=>null]]])]);
+    $next='Ask the registrar to confirm terms for .com.';break;
+case 'registrar requirements':
+    $facts=OfferState::decode($original['catalogue_facts']);$facts['requiresNameservers']=true;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($facts)]);
+    $next='Ask the registrar to confirm renewal and nameserver requirements for .com.';break;
+case 'price choice':
+    DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>'0.00']);
+    $next='Set a positive registration price in Edit prices on .com.';$open='tld';
+    $url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$t->id]);break;
+}
+[$table,$row]=nextTable();$status=$table->status($row);
+same($next,$status['next'],'The Status step names the action for '.$scenario);
+same($open,$status['open'],'The Status preserves the step destination for '.$scenario);
+$html=\Livewire\Livewire::actingAs($actor)->test(NextStepStaffPage::class)->html();
+$dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
+$cell='//td[contains(@class,"domains-sell-status") and contains(.,"'.$next.'")]';
+same(1,$xpath->query($cell)->length,'The next step is visible in Status for '.$scenario);
+if($url===null){same(0,$xpath->query($cell.'//a[@href]')->length,'Status has no unrelated TLD link for '.$scenario);}
+else{same(1,$xpath->query($cell.'//a[@href="'.$url.'"]')->length,'Status links to the TLD that fixes '.$scenario);}
+} catch (Throwable $error) {$failures[]='Status link '.$scenario.': '.$error->getMessage();}
+}
+try {
 same(0,$calls,'All states render without provider resolution or a send');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);[$table,$row]=nextTable();same(null,$table->cell($row,'register','price')['text'],'Staff without cost permission do not see money-cell reasons');
 

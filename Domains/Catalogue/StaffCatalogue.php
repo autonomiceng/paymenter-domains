@@ -55,6 +55,7 @@ final class StaffCatalogue
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if(in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)){return $step('off','Stopped in What you sell.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
+        try{$rule=Pricing::rule($t);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
         $binding=static fn()=>AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
         if($reason==='publication_pending'&&$this->work){$this->work->wake($binding());return $waiting([]);}
         try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
@@ -74,7 +75,7 @@ final class StaffCatalogue
             if(!$observation||!$observation->fresh($now)||$cost->staffRetail()===null
                 ||$key==='renew:1'&&OfferState::money($t->catalogue_retained_annual_retail,2)===null){
                 if($observation?->fresh($now)){
-                    $quote=Retail::quote($observation,Pricing::rule($t));
+                    $quote=Retail::quote($observation,$rule);
                     if($quote===null||PricingRule::units($quote,2)<1){return $missing('Set a positive '.$names[$observation->action].' price in Edit prices on .'.$t->tld.'.');}
                 }
                 if(!$this->work||!$this->readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
