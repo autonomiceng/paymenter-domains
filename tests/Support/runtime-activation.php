@@ -93,7 +93,7 @@ Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedire
 $account=['account'=>$server->id];
 $test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();
 expect(!str_contains($test->html(),'Choose the TLDs you sell.'),'Accepted catalogue is not falsely reported missing');
-DB::table('settings')->where('settingable_id',$server->id)->where('key',Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY)->update(['value'=>'invalid-synthetic-acceptance']);
+DB::table('settings')->where('settingable_id',$server->id)->where('key','domains_catalogue_acceptance')->update(['value'=>'invalid-synthetic-acceptance']);
 $test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();$html=$test->html();
 foreach(['What you sell','Choose the TLDs you sell.','Registrations','Transfers','System checks','Site setup'] as $word){expect(str_contains($html,$word),'Account page shows go-live fact '.$word);}
 expect(Domain::where('domain','queued-held.test')->exists(),'The excluded queued-held.test fixture exists');

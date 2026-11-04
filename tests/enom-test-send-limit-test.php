@@ -76,11 +76,11 @@ $review=static function(?string $stamp=null)use($staff): Review {
 };
 $write=static fn($r,$day,$minute=3)=>ApiCallLimits::save($r,['day'=>$day,'minute'=>$minute]);
 same(true,admits($uid),'Seed current usage before lowering the guard');
-$before=PriceSync::callsToday($binding);
+$before=\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding);
 CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>false,'renewal_safe'=>true]]);
 DB::table('domains_observation_queues')->insert(['server_id'=>1,'account_fingerprint'=>$binding->fingerprint,'catalogue_hold'=>'catalogue_call_capacity']);
 $stale=$review();$changed=$review();$write($changed,2,2);
-same(['used'=>$before['used'],'limit'=>2],PriceSync::callsToday($binding),'Sync capacity sees the saved cap immediately');
+same(['used'=>$before['used'],'limit'=>2],\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding),'Sync capacity sees the saved cap immediately');
 same(['day'=>2,'minute'=>2],Limit::limits($uid),'Physical guard reads the same saved limits');
 expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],'0 calls left'),'The capacity check immediately shows the reduced allowance');
 same(false,admits($uid),'Lowering below usage refuses further sends');
@@ -115,7 +115,7 @@ same('Price sync needs 6 calls; 0 calls left for automatic price reads',
     'A retained capacity failure shows the automatic allowance without promising a retry');
 // Unknown usage still closes the execution guard, but it must not be presented as a measured zero.
 Schema::rename(Tables::SENDS,'domains_test_sends_unreadable');
-same(null,PriceSync::callsToday($binding),'Unreadable send storage makes usage unknown');
+same(null,\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding),'Unreadable send storage makes usage unknown');
 same(0,PriceSync::backgroundLeft($binding,$clock),'Unknown usage keeps the automatic guard closed');
 same("Couldn't read our call count or limit. Try again.",
     \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
@@ -144,7 +144,7 @@ foreach([null,0,'invalid'] as $badCap){
 config(['domains.enom_live.accounts.live-cap-uid.daily_call_cap'=>6]);
 $liveReview=new Review($staff->id,$liveServer->id,null,'call_limits',Review::ticket($staff->id,$liveServer->id,null,'call_limits',Review::stamp($liveServer->id,null)),'Adjust our Live runaway guard');
 $write($liveReview,1);
-same(['used'=>2,'limit'=>1],PriceSync::callsToday($liveBinding),'Live sync capacity uses the same saved cap immediately');
+same(['used'=>2,'limit'=>1],\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($liveBinding),'Live sync capacity uses the same saved cap immediately');
 same('Limit reached. Further calls wait until the count resets.',
     \Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::calls($live)['sub'],'A positive exhausted Live limit still explains the count reset');
 try{EnomLiveCalls::reserve($liveBinding);expect(false,'Live send exceeded lowered cap');}catch(EnomTestCallLimit){}

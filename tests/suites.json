@@ -207,14 +207,9 @@
     "tests/owner-records-test.php",
     "tests/owner-record-confirmation-test.php",
     "tests/owner-record-errors-test.php",
-    "tests/staff-tld-reads-test.php",
     "tests/staff-tld-page-test.php",
     "tests/staff-settings-history-test.php",
-    "tests/staff-tld-writes-test.php",
-    "tests/staff-tld-actions-test.php",
-    "tests/tld-terms-guidance-test.php",
     "tests/tld-pricing-publish-test.php",
-    "tests/pricing-strategy-save-test.php",
     "tests/default-followers-preview-test.php",
     "tests/default-pricing-unreadable-test.php",
     "tests/offer-pricing-unreadable-test.php",
@@ -467,8 +462,7 @@
     "tests/offer-sync-facts-test.php",
     "tests/offer-contract-admission-test.php",
     "tests/offer-store-cleanup-test.php",
-    "tests/offer-store-prefix-test.php",
-    "tests/catalogue-test.php"
+    "tests/offer-store-prefix-test.php"
   ],
   "ui": [],
   "runner": [

@@ -20,8 +20,6 @@ $registry->register('enom',['token'],new class implements AccountVerifier { publ
     static fn(AccountBinding $b,array $c)=>new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new Money('100.00','USD')))));
 app()->instance(AccountBindings::class,new AccountBindings($registry));
 $account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
-$catalogue=CatalogueAcceptances::load($binding);
-DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new CatalogueAcceptance($binding,$catalogue->revision,$catalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.transfer'=>true]);
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
 expect(EnomTestRegistration::enabled($binding),'Real TEST registration policy on');

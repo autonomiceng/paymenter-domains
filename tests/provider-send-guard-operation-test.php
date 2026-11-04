@@ -15,8 +15,6 @@ app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::cla
 EnomTestSendLimitSchema::install();BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $binding=$bindingFor(0);
 $op=$new(placeholderComFixtureName('guard-held-placeholder.com'));
-$catalogue=CatalogueAcceptances::load($binding);
-DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new CatalogueAcceptance($binding,$catalogue->revision,$catalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
 BalanceReads::record($binding,new \Paymenter\Extensions\Servers\Domains\Data\Money('100.00','USD'),$clock->now(),'manual');
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 expect(EnomTestRegistration::enabled($binding),'Real TEST policy enabled for the operation');

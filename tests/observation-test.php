@@ -91,7 +91,7 @@ same('binding_mismatch',$work->tick(1)[$d->server_id],'Account catch retains bin
 same($calls,count($observation->calls),'Account mismatch never reads provider');
 DB::table('domains_observation_queues')->where('id',$queue->id)->update(['account_fingerprint'=>$queue->account_fingerprint]);
 // A broken catalogue audit cannot prevent an independent due domain read.
-$savedAcceptance=App\Models\Server::findOrFail($d->server_id)->settings()->where('key',\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY)->sole();$savedAcceptance->delete();
+$savedAcceptance=App\Models\Server::findOrFail($d->server_id)->settings()->where('key','domains_catalogue_acceptance')->sole();$savedAcceptance->delete();
 DB::table('domains_observation_queues')->where('id',$queue->id)->update(['catalogue_audit'=>'invalid-json','catalogue_hold'=>null,'catalogue_due'=>0]);
 DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>null,'due_at'=>0,'lease_until'=>0]);
 $calls=count($observation->calls);$isolated=new ObservationWork($observer,$clock,$budget,new \Paymenter\Extensions\Servers\Domains\Services\CatalogueSync($readBindings,$prices));$isolated->tick(1);
