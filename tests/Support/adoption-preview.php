@@ -19,9 +19,12 @@ function adoptionFixture(Environment $environment = Environment::Test): array
     $owner = commerceUser(); $other = commerceUser(); $staff = staffUser(['admin.domains.view', 'admin.domains.adopt.preview']);
     $tld = $tlds[0]; $product = $native->product($tld, 'register'); $plan = $native->annualPlan($product);
     $order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
-    $service = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id,
-        'plan_id' => $plan->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
-    $property = $service->properties()->create(['key' => 'domain', 'value' => 'example.com']);
+    // The mapped service/property predate extension checkout; retain their native historical shape.
+    [$service,$property]=Service::withoutEvents(static function()use($owner,$order,$product,$plan):array {
+        $service=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,
+            'plan_id'=>$plan->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']);
+        return [$service,$service->properties()->create(['key'=>'domain','value'=>'example.com'])];
+    });
     $clock = new AdoptionClock; $wire = new AdoptionWire;
     $wire->payloads['GetDomainInfo'] = str_replace('synthetic-uid', 'account-enom', $wire->payloads['GetDomainInfo']);
     $registry = new RegistrarRegistry;
