@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(method_exists(OfferReader::class, 'readBatch'), 'Mixed-account admission requires one shared batch loader');
 // Native SQLite exercises actual binding, projection and local loading. It cannot prove InnoDB
 // current reads or concurrent blocking; the installed two-connection check remains deferred.
-(new Installation)->install(); extract(commerceFixture());
+(new Installation)->install(); extract(commerceFixture(active:true));
 $clock = new FakeClock($now); $allowed = true; $checked = [];
 $authorize = static function ($q, $context) use (&$allowed): void {
     if (!$allowed && $context !== Context::Public) { throw new DomainException('Permission revoked.'); }

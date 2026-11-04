@@ -19,7 +19,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Install
 // financial rows. All registrar data and callbacks are synthetic; no transport is installed.
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Writer.php'), 'Dormant offer writer can apply revisions and project native prices');
 (new Installation)->install();
-extract(commerceFixture());
+extract(commerceFixture(active:true));
 [$enom, $namesilo] = $tlds;
 $b = CatalogueAcceptances::binding(Account::where('server_id', $enom->server_id)->sole());
 $n = CatalogueAcceptances::binding(Account::where('server_id', $namesilo->server_id)->sole());

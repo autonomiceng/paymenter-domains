@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/CallerPorts.php'), 'Caller ports must compose local account gates and shared reader/writer');
 // A native fixture is needed for encrypted credential/processing gates and real price row IDs.
 // All transport factories are synthetic tripwires; no installed/Live acceptance is claimed.
-(new Installation)->install(); extract(commerceFixture());
+(new Installation)->install(); extract(commerceFixture(active:true));
 $clock = new FakeClock($now); $permission = true; $feature = true;
 $authorize = static function ($input, $context) use (&$permission): void {
     if (!$permission) { throw new DomainException('Permission revoked.'); }

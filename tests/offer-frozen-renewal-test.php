@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/Support/OfferFixture.php';
+$activeCommerceFixture=true;
 require __DIR__.'/bootstrap.php';
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Capabilities.php'),'Independent renewal capabilities required');
 require __DIR__.'/Support/renewal-execution.php';

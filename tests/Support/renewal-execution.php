@@ -41,7 +41,7 @@ $transport = new class($state) implements Transport {
 };
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, 'account-enom', $c['token'], $transport), ['com']));
-$renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock);
+$renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,$caps??null);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); Queue::fake();
 $billing = new DomainBilling($bindings, $guard, $clock); $cycles = new RenewalCycles($bindings, $clock);
 $makeRenewal = static function (string $name, bool $paid = true, int $years = 1, bool $credit = false, ?Closure $beforeBill = null) use ($prepare, $reconcile, $clock, $billing, $state, $product, $user) {

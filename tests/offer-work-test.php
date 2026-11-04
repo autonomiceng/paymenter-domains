@@ -22,7 +22,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueA
 // Only the wire and clock are fake; no provider runtime or active scheduler is registered.
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferWork.php'), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
 (new Installation)->install();
-extract(commerceFixture());
+extract(commerceFixture(active:true));
 $b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
 $n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
 (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b); (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($n);

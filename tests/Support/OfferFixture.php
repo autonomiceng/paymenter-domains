@@ -30,7 +30,7 @@ final class OfferFixture
                 $intent=new Intent(defaultSell:false,sell:$terms!==[],longest:$terms?max($terms):null,transfers:$transfers,
                     stops:$tld->enabled?[]:['register','renew','transfer']);
                 DB::table('domains_tlds')->where('id',$tld->id)->update(['catalogue_intent'=>OfferState::json($intent),
-                    'catalogue_revision'=>1,'catalogue_converted'=>true,'catalogue_retained_annual_retail'=>$retained]);
+                    'catalogue_facts'=>null,'catalogue_revision'=>1,'catalogue_converted'=>true,'catalogue_retained_annual_retail'=>$retained]);
             }
         });
         DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$binding->serverId],['account_fingerprint'=>$binding->fingerprint,'offer_feed_run'=>1]);
