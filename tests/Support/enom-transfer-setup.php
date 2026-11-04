@@ -32,7 +32,7 @@ $setupReply=static function(array $p)use($transferReply):string {
     };return $body===null?$transferReply($p):'<interface-response><Command>'.$p['Command'].'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
 };
 Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$setupReply]);config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
-$settings=app(StaffSettingsWrites::class);$write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void{$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST transfer');$settings->run($r,$data);};
+$settings=app(StaffSettingsWrites::class);$write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void{Auth::setUser($staff);$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST transfer');$settings->run($r,$data);};
 $write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid'=>$transferUid,'token'=>'TEST-SECRET-TOKEN']);$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 if(isset($transferConfigured)){$transferConfigured();}
 $write('probe');

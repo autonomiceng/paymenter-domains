@@ -55,7 +55,7 @@ resetWire(['reply'=>$reply]);
 $settings=app(StaffSettingsWrites::class);$bindings=app(AccountBindings::class);$ports=app(RuntimePorts::class);
 expect($settings->connectionAvailable(),'Installed TEST phase boots staff connection checks');
 $write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void {
-    $r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST registration');$settings->run($r,$data);
+    Auth::setUser($staff);$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST registration');$settings->run($r,$data);
 };
 $write('configure',['registrar'=>'enom','environment'=>'test','uid'=>'test-uid','token'=>'TEST-SECRET-TOKEN']);
 $a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);

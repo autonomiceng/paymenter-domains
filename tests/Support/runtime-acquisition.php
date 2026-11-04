@@ -155,7 +155,7 @@ foreach(['register','transfer','register','transfer'] as $i=>$action){
     $beforeReads=$state->reads;$beforeRdap=$state->rdap;
     $worker->invoice($op->invoice_id);Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id);
     $worker->operation($op->id);$expected[]=[$action,$op->domain->domain];
-    same($expected,$state->writes,'Correct action protocol exchanges exactly once in order');
+    same($expected,$state->writes,'Correct action protocol exchanges exactly once in order: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code,$state->writes]));
     same($action==='register'?'pending':'uncertain',$op->fresh()->state,'Real acquisition engine records its action outcome');
     same('sealed',$op->fresh()->attempt['seal'],'Actual funding and dispatch checks completed');
     same($action==='register'?1:2,$state->reads-$beforeReads,'Real action-specific fresh preflight count');
