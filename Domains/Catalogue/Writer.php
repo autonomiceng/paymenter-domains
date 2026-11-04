@@ -346,7 +346,7 @@ final class Writer implements Catalogue
             }
             $values = ['wholesale' => $cost->total, 'retail' => $retail, 'unit' => 'term_total', 'source' => $cost->source,
                 'observed_at' => $cost->observedAt->format('Y-m-d H:i:s'), 'fresh_until' => $cost->freshUntil->format('Y-m-d H:i:s'),
-                'eligibility' => null, 'hold_reason' => null, 'revision' => (int) $p->revision + 1];
+                'revision' => (int) $p->revision + 1];
             DB::table('domains_prices')->where('id', $p->id)->update($values);
         }
     }

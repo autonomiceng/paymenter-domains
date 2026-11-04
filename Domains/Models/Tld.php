@@ -19,13 +19,11 @@ class Tld extends Model
 
     protected $table = 'domains_tlds';
     protected $guarded = [];
-    protected $hidden = ['catalogue_intent', 'catalogue_facts', 'catalogue_issues', 'account_fingerprint', 'cost_register_terms', 'cost_renew', 'cost_transfer', 'markup', 'catalogue_revision', 'catalogue_published_revision', 'catalogue_retained_annual_retail', 'catalogue_converted', 'catalogue_created'];
+    protected $hidden = ['catalogue_intent', 'catalogue_facts', 'catalogue_issues', 'account_fingerprint', 'markup', 'catalogue_revision', 'catalogue_published_revision', 'catalogue_retained_annual_retail', 'catalogue_converted', 'catalogue_created'];
     protected $casts = [
         'enabled' => 'boolean', 'register_enabled' => 'boolean', 'renew_enabled' => 'boolean', 'transfer_enabled' => 'boolean',
-        'use_default_rule' => 'boolean', 'markup' => 'decimal:2', 'renew_price' => 'decimal:2',
-        'fixed_register' => 'decimal:2', 'fixed_renew' => 'decimal:2', 'fixed_transfer' => 'decimal:2',
-        'cost_register_terms' => 'array', 'sale_holds' => 'array', 'cost_renew' => 'decimal:4', 'cost_transfer' => 'decimal:4',
-        'costs_synced_at' => 'immutable_datetime', 'sort_order' => 'integer',
+        'use_default_rule' => 'boolean', 'markup' => 'decimal:2', 'fixed_register' => 'decimal:2', 'fixed_renew' => 'decimal:2', 'fixed_transfer' => 'decimal:2',
+        'sort_order' => 'integer',
         'catalogue_retained_annual_retail' => 'decimal:2',
         'min_years' => 'integer', 'max_years' => 'integer', 'registry_fields' => 'array',
     ];
