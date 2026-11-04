@@ -12,6 +12,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
     $clock->at=new DateTimeImmutable('2028-10-01T12:00:00Z');
     Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
     $bindings->setProcessing($server->id,false);Queue::fake();
+    installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
     config(['domains.enom_live.management'=>false]);
     // Other producers have their own schedules; keep this turn focused on balance refreshes.
     DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>$clock->now()->getTimestamp()+86400]);

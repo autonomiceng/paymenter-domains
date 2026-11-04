@@ -16,7 +16,7 @@ $transferConfigured=static function():void {
     config(['domains.enom_live.site'=>'https://billing.example.com','domains.enom_live.accounts'=>['live-uid'=>['fingerprint'=>$binding->fingerprint,'daily_call_cap'=>1000,'daily_spend_limit_usd'=>'100.00']],'domains.enom_live.catalogue'=>true]);
     expect(!Policy::enabled($binding),'Live transfer defaults off despite Live catalogue and TEST opt-in');
     foreach([false,'true',1,null] as $off){config(['domains.enom_live.transfer'=>$off]);expect(!Policy::enabled($binding),'Live transfer requires boolean true');}
-    config(['domains.enom_live.transfer'=>true]);
+    config(['domains.enom_live.transfer'=>true,'domains.enom_live.renewal'=>true]);
     expect(Policy::enabled($binding),'Live transfer has independent deployment authority');
     $transferState->environment='live';$transferState->uid='live-uid';
 };
@@ -28,7 +28,7 @@ $evidence=['fingerprint'=>$binding->fingerprint,'site'=>'https://billing.example
     'transfer_proof'=>['confirmed_on'=>'2026-10-20','reference'=>'OFFLINE synthetic pilot','sha256'=>hash('sha256','OFFLINE pilot')]];
 config(['domains.enom_live.accounts.live-uid.evidence'=>$evidence,'domains.support_url'=>'https://support.example.com']);
 DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['finished_at'=>$clock->now()->getTimestamp()]);
-$activate=static fn()=>$write('activate',['registration'=>false,'renewal'=>false,'management'=>false,'transfer'=>true,'confirmed'=>true]);
+$activate=static fn()=>$write('activate',['registration'=>false,'renewal'=>true,'management'=>false,'transfer'=>true,'confirmed'=>true]);
 
 $deny(fn()=>$write('live_transfer',['accept'=>true,'verified'=>true]));
 expect(!Policy::accepted($binding),'Activate is required even with verified input');
