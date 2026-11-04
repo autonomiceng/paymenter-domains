@@ -16,12 +16,14 @@ $entry=new Domains;$entry->installed();extract(commerceFixture(true,static fn()=
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);app()->instance(PriceCatalogue::class,$prices);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class,$sellers);
 // Use the normal installed adapters rather than binding module-only private ports into the container.
-$prices=new PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules);$native=new NativeCatalogue($prices);$sellers=new \Paymenter\Extensions\Servers\Domains\Services\SellerPolicies($prices,$bindings);
+$prices=new PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules);$native=new NativeCatalogue($prices);$sellers=new \Paymenter\Extensions\Servers\Domains\Services\SellerPolicies($prices,$bindings);activeFixturePorts($sellers,$ports,$clock);
 foreach([PriceCatalogue::class=>$prices,NativeCatalogue::class=>$native,\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true]);
 $enom=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
 \App\Models\Server::find($enom->serverId)->settings()->updateOrCreate(['key'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$enom->fingerprint,...\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($enom)])]);
 app()->offsetUnset(RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
+// FreshInstallation inspects these adapters before the module fixture replaces its bindings.
+foreach([CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,OwnedDomains::class,NativePresenter::class] as $type){app()->forgetInstance($type);}
 $entry->boot();installedPanel();
 $owners=app(OwnedDomains::class);$presenter=app(NativePresenter::class);$user=commerceUser();$user->update(['email'=>'native-owner@example.com']);$foreign=commerceUser();foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}$pairs=[];$checkoutLines=[];$cartEdits=[];
 foreach($tlds as $i=>$t){
