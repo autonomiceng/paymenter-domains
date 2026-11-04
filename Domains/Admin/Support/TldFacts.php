@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRegistration};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRegistration,PriceCatalogue};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Saved facts only. No reader factory, credentials or provider calls. */
 final class TldFacts
