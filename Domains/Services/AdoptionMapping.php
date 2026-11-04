@@ -89,7 +89,11 @@ final class AdoptionMapping
             // Preview and confirmation stamp the same contractual holder basis. Confirmation
             // uses its retained price prefix, never a new offer read after ledger locks.
             $holderPrices = $extension['prices'] ?? \Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$binding->serverId,'tld'=>$tld->tld,'action'=>'renew'])->orderBy('id')->get();
-            $retail = $caps->holding($binding,$tld,$holderPrices)['retail'] ?? throw new \DomainException('No retained annual retail.');
+            $holder = $caps->holding($binding,$tld,$holderPrices);
+            $retail = $holder['retail'] ?? throw new \DomainException('No retained annual retail.');
+            if($holder['cost']!==null&&PricingRule::units($retail->retail,2)*100<PricingRule::units($holder['cost']->total)){
+                $retail=new \Paymenter\Extensions\Servers\Domains\Data\RenewalPrice($retail->id,$retail->revision,$retail->retail,$retail->currency,true,'below_cost');
+            }
             $gross = NativeDomainGuard::gross($retail->retail, $l['tax']);
         } catch (\Throwable) { throw new \DomainException('price_unconfirmed'); }
         $settings = $extension['settings'] ?? \App\Models\Server::findOrFail($binding->serverId)->settings()->orderBy('id')->get();
