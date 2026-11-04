@@ -106,6 +106,7 @@ expect(!$wrong->accepted($account),'Wrong acquisition binding is incomplete even
 same(['register'=>null,'transfer'=>null],$wrong->acquisitionGates($account),'Wrong binding has no action readiness');
 $old=installedRuntimePorts();$legacy=$composition;$legacy['acquisition']=(new ReflectionProperty($registrationPort,'engine'))->getValue($registrationPort);
 $old->register($binding->fingerprint,fn()=>$legacy);expect(!$old->accepted($account),'Legacy single-engine acquisition is refused');
+Illuminate\Support\Facades\Auth::setUser(App\Models\User::where('email','fixture-enrollment@example.test')->sole());
 app()->instance(RuntimePorts::class,$closed);$rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account,['label'=>'Active','reason'=>null]),null,'label');
 same(['Not available yet',null,'This site does not offer this yet. Your site admin can turn it on.'],[$rows['Registrations']['value'],$rows['Registrations']['cause'],$rows['Registrations']['help']],'System checks names a feature that is off in server config');
 same('On',$rows['Transfers']['value'],'System checks describes the exact per-action gates');

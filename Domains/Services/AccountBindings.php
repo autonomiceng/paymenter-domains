@@ -429,14 +429,17 @@ final class AccountBindings
      * Feature/runtime acceptance is composed separately, using local existing gates only. */
     public function requireOfferAccount(AccountBinding $expected, Server $server, Account $account): void
     {
+        $this->requireOfferReadiness($expected, $server, $account);
+        if (!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
+    }
+
+    /** Activation validates the same local prefix before it can turn processing on. */
+    public function requireOfferReadiness(AccountBinding $expected, Server $server, Account $account): void
+    {
         $expected->requireMatch($this->binding($account));
         if ((int) $server->id !== $expected->serverId || (int) $account->server_id !== $expected->serverId
             || !$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Offer account is unavailable.'); }
-        if (DB::transactionLevel() > 0) { $this->requireProcessingLocked($server, $account); }
-        else {
-            $this->configuration($account, true, $server);
-            if (!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
-        }
+        $this->configuration($account, true, $server);
     }
 
     /** Local sync commit recheck against current locked credentials, independent of spending pause. */

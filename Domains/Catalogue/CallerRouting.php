@@ -74,7 +74,7 @@ final class CallerRouting
             }),
             OfferReadiness::class => new OfferReadiness(new OfferReader($clock, $authorize,
                 static function ($b, $s, $a, $q) use ($bindings): bool {
-                    try { $bindings->requireOfferAccount($b, $s, $a); return self::feature($b, $q->action, true); }
+                    try { $bindings->requireOfferReadiness($b, $s, $a); return self::feature($b, $q->action, true); }
                     catch (\DomainException) { return false; }
                 }, $current), $caps, $clock)];
     }

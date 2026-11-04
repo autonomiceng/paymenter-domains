@@ -102,7 +102,9 @@ foreach([['initFail'=>true],['configFail'=>true],['execFail'=>true],['status'=>3
     catch(RuntimeException $e){same('Enom exchange failed.',$e->getMessage(),'Failure sanitized');$trace=(string)$e.print_r($e->getTrace(),true);foreach(['SYNTHETIC-TOKEN','synthetic-uid','CONTACT-SENTINEL','EPP-SENTINEL'] as $secret){expect(!str_contains($trace,$secret),'Transport trace redacted');}same(null,$e->getPrevious(),'No unsafe cause');}
     expect(count($GLOBALS['enomWire']['forms'])<=1,'No retries');same($failure['initFail']??false?0:1,$GLOBALS['enomWire']['closed'],'Failure closes handle');
 }
-resetWire(['chunks'=>[str_repeat('x',1048576)]]);same(1048576,strlen($exchange($wire,'registration')($origin,'Purchase',[],1200)),'Exact body limit');
+$head=substr($purchaseReply,0,-strlen('</interface-response>')).'<padding>';$tail='</padding></interface-response>';
+$large=$head.str_repeat('x',1048576-strlen($head)-strlen($tail)).$tail;
+resetWire(['chunks'=>[$large]]);same(hash('sha256',$large),hash('sha256',$exchange($wire,'registration')($origin,'Purchase',[],1200)),'Exact body limit');
 foreach([[],['uid'=>false,'token'=>'SYNTHETIC-TOKEN'],['uid'=>'','token'=>'SYNTHETIC-TOKEN'],['uid'=>'synthetic-uid','token'=>false],['uid'=>'synthetic-uid','token'=>''],['uid'=>'synthetic-uid','token'=>str_repeat('x',4097)],['uid'=>'synthetic-uid','token'=>"bad\n"],['uid'=>'wrong-uid','token'=>'SYNTHETIC-TOKEN']] as $bad){
     $f=$make($binding,static fn()=>$bad);$w=(new ReflectionFunction($f))->getStaticVariables()['wire'];resetWire();
     try{$exchange($w,'registration')($origin,'Purchase',[],1200);throw new LogicException('Expected credential refusal');}catch(RuntimeException){}
@@ -112,7 +114,7 @@ $f=$make($binding,static function(){ $GLOBALS['enomWire']['nanoseconds']=2000000
 $w=(new ReflectionFunction($f))->getStaticVariables()['wire'];resetWire();
 try{$exchange($w,'registration')($origin,'Purchase',[],1200);throw new LogicException('Expected elapsed deadline');}catch(RuntimeException){}
 same(0,$GLOBALS['enomWire']['inits'],'Credential time cannot extend deadline');
-resetWire();$exchange($w,'registration')($origin,'Purchase',[],5000);same(3000,$GLOBALS['enomWire']['options'][CURLOPT_TIMEOUT_MS],'Credential time shortens total timeout');
+resetWire(['chunks'=>[$purchaseReply]]);$exchange($w,'registration')($origin,'Purchase',[],5000);same(3000,$GLOBALS['enomWire']['options'][CURLOPT_TIMEOUT_MS],'Credential time shortens total timeout');
 try{$make(new AccountBinding('namesilo',2,Environment::Test,'other'),$credentials);throw new LogicException('Expected wrong registrar');}catch(InvalidArgumentException){}
 ob_start();var_dump($wire,$factory,$composition);$dump=ob_get_clean();expect(!str_contains($dump,'SYNTHETIC-TOKEN'),'Factory diagnostics have no credentials');
 foreach([fn()=>serialize($wire),fn()=>clone $wire] as $call){try{$call();throw new RuntimeException('Expected server-only refusal');}catch(LogicException){}}
