@@ -77,10 +77,13 @@ $review=static function(?string $stamp=null)use($staff): Review {
 $write=static fn($r,$day,$minute=3)=>ApiCallLimits::save($r,['day'=>$day,'minute'=>$minute]);
 same(true,admits($uid),'Seed current usage before lowering the guard');
 $before=\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding);
-// Isolate allowance arithmetic from credential validation; real transports test both together.
-$allowanceBindings=new class(new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry) extends \Paymenter\Extensions\Servers\Domains\Services\AccountBindings {
- public function offerCredentialRevision(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $expected):string{return 'synthetic-allowance';}
-};
+// Real encrypted credential binding; synthetic verifier performs no provider I/O.
+$allowanceRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+$allowanceRegistry->register('enom',['uid','token'],new class implements \Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
+ public function verify(Environment $environment,array $credentials):string{return $credentials['uid'];}
+},static fn()=>throw new LogicException('Allowance never resolves a provider'));
+$allowanceBindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($allowanceRegistry);
+$allowanceBindings->configure(1,'enom',Environment::Test,['uid'=>$uid,'token'=>'synthetic-allowance-token']);
 $offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts($allowanceBindings,$clock);
 $allowance=fn()=>$offerPorts->allowance($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
 $stale=$review();$changed=$review();$write($changed,2,2);
