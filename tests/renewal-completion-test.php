@@ -90,9 +90,10 @@ same('succeeded',$completion->run($op->id)->state,'Supported renewal settles onl
 same($attempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Original sealed renewal evidence remains unchanged');
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$d->fresh(),$b),'Staff-supported renewal proof anchors the next cycle');
 same($writes+1,$state->writes,'Support answer and reconciliation never send another renewal');
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock){
-    $price=Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$d->server_id,'action'=>'renew'])->sole();
-    $price->update(['retail'=>'1.00','revision'=>$price->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+1 day')]);
+[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock,$ports){
+    $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());
+    $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$d->tld],'renew');
+    $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retail($binding,$d->tld,'1.00'),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 });
 same('1.00',$op->amount,'Below-cost renewal billed at exact retail with no floor');
 [$engine,$writer,$completion]=$compose($b); same('pending',$engine->run($op->id,$writer)->state,'Below-cost paid renewal still sends');
