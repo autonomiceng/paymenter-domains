@@ -12,6 +12,17 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema, OfferSchema, OfferWorkSchema};
 ObservationSchema::install(); OfferSchema::install(); OfferWorkSchema::install();
 [$pending,,$binding]=$makeRenewal(placeholderComFixtureName('offer-paid-renewal-placeholder.com'));
+
+// Annual renewal must use the daily bulk row plus separately dated registry metadata, not invented terms.
+$clock->instant=$clock->now()->modify('+1 second');
+$annualQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+$annualRevision=fn()=>$ports->readOffers($annualQuery,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[
+    new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::Annual,
+        'enom_bulk_bucket_1',$clock->now(),$clock->now()->modify('+48 hours'))]),$annualRevision());
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+    ['register'=>[1]],[],true,false,false,'enom_tld_facts',$clock->now(),$clock->now()->modify('+30 days'))),$annualRevision());
+same([1,'10.40'],[(int)$pending->term,$pending->amount],'Annual renewal invoice uses the published bulk-backed retail');
 [$pendingEngine,$pendingWriter,$completion]=$compose($binding);
 $ack=$pendingEngine->run($pending->id,$pendingWriter);same('pending',$ack->state,'Paid renewal retains its acknowledged attempt; state='.$ack->state.' code='.$ack->safe_code);
 [$uncertain]=$makeRenewal(placeholderComFixtureName('offer-uncertain-renewal-placeholder.com'));

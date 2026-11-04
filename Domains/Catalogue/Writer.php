@@ -169,7 +169,7 @@ final class Writer implements Catalogue
         });
     }
 
-    /** Intent may narrow unknown facts. Widening needs fresh, independent provider/registry evidence. */
+    /** Staff may record pending intent; the evaluator still requires independent evidence before selling. */
     private function intentRefusal(Edit $edit, Tld $t, array $defaults): ?string
     {
         if ($edit->kind !== 'override') { return null; }
@@ -184,7 +184,9 @@ final class Writer implements Catalogue
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
         if (!$widen) { return null; }
         $facts = OfferState::facts($t->catalogue_facts);
-        if (!$facts || !$facts->fresh($this->clock->now()) || !\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($edit->binding()->registrarKey,$t->tld,$facts->registryFields) || $facts->renewalSafe !== true
+        // Unknown/expired metadata queues the selected sold set after this review. Intent grants no sale.
+        if (!$facts || !$facts->fresh($this->clock->now())) { return null; }
+        if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($edit->binding()->registrarKey,$t->tld,$facts->registryFields) || $facts->renewalSafe !== true
             || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false
             || !in_array(1, $facts->terms['renew'] ?? [], true)
             || $sell && !in_array($longest, $facts->terms['register'] ?? [], true)
@@ -297,6 +299,9 @@ final class Writer implements Catalogue
         }
         if ($command instanceof FactsObserved) {
             $old = OfferState::facts($target->catalogue_facts); $new = $command->facts;
+            $costs = [];
+            foreach ($prices as $p) { if ($p->catalogue_observation !== null) { $costs[] = OfferState::cost(OfferState::decode($p->catalogue_observation)); } }
+            $new = (new FeedObserved($command->binding(), $command->tld(), $costs))->facts($new);
             if ($new->observedAt > $now) { throw new \DomainException('Future facts observation.'); }
             if ($old && $old->observedAt > $new->observedAt) { return false; }
             if ($old && $old->observedAt == $new->observedAt) {
@@ -328,16 +333,24 @@ final class Writer implements Catalogue
             }
             $changed = true;
         }
+        if ($changed && $target->catalogue_facts !== null) {
+            $costs = [];
+            foreach (OfferState::query('domains_prices')->where('server_id', $target->server_id)->where('tld', $target->tld)->where('currency', 'USD')->get() as $p) {
+                if ($p->catalogue_observation !== null) { $costs[] = OfferState::cost(OfferState::decode($p->catalogue_observation)); }
+            }
+            $target->catalogue_facts = OfferState::encodeFacts((new FeedObserved($command->binding(), $command->tld(), $costs))->facts(OfferState::facts($target->catalogue_facts)));
+        }
         return $changed;
     }
 
     private function publishPrices(Tld $tld, \DateTimeImmutable $now): void
     {
         $rule = Pricing::rule($tld);
+        $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int) $tld->server_id);
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
         foreach ($prices as $p) {
             if ($p->catalogue_observation === null) { continue; }
-            $cost = OfferState::cost(OfferState::decode($p->catalogue_observation));
+            $cost = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
             try { $retail = Retail::quote($cost, $rule); }
             catch (\InvalidArgumentException) { $retail = null; }
             if ($cost->action === 'renew') {

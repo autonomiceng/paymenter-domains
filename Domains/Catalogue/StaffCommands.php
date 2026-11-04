@@ -87,6 +87,9 @@ final class StaffCommands
         $batch=$this->writer->reviewed($review,$entries,static fn()=>self::stamp($review->serverId,$review->tldId));
         $result=$batch['rows'];$failed=[...$failed,...$batch['failures']];
         if($defaults){($this->wake)($binding);}
+        if(in_array($review->action,['acceptance','tld_settings','seller'],true)){
+            foreach($entries as [$command]){if(isset($result[$command->tld()])){OfferScheduler::routed()?->requestFacts($command->binding(),$command->tld());}}
+        }
         if($review->action==='import'){if($this->sync===null){throw new \LogicException('Offer sync composition required.');}($this->sync)($binding);}
         return ['pending'=>$defaults,'published'=>$defaults?0:count($result),'failed'=>array_map(static fn($name)=>'.'.$name,array_keys($failed)),'rows'=>$result,'failures'=>$failed];
     }
