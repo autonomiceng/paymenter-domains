@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
-use Paymenter\Extensions\Servers\Domains\Services\{ApiCallLimits,CatalogueAcceptances,EnomLive,EnomLiveCalls,EnomLiveCallSchema,PriceSync,StaffSettingsReview as Review,EnomTestCallLimit,EnomTestCalls,EnomTestSendLimit as Limit,EnomTestSendLimitSchema as Tables,Installation};
+use Paymenter\Extensions\Servers\Domains\Services\{ApiCallLimits,EnomLive,EnomLiveCalls,EnomLiveCallSchema,StaffSettingsReview as Review,EnomTestCallLimit,EnomTestCalls,EnomTestSendLimit as Limit,EnomTestSendLimitSchema as Tables,Installation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 (new Installation)->install();(new Installation)->install();
 foreach(Tables::RETIRED as $table){expect(!Schema::hasTable($table),'Fresh install has no retired TEST budget table '.$table);}
@@ -77,12 +77,16 @@ $review=static function(?string $stamp=null)use($staff): Review {
 $write=static fn($r,$day,$minute=3)=>ApiCallLimits::save($r,['day'=>$day,'minute'=>$minute]);
 same(true,admits($uid),'Seed current usage before lowering the guard');
 $before=\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding);
-CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>false,'renewal_safe'=>true]]);
-DB::table('domains_observation_queues')->insert(['server_id'=>1,'account_fingerprint'=>$binding->fingerprint,'catalogue_hold'=>'catalogue_call_capacity']);
+// Isolate allowance arithmetic from credential validation; real transports test both together.
+$allowanceBindings=new class(new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry) extends \Paymenter\Extensions\Servers\Domains\Services\AccountBindings {
+ public function offerCredentialRevision(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $expected):string{return 'synthetic-allowance';}
+};
+$offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts($allowanceBindings,$clock);
+$allowance=fn()=>$offerPorts->allowance($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
 $stale=$review();$changed=$review();$write($changed,2,2);
 same(['used'=>$before['used'],'limit'=>2],\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding),'Sync capacity sees the saved cap immediately');
 same(['day'=>2,'minute'=>2],Limit::limits($uid),'Physical guard reads the same saved limits');
-expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],'0 calls left'),'The capacity check immediately shows the reduced allowance');
+same(0,$allowance(),'Reduced cap immediately closes active feed allowance');
 same(false,admits($uid),'Lowering below usage refuses further sends');
 same(5,Limit::usage('other-uid')['day_limit'],'Another login keeps the config default');
 same(2,Limit::usage(strtoupper($uid))['day_limit'],'UID case aliases share the saved cap');
@@ -103,28 +107,18 @@ same(2,Limit::usage($uid)['day_limit'],'Revoked settings permission refuses the 
 // The same override feeds Live readers and its atomic reservation guard, without touching reserved spend.
 $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage-policy',Review::permission('configure')]]);
 $write($review(),100,3);
-expect(str_contains(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],'98 calls left'),'Raising the cap immediately updates the failed sync check without claiming a successful sync');
-// A saved sell rule reserves 70% of the day for other work; daily room alone cannot promise an automatic retry.
-$server->settings()->create(['key'=>\Paymenter\Extensions\Servers\Domains\Services\SellRule::KEY,'type'=>'array','encrypted'=>false,
-    'value'=>['mode'=>'except','max_cost'=>null,'years'=>1,'transfers'=>false]]);
+same(1,$allowance(),'Minute ceiling still limits the raised daily allowance');
+// Active offer feeds reserve 70% of the day for checkout, independently of selling intent.
 DB::table(Tables::SENDS)->insert(array_fill(0,28,['account'=>Limit::account($uid),'command'=>'GetBalance','sent_at'=>$clock->now()->getTimestamp()]));
-same(70,PriceSync::callsLeft($binding),'Daily cap still has room at the automatic allowance threshold');
-same(0,PriceSync::backgroundLeft($binding,$clock),'Automatic price reads have no room at thirty percent used');
-same('Price sync needs 6 calls; 0 calls left for automatic price reads',
-    \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
-    'A retained capacity failure shows the automatic allowance without promising a retry');
+same(70,ApiCallLimits::usage($binding)['limit']-ApiCallLimits::usage($binding)['used'],'Daily cap still has room at the automatic allowance threshold');
+same(0,$allowance(),'Active feed has no room at thirty percent used');
 // Unknown usage still closes the execution guard, but it must not be presented as a measured zero.
 Schema::rename(Tables::SENDS,'domains_test_sends_unreadable');
 same(null,\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding),'Unreadable send storage makes usage unknown');
-same(0,PriceSync::backgroundLeft($binding,$clock),'Unknown usage keeps the automatic guard closed');
-same("Couldn't read our call count or limit. Try again.",
-    \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
-    'Unknown automatic capacity says what could not be read and gives a next step');
+same(0,$allowance(),'Unknown usage keeps active feed allowance closed');
 Schema::rename('domains_test_sends_unreadable',Tables::SENDS);
 $write($review(),200,3);
-same('Price sync needs 6 calls; 25 calls left for automatic price reads',
-    \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::syncFailure(1)['cause'],
-    'Known positive automatic capacity remains a measured allowance');
+$clock->instant=$clock->now()->modify('+61 seconds');same(3,$allowance(),'Raised daily cap still honors the saved minute allowance');
 config(['app.url'=>'https://billing.example.test','domains.enom_live.site'=>'https://billing.example.test','domains.enom_identity.environment'=>'live']);
 $liveServer=Server::create(['name'=>'Synthetic live cap','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $live=Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$liveServer->id,'registrar_key'=>'enom','environment'=>'live','stable_identity'=>'live-cap-uid']));
