@@ -74,11 +74,14 @@ class PayCheck
     /** Local evidence fails closed; provider unknown keeps the retained paid-preflight behavior. */
     private function catalogueStop(Invoice $invoice, AcquisitionOffers $offers): ?array
     {
-        if ($invoice->fresh()?->status !== 'pending' || self::moneyMoving((int)$invoice->id)) { return null; }
+        if ($invoice->fresh()?->status !== 'pending') { return null; }
         $ops = $this->orders($invoice);
         if ($ops->isEmpty()) { return null; }
         $unavailable = ['why' => 'unavailable', 'text' => 'Domains can’t be ordered right now. Please try again later.'];
         try {
+            // A partial receipt freezes money; it does not authorize collecting more after a Live opt-out.
+            foreach ($ops as $op) { if (self::sellingStopped($op)) { return $unavailable; } }
+            if (self::moneyMoving((int)$invoice->id)) { return null; }
             $selections = $ops->map(static function ($op) {
                 $receipt = $op->policy['checkout']['catalogue'] ?? throw new \DomainException('No catalogue receipt.');
                 $s = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$receipt);
