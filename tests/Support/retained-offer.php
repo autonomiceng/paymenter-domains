@@ -9,7 +9,13 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,UpgradeGate};
 function retainedOfferDatabase(): array
 {
     same('sqlite',DB::connection()->getDriverName(),'Bridge fixture is SQLite only');
-    same(':memory:',config('database.connections.sqlite.database'),'Bridge fixture owns only an in-memory database');
+    $database=config('database.connections.sqlite.database');
+    if($database!==':memory:'){
+        $fixture=(string)getenv('PAYMENTER_TEST_FIXTURE');$expected=(string)getenv('PACKAGE_DATABASE');
+        expect(getenv('PACKAGE_PHASE')==='bridge-seed'&&is_file($fixture.'/.domains-fixture.json')
+            &&$expected!==''&&$database===$expected&&is_file($expected)
+            &&realpath(dirname($expected))===realpath(dirname($fixture)),'Bridge replay owns only the runner-created installed scratch database');
+    }
     $saved=json_decode(file_get_contents(__DIR__.'/../fixtures/retained-offer-bridge.json'),true,512,JSON_THROW_ON_ERROR);
     same('89112442164558c4ab61ff32f210d1b102605112',$saved['source'],'Exact source bridge is pinned');
     DB::statement('PRAGMA foreign_keys = OFF');

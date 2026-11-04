@@ -1,5 +1,5 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
-"""Installed lifecycle scenarios use a retained legacy install; fresh checks new-install mode."""
+"""Installed lifecycle scenarios use active installs; retained upgrades start at the pinned checked bridge."""
 import io
 import json
 import os
@@ -20,7 +20,7 @@ import installed_fixture
 # Previous local runtime before the additive public-suffix schema; no released
 # older version is implied. Source is pinned, with explicit unreleased schema
 # fixture adjustments below; superseded declarations have no upgrade path.
-PREVIOUS = 'e7881cf404e934e1cc84931ab9036e84804b8b61'
+PREVIOUS = '89112442164558c4ab61ff32f210d1b102605112'
 # Published main before C activation: a production-valid retained installation.
 RETAINED = 'eab53f0e98c8c2274adc7b4d5e806aa612e0d325'
 
@@ -124,10 +124,10 @@ def main(scenario):
             refuse_unsafe_archives(root, current)
             evidence['unsafe_archives_refused'] = 3
         elif scenario == 'upgrade':
-            previous = previous_build(root)
+            previous = previous_build(root, legacy=False)
             assert previous['archive_sha256'] != current['archive_sha256'], 'Upgrade must replace different runtime bytes'
             evidence.update(previous_revision=PREVIOUS,
-                            previous_fixture_adjustments=['observation_account_due_index'],
+                            previous_fixture_adjustments=[],
                             previous_zip_sha256=previous['archive_sha256'])
         elif scenario == 'previous':
             requested = os.environ.get('DOMAINS_UPGRADE_FROM', 'HEAD~1')
@@ -139,17 +139,15 @@ def main(scenario):
             print('Runtime-selected baseline: '+revision+('; no Domains diff; still running' if unchanged else '; Domains differ'), flush=True)
             evidence.update(previous_revision=revision, previous_fixture_adjustments=[],
                             previous_zip_sha256=previous['archive_sha256'], no_domains_diff=unchanged)
-        # Checkout/provider/lifecycle scenarios intentionally model an existing installation
-        # that has not converted. Install the pinned old ZIP natively, then retain its
-        # database/history while replacing runtime files with the requested package.
+        # Current financial/provider scenarios start from the normal active fresh package.
+        # Retained upgrade uses the actual checked bridge snapshot in its own phase.
         retained_package = None
-        if scenario not in ('fresh', 'upgrade'):
-            retained_package = previous_build(root, RETAINED, legacy=False, name='retained')
-        evidence['catalogue_mode'] = 'fresh-active' if scenario == 'fresh' else 'retained-legacy'
+        evidence['catalogue_mode'] = 'checked-bridge' if scenario == 'upgrade' else 'fresh-active'
         current_migrations = len(list((ROOT/'Domains/database/migrations').glob('*.php')))
         first, count = 'current', current_migrations
         if scenario in ('upgrade', 'previous'):
-            first, count = 'previous', 7 if scenario == 'upgrade' else baseline_migrations
+            first = 'previous'
+            count = len(list((root/'previous-source/Domains/database/migrations').glob('*.php')))
         # Every scenario owns its app copy and retained database.
         database = root/(scenario+'.sqlite'); database.touch()
         retained = root/(scenario+'-retained.json')
@@ -193,11 +191,17 @@ def main(scenario):
                 print(json.dumps({'timing': 'phase_finish', 'scenario': scenario, 'phase': name,
                                   'seconds': round(time.monotonic() - phase_started, 3),
                                   'package_seconds': round(package_seconds, 3)}), flush=True)
-        if retained_package is not None:
-            env['PACKAGE_MIGRATIONS'] = str(len(list((root/'retained-source/Domains/database/migrations').glob('*.php'))))
-            phase('retained-install', 'retained')
-            shutil.rmtree(installed)
-            env['PACKAGE_MIGRATIONS'] = str(count)
+        if scenario == 'upgrade':
+            # The bridge database contains a genuine B6 checked activation receipt,
+            # captured at the pinned source. Current code never loads the converter.
+            phase('install', 'previous')
+            phase('bridge-seed')
+            phase('bridge-upload', 'current')
+            phase('bridge-verify')
+            evidence.update(upgrade=True, checked_bridge_revision=PREVIOUS,
+                            frozen_obligations_retained=True, converter_removed=True)
+            print(json.dumps(evidence), flush=True)
+            return
         if scenario == 'enom-test-management':
             phase('install-enom-test-management', first)
         else:

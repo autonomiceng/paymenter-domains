@@ -86,7 +86,27 @@ function assertBooted(): void
         expect(str_starts_with((new ReflectionClass($class))->getFileName(),base_path('extensions/Servers/Domains/')),'Class resolves from ZIP: '.$class);
     }
 }
-if($phase==='server-delete'){
+if($phase==='bridge-seed'){
+    require __DIR__.'/Support/retained-offer.php';
+    $saved=retainedOfferDatabase();
+    file_put_contents($receipt,retainedOfferObligations());
+    same('active',\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Pinned bridge already completed checked activation');
+    echo "Pinned checked bridge database seeded with frozen native obligations.\n";
+}elseif($phase==='bridge-upload'){
+    require __DIR__.'/Support/retained-offer.php';
+    $before=file_get_contents($receipt);same($before,retainedOfferObligations(),'Bridge obligations match before upload');
+    $zip=(string)getenv('PACKAGE_ZIP');expect(is_file($zip),'Verified current upload exists');
+    same('server',app(App\Services\Extensions\UploadExtensionService::class)->handle($zip),'Native uploader upgrades the checked bridge');
+    same($before,retainedOfferObligations(),'Final package preserves all frozen bridge obligations');
+    app(Installation::class)->verify();
+    echo "Native checked bridge to final ZIP upgrade preserves frozen obligations.\n";
+}elseif($phase==='bridge-verify'){
+    require __DIR__.'/Support/retained-offer.php';
+    same(file_get_contents($receipt),retainedOfferObligations(),'Fresh final process retains exact bridge obligations');
+    same('active',\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::routeState()['state'],'Final package retains active routing');
+    foreach(['Catalogue/Upgrade'.'Conversion.php','Catalogue/Upgrade'.'Comparison.php','Catalogue/Upgrade'.'Evidence.php'] as $file){expect(!is_file(base_path('extensions/Servers/Domains/'.$file)),'Final ZIP removes bridge converter');}
+    echo "Final installed process retains active bridge receipt and omits converter.\n";
+}elseif($phase==='server-delete'){
     $server=App\Models\Server::where('extension','Domains')->firstOrFail();
     // Paymenter's native DeleteAction calls disabled before attempting deletion.
     App\Helpers\ExtensionHelper::call($server,'disabled',[$server],mayFail:true);
@@ -174,8 +194,8 @@ if($phase==='server-delete'){
     assertRetained($receipt);
     $before=retained();
     $rows=app(Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->endings();
-    same(['com'],array_column($rows,'tld'),'Reinstalled TEST catalogue remains published');
-    same(true,$rows[0]['testEnvironment'],'Reinstalled catalogue keeps TEST provenance');
+    same([],$rows,'Reinstalled paused catalogue remains unavailable to new sales');
+    expect(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld','com')->whereNotNull('catalogue_facts')->exists(),'Reinstall retains independent active facts');
     same($before,retained(),'Reinstalled page projection changes no retained data');
     expect(Account::where('processing_enabled',true)->doesntExist(),'Reinstall preserves processing off');
     echo "Installed catalogue, prices, seller and one-use audit survive reinstall.\n";

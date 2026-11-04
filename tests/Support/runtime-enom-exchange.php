@@ -30,9 +30,7 @@ $registry->register('enom',['uid','token'],$verify,$reader,null,false,$reader);
 $auth=new AccountBindings($registry);$auth->configure($binding->serverId,'enom',Environment::Test,['uid'=>'account-enom','token'=>'SYNTHETIC-WIRE-TOKEN']);
 $sellers=new SellerPolicies($prices,$auth);
 foreach([AccountBindings::class=>$auth,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
-$acceptedCatalogue=CatalogueAcceptances::load($binding);
-DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
-    $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
+expect(\Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($binding,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding)),'Exchange uses the compiled environment route');
 Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($binding,new Money('100.00','USD'),$clock->now(),'manual');
 $admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($auth,$clock,$precheck),$clock);app()->instance(CartAdmission::class,$admission);
 app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
@@ -75,16 +73,7 @@ $reply=static function($p):string {
 echo "Installed exchange composition ready.\n";
 foreach(['register','transfer','register'] as $i=>$action){
     $clock->at=$clock->at->modify('+61 seconds');Cache::flush();
-    if($action==='transfer'){
-        DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
-            $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings)));
-        config(['domains.enom_identity.environment'=>'live','domains.enom_catalogue.enabled'=>false]);
-    }
     $op=$new(placeholderComFixtureName('authenticated-'.$i.'-placeholder.com'),$action);
-    if($action==='transfer'){
-        DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
-            $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
-    }
     config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);resetWire(['reply'=>$reply]);
     $seen=false;$GLOBALS['enomWire']['during']=static function()use(&$seen,$op,$worker,$auth,$binding,$clock,$limiter){
         if($seen){return;}$seen=true;

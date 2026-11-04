@@ -476,7 +476,8 @@
     "tests/test_native.py",
     "tests/test_conversion_inventory.py",
     "tests/test_conversion_mariadb_guards.py",
-    "tests/test_runner_speed.py"
+    "tests/test_runner_speed.py",
+    "tests/test_retired_catalogue_references.py"
   ],
   "package": [
     "tests/test_package.py"

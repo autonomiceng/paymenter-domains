@@ -23,13 +23,15 @@ $server=Server::create(['name'=>'Synthetic held registrar','type'=>'server','ext
 $bindings=app(AccountBindings::class);$binding=$bindings->configure($server->id,'namesilo',Environment::Test,['token'=>'synthetic']);
 $account=Account::where('server_id',$server->id)->sole();same(false,$account->processing_enabled,'Verified identity starts with processing off');
 $ending='test';
-$tld=Tld::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>$ending]);
-$native=app(NativeCatalogue::class);activeFixtureRepublish($native,$tld->id,new DateTimeImmutable);
+$ports=\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
+$revision=$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,$ending,[new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',new DateTimeImmutable,new DateTimeImmutable('+1 day'))]),new \Paymenter\Extensions\Servers\Domains\Catalogue\Revision(0,0,0));
+$tld=Tld::where('server_id',$server->id)->sole();
+$native=app(NativeCatalogue::class);$native->publish($tld->id);
 $sellers=app(SellerPolicies::class);$sellers->initialize($ending);
 $product=$native->product($tld,'register');same(null,$product->stock,'Fresh withdrawn registration product has unlimited stock');
 same([],app(Storefront::class)->endings(),'Configured identity alone publishes no offer');
 commerceReject(fn()=>app(Storefront::class)->offer($ending,'register',1));
-commerceReject(fn()=>CatalogueAcceptances::load($binding));
+same(null,$tld->fresh()->catalogue_facts,'Identity and prices supply no registry/term facts');
 // A guessed native product/plan and forged positive stock/price cannot admit checkout.
 $stockRefused=false;try{$product->update(['stock'=>10]);}catch(Illuminate\Validation\ValidationException $e){$stockRefused=true;expect(isset($e->errors()['stock']),'Installed finite stock refusal names the staff field');}
 expect($stockRefused,'Installed package refuses finite managed stock');
@@ -51,13 +53,10 @@ same(0,App\Models\Service::count(),'Held checkout creates no service');same(0,Ap
 $staff=staffUser(array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()));
 $review=static fn($action,$tldId)=>new Review($staff->id,$server->id,$tldId,$action,Review::ticket($staff->id,$server->id,$tldId,$action,Review::stamp($server->id,$tldId)),'Review synthetic held account');
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
-$settings->run($review('acceptance',null),['changes'=>[$ending=>['terms'=>[1],'transfer'=>false]]]);
+$settings->run($review('acceptance',null),['sell'=>['terms'=>[$ending=>['longest'=>1,'transfer'=>false]]]]);
 expect(count(Review::historyRows($server->fresh()))>0,'Explicit acceptance recorded in staff audit');
-$accepted=CatalogueAcceptances::load($binding);
-same([$ending],array_keys($accepted->endings),'Review saves the accepted ending');
-same([1],$accepted->endings[$ending]['register'],'Review saves accepted registration terms');
-same([1],$accepted->endings[$ending]['renew'],'Review preserves annual renewal terms');
-same(true,$accepted->endings[$ending]['registry'],'Review saves registry evidence');
+$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($tld->fresh()->catalogue_intent);
+same(1,$intent['longest'],'Review writes term intent');same(null,$tld->fresh()->catalogue_facts,'Review cannot invent independent registry facts');
 commerceReject(fn()=>$bindings->setProcessing($server->id,true));
 commerceReject(fn()=>$settings->run($review('processing',null),['enabled'=>true,'confirmed'=>true]));
 same(false,$account->fresh()->processing_enabled,'Staff acceptance without reviewed runtime/shared workers cannot enable spending');
