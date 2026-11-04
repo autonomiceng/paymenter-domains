@@ -84,7 +84,7 @@ $writer->run($review(),['enabled'=>false,'confirmed'=>true]);
 $history=Review::historyRows(Server::findOrFail($t->server_id));$audit=end($history);
 same('Pause or resume orders',$audit['action'],'Processing change audited');
 same($u->id,$audit['actor_id'],'Actual processing actor is retained');
-same([true,false],[$audit['before']['processing_enabled'],$audit['after']['processing_enabled']],'Audit records the real On to Off transition');
+same([true,false],[$audit['before']['processing'],$audit['after']['processing']],'Audit records the real On to Off transition');
 // Generic native lifecycle changes cannot repurpose or remove retained identities.
 commerceReject(fn()=>Server::findOrFail($t->server_id)->update(['extension'=>'Enom']));
 commerceReject(fn()=>Server::findOrFail($t->server_id)->delete());

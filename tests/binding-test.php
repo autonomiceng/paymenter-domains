@@ -146,9 +146,9 @@ DB::table('domains_domains')->where('id', $domain->id)->update(['authority_gener
 $reject(static fn () => Operation::create(array_replace($op->getAttributes(), ['id' => 2, 'operation_key' => 'invalid:zero', 'authority_generation' => 0])));
 DB::table('domains_domains')->where('id', $domain->id)->update(['authority_generation' => 1]);
 $reject(static fn () => Tld::create(['tld' => 'com', 'server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $b->fingerprint]));
-DB::table('servers')->where('id', 1)->update(['extension' => 'Other']); // Deliberate retained corruption bypasses model identity guards.
+DB::table((new Server)->getTable())->where('id', 1)->update(['extension' => 'Other']); // Deliberate retained corruption bypasses model identity guards.
 $reject(static fn () => $bindings->reader(1));
-DB::table('servers')->where('id', 1)->update(['extension' => 'Domains']);
+DB::table((new Server)->getTable())->where('id', 1)->update(['extension' => 'Domains']);
 config(['app.url' => 'https://live.example.invalid/']);
 $live = $bindings->configure(3, 'enom', Environment::Live, $credentials);
 $reject(static fn () => $bindings->reader(3));
