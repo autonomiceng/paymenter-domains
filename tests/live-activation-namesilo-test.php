@@ -118,9 +118,7 @@ expect(!$a->fresh()->processing_enabled,'Missing installed runtime and prices ke
 // Native installed routing is required: a unit reader cannot exercise CallerRouting's setup gates.
 // OFFLINE price/fact rows model setup only; no Live runtime, activation or provider send is installed.
 Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
-$gate=new UpgradeGate;$gate->pause();$capture=$gate->capture();
-do{$converted=$gate->batch($binding,$capture);}while(!$converted['complete']);
-$gate->activate($capture);
+same('active',UpgradeGate::routeState()['state'],'Real fresh installation has already activated current catalogue');
 $server->settings()->where('key',LiveActivation::KEY)->delete();
 expect(!$engine->current($binding),'Setup review starts without an activation receipt');
 $now=app(Clock::class)->now();

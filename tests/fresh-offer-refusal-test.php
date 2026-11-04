@@ -76,7 +76,10 @@ try { $entry->installed(); } catch (DomainException) {}
 $legacy('Unfamiliar Domains migration history');
 // Schema maintenance represents an already installed, empty C6 database, never new-install authority.
 (new Installation)->install(); $before = DB::table('migrations')->orderBy('id')->get()->toJson();
-$entry->installed(); $entry->upgraded('0.1.0');
+foreach ([fn() => $entry->installed(), fn() => $entry->upgraded('0.1.0')] as $upgrade) {
+    try { $upgrade(); throw new LogicException('Old empty installation skipped the bridge'); }
+    catch (DomainException $e) { expect(str_contains($e->getMessage(), 'bridge 0.1.0 at 891124421645'), 'Old empty installation names the required bridge'); }
+}
 $legacy('Old empty installation');
 same($before, DB::table('migrations')->orderBy('id')->get()->toJson(), 'Old empty history is unchanged');
 $record = DB::table('migrations')->where('migration','2026_10_18_000001_create_domains_foundation')->sole();
