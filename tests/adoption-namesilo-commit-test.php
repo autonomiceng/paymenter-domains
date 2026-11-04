@@ -81,6 +81,10 @@ same(['privacy'=>false,'locked'=>true,'nameservers'=>['ns1.example.net','ns2.exa
 expect(!str_contains($a->getRawOriginal('evidence'),'ns1.example.net'),'Normalized settings are encrypted at rest');
 same(null,$a->evidence['provider_domain_id'],'Reference stays null');same('date',$a->evidence['expiry']['precision'],'Date precision retained');
 same($domainCount,Domain::count(),'Preview creates no holding');
+$unlocked=$mapping->capture($target,$context);
+$locked=DB::transaction(function()use($service,$staff,$owner,$mapping,$target,$context){$lock=\Paymenter\Extensions\Servers\Domains\Services\HoldingIdentityLock::lockForAdoption($service->order_id,$service->id,$staff->id);return $mapping->capture($target,$context,$lock);});
+foreach($unlocked['stamps'] as $key=>$value){if($locked['stamps'][$key]!==$value){fwrite(STDERR,'Capture changed key: '.$key."\n");}}
+if($unlocked['retail']!==$locked['retail']){fwrite(STDERR,'Capture changed retail fields: '.implode(',',array_keys(array_diff_assoc($unlocked['retail'],$locked['retail'])))."\n");}
 $d=$commit->confirm($a->request_key,$a->request_digest,$staff);
 same(['namesilo','adopted','active',null,'2027-11-02'],[$d->registrar_key,$d->provenance,$d->status,$d->provider_domain_id,$d->provider_expires_at->format('Y-m-d')],'Shared commit adopts NameSilo without a fabricated reference');
 same(1,$GLOBALS['importCalls'],'Commit performs no provider work');same($ops,Operation::count(),'Import fabricates no purchase operation');same($before,scenarioMoney(),'No invoice, payment, charge or credit on import');
