@@ -19,7 +19,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 expect(!Route::has('domains.domains.search'), 'Storefront remains dormant before explicit test registration');
 require dirname(__DIR__).'/Domains/routes/web.php';
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+extract(commerceFixture(true)); $clock ??= new FakeClock($now);
 $eligibility = activeFixtureEligibility($bindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
 $store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 storefrontCorruptionChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);

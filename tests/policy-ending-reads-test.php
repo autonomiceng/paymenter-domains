@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 // This fixture exercises retained legacy commerce, rather than new-install activation.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $f = noticeFixture(); extract($f); extract(commerceFixture(true, static fn () => null));
-$clock = new FakeClock($now); $at = $now->getTimestamp();
+$clock ??= new FakeClock($now); $at = $now->getTimestamp();
 config(['domains.watch_transfer.enabled' => true]);
 DB::table('domains_watch_names')->where('id', $id)->update(['registration' => 'external']);
 noticeRegistry($f, $at, 45);

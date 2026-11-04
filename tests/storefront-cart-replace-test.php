@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, CartLines, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 require dirname(__DIR__).'/Domains/routes/web.php';
-extract(commerceFixture(true)); $clock = new FakeClock($now); app()->instance(Clock::class, $clock);
+extract(commerceFixture(true)); $clock ??= new FakeClock($now); app()->instance(Clock::class, $clock);
 $eligibility = activeFixtureEligibility($bindings, $clock);
 $store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $controller = new StorefrontController($store, new CartLines($native)); storefrontViews();

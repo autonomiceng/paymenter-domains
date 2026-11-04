@@ -9,13 +9,14 @@ use App\Models\{CartItem, Coupon, Invoice, Order, Service};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, Rdap, RetailLine, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+extract(commerceFixture(true)); $clock ??= new FakeClock($now);
 $diverge = false;
 Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$diverge): void {
     if ($diverge) { App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
 });
 $transfers = new TransferPrecheck(new Rdap(static fn () => throw new RuntimeException('Synthetic offline lookup')));
 $adapter = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock, $transfers), $clock); $adapter->boot(); $adapter->boot();
+$invoiceBinding=new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($adapter,$native,$prices,$clock);$invoiceBinding->boot();app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);
 $user = commerceUser(); $cart = commerceCart($user); $product = $native->product($tlds[0], 'register');
 same('domain', $adapter->fields($product)[0]['name'], 'Neutral native domain checkout field');
 $beforeFields=$reads->calls;
@@ -29,7 +30,7 @@ same('first-placeholder.com', $line->checkout_config['domain'], 'Canonical cart 
 commerceReject(static fn () => commerceAdd($cart, $product, placeholderComFixtureName('first-placeholder.com')));
 commerceAdd($cart, $product, placeholderComFixtureName('second-placeholder.com')); $hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting');
 $beforeReads = $reads->calls;
-commerceCheckout($user, $cart);
+commerceCheckout($user, $cart)->assertHasNoErrors();
 same(1, Order::count(), 'Real native checkout admitted a mixed order');
 same(1, Invoice::count(), 'Hosting and distinct domains share one invoice');
 same(3, Service::count(), 'Separated domain products preserve hosting semantics');

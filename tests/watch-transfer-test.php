@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 // This fixture exercises retained legacy commerce, rather than new-install activation.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 config(['settings.company_name'=>'Example Hosting']);
-config(['domains.watch_transfer.enabled'=>true]);$f=noticeFixture();extract($f);extract(commerceFixture(true,static fn()=>null));$clock=new FakeClock($now);$at=$now->getTimestamp();
+config(['domains.watch_transfer.enabled'=>true]);$f=noticeFixture();extract($f);extract(commerceFixture(true,static fn()=>null));$clock ??= new FakeClock($now);$at=$now->getTimestamp();
 DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);noticeRegistry($f,$at,45);
 $wire=(object)['status'=>['active'],'code'=>200,'during'=>null,'domainCalls'=>0,'failOn'=>null];
 $rdap=new Rdap(static function($url)use($wire,$at){if($wire->during){$run=$wire->during;$wire->during=null;$run();}if(!str_contains($url,'dns.json')){$wire->domainCalls++;}return ['status'=>str_contains($url,'dns.json')?200:($wire->domainCalls===$wire->failOn?503:$wire->code),'body'=>json_encode(str_contains($url,'dns.json')?['services'=>[[['com'],['https://rdap.example.com/']]]]:['objectClassName'=>'domain','ldhName'=>'example.com','status'=>$wire->status,'events'=>[['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>gmdate('Y-m-d\TH:i:s\Z',$at+45*86400)]]])];});
