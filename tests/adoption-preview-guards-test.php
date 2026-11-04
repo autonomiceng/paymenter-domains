@@ -69,9 +69,12 @@ DB::table('services')->where('id', $service->id)->update(['product_id' => $trans
 $count = count($wire->calls); same('mapping_unconfirmed', $run()->code, 'Transfer route needs separate normalization'); same($count, count($wire->calls), 'Transfer route zero wire');
 DB::table('services')->where('id', $service->id)->update(['product_id' => $product->id, 'plan_id' => $plan->id]);
 $hostingProduct = $product->replicate(); $hostingProduct->slug = 'synthetic-hosting'; $hostingProduct->server_id = null; $hostingProduct->save();
-$hosting = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $hostingProduct->id,
-    'plan_id' => $plan->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'active']);
-$hosting->properties()->create(['key' => 'domain', 'value' => 'example.com']);
+// Historical cross-product plan is deliberate adversarial import input, not current checkout.
+$hosting=Service::withoutEvents(static function()use($owner,$order,$hostingProduct,$plan){
+    $row=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$hostingProduct->id,
+        'plan_id'=>$plan->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'active']);
+    $row->properties()->create(['key'=>'domain','value'=>'example.com']);return $row;
+});
 same('ready', $run()->code, 'Ordinary hosting source may coexist with dedicated domain service');
 $legacyServer = Server::create(['name' => 'Synthetic legacy registrar', 'extension' => 'Enom', 'type' => 'server', 'enabled' => true]);
 DB::table('products')->where('id', $hostingProduct->id)->update(['server_id' => $legacyServer->id]);
