@@ -122,12 +122,12 @@ foreach (['8.00','5.00'] as $cost) {
     same($checkout->get('total')->total, $otherTab->get('total')->total, 'Each tab shows the changed total');
     same($beforeReads, $reads->calls, 'Other tabs reuse the same fresh price check');
 }
-// An unchanged-price sync advances revisions without requiring another customer check.
+// A new active offer revision refreshes evidence once even when the visible retail is unchanged.
 $beforeReads = $reads->calls;
 fixtureObserveOfferEntry(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true));
 Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(5,Order::count(),'A refreshed cart sells at the synced price');
-same($beforeReads, $reads->calls, 'Unchanged retail reuses the fresh receipt across price revisions');
+same($beforeReads+1, $reads->calls, 'Current active revision receives one refreshed provider check');
 same('6.50',number_format((float)Invoice::latest('id')->first()->items()->sole()->price,2,'.',''),'Customer invoice equals the refreshed native offer after a falling cost');
 // Native mount must also repair an evicted receipt; subsequent clicks reuse it.
 $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('missing-check-placeholder.com'));

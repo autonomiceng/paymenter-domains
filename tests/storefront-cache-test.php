@@ -13,11 +13,11 @@ DB::enableQueryLog();DB::flushQueryLog();same($healthy,$storefront->endings(),'W
 $queries=DB::getQueryLog();DB::disableQueryLog();
 foreach($queries as $q){expect(!preg_match('/\b(domains_tlds|domains_prices|products|plans|prices)\b/i',$q['query']),'Warm account fence avoids per-offer/native catalogue reads');}
 $t=$tlds[0]->fresh();
-DB::beginTransaction();$t->increment('catalogue_revision');DB::beginTransaction();$t->increment('catalogue_revision');DB::commit();DB::rollBack();
+DB::beginTransaction();$t->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]);DB::beginTransaction();$t->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]);DB::commit();DB::rollBack();
 same($healthy,$storefront->endings(),'Rolled-back outer mutation preserves warm display');
-DB::beginTransaction();DB::beginTransaction();$t->refresh()->increment('catalogue_revision');DB::rollBack();DB::commit();
+DB::beginTransaction();DB::beginTransaction();$t->refresh()->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]);DB::rollBack();DB::commit();
 same($healthy,$storefront->endings(),'Rolled-back savepoint cannot invalidate committed display');
-DB::transaction(fn()=>$t->refresh()->increment('catalogue_revision'));
+DB::transaction(fn()=>$t->refresh()->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]));
 same([],$storefront->endings(),'Committed pending offer revision withdraws cached public rows');
 $q=new Query($binding,['com'],'register');$ports->apply(Edit::republish($binding,'com'),$ports->readOffers($q,Context::Staff)[0]->revision);
 same($healthy,$storefront->endings(),'Real active publication restores next display');
@@ -28,9 +28,10 @@ $clock->instant=$now->modify('+29 seconds');same($healthy,$storefront->endings()
 $clock->instant=$now->modify('+30 seconds');same([],$storefront->endings(),'Exact TTL expiry rechecks corrupt native mapping');
 DB::table('prices')->where('id',$price->id)->update(['price'=>$raw]);$clock->instant=$now->modify('+60 seconds');
 same($healthy,$storefront->endings(),'Next display rechecks repaired native price');
-$root=Cache::getFacadeRoot();Cache::swap(new class(new Illuminate\Cache\ArrayStore) extends Illuminate\Cache\Repository {
-    public function get($key,$default=null){throw new RuntimeException('Synthetic cache outage');}
+$root=Cache::getFacadeRoot();$committed=false;Cache::swap(new class(new Illuminate\Cache\ArrayStore) extends Illuminate\Cache\Repository {
+    public function forever($key,$value){throw new RuntimeException('Synthetic cache outage');}
 });
-try{same($healthy,$storefront->endings(),'Cache outage falls back to current authoritative display');}finally{Cache::swap($root);}
+try{DB::transaction(function()use(&$committed){\Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache::invalidateAfterCommit();DB::afterCommit(static function()use(&$committed){$committed=true;});});}finally{Cache::swap($root);}
+same(true,$committed,'Display invalidation outage cannot suppress other committed callbacks');
 same(0,App\Models\Invoice::count(),'Display cache never creates debt');same(0,App\Models\Service::count(),'Display cache never creates services');
 $nativeSuccessful=true;echo "Active storefront cache: ok\n";

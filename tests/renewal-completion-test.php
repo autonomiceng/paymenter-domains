@@ -93,7 +93,7 @@ same($writes+1,$state->writes,'Support answer and reconciliation never send anot
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock,$ports){
     $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());
     $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$d->tld],'renew');
-    $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retail($binding,$d->tld,'1.00'),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+    $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($binding,$d->tld,'1.00'),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 });
 same('1.00',$op->amount,'Below-cost renewal billed at exact retail with no floor');
 [$engine,$writer,$completion]=$compose($b); same('pending',$engine->run($op->id,$writer)->state,'Below-cost paid renewal still sends');
