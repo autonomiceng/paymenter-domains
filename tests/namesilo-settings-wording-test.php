@@ -7,6 +7,12 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,AccountChecklist};
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+$page->assertSee('Customer pays')->assertSee('Card fee')->assertSee('2.9% + $0.30 per payment');
+foreach(['customer_pays','card_fee'] as $control){
+    $action=Filament\Actions\Testing\TestAction::make('default_pricing_'.$control)->schemaComponent('account_'.$server->id,'content');
+    $page->assertActionVisible($action)->mountAction($action)->assertActionMounted($action);
+    same('Edit default pricing?',$page->instance()->getMountedAction()->getModalHeading(),'Pricing rows open the shared reviewed pricing form');$page->unmountAction();
+}
 $page->assertActionDoesNotExist('accept_namesilo_account');
 $page->mountAction(setupAction('configure',(int)$server->id));
 $page->setActionData(['registrar'=>'namesilo']);

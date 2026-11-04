@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
-    RenewalBillingSettings,RuntimePorts,WatchWork};
+    RenewalBillingSettings,RuntimePorts,WatchWork,CardFee,PricingRules,PricingRule};
 /** Rows for a registrar account's sections and System checks.
  * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value.
  * action names a SettingsActions setup action. A value of On or Off shows as a switch. Every row says what it is in help. */
@@ -45,7 +45,8 @@ final class AccountChecklist
             AccountStatus::SET['not_connected'][0]=>self::row('API connection','Not connected','gray',$status['reason'],'configure',$check),
             default=>self::row('API connection','OK','success',null,'probe',$check)};
         try { $binding=CatalogueAcceptances::binding($a); } catch (\Throwable) { $binding=null; }
-        $rows=[$connection,self::tlds($a,$binding,$offers),self::prices($a),self::orders($a)];
+        $tlds=self::tlds($a,$binding,$offers);
+        $rows=[$connection,$tlds,...self::pricing($a,$offers,$tlds['using_default']),self::prices($a),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
         $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',default=>self::siteOff($a)};
         $rows[]=$gates['register']===true?self::row('Registrations','On, follows Orders',null,null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
@@ -132,20 +133,33 @@ final class AccountChecklist
     private static function tlds(Account $a,?object $binding,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers=null): array
     {
         try {
-            $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$endings=[];
+            $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$endings=[];$defaults=0;
             if($offers){
                 \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)
-                    ->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings):void {
+                    ->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use($offers,&$endings,&$defaults):void {
                         $page=$offers->page($rows);
-                        foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($sales['register']||$sales['transfer']){$endings[]=$t->tld;}}
+                        foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($sales['register']||$sales['transfer']){$endings[]=$t->tld;if(!$page[$t->id]['own']){$defaults++;}}}
                     });
-            }else{$endings=array_keys(CatalogueAcceptances::load($binding)->endings);}
-        } catch (\Throwable) { $endings=[]; }
+            }else{$endings=array_keys(CatalogueAcceptances::load($binding)->endings);$defaults=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->whereIn('tld',$endings)->where('use_default_rule',true)->count();}
+        } catch (\Throwable) { $endings=[];$defaults=0; }
         sort($endings);
         try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
         $count=count($endings);
         return [...self::row('What you sell',$endings?self::sample($endings):null,null,$endings?$count.' '.($count===1?'TLD':'TLDs').' for sale':'Choose the TLDs you sell.',null,'The TLDs customers can buy from this account.'),
-            'buttons'=>[Action::make('what_you_sell_'.$a->server_id)->label($endings?'Change':'Choose what you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
+            'using_default'=>$defaults,'buttons'=>[Action::make('what_you_sell_'.$a->server_id)->label($endings?'Change':'Choose what you sell')->link()->size('sm')->url($url)->visible($url!==null)]];
+    }
+    /** Use the installed catalogue's pricing reader and its TLD override decisions. */
+    private static function pricing(Account $a,?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $offers,int $defaults): array
+    {
+        $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+        try{$rule=$offers?->pricing((int)$a->server_id)??(new PricingRules)->defaultRule();$value=ucfirst(PricingRule::describe($rule));}catch(\Throwable){$value=null;}
+        try{$fee=CardFee::describe($offers?->fee((int)$a->server_id)??CardFee::read()).' per payment';}catch(\Throwable){$fee=null;}
+        return [
+            [...self::row('Customer pays',$value,null,$value===null?'Default pricing could not be read. Use Edit to fix it.':'Used by '.$defaults.' '.($defaults===1?'TLD':'TLDs'),null,'The default pricing rule. A TLD can use its own rule instead.'),
+                'edit'=>true,'buttons'=>[SettingsActions::defaultPricing()->name('default_pricing_customer_pays')]],
+            [...self::row('Card fee',$fee,null,$fee===null?'The card fee could not be read. Use Edit to fix it.':null,null,'The estimated fee per payment used by pricing rules that include the card fee.'),
+                'edit'=>true,'buttons'=>[SettingsActions::defaultPricing()->name('default_pricing_card_fee')]],
+        ];
     }
     /** The TLDs people know first, then a count. The full list is on What you sell. */
     private static function sample(array $endings): string

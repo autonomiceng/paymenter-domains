@@ -104,7 +104,7 @@ class RegistrarAccount extends Page
             $entry=MissingEntry::apply(TextEntry::make('new_domain_dns')->label('New domains use')->state($value)->inlineLabel(),cause:$value!==null?null:'Choose an enabled DNS template with Change. Create one under DNS templates first.');
             if($template){$entry->belowContent(implode(', ',$template->nameservers));}
             $entry->hintAction(HelpHint::make(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::HELP));
-            $dnsRow=Sheet::row($entry,[Sheet::button(SettingsActions::setup($id,$this->reviewStamp,'new_domain_dns'))],key:'domain_settings_'.$id)->extraAttributes(['id'=>'switch-template']);
+            $dnsRow=Sheet::row($entry,[Sheet::button(SettingsActions::setup($id,$this->reviewStamp,'new_domain_dns'))],key:'domain_settings_'.$id)->extraAttributes(['id'=>'switch-template'],merge:true);
             $sections[]=Sheet::section('Domain settings',[$dnsRow,...$this->rows('settings',$pick('DNS, nameservers and contacts','WHOIS privacy'))]);
         } else {
             $sections[]=Sheet::section('Account',$this->rows('account',[self::fact('Registrar',null,'Account not set up yet. Use Connect account.'),self::fact('Domains',(string)Domain::where('server_id',$s->id)->count())]));

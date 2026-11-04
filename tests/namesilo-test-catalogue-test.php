@@ -132,6 +132,8 @@ same('On',$rows['Transfers (experimental)']['value'],'Checklist accepts installe
 $summary=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::summary($account->fresh(),['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>true]);
 same([1,1,1],array_values($summary['counts']),'Shared activation summary reads each retained NS16 action');
 same(1,$summary['tlds'],'Shared activation summary counts the offered TLD once');
+same('Cost + 30%',$rows['Customer pays']['value'],'Shared pricing summary uses the current default rule');
+same('Used by 1 TLD',$rows['Customer pays']['cause'],'Shared pricing summary counts retained catalogue defaults');
 same('.com',$rows['What you sell']['value'],'Checklist uses the current installed NS16 TLD selection');
 expect(!str_contains(json_encode($offer,JSON_THROW_ON_ERROR),'experimental'),'Customer offer carries no staff Experimental label');
 app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
