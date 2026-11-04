@@ -16,8 +16,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, DomainObservation, HoldingObservationWork, ObservationWork};
 
 [$d,,$original] = $holding(placeholderComFixtureName('shared-holder-placeholder.com'));
-$b = CatalogueAcceptances::binding(Account::where('server_id', $d->server_id)->sole());
-foreach (Account::orderBy('server_id')->get() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($a)); }
+$b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $d->server_id)->sole());
+foreach (Account::orderBy('server_id')->get() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a)); }
 $bindings->setProcessing($d->server_id, false);
 $frozen = serialize($original->fresh()->getAttributes());
 $generation = (new UpgradeGate)->pause();

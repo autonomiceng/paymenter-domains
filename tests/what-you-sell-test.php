@@ -46,7 +46,7 @@ same($before,$calls(),'No connected account means no read');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction(setupAction('configure',$server->id))
     ->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid','token'=>'catalogue-token','reason'=>'Connect synthetic picker'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
-$account=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($account);$fill=app(PriceFill::class);
+$account=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);$fill=app(PriceFill::class);
 
 same('What you sell',WhatYouSell::getNavigationLabel(),'Plain menu label');
 
@@ -336,7 +336,7 @@ same('https://resellertest.enom.com/interface.asp',CatalogueAcceptances::load($b
 $old=Server::create(['name'=>'Synthetic saved list','type'=>'server','extension'=>'Domains','enabled'=>true]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$old->id])->mountAction(setupAction('configure',$old->id))
     ->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid-2','token'=>'catalogue-token','reason'=>'Connect synthetic blank'])->callMountedAction()->assertHasNoActionErrors();
-$oldBinding=CatalogueAcceptances::binding(Account::where('server_id',$old->id)->sole());
+$oldBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$old->id)->sole());
 CatalogueAcceptances::save($oldBinding,0,['org'=>['register'=>[1,3],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
 // All accounts only reads: the saved list shows as sold, with its terms, and nothing is written.
 $sellRows=DB::table(SellTableSchema::ROWS)->orderBy('id')->get()->toJson();$before=$calls();
@@ -389,7 +389,7 @@ $GLOBALS['catalogueBulk']=static fn()=>$rows;
 $large=Server::create(['name'=>'Synthetic full list','type'=>'server','extension'=>'Domains','enabled'=>true]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$large->id])->mountAction(setupAction('configure',$large->id))
     ->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid-3','token'=>'catalogue-token','reason'=>'Connect synthetic full list'])->callMountedAction()->assertHasNoActionErrors();
-$largeBinding=CatalogueAcceptances::binding(Account::where('server_id',$large->id)->sole());
+$largeBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$large->id)->sole());
 $page=queuedPriceSync(fn()=>Livewire::actingAs($staff)->test(WhatYouSell::class,['account'=>$large->id])->callAction('sync_now'),'Prices updated');
 $started=hrtime(true);$page->callAction('rule',['sell_new'=>'yes','max_cost'=>null,'years'=>1,'transfers'=>true])->assertNotified('Saved');$saved=(hrtime(true)-$started)/1e9;
 same(616,count(CatalogueAcceptances::load($largeBinding)->endings),'Every TLD fits in one account');

@@ -43,7 +43,7 @@ $registry->register('enom', ['token'], new class implements AccountVerifier {
 $readBindings = new AccountBindings($registry);
 $sync = new CatalogueSync($readBindings, $prices);
 $account = Account::where('server_id', $tlds[0]->server_id)->sole();
-$binding = CatalogueAcceptances::binding($account);
+$binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $GLOBALS['catalogueList'] = ['com'];
 $GLOBALS['catalogueMaximum'] = ['com' => 3];
 

@@ -59,7 +59,7 @@ $GLOBALS['staffSource']=$source;
 class OfferStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell
 {protected function catalogue():?StaffCatalogue{return $GLOBALS['staffSource'];}
 // Blade calls binding() on the concrete component; expose the inherited private helper in this fixture only.
-public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding{return $this->account?\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$this->account)->sole()):null;}}
+public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding{return $this->account?\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$this->account)->sole()):null;}}
 \Livewire\Livewire::component('offer-staff-page',OfferStaffPage::class);
 $component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('12.00');
 same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');

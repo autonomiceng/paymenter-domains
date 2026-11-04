@@ -26,7 +26,7 @@ foreach (range('a', 'z') as $a) {
         if (count($names) === 599) { break 2; }
     }
 }
-$base = $tlds[0]->fresh(); $binding = CatalogueAcceptances::binding(Account::where('server_id', $base->server_id)->sole());
+$base = $tlds[0]->fresh(); $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $base->server_id)->sole());
 $accepted = CatalogueAcceptances::load($binding); $ends = [];
 foreach ($names as $name) { $ends[$name] = ['register' => [1], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]; }
 $accepted = CatalogueAcceptances::save($binding, $accepted->revision, $ends);

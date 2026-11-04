@@ -21,8 +21,8 @@ expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Writer.php'), 'Dormant offer
 (new Installation)->install();
 extract(commerceFixture(active:true));
 [$enom, $namesilo] = $tlds;
-$b = CatalogueAcceptances::binding(Account::where('server_id', $enom->server_id)->sole());
-$n = CatalogueAcceptances::binding(Account::where('server_id', $namesilo->server_id)->sole());
+$b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $enom->server_id)->sole());
+$n = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $namesilo->server_id)->sole());
 // A retained staff master stop is independent of saved/default selling intent.
 $enom->update(['enabled' => false]);
 $converter = new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture;

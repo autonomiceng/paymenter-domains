@@ -69,7 +69,7 @@ same($healthy,TldFacts::salesState($t->fresh()),'Restored renewal-enabled contra
 same(['com'],array_column($store->endings(),'tld'),'Renewal-enabled contrast restores public sales');
 same($retained,$savedPrices(),'Switch changes preserve all saved prices');
 // The saved minimum is not necessarily the first eligible registration price.
-$binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());$calls=$reads->calls;
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());$calls=$reads->calls;
 $t->update(['min_years'=>1,'max_years'=>10]);
 foreach([[2],[1,2]] as $terms){
     $accepted=CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,['com'=>['register'=>$terms,'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);

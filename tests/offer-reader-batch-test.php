@@ -29,8 +29,8 @@ $ready = static function ($b, $server, $account) use (&$checked): bool {
 };
 $reader = new OfferReader($clock, $authorize, $ready);
 $writer = new Writer(new Projection($native), $clock, $authorize, static fn () => true);
-$b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
-$n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
+$b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
+$n = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
 $converter = new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture; $converter->batch($b); $converter->batch($n);
 $rev = static fn ($binding) => $writer->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
 foreach ([$b, $n] as $binding) {

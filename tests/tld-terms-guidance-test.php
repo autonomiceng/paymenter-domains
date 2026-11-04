@@ -13,7 +13,7 @@ extract(commerceFixture(true));tldPanel();pinStaffClock($now);$t=$tlds[0];
 $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions);Auth::setUser($u);app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings,true));
 // The demo account: .com for 1 to 3 years with annual renewal; transfers are off.
-$binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
 CatalogueAcceptances::save($binding,CatalogueAcceptances::load($binding)->revision,['com'=>['register'=>[1,2,3],'renew'=>[1],'transfer'=>[],'registry'=>true,'renewal_safe'=>true]]);
 $t->update(['transfer_enabled'=>false]);$t=$t->fresh();
 $before=$t->only(['min_years','max_years','enabled','register_enabled','transfer_enabled','renew_enabled']);

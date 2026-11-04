@@ -33,7 +33,7 @@ foreach (['unique', 'zero', 'multiple'] as $case) {
     same($before + 1, $writer->calls, 'Exactly one original send');
     $op = $op->fresh(); same('sealed', $op->attempt['seal'], 'Original seal survives both rollbacks');
     expect(!array_key_exists('execution', $op->attempt), 'No returned execution facts persisted');
-    $binding = \Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $op->server_id)->sole());
+    $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $op->server_id)->sole());
     HistoryAcceptances::save(new HistoryAcceptance($binding, 'America/Los_Angeles', 0, 86400, 'enom_registration_v1'));
     $observation->name = $op->domain->domain; $observation->fault = $case === 'unique' ? '' : $case;
     $observation->calls = []; $clock->instant = new DateTimeImmutable('2026-10-18T12:06:01Z');
@@ -67,7 +67,7 @@ foreach(['accepted','not_processed'] as $outcome){
     if($outcome==='accepted'){
         same('succeeded',$reconcile->run($op->id)->state,'Exact supported order read settles old uncertainty');
         same('staff_answer',$op->fresh()->attempt['reconciliation']['source'],'Completion distinguishes staff evidence from a captured wire reply');
-        expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$op->domain->fresh(),\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole())),'Supported completion independently reconstructs its evidence');
+        expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$op->domain->fresh(),\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole())),'Supported completion independently reconstructs its evidence');
         expect(!in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Orders,$observation->calls,true),'Support order never searches outside the history window');
     }else{
         expect(isset($op->funding['refund']),'Final no-order/no-charge answer settles the original payment');

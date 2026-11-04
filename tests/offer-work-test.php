@@ -23,8 +23,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueA
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferWork.php'), 'One dormant offer worker coalesces feed and lazy facts in the existing queue');
 (new Installation)->install();
 extract(commerceFixture(active:true));
-$b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
-$n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
+$b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
+$n = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
 (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b); (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($n);
 $clock = new class($now->modify('+1 minute')) implements Clock {
     public function __construct(public DateTimeImmutable $time) {}

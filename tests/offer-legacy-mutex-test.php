@@ -21,7 +21,7 @@ expect(is_file(dirname(__DIR__).'/Domains/Catalogue/CallerRouting.php'), 'Shared
     same('legacy', \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => 'legacy'), 'Nested caller hooks remain legacy');
 });
 $legacy = $sellers->selection('com', 'register', 1, $now);
-(new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole()));
+(new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole()));
 DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_retained_annual_retail' => '99.00',
     'catalogue_intent' => '{"sell":false}', 'catalogue_facts' => null]);
 same($legacy->jsonSerialize(), $sellers->selection('com', 'register', 1, $now)->jsonSerialize(), 'Seller hook keeps legacy selection behavior');
@@ -35,7 +35,7 @@ same($legacy->priceId, $batch[0]->id, 'Locked seller hook keeps legacy admission
 same(['com'], array_keys($sellers->displayCatalogues(['com'])), 'Seller display hook keeps its legacy shape');
 
 $account = Account::where('server_id', $tlds[0]->server_id)->sole();
-$binding = CatalogueAcceptances::binding($account); $accepted = CatalogueAcceptances::load($binding);
+$binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account); $accepted = CatalogueAcceptances::load($binding);
 $clock = new FakeClock($now); $budget = new AccountReadBudget($clock);
 app()->instance(AccountBindings::class, $bindings);
 $worker = new ObservationWork(new DomainObservation($bindings, $clock, $budget), $clock, $budget);

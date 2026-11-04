@@ -24,7 +24,7 @@ $server=Server::create(['name'=>'Synthetic automatic sales','type'=>'server','ex
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction(setupAction('configure',$server->id))
     ->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid','token'=>'catalogue-token','reason'=>'Connect synthetic account'])
     ->callMountedAction()->assertHasNoActionErrors();
-$account=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($account);
+$account=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $write=static function(string $action,array $data)use($staff,$server):void {
     $r=new Review($staff->id,$server->id,null,$action,Review::ticket($staff->id,$server->id,null,$action,Review::stamp($server->id,null)),'Synthetic selling review');
     app(StaffSettingsWrites::class)->run($r,$data);
@@ -238,7 +238,7 @@ config(['domains.enom_test_sends_per_day'=>10000]);
 $live=Server::create(['name'=>'Synthetic inactive Live','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $la=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$live->id,'registrar_key'=>'enom','environment'=>'live','stable_identity'=>'inactive-live-uid']));
 Account::withVerifiedBindingWrite(fn()=>$la->update(['live_site'=>'https://billing.example.com']));
-$lb=CatalogueAcceptances::binding($la);$live->settings()->create(['key'=>SellRule::KEY,'type'=>'array','encrypted'=>false,'value'=>['mode'=>'except','max_cost'=>null,'years'=>1,'transfers'=>false]]);
+$lb=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($la);$live->settings()->create(['key'=>SellRule::KEY,'type'=>'array','encrypted'=>false,'value'=>['mode'=>'except','max_cost'=>null,'years'=>1,'transfers'=>false]]);
 config(['app.url'=>'https://billing.example.com','domains.enom_identity.environment'=>'live','domains.enom_live.site'=>'https://billing.example.com',
     'domains.enom_live.catalogue'=>true,'domains.enom_live.registration'=>true,'domains.enom_live.accounts'=>['inactive-live-uid'=>['fingerprint'=>$lb->fingerprint,'daily_call_cap'=>1000]]]);
 same(true,SellAutomation::enabled($la->fresh()),'Local preparation can supply the prices and seller needed by Activate');

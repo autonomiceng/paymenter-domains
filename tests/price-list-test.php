@@ -140,7 +140,7 @@ $one=Livewire::actingAs($editor)->test(WhatYouSell::class)->set('account',$t->se
 expect(!$one->instance()->getTable()->getColumn('account_name')->isVisible(),'One account needs no Account column');
 // Past 1 year only saved totals show: Off when not sold that long, Missing with its step when sold and not saved.
 $sells=SellRow::where(['server_id'=>$t->server_id,'tld'=>'com'])->sole();
-$binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
 $three=Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',$t->server_id)->set('years',3)->assertSee('3-year cost')->assertSee('No price is saved for this many years.')
     ->assertTableColumnStateSet('register_price','23.40',$sells)->assertTableColumnStateSet('renew_price','Off',$sells)->assertTableColumnStateSet('transfer_cost','Off',$sells);
 $off=$three->instance()->getTable()->getColumn('renew_cost')->record($three->instance()->getTableRecord((string)$sells->id));same(['Off','gray'],[$off->getState(),$off->getColor(null)],'Off is muted, not an alarm');
@@ -223,7 +223,7 @@ $publicationStatus(true);
 
 // Real quarantine retains billed renewal retail while costs/profit and acquisition prices become unknown.
 $priorRenewal=$prices->renewal($other->server_id,$other->account_fingerprint,'com','USD',$now);
-$binding=CatalogueAcceptances::binding(Account::where('server_id',$other->server_id)->sole());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$other->server_id)->sole());
 $prices->unavailable(new CatalogueUnavailable($binding,'com',$now),CatalogueAcceptances::load($binding),static fn()=>null,$now);
 $retained=$prices->renewal($other->server_id,$other->account_fingerprint,'com','USD',$now);
 expect($retained->retained,'Quarantined renewal still bills the retained price');same($priorRenewal->retail,$retained->retail,'Quarantine preserves billed retail');

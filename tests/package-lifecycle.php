@@ -252,14 +252,14 @@ if($phase==='server-delete'){
                 'domains.enom_live.accounts'=>[$live->stable_identity=>['fingerprint'=>$live->account_fingerprint,'daily_call_cap'=>1000,'daily_spend_limit_usd'=>'100.00']]]);
         }
         if(getenv('PACKAGE_STANDING_UPGRADE')){
-            $binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($live);
+            $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($live);
             same($live->account_fingerprint,Paymenter\Extensions\Servers\Domains\Services\EnomLive::account($binding)['fingerprint'],'Retained live prerequisites are valid independently of opt-ins');
             same(0,App\Models\Server::findOrFail($live->server_id)->settings()->whereIn('key',['domains_enom_live_renewal','domains_enom_live_management',Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::KEY])->count(),'Upgrade copies no live action or catalogue acceptance');
         }
         same(false,Paymenter\Extensions\Servers\Domains\Services\EnomLive::requested(),'Upgrade keeps every live opt-in off');
         same(0,DB::table(Paymenter\Extensions\Servers\Domains\Services\EnomLiveCallSchema::TABLE)->count(),'Upgrade creates no live call or spend authority');
         foreach(Account::all() as $account){foreach(['catalogue','registration','renewal','management'] as $action){
-            expect(!Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account),$action),'Retained account gains no live action');
+            expect(!Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account),$action),'Retained account gains no live action');
         }}
         config(['domains.enom_live'=>$oldLiveConfig,'domains.enom_identity.environment'=>$oldIdentity,'app.url'=>$oldUrl]);
     }

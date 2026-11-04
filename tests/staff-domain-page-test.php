@@ -96,7 +96,7 @@ same([null,'Fills in by itself within a day'],[$f['Last sync']['value'],$f['Last
 $dnsSetting=App\Models\Server::findOrFail($active->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $beforeDns=$active->fresh()->observation;$dnsMissing=[[$value($active,'DNS records'),$sub($active,'DNS records')]];
 $coreObservation=$beforeDns;unset($coreObservation['followup']);$active->fresh()->update(['observation'=>$coreObservation]);
-$binding=CatalogueAcceptances::binding(Account::where('server_id',$active->server_id)->firstOrFail());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$active->server_id)->firstOrFail());
 ObservationProjection::save($active->fresh(),new DomainSnapshot($binding,$active->domain,owned:true,
     expiry:new DateEvidence($active->provider_expires_at->format('Y-m-d'),ExpiryPrecision::Date,'synthetic_read'),
     providerAutoRenew:false,privacy:false,locked:true,active:true),TransferStatus::Unknown,new DateTimeImmutable('2026-10-20T15:05:00+00:00'));

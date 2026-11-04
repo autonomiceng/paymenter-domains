@@ -116,7 +116,7 @@ DB::table('invoices')->where('id',$stale->invoice_id)->update(['status'=>'paid']
 same([$before,$sent,1],[$cash(),$mails(),$alerts($stale)],'An invoice already Paid gets no credit and staff are told');
 
 // Real checkout across two accounts: both sweeps see the one payment, which credits once.
-$other=$tlds[1];$binding=CatalogueAcceptances::binding(Account::where('server_id',$other->server_id)->sole());$kept=CatalogueAcceptances::load($binding);
+$other=$tlds[1];$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$other->server_id)->sole());$kept=CatalogueAcceptances::load($binding);
 $net=Tld::create(['server_id'=>$other->server_id,'registrar_key'=>$other->registrar_key,'account_fingerprint'=>$other->account_fingerprint,'tld'=>'net','enabled'=>true,'min_years'=>1,'max_years'=>1]);
 $accepted=CatalogueAcceptances::save($binding,$kept->revision,$kept->endings+['net'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
 $rates=array_map(fn($a)=>new CatalogueRate($a,1,'6.00','synthetic',$clock->now(),$clock->now()->modify('+1 day')),['register','renew','transfer']);

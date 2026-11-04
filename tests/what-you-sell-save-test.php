@@ -24,7 +24,7 @@ $GLOBALS['catalogueList']=['com','net','org'];$GLOBALS['catalogueMaximum']=['com
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction(setupAction('configure',$server->id))
     ->setActionData(['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid','token'=>'catalogue-token','reason'=>'Connect synthetic picker'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
-$settings=app(StaffSettingsWrites::class);$front=app(Storefront::class);$account=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($account);
+$settings=app(StaffSettingsWrites::class);$front=app(Storefront::class);$account=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $review=static fn(string $action,?int $tld=null)=>new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),in_array($action,Review::NO_REASON,true)?'':'Set up synthetic picker');
 $write=static fn(string $action,array $data=[],?int $tld=null)=>$settings->run($review($action,$tld),$data);
 

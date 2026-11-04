@@ -16,7 +16,7 @@ $runtimeDoc=(string)file_get_contents(__DIR__.'/../docs/runtime.md');
 expect(str_contains($runtimeDoc,'at most eight accounts, with 25 operations, 25 domains and 25 TLDs per account'),'Worker selection counts operations, domains and TLDs');
 expect(str_contains($runtimeDoc,'share the same limiter'),'Request limits have a separate unit');
 $server=$tlds[0]->server_id;
-$binding=CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->sole());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server)->sole());
 $clock=new class implements Clock {
     public DateTimeImmutable $instant;
     public function __construct(){$this->instant=new DateTimeImmutable('2026-10-22T12:00:00Z');}

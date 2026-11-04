@@ -28,7 +28,7 @@ $pending->fill(['domain'=>'pending-alert.example.test','sld'=>'pending-alert','t
     'account_fingerprint'=>$enom->fresh()->account_fingerprint,'status'=>'registration_pending','provider_expires_at'=>null,'last_synced_at'=>null]);$pending->save();
 \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::record($pending,'unknown_expiry',time());
 // Show a read balance one cent below Due in 30 days, after the test's failed read.
-$clock->instant=$clock->instant->modify('+2 minutes');BalanceReads::record(CatalogueAcceptances::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
+$clock->instant=$clock->instant->modify('+2 minutes');BalanceReads::record(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
 $save('list',Livewire::actingAs($staff)->test(RegistrarSetup::class));
 // Accounts render for staff with every setup permission and the public suffix list, so all buttons show.
 Paymenter\Extensions\Servers\Domains\Services\PslSchema::install();Paymenter\Extensions\Servers\Domains\Services\PslReviewSchema::install();
