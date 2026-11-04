@@ -21,7 +21,7 @@ $registry->register('enom', ['token'], $verifier, static function (AccountBindin
     $observed = $clock->now()->modify($state->change === 'stale' ? '-1 second' : '+0 seconds');
     $quote = new QuoteEvidence($state->change === 'term' ? new Query($query->name, $query->action, 3) : $query,
         $state->change === 'cost' ? null : $cost, CostUnit::TermTotal, 'synthetic', $observed, $clock->now()->modify('+120 seconds'));
-    if ($state->revoke) { CatalogueAcceptances::save($b, 1, []); }
+    if ($state->revoke) { fixtureObserveOfferFacts($b,[]); }
     $reader = new FakeRegistrar($b, new Capabilities($b, []), match ($state->change) {
         'unanswered' => new DriverResult($b, Disposition::Unknown, SendState::Sent, ResultReason::Unresolved),
         'unsupported' => new DriverResult($b, Disposition::Rejected, SendState::DefinitelyUnsent, ResultReason::Unsupported, rejectionBasis: RejectionBasis::DefinitelyUnsent),
@@ -32,7 +32,7 @@ $registry->register('enom', ['token'], $verifier, static function (AccountBindin
     $state->readers[]=$reader;return $reader;
 });
 $freshBindings = new AccountBindings($registry); $features = new WriteFeatures(registration: true);
-$acceptance = new WriteAcceptance($enomBinding, true, true, 25);
+$acceptance = new WriteAcceptance($enomBinding, true, true, 25,catalogue: $GLOBALS['caps']??null);
 $fresh = new RegistrationPreflight($freshBindings, $features, $acceptance);
 $ctx = static fn () => new RequestContext($enomBinding, RequestOrigin::Background, $clock->now()->modify('+60 seconds'), new RequestBudget(4), $clock);
 // Each refusal keeps its own cause, so staff are sent to the fix that works.
@@ -61,7 +61,7 @@ same(['100.00','USD',null,'preflight'],[$balanceRow->amount,$balanceRow->currenc
 same(['availability','quote','balance'],end($state->readers)->calls,'Successful preflight performs exactly one balance read');
 $before = $state->calls;
 commerceReject(fn () => (new RegistrationPreflight($freshBindings, new WriteFeatures, $acceptance))->inspect($op, $op->domain, $ctx()));
-commerceReject(fn () => (new RegistrationPreflight($freshBindings, $features, new WriteAcceptance($enomBinding)))->inspect($op, $op->domain, $ctx()));
+commerceReject(fn () => (new RegistrationPreflight($freshBindings, $features, new WriteAcceptance($enomBinding,catalogue: $GLOBALS['caps']??null)))->inspect($op, $op->domain, $ctx()));
 same($before, $state->calls, 'Default gates and missing USD/batch acceptance refuse before reads');
 // Change the default seller after checkout: the original accepted holder still owns dispatch.
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());

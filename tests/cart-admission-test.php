@@ -99,7 +99,7 @@ $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderCom
 $history = [DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()];
 $services = DB::table('services')->orderBy('id')->get()->toJson();
 $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
-$accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
+$accepted = fixtureOfferFacts($binding);
 Illuminate\Support\Once::flush();
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 Illuminate\Support\Once::flush();
@@ -109,7 +109,7 @@ foreach (['8.00','5.00'] as $cost) {
     foreach ([['register',1],['register',3],['renew',1],['transfer',1]] as [$action,$term]) {
         $rates[] = new Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$cost,'synthetic',$now,$now->modify('+1 day'));
     }
-    $prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
+    fixtureObserveOfferEntry(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true));
     Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same(4,Order::count(),'A retained cart cannot charge an unseen synced price');
     same($history,[DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()],'Sync and refused checkout preserve issued invoices');
@@ -123,7 +123,7 @@ foreach (['8.00','5.00'] as $cost) {
 }
 // An unchanged-price sync advances revisions without requiring another customer check.
 $beforeReads = $reads->calls;
-$prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
+fixtureObserveOfferEntry(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true));
 Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(5,Order::count(),'A refreshed cart sells at the synced price');
 same($beforeReads, $reads->calls, 'Unchanged retail reuses the fresh receipt across price revisions');

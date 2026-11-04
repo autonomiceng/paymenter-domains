@@ -148,7 +148,7 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     DB::table('domains_accounts')->where('id', $account->id)->update(['account_fingerprint' => $binding->fingerprint]);
     same('$20.00', array_column(storefrontFreshEndings($store), null, 'tld')['qnet']['register'], 'Fresh read recovers restored account');
     $before = $reads->calls;
-    $accepted = CatalogueAcceptances::load($binding); CatalogueAcceptances::save($binding, $accepted->revision, $accepted->endings);
+    $accepted = fixtureOfferFacts($binding); fixtureObserveOfferFacts($binding,$accepted->endings);
     expect(!isset(array_column($store->endings(), null, 'tld')['qnet']), 'Changed acceptance revision invalidates old publication proof');
     same('held', $store->check('example.qnet')['status'], 'Check independently requires current acceptance revision');
     same($before, $reads->calls, 'Revoked publication proof has no provider I/O');

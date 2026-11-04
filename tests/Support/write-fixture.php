@@ -28,7 +28,7 @@ $proxy = new class implements AdmittedRegistrarDriver, WriteGate {
 };
 $build = static function ($binding, ?WriteFeatures $features = null, ?WriteAcceptance $acceptance = null) use (&$engine, $claims, $preflight, $clock, $proxy, $transport) {
     $features ??= new WriteFeatures(registration: true);
-    $acceptance ??= new WriteAcceptance($binding, true, true, 25, static fn () => true);
+    $acceptance ??= new WriteAcceptance($binding, true, true, 25, static fn () => true,catalogue: $GLOBALS['caps']??null);
     $class = 'Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo').'\\Writer';
     $bridge = new $class($binding, $features, $acceptance, static function () use (&$engine) { return $engine; }, $transport);
     $proxy->bridge = $bridge; $proxy->before = null;

@@ -5,10 +5,10 @@ use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
 use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 
 return static function ($binding, Closure $check, Closure $refresh, Closure $calls, Closure $during): void {
-    $accepted = CatalogueAcceptances::load($binding);
+    $accepted = fixtureOfferFacts($binding);
     $original = $accepted->endings;
     $save = static function (array $endings) use ($binding): void {
-        CatalogueAcceptances::save($binding, CatalogueAcceptances::load($binding)->revision, $endings);
+        fixtureObserveOfferFacts($binding,$endings);
     };
     same(RenewalCode::Admitted, $check()->code, 'Current ending acceptance admits holder');
     foreach (['renewal_safe' => false, 'renew' => [], 'absent' => null] as $flag => $value) {

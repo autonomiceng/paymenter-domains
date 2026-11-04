@@ -21,7 +21,7 @@ same(['ns1.provider.example','ns2.provider.example'],$r->domain->fresh()->observ
 same('requested',$r->domain->fresh()->observation['nameservers']['state']??null,'NameSilo transfer fallback stays unconfirmed');
 $unresolved(['inactive','auto','privacy','short','owner','nocharge','duplicate','late','credited','unknowncharge','paged','nohistory','lag']);
 // Slice25 accepts the no-ID anchor and still requires immutable ordinary acquisition proof.
-$observe->name=$completed->domain->domain; $observe->fault=''; $authority=new RenewalAuthority($readBindings,$clock);
+$observe->name=$completed->domain->domain; $observe->fault=''; $authority=new RenewalAuthority($readBindings,$clock,catalogue: $GLOBALS['caps']??null);
 $request=new RenewalRequest($completed->domain_id,$completed->authority_generation,$completed->domain->confirmed_revision,'2028-01-01',null);
 $admit=new RenewalAdmission($authority,$readBindings,new RenewalAcceptance($binding,true,true,25),$clock);
 Cache::flush(); same(RenewalCode::Admitted,$admit->check($request)->code,'NameSilo transfer anchor admits ordinary renewal');

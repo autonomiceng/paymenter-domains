@@ -22,8 +22,8 @@ $op = $new('ordinary.example.com'); $result = $engine->execute($op->id);
 same('uncertain', $result->state, 'Unknown response holds obligation'); same('ordinary.example.com', $result->domain->reservation_name, 'Unknown holds name');
 same('99.00', $writer->last->authorizedCost->amount, 'Known cost above paid retail is allowed: no dispatch margin floor');
 same('possibly_sent', $result->attempt['execution']['send_state'], 'Normalized execution retained');
-$assertNoSend($result, 'uncertain'); commerceReject(fn () => $engine->consume($writer->last, $writer->context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($writer->last->binding)));
-$forged = clone $writer->last; commerceReject(fn () => $engine->consume($forged, $writer->context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($forged->binding)));
+$assertNoSend($result, 'uncertain'); commerceReject(fn () => $engine->consume($writer->last, $writer->context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($writer->last->binding,catalogue: $GLOBALS['caps']??null)));
+$forged = clone $writer->last; commerceReject(fn () => $engine->consume($forged, $writer->context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($forged->binding,catalogue: $GLOBALS['caps']??null)));
 foreach (['execution', 'dispatch_attempted_at', 'claim_key', 'seal'] as $key) {
     $attempt = $result->attempt; unset($attempt[$key]); commerceReject(fn () => $result->fresh()->update(['attempt' => $attempt]));
 }

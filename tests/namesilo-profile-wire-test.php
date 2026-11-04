@@ -61,7 +61,7 @@ foreach(['ok','unsent','lost','badread','readfail','drift'] as $mode){
     $features=new WriteFeatures(registration:true);
     $profileOps=new ProfileContactOperations($binding,$claims,$clock,$profileTransport->reservation,$profileTransport->exchange());
     $profiles=new RegistrationProfiles($binding,$claims,$clock,static fn()=>throw new \LogicException('No legacy profile sender'),operations:$profileOps);
-    $accepted=new WriteAcceptance($binding,true,true,25,$profiles);$fresh=new RegistrationPreflight($freshBindings,$features,$accepted,$profiles);
+    $accepted=new WriteAcceptance($binding,true,true,25,$profiles,catalogue: $GLOBALS['caps']??null);$fresh=new RegistrationPreflight($freshBindings,$features,$accepted,$profiles);
     $protocol=new Registration($binding,$profiles,$purchaseTransport->exchange());$protocol->useReservation($purchaseTransport->reservation);
     $bridge=new Writer($binding,$features,$accepted,static function()use(&$engine){return $engine;},$protocol);$engine=new DomainOperations($claims,$fresh,$bridge,$clock);
     \Illuminate\Support\Facades\Cache::flush();$before=$ledger->usage($binding);$money=$nativeMoney();$result=$runRegistration($op);

@@ -60,7 +60,7 @@ $scenarioCompose = static function (int $i, string $action, bool $enabled = true
     if ($action === 'transfer') { return; }
     $features = new WriteFeatures(registration: $enabled);
     $profiles = new Paymenter\Extensions\Servers\Domains\Services\RegistrationProfiles($binding, $claims, $clock, $registrationExchange);
-    $accepted = new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding, true, true, 25, $profiles);
+    $accepted = new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding, true, true, 25, $profiles,catalogue: $GLOBALS['caps']??null);
     $fresh = new RegistrationPreflight($freshBindings, $features, $accepted, $profiles);
     $class = 'Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($i === 0 ? 'Enom' : 'NameSilo').'\\';
     $protocol = $i === 0 ? new ($class.'Registration')($binding, $registrationExchange) : new ($class.'Registration')($binding, $profiles, $registrationExchange);

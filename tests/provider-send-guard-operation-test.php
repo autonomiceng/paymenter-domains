@@ -18,7 +18,7 @@ $op=$new(placeholderComFixtureName('guard-held-placeholder.com'));
 BalanceReads::record($binding,new \Paymenter\Extensions\Servers\Domains\Data\Money('100.00','USD'),$clock->now(),'manual');
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
 expect(EnomTestRegistration::enabled($binding),'Real TEST policy enabled for the operation');
-$factory=RuntimeFactory::make($binding,$freshBindings,$clock,new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25),new RenewalAcceptance($binding),
+$factory=RuntimeFactory::make($binding,$freshBindings,$clock,new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null),new RenewalAcceptance($binding),
     new TransferPrecheck(new Rdap(static fn()=>null)),static fn()=>['uid'=>'account-enom','token'=>'SYNTHETIC-TOKEN']);
 // The private exchange is exercised inside the genuine admitted Registration protocol and engine.
 $wire=(new ReflectionFunction($factory))->getStaticVariables()['wire'];
@@ -28,7 +28,7 @@ $preflightRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarR
 $read=static fn($b,$c)=>$registry->reader($b,$c);
 $preflightRegistry->register('enom',['token'],$verifier,$read,registrationPreflightFactory:$read);
 $preflightBindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($preflightRegistry);
-$features=new WriteFeatures(registration:true);$accepted=new WriteAcceptance($binding,true,true,25);
+$features=new WriteFeatures(registration:true);$accepted=new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);
 $protocol=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration($binding,$exchange);
 $fresh=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($preflightBindings,$features,$accepted);
 $bridge=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Writer($binding,$features,$accepted,static function()use(&$engine){return $engine;},$protocol);

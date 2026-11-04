@@ -64,7 +64,7 @@ config(['domains.enom_test_sends_per_minute'=>100000]);
 // Only the runs bind the offline production runtime.
 $wired=static function($binding)use($renewBindings,$authority,$bindings,$clock):array {
     $accepted=new RenewalAcceptance($binding,true,true,25,true);$features=new WriteFeatures(renewal:true);
-    $factory=RuntimeFactory::make($binding,$bindings,$clock,$features,new WriteAcceptance($binding),$accepted,new TransferPrecheck(new Rdap(static fn()=>null)),
+    $factory=RuntimeFactory::make($binding,$bindings,$clock,$features,new WriteAcceptance($binding,catalogue: $GLOBALS['caps']??null),$accepted,new TransferPrecheck(new Rdap(static fn()=>null)),
         static fn()=>['uid'=>'account-enom','token'=>'synthetic-offline-token']);
     $wire=(new ReflectionFunction($factory))->getStaticVariables()['wire'];$exchange=(new ReflectionMethod($wire,'exchange'))->invoke($wire,'renewal');
     $engine=new RenewalExecution($renewBindings,$authority,new RenewalAdmission($authority,$renewBindings,$accepted,$clock),$accepted,$features,$clock);

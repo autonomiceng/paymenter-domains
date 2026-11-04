@@ -35,7 +35,7 @@ DB::transaction(function () use ($caps, $binding, $t): void {
 });
 $op = new Paymenter\Extensions\Servers\Domains\Models\Operation;
 $op->setRelation('domain', new Paymenter\Extensions\Servers\Domains\Models\Domain(['tld'=>'com']));
-$accept = new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,null,null,$caps);
+$accept = new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,null,null,$caps,catalogue: $GLOBALS['caps']??null);
 $order = new Paymenter\Extensions\Servers\Domains\Data\Query('capability-placeholder.com',Paymenter\Extensions\Servers\Domains\Data\Action::Register,1);
 same([1,3],$accept->requireCurrent($binding,$order,$op)->terms,'Execution uses independent provider terms while unsold');
 $op->catalogueTld=Tld::findOrFail($t->id);

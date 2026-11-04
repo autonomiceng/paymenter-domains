@@ -31,7 +31,7 @@ foreach (['lock' => ['locked' => false], 'nameservers' => ['nameservers' => ['ns
     app()->instance(Runtime::class, new Runtime);
     app()->instance(ReadLimiter::class, new WireLimit(1000));
     $factory = RuntimeFactory::make($binding, $bindings, $clock, new WriteFeatures(management: true),
-        new WriteAcceptance($binding), new RenewalAcceptance($binding), new TransferPrecheck(new Rdap(static fn () => null)),
+        new WriteAcceptance($binding,catalogue: $GLOBALS['caps']??null), new RenewalAcceptance($binding), new TransferPrecheck(new Rdap(static fn () => null)),
         static fn () => ['uid' => 'account-enom', 'token' => 'synthetic-offline-token'],
         managementAccepted: true, testManagement: true);
     ['management' => $engine, 'management_protocol' => $driver] = $factory();

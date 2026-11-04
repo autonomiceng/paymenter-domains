@@ -23,11 +23,11 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $registry->register($b->registrarKey,['token'],$verify,fn($binding,$credentials)=>new FakeRegistrar($binding,new Capabilities($binding,[]),new DriverResult($binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,$facts)));
     $reader=new AccountBindings($registry);$reconcile=new OperationReconciliation($claims,$reader,$clock);$features=new WriteFeatures(true,true,true,true);
     $writer=new FakeWriter($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Unknown,SendState::PossiblySent,ResultReason::Unresolved));$engine=new DomainOperations($claims,$preflight,$writer,$clock);
-    $authority=new RenewalAuthority($bindings,$clock);$accept=new RenewalAcceptance($b,true,true,25);$renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
+    $authority=new RenewalAuthority($bindings,$clock,catalogue: $GLOBALS['caps']??null);$accept=new RenewalAcceptance($b,true,true,25);$renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
     $protocolClass='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($b->registrarKey==='enom'?'Enom':'NameSilo').'\\Management';$protocol=new $protocolClass($b,static fn()=>throw new LogicException('No management transport in lifecycle acceptance'));
     $noExchange=static fn()=>throw new LogicException('No acquisition exchange in reconciliation fixture');
     $profiles=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationProfiles($b,$claims,$clock,$noExchange);
-    $writeAccept=new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($b,true,true,25,$profiles);
+    $writeAccept=new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($b,true,true,25,$profiles,catalogue: $GLOBALS['caps']??null);
     $namespace='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($b->registrarKey==='enom'?'Enom':'NameSilo').'\\';
     $registration=$b->registrarKey==='enom'?new ($namespace.'Registration')($b,$noExchange):new ($namespace.'Registration')($b,$profiles,$noExchange);
     $transfer=$b->registrarKey==='enom'?new ($namespace.'Transfer')($b,$noExchange):new ($namespace.'Transfer')($b,$profiles,$noExchange);

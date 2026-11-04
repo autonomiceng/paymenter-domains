@@ -15,7 +15,7 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
     $binding = $bindings->configure($server->id, 'enom', Environment::Test, ['token' => 'catalogue-fixture-'.$server->id]);
     $bindings->setProcessing($server->id, true, syntheticActivation());
     $rows = array_fill_keys($endings, ['register' => $terms, 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]);
-    $accepted = CatalogueAcceptances::save($binding, 0, $rows); $catalogueTlds = [];
+    $accepted = fixtureObserveOfferFacts($binding,$rows); $catalogueTlds = [];
     foreach ($endings as $ending) {
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => 'enom', 'account_fingerprint' => $binding->fingerprint,
             'tld' => $ending, 'enabled' => true, 'min_years' => min($terms), 'max_years' => max($terms),
@@ -23,7 +23,7 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
         $rates = [new CatalogueRate('renew', 1, '8.00', 'synthetic', $now, $now->modify('+1 day')),
             new CatalogueRate('transfer', 1, '7.00', 'synthetic', $now, $now->modify('+1 day'))];
         foreach ($terms as $term) { $rates[] = new CatalogueRate('register', $term, '6.00', 'synthetic', $now, $now->modify('+1 day')); }
-        $prices->import(new CatalogueEntry($binding, $ending, $rates, $terms, true, true), $accepted, static fn () => null, $now);
+        fixtureObserveOfferEntry(new CatalogueEntry($binding, $ending, $rates, $terms, true, true));
         activeFixtureRepublish($native,$tld->id, $now); $catalogueTlds[$ending] = $tld->fresh();
         $policy = $sellers->initialize($ending); activeFixtureSeller($sellers,$ending, $policy->revision, $server->id, true, true, $now);
     }

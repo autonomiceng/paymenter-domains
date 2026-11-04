@@ -13,7 +13,7 @@ expect(method_exists(RenewalWriter::class,'useReservation'),'Renewal writer need
 require __DIR__.'/reconciliation-namesilo-test.php';$nativeSuccessful=false;
 require __DIR__.'/Support/namesilo-write-wire.php';require_once __DIR__.'/Support/namesilo-account-guard.php';
 nameSiloGuardExpected($binding,'expected@example.com');
-$rb=new AccountBindings($registry);$authority=new RenewalAuthority($rb,$clock);
+$rb=new AccountBindings($registry);$authority=new RenewalAuthority($rb,$clock,catalogue: $GLOBALS['caps']??null);
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();Queue::fake();
 $billing=new DomainBilling($bindings,$guard,$clock);$holding=$result->domain->fresh();
 $accepted=new RenewalAcceptance($binding,true,true,25);$features=new WriteFeatures(renewal:true);

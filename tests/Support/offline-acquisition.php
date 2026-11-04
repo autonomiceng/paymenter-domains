@@ -8,7 +8,7 @@ function offlineAcquisition(AccountBinding $binding,AccountBindings $bindings,Cl
     Closure $exchange,?TransferPrecheck $precheck=null):AcquisitionPorts
 {
     $profiles=new RegistrationProfiles($binding,new OperationClaims($bindings,$clock),$clock,$exchange);
-    $accepted=new WriteAcceptance($binding,true,true,25,$profiles);
+    $accepted=new WriteAcceptance($binding,true,true,25,$profiles,catalogue: $GLOBALS['caps']??null);
     $registration=$binding->registrarKey==='enom'
         ?new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration($binding,$exchange)
         :new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Registration($binding,$profiles,$exchange);

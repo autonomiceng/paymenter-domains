@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionPort,CatalogueAcce
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Registration,Transfer};
 $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
 $writes=0;$exchange=static function()use(&$writes):string{$writes++;return 'malformed';};
-$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25);
+$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);
 $ports=[
     'register'=>AcquisitionPort::registration($binding,$freshBindings,$clock,$features,$accepted,new Registration($binding,$exchange)),
     'transfer'=>AcquisitionPort::transfer($binding,$freshBindings,$clock,$features,$accepted,new Transfer($binding,$exchange),new TransferPrecheck(new Rdap(static fn()=>throw new RuntimeException('Synthetic offline RDAP')))),

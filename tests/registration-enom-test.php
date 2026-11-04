@@ -116,7 +116,7 @@ $before = $registration->calls; commerceReject(fn () => $attacker->attack($proto
 // Gate identity is mandatory before claim, not just equal gate values.
 $makeEngine($binding, $exchange); $op = $new('composition.example.com');
 commerceReject(fn () => $bridge->requireComposition($fresh, new WriteFeatures(registration: true), $acceptance, $protocol));
-commerceReject(fn () => $bridge->requireComposition($fresh, new WriteFeatures(registration: true), new WriteAcceptance($binding, true, true, 25), $protocol));
+commerceReject(fn () => $bridge->requireComposition($fresh, new WriteFeatures(registration: true), new WriteAcceptance($binding, true, true, 25,catalogue: $GLOBALS['caps']??null), $protocol));
 $engine = new DomainOperations($claims, $preflight, $bridge, $clock);
 commerceReject(fn () => $engine->execute($op->id)); same(null, $op->fresh()->attempt, 'Synthetic preflight cannot authorize protocol');
 try { $engine->consume($forged, $ctx, null); expect(false, 'Null acceptance prohibited'); } catch (TypeError) {}

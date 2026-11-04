@@ -14,7 +14,7 @@ $staff->update(['role_id' => $role->id]); $refunds = new Refunds($clock);
 foreach (['enom', 'namesilo'] as $index => $registrar) {
     if ($index) { activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[$index]->server_id, true, true, $clock->now()); }
     $binding = $bindingFor($index);
-    $acceptance = new WriteAcceptance($binding, true, true, 25, static fn () => true);
+    $acceptance = new WriteAcceptance($binding, true, true, 25, static fn () => true,catalogue: $GLOBALS['caps']??null);
     $fresh = new RegistrationPreflight($freshBindings, new WriteFeatures(registration: true), $acceptance);
     // The synthetic writer reaches preflight independently of the bridge's earlier owner-setup guard.
     $engine = new DomainOperations($claims, $fresh, $writer, $clock); $writer->engine = $engine;

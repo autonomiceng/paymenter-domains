@@ -17,7 +17,7 @@ expect(!app()->bound(App\Services\Invoice\ProcessPaidInvoiceService::class),'Nat
 same(App\Services\Invoice\ProcessPaidInvoiceService::class,get_class(app(App\Services\Invoice\ProcessPaidInvoiceService::class)),'Resolve the native paid processor');
 $ports=app(RuntimePorts::class);$work=app(RuntimeWork::class);$preflight->cost='6.00';
 $a=Account::where('server_id',$tlds[0]->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
-$features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock);$accept=new RenewalAcceptance($b,true,true,25);
+$features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock,catalogue: $GLOBALS['caps']??null);$accept=new RenewalAcceptance($b,true,true,25);
 $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
 require __DIR__.'/native-paid-acquisition.php';
 $composition=['acquisition'=>offlineAcquisition($b,$paidBindings,$clock,$features,$paidExchange,$paidPrecheck),'reconciliation'=>new OperationReconciliation($claims,$bindings,$clock),

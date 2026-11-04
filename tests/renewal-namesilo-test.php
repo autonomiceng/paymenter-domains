@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RenewalAccep
 // Ordinary admission uses the completed nonpremium purchase, never a fabricated provider domain ID.
 $renewBindings = new AccountBindings($registry);
 $admission = new RenewalAdmission(
-    new RenewalAuthority($renewBindings, $clock), $renewBindings,
+    new RenewalAuthority($renewBindings, $clock,catalogue: $GLOBALS['caps']??null), $renewBindings,
     new RenewalAcceptance($binding, true, true, 25, true), $clock);
 $holding = $result->domain->fresh();
 $request = static fn (?string $id = null) => new RenewalRequest($holding->id,

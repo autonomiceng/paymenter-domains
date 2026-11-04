@@ -62,7 +62,7 @@ expect(!isset($op->fresh()->policy['renewal_execution']),'Release removes stale 
 expect(!isset(Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::for($op->fresh())['admission']),'Queued request has no held-release instruction');
 same(0,$state->writes,'Staff release grants no send');
 $offline=static fn()=>throw new LogicException('No unrelated exchange permitted');$features=new WriteFeatures(renewal:true);
-$composition=RuntimeComposition::make($b,$renewBindings,$clock,$features,new WriteAcceptance($b,true,true,25),new RenewalAcceptance($b,true,true,25,true),
+$composition=RuntimeComposition::make($b,$renewBindings,$clock,$features,new WriteAcceptance($b,true,true,25,catalogue: $GLOBALS['caps']??null),new RenewalAcceptance($b,true,true,25,true),
     new TransferPrecheck(new Rdap($offline)),new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration($b,$offline),
     new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Transfer($b,$offline),$offline,new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($b,$offline));
 $composition['renewal']=$engine;$composition['renewal_writer']=$writer;$composition['renewal_completion']=$completion;

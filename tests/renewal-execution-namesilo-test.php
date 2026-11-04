@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
 use Paymenter\Extensions\Servers\Domains\Models\{Operation, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, NativeDomainGuard, RenewalAcceptance, RenewalAdmission, RenewalAuthority, RenewalCompletion, RenewalExecution, RenewalWriter, WriteFeatures};
-$renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock);
+$renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,catalogue: $GLOBALS['caps']??null);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); Queue::fake();
 $billing = new DomainBilling($bindings, $guard, $clock); $holding = $result->domain->fresh();
 $accepted = new RenewalAcceptance($binding, true, true, 25); $features = new WriteFeatures(renewal:true);

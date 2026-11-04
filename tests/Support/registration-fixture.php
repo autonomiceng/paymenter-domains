@@ -29,7 +29,7 @@ $makeEngine = static function ($binding, $exchange, ?WriteFeatures $features = n
     $features ??= new WriteFeatures(registration: true);
     $profiles = new RegistrationProfiles($binding, $claims, $clock, $exchange,
         static function (string $predicate, bool $passed) use ($registration): void { $registration->diagnostics[$predicate] = $passed; });
-    $acceptance = new WriteAcceptance($binding, true, true, 25, $profiles);
+    $acceptance = new WriteAcceptance($binding, true, true, 25, $profiles,catalogue: $GLOBALS['caps']??null);
     $fresh = new RegistrationPreflight($freshBindings, $features, $acceptance, $profiles);
     $class = 'Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo').'\\';
     $protocol = $binding->registrarKey === 'enom' ? new ($class.'Registration')($binding, $exchange) : new ($class.'Registration')($binding, $profiles, $exchange);
