@@ -24,6 +24,7 @@ same([60,60],TransferPrecheck::rules($workerSelection),'Worker preflight uses cu
 same([60,60],Illuminate\Support\Facades\DB::transaction(fn()=>TransferPrecheck::rules($workerSelection,true)),'Seal rules use the same locked current facts');
 $foreignSelection=new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection('com',$s->serverId,$s->registrar,str_repeat('f',64),0,'transfer',1,'USD',0,0);
 commerceReject(fn()=>TransferPrecheck::rules($foreignSelection));
+$beforeFactsClock=$clock->instant;$clock->instant=$clock->instant->modify('+2 days');commerceReject(fn()=>TransferPrecheck::rules($workerSelection));$clock->instant=$beforeFactsClock;
 
 $token=$eligibility->observe('example.com',$s,[1]);same($s->serverId,$eligibility->require($token,'example.com',[1])->serverId,'Accepted transfer receipt');
 same(2,$calls,'One bootstrap plus one domain read');

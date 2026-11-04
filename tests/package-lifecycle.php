@@ -148,14 +148,10 @@ if($phase==='bridge-seed'){
         assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST send limit schema.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
 }elseif($phase==='enom-live'){
-    try { require __DIR__.'/Support/enom-live.php'; } catch (Throwable $error) {
-        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
-    }
+    require __DIR__.'/Support/enom-live.php';
 }elseif($phase==='enom-test-transfer'){
     require __DIR__.'/Support/enom-transfer-setup.php';
-    try { require __DIR__.'/Support/enom-test-transfer.php'; } catch (Throwable $error) {
-        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
-    }
+    require __DIR__.'/Support/enom-test-transfer.php';
 }elseif($phase==='enom-test-transfer-restart'){
     require __DIR__.'/Support/enom-transfer-restart.php';
 }elseif($phase==='enom-test-management'){
@@ -168,18 +164,14 @@ if($phase==='bridge-seed'){
 }elseif($phase==='enom-test-management-restart'){
     require __DIR__.'/Support/enom-management-restart.php';
 }elseif($phase==='enom-test-renewal'){
-    try { require __DIR__.'/Support/enom-test-registration.php'; } catch (Throwable $error) {
-        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
-    }
+    require __DIR__.'/Support/enom-test-registration.php';
     require __DIR__.'/Support/enom-test-renewal.php';
 }elseif($phase==='enom-test-renewal-restart'){
     require __DIR__.'/Support/enom-renewal-restart.php';
 }elseif(str_starts_with($phase,'enom-test-renewal-race-')){
     require __DIR__.'/Support/enom-renewal-race.php';
 }elseif($phase==='enom-test-registration'){
-    try { require __DIR__.'/Support/enom-test-registration.php'; } catch (Throwable $error) {
-        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
-    }
+    require __DIR__.'/Support/enom-test-registration.php';
 }elseif($phase==='enom-test-calls'){
     require __DIR__.'/Support/installed-test-counter.php';
 }elseif($phase==='enom-test-call-count'){
@@ -229,9 +221,7 @@ if($phase==='bridge-seed'){
         require __DIR__.'/Support/namesilo-nexus.php';
     }else{require __DIR__.'/renewal-execution-namesilo-test.php';}
 }elseif(in_array($phase,['acquisition','enom-exchange'],true)){
-    try { require __DIR__.'/Support/runtime-acquisition.php'; } catch (Throwable $error) {
-        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
-    }
+    require __DIR__.'/Support/runtime-acquisition.php';
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
     expect(!is_link(base_path('extensions/Servers/Domains')),'Runtime is installed files, never a source link');
