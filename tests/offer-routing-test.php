@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmissio
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 // Real installed container seams are necessary: a caller-supplied adapter matrix cannot prove cutover.
-(new Installation)->install(); extract(commerceFixture(true));
+(new Installation)->install(); extract(commerceFixture(true,active:true));
 app()->instance(AccountBindings::class, $bindings); app()->instance(NativeCatalogue::class, $native);
 app()->instance(Clock::class, new FakeClock($now)); Runtime::register();
 same(true, is_callable([CallerRouting::class, 'contract']), 'Installed routing must expose its compiled construction-only contract');
@@ -21,7 +21,7 @@ same(15, count($contract['routes']), 'Contract covers every installed caller fam
 expect(preg_match('/^[a-f0-9]{64}$/D', $contract['id']) === 1, 'Contract identifier is digest-only');
 same(null, Capabilities::routed(), 'Construction probe cannot leak future capability routing');
 same(null, OfferScheduler::routed(), 'Fresh installation keeps legacy scheduling');
-same(app(ObservationWork::class), Runtime::observations(), 'Installed runtime still selects legacy before activation');
+try{Runtime::observations();throw new LogicException('Legacy scheduler remained available');}catch(DomainException $e){same(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,$e->getMessage(),'Unconverted runtime names the bridge');}
 same($before, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Inspection writes no catalogue rows');
 same($calls, $reads->calls, 'Inspection does not resolve a provider');
 $admission = app(CartAdmission::class);
