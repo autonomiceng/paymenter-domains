@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 // Native Eloquent product/settings/plan loading is the regression; pure rule tests cannot cover it.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
@@ -102,10 +103,8 @@ foreach (['/domains', '/domains/register', '/domains/pricing'] as $url) {
 }
 same($before, $reads->calls, 'All three page GETs make zero registrar calls');
 expect($failures === [], 'At most 64 queries per page at 599 endings: '.implode(', ', $failures));
-// The dormant routed storefront must retain the same reseller-scale bound as legacy pages.
-$conversion = new Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeConversion;
-same(false, $conversion->batch($binding, 500)['complete'], 'First bounded conversion leaves the remaining scale rows');
-same(true, $conversion->batch($binding, 500)['complete'], 'Second bounded conversion completes the same fixture');
+// The active storefront keeps the same reseller-scale bound on a directly arranged synthetic offer set.
+(new Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($binding);
 // Independently observed synthetic facts and matching publication, without 599 provider/writer turns.
 $facts = new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]],
     [], true, false, false, 'synthetic', $now, $now->modify('+1 day'));

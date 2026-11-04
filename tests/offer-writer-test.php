@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -8,7 +9,7 @@ require __DIR__.'/Support/accounts.php';
 
 use App\Models\{Invoice, InvoiceItem, InvoiceTransaction, Order, Plan, Product, Server, Service};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferState, Projection, Query, Retail, Revision, UpgradeConversion, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferState, Projection, Query, Retail, Revision, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
@@ -24,7 +25,7 @@ $b = CatalogueAcceptances::binding(Account::where('server_id', $enom->server_id)
 $n = CatalogueAcceptances::binding(Account::where('server_id', $namesilo->server_id)->sole());
 // A retained staff master stop is independent of saved/default selling intent.
 $enom->update(['enabled' => false]);
-$converter = new UpgradeConversion;
+$converter = new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture;
 $converter->batch($b); $converter->batch($n);
 $convertedIntent = json_decode(DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_intent'), true);
 same(['register', 'renew', 'transfer'], $convertedIntent['stops'], 'Converted staff master stop remains explicit offer intent');

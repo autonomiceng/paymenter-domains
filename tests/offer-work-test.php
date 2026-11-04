@@ -1,13 +1,14 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/accounts.php';
 
 use Illuminate\Support\Facades\{DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, FeedObserved, Intent, OfferWork, Projection, Query, UpgradeConversion, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, FeedObserved, Intent, OfferWork, Projection, Query, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
@@ -24,7 +25,7 @@ expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferWork.php'), 'One dorman
 extract(commerceFixture());
 $b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
 $n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
-(new UpgradeConversion)->batch($b); (new UpgradeConversion)->batch($n);
+(new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b); (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($n);
 $clock = new class($now->modify('+1 minute')) implements Clock {
     public function __construct(public DateTimeImmutable $time) {}
     public function now(): DateTimeImmutable { return $this->time; }

@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -20,7 +21,7 @@ expect(is_file(dirname(__DIR__).'/Domains/Catalogue/CallerRouting.php'), 'Shared
     same('legacy', \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::legacy(static fn () => 'legacy'), 'Nested caller hooks remain legacy');
 });
 $legacy = $sellers->selection('com', 'register', 1, $now);
-(new \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeConversion)->batch(CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole()));
+(new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole()));
 DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_retained_annual_retail' => '99.00',
     'catalogue_intent' => '{"sell":false}', 'catalogue_facts' => null]);
 same($legacy->jsonSerialize(), $sellers->selection('com', 'register', 1, $now)->jsonSerialize(), 'Seller hook keeps legacy selection behavior');

@@ -1,12 +1,13 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/OfferFixture.php';
 $deferDomainsBootstrap = true;
 require __DIR__.'/mariadb-bootstrap.php';
 require __DIR__.'/FakeRegistrar.php';
 use App\Models\{Role, Server, User};
 use Illuminate\Support\Facades\{Artisan, DB, Schema};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeConversion, UpgradeGate, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeGate, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices;
@@ -33,7 +34,7 @@ if ($phase === 'seed') {
     $b = $bindings->configure($server->id, 'enom', Environment::Test, ['token'=>'synthetic-account']);
     $role = Role::create(['name'=>'Synthetic import staff','permissions'=>[Staff::VIEW,Staff::POLICY,'admin.domains.settings.import']]);
     User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'race-staff@example.test','password'=>'synthetic-password','role_id'=>$role->id]);
-    (new UpgradeConversion)->batch($b); (new UpgradeGate)->pause();
+    (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b); (new UpgradeGate)->pause();
     Schema::create('offer_fixture_reads', static function ($t): void { $t->id(); });
 } else { $b = CatalogueAcceptances::binding(Account::sole()); }
 $generation = UpgradeGate::generation();

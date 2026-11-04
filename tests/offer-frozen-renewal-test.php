@@ -1,11 +1,12 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 require __DIR__.'/bootstrap.php';
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Capabilities.php'),'Independent renewal capabilities required');
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection, UpgradeConversion};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, ObservationSchema, OfferSchema, OfferWorkSchema};
 ObservationSchema::install(); OfferSchema::install(); OfferWorkSchema::install();
@@ -20,7 +21,7 @@ $frozen=static function(): string {
     return serialize($rows);
 };
 $before=$frozen(); $writes=$state->writes;
-foreach(Account::all() as $account){(new UpgradeConversion)->batch(CatalogueAcceptances::binding($account));}
+foreach(Account::all() as $account){(new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($account));}
 $caps=new Capabilities(new CallerPorts(new Projection($native),$clock,$bindings,static fn()=>null,static fn()=>true),$clock,static fn()=>null);
 same('10.40',$caps->holder($binding,'com')->retail,'Renewal holder keeps retained annual retail with unknown facts');
 commerceReject(fn()=>$caps->requireRenewal($binding,'com'));

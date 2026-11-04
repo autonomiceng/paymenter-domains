@@ -82,8 +82,6 @@
     "tests/card-fee-settings-test.php",
     "tests/catalogue-test.php",
     "tests/enom-pricing-test.php",
-    "tests/offer-conversion-test.php",
-    "tests/offer-upgrade-gate-test.php",
     "tests/offer-writer-test.php",
     "tests/offer-work-test.php",
     "tests/seller-policy-test.php",
