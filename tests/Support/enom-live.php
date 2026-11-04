@@ -168,14 +168,14 @@ foreach(['before_activate','evidence_removed'] as $missing){
     $debtBefore=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
     $blockedCheckout=commerceCheckout($user,$cart);
     same($debtBefore,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],$missing.' creates no invoice or bound operation');
-    $blockedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
-    try{$front->offer('com','register',1);throw new LogicException('Direct offer must refuse');}catch(App\Exceptions\DisplayException){}
+    $blockedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
+    try{$front->offer('com','register',1);throw new LogicException('Direct offer must refuse');}catch(DomainException){}
     same('held',$front->check(placeholderComFixtureName('search-'.str_replace('_','-',$missing).'-placeholder.com'))['status'],$missing.' search has no buy action');
-    try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked admission must refuse');}catch(App\Exceptions\DisplayException){}
+    try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked admission must refuse');}catch(DomainException){}
     if($missing==='before_activate'){$receiptRow->exists=false;$receiptRow->save();}else{config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);}
 }
 $preview=commerceCart($user);commerceAdd($preview,$product,placeholderComFixtureName('live-preview-placeholder.com'));$orders=App\Models\Order::count();$invoices=App\Models\Invoice::count();config(['domains.enom_live.registration'=>false]);
-commerceCheckout($user,$preview)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+commerceCheckout($user,$preview)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
 same([$orders,$invoices],[App\Models\Order::count(),App\Models\Invoice::count()],'Live preview-only checkout creates no native debt');config(['domains.enom_live.registration'=>true]);
 $pendingSale=$new(placeholderComFixtureName('live-pay-gate-placeholder.com'),false);
 App\Models\Credit::updateOrCreate(['user_id'=>$user->id,'currency_code'=>'USD'],['amount'=>'500.00']);

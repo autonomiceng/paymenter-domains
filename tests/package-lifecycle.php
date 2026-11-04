@@ -153,7 +153,9 @@ if($phase==='bridge-seed'){
     }
 }elseif($phase==='enom-test-transfer'){
     require __DIR__.'/Support/enom-transfer-setup.php';
-    require __DIR__.'/Support/enom-test-transfer.php';
+    try { require __DIR__.'/Support/enom-test-transfer.php'; } catch (Throwable $error) {
+        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
+    }
 }elseif($phase==='enom-test-transfer-restart'){
     require __DIR__.'/Support/enom-transfer-restart.php';
 }elseif($phase==='enom-test-management'){

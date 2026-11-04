@@ -79,7 +79,7 @@ $write('test_renewal',['accept'=>true,'verified'=>true]);$server->settings()->up
 $GLOBALS['enomWire']['during']=static function(array $p)use($op,$clock):void {if($p['Command']==='Extend'){(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);}};
 Cache::flush();$used=DB::table(EnomTestSendLimitSchema::SENDS)->count();
 (new RuntimeWork($clock,new RuntimePorts))->operation($op->id);$commands=array_column($GLOBALS['enomWire']['forms'],'Command');
-same(['GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','Extend'],$commands,'Two bounded six-read assessments and one Extend');
+same(['GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','Extend'],$commands,'Two bounded six-read assessments and one Extend: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code,$commands]));
 same('pending',$op->fresh()->state,'Paid renewal acknowledged once');same($used+13,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Extend counted once among the 13 sends');same($before,$money(),'Renewal dispatch changes no native financial bytes');
 $extend=end($GLOBALS['enomWire']['forms']);same(['1','no'],[$extend['NumYears'],$extend['UseCreditCard']],'One annual renewal without card');
 $s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');
