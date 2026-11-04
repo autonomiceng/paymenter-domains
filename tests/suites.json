@@ -460,6 +460,7 @@
     "tests/namesilo-installed-quote-test.php",
     "tests/live-activation-namesilo-test.php",
     "tests/namesilo-test-activation-test.php",
+    "tests/namesilo-settings-test.php",
     "tests/namesilo-test-runtime-test.php",
     "tests/namesilo-test-catalogue-test.php",
     "tests/dialog-footer-test.php",

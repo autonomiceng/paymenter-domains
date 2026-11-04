@@ -75,7 +75,7 @@ class RegistrarAccount extends Page
     {
         $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
         if (!$this->record()) { return [$setup('configure'),$setup('enroll_sandbox')]; }
-        return [ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id)])
+        return [...($this->record()->environment==='test'&&!$this->record()->processing_enabled?[$setup('processing')->name('activate_test')->label('Activate')]:[]),ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id)])
             ->label('More')->button()->outlined()->color('gray')->size('sm')->icon('heroicon-m-chevron-down')->iconPosition('after')];
     }
     /** Rebuild the page after a System checks action changed what it shows. */
