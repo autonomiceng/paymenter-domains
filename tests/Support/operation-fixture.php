@@ -15,11 +15,16 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
-extract(commerceFixture(true, $fixtureActivation ?? null, environment: $fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, ending: $fixtureEnding ?? 'com')); $clock = new FakeClock($now);
+extract(commerceFixture(true, $fixtureActivation ?? null, environment: $fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, ending: $fixtureEnding ?? 'com', active:$activeCommerceFixture??false)); $clock ??= new FakeClock($now);
 $transfers = new \Paymenter\Extensions\Servers\Domains\Services\TransferInputs($clock, new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock));
 $transferCheck = new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline RDAP')));
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => $fixtureEnding ?? 'com']);
-$admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transferCheck), $clock); $admission->boot();
+if(isset($offers)){
+    require_once __DIR__.'/offer-commerce.php';
+    $eligibility=new class($bindings,$clock,$transferCheck) extends CheckoutEligibility {use OfferCommerceRoute;};$eligibility->fixtureOffers=$offers;
+    $admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {use OfferCommerceRoute;};$admission->fixtureOffers=$offers;
+}else{$admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transferCheck), $clock);}
+$admission->boot();
 $invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); $invoiceBinding->boot();
 if(app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)){app()->instance(InvoiceBinding::class,$invoiceBinding);}
 $user = commerceUser(); $user->update(['email' => 'finance-owner@example.com']);
@@ -69,9 +74,9 @@ $preflight = new class($clock) implements OperationPreflight {
             new Money($this->cost, 'USD'), true, $this->premium, $this->clock->now()->modify('-'.$this->ageSeconds.' seconds'), $this->clock->now()->modify('+'.$this->freshSeconds.' seconds'), OperationClaims::payloadDigest($op));
     }
 };
-$writer = new class($clock) implements AdmittedRegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\WriteGate {
+$writer = new class($clock,$caps??null) implements AdmittedRegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\WriteGate {
     public ?DateTimeImmutable $blockedUntil = null; public bool $disabled = false; public int $reservations = 0;
-    public function __construct(private $clock) {}
+    public function __construct(private $clock,private $caps) {}
     public function requireEnabled(\Paymenter\Extensions\Servers\Domains\Data\Action $action): void {
         if ($this->disabled) { throw new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('write_disabled'); }
     }
@@ -85,7 +90,7 @@ $writer = new class($clock) implements AdmittedRegistrarDriver, \Paymenter\Exten
     public bool $consume = true; public bool $wrongBinding = false; public Disposition $disposition = Disposition::Unknown;
     public function register(AdmittedOperation $op, RequestContext $context): DriverResult {
         same(0, DB::transactionLevel(), 'Write never under database locks');
-        if ($this->consume) { $this->engine->consume($op, $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($op->binding, true, true, 25, static fn () => true)); commerceReject(fn () => $this->engine->consume($op, $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($op->binding, true, true, 25, static fn () => true))); }
+        if ($this->consume) { $this->engine->consume($op, $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($op->binding, true, true, 25, static fn () => true,catalogue:$this->caps)); commerceReject(fn () => $this->engine->consume($op, $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($op->binding, true, true, 25, static fn () => true,catalogue:$this->caps))); }
         $context->claimRead($context->binding); $this->calls++; $this->last = $op; $this->context = $context;
         $saved = Operation::where('operation_key', $op->operationKey)->sole();
         same('sealed', $saved->attempt['seal'], 'Seal durably committed before writer');

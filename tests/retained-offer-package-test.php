@@ -31,7 +31,7 @@ foreach([
  fn()=>$prices->current($binding->serverId,$binding->fingerprint,'com','register',1,'USD',$now),
  fn()=>$sellers->displayCatalogues(['com']),
  fn()=>$sellers->selection('com','register',1,$now),
- fn()=>$sellers->admit([]),
+ fn()=>$sellers->admit([],$now),
 ] as $read){
  try{$read();throw new LogicException('Final package reached legacy policy');}
  catch(DomainException $e){same(Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,$e->getMessage(),'Legacy policy entry points name the bridge');}

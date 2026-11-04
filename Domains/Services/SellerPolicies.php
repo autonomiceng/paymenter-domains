@@ -12,9 +12,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tl
 final class SellerPolicies
 {
     protected function catalogue(): ?AcquisitionOffers
-    { return CallerRouting::resolve(AcquisitionOffers::class); }
+    { return $this->offers ?? CallerRouting::resolve(AcquisitionOffers::class); }
 
-    public function __construct(private readonly PriceCatalogue $prices, private readonly AccountBindings $bindings) {}
+    public function __construct(private readonly PriceCatalogue $prices, private readonly AccountBindings $bindings, private readonly ?AcquisitionOffers $offers = null) {}
 
     public function initialize(string $tld, ?int $generation = null): SalesPolicy
     {

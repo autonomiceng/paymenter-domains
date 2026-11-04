@@ -6,7 +6,7 @@ require_once __DIR__.'/Support/OfferFixture.php';
 require_once __DIR__.'/native-app.php';
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/Capabilities.php'),'Independent holder capabilities required');
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-$installedFixture=true;
+$installedFixture=true;$activeCommerceFixture=true;
 require __DIR__.'/Support/reconciliation-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection, Facts, OfferState};
