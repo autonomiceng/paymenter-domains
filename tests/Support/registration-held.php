@@ -33,7 +33,7 @@ $product=App\Models\Product::create(['name'=>'Withdrawn synthetic domain','slug'
     'category_id'=>$category->id,'server_id'=>$server->id,'hidden'=>true,'stock'=>null,'per_user_limit'=>0,'allow_quantity'=>'separated']);
 foreach(['domains_catalogue'=>'1','domains_tld_id'=>(string)$tld->id,'domains_action'=>'register','domains_registrar'=>'namesilo'] as $key=>$value){$product->settings()->create(['key'=>$key,'value'=>$value,'type'=>'string','encrypted'=>false]);}
 $product->plans()->create(['name'=>'1 year','type'=>'recurring','billing_period'=>1,'billing_unit'=>'year']);
-$sellers=app(SellerPolicies::class);$sellers->initialize($ending);
+$sellers=app(SellerPolicies::class);
 same($product->id,$native->product($tld,'register')->id,'Adversarial mapping retains its native route');same(null,$product->stock,'Fresh withdrawn registration product has unlimited stock');
 same([],app(Storefront::class)->endings(),'Configured identity alone publishes no offer');
 commerceReject(fn()=>app(Storefront::class)->offer($ending,'register',1));
