@@ -19,6 +19,8 @@ expect(\Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($bin
 saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
 $tld=installedOfferEvidence($binding,$clock);
 $write('test_renewal',['accept'=>true,'verified'=>true]);
+// Keep the independent renewal writer off during its negative composition cases.
+config(['domains.enom_writes.renewal'=>false]);
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
 $catalogueUsed=enomTestSendCount();same(2,$catalogueUsed,'Only real configure and probe consume setup sends; independent evidence is local');
@@ -65,18 +67,12 @@ $beforeIdentity=count($GLOBALS['enomWire']['forms']);try{app(Paymenter\Extension
 same($limitUsed,enomTestSendCount(),'Refused identity send records no attempt');
 same($beforeIdentity,count($GLOBALS['enomWire']['forms']),'Identity at the send limit stops before curl_exec');config(['domains.enom_test_sends_per_day'=>1000]);
 
-$previewUser=commerceUser();$previewProduct=app(NativeCatalogue::class)->product($tld,'register');$previewCart=commerceCart($previewUser);commerceAdd($previewCart,$previewProduct,placeholderComFixtureName('preview-optout-placeholder.com'));
-config(['domains.enom_writes.registration'=>null]);expect(!$ports->accepted($a),'Missing deployment write key keeps A4 preview-only behavior');
-$beforeOrders=App\Models\Order::count();$beforeInvoices=App\Models\Invoice::count();$beforeTransactions=App\Models\InvoiceTransaction::count();$beforeCalls=count($GLOBALS['enomWire']['forms']);
-commerceCheckout($previewUser,$previewCart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Test domains can’t be ordered. Remove them to check out.','type'=>'error']);
-same($beforeOrders,App\Models\Order::count(),'Opt-out checkout creates no order');same($beforeInvoices,App\Models\Invoice::count(),'Opt-out checkout creates no invoice');same($beforeTransactions,App\Models\InvoiceTransaction::count(),'Opt-out checkout creates no payment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Opt-out checkout makes no Enom calls');
-config(['domains.enom_writes.registration'=>true,'domains.enom_identity.environment'=>'live']);
-$beforeOrders=App\Models\Order::count();$beforeInvoices=App\Models\Invoice::count();$beforeTransactions=App\Models\InvoiceTransaction::count();$beforeCalls=count($GLOBALS['enomWire']['forms']);
-// The pre-transaction refresh refuses the changed identity before order admission's TEST preview check.
-commerceCheckout($previewUser,$previewCart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'We couldn’t check this domain. Try checkout again, or edit or remove it from your cart.','type'=>'error']);
-same($beforeOrders,App\Models\Order::count(),'Changing identity mode to live cannot reopen accepted TEST checkout');same($beforeInvoices,App\Models\Invoice::count(),'Identity-mode mismatch creates no invoice');same($beforeTransactions,App\Models\InvoiceTransaction::count(),'Identity-mode mismatch creates no payment');same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Identity-mode mismatch makes no Enom calls');
-config(['domains.enom_identity.environment'=>'test']);
-config(['domains.enom_writes.registration'=>true]);
+// Active paused accounts have no public offer, unlike the retired A4 preview catalogue.
+// Deployment-off stale checkout coverage remains at the end of this installed phase;
+// default-held guessed checkout and zero obligations are covered by registration-held.php.
+$beforeCalls=count($GLOBALS['enomWire']['forms']);
+same([],app(Storefront::class)->endings(),'A catalogue review cannot open paused new sales');
+same($beforeCalls,count($GLOBALS['enomWire']['forms']),'Closed active display makes no provider request');
 $corrupt=clone $a;$corrupt->stable_identity='changed-identity';expect(!$ports->registered($corrupt),'Mismatched identity reports unregistered instead of throwing');
 $deny=static function(callable $work):void {try{$work();throw new LogicException('Expected refusal');}catch(DomainException) {}};
 foreach([false,'true'] as $off){config(['domains.enom_writes.registration'=>$off]);expect(!$ports->accepted($a),'Only boolean true enables composition');}
@@ -105,7 +101,7 @@ Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void
 config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();
 $user=commerceUser();$user->update(['email'=>'registration-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
-$product=app(NativeCatalogue::class)->product($tld,'register');$front=app(Storefront::class);
+$front=app(Storefront::class);
 $before=count($GLOBALS['enomWire']['forms']);$beforeUsed=enomTestSendCount();Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])->assertSee('API calls, last 24 hours')->assertSee(number_format(EnomTestSendLimit::usage('test-uid')['day']).' of '.number_format(EnomTestSendLimit::usage('test-uid')['day_limit']))->assertSeeInOrder(['Sales','Registrations','On','Transfers'])->assertDontSee('TEST-SECRET-TOKEN');$front->endings();same($before,count($GLOBALS['enomWire']['forms']),'Page views make zero calls');same($beforeUsed,enomTestSendCount(),'Page views record no TEST sends');
 $before=count($GLOBALS['enomWire']['forms']);Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
     ->callAction('checkBalance')->assertNotified('Balance updated');
@@ -113,6 +109,9 @@ same($before+1,count($GLOBALS['enomWire']['forms']),'Staff Refresh now makes one
 same('GetBalance',$GLOBALS['enomWire']['forms'][array_key_last($GLOBALS['enomWire']['forms'])]['Command'],'Existing staff Refresh now reads the opted-in TEST balance');
 $manualBalance=DB::table(Paymenter\Extensions\Servers\Domains\Services\BalanceSchema::TABLE)->where('server_id',$server->id)->where('account_fingerprint',$binding->fingerprint)->first();
 same(['manual','USD',null],[$manualBalance->source,$manualBalance->currency,$manualBalance->last_error_code],'Staff balance action records fresh USD evidence');
+config(['domains.enom_writes.renewal'=>true]);
+$write('processing',['enabled'=>true,'confirmed'=>true]);$write('publish',[],$tld->id);
+$product=app(NativeCatalogue::class)->product($tld,'register');expect($product!==null,'Real active publication follows deliberate processing activation');
 same('available',$front->check('paid-test-placeholder.com')['status'],'Explicit search');
 $worker=app(RuntimeWork::class);$unpaidUser=commerceUser();$unpaidUser->update(['email'=>'unpaid-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$unpaidUser->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
@@ -150,7 +149,7 @@ $new=static function(string $name)use($user,$product,$clock):Operation {
     return $op->fresh();
 };
 // Default processing off holds a native paid order without opening a provider request.
-$paused=$new(placeholderComFixtureName('processing-off-placeholder.com'));$before=count($GLOBALS['enomWire']['forms']);$pausedUsed=enomTestSendCount();$worker->operation($paused->id);
+$paused=$new(placeholderComFixtureName('processing-off-placeholder.com'));$write('processing',['enabled'=>false,'confirmed'=>true]);$before=count($GLOBALS['enomWire']['forms']);$pausedUsed=enomTestSendCount();$worker->operation($paused->id);
 same(['held','processing'],[$paused->fresh()->state,$paused->fresh()->safe_code],'Paid TEST order reports the staff processing hold');
 same($before,count($GLOBALS['enomWire']['forms']),'Processing-off queued registration sends no Enom request');same($pausedUsed,enomTestSendCount(),'Processing-off does not reserve a TEST call');
 $write('processing',['enabled'=>true,'confirmed'=>true]);expect($a->fresh()->processing_enabled,'Staff deliberately enabled processing');
@@ -400,7 +399,7 @@ same('pending',$midnightOp->fresh()->state,'Midnight during preflight does not c
 same($midnightUsed+4,enomTestSendCount(),'Preflights and Purchase each record one attempt across UTC midnight');
 expect($a->fresh()->processing_enabled,'Catalogue-off regression starts after staff enabled processing');$catalogueCart=commerceCart($user);commerceAdd($catalogueCart,$product,placeholderComFixtureName('catalogue-off-processing-placeholder.com'));config(['domains.enom_catalogue.enabled'=>false]);$counts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
 commerceCheckout($user,$catalogueCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');same($counts,[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])],'Catalogue key-off with processing enabled creates no order, invoice, payment, or Purchase');config(['domains.enom_catalogue.enabled'=>true]);
-config(['domains.enom_writes.registration'=>null]);expect($a->fresh()->processing_enabled,'Key-off regression starts after staff enabled processing');$closedCart=commerceCart($user);commerceAdd($closedCart,$product,placeholderComFixtureName('key-off-processing-placeholder.com'));$counts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
+expect($a->fresh()->processing_enabled,'Key-off regression starts after staff enabled processing');$closedCart=commerceCart($user);commerceAdd($closedCart,$product,placeholderComFixtureName('key-off-processing-placeholder.com'));config(['domains.enom_writes.registration'=>null]);$counts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
 commerceCheckout($user,$closedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');same($counts,[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])],'Key-off with processing enabled creates no order, invoice, payment, or Purchase');config(['domains.enom_writes.registration'=>true]);
 $clock->at=$clock->now()->modify('+1 second');$tld=installedOfferEvidence($binding,$clock,true);
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);

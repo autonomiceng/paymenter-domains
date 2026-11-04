@@ -21,7 +21,7 @@ config(['cache.default'=>'database','session.driver'=>'database','queue.default'
 Queue::fake();
 $user=commerceUser();$user->update(['email'=>'registration-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
-$write('processing',['enabled'=>true,'confirmed'=>true]);
+$write('processing',['enabled'=>true,'confirmed'=>true]);$write('publish',[],$tld->id);
 $product=app(NativeCatalogue::class)->product($tld,'register');
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('paid-test-placeholder.com'));
 commerceCheckout($user,$cart)->assertHasNoErrors();
