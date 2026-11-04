@@ -146,9 +146,9 @@ DB::table('domains_domains')->where('id', $domain->id)->update(['authority_gener
 $reject(static fn () => Operation::create(array_replace($op->getAttributes(), ['id' => 2, 'operation_key' => 'invalid:zero', 'authority_generation' => 0])));
 DB::table('domains_domains')->where('id', $domain->id)->update(['authority_generation' => 1]);
 $reject(static fn () => Tld::create(['tld' => 'com', 'server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $b->fingerprint]));
-Server::findOrFail(1)->update(['extension' => 'Other']);
+DB::table('servers')->where('id', 1)->update(['extension' => 'Other']); // Deliberate retained corruption bypasses model identity guards.
 $reject(static fn () => $bindings->reader(1));
-Server::findOrFail(1)->update(['extension' => 'Domains']);
+DB::table('servers')->where('id', 1)->update(['extension' => 'Domains']);
 config(['app.url' => 'https://live.example.invalid/']);
 $live = $bindings->configure(3, 'enom', Environment::Live, $credentials);
 $reject(static fn () => $bindings->reader(3));
@@ -189,7 +189,7 @@ $localBoot = new RegistrarRegistry;
 \Paymenter\Extensions\Servers\Domains\Services\RegistrarFactories::bootstrap($localBoot);
 expect(in_array('namesilo', $localBoot->keys(), true), 'NameSilo local enrollment is composed without an identity verifier');
 require __DIR__.'/Support/staff-panel.php';
-use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, SellTableSchema, SalesPolicySchema, NameSiloAccountGuard};
+use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, SalesPolicySchema, NameSiloAccountGuard};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
 SalesPolicySchema::install(); StaffAuditSchema::install();
 $staff = staffUser(['admin.domains.view', 'admin.domains.manage-policy', StaffSettingsReview::permission('configure')]);
