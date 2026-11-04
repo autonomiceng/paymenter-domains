@@ -175,11 +175,7 @@
 @media (max-width: 719px) {
     .domains table.domains-tbl.domains-stackable, .domains .domains-stackable tbody { display: block; }
     .domains .domains-stackable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-    /* The two sort links stay on phones: the rest of the head is the labels in each row. */
-    .domains .domains-list thead { position: static; display: block; width: auto; height: auto; clip: auto; }
-    .domains .domains-list thead tr { display: flex; gap: 1.5rem; padding: .5rem 1rem; }
-    .domains .domains-list thead th { width: auto; padding: 0; border: 0; }
-    .domains .domains-list thead th:not([aria-sort]) { display: none; }
+    .domains .domains-list thead { display: none; }
     .domains .domains-stackable tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .375rem .75rem; padding: .875rem 1rem; border-bottom: 1px solid var(--e-line); }
     .domains .domains-stackable tbody tr:last-child { border-bottom: 0; }
     .domains .domains-stackable td { display: block; padding: 0; border: 0; }
@@ -470,6 +466,10 @@
 .domains h1.domains-mono { font-size: clamp(1.25rem, 5.5vw, 1.75rem); line-height: 1.2; font-weight: 600; overflow-wrap: anywhere; }
 .domains .domains-ph ~ .domains-notice { align-items: center; margin-bottom: 1.5rem; }
 .domains .domains-notice__tx { flex: 1; }
+@media (max-width: 719px) {
+    .domains .domains-ph ~ .domains-notice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+    .domains .domains-ph ~ .domains-notice > a { grid-column: 2; justify-self: start; }
+}
 .domains .domains-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 2.25rem; align-items: start; }
 .domains .domains-sheet { --e-field: var(--e-bg); min-width: 0; background: var(--e-panel); border: 1px solid var(--e-line); border-radius: .5rem; }
 .domains .domains-sheet > .domains-panel { background: none; border: 0; border-radius: 0; }

@@ -15,5 +15,16 @@ $words=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($result
 same(['title'=>'Enom has not answered yet','body'=>"Ask Enom to check this attempt. You can record Enom’s answer after ".$at.'.'],$words,'Staff gets a real Pacific time and next step');
 $page=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$result->id]);
 $page->assertSee($words['title'])->assertSee($words['body'])->assertDontSee('Cannot check registrar')->assertDontSee('PRIVATE-REPLY');
+require __DIR__.'/Support/owner-pages.php';
+$customer=App\Models\User::findOrFail($result->domain->user_id);
+Illuminate\Support\Facades\Auth::setUser($customer);
+$request=Illuminate\Http\Request::create('/domains/'.$result->domain_id,'GET');
+$request->setUserResolver(fn()=>$customer);$request->setLaravelSession(app('request')->session());
+$html=(new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController($owners))->show($request,$result->domain_id)->render();
+$notice=storefrontDom($html)->query('//*[@role="status" and contains(@class,"domains-notice")]')->item(0);
+expect($notice!==null,'Customer sees the uncertain registration notice');
+expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'Customer view has no staff registrar instruction');
+expect(str_contains($notice->textContent,'We’re confirming this registration with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.$at.'.'),'Customer sees the wait message and the real PT deadline');
+expect(str_contains($notice->getAttribute('class'),'domains-notice--info'),'Waiting for our registrar check asks no customer action');
 same('uncertain',$result->state,'No fabricated completion');same(null,$result->attempt['execution'],'Attempt remains unchanged');
 $nativeSuccessful=true;echo "Native local status stop explains next step and real PT time.\n";
