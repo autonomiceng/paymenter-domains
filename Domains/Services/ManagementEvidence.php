@@ -10,7 +10,7 @@ final class ManagementEvidence
     /** Only the current worker's exact, armed, unconsumed transport grant proves no send. */
     public static function retainUnsent(Operation $op,\Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol $driver): void
     {
-        $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole());
+        $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->sole());
         if($b->registrarKey!=='namesilo'||!$driver->bindsTo($b)||!$driver->unconsumed((int)$op->id)||self::$unsent!==null){throw new \DomainException('Live unsent reservation required.');}
         self::$unsent=[(int)$op->id,$op->attempt['management_claim']??null];
         try{$op->update(['state'=>'held','safe_code'=>'management_definitely_unsent','lease_expires_at'=>null,
@@ -78,7 +78,7 @@ final class ManagementEvidence
 
         if(array_key_exists('management_test_unsent',$old)&&($new['management_test_unsent']??null)!==$old['management_test_unsent']){throw new \DomainException('Unsent management proof frozen.');}
         if(!array_key_exists('management_test_unsent',$old)&&array_key_exists('management_test_unsent',$new)){
-            $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
+            $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
             if($new['management_test_unsent']!==true||$op->funding_basis!=='non_billable_management'||($old['seal']??null)!=='sealed'||($new['seal']??null)!=='sealed'||($new['send_state']??null)!=='definitely_unsent'||array_key_exists('management_reads',$new)||array_key_exists('management_ack',$new)||$op->provider_order_id!==null||$op->state!=='held'||$op->safe_code!=='enom_test_management_call_cap'
                 ||!EnomTestWriteReservation::unconsumed($b,'management',(int)$op->id)){throw new \DomainException('Unsent management reservation required.');}
         }

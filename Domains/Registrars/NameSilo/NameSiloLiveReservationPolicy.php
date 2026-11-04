@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\LiveReservationPolicy;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
@@ -18,7 +19,7 @@ final class NameSiloLiveReservationPolicy implements LiveReservationPolicy
             ||isset($parts['query'])||isset($parts['fragment'])||strlen($site)>255||rtrim($site,'/')!==$site
             ||$site!==rtrim((string)config('app.url'),'/')){throw new \DomainException('Live NameSilo site unavailable.');}
         $account=Account::where('server_id',$binding->serverId)->sole();
-        $binding->requireMatch(CatalogueAcceptances::binding($account));
+        $binding->requireMatch(AccountBindings::binding($account));
         Server::whereKey($binding->serverId)->where('extension','Domains')->where('enabled',true)->sole();
         $rows=config('domains.namesilo_live.accounts',[]);$row=is_array($rows)?($rows[$account->stable_identity]??null):null;
         if($account->live_site!==$site||!is_array($row)||($row['fingerprint']??null)!==$binding->fingerprint

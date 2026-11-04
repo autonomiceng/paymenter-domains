@@ -32,7 +32,7 @@ final class HistoryAcceptances
             if ($review && ($review->action !== 'history' || $review->serverId !== $binding->serverId)) { throw new \DomainException('History review mismatch.'); }
             $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail();
-            $binding->requireMatch(CatalogueAcceptances::binding($account));
+            $binding->requireMatch(AccountBindings::binding($account));
             if (!$server->enabled || $server->extension !== 'Domains') { throw new \DomainException('Unavailable server.'); }
             self::saveLocked($acceptance); $review?->record();
         });
@@ -43,7 +43,7 @@ final class HistoryAcceptances
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer history transaction required.');}
         $binding=$acceptance->binding;EnomLiveActivation::requireHistory($acceptance);
         $server=Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
-        $binding->requireMatch(CatalogueAcceptances::binding(Account::where('server_id',$binding->serverId)->lockForUpdate()->sole()));
+        $binding->requireMatch(AccountBindings::binding(Account::where('server_id',$binding->serverId)->lockForUpdate()->sole()));
         $key = self::KEY.(str_ends_with($acceptance->vocabulary, '_renewal_v1') ? '_renewal' : (str_ends_with($acceptance->vocabulary, '_transfer_v1') ? '_transfer' : ''));
         $setting = $server->settings()->where('key', $key)->lockForUpdate()->first()
             ?? $server->settings()->make(['key' => $key]);
@@ -57,7 +57,7 @@ final class HistoryAcceptances
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer history transaction required.'); }
         $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
-        $binding->requireMatch(CatalogueAcceptances::binding(Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail()));
+        $binding->requireMatch(AccountBindings::binding(Account::where('server_id', $binding->serverId)->lockForUpdate()->firstOrFail()));
         $suffix = match ($action) { Action::Register => '', Action::Renew => '_renewal', Action::Transfer => '_transfer', default => throw new \DomainException('History action required.') };
         $server->settings()->where('key', self::KEY.$suffix)->delete();
     }

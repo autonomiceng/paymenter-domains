@@ -41,7 +41,7 @@ final class AdoptionMapping
         CanonicalName::parse($target->name, [$tld->tld]);
         try { $account = $extension['account'] ?? Account::where('server_id', $target->serverId)->sole(); }
         catch (\Throwable) { throw new \DomainException('account_unconfirmed'); }
-        $binding = CatalogueAcceptances::binding($account);
+        $binding = AccountBindings::binding($account);
         if ($binding->registrarKey !== $tld->registrar_key || $binding->environment !== $target->environment
             || $binding->fingerprint !== $tld->account_fingerprint) { throw new \DomainException('account_unconfirmed'); }
         $this->bindings->requireAdoptionSource($binding->registrarKey);

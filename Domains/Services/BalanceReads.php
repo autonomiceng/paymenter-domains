@@ -41,7 +41,7 @@ final class BalanceReads
             if (!in_array($source,['daily','preflight','renewal','manual'],true)) { throw new \LogicException('Invalid balance source.'); }
             DB::transaction(function()use($binding,$money,$at,$source,$error):void {
                 $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->firstOrFail();
-                $binding->requireMatch(CatalogueAcceptances::binding($a));
+                $binding->requireMatch(AccountBindings::binding($a));
                 $q=DB::table(BalanceSchema::TABLE)->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint);
                 $row=(clone $q)->lockForUpdate()->first();
                 if ($row && (int)$row->attempted_at>$at->getTimestamp()) { return; }

@@ -106,7 +106,7 @@ final class Capabilities
             $row = $p;
             if ($p->catalogue_observation !== null) { $cost = $this->current(OfferState::cost(OfferState::decode($p->catalogue_observation))); }
         }
-        $value = UpgradeEvidence::money($t->catalogue_retained_annual_retail, 2);
+        $value = OfferState::money($t->catalogue_retained_annual_retail, 2);
         $retail = $value !== null && \Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($value) > 0
             ? new RenewalPrice($row?->id, $row?->revision, $value, 'USD', true, 'retained_renewal') : null;
         return compact('retail', 'cost');

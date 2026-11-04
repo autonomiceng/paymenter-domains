@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -61,7 +62,7 @@ final class OfferReader
         foreach ($bindings as $id => $binding) {
             $server = $servers[$id] ?? throw new \DomainException('Offer server disappeared.');
             $account = $accounts[$id] ?? throw new \DomainException('Offer account disappeared.');
-            $binding->requireMatch(CatalogueAcceptances::binding($account));
+            $binding->requireMatch(AccountBindings::binding($account));
             $defaults[$id] = OfferState::decode($account->catalogue_defaults);
             foreach ($queries as $i => $query) {
                 if ($query->binding->serverId !== $id) { continue; }

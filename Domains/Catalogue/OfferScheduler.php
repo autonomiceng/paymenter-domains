@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
@@ -16,7 +17,7 @@ final class OfferScheduler
         private readonly Clock $clock, private readonly \Closure $current) {}
     public static function routed(): ?self { return CallerRouting::resolve(self::class); }
     public function enroll(int $server): void
-    { $this->offers->wake(CatalogueAcceptances::binding(Account::where('server_id', $server)->sole())); }
+    { $this->offers->wake(AccountBindings::binding(Account::where('server_id', $server)->sole())); }
     public function sync(AccountBinding $b, RequestOrigin $origin = RequestOrigin::Interactive, ?int $expectedGeneration = null): void { $this->offers->sync($b, $origin, $expectedGeneration); }
     public function wake(AccountBinding $b): void { $this->offers->wake($b); }
     public function requestFacts(AccountBinding $b, string $tld): void { $this->offers->requestFacts($b, $tld); }

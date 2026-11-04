@@ -17,7 +17,7 @@ final class HolderPricing implements NativeRepriceGuard
     {
         if ($offers = $this->offers ?? Capabilities::routed()) {
             if ($currency !== 'USD') { throw new \DomainException('USD holder retail required.'); }
-            $b = CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $domain->server_id)->sole());
+            $b = AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $domain->server_id)->sole());
             if ($domain->account_fingerprint !== $b->fingerprint || $domain->registrar_key !== $b->registrarKey) { throw new \DomainException('Holder binding changed.'); }
             return $offers->holder($b, $domain->tld, $lock ? ($locked ?? throw new \LogicException('Locked holding TLD required.')) : null);
         }

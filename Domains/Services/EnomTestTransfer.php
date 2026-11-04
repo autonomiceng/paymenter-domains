@@ -29,7 +29,7 @@ final class EnomTestTransfer
     {
         if(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->value('registrar_key')==='namesilo'){NameSiloFeatureSettings::review($r,$data,'transfer');return;}
         $r->local(function()use($r,$data):void {
-            $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole());
+            $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole());
             $live=$b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live;$label=$live?'Live':'TEST';
             if((str_starts_with($r->action,'live_')||$r->action==='activate')!==$live||(($data['accept']??false)===true&&!self::enabled($b))){throw new \DomainException($label.' transfer deployment is unavailable.');}
             $value=null;
@@ -47,7 +47,7 @@ final class EnomTestTransfer
     public static function endings(int $serverId): array
     {
         try{
-            $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$serverId)->sole());
+            $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$serverId)->sole());
             if ($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) { return self::accepted($b)?$caps->endings($b,'transfer'):[]; }
             return self::accepted($b)?array_map('strval',array_keys(array_filter(CatalogueAcceptances::load($b)->endings,static fn(array $row)=>$row['transfer']!==[]))):[];
         }catch(\Throwable){return [];}

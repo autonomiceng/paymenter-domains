@@ -41,8 +41,8 @@ final class PriceFill
     public function daily(Account $account): void
     {
         OperationClaims::outside();
-        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),RequestOrigin::Background);return;}
-        $generation=UpgradeGate::legacy();$binding=CatalogueAcceptances::binding($account);
+        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(AccountBindings::binding($account),RequestOrigin::Background);return;}
+        $generation=UpgradeGate::legacy();$binding=AccountBindings::binding($account);
         $now=$this->clock->now()->getTimestamp();$due=$now-self::EVERY_SECONDS;
         $key=['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint];
         DB::transaction(static function()use($binding,$key,$generation):void {
@@ -64,8 +64,8 @@ final class PriceFill
     public function run(Account $account,?int $expectedGeneration=null): int
     {
         OperationClaims::outside(); $generation=$expectedGeneration??UpgradeGate::generation();
-        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(CatalogueAcceptances::binding($account),expectedGeneration:$generation);return 0;}
-        $generation=UpgradeGate::legacy($generation);$binding=CatalogueAcceptances::binding($account);
+        if(($scheduler=OfferScheduler::routed())!==null){$scheduler->sync(AccountBindings::binding($account),expectedGeneration:$generation);return 0;}
+        $generation=UpgradeGate::legacy($generation);$binding=AccountBindings::binding($account);
         $reader=$this->reader($binding)??throw new \DomainException('TEST catalogue reads are unavailable.');
         return $this->fill($binding,$reader,RequestOrigin::Interactive,$generation);
     }
@@ -113,7 +113,7 @@ final class PriceFill
     {
         \App\Models\Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
         $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->sole();
-        $binding->requireMatch(CatalogueAcceptances::binding($a));
+        $binding->requireMatch(AccountBindings::binding($a));
         UpgradeGate::legacy($generation);
     }
     private static function start(AccountBinding $binding,int $generation): int

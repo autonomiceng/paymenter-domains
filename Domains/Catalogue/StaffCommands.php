@@ -35,7 +35,7 @@ final class StaffCommands
     {
         $t=Tld::findOrFail($id);
         if($review!==null){$this->run($review,[]);return;}
-        $b=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
+        $b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
         $d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
         $this->writer->apply(Edit::republish($b,$t->tld),$this->revision($t,$d));
     }
@@ -47,7 +47,7 @@ final class StaffCommands
             $fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);
             $review->input($data);return $this->writer->defaultPricing($review,$this->rule($data,$fee),$fee);
         }
-        $account=Account::where('server_id',$review->serverId)->sole();$binding=CatalogueAcceptances::binding($account);
+        $account=Account::where('server_id',$review->serverId)->sole();$binding=AccountBindings::binding($account);
         $query=Tld::where('server_id',$review->serverId)->where('catalogue_converted',true);
         if($review->tldId!==null){$query->whereKey($review->tldId);}
         $sell=$data['sell']??[];$names=array_unique(array_keys(($sell['choices']??[])+($sell['terms']??[])));
@@ -59,8 +59,7 @@ final class StaffCommands
         foreach($names as $name){if(!$rows->contains('tld',$name)){$failed[$name]='Converted TLD required.';}}
         if($defaults){
             $intent=$this->intent($d);
-            $v=\Paymenter\Extensions\Servers\Domains\Services\SellRule::validate($sell['rule']);
-            $intent=new Intent($v['mode']!=='only',$v['years'],$v['transfers'],$v['max_cost']);
+            $intent=Intent::fromRule($sell['rule']);
             $command=Edit::defaults($binding,$rows->first()->tld,$intent);
             $entries[]=[$command,$this->revision($rows->first(),$d)];
         }
@@ -126,7 +125,7 @@ final class StaffCommands
     private function seller(Tld $t,array $data): Edit
     {
         $id=($data['seller']??'')===''?(int)$t->server_id:(int)$data['seller'];
-        $b=CatalogueAcceptances::binding(Account::where('server_id',$id)->sole());
+        $b=AccountBindings::binding(Account::where('server_id',$id)->sole());
         return Edit::seller($b,$t->tld,($data['seller']??'')===''?[]:array_keys(array_filter(['register'=>(bool)($data['register']??false),'transfer'=>(bool)($data['transfer']??false)])));
     }
 }

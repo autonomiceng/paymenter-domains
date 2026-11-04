@@ -69,7 +69,7 @@ final class StaffOperationWrites
                 'registry_details_unsupported','usd_balance_required','enom_test_transfer_usd_balance_required','enom_test_setup_required','enom_test_transfer_setup_required'];
             $retry=$testRegistration&&OperationClaims::testCallRefusalRetryable($op);
             $renewalCap=$op->action==='renew'&&$op->registrar_key==='enom'&&$op->safe_code==='enom_test_renewal_call_cap'
-                &&$account&&in_array($account->environment,['test','live'],true)&&EnomTestRenewal::enabled(CatalogueAcceptances::binding($account));
+                &&$account&&in_array($account->environment,['test','live'],true)&&EnomTestRenewal::enabled(AccountBindings::binding($account));
             if(!$retry&&!($testRegistration&&in_array($op->safe_code,$testOnly,true))&&!$renewalCap){throw new \DomainException('This hold requires its original recovery or evidence path.');}
         } elseif(!$balanceRetry&&OperationClaims::testCallRefusalRetryable($op)) {
             $retry=$op->action==='transfer'?EnomTestTransfer::deploymentEnabled():EnomTestRegistration::deploymentEnabled();
@@ -99,7 +99,7 @@ final class StaffOperationWrites
         $refunded=$op->state==='rejected'&&$op->safe_code==='refund_approved'&&isset($op->funding['refund_authorization'],$op->funding['refund']);
         if($refunded){RefundProof::requireUnsent($op,$l['domain']);RefundPayment::requireCurrent($op,$l);}
         $completed=$op->state==='succeeded'&&in_array($op->action,['register','transfer','renew'],true)
-            &&RenewalAuthority::resolved($op,$l['domain'],CatalogueAcceptances::binding($l['account']));
+            &&RenewalAuthority::resolved($op,$l['domain'],AccountBindings::binding($l['account']));
         if(!$completed&&!$refunded&&!OperationTerminalProof::safe($op,$l['domain'])&&!ManagementEvidence::resolved($op,$l['domain'])) {
             throw new \DomainException('A proven terminal outcome is required. Re-check the original attempt.'); }
         // Acknowledges existing engine proof. It changes no outcome, financial marker or reservation.

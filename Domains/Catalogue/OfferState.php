@@ -6,13 +6,24 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
-use Paymenter\Extensions\Servers\Domains\Services\EndingChoices;
+use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices, PricingRule};
 
 /** Persistence codec. Facts have one independent age; normalized costs never carry fact proofs. */
 final class OfferState
 {
     public static function json(mixed $value): string { return json_encode($value, JSON_THROW_ON_ERROR); }
-    public static function decode(mixed $value): array { return UpgradeEvidence::json($value); }
+    public static function decode(mixed $value): array
+    {
+        if (is_array($value)) { return $value; }
+        return $value === null ? [] : json_decode($value, true, 32, JSON_THROW_ON_ERROR);
+    }
+    public static function money(mixed $value, int $scale): ?string
+    {
+        if (!is_string($value) && !is_int($value)) { return null; }
+        $value = str_contains((string) $value, '.') ? rtrim(rtrim((string) $value, '0'), '.') : (string) $value;
+        try { return PricingRule::decimal(PricingRule::units($value, $scale), $scale); }
+        catch (\InvalidArgumentException) { return null; }
+    }
     public static function equivalent(array $a, array $b): bool
     { return self::canonical($a) === self::canonical($b); }
     private static function canonical(mixed $v): mixed
@@ -56,7 +67,7 @@ final class OfferState
         foreach ($prices as $p) {
             if ($p->catalogue_observation === null || $p->currency !== 'USD') { continue; }
             $c = self::cost(self::decode($p->catalogue_observation)); $costs[] = $c;
-            if ($p->retail !== null) { $retail[$c->key()] = UpgradeEvidence::money($p->retail, 2) ?? throw new \DomainException('Invalid published retail.'); }
+            if ($p->retail !== null) { $retail[$c->key()] = OfferState::money($p->retail, 2) ?? throw new \DomainException('Invalid published retail.'); }
         }
         $revision = self::revision($tld, $defaults, $policy);
         $published = $tld->catalogue_published_revision === null ? null : new Revision(...self::decode($tld->catalogue_published_revision));
@@ -70,6 +81,6 @@ final class OfferState
         return new Snapshot(new FeedObserved($binding, $tld->tld, $costs), $facts, new Intent(...$intent),
             $revision, $publishing ? $revision : $published, $retail, $selected ? $binding : null, $actions,
             $ready, hidden: EndingChoices::hidden($tld->tld),
-            retainedAnnualRetail: UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2));
+            retainedAnnualRetail: OfferState::money($tld->catalogue_retained_annual_retail, 2));
     }
 }

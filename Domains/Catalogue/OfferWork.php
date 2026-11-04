@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
@@ -104,7 +105,7 @@ final class OfferWork
 
     private function run(int $server): string
     {
-        $account = Account::where('server_id', $server)->sole(); $b = CatalogueAcceptances::binding($account);
+        $account = Account::where('server_id', $server)->sole(); $b = AccountBindings::binding($account);
         $credential = $this->credentials ? ($this->credentials)($b) : null;
         $job = null;
         $this->editQueue($b, function ($q, $row) use (&$job): void {
@@ -272,7 +273,7 @@ final class OfferWork
     }
     private function account(AccountBinding $b): Account
     {
-        $a = Account::where('server_id', $b->serverId)->sole(); $b->requireMatch(CatalogueAcceptances::binding($a)); return $a;
+        $a = Account::where('server_id', $b->serverId)->sole(); $b->requireMatch(AccountBindings::binding($a)); return $a;
     }
     private function offerBinding(AccountBinding $b, Tld $t): void
     {

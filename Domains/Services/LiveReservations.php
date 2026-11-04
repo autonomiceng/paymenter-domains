@@ -23,7 +23,7 @@ final class LiveReservations
     {
         if($binding->environment!==$this->environment||$this->environment===Environment::Test&&$binding->registrarKey!=='namesilo'){throw new LiveReservationLimit;}
         $account=Account::where('server_id',$binding->serverId)->sole();
-        $binding->requireMatch(CatalogueAcceptances::binding($account));
+        $binding->requireMatch(AccountBindings::binding($account));
         return self::key($binding->registrarKey,$account->stable_identity,$this->environment);
     }
     /** Narrow this consumer's atomic daily share; default background work keeps half for checkout. */

@@ -78,7 +78,7 @@ class StaffSettingsWrites
             $r->local(function()use($r,$enabled):void {
                 $live=Account::where('server_id',$r->serverId)->sole();
                 if($enabled&&$live->environment==='live'){
-                    $b=CatalogueAcceptances::binding($live);
+                    $b=AccountBindings::binding($live);
                     if(!EnomLiveActivation::current($b)){throw new \DomainException('Activate live sales first. Open the registrar account to see what is missing.');}
                     EnomLiveActivation::requireReady($live,['registration'=>EnomLiveActivation::registrationAccepted($b),'renewal'=>EnomTestRenewal::accepted($b),'management'=>EnomTestManagement::accepted($b),'transfer'=>EnomTestTransfer::accepted($b)]);
                 }
@@ -113,7 +113,7 @@ class StaffSettingsWrites
             $this->sellers->change($t->tld,$p->revision,$id,(bool)($data['register']??false),(bool)($data['transfer']??false),$now,$r);return null;
         }
         if($r->action==='history'&&($data['accept']??false)===true){
-            $a=Account::where('server_id',$r->serverId)->firstOrFail();$binding=CatalogueAcceptances::binding($a);
+            $a=Account::where('server_id',$r->serverId)->firstOrFail();$binding=AccountBindings::binding($a);
             if(($data['verified']??false)!==true){throw new \DomainException('Independent history verification required.');}
             $action=\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??''));
             $vocabulary=$binding->registrarKey.match($action){\Paymenter\Extensions\Servers\Domains\Data\Action::Register=>'_registration_v1',\Paymenter\Extensions\Servers\Domains\Data\Action::Renew=>'_renewal_v1',\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer=>'_transfer_v1',default=>throw new \DomainException('History action unsupported.')};
@@ -144,7 +144,7 @@ class StaffSettingsWrites
             if($t&&($t->registrar_key!==$a->registrar_key||$t->account_fingerprint!==$a->account_fingerprint)){throw new \DomainException('TLD binding mismatch.');}
             if($r->action==='new_domain_dns'){NewDomainDns::saveLocked($a,$data['dns_template']??null);return;}
             if($r->action==='history'){
-                HistoryAcceptances::revokeLocked(CatalogueAcceptances::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
+                HistoryAcceptances::revokeLocked(AccountBindings::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
             }
             if($r->action==='tld_settings'){
                 if(!$t){throw new \DomainException('TLD required.');}
@@ -154,12 +154,12 @@ class StaffSettingsWrites
                 if($min===(int)$t->min_years&&$max===(int)$t->max_years&&(bool)($data['enabled']??false)===(bool)$t->enabled&&(bool)($data['renew']??false)===(bool)$t->renew_enabled
                     &&(bool)($data['register']??false)===(bool)$t->register_enabled&&(bool)($data['transfer']??false)===(bool)$t->transfer_enabled){throw new \DomainException('Terms unchanged.');}
                 if($min<$t->min_years||$max>$t->max_years){
-                    $accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a),true)->endings[$t->tld]??null;
+                    $accepted=CatalogueAcceptances::load(AccountBindings::binding($a),true)->endings[$t->tld]??null;
                     if(($data['verified']??false)!==true||!in_array($min,$accepted['register']??[],true)||!in_array($max,$accepted['register']??[],true)){throw new \DomainException('Explicit verified widening required.');}
                 }
                 $renew=(bool)($data['renew']??false);
                 if(!$renew&&Domain::where(['server_id'=>$s->id,'tld'=>$t->tld,'account_fingerprint'=>$a->account_fingerprint])->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Retained holders require annual renewal support.');}
-                $sellRule=SellRule::saved(CatalogueAcceptances::binding($a));
+                $sellRule=SellRule::saved(AccountBindings::binding($a));
                 $selling=$sellRule===null?null:SellRow::firstOrNew(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'tld'=>$t->tld]);
                 $t->fill(['min_years'=>$min,'max_years'=>$max,'enabled'=>(bool)($data['enabled']??false),'renew_enabled'=>$renew]);
                 foreach(['register','transfer'] as $action){
@@ -182,17 +182,17 @@ class StaffSettingsWrites
                 if($selling!==null){
                     // Preserve the old All behavior for other rows when this staff save records a new exception.
                     if($sellRule['mode']==='all'&&!$t->register_enabled){
-                        SellRule::rows(CatalogueAcceptances::binding($a))->where('choice','skip')->update(['choice'=>null]);
+                        SellRule::rows(AccountBindings::binding($a))->where('choice','skip')->update(['choice'=>null]);
                         $sellRule['mode']='except';$s->settings()->where('key',SellRule::KEY)->firstOrFail()->update(['value'=>$sellRule]);
                     }
                     $selling->transfer=$t->transfer_enabled===$sellRule['transfers']?null:$t->transfer_enabled;
                     $selling->choice=$t->register_enabled?($selling->choice==='skip'?($sellRule['mode']==='only'?'sell':null):$selling->choice):'skip';
                     $selling->save();$r->input(['selling_choice'=>$selling->choice]);
                 }
-                $t->save();TestCatalogue::withdrawCarts(CatalogueAcceptances::binding($a),$t->tld,true);return;
+                $t->save();TestCatalogue::withdrawCarts(AccountBindings::binding($a),$t->tld,true);return;
             }
             if($r->action!=='acceptance'){throw new \DomainException('Unsupported settings action.');}
-            $binding=CatalogueAcceptances::binding($a);
+            $binding=AccountBindings::binding($a);
             try{$old=CatalogueAcceptances::load($binding,true);}catch(\DomainException){$old=null;}
             $changes=$data['changes']??null;
             if(is_array($data['sell']??null)){

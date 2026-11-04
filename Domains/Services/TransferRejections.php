@@ -29,7 +29,7 @@ final class TransferRejections
             ||$d->provider_expires_at!==null||$d->provider_domain_id!==null||$d->provider_order_id!==null
             ||$l['operations']->contains(fn($other)=>$other->id!==$op->id&&!OperationTerminalProof::safe($other,$d))){
             throw new \DomainException('Transfer records disagree. Ask the registrar to check this request.');}
-        $attempt=ReconciliationEvidence::attempt($op,$d,CatalogueAcceptances::binding($l['account']));
+        $attempt=ReconciliationEvidence::attempt($op,$d,AccountBindings::binding($l['account']));
         if(($input['final_confirmed']??false)!==true
             ||($op->registrar_key==='enom'?($attempt->transferReference===null||($input['order_reference']??null)!==$attempt->transferReference)
                 :\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TransferState::read($input['transfer_status']??null)!==\Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Rejected)||($input['outcome']??null)!=='transfer_rejected'){

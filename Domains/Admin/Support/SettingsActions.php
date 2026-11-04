@@ -238,7 +238,7 @@ final class SettingsActions
     {
         $text=self::description('import');
         try{
-            $account=Account::where('server_id',$server)->sole();if(StaffCatalogue::routed()!==null){return $text;}$binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);
+            $account=Account::where('server_id',$server)->sole();if(StaffCatalogue::routed()!==null){return $text;}$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
             $accepted=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);$today=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday($binding);
             // Sync never adds TLDs, so say which ones it covers and where more are added.
             $endings=array_map(fn($e)=>'.'.$e,array_keys($accepted->endings));$count=count($endings);
@@ -271,7 +271,7 @@ final class SettingsActions
     /** Sync needs an account whose price list we can read. */
     public static function syncOffered(?Account $account): bool
     {
-        try{if(($catalogue=StaffCatalogue::routed())!==null){return $account!==null&&$catalogue->readable(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));}return $account!==null&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account));}
+        try{if(($catalogue=StaffCatalogue::routed())!==null){return $account!==null&&$catalogue->readable(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}return $account!==null&&\Paymenter\Extensions\Servers\Domains\Services\TestCatalogue::enabled(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}
         catch(\Throwable){return false;}
     }
     public static function syncAll(int $server,bool $named=false): Action
@@ -360,7 +360,7 @@ final class SettingsActions
         try{
             $a=Account::where('server_id',$server)->sole();
             if($a->environment!==$m[1]){return false;}
-            $b=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a);
+            $b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
             $class=match($m[2]){'renewal'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::class,'management'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::class,default=>EnomTestTransfer::class};
             return $class::enabled($b)||$class::stored($b)||($m[2]==='renewal'&&\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::anyOn($server));
         }catch(\Throwable){return false;}
@@ -369,14 +369,14 @@ final class SettingsActions
     private static function accepted(int $server,string $name): bool
     {
         if(!preg_match('/^(test|live)_(renewal|management|transfer)$/',$name,$m)){return false;}
-        try{$b=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$server)->firstOrFail());
+        try{$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$server)->firstOrFail());
             return match($m[2]){'renewal'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::on($b),'transfer'=>EnomTestTransfer::stored($b),default=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::stored($b)};}
         catch(\Throwable){return false;}
     }
     private static function switchOn(string $id,int $server): bool
     {
         return match($id){'processing'=>(bool)Account::where('server_id',$server)->value('processing_enabled'),
-            'late_renewal'=>\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::stored(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Account::where('server_id',$server)->sole())),
+            'late_renewal'=>\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::stored(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$server)->sole())),
             'renew_early'=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::read($server)['manual'],
             'renewals'=>\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::anyOn($server),default=>self::accepted($server,$id)};
     }
@@ -437,7 +437,7 @@ final class SettingsActions
             if($catalogue!==null){$facts=$catalogue->page(collect([$t]))[$t->id]['facts'];$safe=$catalogue->restorable($t);$register=$safe['register']?$facts->terms['register']:[];
                 $bounds=[...$register,$catalogue->setting($t,'min_years'),$catalogue->setting($t,'max_years')];
                 return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),'register_allowed'=>$safe['register'],'transfer_allowed'=>$safe['transfer']];}
-            $row=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account))->endings[$t->tld]??[];
+            $row=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account))->endings[$t->tld]??[];
             $register=array_values(array_filter($row['register']??[],'is_int'));$renewable=in_array(1,$row['renew']??[],true)&&($row['registry']??false)&&($row['renewal_safe']??false);
             $bounds=[...$register,$t->min_years,$t->max_years];
             return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),

@@ -67,7 +67,7 @@ final class HoldingObservationWork
         $guard((int)$queue->server_id);
         $account=Account::where('server_id',$queue->server_id)->firstOrFail();
         if($account->account_fingerprint!==$queue->account_fingerprint){throw new \DomainException('Observation queue binding changed.');}
-        $b=CatalogueAcceptances::binding($account);
+        $b=AccountBindings::binding($account);
         if(!EnomTestManagement::accepted($b)&&(EnomTestRegistration::enabled($b)||EnomTestRenewal::enabled($b)||EnomTestTransfer::enabled($b))){return 'read_deferred';}
         $this->discover($queue,$guard); if($catalogue){$catalogue();}
         $job=$this->claim($queue,$guard); if(!$job){return 'idle';}

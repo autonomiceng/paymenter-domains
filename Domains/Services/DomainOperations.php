@@ -68,7 +68,7 @@ final class DomainOperations
             try {
                 $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$route->server_id)->first();
                 if(!$account) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
-                $binding = CatalogueAcceptances::binding($account);
+                $binding = AccountBindings::binding($account);
                 if(!($route->action==='transfer'?EnomTestTransfer::accepted($binding):EnomTestRegistration::sellable($binding))) { return $this->claims->holdUnclaimed($id,'write_acceptance_required'); }
                 if(($reason=EnomTestRegistration::localHoldReason($binding,$route))!==null){return $this->claims->holdUnclaimed($id,$reason);}
                 return EnomTestCalls::withPurchase($binding,fn()=> $this->executeClaimed($id,$entry,$binding),(int)$route->id,$route->action==='transfer'?'transfer':'registration');

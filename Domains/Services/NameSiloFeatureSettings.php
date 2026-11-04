@@ -34,7 +34,7 @@ final class NameSiloFeatureSettings
     {
         if(!in_array($feature,['renewal','management','transfer'],true)||!in_array($r->action,['test_'.$feature,'live_'.$feature,'activate'],true)){throw new \DomainException('NameSilo feature review required.');}
         $r->local(static function()use($r,$data,$feature):void {
-            $b=CatalogueAcceptances::binding(Account::where('server_id',$r->serverId)->sole());$on=($data['accept']??false)===true;
+            $b=AccountBindings::binding(Account::where('server_id',$r->serverId)->sole());$on=($data['accept']??false)===true;
             $live=$b->environment===Environment::Live;
             if($b->registrarKey!=='namesilo'||(str_starts_with($r->action,'live_')||$r->action==='activate')!==$live
                 ||($on&&!self::enabled($b,$feature))){throw new \DomainException('NameSilo feature is off on this site.');}

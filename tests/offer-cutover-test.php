@@ -50,6 +50,15 @@ $admission->refresh();$before=$reads->calls;$checkout=commerceCheckout($user,$ca
 same(4,Operation::count(),'Real installed checkout adds exactly one obligation beside three frozen historical operations');
 $op=Operation::where('operation_key','like','invoice-item:%')->sole();same('23.40',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
 same($before,$reads->calls,'Locked checkout creates no second provider read');
+// Active workers use deployed protocol policy, independent of the retired ending list.
+$setting=App\Models\Server::findOrFail($binding->serverId)->settings()->where('key',CatalogueAcceptances::KEY)->sole();
+$oldAcceptance=$setting->getRawOriginal();$setting->delete();
+same(null,Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::localHoldReason($binding,$op),'Active worker accepts evidenced order without legacy catalogue acceptance');
+config(['domains.enom_writes.registration'=>false]);
+expect(Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::localHoldReason($binding,$op)!==null,'Removing write opt-in still holds active order');
+config(['domains.enom_writes.registration'=>true]);
+DB::table('settings')->insert($oldAcceptance);
+
 $cost=DB::transaction(fn()=>$prices->current($binding->serverId,$binding->fingerprint,'com','register',3,'USD',$now,true,$tlds[0]->fresh()));same([3,'23.40','18.0000'],[$cost->term,$cost->retail,$cost->wholesale],'Locked normalized cost path preserves exact term-total evidence');
 commerceReject(fn()=>DB::transaction(fn()=>$prices->current($binding->serverId,str_repeat('f',64),'com','register',3,'USD',$now,true,$tlds[0]->fresh())));
 $invoice=App\Models\Invoice::findOrFail($op->invoice_id);same(null,app(PayCheck::class)->stop($invoice),'Installed payment check accepts current local offer evidence');

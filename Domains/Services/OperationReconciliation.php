@@ -233,7 +233,7 @@ final class OperationReconciliation
     }
     private function authority($op, $domain, $all, $funding, $server, $account)
     {
-        $this->bindings->requireReadableLocked($server, $account); $binding = CatalogueAcceptances::binding($account);
+        $this->bindings->requireReadableLocked($server, $account); $binding = AccountBindings::binding($account);
         if ($domain->status !== ($op->action === 'transfer' ? 'transfer_pending' : 'registration_pending') || !$domain->billing_managed || $domain->reservation_name !== $domain->domain
             || $domain->provider_expires_at !== null || $domain->provider_domain_id !== null || $domain->provider_order_id !== null
             || $op->confirmed_expires_at !== null || $op->authority_generation !== $domain->authority_generation

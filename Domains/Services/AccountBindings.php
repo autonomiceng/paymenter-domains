@@ -455,7 +455,8 @@ final class AccountBindings
         return $server;
     }
 
-    private function binding(Account $account): AccountBinding
+    /** Local immutable identity validation; independent of catalogue policy and provider I/O. */
+    public static function binding(Account $account): AccountBinding
     {
         $binding = new AccountBinding($account->registrar_key, (int) $account->server_id,
             Environment::from($account->environment), $account->stable_identity);

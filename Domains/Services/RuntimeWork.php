@@ -30,7 +30,7 @@ final readonly class RuntimeWork
             if($a&&($a->processing_enabled||in_array($op->state,['pending','uncertain','running'],true)||TransferPolling::applies($op))&&$this->ports->accepted($a)){if(app(RuntimeDispatch::class)->current($op)){$this->ports->operation($op);}}}finally{$this->notice((int)$op->domain_id);}
     }
     private static function testRegistrationEnabled(Account $account): bool
-    {try{return EnomTestRegistration::enabled(CatalogueAcceptances::binding($account));}catch(\Throwable){return false;}}
+    {try{return EnomTestRegistration::enabled(AccountBindings::binding($account));}catch(\Throwable){return false;}}
     private function notice(int $id): void {$this->attempt('notices',fn()=>app(Reminders::class)->remind($id),$id);}
     private function attempt(string $producer,\Closure $run,?int $row=null): void
     {(new RuntimeDiagnostics($this->clock))->attempt($producer,$run,$row);}
@@ -100,8 +100,8 @@ final readonly class RuntimeWork
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
             $tldCursor=(int)$row->tld_cursor;
             $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
-                if(($scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed())!==null){$scheduler->wake(CatalogueAcceptances::binding($a));return;}
-                $catalogue=TestCatalogue::enabled(CatalogueAcceptances::binding($a));
+                if(($scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed())!==null){$scheduler->wake(AccountBindings::binding($a));return;}
+                $catalogue=TestCatalogue::enabled(AccountBindings::binding($a));
                 foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->keepCurrent($t,$this->clock->now(),$catalogue),(int)$t->id);}
                 // Complete the scan despite individual failures; wrapping retries every retained TLD.
                 $tldCursor=$tlds->count()===25?$tlds->last()->id:0;

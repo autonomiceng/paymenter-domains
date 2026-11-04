@@ -31,7 +31,7 @@ final class EnomLiveCalls
         if(!EnomLive::requested()){return '';}
         $uid=strtolower($uid);
         foreach(Account::where('registrar_key','enom')->where('environment','live')->get() as $a){
-            try{$binding=CatalogueAcceptances::binding($a);if($a->stable_identity===$uid&&EnomLive::enabled($binding,'catalogue')){return self::reserve($binding);}}catch(\Throwable){continue;}
+            try{$binding=AccountBindings::binding($a);if($a->stable_identity===$uid&&EnomLive::enabled($binding,'catalogue')){return self::reserve($binding);}}catch(\Throwable){continue;}
         }
         EnomTestCalls::refuse();
     }

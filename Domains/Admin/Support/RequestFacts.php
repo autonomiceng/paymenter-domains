@@ -2,6 +2,7 @@
 // Adapted from Enom 444f31c staff activity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, CatalogueAcceptances, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
@@ -187,7 +188,7 @@ final class RequestFacts
         if ($review->state==='queued') { $review->state='held';$review->safe_code=OperationClaims::balanceRefusalRetryable($op)?'registrar_balance_insufficient':'staff_review_required'; }
         try {
             StaffOperationWrites::requireRelease($review,StaffOperationWrites::releaseFacts($op),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
-            if (($op->registrar_key==='enom'&&EnomTestRegistration::localHoldReason(\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account),$op)!==null)
+            if (($op->registrar_key==='enom'&&EnomTestRegistration::localHoldReason(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account),$op)!==null)
                 || !\Paymenter\Extensions\Servers\Domains\Services\AcquisitionSetup::ready($op)) { return $stopped; }
         } catch (\Throwable) { return $stopped; }
         if (!$account->processing_enabled) { return 'Ready to send. '.self::ORDERS_OFF; }
@@ -319,7 +320,7 @@ final class RequestFacts
     private static function unsent(Operation $op): array
     {
         $again=ManagementEvidence::recoverable($op); $account=self::account($op)['account'];
-        try { $off=$op->registrar_key==='enom'&&$account&&!EnomTestManagement::accepted(CatalogueAcceptances::binding($account)); } catch (\Throwable) { $off=false; }
+        try { $off=$op->registrar_key==='enom'&&$account&&!EnomTestManagement::accepted(AccountBindings::binding($account)); } catch (\Throwable) { $off=false; }
         if ($off) {
             return ['title'=>RequestStatus::UNSENT,'body'=>'DNS, nameservers and contacts are Off for this registrar account. Turn them on'.($again?' and we try again by ourselves.':', then make the change again on the domain page.'),
                 'tone'=>'warning','link'=>'registrars','link_label'=>self::DNS_SWITCH];

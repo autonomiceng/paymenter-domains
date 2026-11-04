@@ -2,6 +2,7 @@
 // Enom 444f31c TLD pricing layout; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Navigation\NavigationItem;
 use Filament\Pages\Enums\SubNavigationPosition;
@@ -62,7 +63,7 @@ class ViewTld extends ViewRecord
         $acceptedSales=static function()use($server,$t):array {
             if(($catalogue=StaffCatalogue::routed())!==null){return $catalogue->restorable($t);}
             $a=Account::where('server_id',$server)->sole();
-            $accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a))->endings[$t->tld]??[];
+            $accepted=CatalogueAcceptances::load(AccountBindings::binding($a))->endings[$t->tld]??[];
             return ['register'=>!empty($accepted['register']),'transfer'=>!empty($accepted['transfer'])];
         };
         return Action::make('restore_sales')->label('Restore sales')->requiresConfirmation()->modalHeading('Restore sales?')->modalSubmitActionLabel('Restore sales')

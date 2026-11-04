@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Filament\Actions\Action;
 use Filament\Forms\Components\{Checkbox,Hidden};
 use Filament\Notifications\Notification;
@@ -17,7 +18,7 @@ final class LiveActivationAction
     public static function offered(Account $a): bool
     {
         if(!in_array($a->registrar_key,['enom','namesilo'],true)||$a->environment!=='live'||!Staff::can(Staff::POLICY)||!Staff::can(Staff::COSTS)||!Staff::can(Review::permission('activate'))){return false;}
-        try{CatalogueAcceptances::binding($a);return true;}catch(\Throwable){return false;}
+        try{AccountBindings::binding($a);return true;}catch(\Throwable){return false;}
     }
     public static function summary(Account $a,?array $features=null): HtmlString
     {
@@ -31,7 +32,7 @@ final class LiveActivationAction
     }
     public static function make(Account $a,string $stamp): Action
     {
-        $id=(int)$a->server_id;$binding=CatalogueAcceptances::binding($a);
+        $id=(int)$a->server_id;$binding=AccountBindings::binding($a);
         return Action::make('activate_live')->label('Activate')->visible(fn()=>self::offered($a))
             ->modalHeading('Activate live sales?')->modalSubmitActionLabel('Activate')->modalWidth('4xl')
             ->schema(function()use($a,$id,$stamp,$binding):array {

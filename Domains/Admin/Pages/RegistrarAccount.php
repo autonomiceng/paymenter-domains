@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use App\Models\Server;
 use Filament\Actions\{Action,ActionGroup};
 use Filament\Infolists\Components\TextEntry;
@@ -179,7 +180,7 @@ class RegistrarAccount extends Page
         $rows=[self::fact('Registrar',TldFacts::registrar($a->registrar_key)),self::fact('Mode',RegistrarFacts::mode($a),null,RegistrarFacts::MODE_HELP)];
         if ($a->registrar_key==='enom') { $rows[]=[...self::fact('API user',$user=RegistrarFacts::apiUser($a),$user===null?'Identity not verified yet. Use Edit.':null),'action'=>'configure','edit'=>true,'mono'=>true]; }
         if ($a->registrar_key==='enom'&&$a->environment==='live') {
-            try { $fingerprint=CatalogueAcceptances::binding($a)->fingerprint; } catch (\Throwable) { $fingerprint=null; }
+            try { $fingerprint=AccountBindings::binding($a)->fingerprint; } catch (\Throwable) { $fingerprint=null; }
             // Operators copy it into domains.enom_live.accounts (release-runbook.md).
             $rows[]=[...self::fact('Live account ID',$fingerprint,$fingerprint===null?"Saved credentials can't be read. Use More, then Edit API credentials.":null),'mono'=>true,'copy'=>true];
         }

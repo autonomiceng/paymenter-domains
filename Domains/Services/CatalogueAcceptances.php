@@ -127,9 +127,5 @@ final class CatalogueAcceptances
         return $next;
     }
     public static function binding(Account $account): AccountBinding
-    {
-        $binding = new AccountBinding($account->registrar_key, (int) $account->server_id, Environment::from($account->environment), $account->stable_identity);
-        if ($binding->fingerprint !== $account->account_fingerprint) { throw new \DomainException('Catalogue binding mismatch.'); }
-        return $binding;
-    }
+    { return AccountBindings::binding($account); }
 }

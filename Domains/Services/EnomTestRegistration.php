@@ -70,7 +70,7 @@ final class EnomTestRegistration
         if(!$account){return null;}
         $queued=clone $op;$queued->state='queued';
         if(!self::applies($queued)&&!EnomTestTransfer::applies($queued)){return null;}
-        try{return ['hold'=>self::localHoldReason(CatalogueAcceptances::binding($account),$op)];}catch(\Throwable){return null;}
+        try{return ['hold'=>self::localHoldReason(AccountBindings::binding($account),$op)];}catch(\Throwable){return null;}
     }
     /** Build account-bound ports without decrypting credentials or sending provider requests. */
     public static function factory(AccountBinding $binding): \Closure
@@ -90,6 +90,9 @@ final class EnomTestRegistration
         if($binding->registrarKey!=='enom'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test&&!EnomLive::enabled($binding,'catalogue')){return false;}
         if($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live&&!EnomLiveActivation::current($binding)){return false;}
         try {
+            if (\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed() !== null) {
+                return EnomProtocol::accepts($binding, $protocol);
+            }
             $accepted=CatalogueAcceptances::load($binding,$lock);
             return $protocol['batch_route']===true&&$accepted->registrationRoute===$protocol['route']
                 &&$accepted->registrationIntervalSeconds===$protocol['interval_seconds'];

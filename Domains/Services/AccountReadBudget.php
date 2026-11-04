@@ -21,7 +21,7 @@ final class AccountReadBudget implements ReadLimiter
         OperationClaims::outside();
         return DB::transaction(function () use ($binding,$origin,$calls): string {
             $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->firstOrFail();
-            $binding->requireMatch(CatalogueAcceptances::binding($a));
+            $binding->requireMatch(AccountBindings::binding($a));
             $now=$this->micros(); $q=DB::table('domains_read_budgets');
             $row=(clone $q)->where('server_id',$binding->serverId)->lockForUpdate()->first();
             $leases=$row?json_decode($row->leases,true,8,JSON_THROW_ON_ERROR):[];
@@ -49,7 +49,7 @@ final class AccountReadBudget implements ReadLimiter
     {
         OperationClaims::outside();
         DB::transaction(function () use ($binding,$token): void {
-            $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->firstOrFail(); $binding->requireMatch(CatalogueAcceptances::binding($a));
+            $a=Account::where('server_id',$binding->serverId)->lockForUpdate()->firstOrFail(); $binding->requireMatch(AccountBindings::binding($a));
             $q=DB::table('domains_read_budgets')->where('server_id',$binding->serverId); $row=(clone $q)->lockForUpdate()->firstOrFail();
             $leases=json_decode($row->leases,true,8,JSON_THROW_ON_ERROR); unset($leases[$token]);
             $q->update(['leases'=>json_encode($leases,JSON_THROW_ON_ERROR)]);

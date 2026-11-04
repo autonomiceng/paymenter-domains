@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\{Server, Setting, User, Role};
 use Illuminate\Support\Facades\{DB, Auth, Schema};
@@ -213,7 +214,7 @@ final class UpgradeGate
 
         Account::orderBy('server_id')->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->chunk(250, static function ($accounts) use (&$compatible, &$complete, &$offers, &$issues, &$mismatches): void {
             foreach ($accounts as $account) {
-                $report = (new UpgradeConversion)->stagingReport(CatalogueAcceptances::binding($account));
+                $report = (new UpgradeConversion)->stagingReport(AccountBindings::binding($account));
                 $complete = $complete && $report['complete'];
                 $compatible = $compatible && $report['staging_mismatches'] === [] && $report['source_unchanged'];
                 $offers += $report['expected'];
@@ -299,7 +300,7 @@ final class UpgradeGate
         // Bounded, idempotent wake is after the committed switch; a failed account is independent.
         CallerRouting::reset();
         foreach (Account::orderBy('server_id')->limit(8)->get() as $account) {
-            try { OfferScheduler::routed()?->wake(CatalogueAcceptances::binding($account)); } catch (\Throwable) {}
+            try { OfferScheduler::routed()?->wake(AccountBindings::binding($account)); } catch (\Throwable) {}
         }
         return $result;
     }

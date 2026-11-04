@@ -24,7 +24,7 @@ final class PublicationEligibility
     {
         \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         $account = Account::where('server_id', $tld->server_id)->firstOrFail();
-        $binding = CatalogueAcceptances::binding($account);
+        $binding = AccountBindings::binding($account);
         $accepted = CatalogueAcceptances::load($binding, $lock); $prices = [];
         foreach ([['renew', 1], [$action, $term]] as [$kind, $years]) {
             $query = Price::where(['server_id' => $tld->server_id, 'account_fingerprint' => $binding->fingerprint,

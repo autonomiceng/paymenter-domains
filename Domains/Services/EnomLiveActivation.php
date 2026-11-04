@@ -15,7 +15,7 @@ final class EnomLiveActivation
     private const PRICE_MISSING='Costs and prices Missing. Choose what you sell, Sync prices, then check the enabled TLDs and registrar on the TLD list.';
     public static function defaults(Account $a): array
     {
-        $b=CatalogueAcceptances::binding($a);$out=[];
+        $b=AccountBindings::binding($a);$out=[];
         foreach(self::FEATURES as $feature){$out[$feature]=$feature!=='transfer'&&self::featureEnabled($b,$feature);}
         return $out;
     }
@@ -37,7 +37,7 @@ final class EnomLiveActivation
     private static function receipt(Account $a): array {return self::engine($a)->receipt($a);}
     public static function enabling(Account $a,array $features): array
     {
-        $b=CatalogueAcceptances::binding($a);
+        $b=AccountBindings::binding($a);
         return self::engine($b)->enabling($a,$features,['registration'=>(self::receipt($a)['registration']??false)===true,
             'renewal'=>EnomTestRenewal::stored($b),'management'=>EnomTestManagement::stored($b),'transfer'=>EnomTestTransfer::stored($b)]);
     }
@@ -151,7 +151,7 @@ final class EnomLiveActivation
         $features=[];foreach(self::FEATURES as $feature){if(!is_bool($data[$feature]??null)){throw new \DomainException('Choose the Live features to activate.');}$features[$feature]=$data[$feature];}
         $r->input($features);
         $r->local(static function()use($r,$features):void {
-            $a=Account::where('server_id',$r->serverId)->sole();$b=CatalogueAcceptances::binding($a);
+            $a=Account::where('server_id',$r->serverId)->sole();$b=AccountBindings::binding($a);
             if(!in_array($b->registrarKey,['enom','namesilo'],true)||$b->environment!==Environment::Live){throw new \DomainException('Live registrar account required.');}
             $enabling=self::enabling($a,$features);$receipt=self::receipt($a);
             if($enabling){
@@ -173,7 +173,7 @@ final class EnomLiveActivation
     }
     public static function summary(Account $a,?array $features=null): array
     {
-        $features??=self::defaults($a);$b=CatalogueAcceptances::binding($a);$balance=self::balance($a);$details=[];
+        $features??=self::defaults($a);$b=AccountBindings::binding($a);$balance=self::balance($a);$details=[];
         $details[]=implode(', ',array_map(static fn($feature)=>ucfirst($feature).' '.($features[$feature]?'On':'Off'),self::FEATURES)).'.';
         $details[]='Account '.$b->fingerprint.', site '.($a->live_site??'Missing: verify the API connection').'.';
         $provider=$a->registrar_key==='namesilo'?'NameSilo':'Enom';

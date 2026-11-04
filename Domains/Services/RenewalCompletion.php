@@ -27,7 +27,7 @@ final readonly class RenewalCompletion
             $op->update(['state' => $op->state === 'running' ? 'uncertain' : $op->state, 'lease_expires_at' => null, 'policy' => $policy]);
             try {
                 $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true);
-                $attempt = ReconciliationEvidence::attempt($op, $l['domain'], CatalogueAcceptances::binding($l['account']));
+                $attempt = ReconciliationEvidence::attempt($op, $l['domain'], AccountBindings::binding($l['account']));
                 if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp']];
@@ -90,7 +90,7 @@ final readonly class RenewalCompletion
             $l=HoldingLocks::take($seed,$review->actorId);$review->check($l);$op=$l['operations']->firstWhere('id',$id);
             if(!$op||!$this->eligible($op)){throw new \DomainException('No unresolved sealed renewal.');}
             $this->bindings->requireReadableLocked($l['server'],$l['account']);RenewalFunding::requireCurrent($op,$l,true);
-            ReconciliationEvidence::attempt($op,$l['domain'],CatalogueAcceptances::binding($l['account']));
+            ReconciliationEvidence::attempt($op,$l['domain'],AccountBindings::binding($l['account']));
             $policy=$op->policy;$history=$policy['renewal_resumptions']??[];
             if(!is_array($history)||!array_is_list($history)||count($history)>=20){throw new \DomainException('Renewal read resume limit reached.');}
             $policy['renewal_resumptions']=[...$history,['prior_polls'=>$policy['renewal_polls']??0,'at'=>$this->clock->now()->format(DATE_ATOM)]];

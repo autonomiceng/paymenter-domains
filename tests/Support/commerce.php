@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com'): array
 {
+    if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     FoundationSchema::install(); SalesPolicySchema::install();
     if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install(); }
     if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::install(); }
