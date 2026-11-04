@@ -49,12 +49,12 @@ final class AccountChecklist
         try { $binding=CatalogueAcceptances::binding($a); } catch (\Throwable) { $binding=null; }
         $rows=[$connection,self::tlds($a,$binding,$offers),self::prices($a),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
-        $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',$a->registrar_key!=='enom'=>self::NAMESILO,default=>self::siteOff($a)};
+        $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',default=>self::siteOff($a)};
         $rows[]=$gates['register']===true?self::row('Registrations','On, follows Orders',null,null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
         $rows[]=self::transfers($a,$binding,$gates['transfer'],$off);
         foreach(['renewal'=>['Renewals',EnomTestRenewal::class,self::RENEWALS],'management'=>['DNS, nameservers and contacts',EnomTestManagement::class,self::MANAGEMENT]] as $key=>[$label,$feature,$help]){
-            $rows[]=match(true){$a->registrar_key!=='enom'=>$key==='renewal'?self::billingSwitch((int)$a->server_id):self::unavailable($label,self::NAMESILO),
-                $binding===null=>[...self::unavailable($label,$help),'cause'=>'Restore the saved account identity first.'],
+            $rows[]=match(true){
+                $binding===null=>[...self::unavailable($label,$help),'cause'=>'Restore the API connection first.'],
                 !$feature::enabled($binding)&&!$feature::stored($binding)&&!($key==='renewal'&&RenewalBillingSettings::anyOn((int)$a->server_id))=>self::unavailable($label,self::siteOff($a)),
                 default=>self::writeSwitch($a,$label,$key,$key==='renewal'?EnomTestRenewal::on($binding):$feature::stored($binding),$help)};
         }
@@ -71,12 +71,12 @@ final class AccountChecklist
     /** Live stays off until activation; sent transfers keep reconciling after revocation. */
     private static function transfers(Account $a,?object $binding,?bool $gate,\Closure $off): array
     {
-        if($a->environment==='live'&&$a->registrar_key==='enom'&&$binding===null){return [...self::unavailable('Transfers',self::TRANSFERS),'cause'=>'Restore the saved account identity first.'];}
-        if($a->environment==='live'&&$a->registrar_key==='enom'){
+        if($a->environment==='live'&&$binding===null){return [...self::unavailable('Transfers',self::TRANSFERS),'cause'=>'Restore the API connection first.'];}
+        if($a->environment==='live'){
             if(!EnomTestTransfer::enabled($binding)&&!EnomTestTransfer::stored($binding)){return self::unavailable('Transfers',self::siteOff($a));}
             return self::writeSwitch($a,'Transfers','transfer',EnomTestTransfer::stored($binding),'Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too.');
         }
-        if($binding!==null&&EnomTestTransfer::enabled($binding)){$on=EnomTestTransfer::accepted($binding);return self::row('Transfers (experimental)',$on?'On':'Off',$on?'success':null,null,'test_transfer',self::TRANSFERS);}
+        if($binding!==null&&(EnomTestTransfer::enabled($binding)||EnomTestTransfer::stored($binding))){$on=EnomTestTransfer::stored($binding);return self::row('Transfers (experimental)',$on?'On':'Off',$on?'success':null,null,'test_transfer',self::TRANSFERS);}
         $help=match(true){$a->registrar_key!=='enom'=>$off($gate),$binding===null=>'Restore the API connection first.',
             config('domains.enom_identity.environment')!=='test'=>'Set domains.enom_identity.environment to test in the site config, then reload this page.',
             config('domains.enom_catalogue.enabled')!==true=>'Set domains.enom_catalogue.enabled to true in the site config, then reload this page.',
@@ -129,7 +129,7 @@ final class AccountChecklist
     /** A bad saved calendar can't be saved back, so this switch waits for Edit schedule. It only works while Renewals is on, so otherwise the row says so with no switch. On with a bad calendar keeps its switch: it shows what customers can still do. */
     private static function renewEarly(int $server): array
     {
-        try { $a=Account::where('server_id',$server)->firstOrFail();$renewing=$a->registrar_key==='enom'?EnomTestRenewal::on(CatalogueAcceptances::binding($a)):RenewalBillingSettings::anyOn($server); } catch (\Throwable) { $renewing=false; }
+        try { $a=Account::where('server_id',$server)->firstOrFail();$renewing=EnomTestRenewal::on(CatalogueAcceptances::binding($a)); } catch (\Throwable) { $renewing=false; }
         $billing=RenewalBillingSettings::read($server);$on=$renewing&&$billing['manual'];$bad=$billing['issue_days']===null;
         $help='Lets customers pay for a renewal before the invoice goes out.';$blocked=match(true){!$renewing=>'Needs Renewals on.',$bad=>'Fix the invoice days first.',default=>null};
         if($blocked!==null&&!$on){return self::row('Customer can renew early',$blocked,null,null,null,$help);}

@@ -205,7 +205,7 @@ final class SettingsActions
             $turn=fn()=>self::switchOn($id,$server)?'Turn off':'Turn on';
             $label=$setup?fn()=>self::setupLabel($name,$registrar()!==null):Review::ACTIONS[$name];
             $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
-                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&(!str_starts_with($name,'live_')||(Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','live')->exists()))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&($name!=='test_transfer'||(EnomTestTransfer::deploymentEnabled()&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_management'||(config('domains.enom_writes.management')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists()))&&($name!=='test_renewal'||(config('domains.enom_writes.renewal')===true&&Account::where('server_id',$server)->where('registrar_key','enom')->where('environment','test')->exists())))
+                ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&self::featureVisible($server,$name))
                 ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
                 ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name)))))
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
@@ -352,6 +352,18 @@ final class SettingsActions
             $summary['skipped']===[]?null:'Off in Paymenter, so skipped: '.implode(', ',$summary['skipped']).'.',
             ($summary['audit_failed']??false)?"Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":null,
         ]));
+    }
+    /** Keep Off reachable after deployment evidence is withdrawn. Writers recheck current permissions. */
+    private static function featureVisible(int $server,string $name): bool
+    {
+        if(!preg_match('/^(test|live)_(renewal|management|transfer)$/',$name,$m)){return true;}
+        try{
+            $a=Account::where('server_id',$server)->sole();
+            if($a->environment!==$m[1]){return false;}
+            $b=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a);
+            $class=match($m[2]){'renewal'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::class,'management'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::class,default=>EnomTestTransfer::class};
+            return $class::enabled($b)||$class::stored($b);
+        }catch(\Throwable){return false;}
     }
     /** Renewals, DNS management and transfers are on when their saved acceptance is current. */
     private static function accepted(int $server,string $name): bool

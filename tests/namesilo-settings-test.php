@@ -17,4 +17,15 @@ $page->assertActionVisible('activate_test');
 $page->callAction('activate_test')->assertNotified('Orders resumed');
 expect($account->fresh()->processing_enabled,'Activate enables the authenticated TEST account');
 same(1,$GLOBALS['enrollmentCalls'],'Activate is local and makes no provider request');
+$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+foreach(['transfer','renewal','management'] as $feature){
+    $action=setupAction('test_'.$feature,(int)$server->id);
+    $page->assertActionVisible($action)->callAction($action)->assertNotified('Saved');
+    $rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
+    $label=['transfer'=>'Transfers (experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'][$feature];
+    same('Off',$rows[$label]['value'],$label.' can be turned off');
+    $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+    $page->callAction($action)->assertNotified('Saved');
+    $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+}
 $nativeSuccessful=true;

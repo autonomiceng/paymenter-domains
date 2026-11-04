@@ -10,16 +10,16 @@ final class EnomTestTransfer
 {
     public const KEY='domains_enom_test_transfer';
     public static function enabled(AccountBinding $b): bool
-    { return EnomLive::enabled($b,'transfer')||(self::deploymentEnabled()&&TestCatalogue::testDeployment($b)&&TestCatalogue::enabled($b)); }
+    { if($b->registrarKey==='namesilo'){return NameSiloFeatureSettings::enabled($b,'transfer');} return EnomLive::enabled($b,'transfer')||(self::deploymentEnabled()&&TestCatalogue::testDeployment($b)&&TestCatalogue::enabled($b)); }
     public static function protocol(?AccountBinding $b=null): array
     { return ['route'=>$b?->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?EnomLive::route():'https://resellertest.enom.com/interface.asp','command'=>\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\RegistrationCommand::Transfer->value,'interval'=>\Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::REQUEST_SECONDS]; }
     public static function accepted(AccountBinding $b): bool
-    {
+    { if($b->registrarKey==='namesilo'){return NameSiloFeatureSettings::accepted($b,'transfer');}
         return self::enabled($b)&&($b->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Live||EnomLiveActivation::current($b))&&self::stored($b);
     }
     /** Retained switch state, so Off stays available when deployment or provider evidence is removed. */
     public static function stored(AccountBinding $b): bool
-    {
+    { if($b->registrarKey==='namesilo'){return NameSiloFeatureSettings::stored($b,'transfer');}
         try {
             $s=\App\Models\Server::findOrFail($b->serverId)->settings()->where('key',EnomLive::key($b,self::KEY))->first();
             return $s?->encrypted===true&&json_decode($s->value,true,8,JSON_THROW_ON_ERROR)===['fingerprint'=>$b->fingerprint,...self::protocol($b)];
@@ -27,6 +27,7 @@ final class EnomTestTransfer
     }
     public static function review(StaffSettingsReview $r,array $data): void
     {
+        if(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->value('registrar_key')==='namesilo'){NameSiloFeatureSettings::review($r,$data,'transfer');return;}
         $r->local(function()use($r,$data):void {
             $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole());
             $live=$b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live;$label=$live?'Live':'TEST';
