@@ -17,6 +17,8 @@ expect((new ReflectionMethod(HoldingLocks::class,'take'))->getNumberOfParameters
 [$uncertain] = $prepare('uncertain-offer-placeholder.com', 'null');
 $frozen = static fn ($op) => [DB::table('domains_operations')->where('id',$op->id)->sole(), DB::table('invoices')->where('id',$op->invoice_id)->sole(), DB::table('invoice_items')->where('id',$op->invoice_item_id)->sole()];
 $before = serialize([$frozen($paid),$frozen($uncertain)]);
+// Retained obligations continue after current provider facts become unknown.
+DB::table('domains_tlds')->update(['catalogue_facts'=>null]);
 $ports = new CallerPorts(new Projection($native), $clock, $bindings, static fn()=>null, static fn()=>true);
 $caps = new Capabilities($ports, $clock, static fn()=>null);
 foreach (Account::all() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($a)); }
