@@ -65,7 +65,7 @@ foreach ([[$tlds[0]->server_id], []] as $testServers) {
 Illuminate\Support\Facades\DB::table('domains_accounts')->update(['environment'=>'test']);
 $d=Domain::firstOrFail();Illuminate\Support\Facades\DB::table('services')->where('id',$d->service_id)->update(['user_id'=>$other->id]);
 try{$owners->owned($user,$d->id);expect(false,'Native ownership drift refused');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
-$store=new Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers,$prices,$native,$bindings,
+$store=activeFixtureStorefront($sellers,$prices,$native,$bindings,
     new Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock,new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap)),$clock);
 $entry=new Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController($store);
 $r=$request($user);$r->query->set('name',placeholderComFixtureName($maxSld.'.com'));$before=count($state->calls);$data=$entry->show($r)->getData();

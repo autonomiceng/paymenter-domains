@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 extract(commerceFixture(true)); $clock = new FakeClock($now);
 $eligibility = activeFixtureEligibility($bindings, $clock);
-$store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $measure = static function (Closure $read): array {
     DB::enableQueryLog(); DB::flushQueryLog();
     try { $result = $read(); return [$result, array_column(DB::getQueryLog(), 'query')]; }

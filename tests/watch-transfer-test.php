@@ -15,7 +15,7 @@ config(['domains.watch_transfer.enabled'=>true]);$f=noticeFixture();extract($f);
 DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);noticeRegistry($f,$at,45);
 $wire=(object)['status'=>['active'],'code'=>200,'during'=>null,'domainCalls'=>0,'failOn'=>null];
 $rdap=new Rdap(static function($url)use($wire,$at){if($wire->during){$run=$wire->during;$wire->during=null;$run();}if(!str_contains($url,'dns.json')){$wire->domainCalls++;}return ['status'=>str_contains($url,'dns.json')?200:($wire->domainCalls===$wire->failOn?503:$wire->code),'body'=>json_encode(str_contains($url,'dns.json')?['services'=>[[['com'],['https://rdap.example.com/']]]]:['objectClassName'=>'domain','ldhName'=>'example.com','status'=>$wire->status,'events'=>[['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>gmdate('Y-m-d\TH:i:s\Z',$at+45*86400)]]])];});
-$eligibility=activeFixtureEligibility($bindings,$clock,new TransferPrecheck($rdap));$store=new Storefront($sellers,$prices,$native,$bindings,$eligibility,$clock);
+$eligibility=activeFixtureEligibility($bindings,$clock,new TransferPrecheck($rdap));$store=activeFixtureStorefront($sellers,$prices,$native,$bindings,$eligibility,$clock);
 app()->instance(Storefront::class,$store);
 $selection=$sellers->selection('com','transfer',1,$now);App\Models\Server::find($selection->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';storefrontViews();$session=app('request')->session();

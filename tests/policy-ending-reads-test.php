@@ -27,7 +27,7 @@ $rdap = new Rdap(static fn ($url) => ['status' => 200, 'body' => json_encode(str
         ['eventAction' => 'registration', 'eventDate' => '2020-01-01T00:00:00Z'],
         ['eventAction' => 'expiration', 'eventDate' => gmdate('Y-m-d\TH:i:s\Z', $at + 45 * 86400)]]])]);
 $eligibility = activeFixtureEligibility($bindings, $clock, new TransferPrecheck($rdap));
-$store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 app()->instance(Storefront::class, $store);
 $tlds[0]->server->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 require dirname(__DIR__).'/Domains/routes/web.php'; require dirname(__DIR__).'/Domains/routes/owned.php';

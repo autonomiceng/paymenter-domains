@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 require dirname(__DIR__).'/Domains/routes/web.php';
 extract(commerceFixture(true)); $clock = new FakeClock($now); app()->instance(Clock::class, $clock);
 $eligibility = activeFixtureEligibility($bindings, $clock);
-$store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $controller = new StorefrontController($store, new CartLines($native)); storefrontViews();
 (activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
 $user = commerceUser(); $cart = commerceCart($user);
