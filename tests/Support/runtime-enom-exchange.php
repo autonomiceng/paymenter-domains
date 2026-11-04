@@ -34,7 +34,7 @@ expect(\Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($bin
 Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($binding,new Money('100.00','USD'),$clock->now(),'manual');
 $admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($auth,$clock,$precheck),$clock);app()->instance(CartAdmission::class,$admission);
 app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
-(new Paymenter\Extensions\Servers\Domains\Domains)->boot();Illuminate\Support\Facades\Queue::fake();
+app()->offsetUnset(RuntimePorts::class);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();Illuminate\Support\Facades\Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 App\Models\Server::find($binding->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);

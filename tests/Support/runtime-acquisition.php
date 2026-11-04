@@ -27,7 +27,7 @@ $checkoutCheck=new TransferPrecheck(new Rdap($offline));
 $admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock,$checkoutCheck),$clock);
 app()->instance(CartAdmission::class,$admission);
 app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
-(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
+app()->offsetUnset(RuntimePorts::class);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
 Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
