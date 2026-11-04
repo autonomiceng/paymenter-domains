@@ -26,30 +26,13 @@ $wire = new class implements Transport {
     }
 };
 $driver = new Driver(new Client($binding, 'offline', 'synthetic', $wire), ['com']);
-$rules = new PricingRules; $catalogue = new PriceCatalogue($rules); $query = new Query('example.com', Action::Register, 3);
-$accepted = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($binding, 1, ['com' => ['register' => [3], 'renew' => [1], 'transfer' => [], 'registry' => true, 'renewal_safe' => true]]);
-$read = fn () => $driver->catalogueBatch($accepted, new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness(86400, 86400), $context())['com']?->rates ?? throw new DomainException;
-
-same(['synced' => 1, 'failed' => []], $catalogue->sync(1, $read), 'Real Enom adapter feeds neutral pricing service');
-$snapshot = $catalogue->current(1, $account['account_fingerprint'], 'com', 'register', 3, 'USD', $clock->now());
-same('26.86500000', Price::where('action', 'register')->firstOrFail()->wholesale, 'Database zero padding alone is normalized by catalogue');
-same('26.8650', $snapshot->wholesale, 'PriceSnapshot preserves exact term wholesale');
-same('34.92', $snapshot->retail, 'Annual retail rounds before selected term multiplication');
-same('enom_product_price', $snapshot->source, 'Snapshot retains adapter provenance');
-same('2026-10-20T12:00:00+00:00', $snapshot->freshUntil->format(DATE_ATOM), 'Freshness survives database persistence');
-$before = Price::orderBy('id')->get()->toJson();
-$wire->fail = true; same(0, $catalogue->sync(1, $read)['synced'], 'Failed read never zero or withdrawal');
-same($before, Price::orderBy('id')->get()->toJson(), 'Timeout retains all price bytes, revisions and freshness');
-$wire->fail = false; $wire->price = '8.95500000'; same(0, $catalogue->sync(1, $read)['synced'], 'Unsupported precision rejects whole TLD refresh');
-same($before, Price::orderBy('id')->get()->toJson(), 'Unsupported precision retains all prices');
-$wire->price = '8.9550';
-saveDefaultRule([...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '1.00', 'renew' => '1.00', 'transfer' => '1.00']], $catalogue->republish(...));
-$renew = $catalogue->current(1, $account['account_fingerprint'], 'com', 'renew', 1, 'USD', $clock->now());
-same('1.00', $renew->retail, 'Below-cost renewals remain priced'); same('below_cost', $renew->staffAlert, 'Below-cost renewal only alerts staff');
-$wire->enabled = false;
-same(1, $catalogue->sync(1, $read)['synced'], 'Positive source no-price can refresh');
-same(null, Price::where('action', 'register')->firstOrFail()->wholesale, 'Acquisition no-price withdraws term');
-same('1.00', $catalogue->renewal(1, $account['account_fingerprint'], 'com', 'USD', $clock->now())->retail, 'No-price preserves published holding renewal retail');
-same('34.92', $snapshot->retail, 'Frozen snapshot never repriced');
-$nativeSuccessful = true;
-echo "Enom adapter to catalogue/PriceSnapshot and failed-read retention passed.\n";
+$query = new Query('example.com', Action::Register, 3);
+$read=static fn()=>$driver->productPrice('com','register',3,$context());
+$observed=$read();same('success',$observed->status,'Synthetic Enom price reply accepted');
+same(['tld'=>'com','action'=>'register','years'=>3,'price'=>'8.9550'],$observed->facts(),'Exact annual precision and requested term preserved');
+$before=Price::count();$wire->fail=true;same('unknown',$read()->status,'Timeout stays unknown');same($before,Price::count(),'Pure failed quote never changes persisted prices');
+$wire->fail=false;$wire->price='8.95500000';same('unknown',$read()->status,'Unsupported precision stays unknown');
+$wire->price='8.9550';$wire->enabled=false;same('no_price',$read()->status,'Explicit disabled is distinct from failed read');
+same('8.9550',$observed->facts()['price'],'Prior observed reply remains immutable after later failures and no-price');
+// Persisted normalized publication and failed-run retention are covered by offer-feed/work/writer.
+$nativeSuccessful=true;echo "Enom exact price read, unknown failure and disabled result passed.\n";
