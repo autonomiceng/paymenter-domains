@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveRese
 final class SendReservation implements \Paymenter\Extensions\Servers\Domains\Contracts\WriteReservation
 {
     private ?array $scope=null;
-    public function __construct(private readonly AccountBinding $binding,private readonly NameSiloLiveReservationPolicy $policy) {}
+    public function __construct(private readonly AccountBinding $binding,private readonly NameSiloLiveReservationPolicy|TestReservationPolicy $policy) {}
     public function bindsTo(AccountBinding $binding): bool {return $this->binding->matches($binding);}
     public function run(string $feature,int $operationId,\Closure $work): mixed
     {
@@ -26,7 +26,7 @@ final class SendReservation implements \Paymenter\Extensions\Servers\Domains\Con
         if($feature!==$s['feature']||in_array($command,['registerDomain','transferDomain','renewDomain'],true)&&($cost===null||$cost->currency!=='USD'||!preg_match('/[1-9]/',$cost->amount))){throw new LiveReservationLimit;}
         AdmittedTransport::parameters($command,$parameters);
         $this->policy->requireFeature($this->binding,$feature);
-        $day=(new LiveReservations($this->policy))->reserve($this->binding,$cost);
+        $day=(new LiveReservations($this->policy,$this->binding->environment))->reserve($this->binding,$cost);
         $this->scope['grant']=[$command,self::digest($parameters),$day];
     }
     private static function digest(#[\SensitiveParameter] array $parameters): string

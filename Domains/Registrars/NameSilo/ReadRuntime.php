@@ -11,7 +11,7 @@ final class ReadRuntime
     public static function factory(AccountBinding $binding,Clock $clock,#[\SensitiveParameter] \Closure $credentials,
         #[\SensitiveParameter] \Closure $revision,#[\SensitiveParameter] ?\Closure $accepted=null): \Closure
     {
-        if($binding->registrarKey!=='namesilo'||$binding->environment!==Environment::Live){throw new \InvalidArgumentException('Live NameSilo reader required.');}
+        if($binding->registrarKey!=='namesilo'){throw new \InvalidArgumentException('NameSilo reader required.');}
         $secrets=new \SensitiveParameterValue([$credentials,$revision,$accepted]);
         return static function(AccountBinding $requested)use($binding,$clock,$secrets):Driver {
             try {
@@ -22,11 +22,15 @@ final class ReadRuntime
                     try {
                         // This port must never acquire a mutation grant, even if a later caller misuses it.
                         if($write||!$accepted||$accepted($binding,$stamp)!==true){throw new \DomainException;}
-                        (new NameSiloLiveReservationPolicy)->requireFeature($binding,'catalogue');
+                        ($binding->environment===Environment::Live?new NameSiloLiveReservationPolicy:new TestReservationPolicy)->requireFeature($binding,'catalogue');
                         return $credentials($stamp);
                     }catch(\Throwable){throw new \DomainException('NameSilo runtime read acceptance unavailable.');}
                 };
                 $key=$current(false)['api_key'];
+                if($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()){
+                    $actions=array_values(array_filter(['register','renew','transfer'],static fn($action)=>$caps->endings($binding,$action)!==[]));
+                    return new Driver(new Client($binding,$key,new AdmittedTransport($binding,$current)),$actions,$clock);
+                }
                 $acceptedCatalogue=CatalogueAcceptances::load($binding);$actions=[];
                 foreach($acceptedCatalogue->endings as $row){
                     foreach(['register','renew','transfer'] as $action){if($row[$action]===[1]){$actions[$action]=$action;}}

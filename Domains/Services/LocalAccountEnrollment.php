@@ -18,7 +18,10 @@ final class LocalAccountEnrollment
         if (!$environment) { return false; }
         if (NameSiloSandbox::enabled()) { throw new \DomainException('Choose one NameSilo enrollment composition.'); }
         $registry->register('namesilo', ['api_key'], new NameSilo\AccountVerifier,
-            static fn () => throw new \DomainException('Domain reads require separate deployment composition.'),
+            static function(AccountBinding $binding) use ($environment): NameSilo\Driver {
+                if($environment!==Environment::Test){throw new \DomainException('Domain reads require separate deployment composition.');}
+                return (NameSilo\TestRuntime::reader($binding,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)))($binding);
+            },
             static function (AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): NameSilo\Driver {
                 if ($binding->environment !== $environment) { throw new \DomainException('Credential environment changed.'); }
                 return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), []);

@@ -6,23 +6,23 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport,DeadlineTransport,Environment,RegistrarRequest,RequestContext,TransportResponse};
 use Paymenter\Extensions\Servers\Domains\Services\{LiveReservationLimit,LiveReservations,OperationClaims,ProviderSendGuard};
-/** Dormant Live port. The installed binding factory supplies fresh, verified credentials on every call. */
+/** Account-bound port. The installed binding factory supplies fresh, verified credentials on every call. */
 final class AdmittedTransport implements DeadlineTransport
 {
     private readonly \SensitiveParameterValue $credentials;
-    private readonly NameSiloLiveReservationPolicy $policy;
+    private readonly NameSiloLiveReservationPolicy|TestReservationPolicy $policy;
     public readonly SendReservation $reservation;
     public function __construct(private readonly AccountBinding $binding,#[\SensitiveParameter] \Closure $credentials)
     {
-        if($binding->registrarKey!=='namesilo'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Live){throw new \InvalidArgumentException('Live NameSilo transport required.');}
-        $this->credentials=new \SensitiveParameterValue($credentials);$this->policy=new NameSiloLiveReservationPolicy;
+        if($binding->registrarKey!=='namesilo'){throw new \InvalidArgumentException('NameSilo transport required.');}
+        $this->credentials=new \SensitiveParameterValue($credentials);$this->policy=$binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?new NameSiloLiveReservationPolicy:new TestReservationPolicy;
         $this->reservation=new SendReservation($binding,$this->policy);
     }
     public function send(Environment $environment,RequestContext $context,RegistrarRequest $request,#[\SensitiveParameter] string $apiKey): TransportResponse
     {return $this->sendWithin($environment,$context,$request,$apiKey,25000);}
     public function sendWithin(Environment $environment,RequestContext $context,RegistrarRequest $request,#[\SensitiveParameter] string $apiKey,int $timeoutMs): TransportResponse
     {
-        if($environment!==Environment::Live){throw new LiveReservationLimit;}
+        if($environment!==$this->environment()){throw new LiveReservationLimit;}
         return $this->wire($environment->origin().'/'.$context->value,$request->command,$request->parameters(),$timeoutMs,$apiKey);
     }
     /** Inject only into genuine engine-bound protocols. Writes additionally need the pre-seal reservation scope. */
@@ -64,8 +64,8 @@ final class AdmittedTransport implements DeadlineTransport
         try {
             OperationClaims::outside();$feature=self::feature($command);$write=$feature!=='catalogue';
             if($timeoutMs<1||$timeoutMs>25000||getenv('SSLKEYLOGFILE')||!function_exists('curl_init')
-                ||!in_array($origin,[Environment::Live->origin().'/api',Environment::Live->origin().'/apibatch'],true)
-                ||$write&&$origin!==Environment::Live->origin().'/apibatch'){throw new LiveReservationLimit;}
+                ||!in_array($origin,[$this->environment()->origin().'/api',$this->environment()->origin().'/apibatch'],true)
+                ||$write&&$origin!==$this->environment()->origin().'/apibatch'){throw new LiveReservationLimit;}
             self::parameters($command,$parameters);$this->policy->requireFeature($this->binding,$feature);
             // The factory must revalidate AccountBindings' encrypted credential digest and processing/site binding here.
             $credentials=($this->credentials->getValue())($write);$key=$credentials['api_key']??null;
@@ -82,8 +82,8 @@ final class AdmittedTransport implements DeadlineTransport
                     if(strlen($chunk)>CurlTransport::BODY_LIMIT-strlen($body)){return 0;}$body.=$chunk;return strlen($chunk);
                 }];
             if(!curl_setopt_array($handle,$options)){throw new \RuntimeException;}
-            $day=$write?null:(new LiveReservations($this->policy))->reserve($this->binding);
-            ProviderSendGuard::beforeSend('namesilo','live',$command);
+            $day=$write?null:(new LiveReservations($this->policy,$this->binding->environment))->reserve($this->binding);
+            ProviderSendGuard::beforeSend('namesilo',$this->binding->environment->value,$command);
             $this->policy->requireFeature($this->binding,$feature);
             $now=app(Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'));
             $midnight=$now->modify('+1 day')->setTime(0,0);
@@ -98,7 +98,9 @@ final class AdmittedTransport implements DeadlineTransport
         catch(\Throwable){throw new \RuntimeException('NameSilo transport outcome unresolved.');}
         finally{if($handle!==null&&$handle!==false){curl_close($handle);}}
     }
-    public function __debugInfo(): array {return ['registrar'=>'namesilo','environment'=>'live'];}
+    private function environment(): Environment
+    {return $this->binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?Environment::Live:Environment::Sandbox;}
+    public function __debugInfo(): array {return ['registrar'=>'namesilo','environment'=>$this->binding->environment->value];}
     public function __serialize(): never {throw new \LogicException('Admitted transports cannot be persisted.');}
     public function __clone(): void {throw new \LogicException('Admitted transports cannot be cloned.');}
 }

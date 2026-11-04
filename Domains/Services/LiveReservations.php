@@ -11,26 +11,26 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 final class LiveReservations
 {
     private static array $checkoutHeadroom=[];
-    public function __construct(private readonly LiveReservationPolicy $policy) {}
+    public function __construct(private readonly LiveReservationPolicy $policy,private readonly Environment $environment=Environment::Live) {}
 
-    private static function key(string $provider,#[\SensitiveParameter] string $identity): string
+    private static function key(string $provider,#[\SensitiveParameter] string $identity,Environment $environment=Environment::Live): string
     {
         $identity=AccountBinding::canonicalIdentity($provider,$identity);
         // Keep deployed Enom keys exactly; all other providers get an independent namespace.
-        return hash('sha256',$provider==='enom'?$identity:$provider."\0live\0".$identity);
+        return hash('sha256',$provider==='enom'&&$environment===Environment::Live?$identity:$provider."\0".$environment->value."\0".$identity);
     }
-    private static function account(AccountBinding $binding): string
+    private function account(AccountBinding $binding): string
     {
-        if($binding->environment!==Environment::Live){throw new LiveReservationLimit;}
+        if($binding->environment!==$this->environment||$this->environment===Environment::Test&&$binding->registrarKey!=='namesilo'){throw new LiveReservationLimit;}
         $account=Account::where('server_id',$binding->serverId)->sole();
         $binding->requireMatch(CatalogueAcceptances::binding($account));
-        return self::key($binding->registrarKey,$account->stable_identity);
+        return self::key($binding->registrarKey,$account->stable_identity,$this->environment);
     }
     /** Narrow this consumer's atomic daily share; default background work keeps half for checkout. */
-    public static function withCheckoutHeadroom(string $provider,#[\SensitiveParameter] string $identity,\Closure $read,int $dailyPercent=50): mixed
+    public static function withCheckoutHeadroom(string $provider,#[\SensitiveParameter] string $identity,\Closure $read,int $dailyPercent=50,Environment $environment=Environment::Live): mixed
     {
         if($dailyPercent<1||$dailyPercent>50){throw new \InvalidArgumentException('Invalid daily read share.');}
-        $account=self::key($provider,$identity);$prior=self::$checkoutHeadroom[$account]??null;
+        $account=self::key($provider,$identity,$environment);$prior=self::$checkoutHeadroom[$account]??null;
         self::$checkoutHeadroom[$account]=min($prior??100,$dailyPercent);
         try{return $read();}finally{if($prior===null){unset(self::$checkoutHeadroom[$account]);}else{self::$checkoutHeadroom[$account]=$prior;}}
     }
@@ -49,7 +49,7 @@ final class LiveReservations
             if(!is_int($limit)||$limit<1||!is_string($spend)||$cost!==null&&$cost->currency!=='USD'){throw new LiveReservationLimit;}
             $ceiling=self::micros($spend);$amount=$cost?self::micros($cost->amount):0;
             if($amount>$ceiling){throw new LiveReservationLimit;}
-            $day=self::day();$key=self::account($binding);
+            $day=self::day();$key=$this->account($binding);
             if(isset(self::$checkoutHeadroom[$key])){$share=self::$checkoutHeadroom[$key];$limit=intdiv($limit,100)*$share+intdiv(($limit%100)*$share,100);}
             DB::table(LiveReservationSchema::TABLE)->insertOrIgnore(['account'=>$key,'day'=>$day,'used'=>0,'spend_micros'=>0]);
             if(DB::table(LiveReservationSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
@@ -62,7 +62,7 @@ final class LiveReservations
     {
         try {
             $this->policy->limits($binding);
-            $row=DB::table(LiveReservationSchema::TABLE)->where(['account'=>self::account($binding),'day'=>self::day()])->first();
+            $row=DB::table(LiveReservationSchema::TABLE)->where(['account'=>$this->account($binding),'day'=>self::day()])->first();
             return ['used'=>(int)($row->used??0),'spend_micros'=>(int)($row->spend_micros??0)];
         }catch(\Throwable){throw new LiveReservationLimit;}
     }
