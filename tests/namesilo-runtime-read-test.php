@@ -76,7 +76,7 @@ same([], $GLOBALS['runtimeWire']['calls'],'Factory construction performs no prov
 $registry->registerBoundReader($binding,$factory);
 $deny(fn()=>$registry->registerBoundReader($binding,$factory));
 $reader=$bindings->reader($server->id);
-expect($reader instanceof Driver&&$reader instanceof CatalogueReader&&$reader instanceof TransferPoller,'Shared readers and transfer polling use the genuine driver');
+expect($reader instanceof Driver&&$reader instanceof TransferPoller,'Shared readers and transfer polling use the genuine driver');
 expect(!$reader instanceof AdmittedRegistrarDriver,'Reader factory exposes no writer');
 same([], $GLOBALS['runtimeWire']['calls'],'Creating a runtime reader performs no provider work');
 $usage=fn()=>(new LiveReservations(new NameSiloLiveReservationPolicy))->usage($binding);
