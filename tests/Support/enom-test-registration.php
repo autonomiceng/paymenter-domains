@@ -406,8 +406,8 @@ $clock->at=$clock->now()->modify('+1 second');$tld=installedOfferEvidence($bindi
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
 $write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>true],$tld->id);
 $server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);$write('publish',[],$tld->id);$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
-$mixedCart=commerceCart($user);commerceAdd($mixedCart,$product,placeholderComFixtureName('mixed-register-placeholder.com'));$GLOBALS['testTransferQuery']=true;commerceAdd($mixedCart,$transferProduct,placeholderComFixtureName('mixed-transfer-placeholder.com'));unset($GLOBALS['testTransferQuery']);$mixedCounts=[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])];
-commerceCheckout($user,$mixedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');same($mixedCounts,[App\Models\Order::count(),App\Models\Invoice::count(),App\Models\InvoiceTransaction::count(),count($GLOBALS['enomWire']['forms'])],'Mixed TEST registration and transfer cart creates no order, invoice, payment, or Purchase');
+// Retired TEST-only mixed-cart prohibition: offer-commerce-test.php proves active mixed-account
+// success and whole-basket rollback; this fixture retains the independent transfer processing fence.
 $selection=app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->selection('com','transfer',1,$clock->now());DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
 try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$selection],$clock->now()));throw new LogicException('TEST registration does not exempt transfer from processing.');}catch(DomainException){}DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
 resetWire();$clock->at=new DateTimeImmutable('2026-10-22T00:00:01Z');

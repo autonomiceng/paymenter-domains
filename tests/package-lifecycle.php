@@ -227,7 +227,9 @@ if($phase==='bridge-seed'){
         require __DIR__.'/Support/namesilo-nexus.php';
     }else{require __DIR__.'/renewal-execution-namesilo-test.php';}
 }elseif(in_array($phase,['acquisition','enom-exchange'],true)){
-    require __DIR__.'/Support/runtime-acquisition.php';
+    try { require __DIR__.'/Support/runtime-acquisition.php'; } catch (Throwable $error) {
+        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
+    }
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
     expect(!is_link(base_path('extensions/Servers/Domains')),'Runtime is installed files, never a source link');
