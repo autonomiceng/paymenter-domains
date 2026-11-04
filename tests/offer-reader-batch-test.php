@@ -4,21 +4,18 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/OfferFixture.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
-require __DIR__.'/Support/native-commerce.php';
-require __DIR__.'/Support/accounts.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferReader, OfferState, Projection, Query, Revision, Writer};
-use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Facts, FactsObserved, Intent, OfferReader, OfferState, Projection, Query, Writer};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 expect(method_exists(OfferReader::class, 'readBatch'), 'Mixed-account admission requires one shared batch loader');
 // Native SQLite exercises actual binding, projection and local loading. It cannot prove InnoDB
 // current reads or concurrent blocking; the installed two-connection check remains deferred.
-(new Installation)->install(); extract(commerceFixture(active:true));
+// One active commerce installation supplies both accounts; no second installation or cart helpers.
+extract(commerceFixture(active:true));
 $clock = new FakeClock($now); $allowed = true; $checked = [];
 $authorize = static function ($q, $context) use (&$allowed): void {
     if (!$allowed && $context !== Context::Public) { throw new DomainException('Permission revoked.'); }
@@ -67,24 +64,41 @@ foreach (['offer', 'defaults', 'selection', 'publication'] as $axis) {
     $writer->apply(Edit::republish($b, 'com'), $rev($b));
 }
 commerceReject(fn () => $reader->readBatch($queries, Context::Locked));
-$trace = []; $record = false;
-DB::listen(static function ($q) use (&$trace, &$record): void { if ($record) { $trace[] = strtolower($q->sql); } });
-DB::transaction(function () use ($reader, $native, $tlds, $b, $n, $rev, &$trace, &$record, &$checked): void {
-    (new Projection($native))->lock($tlds);
-    $expected = $rev($b); $checked = []; $trace = []; $record = true;
-    $out = $reader->readBatch([new Query($n, ['com'], 'register'), new Query($b, ['com'], 'register', 3, expected: ['com' => $expected])], Context::Locked);
-    $record = false;
-    same(true, $out[1][0]->available, 'Locked batch uses the same evaluator and current tuple');
-    same([$b->serverId, $n->serverId], $checked, 'Local readiness follows sorted account prefix, not cart order');
-});
+// SQLite omits FOR UPDATE in rendered SQL. Observe the actual builder lock flag instead
+// of treating credential-validation SELECTs of an already locked account as new locks.
+$connection = DB::connection(); $original = $connection->getQueryGrammar();
+$grammar = new class($connection) extends \Illuminate\Database\Query\Grammars\SQLiteGrammar {
+    public array $selects = [];
+    public function compileSelect(\Illuminate\Database\Query\Builder $query)
+    {
+        $this->selects[] = ['table' => $query->from, 'lock' => $query->lock,
+            'bindings' => $query->getBindings(), 'orders' => $query->orders];
+        return parent::compileSelect($query);
+    }
+};
+try {
+    $connection->setQueryGrammar($grammar);
+    DB::transaction(function () use ($reader, $native, $tlds, $b, $n, $rev, $grammar, &$checked): void {
+        (new Projection($native))->lock($tlds);
+        $expected = $rev($b); $checked = []; $grammar->selects = [];
+        $out = $reader->readBatch([new Query($n, ['com'], 'register'), new Query($b, ['com'], 'register', 3, expected: ['com' => $expected])], Context::Locked);
+        same(true, $out[1][0]->available, 'Locked batch uses the same evaluator and current tuple');
+        same([$b->serverId, $n->serverId], $checked, 'Local readiness follows sorted account prefix, not cart order');
+    });
+} finally { $connection->setQueryGrammar($original); }
 $tables = [(new Server)->getTable(), 'domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices'];
-$positions = [];
-foreach ($trace as $sql) {
-    foreach ($tables as $i => $table) { if (str_contains($sql, 'from "'.$table.'"')) { $positions[] = $i; } }
+$locked = array_values(array_filter($grammar->selects, static fn ($q) => $q['lock'] !== null));
+same($tables, array_column($locked, 'table'), 'Every shared lock group is acquired once, before any later account lock');
+foreach ($locked as $q) { same(true, $q['lock'], 'Every lock group requests an exclusive lock'); }
+foreach (array_slice($locked, 0, 2) as $i => $q) {
+    same($i === 0 ? ['server', $b->serverId, $n->serverId] : [$b->serverId, $n->serverId], $q['bindings'], 'Whole account prefix is acquired in numeric order');
+    same([['column' => $i === 0 ? 'id' : 'server_id', 'direction' => 'asc']], $q['orders'], 'Account locks use stable ascending order');
 }
-$sorted = $positions; sort($sorted);
-same($sorted, $positions, 'No second account is acquired after a policy/TLD/price read');
-same([0, 1, 2, 3, 4], array_values(array_unique($positions)), 'Every shared lock group is exercised');
+$accountReads = array_values(array_filter($grammar->selects, static fn ($q) => $q['table'] === 'domains_accounts' && $q['lock'] === null));
+expect($accountReads !== [], 'Current NameSilo TEST facts revalidate the already locked account without a new lock');
+foreach ($accountReads as $q) {
+    same([$n->serverId], $q['bindings'], 'Plain validation reads stay within the acquired account prefix');
+}
 same(0, $reads->calls, 'No provider factory or callback is entered by batch loading');
 $nativeSuccessful = true;
 echo "Offer batch loading: ok\n";
