@@ -117,7 +117,7 @@ same([$before,$sent,1],[$cash(),$mails(),$alerts($stale)],'An invoice already Pa
 
 // Real checkout across two accounts: both sweeps see the one payment, which credits once.
 $other=$tlds[1];$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$other->server_id)->sole());$kept=fixtureOfferFacts($binding);
-$net=Tld::create(['server_id'=>$other->server_id,'registrar_key'=>$other->registrar_key,'account_fingerprint'=>$other->account_fingerprint,'tld'=>'net','enabled'=>true,'min_years'=>1,'max_years'=>1]);
+$net=Tld::create(['server_id'=>$other->server_id,'registrar_key'=>$other->registrar_key,'account_fingerprint'=>$other->account_fingerprint,'tld'=>'net','catalogue_converted'=>true,'catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1,transfers:true)),'enabled'=>true,'min_years'=>1,'max_years'=>1]);
 $accepted=fixtureObserveOfferFacts($binding,$kept->endings+['net'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
 $rates=array_map(fn($a)=>new CatalogueRate($a,1,'6.00','synthetic',$clock->now(),$clock->now()->modify('+1 day')),['register','renew','transfer']);
 fixtureObserveOfferEntry(new CatalogueEntry($binding,'net',$rates,[1],true,true));
