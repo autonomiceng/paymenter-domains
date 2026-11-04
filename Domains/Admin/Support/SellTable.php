@@ -56,14 +56,14 @@ final class SellTable
         return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->server_id.':'.$t->tld=>$page[$t->id]])->all();
     }
     /** One binding-scoped identity read for the supplied account/TLD pairs. */
-    private function tlds(array $rows): \Illuminate\Database\Eloquent\Collection
+    private function tlds(array $rows,array $columns=['*']): \Illuminate\Database\Eloquent\Collection
     {
         $pairs=collect($rows)->groupBy('server_id');
         return Tld::where(function($q)use($pairs):void {
             $q->whereRaw('1=0');
             foreach($pairs as $server=>$rows){if(isset($this->bindings[$server])){$q->orWhere(fn($one)=>$one->where('server_id',$server)
                 ->where('account_fingerprint',$this->bindings[$server]->fingerprint)->whereIn('tld',$rows->pluck('tld')));}}
-        })->get();
+        })->get($columns);
     }
     /** The saved TLD behind a row, for its own page. A row nothing is saved for yet has none. */
     public function tldId(OfferRow $row): ?int
@@ -86,7 +86,7 @@ final class SellTable
     {
         if(!Staff::requireView()->costs||!$this->costs||$this->filteredRows===null){return 0;}
         if($this->hiddenWarnings!==null){return $this->hiddenWarnings;}
-        $this->facts();$hidden=$this->tlds(($this->filteredRows)())->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]));
+        $this->facts();$hidden=$this->tlds(($this->filteredRows)(),['server_id','tld','catalogue_intent','use_default_rule','pricing_mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'])->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]));
         return $this->hiddenWarnings=count($this->source()->omissions($hidden));
     }
     public function scope(): ?int {return count($this->bindings)===1?array_key_first($this->bindings):null;}
