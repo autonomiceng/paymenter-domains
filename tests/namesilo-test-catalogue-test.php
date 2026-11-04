@@ -35,9 +35,10 @@ function curl_exec($h): bool {
         default=>throw new \RuntimeException('Unexpected synthetic wire command.'),
     };
     $body=json_encode(['request'=>['operation'=>$command],'reply'=>['detail'=>'success']+$reply]);
+    $GLOBALS['nsCatalogueClock']->instant=$GLOBALS['nsCatalogueClock']->now()->modify('+1 second');
     return ($o[CURLOPT_WRITEFUNCTION])($h,$body)===strlen($body);
 }
-$clock=new FakeClock(new \DateTimeImmutable('2026-11-03T12:00:00Z'));app()->instance(Clock::class,$clock);$now=$clock->now();
+$clock=new FakeClock(new \DateTimeImmutable('2026-11-03T12:00:00Z'));app()->instance(Clock::class,$clock);$now=$clock->now();$GLOBALS['nsCatalogueClock']=$clock;
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
 Category::create(['name'=>'Domains','slug'=>'domains']);
 Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
