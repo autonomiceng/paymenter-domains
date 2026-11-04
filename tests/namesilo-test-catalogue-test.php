@@ -28,7 +28,7 @@ function curl_exec($h): bool {
     same('ote.namesilo.com',$url['host'],'Catalogue and checkout use only OTE');
     $GLOBALS['nsCatalogueCalls'][]=$command;
     $reply=match($command){
-        'getPrices'=>['code'=>300,'com'=>['registration'=>'10.00','renew'=>'12.00','transfer'=>'11.00'],
+        'getPrices'=>['code'=>300,'com'=>$GLOBALS['nsCatalogueRow']??['registration'=>'10.00','renew'=>'12.00','transfer'=>'11.00'],
             'net'=>['registration'=>'13.00','renew'=>'14.00','transfer'=>'15.00']],
         'getAccountBalance'=>['code'=>300,'balance'=>'123.45'],
         'checkRegisterAvailability'=>['code'=>300,'available'=>[['domain'=>$p['domains'],'price'=>'10.00','premium'=>0,'duration'=>1]]],
@@ -122,6 +122,30 @@ commerceCheckout($user,$cart);
 same(1,Operation::count(),'Real native checkout binds one NameSilo order');
 $op=Operation::sole();same('namesilo',$op->registrar_key,'Checkout freezes the selected NameSilo seller');
 same('13.00',$op->policy['price']['retail'],'Invoice retains the admitted price');
+// Real writer/projection proves an unusable feed retracts saved costs, including holder estimates.
+auth()->login($staff);
+$feedContext=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+120 seconds'),new RequestBudget(1),$clock);
+$applyFeed=static function()use($offerPorts,$binding,$feedContext,$ports,$revision):void {
+    foreach($offerPorts->feed($binding)->prices($feedContext()) as $command){
+        if($command->tld()==='com'){$ports->apply($command,$revision());}
+    }
+};
+$saved=Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts;
+$GLOBALS['nsCatalogueRow']=['registration'=>'10.00','renew'=>'broken','transfer'=>'11.00'];
+$applyFeed();
+foreach(['register','renew','transfer'] as $action){
+    $cost=$ports->loadBatch([new Query($binding,['com'],$action)],Context::Staff)[0][0]->observation();
+    if($cost?->enabled!==false||$cost->total!==null){$saleFailures[]='Unusable row retracts saved '.$action.' cost';}
+}
+$saleRefuses(fn()=>$storefront->offer('com','register',1),'Unusable price row refuses registration at the old cost');
+$saleRefuses(fn()=>$storefront->offer('com','transfer',1),'Unusable price row refuses transfer at the old cost');
+$saleRefuses(fn()=>$offerPorts->feed($binding)->facts('com',$feedContext()),'Unusable price row refuses a cold facts refresh');
+if($capabilities->cost($binding,'com')!==null){$saleFailures[]='Unusable price row removes the holder renewal estimate';}
+same('15.60',$capabilities->holder($binding,'com')->retail,'Unusable price row preserves retained holder retail');
+same($saved,Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts,'Price retraction does not redate protocol facts');
+unset($GLOBALS['nsCatalogueRow']);$applyFeed();
+same('$13.00',$storefront->offer('com','register',1)['price'],'A usable row restores registration');
+same('12.0000',$capabilities->cost($binding,'com')->total,'A usable row restores the holder cost estimate');
 $before=count($GLOBALS['nsCatalogueCalls']);auth()->login($staff);
 config(['domains.namesilo_test.registration'=>false]);
 $refuses(fn()=>DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selection']],$now)));

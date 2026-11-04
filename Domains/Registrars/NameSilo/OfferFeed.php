@@ -19,12 +19,10 @@ final class OfferFeed implements PricedFeed
         $at = $context->now(); $until = $at->modify('+'.$this->freshness->maxAge().' seconds'); $commands = [];
         foreach ($this->reader->prices($context) as $tld => $row) {
             CanonicalName::parse('example.'.$tld, [$tld]);
-            $costs = [];
-            foreach (['register' => 'registration', 'renew' => 'renew', 'transfer' => 'transfer'] as $action => $field) {
-                $amount = PricingRule::wholesale($row[$field] ?? null);
-                // NameSilo quarantine is unknown for the whole row, never explicit disabled.
-                if ($amount === null || PricingRule::units($amount) < 1) { $costs = []; break; }
-                $costs[] = new Cost($action, 1, true, $amount, CostUnit::Annual, 'namesilo_account_annual', $at, $until);
+            $costs = []; $amounts = $this->amounts($row);
+            // Quarantine retracts every annual cost; unknown amounts never become zero.
+            foreach ($amounts ?? ['register' => null, 'renew' => null, 'transfer' => null] as $action => $amount) {
+                $costs[] = new Cost($action, 1, $amount !== null, $amount, CostUnit::Annual, 'namesilo_account_annual', $at, $until);
             }
             $commands[] = new FeedObserved($context->binding, $tld, $costs);
         }
@@ -36,8 +34,19 @@ final class OfferFeed implements PricedFeed
         CanonicalName::parse('example.'.$tld, [$tld]);
         if (!$this->facts) { throw new \DomainException('NameSilo offer facts are unverified.'); }
         $facts = ($this->facts)($tld);
-        // The cold check confirms this ending is still present; prices never supply or redate facts.
-        if (!array_key_exists($tld,$this->reader->prices($context))) { throw new \DomainException('NameSilo ending unavailable.'); }
+        // The cold check requires a usable row; prices never supply or redate facts.
+        if ($this->amounts($this->reader->prices($context)[$tld] ?? null) === null) { throw new \DomainException('NameSilo ending unavailable.'); }
         return new FactsObserved($context->binding,$tld,$facts);
+    }
+    /** All three prices are required; one unusable field quarantines the whole ending. */
+    private function amounts(?array $row): ?array
+    {
+        $amounts = [];
+        foreach (['register' => 'registration', 'renew' => 'renew', 'transfer' => 'transfer'] as $action => $field) {
+            $amount = PricingRule::wholesale($row[$field] ?? null);
+            if ($amount === null || PricingRule::units($amount) < 1) { return null; }
+            $amounts[$action] = $amount;
+        }
+        return $amounts;
     }
 }
