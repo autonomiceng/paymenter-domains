@@ -23,7 +23,7 @@ $clock ??= new FakeClock($now); $admission = activeFixtureAdmission($native, $se
 $admission->boot(); $invoiceBinding=new InvoiceBinding($admission,$native,$prices,$clock);$invoiceBinding->boot();app()->instance(InvoiceBinding::class,$invoiceBinding);
 $user = commerceUser(); $user->update(['email' => 'contact@example.com']); $other = commerceUser();
 $staff = commerceUser(); $role = Role::create(['name' => 'Domain manager', 'permissions' => ['admin.domains.manage']]); $staff->update(['role_id' => $role->id]);
-tldPanel();$panel = Filament\Facades\Filament::getCurrentPanel();
+\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();tldPanel();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);$panel = Filament\Facades\Filament::getCurrentPanel();
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn () => App\Admin\Resources\CustomPropertyResource::registerRoutes($panel));
 app('router')->getRoutes()->refreshNameLookups();
 DB::beginTransaction();

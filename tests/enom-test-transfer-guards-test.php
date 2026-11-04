@@ -9,6 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestTransfer as Policy,EnomTestRegistration,WriteAcceptance};
 app()->instance(Clock::class,$clock);[$d,$driver]=$holding(placeholderComFixtureName('transfer-policy-placeholder.com'));$binding=$driver->capabilities()->binding;
 config(['domains.enom_writes.registration'=>false,'domains.enom_writes.renewal'=>false,'domains.enom_writes.management'=>false,'domains.enom_writes.transfer'=>true,'domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
+\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
 expect(Policy::enabled($binding),'Independent TEST transfer policy');
 foreach([false,'true',1,null] as $value){config(['domains.enom_writes.transfer'=>$value]);expect(!Policy::enabled($binding),'Strict boolean transfer opt-in');}config(['domains.enom_writes.transfer'=>true]);
 foreach(['live','',null] as $value){config(['domains.enom_identity.environment'=>$value]);expect(!Policy::deploymentEnabled(),'TEST deployment identity only');expect(!Policy::enabled($binding),'TEST identity only');expect(str_contains(Policy::reason(),'not test'),'Identity refusal reason');}config(['domains.enom_identity.environment'=>'test']);
