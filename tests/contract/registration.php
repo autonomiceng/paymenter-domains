@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEv
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver, Registration, Writer};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RegistrarRequest;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationPreflight, RegistrationProfiles, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationPreflight, RegistrationProfiles, WriteAcceptance, WriteFeatures};
 
 // Native funding/account identity/catalogue policy are synthetic and disposable. No real account
 // identity or installed-runtime acceptance is inferred. Actual protocol reads use the REAL driver.
@@ -19,8 +19,8 @@ $binding = $bindingFor(1); $rates = [];
 foreach ([['register', '6.00'], ['renew', '8.00'], ['transfer', '7.00']] as [$action, $cost]) {
     $rates[] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action, 1, $cost, 'synthetic', $now, $now->modify('+1 day'));
 }
-$prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding, 'com', $rates, [1], true, true),
-    CatalogueAcceptances::load($binding), static fn () => null, $now);
+fixtureObserveOfferEntry(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding, 'com', $rates, [1], true, true));
+activeCommerceFacts($now,$now->modify('+1 day'));
 activeFixtureRepublish($native,$tlds[1]->id, $now); $tlds[1]->refresh();
 config(['logging.default' => 'null', 'logging.channels.null' => ['driver' => 'monolog', 'handler' => \Monolog\Handler\NullHandler::class]]);
 $clock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
