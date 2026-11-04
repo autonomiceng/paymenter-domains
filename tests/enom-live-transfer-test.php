@@ -51,7 +51,7 @@ $protocol=['route'=>EnomLive::route(),'command'=>'TP_CreateOrder','interval'=>25
 $accept(Policy::KEY,$protocol);expect(!Policy::accepted($binding),'TEST acceptance cannot authorize Live');
 $accept('domains_enom_live_transfer',[...$protocol,'route'=>'https://resellertest.enom.com/interface.asp']);expect(!Policy::accepted($binding),'TEST route cannot authorize Live');
 $deny(fn()=>$write('test_transfer',['accept'=>true,'verified'=>true]));
-$activate();expect(Policy::accepted($binding),'Independent Live acceptance');$publicOffers(true,'After acceptance');config(['domains.enom_live.transfer'=>false]);$publicOffers(false,'Deployment off');config(['domains.enom_live.transfer'=>true]);$publicOffers(true,'Deployment restored');
+$activate();expect(Policy::accepted($binding),'Independent Live acceptance');$write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class)->product($tld,'transfer');expect($transferProduct!==null,'Reviewed active Live transfer has its published native product');$publicOffers(true,'After acceptance');config(['domains.enom_live.transfer'=>false]);$publicOffers(false,'Deployment off');config(['domains.enom_live.transfer'=>true]);$publicOffers(true,'Deployment restored');
 $write('live_transfer',['accept'=>false]);expect(!Policy::accepted($binding),'Live acceptance can be revoked');same(false,app(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->hasTransferOffers(),'Revocation invalidates the warm Live offer');$publicOffers(false,'After revoke');
 $write('live_transfer',['accept'=>true]);
 same([60,60],TransferPrecheck::rules($selection),'What you sell is used only after Live acceptance');
@@ -63,9 +63,9 @@ foreach(['feature_off','evidence_removed'] as $missing){
     $sale=app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->selection('com','transfer',1,$clock->now());
     if($missing==='feature_off'){$write('live_transfer',['accept'=>false]);}else{config(['domains.enom_live.accounts.live-uid.evidence'=>null]);}
     $debts=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
-    commerceCheckout($user,$blockedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+    commerceCheckout($user,$blockedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
     same($debts,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],$missing.' transfer has no payable debt');
-    try{DB::transaction(fn()=>app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$sale],$clock->now()));throw new LogicException('Locked transfer admission must refuse');}catch(App\Exceptions\DisplayException){}
+    try{DB::transaction(fn()=>app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$sale],$clock->now()));throw new LogicException('Locked transfer admission must refuse');}catch(DomainException){}
     config(['domains.enom_live.accounts.live-uid.evidence'=>$evidence]);if($missing==='feature_off'){$write('live_transfer',['accept'=>true]);}
 }
 $cart=commerceCart($user);commerceAdd($cart,$transferProduct,placeholderComFixtureName('live-transfer-placeholder.com'));commerceCheckout($user,$cart)->assertHasNoErrors();

@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue, StaffSettingsReview as Review, StaffSettingsWrites};
 $clock=new class implements Clock {public DateTimeImmutable $at;public function __construct(){$this->at=new DateTimeImmutable('2026-10-22T00:10:00Z');}public function now():DateTimeImmutable{return $this->at;}};
-app()->instance(Clock::class,$clock);Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+app()->instance(Clock::class,$clock);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $session=app('session')->driver();$session->start();app('request')->setLaravelSession($session);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http://assets.example.test');app(Illuminate\Foundation\Vite::class)->useHotFile($hot);require_once app_path('Classes/helpers.php');tldPanel();
 $rdapMode=(object)['mode'=>'ok','calls'=>0];$rdap=new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static function(string $url,int $timeout)use($rdapMode):array {
