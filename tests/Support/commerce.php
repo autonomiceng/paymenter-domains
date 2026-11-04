@@ -65,7 +65,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
             $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,$ending,$costs),$rev());
             $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$ending,new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$rev());
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,$ending,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:max($terms),transfers:true)),$rev());
-            if($key==='enom'){$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,$ending,['register','transfer']),$rev());}
+            $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,$ending,['register','transfer']),$rev());
             $tlds[]=$tld->fresh();continue;
         }
         $accepted = CatalogueAcceptances::save($binding, 0, [$ending => ['register' => $terms, 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]);
@@ -77,7 +77,12 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $native->publish($tld->id, $now); $tlds[] = $tld->fresh();
     }
     if(!$active){$sellers->initialize($ending); $sellers->change($ending, 1, $tlds[0]->server_id, true, true, $now);}
-    if($active){return compact('bindings','prices','sellers','native','now','tlds','reads','clock','ports','caps','offers');}
+    if($active){
+        $first=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+        $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($first,[$ending],'register');
+        $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($first,$ending,['register','transfer']),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+        return compact('bindings','prices','sellers','native','now','tlds','reads','clock','ports','caps','offers');
+    }
     return compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds', 'reads');
 }
 function commerceReject(callable $call): void
