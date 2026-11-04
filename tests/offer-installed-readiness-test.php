@@ -18,7 +18,7 @@ $review=$ready->review($account->fresh(),$features);
 same(null,$review['missing'],'An otherwise ready paused account can review activation before Orders on');
 same($review,DB::transaction(fn()=>$ready->review($account->fresh(),$features,true)),'Locked readiness uses the same paused account premise');
 $public=CallerPorts::routed()->readOffers(new Query($binding,['com'],'register'),Context::Public)[0];
-expect(!$public->decision->available,'Paused readiness cannot grant a public purchase');
+expect(!$public->available,'Paused readiness cannot grant a public purchase');
 \App\Models\Server::whereKey($binding->serverId)->update(['enabled'=>false]);
 expect($ready->review($account->fresh(),$features)['missing']!==null,'Readiness still checks the current server and credential prefix');
 same(0,$reads->calls,'Readiness checks are local only');

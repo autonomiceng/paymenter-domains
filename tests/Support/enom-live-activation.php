@@ -88,14 +88,18 @@ $activationEvidence=array_replace_recursive($syntheticEvidence,['reference'=>'OF
     'history'=>['registration'=>['lag'=>90],'renewal'=>['lag'=>120]]]);
 // Adding management must not revive retained registrations with missing registration readiness.
 $write('live_management',['accept'=>false]);
-$activationRegister=DB::table('domains_tlds')->where('id',$tld->id)->value('register_enabled');
-DB::table('domains_tlds')->where('id',$tld->id)->update(['register_enabled'=>false]);
+$clock->at=$clock->now()->modify('+1 second');$at=$clock->now();
+$activePorts=\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
+$offerQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+$activePorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',
+    new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[],'renew'=>[1],'transfer'=>[]],[],true,false,false,'independent_synthetic_withdrawal',$at,$at->modify('+1 day'))),
+    $activePorts->readOffers($offerQuery,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 config(['domains.enom_live.accounts.live-uid.evidence'=>$activationEvidence]);
 $activationBefore=[$unchanged(),$server->settings()->where('key',EnomLiveActivation::KEY)->sole()->value];
 try{$write('activate',$activation);throw new LogicException('New management must not revive registrations without registration readiness');}
 catch(DomainException $e){expect(str_contains($e->getMessage(),'Costs and prices Missing.'),'Retained registration readiness refuses the new feature');}
 same($activationBefore,[$unchanged(),$server->settings()->where('key',EnomLiveActivation::KEY)->sole()->value],'Refusal preserves the receipt, saved features, Orders and audit');
-DB::table('domains_tlds')->where('id',$tld->id)->update(['register_enabled'=>$activationRegister]);
+$clock->at=$clock->now()->modify('+1 second');$tld=installedOfferEvidence($binding,$clock);
 config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);$write('activate',$activation);
 // Re-confirming unchanged choices must review updated evidence and both histories.
 config(['domains.enom_live.accounts.live-uid.evidence'=>$activationEvidence]);
