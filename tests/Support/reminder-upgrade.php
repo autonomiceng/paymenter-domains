@@ -12,8 +12,10 @@ $customSchedules=$upgradeQuery->orderBy('server_id')->get()->map(fn($r)=>(array)
 $oldMissing=App\Models\Server::create(['name'=>'Existing account without a schedule','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $legacyServerId=(int)$oldMissing->id;
 Paymenter\Extensions\Servers\Domains\Models\Account::withVerifiedBindingWrite(static fn()=>Paymenter\Extensions\Servers\Domains\Models\Account::create(['server_id'=>$legacyServerId,'registrar_key'=>'enom','environment'=>'test','stable_identity'=>'existing-no-reminder']));
-// Empty paths reproduce today's upgrade, where this additive migration does not exist yet.
+// The shared fixture is now a full install. Recreate this one pre-migration history boundary
+// so the native migrator actually upgrades the existing account and preserves saved choices.
 $upgradePaths=glob(dirname(__DIR__,2).'/Domains/database/migrations/2026_11_01_000047_preserve_reminder_defaults.php');
+if($upgradePaths!==[]){DB::table('migrations')->where('migration','2026_11_01_000047_preserve_reminder_defaults')->delete();}
 app(Illuminate\Database\Migrations\Migrator::class)->run($upgradePaths,['force'=>true]);
 ReminderSchedules::enroll($legacyServerId);
 same(false,(bool)DB::table('domains_reminder_schedules')->where('server_id',$legacyServerId)->value('enabled'),'Existing account without a schedule remains Off after upgrade and worker enrollment');

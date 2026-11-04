@@ -46,7 +46,7 @@ final class AccountChecklist
             default=>self::row('API connection','OK','success',null,'probe',$check)};
         try { $binding=AccountBindings::binding($a); } catch (\Throwable) { $binding=null; }
         $tlds=self::tlds($a,$binding,$offers);
-        $rows=[$connection,$tlds,...self::pricing($a,$offers,$tlds['using_default']),self::prices($a),self::orders($a)];
+        $rows=[$connection,$tlds,...self::pricing($a,$offers,$tlds['using_default']),self::prices($a,$binding),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
         $off=fn(?bool $gate)=>match(true){$gate===null=>'Not set up on this site yet. See System checks.',default=>self::siteOff($a)};
         $rows[]=$gates['register']===true?self::row('Registrations','On, follows Orders',null,null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
@@ -168,8 +168,9 @@ final class AccountChecklist
         $shown=implode(', ',array_map(fn($e)=>'.'.$e,array_slice($first,0,3)));
         return count($first)>3?$shown.' and '.(count($first)-3).' more':$shown;
     }
-    private static function prices(Account $a): array
+    private static function prices(Account $a,?object $binding): array
     {
+        if($binding===null){return [...self::row('TLD prices',null,null,'Restore the API connection first.',null,self::PRICES),'buttons'=>[]];}
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
             return [...self::row('TLD prices',ucfirst($status['state']),null,null,null,self::PRICES),'buttons'=>self::priceButtons($a)];

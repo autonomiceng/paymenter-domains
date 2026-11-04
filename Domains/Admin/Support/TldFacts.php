@@ -139,7 +139,8 @@ final class TldFacts
                 // A price sync is saved for the account; show it only on the TLDs it synced.
                 $ending=Tld::whereKey($tldId)->value('tld');
                 $rows=array_filter($rows,static function($r)use($tldId,$ending):bool {
-                    if($r['tld_id']){return $r['tld_id']===$tldId;}
+                    if($r['tld_id']??null){return $r['tld_id']===$tldId;}
+                    if(isset($r['tld'])){return $r['tld']===$ending;}
                     if($r['action']==='Sync TLD prices'){return is_string($ending)&&(($r['input']['ending']??null)===$ending||in_array($ending,(array)($r['input']['endings']??[]),true));}
                     if($r['action']==='Edit what you sell'){return is_string($ending)&&(self::unknownSalesScope($r['input'])||isset($r['input']['rows'][$ending])||array_key_exists($ending,(array)($r['input']['changes']??[]))||($r['input']['rule_changed']??false));}
                     return in_array($r['action'],['Edit card fee','Edit default rule','Edit default pricing','Publish prices'],true);
@@ -175,7 +176,8 @@ final class TldFacts
                 $phase=(string)$r['phase'];
                 if(str_ends_with($phase,'_requested')){$change.=': started';}elseif(str_ends_with($phase,'_refused')){$change.=': refused';}elseif($phase==='publication_completed'){$change.=': publishing finished';}
                 try{$at=\Carbon\CarbonImmutable::parse((string)$r['at'])->utc()->toIso8601String();}catch(\Throwable){$at=(string)$r['at'];}
-                return ['time'=>$at,'change'=>$change,'reason'=>implode('. ',[...$detail,...($r['reason']===''?[]:[(string)$r['reason']])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
+                $reason=(string)($r['reason']??''); // Catalogue observation audits have no staff-entered reason.
+                return ['time'=>$at,'change'=>$change,'reason'=>implode('. ',[...$detail,...($reason===''?[]:[$reason])]),'by'=>$r['actor_id']===null?'System':($names[$r['actor_id']]??'Staff #'.$r['actor_id'])];
             },array_reverse(array_values($rows)));
         }catch(\Throwable){return null;}
     }

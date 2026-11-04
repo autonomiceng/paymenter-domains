@@ -13,11 +13,14 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install(); }
-    FoundationSchema::install(); SalesPolicySchema::install();
-    if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install(); }
-    if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::install(); }
-    // Historical installed ZIPs predate this schema; current partial fixtures need it explicitly.
-    if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }
+    // Active fixtures already ran every schema and verification through the native installer.
+    if (!$active) {
+        FoundationSchema::install(); SalesPolicySchema::install();
+        if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install(); }
+        if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::install(); }
+        // Historical installed ZIPs predate this schema; current partial fixtures need it explicitly.
+        if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }
+    }
     Currency::firstOrCreate(['code' => 'USD'], ['name' => 'US Dollar', 'format' => '1,000.00', 'prefix' => '$', 'suffix' => '']);
     Category::create(['name' => 'Domains', 'slug' => 'domains', 'description' => 'Domains']);
     $registry = new RegistrarRegistry;

@@ -2,7 +2,7 @@
 // Cost refresh/publication adapted from Enom 444f31c Services/Catalogue.php; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting};
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{PriceSnapshot, RenewalPrice};
@@ -18,22 +18,6 @@ final class PriceCatalogue
     public function __construct(private readonly PricingRules $rules, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null,
         private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts $reads = null) {}
 
-    /** Cost-only legacy import: deliberately drops publication proof on touched rows. Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.
-     * Callback returns explicit rate/no-price entries; omissions NEVER withdraw existing terms.
-     */
-
-
-    /** Shared batch import and existing native publication commit together, in native lock order. */
-
-
-
-
-    /** Caller owns native publication prefix, server/account, policy and TLD locks. */
-
-
-    /** Quarantine an explicit malformed row, preserving holder retail and price identities. */
-
-
     /** Published annual retail survives unknown/stale costs and rule republication failures.
      * Slice 24 projects this into native service.price under locks; issued invoices remain frozen.
      */
@@ -47,8 +31,6 @@ final class PriceCatalogue
         }
         throw new \DomainException(OfferUpgrade::MESSAGE);
     }
-
-
 
     /** Fresh cost evidence only; does not check seller, ownership, funding or driver eligibility.
      * lock=true requires caller-held server, account, policy and TLD locks in storage.md order.
@@ -65,39 +47,6 @@ final class PriceCatalogue
         }
         throw new \DomainException(OfferUpgrade::MESSAGE);
     }
-
-
-
-    /** Pure saved-price validation for render snapshots; callers qualify the row's binding and action.
-     * Saved costs stop authorizing new sales after the daily sync and one missed run. */
-
-
-
-
-
-
-    /** Term retail for one rule and its margin decision. Publication and the staff preview share it.
-     * Renewals that cannot be published (unknown or nonpositive price) keep the prior retail; below-cost renewals are
-     * still billed; below-cost registrations and transfers are held. */
-
-
-    /** Saved rows a staff price change republishes, in register, renew, transfer order. */
-
-
-    /** A saved price is on an older rule, and every cost needed to redo it is here. */
-
-
-    /** A saved price is on an older rule, whether or not it can be redone yet. */
-
-
-    /** What saving a rule would publish: cost, current and new term retail, without writing. */
-
-
-    /** Staff saves publish at once, so every saved term needs a synced read and the one-year renewal needs a cost.
-     * A read without a cost means the registrar does not offer that term. Old reads still count. */
-
-
-
 
     public static function cost(string $value): string
     {

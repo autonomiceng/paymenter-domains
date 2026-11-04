@@ -152,21 +152,11 @@ class NativeCatalogue
         return $product->plans()->where(['type' => 'recurring', 'billing_unit' => 'year', 'billing_period' => 1])->sole();
     }
 
-    /** $change edits the locked TLD before republication, so a staff price change and its publication commit together.
-     * A $change that returns false leaves the TLD alone. */
+    /** Reviewed publication through the active catalogue command. */
     public function publish(int $tldId, \DateTimeImmutable $now, ?StaffSettingsReview $review = null, ?\Closure $change = null): void
     {
         if ($change !== null) { throw new \DomainException('Typed catalogue command required.'); }
         ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->publish($tldId,$review);
     }
-
-    /** The sweep's publication. A rule change that missed this TLD goes on sale by itself once its costs are in, and the audit log says so.
-     * A saved selling rule also prepares new products; older curated catalogues keep their staff publication. */
-
-
-    /** Import saved costs and refresh existing publication in the same native-first transaction.
-     * An ending without native products remains unpublished. All provider reads have already finished. */
-
-
 
 }
