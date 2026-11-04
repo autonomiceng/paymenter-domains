@@ -22,5 +22,6 @@ $page->unmountAction();
 $rows=array_column(AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
 same(['Not supported',null],[$rows['Late renewal']['value'],$rows['Late renewal']['action']],'Unsupported late renewal has no switch');
 $page->assertSee('Free when supported by the TLD.')->assertSee('DNS records and DNSSEC are not offered for NameSilo.');
-same(1,$GLOBALS['enrollmentCalls'],'Viewing and local settings never probe the provider');
+// The included fixture authenticates the initial key and both credential rotations.
+same(3,$GLOBALS['enrollmentCalls'],'Viewing and local settings never probe the provider');
 $nativeSuccessful=true;
