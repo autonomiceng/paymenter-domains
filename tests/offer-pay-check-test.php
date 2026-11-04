@@ -23,6 +23,7 @@ $revision = $ports->readOffers(new Query($binding, ['com'], 'register'), Context
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false)), $revision);
 same('unavailable', $pay->stop($invoice)['why'] ?? null, 'Stale local evidence refuses payment instead of trusting the old clear cache');
 same(['pending', 'awaiting_payment', $before], [$invoice->fresh()->status, $op->fresh()->state, $reads->calls], 'Local staleness neither retires nor reads the provider');
+$op->update(['state'=>'held']);same('unavailable',$pay->stop($invoice)['why']??null,'An unsent held invoice still checks the current local offer before payment');same($before,$reads->calls,'Held payment refusal is local only');$op->update(['state'=>'awaiting_payment']);
 // Restore public selling, then use the same native fixture for unsent/frozen payment behavior.
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true)),
     $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision);
