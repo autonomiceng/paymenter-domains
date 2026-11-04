@@ -59,4 +59,4 @@ same(0,$sends,'Expired independent renewal facts authorize zero physical sends')
 $nativeSuccessful=true;
 echo "Offer frozen renewals: ok\n";
 
-} catch (Throwable $error) { throw new RuntimeException($error->getMessage().' ['.implode(',',array_map(static fn($frame)=>basename($frame['file']??'').':'.($frame['line']??0),array_slice($error->getTrace(),0,12))).']'); }
+} catch (Throwable $error) { throw new RuntimeException($error->getMessage().' ['.implode(',',array_map(static fn($frame)=>basename($frame['file']??'').':'.($frame['line']??0),array_slice($error->getTrace(),0,35))).']'); }
