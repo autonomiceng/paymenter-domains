@@ -60,81 +60,13 @@ final class EnomLiveActivation
     /** Strict by default. Only the display supplies a failure list to continue after a bad action/term. No price writes. */
     private static function prices(Account $a,AccountBinding $b,array $features,\DateTimeImmutable $now,?array &$failures=null): array
     {
-        if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()) {
-            $r=$offers->review($a,$features,DB::transactionLevel()>0);
-            if($failures!==null){$failures=$r['failures'];} elseif($r['missing']!==null){throw new \DomainException($r['missing']);}
-            return $r['costs'];
-        }
-        // Fence this legacy snapshot once; per-term evidence validation stays query-free.
-        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
-        try{
-            $lock=DB::transactionLevel()>0;$accepted=CatalogueAcceptances::load($b,$lock);$rows=[];$counts=['registration'=>0,'transfer'=>0];$rules=new PricingRules;$prices=new PriceCatalogue($rules);
-            // Display snapshot only. Activate still takes the original independent locking reads below.
-            if(!$lock){
-                $policies=SalesPolicy::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->get()->keyBy('tld');
-                $saved=Price::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->where('currency','USD')
-                    ->whereIn('tld',Tld::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->where('enabled',true)->select('tld'))->get()->groupBy('tld');
-                $default=$fee=null;
-            }
-            $evidence=collect();$hash=null;
-            if($accepted->registrationRoute!==EnomLive::route()||$accepted->registrationIntervalSeconds<25){throw new \DomainException;}
-            foreach(Tld::where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->where('enabled',true)->orderBy('tld')->get() as $t){
-                $policy=$lock?SalesPolicy::where('tld',$t->tld)->where('server_id',$a->server_id)->where('account_fingerprint',$b->fingerprint)->first():$policies->get($t->tld);
-                $needed=($features['renewal']??false)&&$t->renew_enabled;
-                foreach(['registration'=>'register','transfer'=>'transfer'] as $feature=>$action){$needed=$needed||(($features[$feature]??false)&&$policy?->{$action.'_enabled'}&&$t->{$action.'_enabled'});}
-                if(!$needed){continue;}
-                $ruleError=null;
-                if(!$lock){
-                    try{
-                        $rule=$t->use_default_rule?($default??=$rules->defaultRule())
-                            :$rules->rule($t,fee:$t->pricing_mode==='markup_fee_percent'?($fee??=CardFee::read()):null);
-                        $hash=hash('sha256',json_encode($rule,JSON_THROW_ON_ERROR));
-                    }catch(\Throwable $e){if($failures===null){throw $e;}$ruleError=$e;}
-                    $evidence=($saved->get($t->tld)??collect())->keyBy(static fn(Price $p)=>$p->action.':'.$p->term);
-                }
-                $attempt=static function(string $action,int $term,\Closure $validate)use(&$failures,$t,$ruleError):void {
-                    try{if($ruleError!==null){throw $ruleError;}$validate();}
-                    catch(\Throwable $e){
-                        if($failures===null){throw $e;}
-                        $failures[]=['tld'=>$t->tld,'action'=>$action,'term'=>$term,
-                            'note'=>'Costs or prices Missing. Check the TLD price list and pricing rule; Sync prices if costs are missing.'];
-                    }
-                };
-                $read=static fn(string $action,int $term)=>$lock
-                    ?$prices->current((int)$a->server_id,$b->fingerprint,$t->tld,$action,$term,'USD',$now,true,$t)
-                    :PriceCatalogue::currentEvidence($evidence->get($action.':'.$term),$hash,$now);
-                foreach(['registration'=>'register','transfer'=>'transfer'] as $feature=>$action){
-                    if(!($features[$feature]??false)||!$policy?->{$action.'_enabled'}||!$t->{$action.'_enabled'}){continue;}
-                    $terms=$action==='register'?range($t->min_years,$t->max_years):[1];
-                    foreach($terms as $term){
-                        $attempt($action,$term,static function()use($lock,$t,$action,$term,$accepted,$evidence,$read,&$rows,&$counts,$feature):void {
-                            if($lock){PublicationEligibility::require($t,$action,$term,true);}
-                            else{PublicationEligibility::requireEvidence($t,$action,$term,$accepted,$evidence->get('renew:1'),$evidence->get($action.':'.$term));}
-                            $p=$read($action,$term);
-                            $renew=$read('renew',1);
-                            $rows[]=self::costRow($t->tld,$action,$term,$p,$renew);$counts[$feature]++;
-                        });
-                    }
-                }
-                if(($features['renewal']??false)&&$t->renew_enabled){
-                    $attempt('renew',1,static function()use($accepted,$t,$read,&$rows):void {
-                        if(!($accepted->endings[$t->tld]['renewal_safe']??false)||!in_array(1,$accepted->endings[$t->tld]['renew']??[],true)){throw new \DomainException;}
-                        $p=$read('renew',1);
-                        $rows[]=self::costRow($t->tld,'renew',1,$p);
-                    });
-                }
-            }
-            foreach($counts as $feature=>$count){if($failures===null&&($features[$feature]??false)&&!$count){throw new \DomainException;}}
-            return $rows;
-        }catch(\Throwable){throw new \DomainException(self::PRICE_MISSING);}
+        $offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed()
+            ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+        $r=$offers->review($a,$features,DB::transactionLevel()>0);
+        if($failures!==null){$failures=$r['failures'];} elseif($r['missing']!==null){throw new \DomainException($r['missing']);}
+        return $r['costs'];
     }
-    private static function costRow(string $tld,string $action,int $term,PriceSnapshot $price,?PriceSnapshot $renew=null): array
-    {
-        $alerts=array_filter([$price->staffAlert,$renew?->staffAlert],static fn($alert)=>$alert!==null);
-        $note=$alerts===[]?null:(in_array('below_cost',$alerts,true)?'Below cost: renewals are still billed.':'Price warning: check the TLD price list.');
-        return ['tld'=>$tld,'action'=>$action,'term'=>$term,'cost'=>$price->wholesale,'price'=>$price->retail,'note'=>$note,
-            'renewCost'=>$renew?->wholesale,'renewPrice'=>$renew?->retail];
-    }
+
     public static function requireReady(Account $a,array $features): void
     {if($problems=self::problems($a,$features)){throw new \DomainException(implode("\n",$problems));}}
     /** Called by the existing feature writers too, so calling one directly cannot replace activation with verified=true. */

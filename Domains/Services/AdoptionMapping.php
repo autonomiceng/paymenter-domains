@@ -84,9 +84,7 @@ final class AdoptionMapping
         }
         try {
             if ($caps=($lock ? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class) : \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed())) { $caps->requireRenewal($binding,$tld->tld,$lock ? $tld : null); } else {
-            $accepted = CatalogueAcceptances::load($binding, $lock !== null);
-            $ending = $accepted->endings[$tld->tld] ?? null;
-            if (!$tld->renew_enabled || !$ending || !$ending['renewal_safe'] || !in_array(1, $ending['renew'], true)) { throw new \DomainException; }
+                throw new \DomainException(OfferUpgrade::MESSAGE);
             }
             $retail = $this->prices->renewal($binding->serverId, $binding->fingerprint, $tld->tld, 'USD', $this->clock->now(), $lock !== null, $lock ? $tld : null);
             $gross = NativeDomainGuard::gross($retail->retail, $l['tax']);

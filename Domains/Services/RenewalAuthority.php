@@ -29,11 +29,7 @@ final readonly class RenewalAuthority
                     if ($caps = $this->offers ?? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class)) {
                         $capabilityUntil = $caps->requireRenewal($binding, $domain->tld, $l['tld'])->freshUntil;
                     } else {
-                    $catalogue = CatalogueAcceptances::load($binding, true);
-                    $parts = CanonicalName::parse($domain->domain, array_keys($catalogue->endings));
-                    $row = $catalogue->endings[$parts['tld']];
-                    if (($row['renewal_safe'] ?? null) !== true
-                        || !in_array(1, $row['renew'] ?? [], true)) { throw new RenewalRefused(RenewalCode::Acceptance); }
+                        throw new RenewalRefused(RenewalCode::Acceptance);
                     }
                 }
                 catch (\Throwable) { throw new RenewalRefused(RenewalCode::Acceptance); }

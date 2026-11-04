@@ -22,4 +22,19 @@ $state->value=json_encode(['state'=>'paused','generation'=>5]);$state->save();$b
 try{(new UpgradeGate)->capture();throw new LogicException('Final package still offers bridge conversion');}
 catch(DomainException $e){expect(str_contains($e->getMessage(),'bridge 0.1.0 at 891124421645'),'Removed conversion points to the pinned bridge');}
 same($before,retainedOfferObligations(),'Refused old conversion cannot change retained obligations');
+$state->value=json_encode(['state'=>'legacy','generation'=>6]);$state->save();
+$before=retainedOfferObligations();$binding=AccountBindings::binding($account);$now=new DateTimeImmutable('2026-10-18T12:00:00Z');
+$prices=new Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue(new Paymenter\Extensions\Servers\Domains\Services\PricingRules);
+$sellers=new Paymenter\Extensions\Servers\Domains\Services\SellerPolicies($prices,app(AccountBindings::class));
+foreach([
+ fn()=>$prices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$now),
+ fn()=>$prices->current($binding->serverId,$binding->fingerprint,'com','register',1,'USD',$now),
+ fn()=>$sellers->displayCatalogues(['com']),
+ fn()=>$sellers->selection('com','register',1,$now),
+ fn()=>$sellers->admit([]),
+] as $read){
+ try{$read();throw new LogicException('Final package reached legacy policy');}
+ catch(DomainException $e){same(Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,$e->getMessage(),'Legacy policy entry points name the bridge');}
+}
+same($before,retainedOfferObligations(),'Retired policy reads preserve obligations');
 $nativeSuccessful=true;
