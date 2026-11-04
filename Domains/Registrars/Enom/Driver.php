@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolRe
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
 /** Named read adapter only; no admission, charging, persistence or account adoption. */
-final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
+final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
 {
     private array $suffixes;
     public function __construct(private readonly Client $client, array $suffixes, private readonly int $priceMaxAgeSeconds = 300)
@@ -19,37 +19,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         foreach ($suffixes as $tld) { if (!is_string($tld)) { throw new \InvalidArgumentException('Invalid ending.'); } Catalogue::tld($tld); }
         $this->suffixes = array_values(array_unique($suffixes));
     }
-    public function catalogueBatch(\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted,
-        \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness, RequestContext $context): array
-    {
-        $this->binding()->requireMatch($accepted->binding); $this->binding()->requireMatch($context->binding);
-        $entries = [];
-        foreach ($accepted->endings as $tld => $row) {
-            try {
-                $started = $context->now();
-                $details = $this->tldCapabilities($tld, $context); $schema = $this->registrySchema($tld, $context);
-                if ($details->status !== 'success' || $schema->status !== 'success') { throw new \DomainException('Catalogue read failed.'); }
-                $facts = $details->facts(); $fields = $schema->facts();
-                $live = $facts['capabilities']->get('register')->terms;
-                $rates = [];
-                foreach (['register', 'renew', 'transfer'] as $action) {
-                    foreach ($row[$action] as $term) {
-                        if ($action === 'register' && !in_array($term, $live, true)) { continue; }
-                        $rate = $this->catalogueRate($tld, $action, $term, $context, $freshness);
-                        $rates[] = new CatalogueRate($rate->action, $rate->term, $rate->perYear, $rate->source,
-                            $started, $started->modify('+'.$freshness->maxAge().' seconds'));
-                    }
-                }
-                $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($this->binding(), $tld, $rates,
-                    array_values(array_intersect($row['register'], $live)),
-                    $fields['supported'] === true && $facts['requires_nameservers'] === false && $facts['registry_attributes'] !== null,
-                    $facts['auto_renew_only'] === false, $fields['fields']);
-            } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred $error) { throw $error; }
-            catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw $error; }
-            catch (\Throwable $error) { $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFailure(\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error)); }
-        }
-        return $entries;
-    }
+
     public function binding(): AccountBinding { return $this->client->binding; }
     public function accountCapabilities(#[\SensitiveParameter] RequestContext $context): Capabilities
     {
@@ -259,15 +229,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         // Account/TLD price is advisory: it proves neither ordinary-name nor availability eligibility.
         return new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, new Evidence(quote: $quote));
     }
-    public function catalogueRate(string $tld, string $action, int $years, #[\SensitiveParameter] RequestContext $context, \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness): CatalogueRate
-    {
-        $catalogueMaxAgeSeconds = $freshness->maxAge();
-        if ($action !== 'register' && $years !== 1) { throw new \DomainException('Only annual renewal/transfer catalogue rates are supported.'); }
-        $read = $this->productPrice($tld, $action, $years, $context); $now = $context->now();
-        if ($read->status === 'unknown') { throw new \DomainException('Enom price read failed.'); }
-        return new CatalogueRate($action, $years, $read->status === 'no_price' ? null : Pricing::annual($read->facts()['price']),
-            'enom_product_price', $now, $now->modify('+'.$catalogueMaxAgeSeconds.' seconds'), 'USD', false);
-    }
+
     public function renewalAssessment(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         if ($query->action !== Action::Renew) { return $this->unsupported($context); }

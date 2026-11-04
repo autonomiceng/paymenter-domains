@@ -140,7 +140,7 @@ final class AccountChecklist
                         $page=$offers->page($rows);
                         foreach($rows as $t){$sales=$page[$t->id]['acquisition'];if($sales['register']||$sales['transfer']){$endings[]=$t->tld;if(!$page[$t->id]['own']){$defaults++;}}}
                     });
-            }else{$endings=array_keys(CatalogueAcceptances::load($binding)->endings);$defaults=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->whereIn('tld',$endings)->where('use_default_rule',true)->count();}
+            }
         } catch (\Throwable) { $endings=[];$defaults=0; }
         sort($endings);
         try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
