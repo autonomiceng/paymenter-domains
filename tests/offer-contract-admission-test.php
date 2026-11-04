@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade;
 $saved=retainedOfferDatabase();
+\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
+same(OfferUpgrade::CONTRACT,\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::contract()['id'],'Installed caller contract remains compatible with reviewed bridge admission');
 $row=Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',UpgradeGate::KEY)->sole();
 $row->value=json_encode([...$saved['receipt'],'contract'=>str_repeat('f',64)],JSON_THROW_ON_ERROR);$row->save();
 $before=retainedOfferSnapshot();
