@@ -6,7 +6,7 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
 use Filament\Schemas\View\Components\TextComponent;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\{Blade,DB};
+use Illuminate\Support\Facades\{Blade,DB,Schema};
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,Price};
