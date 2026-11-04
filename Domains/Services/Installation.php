@@ -21,7 +21,7 @@ final class Installation
     public function install(): void
     {
         OperationClaims::outside(); self::legacy();
-        if (FreshInstallation::uninstalled()) { FreshInstallation::install(); return; }
+        if (FreshInstallation::uninstalled()) { Runtime::register(); FreshInstallation::install(); return; }
         OfferUpgrade::requireCompatible();
         Cache::lock('domains-installation',60)->block(5,function():void {
             $present=Schema::hasTable('domains_accounts');
