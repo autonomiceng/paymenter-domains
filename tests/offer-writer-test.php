@@ -109,8 +109,8 @@ $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: t
 $owner = commerceUser(); $cart = commerceCart($owner); $item = commerceAdd($cart, $registration, 'example.com');
 $unaffectedCart = commerceCart($owner); commerceAdd($unaffectedCart, $orgProduct, 'example.org');
 $order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
-$service = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $registration->id,
-    'plan_id' => $annual->id, 'quantity' => 1, 'price' => '10.40', 'currency_code' => 'USD', 'status' => 'active']);
+$service = Service::withoutEvents(static fn()=>Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $registration->id,
+    'plan_id' => $annual->id, 'quantity' => 1, 'price' => '10.40', 'currency_code' => 'USD', 'status' => 'active']));
 $invoice = Invoice::create(['user_id' => $owner->id, 'currency_code' => 'USD', 'status' => 'paid']);
 InvoiceItem::create(['invoice_id' => $invoice->id, 'reference_type' => $service->getMorphClass(), 'reference_id' => $service->id,
     'description' => 'Frozen renewal', 'quantity' => 1, 'price' => '10.40']);
