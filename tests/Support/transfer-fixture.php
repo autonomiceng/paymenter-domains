@@ -33,7 +33,7 @@ if(isset($offers)){
     $admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {use OfferCommerceRoute;};$admission->fixtureOffers=$offers;
 }else{$admission = activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock,$checkoutTransfer),$clock);}
 $invoiceBinding = new InvoiceBinding($admission,$native,$prices,$clock);
-app()->instance(CartAdmission::class,$admission); app()->instance(InvoiceBinding::class,$invoiceBinding);
+app()->instance(InvoiceBinding::class,$invoiceBinding);
 $admission->boot(); $invoiceBinding->boot();
 $user = commerceUser(); $user->update(['email'=>'transfer-owner@example.com']);
 foreach (['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value) { $user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]); }
