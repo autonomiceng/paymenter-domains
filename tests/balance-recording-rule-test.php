@@ -7,7 +7,7 @@ require __DIR__.'/Support/FakeRegistrar.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,AttemptEvidence,Disposition,DriverResult,Evidence,Money,Query,RequestBudget,RequestContext,RequestOrigin,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads,BalanceSchema,CatalogueAcceptances,EnomTestCallLimit,FoundationSchema,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads, BalanceSchema, EnomTestCallLimit, FoundationSchema, ReadDeferred};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 FoundationSchema::install();BalanceSchema::install();
 fixtureAccount(1,'enom','synthetic-recording-a');fixtureAccount(2,'enom','synthetic-recording-b');

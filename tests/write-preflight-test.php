@@ -6,7 +6,7 @@ require __DIR__.'/Support/write-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, Query, QuoteEvidence, RejectionBasis, RequestBudget, RequestContext, RequestOrigin, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainOperations, OperationClaims, RegistrarFactories, RegistrarRegistry, RegistrationPreflight, WriteAcceptance, WriteFeatures, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainOperations, OperationClaims, RegistrarFactories, RegistrarRegistry, RegistrationPreflight, WriteAcceptance, WriteFeatures, WriteHeld};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 $op = $new(placeholderComFixtureName('fresh-preflight-placeholder.com')); $query = OperationClaims::query($op, $op->domain);
 $state = (object) ['calls' => 0, 'change' => '', 'revoke' => false, 'readers'=>[], 'cost'=>'6.00'];

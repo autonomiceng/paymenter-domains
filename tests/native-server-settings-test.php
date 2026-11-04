@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Disposition,DriverResult,Environment,Evidence,Money,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceReads,BalanceSchema,CatalogueAcceptances,Installation,NativeCatalogue,NativeServerGuard,RegistrarBalances,RegistrarRegistry,Runtime,SellerPolicies,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceReads, BalanceSchema, Installation, NativeCatalogue, NativeServerGuard, RegistrarBalances, RegistrarRegistry, Runtime, SellerPolicies, StaffSettingsReview as Review, StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock,FakeRegistrar};
 function serverSettingsReject(callable $call): void
 {

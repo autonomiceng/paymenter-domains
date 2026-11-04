@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\FeedReadBudget;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, Installation, ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, Installation, ReadDeferred};
 (new Installation)->install();
 $clock = new class implements Clock {
     public DateTimeImmutable $at;

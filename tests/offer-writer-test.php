@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation, PricingRule, StaffSettingsReview};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation, PricingRule, StaffSettingsReview};
 
 // Native SQLite is necessary to prove projection/audit rollback, native identities and frozen
 // financial rows. All registrar data and callbacks are synthetic; no transport is installed.

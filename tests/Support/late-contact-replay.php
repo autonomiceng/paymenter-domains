@@ -6,8 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AdmittedOperation,DispatchReadine
 use Illuminate\Support\Facades\Queue;
 use Paymenter\Extensions\Servers\Domains\Jobs\RunOperation;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,DomainManagement,DomainOperations,OperationClaims,OperationReconciliation,
-    RenewalAcceptance,RenewalAdmission,RenewalAuthority,RenewalCompletion,RenewalExecution,RenewalWriter,RuntimeDispatch,RuntimePorts,RuntimeWork,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, DomainOperations, OperationClaims, OperationReconciliation, RenewalAcceptance, RenewalAdmission, RenewalAuthority, RenewalCompletion, RenewalExecution, RenewalWriter, RuntimeDispatch, RuntimePorts, RuntimeWork, WriteFeatures};
 
 // Supply accepted ports so a missing hold cannot pass merely because no executor was installed.
 require_once __DIR__.'/offline-acquisition.php';

@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CostUnit, Disposition, DriverResult, Environment, Evidence, Money, QuoteEvidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationPreflight, RegistrationProfiles, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainOperations, OperationClaims, RegistrarRegistry, RegistrationPreflight, RegistrationProfiles, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 \Paymenter\Extensions\Servers\Domains\Services\ContactProfileSchema::install();
 $registration = (object) ['query' => null, 'calls' => [], 'reads' => [], 'purchases' => [], 'mode' => '', 'profile' => [], 'id' => 100, 'diagnostics' => []];

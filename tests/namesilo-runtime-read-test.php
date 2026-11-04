@@ -6,10 +6,10 @@ require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver,CatalogueReader,TransferPoller};
+use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, TransferPoller};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,Environment,ExecutionRecord,Query,RequestBudget,RequestContext,RequestOrigin,SendState,TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,Installation,LiveReservations,LocalAccountEnrollment,RegistrarFactories,RegistrarRegistry,RuntimePorts};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, Installation, LiveReservations, LocalAccountEnrollment, RegistrarFactories, RegistrarRegistry, RuntimePorts};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(method_exists(AccountBindings::class,'nameSiloRuntimeReaderFactory'),'Installed NameSilo needs an admitted runtime reader factory');
 function hrtime(bool $number=false): int {return 0;}

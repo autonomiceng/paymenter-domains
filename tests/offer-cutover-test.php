@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/offer-activation-test.php';$nativeSuccessful=false;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Capabilities,Context,Edit,Facts,FactsObserved,Intent,OfferScheduler,Query,Revision,StaffCatalogue,StaffCommands,UpgradeGate};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,CatalogueAcceptances,CheckoutEligibility,EnomTestRenewal,InvoiceBinding,NativeCatalogue,ObservationRecords,PayCheck,PriceFill,PublicationEligibility,Runtime,RuntimePorts,StaffOperationReview,StaffOperations,StaffSettingsReview,StaffSettingsWrites,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CheckoutEligibility, EnomTestRenewal, InvoiceBinding, NativeCatalogue, ObservationRecords, PayCheck, Runtime, RuntimePorts, StaffOperationReview, StaffOperations, StaffSettingsReview, StaffSettingsWrites, Storefront};
 use Illuminate\Support\Facades\DB;
 // No test routing overrides: native events and long-lived installed services must select together.
 $caps=Capabilities::routed();same(true,$caps instanceof Capabilities,'The checked switch must route the installed holder adapter');

@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, UpgradeGate, OfferScheduler, Capabilities};
-use Paymenter\Extensions\Servers\Domains\Services\{Runtime, CatalogueAcceptances};
+use Paymenter\Extensions\Servers\Domains\Services\{Runtime};
 
 final class InitializationInterrupted extends RuntimeException {}
 $entry = new Domains; $commit = false; $competing = false;

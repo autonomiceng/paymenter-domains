@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Manag
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\StaffReviewHistory;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,ManagementEvidence,PrivacyRetirement,RefundCandidates,RefundProof,Refunds,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence, PrivacyRetirement, RefundCandidates, RefundProof, Refunds, StaffOperationReview, StaffOperations};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries;
 $product->server->settings()->create(['key'=>'domains_privacy_price','value'=>'5.00','type'=>'string']);
 $refunds=new Refunds($clock);app()->instance(Refunds::class,$refunds);

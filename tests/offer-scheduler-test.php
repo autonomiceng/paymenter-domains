@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeGate, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\RequestContext;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, DomainObservation, HoldingObservationWork, ObservationWork};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, DomainObservation, HoldingObservationWork, ObservationWork};
 
 [$d,,$original] = $holding(placeholderComFixtureName('shared-holder-placeholder.com'));
 $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $d->server_id)->sole());

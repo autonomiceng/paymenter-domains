@@ -8,7 +8,7 @@ require_once dirname(__DIR__).'/native-app.php';
 $entry=new Paymenter\Extensions\Servers\Domains\Domains;$entry->installed();
 require __DIR__.'/operation-fixture.php';require __DIR__.'/installed.php';require_once __DIR__.'/staff-panel.php';
 require_once __DIR__.'/offline-acquisition.php';
-use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimePorts,RuntimeWork,AccountBindings,NativeCatalogue,PriceCatalogue,SellerPolicies,CartAdmission,InvoiceBinding,OperationReconciliation,RenewalAuthority,RenewalAcceptance,RenewalAdmission,RenewalExecution,RenewalWriter,RenewalCompletion,DomainManagement,WriteFeatures,CatalogueAcceptances};
+use Paymenter\Extensions\Servers\Domains\Services\{Runtime, RuntimePorts, RuntimeWork, AccountBindings, NativeCatalogue, PriceCatalogue, SellerPolicies, CartAdmission, InvoiceBinding, OperationReconciliation, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, DomainManagement, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 foreach([Paymenter\Extensions\Servers\Domains\Contracts\Clock::class=>$clock,AccountBindings::class=>$bindings,
     NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers,CartAdmission::class=>$admission,InvoiceBinding::class=>$invoiceBinding]as$class=>$object){app()->instance($class,$object);}

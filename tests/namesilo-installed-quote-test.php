@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{Action,Environment,Query,RequestBudget,RequestContext as Context,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,Installation,RegistrarFactories,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation, RegistrarFactories, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 function hrtime(bool $number=false): int {return 0;}
 function curl_init(): object {++$GLOBALS['installedQuoteWire']['inits'];return new \stdClass;}

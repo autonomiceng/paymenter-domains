@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferState, Projection, Query, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/CallerPorts.php'), 'Caller ports must compose local account gates and shared reader/writer');

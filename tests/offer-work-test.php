@@ -16,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Driver, OfferFeed};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ReadCommand, Transport};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client as NsClient, Driver as NsDriver, OfferFeed as NsFeed};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as NsEnvironment, RegistrarRequest, RequestContext as NsContext, TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, Installation, OfferWorkSchema, PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, Installation, OfferWorkSchema, PricingRule};
 
 // Real SQLite queue/writer/projection is needed for durable claims, restart and scoped publication.
 // Only the wire and clock are fake; no provider runtime or active scheduler is registered.

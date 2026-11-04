@@ -3,7 +3,7 @@
 declare(strict_types=1);
 use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionSetup, CatalogueAcceptances, ContactRecovery, ContactSetup, RegistryInputs, SetupValidation, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionSetup, ContactRecovery, ContactSetup, RegistryInputs, SetupValidation, WriteHeld};
 $makeEngine($binding,$exchange);
 $accepted=fixtureOfferFacts($binding);
 expect(!RegistryInputs::supported('namesilo','us',[]),'Nexus preparation never publishes .us');

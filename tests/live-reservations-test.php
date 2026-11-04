@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,LiveReservationPolicy};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,Money};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomLiveCalls,EnomLiveCallSchema,Installation,LiveReservationLimit,LiveReservations};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomLiveCalls, EnomLiveCallSchema, Installation, LiveReservationLimit, LiveReservations};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 (new Installation)->install();
 $clock=new FakeClock(new DateTimeImmutable('2026-11-01T23:59:59Z'));app()->instance(Clock::class,$clock);

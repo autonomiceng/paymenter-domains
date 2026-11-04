@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock, Read
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, RegistrarRequest, TransportResponse};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, CartAdmission, CatalogueAcceptances, CheckoutEligibility, ObservationSchema, ReadDeferred, RegistrarRegistry, Runtime, SellerPolicies};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, CartAdmission, CheckoutEligibility, ObservationSchema, ReadDeferred, RegistrarRegistry, Runtime, SellerPolicies};
 extract(commerceFixture(true)); ObservationSchema::install();
 $clock = new class($now) implements Clock {
     public int $offset = 0;

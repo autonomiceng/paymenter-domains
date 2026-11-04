@@ -4,7 +4,7 @@ declare(strict_types=1);
 use App\Models\{Invoice,Service};
 use Illuminate\Support\Facades\{Cache,DB,Event,Log};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,DomainManagement,HookDiagnostics,NativePaidHooks,OperationClaims,OperationReconciliation,RenewalAcceptance,RenewalAdmission,RenewalAuthority,RenewalCompletion,RenewalExecution,RenewalWriter,Runtime,RuntimePorts,RuntimeWork,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainManagement, HookDiagnostics, NativePaidHooks, OperationClaims, OperationReconciliation, RenewalAcceptance, RenewalAdmission, RenewalAuthority, RenewalCompletion, RenewalExecution, RenewalWriter, Runtime, RuntimePorts, RuntimeWork, WriteFeatures};
 $phase=getenv('HOOK_PHASE');$root=getenv('HOOK_ROOT');$database=getenv('HOOK_DATABASE');$mode=getenv('HOOK_MODE');
 if($phase==='seed'){
     require __DIR__.'/native-paid-fixture.php';

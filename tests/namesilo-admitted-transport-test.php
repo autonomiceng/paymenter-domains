@@ -9,7 +9,7 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,Installation,LiveReservationLimit,LiveReservations};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation, LiveReservationLimit, LiveReservations};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(is_file(dirname(__DIR__).'/Domains/Registrars/NameSilo/AdmittedTransport.php'),'NameSilo must provide a budgeted, one-send admitted transport');
 // Namespaced cURL functions make accidental sockets impossible while exercising the physical boundary.

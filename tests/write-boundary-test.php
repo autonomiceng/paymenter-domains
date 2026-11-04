@@ -5,7 +5,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/write-fixture.php';
 use App\Models\InvoiceTransaction;
 use Illuminate\Support\Facades\{Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, WriteAcceptance};
+use Paymenter\Extensions\Servers\Domains\Services\{WriteAcceptance};
 $ops = [];
 foreach (['funding', 'owner', 'generation', 'reservation', 'pause', 'peer', 'acceptance', 'lease', 'context', 'budget', 'reference', 'charge', 'candidates', 'refund', 'cost', 'policy'] as $change) { $ops[$change] = $new(placeholderComFixtureName('boundary-'.$change.'-placeholder.com')); }
 $rate = $new(placeholderComFixtureName('rate-held-placeholder.com')); $preseal = [];

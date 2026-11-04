@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,Projection,StaffCatalogue,StaffCommands,Writer};
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsWrites};
 extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $GLOBALS['intentSource']=new StaffCatalogue($ports,$clock);

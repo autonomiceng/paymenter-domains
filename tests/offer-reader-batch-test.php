@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferReader, OfferState, Projection, Query, Revision, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 expect(method_exists(OfferReader::class, 'readBatch'), 'Mixed-account admission requires one shared batch loader');

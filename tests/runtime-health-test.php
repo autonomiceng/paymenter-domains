@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,CatalogueAcceptances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget};
 
 // Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();

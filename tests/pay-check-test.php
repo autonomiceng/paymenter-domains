@@ -11,7 +11,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,CostUnit,Disposition,DriverResult,Environment,Evidence,Money,QuoteEvidence,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,OperationClaims,PayCheck,RegistrarRegistry,RuntimeWork};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationClaims, PayCheck, RegistrarRegistry, RuntimeWork};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
 $live=(object)['available'=>true,'premium'=>false,'cost'=>'0.01','fail'=>false,'reads'=>0,'query'=>null];

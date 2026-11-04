@@ -5,7 +5,7 @@ use App\Models\{Product, Server};
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueRate, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Price, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, CheckoutEligibility, Rdap, Storefront, TransferPrecheck};
+use Paymenter\Extensions\Servers\Domains\Services\{CheckoutEligibility, Rdap, Storefront, TransferPrecheck};
 
 /** A separate synthetic account keeps catalogue mutations isolated from other storefront scenarios. */
 function storefrontCatalogueFixture(array $fixture, array $endings, array $terms): array

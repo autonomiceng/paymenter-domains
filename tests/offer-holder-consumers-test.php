@@ -11,7 +11,7 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection, Facts, OfferState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, DomainBilling, HolderPricing, HoldingLocks, LateRenewalQuote, NativeDomainGuard};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, HoldingLocks, LateRenewalQuote, NativeDomainGuard};
 expect((new ReflectionMethod(HoldingLocks::class,'take'))->getNumberOfParameters() >= 10, 'Holding consumers need the prepared offer snapshot before operation locks');
 [$paid,$binding] = $prepare('paid-pending-offer-placeholder.com');
 [$uncertain] = $prepare('uncertain-offer-placeholder.com', 'null');

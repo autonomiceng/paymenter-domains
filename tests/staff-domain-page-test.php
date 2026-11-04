@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Relation
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{AcquisitionActions, DomainEditActions, DomainFacts, HoldingActions, Staff};
 use Paymenter\Extensions\Servers\Domains\Data\{DateEvidence, DomainSnapshot, ExpiryPrecision, TransferStatus};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, WatchAudit};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, DomainManagement, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, ObligationAlerts, ObservationProjection, ObservationRecords, StaffHoldingReview};
 // Saving global settings reloads Paymenter settings from the table.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['value'=>'Example Hosting','type'=>'string','encrypted'=>false]);config(['settings.company_name'=>'Example Hosting']);
 

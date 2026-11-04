@@ -10,7 +10,7 @@ require __DIR__.'/owner-records.php';
 require __DIR__.'/installed.php';
 require_once __DIR__.'/staff-panel.php';
 require_once __DIR__.'/offline-acquisition.php';
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,RuntimePorts,NativeCatalogue,PriceCatalogue,SellerPolicies,RenewalAuthority,RenewalAcceptance,RenewalAdmission,RenewalExecution,RenewalWriter,RenewalCompletion,WriteFeatures,CatalogueAcceptances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RuntimePorts, NativeCatalogue, PriceCatalogue, SellerPolicies, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}

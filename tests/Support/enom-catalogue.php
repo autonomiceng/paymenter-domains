@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{List
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,NativeCatalogue,RuntimePorts,SellerPolicies,StaffSettingsReview as Review,StaffSettingsWrites,Storefront,TestCatalogue};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, NativeCatalogue, RuntimePorts, SellerPolicies, StaffSettingsReview as Review, StaffSettingsWrites, Storefront, TestCatalogue};
 require_once __DIR__.'/staff-tlds.php';require_once __DIR__.'/native-commerce.php';
 require_once app_path('Classes/helpers.php');
 $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http://assets.example.test');
