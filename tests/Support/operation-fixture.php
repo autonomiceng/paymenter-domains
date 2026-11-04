@@ -104,7 +104,7 @@ $writer = new class($clock,$caps??null) implements AdmittedRegistrarDriver, \Pay
     public function transferIn(AdmittedOperation $op, RequestContext $context): DriverResult { return $this->register($op, $context); }
     public function renew(AdmittedOperation $op, RequestContext $context): DriverResult { throw new LogicException('Renewal gate23 closed.'); }
 };
-$claims = new OperationClaims($bindings, $clock); $engine = new DomainOperations($claims, $preflight, $writer, $clock); $writer->engine = $engine;
+$claims = new OperationClaims($bindings, $clock,$caps??null); $engine = new DomainOperations($claims, $preflight, $writer, $clock); $writer->engine = $engine;
 $assertNoSend = static function (Operation $op, string $state = 'held') use ($engine, $writer): Operation {
     $before = $writer->calls; $result = $engine->execute($op->id); same($before, $writer->calls, 'Refused authority sends nothing');
     same($state, $result->state, 'Refusal preserves safe lifecycle'); return $result;

@@ -93,7 +93,7 @@ foreach (['enom','namesilo'] as $key) {
         $state->readers[]=$reader;return $reader;
     });
 }
-$freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock);
+$freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock,$caps??null);
 $exchange = static function ($origin,$command,$p,$timeout) use ($state): string {
     if($command==='contactList'&&$p===[]){return nameSiloDefaultContactReply();}
     same(0,DB::transactionLevel(),'Wire outside locks'); expect($timeout > 0 && $timeout <= 25000,'Bounded wire'); $state->calls[] = $command;

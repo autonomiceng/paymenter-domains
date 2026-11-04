@@ -21,7 +21,7 @@ final readonly class RenewalAuthority
         try {
             $seed = Domain::findOrFail($request->domainId);
             return DB::transaction(function () use ($seed, $request, $stamp, $accepted, $until): array {
-                $l = HoldingLocks::take($seed); $domain = $l['domain'];
+                $l = HoldingLocks::take($seed,catalogue:$this->offers); $domain = $l['domain'];
                 $binding = AccountBindings::binding($l['account']); $capabilityUntil = null;
                 try {
                     $this->bindings->requireProcessingLocked($l['server'], $l['account']); $accepted?->requireCurrent($binding);
