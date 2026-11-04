@@ -8,7 +8,7 @@ require __DIR__.'/Support/native-commerce.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\{Category,Currency,Setting};
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,CallerRouting,Context,Edit,Intent,OfferPorts,OfferReadiness,OfferScheduler,Query,UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities,CallerPorts,CallerRouting,Context,Edit,Intent,OfferPorts,OfferReadiness,OfferScheduler,Query,UpgradeGate};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,Tld};
@@ -79,15 +79,29 @@ same(['$13.00','$15.60'],[$offer['price'],$offer['renew']],'Installed public rou
 expect($storefront->hasTransferOffers(),'NameSilo annual transfers follow the same seller and price gates');
 $readiness=OfferReadiness::routed()->review($account->fresh(),['registration'=>true,'transfer'=>true]);
 same(null,$readiness['missing'],'Neutral activation readiness accepts supported NameSilo prices');
+$capabilities=Capabilities::routed();
+same([1],$capabilities->requireOrder($binding,'com','register',1),'Current TEST evidence admits orders');
+expect($capabilities->requireRenewal($binding,'com')->renewalSafe,'Current TEST evidence admits renewals');
+same(['com'],$capabilities->endings($binding),'Current TEST evidence lists the supported ending');
 $saleFailures=[];
 $saleRefuses=static function(callable $work,string $label)use(&$saleFailures):void {
     try{$work();}catch(\DomainException){return;}$saleFailures[]=$label;
 };
+$capabilityRefuses=static function(string $label)use($capabilities,$binding,$saleRefuses,&$saleFailures):void {
+    foreach(['register','transfer'] as $action){$saleRefuses(fn()=>$capabilities->requireOrder($binding,'com',$action,1),$label.' refuses '.$action);}
+    $saleRefuses(fn()=>$capabilities->requireRenewal($binding,'com'),$label.' refuses renewal');
+    if($capabilities->endings($binding)!==[]){$saleFailures[]=$label.' excludes unsupported endings';}
+};
+$expired=$evidence;$expired['facts']['com']['fresh_until']=$clock->now()->format(DATE_ATOM);
+config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$expired]]);
+$capabilityRefuses('Expired TEST evidence with a fresh stored observation');
+config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
 $before=count($GLOBALS['nsCatalogueCalls']);
 $saved=Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts;
 $withdrawn=$evidence;unset($withdrawn['facts']['com']);
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$withdrawn]]);
 $refuses(fn()=>TestCatalogueFacts::read($binding,$evidence['credential_revision'],'com',$clock));
+$capabilityRefuses('Withdrawn TEST evidence');
 $saleRefuses(fn()=>$storefront->offer('com','register',1),'Withdrawn TLD evidence must refuse public offers');
 $saleRefuses(fn()=>DB::transaction(fn()=>app(SellerPolicies::class)->admit([$offer['selection']],$clock->now())),
     'Withdrawn TLD evidence must refuse locked admission');
@@ -129,6 +143,7 @@ $next=['fingerprint'=>$binding->fingerprint,'credential_revision'=>$bindings->cr
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$next]]);
 $writes->run($review('processing'),['enabled'=>true,'confirmed'=>true]);
 $refuses(fn()=>TestCatalogueFacts::read($binding,$next['credential_revision'],'com',$clock));
+$capabilityRefuses('Replacement credentials without current TLD evidence');
 $rotatedSelection=$offer['selection'];
 $saleRefuses(static function()use($storefront,&$rotatedSelection):void {
     $rotatedSelection=$storefront->offer('com','register',1)['selection'];
