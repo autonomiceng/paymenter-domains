@@ -61,7 +61,7 @@ foreach (['disabled', 'credential'] as $failure) {
         same(['com'], array_column($storefront->endings(), 'tld'), $temperature.': healthy seller survives '.$failure);
         expect($storefront->hasTransferOffers(), 'Healthy transfer remains linked after '.$failure);
     }
-    if ($failure === 'disabled') { $server->update(['enabled' => true]); }
+    if ($failure === 'disabled') { $server->update(['enabled' => true]);$bindings->setProcessing($server->id,true,syntheticActivation()); }
     else { DB::table('settings')->where('id', $proof->id)->update(['value' => $raw]); }
     same(['com', 'net'], array_column($storefront->endings(), 'tld'), 'Restored account changes the namespace again');
 }

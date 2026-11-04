@@ -21,7 +21,7 @@ final class HolderPricing implements NativeRepriceGuard
             if ($domain->account_fingerprint !== $b->fingerprint || $domain->registrar_key !== $b->registrarKey) { throw new \DomainException('Holder binding changed.'); }
             return $offers->holder($b, $domain->tld, $lock ? ($locked ?? throw new \LogicException('Locked holding TLD required.')) : null);
         }
-        return CallerRouting::legacy(fn () => $this->catalogue->renewal((int) $domain->server_id, $domain->account_fingerprint, $domain->tld, $currency, $now, $lock, $locked));
+        throw new \DomainException(OfferUpgrade::MESSAGE);
     }
 
     /** Compatibility contract delegates to the sole locked native save authority. */
