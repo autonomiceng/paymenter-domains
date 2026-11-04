@@ -68,8 +68,17 @@ final class StaffSettingsReview
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
         if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{
             $state=UpgradeGate::routeState();
-            if($state['state']!=='active'){throw new \DomainException(OfferUpgrade::MESSAGE);}
-            UpgradeGate::active($state['generation']);
+            // A replaced package can still encounter legacy state after a failed native upgrade hook.
+            $disable=match($this->action){
+                'processing'=>($this->input['enabled']??null)===false,
+                'renewal_billing'=>($this->input['scheduled']??null)===false&&($this->input['manual']??null)===false,
+                default=>false,
+            };
+            if($state['state']==='legacy'&&$disable){UpgradeGate::legacy($state['generation']);}
+            else{
+                if($state['state']!=='active'){throw new \DomainException(OfferUpgrade::MESSAGE);}
+                UpgradeGate::active($state['generation']);
+            }
         }}
         $this->catalogueStamp=$catalogueStamp;
         if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}
