@@ -459,6 +459,8 @@
     "tests/offer-frozen-transfer-test.php",
     "tests/namesilo-installed-quote-test.php",
     "tests/live-activation-namesilo-test.php",
+    "tests/namesilo-test-activation-test.php",
+    "tests/namesilo-test-runtime-test.php",
     "tests/dialog-footer-test.php",
     "tests/namesilo-runtime-purchase-test.php",
     "tests/namesilo-profile-operations-test.php",

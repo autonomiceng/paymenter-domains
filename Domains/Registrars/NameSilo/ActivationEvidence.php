@@ -10,6 +10,16 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcce
 /** Dormant local evidence adapter. Not registered with staff actions, factories or RuntimePorts. */
 final class ActivationEvidence implements LiveActivationEvidence
 {
+    /** TEST accepts only the authenticated local lineage, never a Live account or an OTE label. */
+    public static function testAccount(AccountBinding $binding): Account
+    {
+        if($binding->registrarKey!=='namesilo'||$binding->environment!==Environment::Test
+            ||config('domains.namesilo_account.environment')!=='test'){throw new \DomainException('TEST NameSilo account required.');}
+        $account=Account::where('server_id',$binding->serverId)->sole();
+        $binding->requireMatch(CatalogueAcceptances::binding($account));
+        app(AccountBindings::class)->credentialRevision($binding);
+        return $account;
+    }
     public function deployment(AccountBinding $binding): bool
     {return $binding->registrarKey==='namesilo'&&$binding->environment===Environment::Live&&config('domains.namesilo_account.environment')==='live';}
     public function site(): string
