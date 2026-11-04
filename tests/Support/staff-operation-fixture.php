@@ -20,5 +20,11 @@ foreach(array_keys(StaffOperationReview::ACTIONS) as $action){$all[]=StaffOperat
 $staff=staffUser($all); Auth::setUser($staff); $service=new StaffOperations($clock);
 $ticket=fn($op,$action)=>StaffOperationReview::ticket($staff->id,$op->domain_id,$op->id,$action,StaffOperationReview::stamp($op->fresh(),$op->domain->fresh()),$clock);
 $run=fn($op,$action,$key=null)=>$service->run($staff,$op->domain_id,$op->id,$action,$key??$ticket($op,$action),'Reviewed current evidence');
-$held=static function($name)use($new){$op=$new($name);$op->update(['state'=>'held','safe_code'=>'staff_review_required']);return $op->fresh();};
+$held=static function($name)use($new,$tlds){
+    // The real paid order predates its later processing pause; current checkout refuses paused accounts.
+    $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole();$processing=$account->processing_enabled;
+    DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+    try{$op=$new($name);}finally{DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>$processing]);}
+    $op->update(['state'=>'held','safe_code'=>'staff_review_required']);return $op->fresh();
+};
 $credit=fn()=>Credit::where('user_id',$user->id)->sum('amount');
