@@ -3,7 +3,9 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit};
+use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment};
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
 use Paymenter\Extensions\Servers\Domains\Services\EndingChoices;
 
 /** Persistence codec. Facts have one independent age; normalized costs never carry fact proofs. */
@@ -62,7 +64,10 @@ final class OfferState
             && $policy->registrar_key === $binding->registrarKey && $policy->account_fingerprint === $binding->fingerprint;
         $actions = [];
         foreach (['register', 'transfer'] as $action) { if ($policy?->{$action.'_enabled'}) { $actions[] = $action; } }
-        return new Snapshot(new FeedObserved($binding, $tld->tld, $costs), self::facts($tld->catalogue_facts), new Intent(...$intent),
+        $facts = self::facts($tld->catalogue_facts);
+        if ($binding->registrarKey === 'namesilo' && $binding->environment === Environment::Test
+            && !TestCatalogueFacts::current($binding, $tld->tld, $facts, app(Clock::class))) { $facts = null; }
+        return new Snapshot(new FeedObserved($binding, $tld->tld, $costs), $facts, new Intent(...$intent),
             $revision, $publishing ? $revision : $published, $retail, $selected ? $binding : null, $actions,
             $ready, hidden: EndingChoices::hidden($tld->tld),
             retainedAnnualRetail: UpgradeEvidence::money($tld->catalogue_retained_annual_retail, 2));

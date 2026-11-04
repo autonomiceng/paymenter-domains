@@ -137,7 +137,11 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     same('10.0100', $rows['com']->costs['register:1']->total, 'NameSilo exact annual account price');
     same('21.0000', $rows['co.uk']->costs['renew:1']->total, 'Dotted keys do not use dot-path lookup');
     same(['register:1', 'renew:1', 'transfer:1'], array_keys($rows['com']->costs), 'Annual-only without invented terms');
-    same([], $rows['org']->costs, 'Quarantined row supplies no disablement or price');
+    same(['register:1', 'renew:1', 'transfer:1'], array_keys($rows['org']->costs), 'Quarantined row retracts all annual costs');
+    foreach ($rows['org']->costs as $cost) {
+        same(false, $cost->enabled, 'Quarantined cost is unavailable');
+        same(null, $cost->total, 'Quarantined cost is unknown, never zero');
+    }
     same([$environment === Environment::Test ? WireEnvironment::Sandbox : WireEnvironment::Live, WireContext::Background, 'getPrices', []], end($nameSiloWire->calls), 'Bound environment, batch origin, and no retail flag');
     $refuses(fn () => $feed->facts('com', $context($binding)));
     same($before + 1, count($nameSiloWire->calls), 'Unverified NameSilo metadata cannot be fabricated from prices');

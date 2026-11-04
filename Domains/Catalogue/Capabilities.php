@@ -5,8 +5,9 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RenewalPrice};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RenewalPrice};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
 use Paymenter\Extensions\Servers\Domains\Services\RegistryInputs;
 
 /** Authorized provider facts and holder evidence. Public intent never grants execution support.
@@ -23,7 +24,9 @@ final class Capabilities
         $t = $locked ?? Tld::where('server_id', $b->serverId)->where('tld', $name)->sole();
         $this->identity($b, $name, $t);
         $f = OfferState::facts($t->catalogue_facts);
-        if (!$f || !$f->fresh($this->clock->now())) { throw new \DomainException('Current provider facts unavailable.'); }
+        if (!$f || !$f->fresh($this->clock->now())
+            || ($b->registrarKey === 'namesilo' && $b->environment === Environment::Test
+                && !TestCatalogueFacts::current($b, $name, $f, $this->clock))) { throw new \DomainException('Current provider facts unavailable.'); }
         return $f;
     }
     public function requireRenewal(AccountBinding $b, string $name, ?Tld $locked = null): Facts
