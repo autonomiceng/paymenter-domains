@@ -23,7 +23,7 @@ $tld = Tld::where('server_id', $binding->serverId)->where('tld', 'net')->sole();
 same(null, $tld->registry_fields, 'Writer discovery leaves the retired registry column empty');
 $domain = Domain::create(['server_id'=>$binding->serverId, 'registrar_key'=>'namesilo',
     'account_fingerprint'=>$binding->fingerprint, 'user_id'=>900, 'service_id'=>900,
-    'domain'=>'typed-contact-placeholder.net', 'sld'=>'typed-contact-placeholder', 'tld'=>'net', 'status'=>'active']);
+    'domain'=>'example.net', 'sld'=>'example', 'tld'=>'net', 'status'=>'active']);
 $calls = [];
 $driver = new Management($binding, static function ($origin, $command, $parameters, $timeout) use (&$calls): string {
     $calls[] = $command;
