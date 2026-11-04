@@ -57,7 +57,8 @@ same(1,count($commands),'One account price row becomes one normalized command');
 same(['register:1','renew:1','transfer:1'],array_keys($first->costs),'Account listing establishes annual prices only');
 same('12.3400',$first->costs['register:1']->total,'Annual account quote preserves exact precision');
 same('namesilo_account_annual',$first->costs['register:1']->source,'Account source retained');
-$wire->price='bad';$unknown=$feed->prices($context());same([],$unknown[0]->costs,'Malformed account price quarantines the row without disabled evidence');
+$wire->price='bad';try{$feed->prices($context());throw new LogicException('Malformed whole-account prices accepted');}catch(DomainException){}
+same('12.3400',$first->costs['register:1']->total,'Malformed account reply retains prior observation without disabled evidence');
 $wire->price='1.00';$fresh=$feed->prices($context());same('1.0000',$fresh[0]->costs['register:1']->total,'Later independent observation has its own cost');
 same('12.3400',$first->costs['register:1']->total,'Earlier observation remains immutable');
 $advisory=Prices::rate($driver->quote($query,$context()),$binding,$query,'com',$clock);
