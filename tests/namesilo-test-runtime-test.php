@@ -31,7 +31,7 @@ $context=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clo
 same('123.45',$reader->balance($context())->evidence()->balance?->amount,'Installed TEST reader returns exact normalized funds');same(1,$GLOBALS['testRuntimeCalls'],'Built-in read factory reaches the admitted TEST wire');
 $ledger=new LiveReservations(new TestReservationPolicy,Environment::Test);
 same(1,$ledger->usage($binding)['used'],'TEST reads reserve their separate daily budget');
-$refuses=static function(callable $work):void {try{$work();}catch(\Throwable){return;}throw new \RuntimeException('Expected refusal.');};
+$refuses=static function(callable $work,string $type=\Throwable::class):void {try{$work();}catch(\Throwable $e){if($e instanceof $type){return;}throw $e;}throw new \RuntimeException('Expected refusal.');};
 $refuses(fn()=>(new LiveReservations(new TestReservationPolicy))->usage($binding));
 config(['domains.namesilo_test.catalogue'=>false]);
 expect(!$ports->accepted($account->fresh()),'Deployment withdrawal closes existing TEST composition');
@@ -44,7 +44,7 @@ $refuses(fn()=>$writes->run($review('processing'),['enabled'=>true,'confirmed'=>
 expect(!$account->fresh()->processing_enabled,'Orders cannot bypass the shared-worker prerequisite');
 config(['cache.default'=>'database']);
 expect($ports->accepted($account->fresh()),'Processing pause preserves the read and reconciliation runtime');
-$refuses(fn()=>(new AdmittedTransport($binding,static fn()=>['api_key'=>'synthetic-ote-key']))->exchange()('https://www.namesilo.com/apibatch','getAccountBalance',[],1000));
+$refuses(fn()=>(new AdmittedTransport($binding,static fn()=>['api_key'=>'synthetic-ote-key']))->exchange()('https://www.namesilo.com/apibatch','getAccountBalance',[],1000),LiveReservationLimit::class);
 same($before,$GLOBALS['testRuntimeCalls'],'A TEST handle cannot select a Live origin');
 $writes->run($review('configure'),['registrar'=>'namesilo','environment'=>Environment::Test->value,'credentials'=>['api_key'=>'synthetic-rotated-key']]);
 $reader->balance($context());same($before,$GLOBALS['testRuntimeCalls'],'Previously constructed readers refuse a credential rotation');
