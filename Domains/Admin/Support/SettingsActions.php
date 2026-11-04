@@ -234,25 +234,7 @@ final class SettingsActions
     /** Sync prices for every accepted TLD of one account, from the TLD list header: one short question, no typed TLD and
      * no reason. The audit records who synced, when and which TLDs. */
     /** The Sync prices question: what it reads, and its share of our own daily call cap. */
-    private static function syncDescription(int $server): string|\Illuminate\Support\HtmlString
-    {
-        $text=self::description('import');
-        try{
-            $account=Account::where('server_id',$server)->sole();if(StaffCatalogue::routed()!==null){return $text;}$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
-            $accepted=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);$today=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::callsToday($binding);
-            // Sync never adds TLDs, so say which ones it covers and where more are added.
-            $endings=array_map(fn($e)=>'.'.$e,array_keys($accepted->endings));$count=count($endings);
-            $text=($count===0?'This account sells no TLDs yet, so there is nothing to sync.':'Gets current costs from '.self::seller($account).' for the '.$count.' '.($count===1?'TLD':'TLDs').' this account sells: '.implode(', ',array_slice($endings,0,10)).($count>10?' and '.($count-10).' more':'').'.')
-                .' To sell more, add them under What you sell.';
-            if($count>0&&$today!==null&&$today['limit']>=1){
-                $calls=\Paymenter\Extensions\Servers\Domains\Services\PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
-                $text.=' Uses about '.$calls.' of '.$today['limit'].' registrar calls allowed '.($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Test?'in any 24 hours':'today').' (a safety limit you set).';
-            }
-            if(!\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::canAccess()){return $text;}
-            $url=\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$server]);
-            return new \Illuminate\Support\HtmlString(str_replace('What you sell','<a class="fi-link domains-link" href="'.e($url).'">What you sell</a>',e($text)));
-        }catch(\Throwable){return $text;}
-    }
+    private static function syncDescription(int $server): string|\Illuminate\Support\HtmlString { return self::description('import'); }
     /** One short line for a notification: only what staff must act on is named. The prices are on the page. */
     public static function syncSummary(array $result): string
     {
@@ -297,7 +279,7 @@ final class SettingsActions
         $t=$tld?Tld::find($tld):null;
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         $now=now()->toDateTimeImmutable();
-        try{$rows=StaffCatalogue::routed()?->preview($t,$rule)??PriceCatalogue::preview($t,$rule,$now);}catch(\Throwable){$rows=[];}
+        try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
         if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No costs yet. Use Sync prices on the TLD list first. Saving now changes nothing.</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
@@ -320,9 +302,8 @@ final class SettingsActions
     private static function reach(): array
     {
         $off=\App\Models\Server::where('extension','Domains')->where('enabled',false)->whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id');
-        $converted=StaffCatalogue::routed()!==null;
         $tlds=TldFacts::bound(Tld::query())->whereNotIn('server_id',$off->keys())->orderBy('tld')->get();
-        $own=static fn(Tld $t)=>$converted?\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::own($t):($t->use_default_rule?null:(new PricingRules)->rule($t));
+        $own=static fn(Tld $t)=>\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::own($t);
         $tlds=$tlds->filter(function(Tld $t)use($own):bool{
             try{$rule=$own($t);return $rule===null||$rule['mode']==='markup_fee_percent';}
             // The table's sell-note names unreadable own rules and their fix; they cannot follow this save.
@@ -332,7 +313,12 @@ final class SettingsActions
         $prices=\Paymenter\Extensions\Servers\Domains\Models\Price::whereIn('server_id',$followers->pluck('server_id')->unique())->whereIn('tld',$followers->pluck('tld')->unique())->where('currency','USD')->orderBy('id')->get()
             ->groupBy(fn($p)=>$p->server_id.':'.$p->registrar_key.':'.$p->account_fingerprint.':'.$p->tld);
         $now=now()->toDateTimeImmutable();
-        $waiting=$followers->filter(function(Tld $t)use($now,$prices){try{PriceCatalogue::requireCosts($t,$now,$prices->get($t->server_id.':'.$t->registrar_key.':'.$t->account_fingerprint.':'.$t->tld,collect()));return false;}catch(\Throwable){return true;}});
+        $waiting=$followers->filter(function(Tld $t)use($now,$prices){
+            $rows=$prices->get($t->server_id.':'.$t->registrar_key.':'.$t->account_fingerprint.':'.$t->tld,collect());
+            if($rows->isEmpty()){return true;}
+            foreach($rows as $row){try{if($row->catalogue_observation===null||!\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($row->catalogue_observation))->fresh($now)){return true;}}catch(\Throwable){return true;}}
+            return false;
+        });
         return ['default'=>$followers->count(),'own'=>$tlds->count()-$followers->count(),'waiting'=>$waiting->pluck('tld')->unique()->values()->all(),'off'=>$off->values()->all()];
     }
     private static function reachDefault(array $reach): string
@@ -437,11 +423,7 @@ final class SettingsActions
             if($catalogue!==null){$facts=$catalogue->page(collect([$t]))[$t->id]['facts'];$safe=$catalogue->restorable($t);$register=$safe['register']?$facts->terms['register']:[];
                 $bounds=[...$register,$catalogue->setting($t,'min_years'),$catalogue->setting($t,'max_years')];
                 return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),'register_allowed'=>$safe['register'],'transfer_allowed'=>$safe['transfer']];}
-            $row=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account))->endings[$t->tld]??[];
-            $register=array_values(array_filter($row['register']??[],'is_int'));$renewable=in_array(1,$row['renew']??[],true)&&($row['registry']??false)&&($row['renewal_safe']??false);
-            $bounds=[...$register,$t->min_years,$t->max_years];
-            return ['ending'=>$t->tld,'register'=>$register,'min'=>min($bounds),'max'=>max($bounds),
-                'register_allowed'=>$renewable&&$register!==[],'transfer_allowed'=>$renewable&&in_array(1,$row['transfer']??[],true)];
+            return null;
         }catch(\Throwable){return null;}
     }
     /** The real reason a change to a TLD's terms was refused, in plain words; null leaves the shared guidance. */

@@ -11,7 +11,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,CatalogueAcceptances,EnomLive,EnomTestSendLimit,NameSiloSandbox,PriceSync,RegistrarBalances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomLive,EnomTestSendLimit,NameSiloSandbox,RegistrarBalances};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Facts shared by the Registrars list and the registrar account page. Values are null when Missing; 'cause' says why. */
 final class RegistrarFacts
@@ -74,7 +74,7 @@ final class RegistrarFacts
         if ($account->environment==='live') {
             try {
                 $binding=AccountBindings::binding($account);
-                $u=EnomLive::deployment($binding)?PriceSync::callsToday($binding):null;
+                $u=EnomLive::deployment($binding)?\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding):null;
             } catch (\Throwable) { $u=null; }
             if ($u===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read our call count or limit. Check the API credentials and Live account setup.",'help'=>null]; }
             $full=$u['used']>=$u['limit'];$off=$u['limit']===0;
