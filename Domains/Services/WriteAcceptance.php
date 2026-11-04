@@ -36,8 +36,6 @@ final readonly class WriteAcceptance
         } else {
             throw new WriteHeld('order_not_supported');
         }
-        $terms = $row[$query->action->value];
-        }
         if ($profile && $binding->registrarKey === 'namesilo' && !($this->profileProofCheck instanceof RegistrationProfiles
             ? $this->profileProofCheck->hasProof($op) : ($this->profileProofCheck && ($this->profileProofCheck)($op) === true))) {
             throw new WriteHeld('contact_profile_proof_required');
