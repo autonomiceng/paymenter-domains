@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\{DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimePorts,RuntimeSchema,ReminderSchedules,AccountBindings,NativePresenter,StaffSettingsReview as Review,StaffSettingsWrites,NativeCatalogue,NativeServerGuard};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
+// Start through the authentic current fresh initializer before exercising retained lifecycle.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $entry=new Domains([]);$entry->installed();
 foreach(Installation::SCHEMAS as $schema){$schema::verify();}
@@ -23,12 +23,8 @@ $entry->upgraded('0.0.1');
 expect((bool)DB::table('domains_operations')->find($legacyId)->management_pending,'Upgrade indexes retained pending glue even when its migration is already recorded');
 same($retained,array_diff_key((array)DB::table('domains_operations')->find($legacyId),['management_pending'=>true]),'Upgrade preserves retained request evidence and dates');
 DB::table('domains_operations')->where('id',$legacyId)->delete();
-// An interrupted two-table install repairs only the missing table and retains the other table's rows.
-$sell=Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class;
-DB::table($sell::ROWS)->insert(['server_id'=>999,'account_fingerprint'=>str_repeat('a',64),'tld'=>'com']);
-Schema::drop($sell::FILLS);$sell::install();
-same(1,DB::table($sell::ROWS)->where('server_id',999)->count(),'Recovering fills retains sell rows');
-Schema::drop($sell::ROWS);$sell::install();$sell::verify();
+// Retired stores stay absent on install, upgrade and repeated verification.
+foreach(['domains_sell_rows','domains_sell_fills'] as $retired){expect(!Schema::hasTable($retired),'Final package never recreates retired stores');}
 $pointerMigration = DB::table('migrations')->where('migration', '2026_10_19_000014_add_holding_adoption')->sole();
 DB::table('migrations')->where('id', $pointerMigration->id)->delete();
 $pointerRefused = false;

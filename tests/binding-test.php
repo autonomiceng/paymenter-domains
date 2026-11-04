@@ -190,7 +190,7 @@ expect(in_array('namesilo', $localBoot->keys(), true), 'NameSilo local enrollmen
 require __DIR__.'/Support/staff-panel.php';
 use Paymenter\Extensions\Servers\Domains\Services\{LocalAccountEnrollment, StaffAuditSchema, StaffSettingsReview, SellTableSchema, SalesPolicySchema, NameSiloAccountGuard};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};
-SellTableSchema::install(); SalesPolicySchema::install(); StaffAuditSchema::install();
+SalesPolicySchema::install(); StaffAuditSchema::install();
 $staff = staffUser(['admin.domains.view', 'admin.domains.manage-policy', StaffSettingsReview::permission('configure')]);
 $review = static function (int $id) use ($staff): StaffSettingsReview {
     return new StaffSettingsReview((int) $staff->id, $id, null, 'configure',

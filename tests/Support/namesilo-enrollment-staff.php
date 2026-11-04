@@ -81,7 +81,7 @@ same('test',$a->environment,'Fixed sandbox environment');same(false,$a->processi
 $s->update(['enabled'=>false]);$unavailableSetup=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSee('Not connected')->assertSee('Off in Paymenter')->assertDontSee('not a current OTE enrollment');unset($unavailableSetup);gc_collect_cycles();$s->update(['enabled'=>true]);
 expect(!app(RuntimePorts::class)->accepted($a),'No installed write ports');
 $refuse(fn()=>$bindings->requireProcessing($binding),'Processing gate');$refuse(fn()=>$bindings->reader($s->id),'Domain reads separately composed');
-$refuse(fn()=>CatalogueAcceptances::load($binding),'No inherited acceptance');
+same(0,Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$binding->serverId)->whereNotNull('catalogue_facts')->count(),'No inherited provider facts');
 same(0,Paymenter\Extensions\Servers\Domains\Models\Domain::where('server_id',$s->id)->count(),'No inherited holdings');
 same(0,Paymenter\Extensions\Servers\Domains\Models\Operation::count(),'No inherited operations');
 foreach($s->settings()->whereIn('key',[NameSiloSandbox::KEY,'domains_credentials','domains_verified_credentials'])->get() as $setting){
@@ -120,7 +120,7 @@ $GLOBALS['enrollmentExpectedContext']='apibatch';
 $GLOBALS['enrollmentExpectedTimeout']=25000;
 Log::shouldNotHaveReceived('warning');Log::shouldNotHaveReceived('error');
 // The price fill for What you sell has its own daily turn, so mark it done to watch only the balance read.
-DB::table(Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)->insert(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'tried_at'=>$balanceClock->now()->getTimestamp()]);
+DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$s->id],['account_fingerprint'=>$a->account_fingerprint,'offer_feed_tried_at'=>$balanceClock->now()->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$balanceClock->now()->getTimestamp()+86400])]);
 $n=$GLOBALS['enrollmentCalls'];app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();same($n+1,$GLOBALS['enrollmentCalls'],'First runtime tick sends one scheduled OTE balance read');
 same('/apibatch/getAccountBalance',$GLOBALS['enrollmentLastRead']['path']??null,'Scheduled runtime read uses the OTE batch balance route');
 $n=$GLOBALS['enrollmentCalls'];app(Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class)->tick();same($n,$GLOBALS['enrollmentCalls'],'Following runtime tick does not repeat the daily balance read');
@@ -302,6 +302,6 @@ $race=$fresh();$GLOBALS['enrollmentDuringRead']=static function()use($attempt):v
 $refuse(fn()=>$attempt(['api_key'=>'racing-key'],$race),'Duplicate key enrolled in flight');unset($GLOBALS['enrollmentDuringRead']);same(0,Account::where('server_id',$race->id)->count(),'Final key uniqueness check');
 $s->update(['enabled'=>false]);$n=$GLOBALS['enrollmentCalls'];$refuse(fn()=>$attempt(['api_key'=>'synthetic-ote-key']),'Disabled original retains its key');same($n,$GLOBALS['enrollmentCalls'],'Disabled original sends nothing');$replacement=$attempt(['api_key'=>'rotated-key']);$s->update(['enabled'=>true]);
 $newAccount=Account::where('server_id',$replacement->id)->sole();expect($newAccount->account_fingerprint!==$binding->fingerprint,'Rotated key creates independent enrollment');same(false,$newAccount->processing_enabled,'Replacement processing off');
-$refuse(fn()=>CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($newAccount)),'Replacement inherits no acceptance');
+same(0,Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$newAccount->server_id)->whereNotNull('catalogue_facts')->count(),'Replacement inherits no provider facts');
 foreach(Review::historyRows($s->fresh()) as $row){$json=json_encode($row);foreach(['sandbox@example.test','synthetic-ote-key','9876.54','key_fingerprint'] as $secret){expect(!str_contains($json,$secret),'Audit omits label/key/balance');}}
 echo "NameSilo OTE enrollment: immutable, explicitly weaker, live refused, redacted; real provider calls: 0.\n";
