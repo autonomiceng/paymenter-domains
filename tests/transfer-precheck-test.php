@@ -16,6 +16,15 @@ $eligibility=activeFixtureEligibility($bindings,$clock,new TransferPrecheck($rda
 $s=$sellers->selection('com','transfer',1,$now);$server=App\Models\Server::find($s->serverId);
 commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));same(0,$calls,'No lookup without explicit allowlist');
 $server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
+// Worker preflight builds an internal selection without a public cart receipt.
+// Retired registry columns cannot supply or veto its current typed provider facts.
+Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['registry_fields'=>null]);
+$workerSelection=new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection('com',$s->serverId,$s->registrar,$s->fingerprint,0,'transfer',1,'USD',0,0);
+same([60,60],TransferPrecheck::rules($workerSelection),'Worker preflight uses current typed registry facts without a cart receipt');
+same([60,60],Illuminate\Support\Facades\DB::transaction(fn()=>TransferPrecheck::rules($workerSelection,true)),'Seal rules use the same locked current facts');
+$foreignSelection=new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection('com',$s->serverId,$s->registrar,str_repeat('f',64),0,'transfer',1,'USD',0,0);
+commerceReject(fn()=>TransferPrecheck::rules($foreignSelection));
+
 $token=$eligibility->observe('example.com',$s,[1]);same($s->serverId,$eligibility->require($token,'example.com',[1])->serverId,'Accepted transfer receipt');
 same(2,$calls,'One bootstrap plus one domain read');
 foreach([['example.net',$s,[1]],['example.com',$s,[2]]]as[$name,$selection,$identity]){commerceReject(fn()=>$eligibility->require($token,$name,$identity));}
