@@ -15,6 +15,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Operation,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CartAdmission,CatalogueAcceptances,InvoiceBinding,PricingRule,RuntimePorts,SellerPolicies,Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(CallerRouting::supportsSales('namesilo'),'Installed catalogue routes NameSilo sales through neutral gates');
+\Illuminate\Support\Facades\Schema::create('cache',static function($t):void {
+    $t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');
+});
 function curl_init(): object {return new \stdClass;}
 function curl_setopt_array($h,array $options): bool {$GLOBALS['nsCatalogueOptions']=array_replace($GLOBALS['nsCatalogueOptions']??[],$options);return true;}
 function curl_getinfo($h,int $option): int {return 200;}
