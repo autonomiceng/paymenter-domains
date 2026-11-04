@@ -37,7 +37,7 @@ app()->instance(AccountBindings::class,new AccountBindings($registry));
 $account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.transfer'=>true]);
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
-\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
+app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
 expect(EnomTestRegistration::enabled($binding),'Real TEST registration policy on');
 $open=fn($op)=>Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 // Stored pre-claim checks share automatic recovery, including pause words and stale-action rejection.

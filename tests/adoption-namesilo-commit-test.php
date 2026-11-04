@@ -51,7 +51,7 @@ $factory=NameSiloAdoptionReader::factory($bindings->nameSiloRuntimeReaderFactory
 $registry->register('namesilo',['api_key'],new AccountVerifier,static fn()=>throw new \LogicException('No general reader fallback'),
     adoptionReaderFactory:$factory,authenticator:new CredentialAuthenticator(Environment::Live));
 // Normal active routing for the admitted read handle; pricing evidence is a separate module fixture.
-app()->instance(AccountBindings::class,$bindings);\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
+app()->instance(AccountBindings::class,$bindings);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
 $baseNative=new \Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules));
 $offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($baseNative),$clock,$bindings,static fn()=>null,static fn()=>true);
 $offerCaps=new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($offerPorts,$clock,static fn()=>null);
