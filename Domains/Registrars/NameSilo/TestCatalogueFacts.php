@@ -32,7 +32,7 @@ final class TestCatalogueFacts
             $row=self::account($binding,$revision);
             $e=$row['facts'][$tld]??null;
             if(!is_array($e)||!is_array($e['terms']??null)||!is_array($e['registry_fields']??null)
-                ||array_keys($e['terms'])!==['register','renew','transfer']){throw new \DomainException;}
+                ||count($e['terms'])!==3||array_diff(array_keys($e['terms']),['register','renew','transfer'])!==[]){throw new \DomainException;}
             foreach($e['terms'] as $terms){if(!is_array($terms)||!in_array($terms,[[],[1]],true)){throw new \DomainException;}}
             $dates=[];
             foreach(['observed_at','fresh_until'] as $key){

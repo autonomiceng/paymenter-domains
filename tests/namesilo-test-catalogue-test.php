@@ -63,13 +63,26 @@ $evidence=['fingerprint'=>$binding->fingerprint,'credential_revision'=>$bindings
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
 $refuses=static function(callable $work):void {try{$work();}catch(\Throwable){return;}throw new \RuntimeException('Expected refusal.');};
 foreach([
-    ['facts.com.terms.register',[1,2]],['facts.com.observed_at',$now->modify('+1 hour')->format(DATE_ATOM)],
+    ['facts.com.terms.register',[1,2]],
+    ['facts.com.terms',['register'=>[1],'renew'=>[1]]],
+    ['facts.com.terms',['register'=>[1],'renew'=>[1],'transfer'=>[1],'delete'=>[]]],
+    ['facts.com.terms',['register'=>[1],'renew'=>[1],'delete'=>[1]]],['facts.com.observed_at',$now->modify('+1 hour')->format(DATE_ATOM)],
     ['facts.com.fresh_until',$now->format(DATE_ATOM)],['facts.com.registry_fields',null],
     ['credential_revision','wrong-revision'],['fingerprint','wrong-binding'],
 ] as [$key,$value]){
     $broken=$evidence;\Illuminate\Support\Arr::set($broken,$key,$value);
     config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$broken]]);
     $refuses(fn()=>TestCatalogueFacts::read($binding,$evidence['credential_revision'],'com',$clock));
+}
+// Deployment configuration is a keyed map: insertion order carries no action authority.
+foreach([
+    ['register','renew','transfer'],['register','transfer','renew'],['renew','register','transfer'],
+    ['renew','transfer','register'],['transfer','register','renew'],['transfer','renew','register'],
+] as $actions){
+    $reordered=$evidence;$reordered['facts']['com']['terms']=array_fill_keys($actions,[1]);
+    config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$reordered]]);
+    $facts=TestCatalogueFacts::read($binding,$evidence['credential_revision'],'com',$clock);
+    foreach(['register','renew','transfer'] as $action){same([1],$facts->terms[$action],'TEST term keys accept any insertion order');}
 }
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
 
