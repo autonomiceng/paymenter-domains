@@ -23,7 +23,7 @@ final class RuntimePorts
     private function composition(Account $account): array
     {
         $binding=CatalogueAcceptances::binding($account);
-        $factory=$this->factories[$account->account_fingerprint]??((EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding))||EnomTestRegistration::recoveryEnabled($binding))?EnomTestRegistration::factory($binding):null)
+        $factory=$this->factories[$account->account_fingerprint]??(($binding->registrarKey==='enom')&&(EnomTestRegistration::enabled($binding)||(EnomTestRenewal::enabled($binding)||EnomTestManagement::enabled($binding)||EnomTestTransfer::enabled($binding))||EnomTestRegistration::recoveryEnabled($binding))?EnomTestRegistration::factory($binding):null)
             ??(\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($binding)?\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::factory($binding):null)
             ??throw new \DomainException('Runtime provider acceptance is required.');
         $ports=$factory(CatalogueAcceptances::binding($account));
