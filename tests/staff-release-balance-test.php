@@ -54,7 +54,7 @@ foreach(['usd_balance_required','enom_test_transfer_usd_balance_required'] as $c
     commerceReject(fn()=>$run($op,'release'));
     same('held',$engine->execute($op->id)->state,'Paused stored hold cannot send');
     DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
-    same(null,OperationClaims::balanceAdmissionReason($op->fresh()),'Current balance retry authority is valid');
+    same(null,OperationClaims::balanceAdmissionReason($op->fresh()),'Current balance retry authority is valid: '.OperationClaims::balanceAdmissionReason($op->fresh()));
     $open($op)->assertSee('Not sent. It will retry automatically.')->assertDontSee('Open account')->assertActionHidden('release');
     commerceReject(fn()=>$run($op,'release'));
     DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
