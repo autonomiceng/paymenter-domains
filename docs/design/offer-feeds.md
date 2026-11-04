@@ -37,8 +37,9 @@ rotation finds unknown/expired metadata. Discovery alone never queues the whole 
 Turning sales off stops those automatic facts reads; original send caps and read-group budgets stay.
 Native price rows survive unavailable offers; the evaluator and admission still refuse purchases.
 
-Registration checkout automatically re-quotes stale daily prices for the exact name, term and
-selected account. `AcquisitionOffers` applies the current staff pricing rule and rechecks the
+Registration and one-year transfer checkout automatically re-quote stale daily prices for the
+exact name, action, term and selected account. Customer reads use public catalogue authority;
+price observation ages decide which acquisition/annual renewal costs need a fresh quote. `AcquisitionOffers` applies the current staff pricing rule and rechecks the
 ordinary sale guards with temporary order evidence; neither daily nor native list prices change.
 An unchanged total continues on the same click. A changed total uses the existing cart review
 notice and next-click confirmation. Unreadable, below-cost and over-ceiling quotes stay blocked.
