@@ -8,11 +8,11 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, PriceSnapshot, Re
 /** Server-only mapping evidence. Never accepts posted prices or synthesizes cost/row identity. */
 final readonly class ReadOffer implements \JsonSerializable
 {
-    public function __construct(public Decision $decision, private AccountBinding $binding, private ?object $row, private Context $context) {}
+    public function __construct(public Decision $decision, private AccountBinding $binding, private ?object $row, private Context $context, private ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness = null) {}
 
     /** Original observation, including source unit/age, is not a spending grant. */
     public function observation(): ?Cost
-    { return $this->row?->catalogue_observation === null ? null : OfferState::cost(OfferState::decode($this->row->catalogue_observation)); }
+    { return $this->row?->catalogue_observation === null ? null : ($this->freshness ?? \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($this->binding->serverId))->cost(OfferState::cost(OfferState::decode($this->row->catalogue_observation))); }
 
     /** Staff display only: saved retail remains visible when the offer cannot be purchased. */
     public function staffRetail(): ?string

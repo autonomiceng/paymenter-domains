@@ -28,6 +28,7 @@ $enomWire = new class implements Transport {
     public array $calls = [];
     public string $currency = 'USD';
     public string $register = '10.0010';
+    public string $renew = '11.0000';
     public string $enabled = 'true';
     public bool $omit = false;
     public ?int $fail = null;
@@ -48,7 +49,7 @@ $enomWire = new class implements Transport {
         $body = "Command={$command->value}\nErrCount=0\nDone=true\nCount=2\n";
         foreach (['com', 'co.uk'] as $i => $tld) {
             $n = $i + 1;
-            $body .= "TLD$n=$tld\nCurrency$n={$this->currency}\nRegisterPrice$n=999.00\nResellerPriceRenew$n=11.0000\nRenewEnabled$n=true\nResellerPriceTran$n=12.0000\nTransferEnabled$n=false\n";
+            $body .= "TLD$n=$tld\nCurrency$n={$this->currency}\nRegisterPrice$n=999.00\nResellerPriceRenew$n={$this->renew}\nRenewEnabled$n=true\nResellerPriceTran$n=12.0000\nTransferEnabled$n=false\n";
             if (!$this->omit) { $body .= "ResellerPriceReg$n={$this->register}\nRegisterEnabled$n={$this->enabled}\n"; }
         }
         return $body;
@@ -57,7 +58,7 @@ $enomWire = new class implements Transport {
 foreach ([Environment::Test, Environment::Live] as $environment) {
     $binding = new AccountBinding('enom', 1, $environment, 'synthetic-account');
     $driver = new EnomDriver(new EnomClient($binding, 'synthetic-account', 'placeholder-key', $enomWire), ['com', 'co.uk']);
-    $feed = new EnomFeed($driver, new CatalogueFreshness(86400, 86400));
+    $feed = new EnomFeed($driver, new CatalogueFreshness(48));
     $enomWire->calls = [];
     $c = $context($binding); $rows = $indexed($feed->prices($c));
     same('10.0010', $rows['com']->costs['register:1']->total ?? null, 'Enom feed returns exact reseller cost observations');
@@ -80,12 +81,20 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     $before = count($enomWire->calls); $facts = $feed->facts('co.uk', $context($binding, 2));
     same(2, count($enomWire->calls) - $before, 'Cold facts use exactly two reads, never price-per-term reads');
     same([1, 2, 3], $facts->facts->terms['register'], 'Registry term facts preserved');
+    same([1], $facts->facts->terms['renew'] ?? [], 'Positive enabled bulk renewal proves one annual term');
+    same([], $facts->facts->terms['transfer'] ?? [], 'Disabled bulk transfer proves no term');
+    same(172800, $rows['com']->costs['renew:1']->freshUntil->getTimestamp() - $oldAt->getTimestamp(), 'Daily costs survive one missed run');
     same([[], true, false, false], [$facts->facts->registryFields, $facts->facts->renewalSafe, $facts->facts->requiresNameservers, $facts->facts->autoRenewOnly], 'Independent registry and renewal facts');
     same($oldAt, $rows['com']->costs['register:1']->observedAt, 'Facts do not freshen previous costs');
     same($clock->now(), $facts->facts->observedAt, 'Facts have their own observation age');
-    $explicit = new EnomFeed($driver, terms: [1 => [1], 2 => [2, 3, 4], 5 => [5], 10 => [10]]);
+    $enomWire->renew = '0.0000';
+    $missingRenew = $indexed($feed->prices($context($binding)));
+    same(false, isset($missingRenew['com']->costs['renew:1']), 'Zero renewal price remains unknown');
+    same([], $feed->facts('com', $context($binding, 2))->facts->terms['renew'], 'Unknown annual renewal cannot enable sales');
+    $enomWire->renew = '11.0000';
+    $explicit = new EnomFeed($driver, new CatalogueFreshness, terms: [1 => [1], 2 => [2, 3, 4], 5 => [5], 10 => [10]]);
     same('30.0030', $indexed($explicit->prices($context($binding)))['com']->costs['register:3']->total, 'Only supplied bucket evidence enables another exact term');
-    $refuses(fn () => new EnomFeed($driver, terms: [5 => [4]]));
+    $refuses(fn () => new EnomFeed($driver, new CatalogueFreshness, terms: [5 => [4]]));
     $enomWire->enabled = 'false'; $enomWire->register = '0.00';
     same(false, $indexed($feed->prices($context($binding)))['com']->costs['register:1']->enabled, 'Provider disabled sentinel is positive evidence');
     $enomWire->enabled = 'unknown';
@@ -131,7 +140,7 @@ $nameSiloWire = new class implements DeadlineTransport {
 };
 foreach ([Environment::Test, Environment::Live] as $environment) {
     $binding = new AccountBinding('namesilo', 3, $environment, 'synthetic-account');
-    $feed = new NameSiloFeed(new NameSiloDriver(new NameSiloClient($binding, 'placeholder-key', $nameSiloWire), clock: $clock));
+    $feed = new NameSiloFeed(new NameSiloDriver(new NameSiloClient($binding, 'placeholder-key', $nameSiloWire), clock: $clock), new CatalogueFreshness);
     $before = count($nameSiloWire->calls); $rows = $indexed($feed->prices($context($binding, 1)));
     same(1, count($nameSiloWire->calls) - $before, 'NameSilo feed uses exactly one getPrices');
     same('10.0100', $rows['com']->costs['register:1']->total, 'NameSilo exact annual account price');
@@ -149,4 +158,9 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     $refuses(fn () => $feed->prices($context($bad, 1)));
     same($before + 1, count($nameSiloWire->calls), 'Cross-account NameSilo read sends nothing');
 }
+same(172800, (new CatalogueFreshness)->maxAge(), 'Default price freshness covers two daily intervals');
+putenv('DOMAINS_PRICE_FRESHNESS_SECONDS=86400');
+same(172800, (new CatalogueFreshness)->maxAge(), 'Environment cannot override staff price freshness');
+putenv('DOMAINS_PRICE_FRESHNESS_SECONDS');
+foreach ([23, 169] as $invalid) { $refuses(fn () => new CatalogueFreshness($invalid)); }
 echo "Neutral feed adapter checks passed.\n";

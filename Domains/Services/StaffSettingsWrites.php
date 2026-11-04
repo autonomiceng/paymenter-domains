@@ -36,6 +36,7 @@ class StaffSettingsWrites
         if(in_array($r->action,['test_renewal','live_renewal'],true)){EnomTestRenewal::review($r,$data);return null;}
         if(in_array($r->action,['test_transfer','live_transfer'],true)){EnomTestTransfer::review($r,$data);return null;}
         if($r->action==='renewal_billing'){RenewalBillingSettings::save($r,$data);return null;}
+        if($r->action==='price_freshness'){\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::save($r,$data);return null;}
         if($r->action==='call_limits'){ApiCallLimits::save($r,$data);return null;}
         if($r->action==='unpaid_hold'){UnpaidHoldSetting::save($r,$data);return null;}
         if($r->action==='enroll_sandbox'){

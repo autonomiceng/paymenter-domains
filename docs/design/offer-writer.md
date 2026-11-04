@@ -37,7 +37,9 @@ survives missing/disabled/stale or invalid new retail; valid current renewal pri
 retained-retail command seeds/corrects that fallback independently; use a pricing override for a lasting rule.
 
 Offer prices, projection and encrypted existing staff audit commit together. Native mappings/plans remain
-permanent; withdrawn acquisition prices disappear, while native services/invoices/operations are untouched.
+permanent; unavailable offers retain native price IDs and amounts. The evaluator and locked admission
+still refuse acquisition; retained native rows confer no selling authority. Native services/invoices/operations
+are untouched.
 Unchanged native rows skip updates. Cache invalidation and account/TLD-scoped cart withdrawal happen after
 commit. This path never copies acceptance proofs or changes acceptance state.
 

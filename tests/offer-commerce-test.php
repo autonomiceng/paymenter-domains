@@ -15,18 +15,35 @@ require __DIR__.'/Support/offer-commerce.php';
 $mutate = null;
 Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$mutate): void { if ($mutate) { $mutate(); } });
 $fixture = offerCommerceFixture(); extract($fixture);
+// Fresh native install: replace fixture evidence with the account bulk table and independently dated metadata.
+DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_facts' => null]);
+$bulkAt = $now->modify('+1 second'); $clock->instant = $bulkAt;
+$bulkCosts = [];
+foreach ([['register', 1, '6.0000'], ['register', 3, '18.0000'], ['renew', 1, '8.0000'], ['transfer', 1, '7.0000']] as [$action, $term, $total]) {
+    $bulkCosts[] = new Paymenter\Extensions\Servers\Domains\Catalogue\Cost($action, $term, true, $total,
+        Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal, 'enom_bulk_bucket_'.($term === 3 ? 2 : 1), $bulkAt, $bulkAt->modify('+48 hours'));
+}
+$annualQuery = new Query($binding, ['com'], 'register');
+$annualRevision = fn () => $ports->readOffers($annualQuery, Context::Staff)[0]->revision;
+$ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', $bulkCosts), $annualRevision());
+$ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com',
+    new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1, 3]], [], true, false, false,
+        'enom_tld_facts', $bulkAt, $bulkAt->modify('+30 days'))), $annualRevision());
+same(true, $ports->readOffers($annualQuery, Context::Public)[0]->available, 'Bulk annual renewal plus registry metadata opens fresh-install .com');
+$annualPublic = $storefront->offer('com', 'register', 1);
+same(['$7.80', '$10.40'], [$annualPublic['price'], $annualPublic['renew']], 'Annual published acquisition and follow-on renewal');
 $public = $storefront->offer('com', 'register', 3);
 $staff = $ports->readOffers(new Query($binding, ['com'], 'register', 3), Context::Staff)[0];
 same(['$23.40', '$10.40', $binding->serverId, 3, '23.40'], [$public['price'], $public['renew'], $public['selection']->serverId,
     $public['selection']->term, $staff->retail], 'Public offer and Staff reader use the selected account and exact term total');
 $user = commerceUser(); $cart = commerceCart($user);
-$line = commerceAdd($cart, $public['product'], 'catalogue-placeholder.com', 3);
+$line = commerceAdd($cart, $public['product'], 'catalogue-placeholder.com', 1);
 $token = $line->checkout_config['domains_check']; $before = $reads->calls;
 $admission->refresh(); same($before, $reads->calls, 'Current add receipt survives refresh without another provider read');
 commerceCheckout($user, $cart);
 same([1, 1, 1], [Order::count(), Invoice::count(), Operation::count()], 'Real native checkout creates one atomic obligation');
 $op = Operation::firstOrFail();
-same([$binding->serverId, 3, '23.40', '10.40'], [(int)$op->server_id, (int)$op->term, $op->policy['price']['retail'],
+same([$binding->serverId, 1, '7.80', '10.40'], [(int)$op->server_id, (int)$op->term, $op->policy['price']['retail'],
     $op->domain->renewal_policy['retail']], 'Acquisition and annual renewal freeze the same admitted batch');
 same($before, $reads->calls, 'Locked checkout and invoice binding never resolve a provider');
 // Mutations happen after the last unlocked refresh and native locks, before our batch admission.
@@ -118,7 +135,7 @@ same($before + 1, $reads->calls, 'Stale five-minute receipt costs one unlocked r
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts[2] + 1, Operation::count(), 'Second click accepts the visible new total');
 same('27.30', Operation::latest('id')->first()->policy['price']['retail'], 'Only the new obligation freezes the new total');
-same('23.40', $op->fresh()->policy['price']['retail'], 'Existing invoice evidence never changes');
+same('7.80', $op->fresh()->policy['price']['retail'], 'Existing invoice evidence never changes');
 commerceReject(static function () use ($op): void { $p = $op->fresh()->policy; $p['checkout']['catalogue']['catalogue']['generation']++; $op->fresh()->update(['policy' => $p]); });
 $nativeSuccessful = true;
 echo "Offer commerce: ok\n";

@@ -22,6 +22,20 @@ final readonly class FeedObserved implements Command
         }
         $this->costs = $indexed;
     }
+    /** Annual support comes only from the registrar's normalized bulk row. Metadata keeps its own age.
+     * The cost observation retains the source/time proving each annual term; it is checked separately at sale. */
+    public function facts(Facts $metadata): Facts
+    {
+        $terms = $metadata->terms;
+        foreach (['renew', 'transfer'] as $action) {
+            $cost = $this->costs[$action.':1'] ?? null;
+            if ($cost === null || !in_array($cost->source, ['enom_bulk_bucket_1', 'namesilo_account_annual'], true)) { continue; }
+            $terms[$action] = $cost->enabled && $cost->total !== null
+                && \Paymenter\Extensions\Servers\Domains\Services\PricingRule::units($cost->total) > 0 ? [1] : [];
+        }
+        return new Facts($terms, $metadata->registryFields, $metadata->renewalSafe, $metadata->requiresNameservers,
+            $metadata->autoRenewOnly, $metadata->source, $metadata->observedAt, $metadata->freshUntil);
+    }
     public function binding(): AccountBinding { return $this->account; }
     public function tld(): string { return $this->ending; }
     public function __debugInfo(): array { return ['tld' => $this->ending]; }

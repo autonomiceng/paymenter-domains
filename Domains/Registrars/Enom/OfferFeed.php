@@ -11,8 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 final class OfferFeed implements PricedFeed
 {
     public const BUCKETS = [1, 2, 5, 10];
+    private array $observations = [];
     public function __construct(private readonly Driver $reader,
-        private readonly CatalogueFreshness $freshness = new CatalogueFreshness,
+        private readonly ?CatalogueFreshness $freshness = null,
         private readonly array $terms = [1 => [1], 2 => [2], 5 => [5], 10 => [10]])
     {
         foreach ($terms as $bucket => $years) {
@@ -39,7 +40,7 @@ final class OfferFeed implements PricedFeed
     {
         $this->reader->binding()->requireMatch($context->binding);
         if ($context->budget->remaining() < $this->priceReads()) { throw new \DomainException('Offer feed capacity unavailable.'); }
-        $at = $context->now(); $until = $at->modify('+'.$this->freshness->maxAge().' seconds'); $rows = [];
+        $at = $context->now(); $until = $at->modify('+'.($this->freshness ?? CatalogueFreshness::forAccount($context->binding->serverId))->maxAge().' seconds'); $rows = [];
         // Buffer the whole run: a failed later bucket/list must expose no earlier commands.
         foreach (self::BUCKETS as $bucket) {
             $read = $this->read($this->reader->bulkPricing(false, $bucket, $context), $context);
@@ -68,6 +69,8 @@ final class OfferFeed implements PricedFeed
         foreach ($list['tlds'] as $tld) { $rows[$tld] ??= []; }
         $commands = [];
         foreach ($rows as $tld => $costs) { $commands[] = new FeedObserved($context->binding, $tld, $costs); }
+        $this->observations = [];
+        foreach ($commands as $command) { $this->observations[$command->tld()] = $command; }
         return $commands;
     }
     public function facts(string $tld, RequestContext $context): FactsObserved
@@ -78,10 +81,11 @@ final class OfferFeed implements PricedFeed
         $details = $this->read($this->reader->tldCapabilities($tld, $context), $context);
         $schema = $this->read($this->reader->registrySchema($tld, $context), $context);
         $auto = $details['auto_renew_only'];
-        return new FactsObserved($context->binding, $tld, new Facts(
-            ['register' => $details['capabilities']->get('register')->terms],
+        $facts = new Facts(
+            ['register' => $details['capabilities']->get('register')->terms, 'renew' => [], 'transfer' => []],
             $schema['supported'] === true && $details['registry_attributes'] !== null ? $schema['fields'] : null,
             $auto === null ? null : !$auto, $details['requires_nameservers'], $auto,
-            'enom_tld_facts', $at, $at->modify('+2592000 seconds')));
+            'enom_tld_facts', $at, $at->modify('+2592000 seconds'));
+        return new FactsObserved($context->binding, $tld, isset($this->observations[$tld]) ? $this->observations[$tld]->facts($facts) : $facts);
     }
 }
