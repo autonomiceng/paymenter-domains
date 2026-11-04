@@ -23,7 +23,7 @@ $enom=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\P
 \App\Models\Server::find($enom->serverId)->settings()->updateOrCreate(['key'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$enom->fingerprint,...\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($enom)])]);
 app()->offsetUnset(RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 // FreshInstallation inspects these adapters before the module fixture replaces its bindings.
-foreach([CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,OwnedDomains::class,NativePresenter::class] as $type){app()->forgetInstance($type);}
+foreach([\Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class,CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,OwnedDomains::class,NativePresenter::class] as $type){app()->forgetInstance($type);}
 $entry->boot();installedPanel();
 $owners=app(OwnedDomains::class);$presenter=app(NativePresenter::class);$user=commerceUser();$user->update(['email'=>'native-owner@example.com']);$foreign=commerceUser();foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}$pairs=[];$checkoutLines=[];$cartEdits=[];
 foreach($tlds as $i=>$t){
