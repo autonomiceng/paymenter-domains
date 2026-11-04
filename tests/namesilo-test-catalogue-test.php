@@ -34,7 +34,7 @@ function curl_exec($h): bool {
         'checkRegisterAvailability'=>['code'=>300,'available'=>[['domain'=>$p['domains'],'price'=>'10.00','premium'=>0,'duration'=>1]]],
         default=>throw new \RuntimeException('Unexpected synthetic wire command.'),
     };
-    $body=json_encode(['request'=>['operation'=>$command],'reply'=>$reply]);
+    $body=json_encode(['request'=>['operation'=>$command],'reply'=>['detail'=>'success']+$reply]);
     return ($o[CURLOPT_WRITEFUNCTION])($h,$body)===strlen($body);
 }
 $clock=new FakeClock(new \DateTimeImmutable('2026-11-03T12:00:00Z'));app()->instance(Clock::class,$clock);$now=$clock->now();
