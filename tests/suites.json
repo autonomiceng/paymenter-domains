@@ -467,7 +467,9 @@
     "tests/offer-contract-admission-test.php",
     "tests/offer-store-cleanup-test.php",
     "tests/offer-store-prefix-test.php",
-    "tests/offer-restore-sales-test.php"
+    "tests/offer-restore-sales-test.php",
+    "tests/catalogue-history-label-test.php",
+    "tests/staff-catalogue-next-step-test.php"
   ],
   "ui": [],
   "runner": [

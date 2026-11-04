@@ -275,6 +275,8 @@ class WhatYouSell extends Page implements HasTable
     {
         $cell=fn(OfferRow $record,string $field)=>$this->reads()->cell($record,$action,$field);
         $column=fn(string $field,string|\Closure $label)=>TextColumn::make($action.'_'.$field)->label($label)->alignEnd()->extraHeaderAttributes(['class'=>'domains-sell-'.$action])->extraCellAttributes(['class'=>'domains-sell-'.$action])->visible(fn()=>$this->canSeeCosts())->toggleable(isToggledHiddenByDefault:$action!=='register')
+            ->description(fn(OfferRow $record)=>$cell($record,$field)['next']??null)
+            ->url(fn(OfferRow $record)=>match($cell($record,$field)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null})
             ->state(fn(OfferRow $record)=>$cell($record,$field)['text'])->color(fn(OfferRow $record)=>$cell($record,$field)['tone'])->tooltip(fn(OfferRow $record)=>$cell($record,$field)['hint'])
             ->badge(fn(OfferRow $record)=>$cell($record,$field)['mark'])->extraAttributes(fn(OfferRow $record)=>$cell($record,$field)['mark']?['data-beco-tone'=>'err']:[]);
         return ColumnGroup::make(PriceList::ACTIONS[$action],[
@@ -327,7 +329,7 @@ class WhatYouSell extends Page implements HasTable
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(OfferRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(OfferRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(OfferRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
                     ->description(fn(OfferRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(OfferRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
-                    ->url(fn(OfferRow $record)=>isset($this->reads()->status($record)['open'])&&($id=$this->reads()->tldId($record))!==null?TldResource::getUrl('view',['record'=>$id]):null),
+                    ->url(fn(OfferRow $record)=>match($this->reads()->status($record)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null}),
             ])
             ->checkIfRecordIsSelectableUsing(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)
             ->toolbarActions([
