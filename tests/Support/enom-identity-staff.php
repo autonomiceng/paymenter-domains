@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,IdentityRefused,RegistrarRegistry,Runtime,RuntimePorts,StaffSettingsReview as Review,StaffSettingsWrites};
 require_once __DIR__.'/staff-tlds.php';
-config(['domains.enom_identity.environment'=>'test']);
+config(['domains.enom_identity.environment'=>'test','domains.namesilo_account.environment'=>'']);
 // Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();
