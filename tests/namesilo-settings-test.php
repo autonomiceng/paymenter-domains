@@ -18,14 +18,21 @@ $page->callAction('activate_test')->assertNotified('Orders resumed');
 expect($account->fresh()->processing_enabled,'Activate enables the authenticated TEST account');
 same(1,$GLOBALS['enrollmentCalls'],'Activate is local and makes no provider request');
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+$failures=[];
 foreach(['transfer','renewal','management'] as $feature){
-    $action=setupAction('test_'.$feature,(int)$server->id);
-    $page->assertActionVisible($action)->callAction($action)->assertNotified('Saved');
-    $rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
-    $label=['transfer'=>'Transfers (experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'][$feature];
-    same('Off',$rows[$label]['value'],$label.' can be turned off');
-    $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
-    $page->callAction($action)->assertNotified('Saved');
-    $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+    try{
+        $action=setupAction('test_'.$feature,(int)$server->id);
+        $page->assertActionVisible($action)->callAction($action)->assertNotified('Saved');
+        $rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
+        $label=['transfer'=>'Transfers (experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'][$feature];
+        same('Off',$rows[$label]['value'],$label.' can be turned off');
+        $class='Paymenter\\Extensions\\Servers\\Domains\\Services\\EnomTest'.ucfirst($feature);
+        expect(!$class::accepted(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account->fresh())),$label.' Off closes the sending gate');
+        $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+        $page->callAction($action)->assertNotified('Saved');
+        expect($class::accepted(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account->fresh())),$label.' On opens its admitted TEST gate');
+        $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+    }catch(Throwable $e){$failures[]=$feature.': '.$e->getMessage();}
 }
+expect($failures===[],implode(PHP_EOL,$failures));
 $nativeSuccessful=true;

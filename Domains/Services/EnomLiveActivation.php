@@ -21,20 +21,20 @@ final class EnomLiveActivation
     }
     public static function featureEnabled(AccountBinding $b,string $feature): bool
     {return $b->registrarKey==='namesilo'?NameSiloFeatureSettings::enabled($b,$feature):EnomLive::enabled($b,$feature);}
-    private static function engine(AccountBinding $b): LiveActivation
-    {return new LiveActivation($b->registrarKey==='namesilo'?new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ActivationEvidence:new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ActivationEvidence);}
+    private static function engine(AccountBinding|Account $b): LiveActivation
+    {return new LiveActivation(($b instanceof Account?$b->registrar_key:$b->registrarKey)==='namesilo'?new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ActivationEvidence:new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ActivationEvidence);}
     public static function stamp(Account $a,bool $balance=false): string
     {
-        $stamp=self::engine(CatalogueAcceptances::binding($a))->stamp($a,$balance);$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed();
+        $stamp=self::engine($a)->stamp($a,$balance);$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed();
         return $offers?hash('sha256',json_encode([$stamp,$offers->stamp($a)],JSON_THROW_ON_ERROR)):$stamp;
     }
-    private static function balance(Account $a): ?object {return self::engine(CatalogueAcceptances::binding($a))->balance($a);}
+    private static function balance(Account $a): ?object {return self::engine($a)->balance($a);}
     private static function evidence(AccountBinding $b): array {return self::engine($b)->evidence($b);}
     private static function history(AccountBinding $b,array $e,string $feature): HistoryAcceptance {return self::engine($b)->history($b,$e,$feature);}
     public static function requireHistory(HistoryAcceptance $h): void {self::engine($h->binding)->requireHistory($h);}
     public static function current(AccountBinding $b): bool {return self::engine($b)->current($b);}
     public static function registrationAccepted(AccountBinding $b): bool {return self::engine($b)->registrationAccepted($b);}
-    private static function receipt(Account $a): array {return self::engine(CatalogueAcceptances::binding($a))->receipt($a);}
+    private static function receipt(Account $a): array {return self::engine($a)->receipt($a);}
     public static function enabling(Account $a,array $features): array
     {
         $b=CatalogueAcceptances::binding($a);
@@ -44,7 +44,7 @@ final class EnomLiveActivation
     public static function problems(Account $a,array $features): array {return self::readiness($a,$features);}
     private static function readiness(Account $a,array $features,?array $projection=null): array
     {
-        return self::engine(CatalogueAcceptances::binding($a))->problems($a,$features,static function(AccountBinding $b,\DateTimeImmutable $now)use($a,$features,$projection):void {
+        return self::engine($a)->problems($a,$features,static function(AccountBinding $b,\DateTimeImmutable $now)use($a,$features,$projection):void {
             if($projection===null){self::prices($a,$b,$features,$now);}
             elseif($projection['missing']!==null){throw new \DomainException($projection['missing']);}
         });
