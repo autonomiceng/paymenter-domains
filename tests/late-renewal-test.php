@@ -19,7 +19,7 @@ $plainQueries=\Illuminate\Support\Facades\DB::getQueryLog();\Illuminate\Support\
 same([],array_values(array_filter($plainQueries,static fn($q)=>preg_match('/\bfrom\s+["`]?invoices\b/i',$q['query']))),'A non-domain payment hook does not read or lock its invoice');
 $server=$product->server;$checkout=['domains.enom_identity.environment'=>null,'domains.enom_catalogue.enabled'=>false,'domains.enom_writes.renewal'=>false];
 $on=['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.renewal'=>true,'domains.enom_test_sends_per_day'=>10000,'domains.enom_test_sends_per_minute'=>10000];
-$lateBilling=new DomainBilling($renewBindings,$guard,$clock);
+$lateBilling=new DomainBilling($renewBindings,$guard,$clock,catalogue: $GLOBALS['caps']??null);
 $holder=static function(string $suffix)use($makeRenewal,$checkout,$on,$clock,$cycles,$server):array{
     config($checkout);[$old,$d,$b]=$makeRenewal(placeholderComFixtureName('late-'.$suffix.'-placeholder.com'),false);
     $clock->instant=new DateTimeImmutable('2027-10-19T12:00:00Z');$cycles->expireUnpaid($d->id);

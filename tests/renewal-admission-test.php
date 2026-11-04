@@ -47,7 +47,10 @@ $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, 'account-enom', $c['token'], $transport), ['com']));
 $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
 $service = new RenewalAdmission($authority, $renewBindings, new RenewalAcceptance($binding, true, true, 25, true), $clock);
-$check = static function (?RenewalRequest $r = null) use ($service, $request, $state) {
+$check = static function (?RenewalRequest $r = null) use ($service, $request, $state, $ports, $clock, $tlds) {
+    // Calendar scenarios advance a year independently of provider-fact aging scenarios.
+    $facts=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tlds[0]->fresh()->catalogue_facts);
+    if($facts!==null&&!$facts->fresh($clock->now())){activeCommerceFacts($clock->now(),$clock->now()->modify('+60 days'),$ports);}
     Cache::flush(); $state->calls = []; return $service->check($r ?? $request());
 };
 (require __DIR__.'/Support/renewal-acceptance.php')($binding, $check,
@@ -153,7 +156,7 @@ $syntheticGrace = static function (?DateEvidence $expiry) use ($domain,$binding,
 };
 $expiry = new DateEvidence('2027-10-18T00:00:00+00:00',ExpiryPrecision::Instant,'synthetic_expiry','UTC');
 foreach (['2027-10-18T00:00:01Z'=>RenewalCode::Admitted,'2027-10-17T23:59:59Z'=>RenewalCode::Grace] as $at=>$expected) {
-    $clock->instant = new DateTimeImmutable($at);
+    $clock->instant = new DateTimeImmutable($at);activeCommerceFacts($clock->now(),$clock->now()->modify('+60 days'),$GLOBALS['ports']);
     $actual=$syntheticGrace($expiry)->code;same($expected,$actual,'Grace starts at the provider expiry '.$at.' ('.$actual->value.')');
 }
 same(RenewalCode::Grace,$syntheticGrace(null)->code,'Grace with unknown expiry refuses');

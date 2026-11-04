@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, OwnedDomains, RenewalCycles, RuntimeIneligible, RuntimeReason};
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();
-$billing=new DomainBilling($bindings,$guard,$clock);Queue::fake();
+$billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null);Queue::fake();
 $controller=new OwnerRenewalController($owners,$billing);$session=app('request')->session();$other=commerceUser();
 [$source]=$prepare(placeholderComFixtureName('owner-renew-placeholder.com'));same('succeeded',$reconcile->run($source->id)->state,'Owner registration confirmed');
 [$lateSource]=$prepare(placeholderComFixtureName('owner-renew-late-placeholder.com'));same('succeeded',$reconcile->run($lateSource->id)->state,'Late registration confirmed');

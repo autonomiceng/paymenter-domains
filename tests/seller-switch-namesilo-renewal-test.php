@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBillin
 HoldingProvenanceSchema::install(); HoldingAdoptionSchema::install(); Queue::fake();
 $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
-$billing = new DomainBilling($bindings, $guard, $clock); $cycles = new RenewalCycles($bindings, $clock); $holding = $result->domain->fresh();
+$billing = new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null); $cycles = new RenewalCycles($bindings, $clock); $holding = $result->domain->fresh();
 $accepted = new RenewalAcceptance($binding, true, true, 25); $features = new WriteFeatures(renewal: true);
 $engine = new RenewalExecution($renewBindings, $authority, new RenewalAdmission($authority, $renewBindings, $accepted, $clock), $accepted, $features, $clock);
 $accountGuard=(object)['email'=>'expected@example.com','id'=>'900','default'=>'1','mode'=>'singleton','reads'=>0];

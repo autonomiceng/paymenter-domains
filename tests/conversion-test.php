@@ -99,7 +99,7 @@ $view=\Illuminate\Support\Facades\Blade::render($template->in_app_body,$notice['
 DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);$server->settings()->where('key','domains_billing_enabled')->update(['value'=>'1']);
 $prices=new PriceCatalogue(new PricingRules);
 $clock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function now():DateTimeImmutable{return new DateTimeImmutable('2028-10-01T00:00:00Z');}};
-$billing=new DomainBilling($bindings,new NativeDomainGuard(new HolderPricing($prices),$clock),$clock);
+$billing=new DomainBilling($bindings,new NativeDomainGuard(new HolderPricing($prices),$clock),$clock,catalogue: $GLOBALS['caps']??null);
 $bill=$billing->invoice($d->id);expect($bill!==null,'Retained purchased domain still creates a native renewal obligation');
 same(true,$dispatch->current(Operation::where('invoice_id',$bill->id)->sole()),'New neutral obligation retains current binding');
 same('12.00',(string)$bill->items()->sole()->price,'Retained renewal retail used');same(null,$services[21]->fresh()->expires_at,'Native expiry remains null');

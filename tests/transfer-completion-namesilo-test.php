@@ -29,7 +29,7 @@ $saved=$completed->fresh()->getRawOriginal('attempt'); $a=$completed->fresh()->a
 Cache::flush(); same(RenewalCode::Cost,$admit->check($request)->code,'No ordinary proof means Cost, never inferred from Active');
 commerceReject(fn()=>$completed->fresh()->update(['attempt'=>$completed->attempt])); DB::table('domains_operations')->where('id',$completed->id)->update(['attempt'=>$saved]);
 App\Models\Server::find($completed->server_id)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-$billing=new DomainBilling($bindings,$guard,$clock); $invoice=$billing->invoice($completed->domain_id,$user);
+$billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null); $invoice=$billing->invoice($completed->domain_id,$user);
 $renew=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();
 same('2028-01-01',$renew->base_expires_at->format('Y-m-d'),'Slice24 bills from NameSilo transfer anchor'); same('2029-01-01',$renew->expected_expires_at->format('Y-m-d'),'Fixed full renewal term');
 same($invoice->id,$billing->invoice($completed->domain_id,$user)->id,'Renewal invoice idempotent'); same(null,$invoice->items->sole()->reference_id,'No native renewal dispatch');

@@ -107,7 +107,7 @@ final class DomainBilling
             Cache::put($retry,$now+900,900);
         }
         $a=EnomTestRenewal::acceptance($b);
-        $decision=(new RenewalAdmission(new RenewalAuthority($this->bindings,$this->clock),$this->bindings,$a,$this->clock))->check($request);
+        $decision=(new RenewalAdmission(new RenewalAuthority($this->bindings,$this->clock,$this->catalogue),$this->bindings,$a,$this->clock))->check($request);
         if(!$decision->allowed()||$decision->status!==\Paymenter\Extensions\Servers\Domains\Data\RenewalStatus::Grace||!$decision->cost||!$decision->renewalUntil||!$decision->providerExpiry){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
         return ['stamp'=>$stamp,'valid_until'=>$decision->validUntil,'expiry'=>$decision->providerExpiry,'deadline'=>$decision->renewalUntil->format(DATE_ATOM),
             'cost'=>['amount'=>$decision->cost->amount,'currency'=>'USD']];

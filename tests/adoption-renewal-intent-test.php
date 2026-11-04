@@ -22,6 +22,6 @@ $l = DB::transaction(fn () => HoldingLocks::take($d));
 expect(RenewalStop::stopped($l), 'Later native cancellation stops future renewal');
 expect(!RenewalStop::blocksExisting($l), 'End-of-period stop does not disable domain management');
 $clock->time = new DateTimeImmutable('2027-09-29T00:00:00Z');
-same(null, (new DomainBilling($bindings, $guard, $clock))->invoice($d->id), 'Next scheduled billing honors later cancellation');
+same(null, (new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null))->invoice($d->id), 'Next scheduled billing honors later cancellation');
 same($money, scenarioMoney(), 'Later cancellation makes no charge and preserves history');
 $nativeSuccessful = true; echo "Renewal-on adoption accepts later native renewal stop without disabling management\n";

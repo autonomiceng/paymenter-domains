@@ -77,7 +77,7 @@ $clock->time = $clock->time->modify('+1 day'); same($d->id, $confirm()->id, 'Dup
 same(1, ServiceCancellation::count(), 'Duplicate reuses original cancellation'); same($links, HistoryLink::all()->map(fn ($l) => $l->getRawOriginal())->all(), 'Duplicate preserves exact links'); same($authority, scenarioAuthority($d), 'Duplicate preserves authority bytes');
 $l = DB::transaction(fn () => HoldingLocks::take($d)); same('adoption', $l['identity_source']['kind'], 'DNR has structural adoption identity');
 same('adoption', HoldingAnchor::resolve($l)->kind, 'DNR read-only anchor available'); expect(RenewalStop::blocksRenewal($l), 'Original DNR blocks issued as well as future authority');
-$clock->time = new DateTimeImmutable('2027-09-29T00:00:00Z'); $billing = new DomainBilling($bindings, $guard, $clock);
+$clock->time = new DateTimeImmutable('2027-09-29T00:00:00Z'); $billing = new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null);
 same(null, $billing->invoice($d->id), 'Scheduled adoption renewal-off creates no invoice');
 $refuse = static function (callable $call, string $label): void { $yes = false; try { $call(); } catch (DomainException|LogicException $e) { $yes = true; } expect($yes, $label); };
 $refuse(fn () => $billing->invoice($d->id, $owner), 'Manual renewal-off refused');

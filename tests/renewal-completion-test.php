@@ -17,7 +17,7 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 $server=$product->server;
 $server->settings()->create(['key'=>EnomTestRenewal::KEY,'type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,...EnomTestRenewal::protocol($b)])]);
 $server->settings()->create(['key'=>EnomLateRenewal::KEY,'type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,'contract'=>EnomLateRenewal::CONTRACT])]);
-Cache::flush();$invoice=(new DomainBilling($renewBindings,$guard,$clock))->invoice($d->id,$user,1);
+Cache::flush();$invoice=(new DomainBilling($renewBindings,$guard,$clock,catalogue: $GLOBALS['caps']??null))->invoice($d->id,$user,1);
 $op=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();
 \App\Helpers\ExtensionHelper::addPayment($invoice,null,$op->amount);Cache::flush();[$engine,$writer,$completion]=$compose($b);
 $writes=$state->writes;$state->fail=ReadCommand::Expired;

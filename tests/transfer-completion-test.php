@@ -244,7 +244,7 @@ $renewalFacts=(new RenewalAuthority($bindings,$clock,offers: $GLOBALS['caps']??n
 same($completed->domain->domain,$renewalFacts[1],'Transfer anchor admitted by execution consumer');
 // The actual slice-24 consumer creates one native annual renewal debt from the transfer anchor.
 App\Models\Server::find($completed->server_id)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-$billing=new Paymenter\Extensions\Servers\Domains\Services\DomainBilling($bindings,$guard,$clock);
+$billing=new Paymenter\Extensions\Servers\Domains\Services\DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null);
 $invoice=$billing->invoice($completed->domain_id,$user); $renew=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();
 same('2028-01-01',$renew->base_expires_at->format('Y-m-d'),'Transfer full-term anchor starts next billing cycle');
 same('2029-01-01',$renew->expected_expires_at->format('Y-m-d'),'One complete renewal year'); same('awaiting_payment',$renew->state,'Billing grants no write authority');
