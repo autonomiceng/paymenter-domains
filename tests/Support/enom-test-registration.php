@@ -139,7 +139,7 @@ $offerQueue->update(['offer_work'=>json_encode($work,JSON_THROW_ON_ERROR)]);
 $before=count($GLOBALS['enomWire']['forms']);$usedBefore=enomTestSendCount();Cache::flush();Queue::fake();$worker->tick();
 same('cancelled',$unpaidDomain->fresh()->status,'Durable TEST domain cursor retires a cancelled unpaid reservation after missed callbacks');
 same(null,$unpaidDomain->fresh()->reservation_name,'TEST lifecycle recovery releases the abandoned local name');same(['rejected','acquisition_cancelled_unpaid'],[$unpaidOp->fresh()->state,$unpaidOp->fresh()->safe_code],'Missed callback recovery closes the unpaid operation');
-same($before,count($GLOBALS['enomWire']['forms']),'Local TEST lifecycle recovery makes no provider requests');same($usedBefore,enomTestSendCount(),'Local TEST lifecycle recovery reserves no provider calls');
+same($before,count($GLOBALS['enomWire']['forms']),'Local TEST lifecycle recovery makes no provider requests: '.json_encode(array_column(array_slice($GLOBALS['enomWire']['forms'],$before),'Command')));same($usedBefore,enomTestSendCount(),'Local TEST lifecycle recovery reserves no provider calls');
 $new=static function(string $name)use($user,$product,$clock):Operation {
     Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
     $cart=commerceCart($user);commerceAdd($cart,$product,$name);commerceCheckout($user,$cart)->assertHasNoErrors();

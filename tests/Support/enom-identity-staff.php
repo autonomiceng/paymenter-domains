@@ -62,6 +62,8 @@ foreach(Review::historyRows($server->fresh()) as $row){$json=json_encode($row);f
 $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh());
 $catalogue=Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
 $query=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+$catalogue->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[]),
+    $catalogue->readOffers($query,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $catalogue->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1)),
     $catalogue->readOffers($query,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $calls=count($GLOBALS['identityCalls']);app(Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class)->daily($a->fresh());
