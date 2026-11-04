@@ -9,7 +9,6 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{AccountChecklist,Staff};
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,Installation,Runtime,StaffSettingsReview as Review,StaffSettingsWrites};
-(new Installation)->install();
 $GLOBALS['enrollmentCalls']=0;
 config(['domains.namesilo_account.environment'=>'test',
     'cache.default'=>'database','session.driver'=>'database','queue.default'=>'database',
@@ -17,7 +16,7 @@ config(['domains.namesilo_account.environment'=>'test',
 Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void {
     $t->string('key')->primary();$t->string('owner');$t->integer('expiration');
 });
-Runtime::register();
+(new Installation)->install();Runtime::register();
 $staff=staffUser(array_keys(Staff::permissions()));
 $server=Server::create(['name'=>'Synthetic NS5 test activation','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $review=static fn(string $action)=>new Review($staff->id,$server->id,null,$action,
