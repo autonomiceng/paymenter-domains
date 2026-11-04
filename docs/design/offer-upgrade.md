@@ -176,3 +176,9 @@ store-cleanup/prefix tests. Active offer-work/runtime-work/scheduler, queued-tri
 staff-policy/global-pricing and cutover tests retain bounded reads, generation races, admission,
 publication and staff review checks against the new implementation. No financial completion or
 provider protocol test is retired with the old catalogue algorithms.
+
+The old SellRow/acceptance UI, seller-policy algorithm, PriceCatalogue importer and price-list
+mirror tests are also bridge-owned. Current offer-staff-reads/policy/global-pricing, offer-commerce,
+Writer and installed cutover cover the active matrix/redaction/CSV, seller switch and publication.
+Native mapping, invoice, checkout, provider, operation and renewal tests stay in the final suite;
+their fixture setup uses the actual active Writer rather than retired policy methods.

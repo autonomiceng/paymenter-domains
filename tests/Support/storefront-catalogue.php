@@ -24,7 +24,7 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
             new CatalogueRate('transfer', 1, '7.00', 'synthetic', $now, $now->modify('+1 day'))];
         foreach ($terms as $term) { $rates[] = new CatalogueRate('register', $term, '6.00', 'synthetic', $now, $now->modify('+1 day')); }
         $prices->import(new CatalogueEntry($binding, $ending, $rates, $terms, true, true), $accepted, static fn () => null, $now);
-        $native->publish($tld->id, $now); $catalogueTlds[$ending] = $tld->fresh();
+        activeFixtureRepublish($native,$tld->id, $now); $catalogueTlds[$ending] = $tld->fresh();
         $policy = $sellers->initialize($ending); activeFixtureSeller($sellers,$ending, $policy->revision, $server->id, true, true, $now);
     }
     return compact('server', 'binding', 'catalogueTlds');

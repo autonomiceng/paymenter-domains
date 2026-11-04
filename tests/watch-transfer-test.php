@@ -103,7 +103,7 @@ $summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
 same(1,storefrontDom($watchPage($summary))->query('//a[@href="'.$summary->urls['compareTransfer'].'" and normalize-space(.)="Transfer to Example Hosting"]')->length,'Hosting domain page offers Transfer to Example Hosting');
 // Watch entry points follow the public transfer offer across repeated publication changes.
 foreach([false,true,false,true] as $enabled){
-    $tlds[0]->update(['transfer_enabled'=>$enabled]);$native->publish($tlds[0]->id,$clock->now());
+    $tlds[0]->update(['transfer_enabled'=>$enabled]);activeFixtureRepublish($native,$tlds[0]->id,$clock->now());
     same($enabled,$store->endings()[0]['transfer']!==null,'Public transfer offer follows the TLD');
     $summary=(new DomainSummaries)->one($owner,'watch',$id,$at);
     same($enabled,$summary->urls['compareTransfer']!==null,'Watch transfer entry follows the public offer');

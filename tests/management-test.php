@@ -28,10 +28,10 @@ Cache::flush();$ns=$submit($d,$driver,'nameservers',['nameservers'=>['NS3.Exampl
 $stopped=Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$d->server_id,'tld'=>$d->tld])->sole();
 $holderPrice=(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices))->renewal($d,'USD',$clock->now())->retail;
 $acquisition=$stopped->only(['register_enabled','transfer_enabled']);$stopped->update(['register_enabled'=>false,'transfer_enabled'=>false]);
-$native->publish($stopped->id,$clock->now());
+activeFixtureRepublish($native,$stopped->id,$clock->now());
 same($holderPrice,(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices))->renewal($d,'USD',$clock->now())->retail,'New-sales stop keeps the holder renewal price');
 Cache::flush();$email=$submit($d,$driver,'auth_code_email');same('auth_email_accepted',$management->run($email->id,$driver)->safe_code,'Email accepted distinct from delivery');commerceReject(fn()=>$submit($d,$driver,'auth_code_email'));
-$stopped->update($acquisition);$native->publish($stopped->id,$clock->now());
+$stopped->update($acquisition);activeFixtureRepublish($native,$stopped->id,$clock->now());
 [$d,$driver]=$holding(placeholderComFixtureName('manage-unknown-placeholder.com'));$state->fault='SetRegLock';$op=$submit($d,$driver,'lock',['locked'=>false]);same('uncertain',$management->run($op->id,$driver)->state,'Malformed write and unmatched readback uncertain');$nativeBeforeReplay=nativeFinancialSnapshot($op);
 $calls=count($state->calls);$management->run($op->id,$driver);same($calls,count($state->calls),'Unknown send never replayed');
 same($nativeBeforeReplay,nativeFinancialSnapshot($op),'Unknown management replay preserves native/financial state');

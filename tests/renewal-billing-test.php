@@ -122,7 +122,7 @@ same(null, $s->fresh()->expires_at, 'Actual native cron leaves native expiry nul
 same((array) $frozen, (array) DB::table('invoice_items')->where('invoice_id', $renewal->id)->first(), 'Native cron preserves issued amount');
 // A separate real completed domain exercises scheduled issue and bill+alert below wholesale.
 $bindings->setProcessing($server->id, true, syntheticActivation());
-$tld->update(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true]); activeFixtureRepublish($prices,$tld); $native->publish($tld->id, $now);
+$tld->update(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true]); activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
 activeFixtureSeller($sellers,'com', 3, $server->id, true, true, $now);
 Carbon\Carbon::setTestNow(); Carbon\CarbonImmutable::setTestNow();
 [$next] = $prepare(placeholderComFixtureName('billing-below-placeholder.com')); same('succeeded', $reconcile->run($next->id)->state, 'Second real anchor completed');

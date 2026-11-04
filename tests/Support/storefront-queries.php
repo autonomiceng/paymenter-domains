@@ -26,7 +26,7 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     extract(storefrontCatalogueFixture($fixture, ['qnet', 'qorg', 'qxyz'], range(1, 10)));
     foreach (array_values($catalogueTlds) as $index => $tld) {
         $tld->update(['fixed_register' => (string) (20 + 10 * $index), 'fixed_renew' => (string) (21 + $index), 'fixed_transfer' => (string) (22 + $index)]);
-        activeFixtureRepublish($prices,$tld); $native->publish($tld->id, $now);
+        activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
     }
     $before = $reads->calls;
     Tld::where('server_id', $server->id)->update(['max_years' => 1]);

@@ -47,7 +47,7 @@ $accepted=CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'
 $tld=Tld::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>'com','enabled'=>true]);
 $rates=[];foreach(['register','renew','transfer'] as $action){$rates[]=new CatalogueRate($action,1,'8.00','synthetic',$clock->now(),$clock->now()->modify('+1 day'));}
 $prices->import(new CatalogueEntry($binding,'com',$rates,[1],true,true),$accepted,static fn()=>null,$clock->now());
-$native->publish($tld->id,$clock->now());$product=$native->product($tld->fresh(),'register');$plan=$native->annualPlan($product);
+activeFixtureRepublish($native,$tld->id,$clock->now());$product=$native->product($tld->fresh(),'register');$plan=$native->annualPlan($product);
 $order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
 // Retained service predates installation; seed it without checkout events.
 $service=Service::withoutEvents(function()use($owner,$order,$product,$plan){

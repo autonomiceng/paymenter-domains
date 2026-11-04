@@ -127,7 +127,7 @@ $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::bindi
 $accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
 Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::save($binding, $accepted->revision, $accepted->endings);
 same([4], $display->remember($render), 'Standalone acceptance save forgets warm display');
-$native->publish($tld->id, $now);
+activeFixtureRepublish($native,$tld->id, $now);
 same([5], $display->remember($render), 'Native publication without review forgets warm display');
 
 // A cache outage after commit cannot turn a committed writer into an error or suppress later callbacks.
