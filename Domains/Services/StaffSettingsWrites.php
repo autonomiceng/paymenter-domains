@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,SalesPolicy,SellRow,Tld};
-use Paymenter\Extensions\Servers\Domains\Data\{CatalogueAcceptance,Environment,RequestBudget,RequestContext,RequestOrigin,SystemClock};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
+use Paymenter\Extensions\Servers\Domains\Data\{Environment,RequestBudget,RequestContext,RequestOrigin,SystemClock};
 /** Local reviews and deliberately composed account reads; connection access defaults off. */
 class StaffSettingsWrites
 {
@@ -18,7 +18,7 @@ class StaffSettingsWrites
     /** Returns the publish summary for a default pricing change, otherwise null. */
     public function run(StaffSettingsReview $r,#[\SensitiveParameter] array $data,?\DateTimeImmutable $now=null): ?array
     {
-        if(($catalogue=$this->catalogue())!==null&&in_array($r->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){return $catalogue->run($r,$data);}
+        if(in_array($r->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){return ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->run($r,$data);}
         $clock=app()->bound(Clock::class)?app(Clock::class):new SystemClock;
         if($now!==null){
             $clock=new class($now) implements Clock {
@@ -29,7 +29,6 @@ class StaffSettingsWrites
             };
         }
         $now??=$clock->now();$r->input($data);
-        if($r->action==='default_pricing'){return $this->saveDefaultPricing($r,$data,$now);}
         if($r->action==='enom_answer'){EnomAnswers::record($r,$data,$now);return null;}
         if($r->action==='late_renewal'){EnomLateRenewal::review($r,$data);return null;}
         if($r->action==='activate'){EnomLiveActivation::review($r,$data);return null;}
@@ -96,22 +95,6 @@ class StaffSettingsWrites
                 });
             });return null;
         }
-        if($r->action==='import'){return TestCatalogue::import($r,$data,$this->bindings,$clock);}
-        if($r->action==='publish'){$this->native->publish($r->tldId??0,$now,$r);return null;}
-        if(in_array($r->action,['override','remove_override'],true)){
-            // Saving prices publishes them in the same transaction; missing or stale costs refuse the whole change.
-            $this->native->publish($r->tldId??0,$now,$r,function(Tld $t)use($r,$data,$now):void{
-                $rule=$r->action==='override'?self::rule($data):null;
-                $t->update($rule===null?['use_default_rule'=>true]:['use_default_rule'=>false,'pricing_mode'=>$rule['mode'],'markup'=>$rule['markup'],'round_up'=>$rule['round_up'],
-                    'fixed_register'=>$rule['fixed']['register'],'fixed_renew'=>$rule['fixed']['renew'],'fixed_transfer'=>$rule['fixed']['transfer']]);
-                PriceCatalogue::requireCosts($t,$now);
-            });return null;
-        }
-        if($r->action==='seller'){
-            $t=Tld::findOrFail($r->tldId);$p=SalesPolicy::where('tld',$t->tld)->firstOrFail();
-            $id=($data['seller']??'')===''?null:(int)$data['seller'];
-            $this->sellers->change($t->tld,$p->revision,$id,(bool)($data['register']??false),(bool)($data['transfer']??false),$now,$r);return null;
-        }
         if($r->action==='history'&&($data['accept']??false)===true){
             $a=Account::where('server_id',$r->serverId)->firstOrFail();$binding=AccountBindings::binding($a);
             if(($data['verified']??false)!==true){throw new \DomainException('Independent history verification required.');}
@@ -146,129 +129,14 @@ class StaffSettingsWrites
             if($r->action==='history'){
                 HistoryAcceptances::revokeLocked(AccountBindings::binding($a),\Paymenter\Extensions\Servers\Domains\Data\Action::from((string)($data['history_action']??'')));return;
             }
-            if($r->action==='tld_settings'){
-                if(!$t){throw new \DomainException('TLD required.');}
-                $min=filter_var($data['min_years']??null,FILTER_VALIDATE_INT);$max=filter_var($data['max_years']??null,FILTER_VALIDATE_INT);
-                if(!$min||!$max||$min<1||$max>10||$min>$max){throw new \DomainException('Valid term bounds required.');}
-                // The transaction rolls back, so a save with no change leaves no history and no used review.
-                if($min===(int)$t->min_years&&$max===(int)$t->max_years&&(bool)($data['enabled']??false)===(bool)$t->enabled&&(bool)($data['renew']??false)===(bool)$t->renew_enabled
-                    &&(bool)($data['register']??false)===(bool)$t->register_enabled&&(bool)($data['transfer']??false)===(bool)$t->transfer_enabled){throw new \DomainException('Terms unchanged.');}
-                if($min<$t->min_years||$max>$t->max_years){
-                    $accepted=CatalogueAcceptances::load(AccountBindings::binding($a),true)->endings[$t->tld]??null;
-                    if(($data['verified']??false)!==true||!in_array($min,$accepted['register']??[],true)||!in_array($max,$accepted['register']??[],true)){throw new \DomainException('Explicit verified widening required.');}
-                }
-                $renew=(bool)($data['renew']??false);
-                if(!$renew&&Domain::where(['server_id'=>$s->id,'tld'=>$t->tld,'account_fingerprint'=>$a->account_fingerprint])->whereNotNull('reservation_name')->orderBy('id')->lockForUpdate()->get()->isNotEmpty()){throw new \DomainException('Retained holders require annual renewal support.');}
-                $sellRule=SellRule::saved(AccountBindings::binding($a));
-                $selling=$sellRule===null?null:SellRow::firstOrNew(['server_id'=>$s->id,'account_fingerprint'=>$a->account_fingerprint,'tld'=>$t->tld]);
-                $t->fill(['min_years'=>$min,'max_years'=>$max,'enabled'=>(bool)($data['enabled']??false),'renew_enabled'=>$renew]);
-                foreach(['register','transfer'] as $action){
-                    $enable=(bool)($data[$action]??false);
-                    if($enable&&(!$t->{$action.'_enabled'}||(!$t->getOriginal('enabled')&&$t->enabled)||(!$t->getOriginal('renew_enabled')&&$renew))){
-                        // Restoring withdrawn sales requires explicit confirmation and current imported acceptance proof.
-                        if(($data['verified']??false)!==true){throw new \DomainException('Explicit restoration required.');}
-                        $prices=new PriceCatalogue(new PricingRules);
-                        // Clearing a row stop requests automation again; its next read must restore acceptance before any sale.
-                        if($action!=='register'||$selling?->choice!=='skip'){
-                            $prices->current((int)$t->server_id,$t->account_fingerprint,$t->tld,'renew',1,'USD',$now,true,$t);
-                            PublicationEligibility::firstEligibleTerm($t,$action,static function(int $term)use($t,$action,$prices,$now):void{
-                                PublicationEligibility::require($t,$action,$term,true);
-                                $prices->current((int)$t->server_id,$t->account_fingerprint,$t->tld,$action,$term,'USD',$now,true,$t);
-                            });
-                        }
-                    }
-                    $t->{$action.'_enabled'}=$enable;
-                }
-                if($selling!==null){
-                    // Preserve the old All behavior for other rows when this staff save records a new exception.
-                    if($sellRule['mode']==='all'&&!$t->register_enabled){
-                        SellRule::rows(AccountBindings::binding($a))->where('choice','skip')->update(['choice'=>null]);
-                        $sellRule['mode']='except';$s->settings()->where('key',SellRule::KEY)->firstOrFail()->update(['value'=>$sellRule]);
-                    }
-                    $selling->transfer=$t->transfer_enabled===$sellRule['transfers']?null:$t->transfer_enabled;
-                    $selling->choice=$t->register_enabled?($selling->choice==='skip'?($sellRule['mode']==='only'?'sell':null):$selling->choice):'skip';
-                    $selling->save();$r->input(['selling_choice'=>$selling->choice]);
-                }
-                $t->save();TestCatalogue::withdrawCarts(AccountBindings::binding($a),$t->tld,true);return;
-            }
-            if($r->action!=='acceptance'){throw new \DomainException('Unsupported settings action.');}
-            $binding=AccountBindings::binding($a);
-            try{$old=CatalogueAcceptances::load($binding,true);}catch(\DomainException){$old=null;}
-            $changes=$data['changes']??null;
-            if(is_array($data['sell']??null)){
-                [$changes,$audit]=SellRule::applyLocked($a,$binding,$old,$data['sell']);$r->input($audit);
-                if($changes===[]){return;}
-            }
-            if(!is_array($changes)||$changes===[]){throw new \DomainException('Nothing to save.');}
-            CatalogueAcceptances::changeLocked($a,$old,$changes);
+            throw new \DomainException('Unsupported settings action.');
         });
-        if($r->action==='acceptance'){
-            // The staff save has committed; acceptance audits need their own outer transaction.
-            SellAutomation::refresh($r->serverId,$now);
-            return null;
-        }
+
         return null;
     }
 
     /** Rule and fee save together. Then each account publishes on its own, and saving again retries what failed. */
-    private function saveDefaultPricing(StaffSettingsReview $r,#[\SensitiveParameter] array $data,\DateTimeImmutable $now): array
-    {
-        $r->local(function()use($data):void{
-            try{$fee=CardFee::validate(['percent'=>$data['fee_percent']??'', 'fixed'=>$data['fee_fixed']??'']);}
-            catch(\InvalidArgumentException){throw new \DomainException('Invalid card fee.');}
-            $rules=new PricingRules;CardFee::saveLocked($fee);$rules->saveDefaultRuleLocked(self::rule($data,$fee));
-            // A custom TLD this fee can't price refuses the whole save.
-            foreach(Account::orderBy('server_id')->lockForUpdate()->get() as $a){
-                foreach(Tld::where(['server_id'=>$a->server_id,'account_fingerprint'=>$a->account_fingerprint,'registrar_key'=>$a->registrar_key,'use_default_rule'=>false,'pricing_mode'=>'markup_fee_percent'])->orderBy('id')->lockForUpdate()->get() as $own){
-                    // Malformed saved rules stay on the TLD's repair path; valid rules must still cover the new fee.
-                    try{$rule=$rules->rule($own,true,CardFee::NONE);}
-                    catch(\DomainException|\InvalidArgumentException){continue;}
-                    PricingRule::validate([...$rule,'card_fee'=>$fee]);
-                }
-            }
-        });
-        $summary=['published'=>0,'failed'=>[],'skipped'=>[]];$prices=new PriceCatalogue(new PricingRules);
-        foreach(Account::orderBy('server_id')->get() as $a){
-            $server=Server::find($a->server_id);$name=$server?->name??'Server #'.$a->server_id;
-            // A disabled account can't sell or publish; its prices catch up once it is back on.
-            if(!$server?->enabled){$summary['skipped'][]=$name;continue;}
-            try{
-                foreach(Tld::where(['server_id'=>$a->server_id,'registrar_key'=>$a->registrar_key,'account_fingerprint'=>$a->account_fingerprint])->where(fn($q)=>$q->where('use_default_rule',true)->orWhere('pricing_mode','markup_fee_percent'))->orderBy('tld')->get() as $tld){
-                    $follows=true;
-                    try{
-                        // Prices move only when the rule or fee they use really changed. Unchanged is fine; a change it can't follow is named below.
-                        $older=$prices->onOlderRule($tld);
-                        if($older||$tld->use_default_rule){PriceCatalogue::requireCosts($tld,$now);}
-                        if(!$older){continue;}
-                        $this->native->publish((int)$tld->id,$now,null,function(Tld $t)use($now,&$follows):bool{
-                            if(!$t->use_default_rule&&$t->pricing_mode!=='markup_fee_percent'){return $follows=false;}
-                            PriceCatalogue::requireCosts($t,$now);return true;});
-                        if($follows){$summary['published']++;}
-                    }
-                    catch(\Throwable $error){
-                        $summary['failed'][$name.' #'.$a->server_id][]='.'.$tld->tld;
-                        if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$tld->tld,'exception_class'=>$error::class]);}
-                    }
-                }
-            }
-            catch(\Throwable $error){
-                $summary['failed'][$name.' #'.$a->server_id]??=[];
-                \Illuminate\Support\Facades\Log::warning('Domains default pricing account failed.',['server_id'=>(int)$a->server_id,'exception_class'=>$error::class]);
-            }
-        }
-        // Each publication has committed independently; losing this audit cannot undo it.
-        try{$r->finish('publication_completed',$summary);}
-        catch(\Throwable $error){
-            $summary['audit_failed']=true;
-            \Illuminate\Support\Facades\Log::warning('Domains pricing publication outcome audit failed.',['action'=>$r->action,'exception_class'=>$error::class]);
-        }
-        return $summary;
-    }
 
-    private static function rule(array $data,?array $fee=null): array
-    {
-        return PricingRule::validate(['mode'=>$data['mode']??null,'markup'=>$data['markup']??'0','round_up'=>$data['round_up']??'none',
-            'fixed'=>['register'=>$data['fixed_register']??null,'renew'=>$data['fixed_renew']??null,'transfer'=>$data['fixed_transfer']??null],
-            ...(($data['mode']??null)==='markup_fee_percent'?['card_fee'=>$fee??CardFee::read(true)]:[])]);
-    }
+
+
 }
