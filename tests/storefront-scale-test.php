@@ -12,8 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{Auth, Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, StorefrontController};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, SellRow, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, CheckoutEligibility, NativeCatalogue, PslReviewSchema, Storefront, WatchSchema};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tld};
+use Paymenter\Extensions\Servers\Domains\Services\{CheckoutEligibility, NativeCatalogue, PslReviewSchema, Storefront, WatchSchema};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 require __DIR__.'/Support/offer-commerce.php';
@@ -27,27 +27,22 @@ foreach (range('a', 'z') as $a) {
     }
 }
 $base = $tlds[0]->fresh(); $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $base->server_id)->sole());
-$accepted = CatalogueAcceptances::load($binding); $ends = [];
-foreach ($names as $name) { $ends[$name] = ['register' => [1], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]; }
-$accepted = CatalogueAcceptances::save($binding, $accepted->revision, $ends);
 $templates = [];
 foreach (['register', 'transfer'] as $action) {
     $product = $native->product($base, $action); $plan = $product->plans()->where('billing_period', 1)->sole();
     $templates[$action] = [$product, $product->settings()->get(), $plan, $plan->prices()->sole()];
 }
 $priceTemplates = Price::where('server_id', $base->server_id)->where('term', 1)->get();
-DB::transaction(function () use ($names, $base, $templates, $priceTemplates, $accepted, $now): void {
+DB::transaction(function () use ($names, $base, $templates, $priceTemplates, $now): void {
     foreach ($names as $name) {
-        $tld = $base->replicate(); $tld->tld = $name; $tld->min_years = $tld->max_years = 1;
+        $tld = $base->replicate(); $tld->tld = $name; // Clone the real normalized Writer seed and its native annual projection.
         // The rehearsal bulk edit turned TLD transfers off while the seller remained selected.
-        $tld->transfer_enabled = false; $tld->save();
-        SellRow::create(['server_id' => $tld->server_id, 'account_fingerprint' => $tld->account_fingerprint, 'tld' => $name,
-            'choice' => 'sell', 'longest' => 1, 'transfer' => false, 'register_cost' => '6.0000', 'renew_cost' => '8.0000',
-            'transfer_cost' => '7.0000', 'high_cost' => '8.0000', 'prices' => [1 => ['register' => '6.0000', 'renew' => '8.0000', 'transfer' => '7.0000']], 'read_at' => $now->getTimestamp()]);
+        $tld->catalogue_intent=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1,transfers:false));
+        $published=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($base->catalogue_published_revision);$published['selection']=1;
+        $tld->catalogue_published_revision=json_encode($published);$tld->save();
         foreach ($priceTemplates as $template) {
             $price = $template->replicate(); $price->tld = $name;
-            $proof = $price->eligibility; $proof['catalogue_revision'] = $accepted->revision; $proof['accepted_terms'] = [1];
-            $price->eligibility = $proof; $price->save();
+            $price->save();
         }
         foreach ($templates as $action => [$template, $settings, $plan, $nativePrice]) {
             $product = $template->replicate(); $product->slug = NativeCatalogue::slug($tld, $action);
@@ -74,14 +69,8 @@ DB::table('prices')->whereNotIn('plan_id', Plan::pluck('id'))->delete();
 DB::table('domains_prices')->where('tld', 'com')->delete(); DB::table('domains_tlds')->where('tld', 'com')->delete();
 PslReviewSchema::install(); WatchSchema::install();
 $clock = new FakeClock($now);
-// The active storefront keeps the same reseller-scale bound on a directly arranged synthetic offer set.
-(new Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($binding);
-// Independently observed synthetic facts and matching publication, without 599 provider/writer turns.
-$facts = new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]],
-    [], true, false, false, 'synthetic', $now, $now->modify('+1 day'));
-DB::table('domains_tlds')->update(['catalogue_facts' => Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts($facts),
-    'catalogue_intent' => Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(defaultSell:false,sell:true,longest:1,transfers:false)),
-    'catalogue_published_revision' => json_encode(['offer' => 1, 'defaults' => 0, 'selection' => 1])]);
+// Every ending above carries independently known synthetic facts/costs from the real Writer seed.
+// Native products/plans are cloned explicitly to keep setup bounded at 599 endings.
 $ports = new Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),
     $clock, $bindings, static fn () => null, static fn () => true);
 $offers = new Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers($ports, $bindings, $native);
@@ -92,7 +81,8 @@ app()->instance(Storefront::class, $store); app()->instance(Clock::class, $clock
 require dirname(__DIR__).'/Domains/routes/web.php'; require dirname(__DIR__).'/Domains/routes/owned.php';
 storefrontViews(); $user = commerceUser(); Auth::login($user);
 $controller = new StorefrontController($store); $owned = app(OwnedDomainController::class);
-same([599, 599, 599, 1797, 1198, 1198], [Tld::count(), SellRow::count(), SalesPolicy::count(), Price::count(), Product::count(), Plan::count()], 'Reseller sells the full scale shape');
+expect(!Illuminate\Support\Facades\Schema::hasTable('domains_sell_rows'),'Retired sell store remains absent at reseller scale');
+same([599, 599, 1797, 1198, 1198], [Tld::count(), SalesPolicy::count(), Price::count(), Product::count(), Plan::count()], 'Reseller sells the full scale shape');
 $failures = []; $before = $reads->calls; $count = 0; $measuring = false; $queries = [];
 DB::listen(static function ($query) use (&$count, &$measuring, &$queries): void {
     if ($measuring) { expect(str_starts_with(strtolower($query->sql), 'select'), 'Page GET only reads our database'); $count++; $queries[] = $query->sql; }

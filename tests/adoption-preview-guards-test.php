@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\{StaffContext, Target};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Adoption};
-use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
+
 extract(adoptionFixture());
 $run = fn () => $reader->preview($target, $context);
 $diagnostics = [];
@@ -92,11 +92,11 @@ same('ready', $run()->code, 'Reviewed hosting map allows explicit server-backed 
 DB::table('products')->where('id', $hostingProduct->id)->update(['server_id' => $legacyServer->id]);
 same('competing_holding', $run()->code, 'A hosting map cannot exempt a known registrar extension');
 DB::table('products')->where('id', $hostingProduct->id)->update(['server_id' => null]);
-$peer = Service::create(['user_id' => $other->id, 'order_id' => $order->id, 'product_id' => $product->id,
-    'plan_id' => $plan->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
-$peerProperty = $peer->properties()->create(['key' => 'domain', 'value' => 'EXAMPLE.COM']);
+$peer = Service::withoutEvents(static fn()=>Service::create(['user_id' => $other->id, 'order_id' => $order->id, 'product_id' => $product->id,
+    'plan_id' => $plan->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']));
+$peerProperty = Service::withoutEvents(static fn()=>$peer->properties()->create(['key' => 'domain', 'value' => 'EXAMPLE.COM']));
 same('competing_holding', $run()->code, 'Other service canonical name collision refused');
-$peerProperty->update(['value' => 'other-placeholder.com']);
+DB::table('properties')->where('id',$peerProperty->id)->update(['value'=>'other-placeholder.com']);
 $cancel = ServiceCancellation::create(['service_id' => $service->id, 'type' => 'immediate', 'reason' => 'Synthetic']);
 same('mapping_unconfirmed', $run()->code, 'Conflicting immediate cancellation refused');
 DB::table('service_cancellations')->where('id', $cancel->id)->delete();
@@ -129,10 +129,12 @@ same($before, [DB::table('invoices')->get()->toJson(), DB::table('invoice_items'
 DB::table('invoices')->where('id', $invoice->id)->update(['user_id' => $other->id]);
 same('unresolved_debt', $run()->code, 'Foreign owner invoice cannot become history'); DB::table('invoices')->where('id', $invoice->id)->update(['user_id' => $owner->id]);
 $rate = \Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id', $tld->server_id)->where('action', 'renew')->sole();
-$eligibility = $rate->eligibility;
-DB::table('domains_prices')->where('id', $rate->id)->update(['eligibility' => json_encode([...$eligibility, 'staff_alert' => 'below_cost'])]);
+$offerPorts=activeFixturePorts($native);$offerQuery=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+$offerRevision=fn()=>$offerPorts->readOffers($offerQuery,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$retained=$tld->fresh()->catalogue_retained_annual_retail;
+$offerPorts->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($binding,'com','1.00'),$offerRevision());
 same('below_cost', $run()->details['price_notice'], 'Below-cost retail is reviewed without a floor');
-DB::table('domains_prices')->where('id', $rate->id)->update(['eligibility' => json_encode($eligibility)]);
+$offerPorts->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($binding,'com',$retained),$offerRevision());
 $server = Server::findOrFail($tld->server_id);
 $setting = $server->settings()->create(['key' => 'domains_due_days', 'value' => '14', 'type' => 'string']);
 same('2027-10-06', $run()->details['renewal_due'], 'Configured due days applied');
@@ -144,7 +146,7 @@ DB::table('domains_accounts')->where('server_id', $tld->server_id)->update(['env
 DB::table('domains_tlds')->where('id', $tld->id)->update(['account_fingerprint' => $live->fingerprint]);
 DB::table('domains_prices')->where('server_id', $tld->server_id)->update(['account_fingerprint' => $live->fingerprint]);
 $server->settings()->where('key', 'domains_catalogue_acceptance')->delete();
-CatalogueAcceptances::save($live, 0, ['com' => ['register' => [1, 3], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]);
+// Independently observed active facts/costs stay on their explicitly re-bound fixture rows.
 $bindings->configure($tld->server_id, 'enom', Environment::Live, ['uid' => 'account-enom', 'token' => 'synthetic-secret']);
 $liveTarget = new Target('example.com', $service->id, $owner->id, $tld->server_id, Environment::Live);
 $count = count($wire->calls); same('account_unconfirmed', $reader->preview($liveTarget, $context)->code, 'Live read refuses unbound non-HTTPS site'); same($count, count($wire->calls), 'Wrong site no wire');
