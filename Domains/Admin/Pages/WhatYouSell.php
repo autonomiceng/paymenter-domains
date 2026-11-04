@@ -112,7 +112,7 @@ class WhatYouSell extends Page implements HasTable
     {return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);}
     private function reads(): SellTable
     {
-        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL,$this->catalogue());
+        return $this->reads??=new SellTable($this->bindings(),$this->years(),$this->canSeeCosts(),fn()=>$this->getTableRecords()->items(),$this->account===self::ALL,$this->catalogue(),fn()=>$this->getFilteredTableQuery()->get(['server_id','tld'])->all());
     }
     private function reload(): void
     {
@@ -135,6 +135,7 @@ class WhatYouSell extends Page implements HasTable
     /** One save for the selection. Fields left as they are stay out of it, so each row keeps what it had. */
     private function bulkEdit(array $data,array $tlds): void
     {
+        if(count($tlds)>25){Notification::make()->warning()->title('Pick at most 25 TLDs')->body('Select 25 or fewer TLDs, then try again.')->send();return;}
         $terms=[...(($data['longest']??self::KEEP)===self::KEEP?[]:['longest'=>(int)$data['longest']]),...($data['transfer']===self::KEEP?[]:['transfer'=>$data['transfer']==='on'])];
         $sell=[...($data['choice']===self::KEEP?[]:['choices'=>array_fill_keys($tlds,$data['choice']==='rule'?null:$data['choice'])]),...($terms===[]?[]:['terms'=>array_fill_keys($tlds,$terms)])];
         if($sell===[]){Notification::make()->title('No changes')->send();return;}
@@ -252,6 +253,10 @@ class WhatYouSell extends Page implements HasTable
             $components[]=Callout::make('Prices left out')->warning()->columnSpanFull()
                 ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
                 ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
+        }
+        if(($hidden=$this->reads()->hiddenWarnings())>0){
+            $components[]=Callout::make('Prices left out on other pages')->warning()->columnSpanFull()
+                ->description($hidden.' more '.($hidden===1?'TLD has':'TLDs have').' prices left out. Open the other pages to see what needs fixing.');
         }
         return $schema->components([...$components,EmbeddedTable::make()]);
     }

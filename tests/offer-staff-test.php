@@ -29,6 +29,21 @@ same($before+1,count(Review::historyRows(Server::find($binding->serverId))),'One
 $source=new \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue($ports,$clock);
 $tableRows=[];$table=new \Paymenter\Extensions\Servers\Domains\Admin\Support\SellTable([$binding->serverId=>$binding],1,true,static function()use(&$tableRows){return $tableRows;},false,$source);
 $tableRows=$table->rows('com')->get()->all();same('12.00',$table->cell($tableRows[0],'register','price')['text'],'Actual reviewed edit reaches Staff table before public checkout');
+// No saved register price is Off for a staff stop or a term beyond longest; active missing prices still need repair.
+$registerPrices=DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->get()->map(fn($p)=>(array)$p)->all();$originalIntent=Tld::find($id)->catalogue_intent;
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->delete();
+foreach([['stops'=>['register'],'longest'=>3,'years'=>1],['stops'=>[],'longest'=>1,'years'=>3],['stops'=>[],'longest'=>3,'years'=>1]] as $case){
+    DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>OfferState::json(['sell'=>true,'longest'=>$case['longest'],'stops'=>$case['stops']])]);
+    $cellRows=[];$cells=new \Paymenter\Extensions\Servers\Domains\Admin\Support\SellTable([$binding->serverId=>$binding],$case['years'],true,static function()use(&$cellRows){return $cellRows;},false,$source);
+    $cellRows=$cells->rows('com')->get()->all();$off=$case['stops']!==[]||$case['years']>$case['longest'];
+    foreach(['cost','price'] as $field){$cell=$cells->cell($cellRows[0],'register',$field);same($off?'Off':'Missing',$cell['text'],'Register '.$field.' follows the actual term sale state');same($off?'gray':'danger',$cell['tone'],'Off does not show a red repair warning');if($off){same(null,$cell['hint'],'Off has no Edit prices or Sync guidance');}}
+}
+DB::table('domains_prices')->insert($registerPrices);DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>$originalIntent]);
+// A saved value remains visible even after registration stops.
+DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>OfferState::json(['sell'=>true,'stops'=>['register']])]);
+$savedRows=[];$savedCells=new \Paymenter\Extensions\Servers\Domains\Admin\Support\SellTable([$binding->serverId=>$binding],1,true,static function()use(&$savedRows){return $savedRows;},false,$source);$savedRows=$savedCells->rows('com')->get()->all();
+same('12.00',$savedCells->cell($savedRows[0],'register','price')['text'],'Saved register price wins over Off');
+DB::table('domains_tlds')->where('id',$id)->update(['catalogue_intent'=>$originalIntent]);
 $list=new class extends \Paymenter\Extensions\Servers\Domains\Services\PriceList {public $source;protected function catalogue():?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue{return $this->source;}};$list->source=$source;
 expect(str_contains($list->csv(),'12.00'),'Same reviewed edit reaches CSV');
 same('$12.00',$storefront->offer('com','register',1)['price'],'Reviewed edit reaches the real public offer');

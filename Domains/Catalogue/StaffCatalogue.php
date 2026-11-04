@@ -144,6 +144,19 @@ final class StaffCatalogue
     }
     private function publicDefaults(array $d,bool $costs): array
     {unset($d['card_fee'],$d['pricing_rule']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
+    /** Omitted-price identities only: validate saved settings without loading every off-page offer and price. */
+    public function omissions(Collection $tlds): array
+    {
+        abort_unless(Staff::requireView()->costs,403);$out=[];$fee=CardFee::read();
+        $default=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule(false,$fee);
+        foreach($tlds as $t){
+            try{$raw=OfferState::decode($t->catalogue_intent);new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));$own=Pricing::hasOwn($t);}
+            catch(\Throwable){$out[]=$t->server_id.':'.$t->tld;continue;}
+            try{Pricing::rule($t,$default,$fee);}
+            catch(\DomainException|\InvalidArgumentException $error){if(!$own){throw $error;}$out[]=$t->server_id.':'.$t->tld;}
+        }
+        return $out;
+    }
     /** The matrix/CSV contract uses the exact same page snapshots, chunked without an unbounded SQL IN. */
     public function matrix(Collection $tlds,int $years,string $filter='all'): array
     {

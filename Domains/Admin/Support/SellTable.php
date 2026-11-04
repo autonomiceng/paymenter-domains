@@ -16,10 +16,12 @@ final class SellTable
     private array $rowTlds=[];
     private ?array $savedRead=null;
     private ?array $savedRows=null;
+    private ?int $hiddenWarnings=null;
     private array $filtered=[];
     /** @param array<int,AccountBinding> $bindings by server
-     * @param \Closure():array<OfferRow> $page the rows on screen */
-    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false,private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null) {}
+     * @param \Closure():array<OfferRow> $page the rows on screen
+     * @param ?\Closure():array<OfferRow> $filteredRows all rows kept by search and filters */
+    public function __construct(private readonly array $bindings,private readonly int $years,private readonly bool $costs,private readonly \Closure $page,private readonly bool $projected=false,private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null,private readonly ?\Closure $filteredRows=null) {}
     /** The registrar's list plus saved TLDs it no longer has, so a price with no sales row still shows.
      * Those rows stay read-only and carry the negated TLD id: a write here would add a sales row. Hidden TLDs show only when already saved.
      * The cast gives the id number affinity, so SQLite matches Filament's string keys. */
@@ -49,14 +51,19 @@ final class SellTable
     private function facts(): array
     {
         if($this->saleFacts!==null){return $this->saleFacts;}
-        $pairs=collect(($this->page)())->groupBy('server_id');
-        $tlds=Tld::where(function($q)use($pairs):void {
+        $tlds=$this->tlds(($this->page)());
+        $this->rowTlds=$tlds->keyBy(fn(Tld $t)=>$t->server_id.':'.$t->tld)->all();$page=$this->source()->page($tlds);
+        return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->server_id.':'.$t->tld=>$page[$t->id]])->all();
+    }
+    /** One binding-scoped identity read for the supplied account/TLD pairs. */
+    private function tlds(array $rows): \Illuminate\Database\Eloquent\Collection
+    {
+        $pairs=collect($rows)->groupBy('server_id');
+        return Tld::where(function($q)use($pairs):void {
             $q->whereRaw('1=0');
             foreach($pairs as $server=>$rows){if(isset($this->bindings[$server])){$q->orWhere(fn($one)=>$one->where('server_id',$server)
                 ->where('account_fingerprint',$this->bindings[$server]->fingerprint)->whereIn('tld',$rows->pluck('tld')));}}
         })->get();
-        $this->rowTlds=$tlds->keyBy(fn(Tld $t)=>$t->server_id.':'.$t->tld)->all();$page=$this->source()->page($tlds);
-        return $this->saleFacts=$tlds->mapWithKeys(fn(Tld $t)=>[$t->server_id.':'.$t->tld=>$page[$t->id]])->all();
     }
     /** The saved TLD behind a row, for its own page. A row nothing is saved for yet has none. */
     public function tldId(OfferRow $row): ?int
@@ -74,6 +81,14 @@ final class SellTable
         $this->facts();
         return $this->savedRead=$this->costs?$this->source()->matrix(collect($this->rowTlds),$this->years):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];
     }
+    /** Count omitted TLDs on other filtered pages without loading their offer/price snapshots. */
+    public function hiddenWarnings(): int
+    {
+        if(!Staff::requireView()->costs||!$this->costs||$this->filteredRows===null){return 0;}
+        if($this->hiddenWarnings!==null){return $this->hiddenWarnings;}
+        $this->facts();$hidden=$this->tlds(($this->filteredRows)())->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]));
+        return $this->hiddenWarnings=count($this->source()->omissions($hidden));
+    }
     public function scope(): ?int {return count($this->bindings)===1?array_key_first($this->bindings):null;}
     private function savedRow(OfferRow $row): ?array
     {
@@ -81,7 +96,7 @@ final class SellTable
         return $this->savedRows[self::key($row)]??null;
     }
     private function kept(string $filter): array {return $this->filtered[$filter]??=app(PriceList::class)->read($this->years,$filter,$this->scope());}
-    /** The formulas behind the table's rows on every page: search and filters narrow these along with the table.
+    /** The formulas behind the current page's rows: search and filters narrow these along with the table.
      * @param list<string> $held server:tld keys the table holds */
     public function explanations(array $held): array
     {
@@ -116,7 +131,7 @@ final class SellTable
         if(!Staff::requireView()->costs){return self::cellOf(null);}
         $saved=$this->savedRow($row);
         if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
-        return $this->savedCell($saved['prices'][$action]??null,$field,'sold');
+        return $this->savedCell($saved['prices'][$action]??null,$field,$this->sold($row,$action));
     }
 
     /** Saved prices win: a price stays on screen even if its term has stopped selling. */
@@ -129,7 +144,16 @@ final class SellTable
         if($sold==='filling'){return self::cellOf('Missing','gray','The next price sync adds it.');}
         return self::missing($field==='cost'?'Use Sync prices.':'To add one, open the TLD page and use Edit prices.');
     }
-    /** sold: an accepted term. filling: the next sync accepts it. off: not sold this long, or at all. */
+    /** Sale intent controls absent cells; saved values still win in savedCell(). */
+    private function sold(OfferRow $row,string $action): string
+    {
+        $facts=$this->facts()[self::key($row)]??[];$intent=$facts['intent']??[];$defaults=$facts['defaults']??[];
+        if(!($intent['sell']??$defaults['defaultSell']??true)||in_array($action,$intent['stops']??[],true)
+            ||$action==='register'&&$this->years>($intent['longest']??$defaults['defaultLongest']??1)
+            ||$action==='transfer'&&!($intent['transfers']??$defaults['defaultTransfers']??false)){return 'off';}
+        $reason=$facts['offers'][$action.':'.$this->years]->decision->reason??null;
+        return in_array($reason,['staff_stopped','staff_term_stopped','unsupported_term','provider_disabled','renewal_stopped'],true)?'off':'sold';
+    }
 
     private static function cellOf(?string $text,?string $tone=null,?string $hint=null): array {return ['text'=>$text,'tone'=>$tone,'hint'=>$hint,'mark'=>false];}
     private static function missing(string $step): array {return ['text'=>'Missing','tone'=>'danger','hint'=>$step,'mark'=>true];}
