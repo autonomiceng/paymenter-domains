@@ -25,7 +25,7 @@ final class ContactProfiles
                 User::whereKey($ownerId)->lockForUpdate()->firstOrFail();
                 $server = Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
                 $account = Account::where('server_id', $server->id)->lockForUpdate()->firstOrFail();
-                $binding->requireMatch(CatalogueAcceptances::binding($account));
+                $binding->requireMatch(AccountBindings::binding($account));
                 if ($server->extension !== 'Domains' || !$server->enabled) { throw new \DomainException('Contact account unavailable.'); }
                 // Retained first row anchors a random index key, independent of APP_KEY rotation.
                 // Missing decryption keys or corrupt anchors refuse recording rather than alias ownership.

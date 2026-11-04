@@ -154,7 +154,7 @@ class CartAdmission
             $product = Product::findOrFail($item->product_id);
             if (!$this->native->mapping($product)) { continue; }
             $account = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $product->server_id)->firstOrFail();
-            $binding = CatalogueAcceptances::binding($account);
+            $binding = AccountBindings::binding($account);
             if ($legacy && EnomTestRegistration::checkoutPreviewOnly($binding) && !EnomTestRegistration::sellable($binding) && !(($this->native->mapping($product)['action']??null)==='transfer'&&EnomTestTransfer::accepted($binding))) {
                 throw new \App\Exceptions\DisplayException($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Domains can’t be ordered right now. Remove them to check out.':'Test domains can’t be ordered. Remove them to check out.');
             }

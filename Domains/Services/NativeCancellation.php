@@ -122,7 +122,7 @@ final class NativeCancellation
                 foreach($domains as$d){
                     $anchor=$ops->firstWhere('operation_key',$d->renewal_policy['billing_anchor']['operation_key']??null);
                     $account=Account::where('server_id',$d->server_id)->first();
-                    if($anchor&&$account&&RenewalAuthority::completed($anchor,$d,CatalogueAcceptances::binding($account))){$allTerminal=true;}
+                    if($anchor&&$account&&RenewalAuthority::completed($anchor,$d,AccountBindings::binding($account))){$allTerminal=true;}
                 }
             }
             // A stop grants no spending or mutation authority. Accept the original immutable
@@ -143,7 +143,7 @@ final class NativeCancellation
             }
             foreach($acquisitions as$op){
                 $d=$domains->firstWhere('id',$op->domain_id);$account=$d?Account::where('server_id',$d->server_id)->first():null;
-                $terminal=$d&&$account&&RenewalAuthority::resolved($op,$d,CatalogueAcceptances::binding($account));
+                $terminal=$d&&$account&&RenewalAuthority::resolved($op,$d,AccountBindings::binding($account));
                 $allTerminal=$allTerminal&&$terminal;
                 $paid=$invoices->firstWhere('id',$op->invoice_id)?->status==='paid'
                     ||$money->where('invoice_id',$op->invoice_id)->contains(fn($t)=>in_array($t->status->value,['succeeded','processing'],true));

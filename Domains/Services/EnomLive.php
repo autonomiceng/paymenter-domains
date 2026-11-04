@@ -29,7 +29,7 @@ final class EnomLive
         $site=self::site();$a=Account::where('server_id',$b->serverId)->sole();$uid=$a->stable_identity;
         $row=config('domains.enom_live.accounts',[])[$uid]??null;
         if(!is_array($row)||($row['fingerprint']??null)!==$b->fingerprint){throw new \DomainException('This account is not set up for live sales yet. Ask your site admin.');}
-        $b->requireMatch(CatalogueAcceptances::binding($a));
+        $b->requireMatch(AccountBindings::binding($a));
         if($a->live_site!==$site){throw new \DomainException('Fix the API connection first.');}
         foreach(Account::where('registrar_key','enom')->where('environment','test')->get() as $test){
             if($test->stable_identity===$uid){throw new \DomainException('An Enom TEST account cannot be used live.');}

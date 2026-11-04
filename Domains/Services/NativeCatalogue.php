@@ -166,7 +166,7 @@ class NativeCatalogue
     public function keepCurrent(Tld $tld, \DateTimeImmutable $now, bool $catalogue): void
     {
         $account = Account::where('server_id', $tld->server_id)->sole();
-        if (SellAutomation::enabled($account) && SellAutomation::row(CatalogueAcceptances::binding($account), $tld->tld, $now) !== null) {
+        if (SellAutomation::enabled($account) && SellAutomation::row(AccountBindings::binding($account), $tld->tld, $now) !== null) {
             app(SellerPolicies::class)->initialize($tld->tld);
             $this->publication($tld, $now, null, null, null, true);
             return;
@@ -228,7 +228,7 @@ class NativeCatalogue
             }
             if ($import) { $import($tld, $server, $account); }
             if ($automatic) {
-                if (!SellAutomation::enabled($account) || SellAutomation::row(CatalogueAcceptances::binding($account), $tld->tld, $now) === null) { return; }
+                if (!SellAutomation::enabled($account) || SellAutomation::row(AccountBindings::binding($account), $tld->tld, $now) === null) { return; }
                 $behind = $this->prices->behindRule($tld, $now);
                 if ($behind) { $this->prices->republishLocked($tld); }
                 $changed = SellAutomation::publishLocked($server, $account, $tld, $policy, $this->prices, $now, $products->isNotEmpty(), $behind);

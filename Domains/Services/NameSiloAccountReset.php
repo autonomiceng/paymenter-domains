@@ -47,7 +47,7 @@ final readonly class NameSiloAccountReset
     {
         try {
             $a=Account::where('server_id',$id)->where('registrar_key','namesilo')->sole();
-            $binding=CatalogueAcceptances::binding($a);
+            $binding=AccountBindings::binding($a);
             $reader=$this->bindings->reader($id,true);$binding->requireMatch($reader->binding());
             if(!$reader instanceof Driver){throw new \DomainException;}
             $ctx=new RequestContext($binding,RequestOrigin::Interactive,$this->clock->now()->modify('+25 seconds'),new RequestBudget(1),$this->clock,$this->limiter);
@@ -79,7 +79,7 @@ final readonly class NameSiloAccountReset
         DB::transaction(function()use($id,$ticket,$reason,$review):void {
             $u=self::actor(true);$s=self::server($id,true);
             $a=Account::where('server_id',$id)->where('registrar_key','namesilo')->lockForUpdate()->sole();
-            $this->bindings->requireReadableLocked($s,$a);$binding=CatalogueAcceptances::binding($a);
+            $this->bindings->requireReadableLocked($s,$a);$binding=AccountBindings::binding($a);
             $this->details($id,$ticket);
             if($binding->fingerprint!==$review['live']['binding']||!hash_equals($review['stamp'],StaffSettingsReview::stamp($id,null,true))
                 ||self::pinned($s,true)!==$review['pinned']||self::expected($s,true)!==$review['live']['email']){

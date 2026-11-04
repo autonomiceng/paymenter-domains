@@ -34,7 +34,7 @@ final class EnomTestManagement
     {
         if(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->value('registrar_key')==='namesilo'){NameSiloFeatureSettings::review($r,$data,'management');return;}
         $r->local(function()use($r,$data):void {
-            $a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole();$b=CatalogueAcceptances::binding($a);$label=$b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live':'TEST';
+            $a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole();$b=AccountBindings::binding($a);$label=$b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live?'Live':'TEST';
             if((str_starts_with($r->action,'live_')||$r->action==='activate')!==($b->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live)||(($data['accept']??false)===true&&!self::enabled($b))){throw new \DomainException($label.' management deployment is unavailable.');}
             $s=\App\Models\Server::findOrFail($b->serverId)->settings()->firstOrNew(['key'=>EnomLive::key($b,self::KEY)]);
             if(($data['accept']??false)===true){

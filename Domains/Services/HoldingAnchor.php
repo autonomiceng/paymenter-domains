@@ -12,7 +12,7 @@ final readonly class HoldingAnchor
     public static function resolved(Operation $op, array $l): bool
     {
         $d = $l['domain'];
-        if (RenewalAuthority::resolved($op, $d, CatalogueAcceptances::binding($l['account']))) { return true; }
+        if (RenewalAuthority::resolved($op, $d, AccountBindings::binding($l['account']))) { return true; }
         $source = $l['identity_source'];
         if ($source['kind'] !== 'adoption' || $op->authority_generation !== $source['holding']['generation'] - 1) { return false; }
         $history = $l['operations']->filter(fn ($row) => $row->authority_generation === $source['holding']['generation'] - 1)->values();
@@ -24,7 +24,7 @@ final readonly class HoldingAnchor
     public static function resolve(array $l): self
     {
         $d = $l['domain']; $a = $d->renewal_policy['billing_anchor'] ?? [];
-        $binding = CatalogueAcceptances::binding($l['account']);
+        $binding = AccountBindings::binding($l['account']);
         $prior = $l['operations']->firstWhere('operation_key', $a['operation_key'] ?? null);
         $source = $l['identity_source'];
         if (($a['expiry'] ?? null) !== $d->provider_expires_at?->format('Y-m-d')) { throw new \DomainException('Confirmed renewal anchor requires review.'); }

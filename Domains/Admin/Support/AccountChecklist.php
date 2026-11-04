@@ -44,7 +44,7 @@ final class AccountChecklist
         $connection=match($status['label']){AccountStatus::SET['connection_failed'][0]=>self::row('API connection','Connection failed','danger',$status['reason'],'probe',$check),
             AccountStatus::SET['not_connected'][0]=>self::row('API connection','Not connected','gray',$status['reason'],'configure',$check),
             default=>self::row('API connection','OK','success',null,'probe',$check)};
-        try { $binding=CatalogueAcceptances::binding($a); } catch (\Throwable) { $binding=null; }
+        try { $binding=AccountBindings::binding($a); } catch (\Throwable) { $binding=null; }
         $tlds=self::tlds($a,$binding,$offers);
         $rows=[$connection,$tlds,...self::pricing($a,$offers,$tlds['using_default']),self::prices($a),self::orders($a)];
         $gates=app(RuntimePorts::class)->acquisitionGates($a);
@@ -90,7 +90,7 @@ final class AccountChecklist
         $live=$a->environment==='live';$action=($live?'live_':'test_').$key;
         if($key==='renewal'){$help=self::billingHelp((int)$a->server_id,$help);}
         return self::paused($a,match(true){$on=>self::row($label,'On','success',null,$action,$help),
-            $live&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a))=>self::row($label,'Off',null,'Paused until setup is approved. Use Activate to see what is missing.',null,$help),
+            $live&&!EnomLiveActivation::current(AccountBindings::binding($a))=>self::row($label,'Off',null,'Paused until setup is approved. Use Activate to see what is missing.',null,$help),
             $key==='renewal'&&RenewalBillingSettings::read((int)$a->server_id)['issue_days']===null=>self::row($label,'Off',null,'Renewal billing is paused. Fix the invoice days first.',null,$help),
             default=>self::row($label,'Off',null,match($key){'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
     }
@@ -105,7 +105,7 @@ final class AccountChecklist
         $on=(bool)$a->processing_enabled;
         $status=$on?'matched':app(AccountBindings::class)->configurationStatus((int)$a->server_id);
         $cause=match(true){$status==='site_unbound'&&$a->registrar_key==='namesilo'=>'Orders are paused. Ask your site admin to confirm the Live site for this account.',
-            $status==='site_unbound'||(!$on&&$status==='matched'&&$a->environment==='live'&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a)))=>'Orders are paused. Use Activate to check setup and turn on Orders.',
+            $status==='site_unbound'||(!$on&&$status==='matched'&&$a->environment==='live'&&!EnomLiveActivation::current(AccountBindings::binding($a)))=>'Orders are paused. Use Activate to check setup and turn on Orders.',
             $status==='matched'=>'Orders are paused. Check setup, then turn on Orders.',default=>'Orders are paused. Fix the API connection first.'};
         return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:$cause,'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
     }
@@ -124,7 +124,7 @@ final class AccountChecklist
     /** A bad saved calendar can't be saved back, so this switch waits for Edit schedule. It only works while Renewals is on, so otherwise the row says so with no switch. On with a bad calendar keeps its switch: it shows what customers can still do. */
     private static function renewEarly(int $server): array
     {
-        try { $a=Account::where('server_id',$server)->firstOrFail();$renewing=EnomTestRenewal::on(CatalogueAcceptances::binding($a)); } catch (\Throwable) { $renewing=false; }
+        try { $a=Account::where('server_id',$server)->firstOrFail();$renewing=EnomTestRenewal::on(AccountBindings::binding($a)); } catch (\Throwable) { $renewing=false; }
         $billing=RenewalBillingSettings::read($server);$on=$renewing&&$billing['manual'];$bad=$billing['issue_days']===null;
         $help='Lets customers pay for a renewal before the invoice goes out.';$blocked=match(true){!$renewing=>'Needs Renewals on.',$bad=>'Fix the invoice days first.',default=>null};
         if($blocked!==null&&!$on){return self::row('Customer can renew early',$blocked,null,null,null,$help);}

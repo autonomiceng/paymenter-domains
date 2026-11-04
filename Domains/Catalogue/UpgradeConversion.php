@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\Server;
 use Illuminate\Database\Query\Builder;
@@ -108,7 +109,7 @@ final class UpgradeConversion
     {
         Server::whereKey($binding->serverId)->lockForUpdate()->firstOrFail();
         $account = Account::where('server_id', $binding->serverId)->lockForUpdate()->sole();
-        $binding->requireMatch(CatalogueAcceptances::binding($account));
+        $binding->requireMatch(AccountBindings::binding($account));
         if ($pausedGeneration !== null) { UpgradeGate::paused($pausedGeneration); }
     }
 
@@ -124,7 +125,7 @@ final class UpgradeConversion
     private function source(AccountBinding $binding): array
     {
         $account = Account::where('server_id', $binding->serverId)->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->sole();
-        $binding->requireMatch(CatalogueAcceptances::binding($account));
+        $binding->requireMatch(AccountBindings::binding($account));
         $server = Server::whereKey($binding->serverId)->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->firstOrFail();
         if ($server->extension !== 'Domains') { throw new \DomainException('Not a Domains server.'); }
         $exists = $server->settings()->where('key', CatalogueAcceptances::KEY)->when(UpgradeComparison::locking(), fn($q) => $q->lockForUpdate())->exists();

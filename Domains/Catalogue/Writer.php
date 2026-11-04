@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\{CartItem, Product, Server};
 use Illuminate\Support\Facades\DB;
@@ -85,7 +86,7 @@ final class Writer implements Catalogue
                     $rows=DB::table('domains_prices')->where('server_id',$a->server_id)->where('tld',$t->tld)->where('account_fingerprint',$a->account_fingerprint)->where('currency','USD')->get();
                     if($rows->isEmpty()){throw new \DomainException('Current costs required.');}
                     foreach($rows as $p){if($p->catalogue_observation===null||!OfferState::cost(OfferState::decode($p->catalogue_observation))->fresh($this->clock->now())){throw new \DomainException('Current costs required.');}}
-                    $b=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a);
+                    $b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
                     $this->apply(Edit::republish($b,$t->tld),OfferState::revision($t,OfferState::decode($a->catalogue_defaults),DB::table('domains_sales_policies')->where('tld',$t->tld)->first()));
                     $summary['published']++;
                 }catch(\Throwable $error){
@@ -204,7 +205,7 @@ final class Writer implements Catalogue
             foreach ($ids as $id) { $servers[$id] = Server::whereKey($id)->lockForUpdate()->firstOrFail(); }
             foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->sole(); }
             if (!isset($accounts[$binding->serverId])) { throw new \DomainException('Seller offer missing.'); }
-            $binding->requireMatch(CatalogueAcceptances::binding($accounts[$binding->serverId]));
+            $binding->requireMatch(AccountBindings::binding($accounts[$binding->serverId]));
             if ($this->current) { ($this->current)(); }
             $policy = DB::table('domains_sales_policies')->where('tld', $name)->lockForUpdate()->first();
             $created = false;
@@ -260,7 +261,7 @@ final class Writer implements Catalogue
             }
             $scopes = [];
             foreach ($seller ? $offers : [$target] as $offer) {
-                $id = (int) $offer->server_id; $account = $accounts[$id]; $b = CatalogueAcceptances::binding($account);
+                $id = (int) $offer->server_id; $account = $accounts[$id]; $b = AccountBindings::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;

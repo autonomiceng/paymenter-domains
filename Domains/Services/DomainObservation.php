@@ -17,7 +17,7 @@ final class DomainObservation
         [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$readRecords,$current): array {
             $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
             if (ObservationRecords::identity($seed)!==ObservationRecords::identity($l['domain'])) { throw new ReadDeferred('Stale observation work.'); }
-            $binding=CatalogueAcceptances::binding($l['account']); $attempt=null;
+            $binding=AccountBindings::binding($l['account']); $attempt=null;
             if ($l['domain']->status==='transfer_pending') {
                 $op=$l['operations']->first(fn($o)=>$o->action==='transfer'&&$o->authority_generation===$l['domain']->authority_generation&&in_array($o->state,['pending','uncertain','held'],true)&&($o->attempt['seal']??null)==='sealed');
                 if ($op) { $attempt=ReconciliationEvidence::attempt($op,$l['domain'],$binding); }
@@ -70,7 +70,7 @@ final class DomainObservation
         }
         $code=DB::transaction(function () use ($seed,$binding,$stamp,$snapshot,$transfer,$records,$failed,$recordFailed,$deferred,$recordOverflow,$recordHeld,$recordEnabled,$readRecords,$failureCode,$current,$credential): string {
             $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);
-            $binding->requireMatch(CatalogueAcceptances::binding($l['account']));
+            $binding->requireMatch(AccountBindings::binding($l['account']));
             if($current&&!hash_equals($credential,$this->bindings->holdingCredentialRevision($binding))){throw new ReadDeferred('Observation credentials changed.');}
             if ($stamp!==$l['stamp']) { throw new ReadDeferred('Observation authority changed.'); }
             if ($recordEnabled && $this->recordGate && !($this->recordGate)($l)) { throw new ReadDeferred('Record processing authority changed.'); }

@@ -2,6 +2,7 @@
 // Adapted from Enom 444f31c TldResource price preview; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
@@ -39,7 +40,7 @@ final class TldFacts
         if($catalogue!==null){return $catalogue->page(collect([$tld]))[$tld->id];}
         \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
         $grants ??= Staff::requireView();
-        try{$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
+        try{$accepted=CatalogueAcceptances::load(AccountBindings::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
         try{$ruleHash=self::ruleHash((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld));}catch(\Throwable){$ruleHash=null;}
         $saved=Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get();
         return self::build($tld,$grants,$accepted,$ruleHash,$saved,static fn():?int=>self::sellerId($tld->tld));
@@ -60,7 +61,7 @@ final class TldFacts
         try{$fee=CardFee::read();}catch(\Throwable){$fee=[];}
         try{$default=$tlds->contains(fn(Tld $t)=>$t->use_default_rule)?self::ruleHash($rules->defaultRule(false,$fee)):null;}catch(\Throwable){$default=null;}
         foreach($servers as $id){
-            try{$accepted[$id]=CatalogueAcceptances::load(CatalogueAcceptances::binding($accounts[$id]??throw new \DomainException));}catch(\Throwable){$accepted[$id]=null;}
+            try{$accepted[$id]=CatalogueAcceptances::load(AccountBindings::binding($accounts[$id]??throw new \DomainException));}catch(\Throwable){$accepted[$id]=null;}
         }
         $key=static fn($row)=>(int)$row->server_id.'|'.$row->account_fingerprint.'|'.$row->tld;
         $prices=Price::whereIn('server_id',$servers)->whereIn('tld',$names)->orderBy('action')->orderBy('term')->get()->groupBy($key);
@@ -177,7 +178,7 @@ final class TldFacts
     }
     public static function acceptance(Account $a): string
     {
-        try{$binding=CatalogueAcceptances::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.', '.$count.' '.($count===1?'TLD':'TLDs');
+        try{$binding=AccountBindings::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.', '.$count.' '.($count===1?'TLD':'TLDs');
             return self::ordersNeedSave($a,$accepted)?$text.'. Save What you sell to take orders':$text;}
         catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.'. New sales held. Open What you sell and save it.';}
     }
@@ -336,7 +337,7 @@ final class TldFacts
         if($code==='catalogue_call_capacity'){
             // Retain the failed sync, but show capacity under today's saved cap without a provider read.
             try{
-                $binding=CatalogueAcceptances::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
+                $binding=AccountBindings::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
                 $needed=PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
                 if(SellRule::saved($binding)!==null){
                     if(PriceSync::callsToday($binding)===null){

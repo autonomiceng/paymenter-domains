@@ -73,7 +73,7 @@ final class RegistrarFacts
         if ($account->registrar_key!=='enom') { return null; }
         if ($account->environment==='live') {
             try {
-                $binding=CatalogueAcceptances::binding($account);
+                $binding=AccountBindings::binding($account);
                 $u=EnomLive::deployment($binding)?PriceSync::callsToday($binding):null;
             } catch (\Throwable) { $u=null; }
             if ($u===null) { return ['value'=>null,'tone'=>null,'sub'=>"Couldn't read our call count or limit. Check the API credentials and Live account setup.",'help'=>null]; }

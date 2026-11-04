@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use App\Models\Server;
 use Illuminate\Support\Collection;
@@ -21,7 +22,7 @@ final class StaffCatalogue
     public function progress(int $server): array
     {
         Staff::requireView();
-        return $this->work?->status(CatalogueAcceptances::binding(Account::where('server_id',$server)->sole()))??['state'=>'idle'];
+        return $this->work?->status(AccountBindings::binding(Account::where('server_id',$server)->sole()))??['state'=>'idle'];
     }
     /** Same sale decisions as the page; bounded chunks, no legacy acceptance/price-fill reads. */
     public function summary(int $server,int $years): array
@@ -104,7 +105,7 @@ final class StaffCatalogue
         $grants=Staff::requireView();if($tlds->count()>100){throw new \DomainException('Staff page exceeds 100 rows.');}
         if($tlds->isEmpty()){return [];}
         $accounts=Account::whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');$queries=[];
-        foreach($tlds->groupBy('server_id') as $server=>$rows){$queries[]=new Query(CatalogueAcceptances::binding($accounts[$server]),$rows->pluck('tld')->all(),'register');}
+        foreach($tlds->groupBy('server_id') as $server=>$rows){$queries[]=new Query(AccountBindings::binding($accounts[$server]),$rows->pluck('tld')->all(),'register');}
         $loaded=$this->ports->staffBatch($queries);$offers=[];
         foreach($queries as $i=>$q){foreach($loaded[$i] as $name=>$offer){$offers[$q->binding->serverId.':'.$name]=$offer;}}
         $sellers=DB::table('domains_sales_policies')->whereIn('tld',$tlds->pluck('tld'))->pluck('server_id','tld');

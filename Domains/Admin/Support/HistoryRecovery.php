@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -52,7 +53,7 @@ final class HistoryRecovery
         try{
             $a=Account::where('server_id',$op->server_id)->sole();
             if($a->environment!=='test'){return null;}
-            $attempt=ReconciliationEvidence::attempt($op,$op->domain,CatalogueAcceptances::binding($a));
+            $attempt=ReconciliationEvidence::attempt($op,$op->domain,AccountBindings::binding($a));
             return $attempt->replyLost()?$attempt:null;
         }catch(\Throwable){return null;}
     }

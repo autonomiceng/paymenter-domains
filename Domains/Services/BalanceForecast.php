@@ -12,7 +12,7 @@ final class BalanceForecast
         $settings=Server::find($account->server_id)?->settings()->whereIn('key',['domains_issue_days','domains_due_days'])->get();
         try{$timing=$settings?BillingCalendar::timing($settings):null;}catch(\Throwable){$timing=null;}
         $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
-        $rates=$catalogue ? $catalogue->costs(CatalogueAcceptances::binding($account)) : Price::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
+        $rates=$catalogue ? $catalogue->costs(AccountBindings::binding($account)) : Price::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
             ->where('action','renew')->where('currency','USD')->get();
         Domain::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
             ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->chunkById(100,function($domains)use($rates,$now,$timing,&$total,&$unknown,&$count,&$unreadable):void {

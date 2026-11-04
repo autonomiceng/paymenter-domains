@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Jobs;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use App\Models\{Notification,User};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
 use Illuminate\Bus\Queueable;
@@ -38,7 +39,7 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
         // A reservation must outlive the job; otherwise two workers can send the same read.
         if(!in_array($connection['driver']??null,['database','redis'],true)||(int)($connection['retry_after']??0)<=$timeout){throw new \DomainException(sprintf(self::WORKER,$timeout));}
         $account=Account::where('server_id',$server)->sole();
-        self::dispatch($actor,$server,CatalogueAcceptances::binding($account)->fingerprint,$reviewKey);
+        self::dispatch($actor,$server,AccountBindings::binding($account)->fingerprint,$reviewKey);
     }
     public function handle(): void
     {
@@ -47,11 +48,11 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
         try{
             if($this->upgradeGeneration!==UpgradeGate::generation()){throw new \DomainException('Settings changed. Reload this page.');}
             $account=Account::where('server_id',$this->server)->sole();
-            if(!hash_equals($this->fingerprint,CatalogueAcceptances::binding($account)->fingerprint)){throw new \DomainException('Settings changed. Reload this page.');}
+            if(!hash_equals($this->fingerprint,AccountBindings::binding($account)->fingerprint)){throw new \DomainException('Settings changed. Reload this page.');}
             if(($scheduler=OfferScheduler::routed())!==null){
                 // Reviewed imports continue through StaffSettingsWrites, preserving their current ticket.
                 if($this->reviewKey!==null){app(StaffSettingsWrites::class)->run(new Review($this->actor,$this->server,null,'import',$this->reviewKey,''),[]);}
-                else{$scheduler->sync(CatalogueAcceptances::binding($account), expectedGeneration:$this->upgradeGeneration);}
+                else{$scheduler->sync(AccountBindings::binding($account), expectedGeneration:$this->upgradeGeneration);}
                 $this->notice('Price sync queued','The account worker will refresh prices. Check sync progress on What you sell.');return;
             }
             UpgradeGate::legacy($this->upgradeGeneration);

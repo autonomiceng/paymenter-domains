@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
@@ -20,9 +21,9 @@ final class OfferReadiness
             if(\Illuminate\Support\Facades\DB::transactionLevel()===0){throw new \LogicException('Readiness locks require a transaction.');}
             \App\Models\Server::whereKey($a->server_id)->lockForUpdate()->firstOrFail();
             $current=Account::where('server_id',$a->server_id)->lockForUpdate()->sole();
-            CatalogueAcceptances::binding($a)->requireMatch(CatalogueAcceptances::binding($current));$a=$current;
+            AccountBindings::binding($a)->requireMatch(AccountBindings::binding($current));$a=$current;
         }
-        $b=CatalogueAcceptances::binding($a);$costs=$failures=[];$counts=['registration'=>0,'transfer'=>0];
+        $b=AccountBindings::binding($a);$costs=$failures=[];$counts=['registration'=>0,'transfer'=>0];
         $defaults=OfferState::decode($a->catalogue_defaults);
         Tld::where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->where('catalogue_converted',true)
             ->orderBy('id')->chunkById(25,function($tlds)use($b,$features,$lock,$defaults,&$costs,&$failures,&$counts):void {

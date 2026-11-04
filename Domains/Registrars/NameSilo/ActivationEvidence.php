@@ -34,7 +34,7 @@ final class ActivationEvidence implements LiveActivationEvidence
     {
         if(!$this->deployment($binding)){throw new \DomainException('Live NameSilo account required.');}
         $site=$this->site();$account=Account::where('server_id',$binding->serverId)->sole();
-        $binding->requireMatch(CatalogueAcceptances::binding($account));
+        $binding->requireMatch(AccountBindings::binding($account));
         Server::whereKey($binding->serverId)->where('extension','Domains')->where('enabled',true)->sole();
         $rows=config('domains.namesilo_live.accounts',[]);$row=is_array($rows)?($rows[$account->stable_identity]??null):null;
         if(!LocalAccountEnrollment::enrolled($account)||$account->live_site!==$site||!is_array($row)
@@ -53,7 +53,7 @@ final class ActivationEvidence implements LiveActivationEvidence
     public function label(): string {return 'NameSilo';}
     public function configuration(Account $account): array
     {
-        try{$revision=app(AccountBindings::class)->credentialRevision(CatalogueAcceptances::binding($account));}
+        try{$revision=app(AccountBindings::class)->credentialRevision(AccountBindings::binding($account));}
         catch(\Throwable){$revision=null;} // A broken key must still permit local review/withdrawal.
         return [config('domains.namesilo_live'),config('domains.namesilo_account.environment'),$revision];
     }

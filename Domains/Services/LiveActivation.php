@@ -94,7 +94,7 @@ final class LiveActivation
     public function enabling(Account $a,array $features,array $before): array
     {
         $enabling=array_filter($features,static fn($on,$feature)=>$on&&!$before[$feature],ARRAY_FILTER_USE_BOTH);
-        if(($enabling||$features===$before)&&!$this->current(CatalogueAcceptances::binding($a))){return array_filter($features);}
+        if(($enabling||$features===$before)&&!$this->current(AccountBindings::binding($a))){return array_filter($features);}
         return $enabling;
     }
     /** Rechecked inside the review mutex. This also drives the page, so every refusal has a next step. */
@@ -102,7 +102,7 @@ final class LiveActivation
     {
         $missing=[];$check=static function(\Closure $work)use(&$missing):void {try{$work();}catch(\DomainException $e){$missing[]=$e->getMessage();}};
         if(Missing::supportUrl()===null){$missing[]='Support contact Missing. Turn tickets on or ask your site admin to set a support link; Paymenter has no other support contact setting.';}
-        $b=CatalogueAcceptances::binding($a);$now=app(Clock::class)->now();
+        $b=AccountBindings::binding($a);$now=app(Clock::class)->now();
         $check(function()use($b):void {$this->provider->account($b);});
         $check(function()use($b):void {$this->provider->receiptContext($b);});
         if(!app(AccountBindings::class)->configurationAvailable((int)$a->server_id)){$missing[]='API connection Missing. Use Connect account to verify the saved credentials and site.';}

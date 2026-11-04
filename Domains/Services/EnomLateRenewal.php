@@ -39,7 +39,7 @@ final class EnomLateRenewal
     public static function review(StaffSettingsReview $r,array $data): void
     {
         $r->local(function()use($r,$data):void{
-            $b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole());
+            $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$r->serverId)->sole());
             if($b->registrarKey!=='enom'||$r->tldId!==null){throw new \DomainException('Enom account required.');}
             $on=($data['accept']??false)===true;
             // This step cannot establish provider semantics: only the site operator can record the dated Enom answer.

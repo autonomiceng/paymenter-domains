@@ -89,7 +89,7 @@ final class ObservationWork
         if ($current->catalogue_due>$now||$current->catalogue_hold!==null||$current->catalogue_lease>$now) { return; }
         $a=Account::where('server_id',$queue->server_id)->firstOrFail();
         if ($a->account_fingerprint!==$queue->account_fingerprint) { throw new ReadDeferred('Observation queue binding changed.'); }
-        $b=CatalogueAcceptances::binding($a); if (TestCatalogue::testDeployment($b)||EnomLive::deployment($b)) { return; } $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
+        $b=AccountBindings::binding($a); if (TestCatalogue::testDeployment($b)||EnomLive::deployment($b)) { return; } $accepted=CatalogueAcceptances::load($b); $keys=array_keys($accepted->endings);
         if (!$keys) { return; } $fresh=new CatalogueFreshness; $now=$this->clock->now()->getTimestamp();
         $claim=DB::transaction(function () use ($queue,$now): ?object {
             UpgradeGate::lockLegacy($queue->upgradeGeneration,(int)$queue->server_id);

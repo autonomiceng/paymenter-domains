@@ -70,7 +70,7 @@ final class EnomTestRegistration
         if(!$account){return null;}
         $queued=clone $op;$queued->state='queued';
         if(!self::applies($queued)&&!EnomTestTransfer::applies($queued)){return null;}
-        try{return ['hold'=>self::localHoldReason(CatalogueAcceptances::binding($account),$op)];}catch(\Throwable){return null;}
+        try{return ['hold'=>self::localHoldReason(AccountBindings::binding($account),$op)];}catch(\Throwable){return null;}
     }
     /** Build account-bound ports without decrypting credentials or sending provider requests. */
     public static function factory(AccountBinding $binding): \Closure

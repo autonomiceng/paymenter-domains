@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Pages;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Carbon\CarbonImmutable;
 use Filament\Actions\{Action,BulkAction};
 use Filament\Forms\Components\{Radio,Select,TextInput,Toggle};
@@ -87,7 +88,7 @@ class WhatYouSell extends Page implements HasTable
     private function binding(): ?AccountBinding {return $this->account?$this->bindingOf($this->account):null;}
     private function bindingOf(int $server): ?AccountBinding
     {
-        try{return CatalogueAcceptances::binding(Account::where('server_id',$server)->sole());}catch(\Throwable){return null;}
+        try{return AccountBindings::binding(Account::where('server_id',$server)->sole());}catch(\Throwable){return null;}
     }
     /** @return array<int,AccountBinding> the accounts this view reads */
     private function bindings(): array

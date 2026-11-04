@@ -34,7 +34,7 @@ final class DomainManagement
         try {
             return (function()use($actor,$seed,$driver,$actions,&$refused):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id,true);
-                if($this->testManagement&&!EnomTestManagement::accepted(CatalogueAcceptances::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
+                if($this->testManagement&&!EnomTestManagement::accepted(AccountBindings::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
                 if(($blocked=$this->unresolved($l))!==null){$refused=(int)$blocked->id;return [];}
                 return array_values(array_filter($actions,function($action)use($l,$actor,$driver,&$refused):bool {
                     if ($action==='auth_code_email'&&$this->emailCooling($l)) { return false; }
@@ -63,7 +63,7 @@ final class DomainManagement
                 $l = HoldingLocks::take($seed, (int) $actor->id); $this->authority($l, (int) $actor->id, $action, $driver);
                 if($driver->capabilities()->privacy!==PrivacyMode::Paid){throw new \DomainException('Paid privacy unsupported.');}
                 $old = $l['operations']->firstWhere('operation_key', 'manage:'.$seed->id.':'.$nonce) ?? ManagementPrivacy::pending($l,$action);
-                return [new ManagementRequest(CatalogueAcceptances::binding($l['account']), 'manage:'.$seed->id.':'.$nonce, $seed->domain, $action, [], $seed->provider_domain_id), $l['stamp'], $old];
+                return [new ManagementRequest(AccountBindings::binding($l['account']), 'manage:'.$seed->id.':'.$nonce, $seed->domain, $action, [], $seed->provider_domain_id), $l['stamp'], $old];
             });
             if ($existing) { if ($existing->action !== $action || (int)$existing->authorized_by !== (int)$actor->id) { throw new \DomainException('Management key reused.'); } return $existing; }
             $terms = $driver->billingTerms($request, new RequestContext($request->binding, RequestOrigin::Interactive, $deadline, new RequestBudget(10), $this->clock, Runtime::limiter()));
@@ -78,7 +78,7 @@ final class DomainManagement
                 $old=$l['operations']->firstWhere('operation_key',$key);
                 if ($old && ($old->action!==$action || (int)$old->authorized_by!==(int)$actor->id
                     || ($old->policy['management']['intent']??null)!==$input)) { throw new \DomainException('Management key reused.'); }
-                return [$input,$l['stamp'],CatalogueAcceptances::binding($l['account']),ManagementSequence::configuration($l),$old];
+                return [$input,$l['stamp'],AccountBindings::binding($l['account']),ManagementSequence::configuration($l),$old];
             });
             if ($existing) { return $existing; }
             $r=new ManagementRequest($binding,'manage:'.$seed->id.':'.$nonce,$seed->domain,$action,$input,$seed->provider_domain_id,domainId:(int)$seed->id);
@@ -156,7 +156,7 @@ final class DomainManagement
             $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds))));
         try {
             if(!$this->testManagement){return $work();}
-            $op=Operation::findOrFail($id);$b=CatalogueAcceptances::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
+            $op=Operation::findOrFail($id);$b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
             return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
         }catch(WriteHeld $e){if($e->reason!=='write_acceptance_required'){throw $e;}return Operation::findOrFail($id);}
     }
@@ -218,7 +218,7 @@ final class DomainManagement
             return DB::transaction(function () use ($seed, $id, $claimed, $claim, $error, $refusals, $driver): Operation {
                 $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
                 if ($claimed && $op && ($op->attempt['management_claim']??null)===$claim && $op->state === 'running') {
-                    $b=CatalogueAcceptances::binding($l['account']);
+                    $b=AccountBindings::binding($l['account']);
                     if(($op->attempt['seal']??null)==='sealed'&&$op->funding_basis==='non_billable_management'&&$b->registrarKey==='namesilo'&&$driver->bindsTo($b)&&$driver->unconsumed($id)){
                         ManagementEvidence::retainUnsent($op,$driver);return $op;
                     }
@@ -297,7 +297,7 @@ final class DomainManagement
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
         $read = $this->locked($seed, $id, $driver, function ($l, $op) use ($driver,$reviewed): ?array {
             if (!self::canReconcile($op,$this->clock->now())) { return null; }
-            $b=CatalogueAcceptances::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
+            $b=AccountBindings::binding($l['account']); if(!$driver->bindsTo($b)){throw new \DomainException('Read binding changed.');}
             try{$this->bindings->requireReadableLocked($l['server'],$l['account']);}
             catch(\Throwable $error){if($reviewed){throw new StaffReviewRefused('The registrar account cannot be read. Check its connection settings and try Check status again.');}throw $error;}
             // Reserve before I/O, including reads that throw or lose their result.
@@ -360,7 +360,7 @@ final class DomainManagement
         }, false, false);
     }
     private function descriptor(Operation $op, array $l): ManagementRequest
-    { return new ManagementRequest(CatalogueAcceptances::binding($l['account']), $op->operation_key, $l['domain']->domain, $op->action, $op->payload ?? [], $l['domain']->provider_domain_id,$op->attempt['management_ack']['order_id']??null,$op->attempt['management_ack']['profile_id']??null, (int) $l['domain']->id, ManagementSequence::context($op,$l)); }
+    { return new ManagementRequest(AccountBindings::binding($l['account']), $op->operation_key, $l['domain']->domain, $op->action, $op->payload ?? [], $l['domain']->provider_domain_id,$op->attempt['management_ack']['order_id']??null,$op->attempt['management_ack']['profile_id']??null, (int) $l['domain']->id, ManagementSequence::context($op,$l)); }
     private function locked(Domain $seed, int $id, ManagementProtocol $driver, \Closure $use, bool $processing = true, bool $authorize = true): mixed
     {
         return DB::transaction(function () use ($seed, $id, $driver, $use, $processing, $authorize): mixed {
@@ -375,7 +375,7 @@ final class DomainManagement
     }
     private function authority(array $l, int $actor, string $action, ManagementProtocol $driver, bool $processing = true, ?string $correction = null, bool $advisory = false): void
     {
-        $d = $l['domain']; $b = CatalogueAcceptances::binding($l['account']);
+        $d = $l['domain']; $b = AccountBindings::binding($l['account']);
         if($this->testManagement){EnomTestManagement::requireAction($b,$action);}
         if(in_array($action,['privacy_purchase','privacy_renew'],true)){
             if($actor!==(int)$d->user_id){throw new \DomainException('Privacy billing is owner-only.');}
@@ -400,7 +400,7 @@ final class DomainManagement
     { if ($this->unresolved($l, $except, $correction, $action) !== null) { throw new \DomainException('Prior operation unresolved.'); } }
     private function unresolved(array $l, ?int $except = null, ?string $correction = null, ?string $action = null): ?Operation
     {
-        $b = CatalogueAcceptances::binding($l['account']);
+        $b = AccountBindings::binding($l['account']);
         foreach ($l['operations'] as $op) {
             if ($correction !== null && $op->operation_key === $correction && ManagementCorrections::pending($l, $action ?? '', $correction)) { continue; }
             if($op->id!==$except&&$op->action==='renew'&&in_array($op->state,['awaiting_payment','queued','held'],true)&&($op->attempt??[])===[]){continue;}

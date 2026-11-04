@@ -32,7 +32,7 @@ final class AcquisitionOffers
         foreach ($requests as [$ending, $action, $term]) {
             $policy = SalesPolicy::where('tld', $ending)->sole();
             $account = Account::where('server_id', $policy->server_id)->sole();
-            $b = CatalogueAcceptances::binding($account);
+            $b = AccountBindings::binding($account);
             if ($b->fingerprint !== $policy->account_fingerprint || $b->registrarKey !== $policy->registrar_key) { throw new \DomainException('Seller changed.'); }
             $selections[] = new SaleSelection($ending, $b->serverId, $b->registrarKey, $b->fingerprint,
                 $policy->revision, $action, $term, 'USD', 0, 0);
@@ -75,7 +75,7 @@ final class AcquisitionOffers
         $result = [];
         foreach ($policies->groupBy('server_id') as $id => $group) {
             try {
-                $b = CatalogueAcceptances::binding($accounts[$id]);
+                $b = AccountBindings::binding($accounts[$id]);
                 $credential = $this->bindings->offerCredentialRevision($b);
                 foreach (array_chunk($group->pluck('tld')->all(), 500) as $names) {
                     foreach ($this->ports->displayBatch([new Query($b, $names, 'register')])[0] as $name => $rows) {
@@ -111,7 +111,7 @@ final class AcquisitionOffers
         if (!$selections || count($selections) > 250) { throw new \DomainException('Invalid acquisition batch.'); }
         $queries = []; $bindings = [];
         foreach ($selections as $s) {
-            $a = Account::where('server_id', $s->serverId)->sole(); $b = CatalogueAcceptances::binding($a);
+            $a = Account::where('server_id', $s->serverId)->sole(); $b = AccountBindings::binding($a);
             if ($b->fingerprint !== $s->fingerprint || $b->registrarKey !== $s->registrar) { throw new \DomainException('Offer binding changed.'); }
             $bindings[] = $b;
             $revision = $expected ? new Revision(...($s->catalogue['revision'] ?? throw new \DomainException('Refresh the domain offer.'))) : null;

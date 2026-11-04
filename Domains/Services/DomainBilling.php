@@ -46,7 +46,7 @@ final class DomainBilling
             }
             $key = RenewalCycles::next($l);
             $years ??= 1; $calendar = $this->requireRequest($l, $actor !== null, $years, $late !== null);
-            if ($late !== null && ($l['stamp'] !== $late['stamp'] || $late['valid_until'] <= $this->clock->now()->modify('+25 seconds') || !EnomLateRenewal::accepted(CatalogueAcceptances::binding($l['account'])))) { throw new \DomainException('Renewal quote changed. Try again.'); }
+            if ($late !== null && ($l['stamp'] !== $late['stamp'] || $late['valid_until'] <= $this->clock->now()->modify('+25 seconds') || !EnomLateRenewal::accepted(AccountBindings::binding($l['account'])))) { throw new \DomainException('Renewal quote changed. Try again.'); }
             // Holding retail is independent of current seller, sales/renew flags and provider cost.
             $price = $this->native->project($l);
             if ($late !== null) { $price = LateRenewalQuote::price($l, $late, $price); }
@@ -94,7 +94,7 @@ final class DomainBilling
             if(!$manual&&RenewalStop::stopped($l)){return null;}
             // Existing payable debt keeps its frozen terms, even when the feature is switched off.
             if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d))){return null;}
-            $b=CatalogueAcceptances::binding($l['account']);
+            $b=AccountBindings::binding($l['account']);
             if(!EnomLateRenewal::accepted($b)||($years!==null&&$years!==1)){throw new RuntimeIneligible(RuntimeReason::OutsideCalendar);}
             $this->requireRequest($l,$manual,1,true);
             return [$b,$l['stamp'],new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($d->id,$d->authority_generation,$d->confirmed_revision,$d->provider_expires_at->format('Y-m-d'),$d->provider_domain_id,manual:$manual)];
@@ -170,7 +170,7 @@ final class DomainBilling
             // Replacement proof needs all invoice members, including unexpected retained items.
             $l['items'] = \App\Models\InvoiceItem::whereIn('invoice_id', $l['invoices']->pluck('id'))->orderBy('id')->get();
             RenewalCycles::next($l);
-            $late = self::expired($l['domain'], $this->clock->now()) && EnomLateRenewal::accepted(CatalogueAcceptances::binding($l['account']));
+            $late = self::expired($l['domain'], $this->clock->now()) && EnomLateRenewal::accepted(AccountBindings::binding($l['account']));
             $calendar = $this->requireRequest($l, true, $late ? 1 : null, $late);
             if ($late) { return ['terms' => [1], 'order_by' => null, 'late' => true]; }
             $this->native->quote($l);
@@ -188,7 +188,7 @@ final class DomainBilling
             throw new RuntimeIneligible(RuntimeReason::BillingOff);
         }
         // No new Enom invoice for a renewal that can't go out, site gate and the other environment included. Issued invoices stay payable; paid renewals wait with their reason.
-        if (EnomTestRenewal::holdsInvoices(CatalogueAcceptances::binding($l['account']))) { throw new RuntimeIneligible(RuntimeReason::BillingOff); }
+        if (EnomTestRenewal::holdsInvoices(AccountBindings::binding($l['account']))) { throw new RuntimeIneligible(RuntimeReason::BillingOff); }
         $today = $this->clock->now()->format('Y-m-d');
         if (!$late && (($manual && self::expired($l['domain'], $this->clock->now())) || (!$manual && ($today >= $calendar['due'] || $today < $calendar['issue'])))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
         $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
