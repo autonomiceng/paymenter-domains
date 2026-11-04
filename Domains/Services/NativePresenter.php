@@ -122,7 +122,7 @@ final readonly class NativePresenter
         $name=$item->checkout_config['domain']??null;
         try{$name=\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse((string)$name,[$mapping['tld']->tld])['domain'];}catch(\Throwable){return null;}
         $renewal=null;$t=$mapping['tld'];
-        try{$price=$this->prices->renewal(new Domain(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'tld'=>$t->tld]),'USD',app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());$renewal=Storefront::money($price->retail);}catch(\Throwable){}
+        try{$price=$this->prices->renewal(new Domain(['server_id'=>$t->server_id,'registrar_key'=>$t->registrar_key,'account_fingerprint'=>$t->account_fingerprint,'tld'=>$t->tld]),'USD',app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());$renewal=Storefront::money($price->retail);}catch(\Throwable){}
         return ['name'=>$name,'action'=>$mapping['action']==='transfer'?'Transfer':'Registration','years'=>$mapping['term'],
             'renewalPrice'=>$renewal,'editUrl'=>route('domains.cart.edit',['item'=>$item->id])];
     }
