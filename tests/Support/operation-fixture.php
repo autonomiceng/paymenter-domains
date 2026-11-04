@@ -26,7 +26,7 @@ if(isset($offers)){
 }else{$admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock, $transferCheck), $clock);}
 $admission->boot();
 $invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); $invoiceBinding->boot();
-if(app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)){app()->instance(InvoiceBinding::class,$invoiceBinding);}
+app()->instance(InvoiceBinding::class,$invoiceBinding);
 $user = commerceUser(); $user->update(['email' => 'finance-owner@example.com']);
 foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA', 'zip' => '98101',
     'country' => 'US', 'phone' => '(206) 555-0100'] as $key => $value) {
