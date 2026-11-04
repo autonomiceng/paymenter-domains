@@ -13,10 +13,12 @@ use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionRetirement, Native
 expect(method_exists(PayCheck::class, 'catalogue'), 'PayCheck needs a dormant local offer fence before trusting its minute cache');
 require __DIR__.'/Support/offer-commerce.php';
 extract(offerCommerceFixture());
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $invoiceBinding);
 $pay = new class($bindings, $clock) extends PayCheck { use OfferCommerceRoute; };
 $pay->fixtureOffers = $offers;
 $user = commerceUser(); $public = $storefront->offer('com', 'register', 1);
-$cart = commerceCart($user); commerceAdd($cart, $public['product'], 'payment-fence-placeholder.com'); commerceCheckout($user, $cart);
+$cart = commerceCart($user); commerceAdd($cart, $public['product'], 'payment-fence-placeholder.com'); $initialCheckout=commerceCheckout($user, $cart);
+expect(Operation::count()===1,'Initial payment fixture checkout: '.json_encode($initialCheckout->effects['dispatches']??[]));
 $op = Operation::sole(); $invoice = Invoice::findOrFail($op->invoice_id); $before = $reads->calls;
 Cache::put('domains.pay-check.'.$op->id, 'clear', 60);
 $revision = $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
