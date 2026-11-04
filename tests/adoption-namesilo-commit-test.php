@@ -82,7 +82,7 @@ expect(!str_contains($a->getRawOriginal('evidence'),'ns1.example.net'),'Normaliz
 same(null,$a->evidence['provider_domain_id'],'Reference stays null');same('date',$a->evidence['expiry']['precision'],'Date precision retained');
 same($domainCount,Domain::count(),'Preview creates no holding');
 $unlocked=$mapping->capture($target,$context);
-$locked=DB::transaction(function()use($service,$staff,$owner,$mapping,$target,$context){$lock=\Paymenter\Extensions\Servers\Domains\Services\HoldingIdentityLock::lockForAdoption($service->order_id,$service->id,$staff->id);return $mapping->capture($target,$context,$lock);});
+$locked=DB::transaction(function()use($service,$staff,$owner,$mapping,$target,$context){$lock=\Paymenter\Extensions\Servers\Domains\Services\HoldingIdentityLock::lockForAdoption($service->order_id,$service->id,$staff->id);$lock->nativeIdentity(new Domain(['user_id'=>$owner->id,'service_id'=>$service->id,'server_id'=>$target->serverId,'domain'=>$target->name,'tld'=>'com','registrar_key'=>'namesilo','account_fingerprint'=>Account::where('server_id',$target->serverId)->sole()->account_fingerprint]));return $mapping->capture($target,$context,$lock);});
 foreach($unlocked['stamps'] as $key=>$value){if($locked['stamps'][$key]!==$value){fwrite(STDERR,'Capture changed key: '.$key."\n");}}
 if($unlocked['retail']!==$locked['retail']){fwrite(STDERR,'Capture changed retail fields: '.implode(',',array_keys(array_diff_assoc($unlocked['retail'],$locked['retail'])))."\n");}
 $d=$commit->confirm($a->request_key,$a->request_digest,$staff);

@@ -3,7 +3,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 set_exception_handler(static function($error):void{fwrite(STDERR,$error->getMessage()."\n".$error->getTraceAsString()."\n");exit(1);});
-require __DIR__.'/runtime-presenter-test.php';$nativeSuccessful=false;require __DIR__.'/Support/reminder-mail.php';require __DIR__.'/Support/FakeWriter.php';
+try { require __DIR__.'/runtime-presenter-test.php'; } catch (\Throwable $error) { fwrite(STDERR,$error->getTraceAsString()."\n"); throw $error; }$nativeSuccessful=false;require __DIR__.'/Support/reminder-mail.php';require __DIR__.'/Support/FakeWriter.php';
 use Illuminate\Support\Facades\{DB,Mail,Queue};
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimeWork,RuntimePorts,OperationClaims,OperationReconciliation,DomainOperations,DomainManagement,RenewalAuthority,RenewalAcceptance,RenewalAdmission,RenewalExecution,RenewalWriter,RenewalCompletion,WriteFeatures,CatalogueAcceptances,RegistrarRegistry,AccountBindings,ReminderSchedules,Reminders,DomainBilling,StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
