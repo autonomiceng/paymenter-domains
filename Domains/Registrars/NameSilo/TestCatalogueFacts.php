@@ -9,15 +9,25 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 /** Independently dated OTE protocol evidence, not metadata inferred from account prices or old flags. */
 final class TestCatalogueFacts
 {
+    public static function current(AccountBinding $binding): bool
+    {
+        try {self::account($binding,app(AccountBindings::class)->credentialRevision($binding));return true;}
+        catch(\Throwable){return false;}
+    }
+    private static function account(AccountBinding $binding,string $revision): array
+    {
+        $account=ActivationEvidence::testAccount($binding);
+        app(AccountBindings::class)->requireCredentialRevision($binding,$revision);
+        $accounts=config('domains.namesilo_test.accounts',[]);
+        $row=is_array($accounts)?($accounts[$account->stable_identity]??null):null;
+        if(!is_array($row)||($row['fingerprint']??null)!==$binding->fingerprint
+            ||($row['credential_revision']??null)!==$revision){throw new \DomainException('TEST protocol evidence binding changed.');}
+        return $row;
+    }
     public static function read(AccountBinding $binding,string $revision,string $tld,Clock $clock): Facts
     {
         try {
-            $account=ActivationEvidence::testAccount($binding);
-            app(AccountBindings::class)->requireCredentialRevision($binding,$revision);
-            $accounts=config('domains.namesilo_test.accounts',[]);
-            $row=is_array($accounts)?($accounts[$account->stable_identity]??null):null;
-            if(!is_array($row)||($row['fingerprint']??null)!==$binding->fingerprint
-                ||($row['credential_revision']??null)!==$revision){throw new \DomainException;}
+            $row=self::account($binding,$revision);
             $e=$row['facts'][$tld]??null;
             if(!is_array($e)||!is_array($e['terms']??null)||!is_array($e['registry_fields']??null)
                 ||array_keys($e['terms'])!==['register','renew','transfer']){throw new \DomainException;}

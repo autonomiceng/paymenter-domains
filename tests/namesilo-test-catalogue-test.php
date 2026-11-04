@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/namesilo-test-activation-test.php';$nativeSuccessful=false;
 require __DIR__.'/Support/native-commerce.php';
+require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\{Category,Currency,Setting};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,CallerRouting,Context,Edit,Intent,OfferPorts,OfferReadiness,OfferScheduler,Query,UpgradeGate};
