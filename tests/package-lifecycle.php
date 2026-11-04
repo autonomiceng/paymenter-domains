@@ -148,7 +148,9 @@ if($phase==='bridge-seed'){
         assertRetained($receipt);echo "Native reinstall retained all recorded data and the TEST send limit schema.\n";
     }else{assertRetained($receipt);echo "Native upload retained all recorded data (".$phase.").\n";}
 }elseif($phase==='enom-live'){
-    require __DIR__.'/Support/enom-live.php';
+    try { require __DIR__.'/Support/enom-live.php'; } catch (Throwable $error) {
+        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
+    }
 }elseif($phase==='enom-test-transfer'){
     require __DIR__.'/Support/enom-transfer-setup.php';
     require __DIR__.'/Support/enom-test-transfer.php';
@@ -164,14 +166,18 @@ if($phase==='bridge-seed'){
 }elseif($phase==='enom-test-management-restart'){
     require __DIR__.'/Support/enom-management-restart.php';
 }elseif($phase==='enom-test-renewal'){
-    require __DIR__.'/Support/enom-test-registration.php';
+    try { require __DIR__.'/Support/enom-test-registration.php'; } catch (Throwable $error) {
+        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
+    }
     require __DIR__.'/Support/enom-test-renewal.php';
 }elseif($phase==='enom-test-renewal-restart'){
     require __DIR__.'/Support/enom-renewal-restart.php';
 }elseif(str_starts_with($phase,'enom-test-renewal-race-')){
     require __DIR__.'/Support/enom-renewal-race.php';
 }elseif($phase==='enom-test-registration'){
-    require __DIR__.'/Support/enom-test-registration.php';
+    try { require __DIR__.'/Support/enom-test-registration.php'; } catch (Throwable $error) {
+        fwrite(STDERR,json_encode(array_map(static fn($frame)=>[basename($frame['file']??''),$frame['line']??0],$error->getTrace())).PHP_EOL);throw $error;
+    }
 }elseif($phase==='enom-test-calls'){
     require __DIR__.'/Support/installed-test-counter.php';
 }elseif($phase==='enom-test-call-count'){
