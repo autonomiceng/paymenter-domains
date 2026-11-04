@@ -19,9 +19,7 @@ commerceReject(fn()=>$sellers->selection('com','register',1,$now));
 same([],app(Storefront::class)->endings(),'Unknown facts withdraw all installed public endings');
 same('10.40',$prices->renewal($binding->serverId,$binding->fingerprint,'com','USD',$now)->retail,'Installed holder route keeps retained annual retail with unknown facts');
 commerceReject(fn()=>$caps->requireRenewal($binding,'com'));
-commerceReject(fn()=>PublicationEligibility::require($tlds[0],'register',1));
-commerceReject(fn()=>(new PriceFill($bindings,app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)))->run(Account::where('server_id',$binding->serverId)->sole(),0));
-commerceReject(fn()=>CatalogueAcceptances::save($binding,1,[]));
+expect(!is_file(dirname(__DIR__).'/Domains/Services/PublicationEligibility.php'),'Legacy publication policy is deleted');
 // Explicit synthetic TEST deployment gates; protocol proof is independent of new offer facts.
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true]);
 App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>EnomTestRenewal::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$binding->fingerprint,...EnomTestRenewal::protocol($binding)])]);
@@ -45,13 +43,11 @@ same(4,Operation::count(),'Real installed checkout adds exactly one obligation b
 $op=Operation::where('operation_key','like','invoice-item:%')->sole();same('23.40',$op->policy['price']['retail'],'Native invoice freezes the admitted shared amount');
 same($before,$reads->calls,'Locked checkout creates no second provider read');
 // Active workers use deployed protocol policy, independent of the retired ending list.
-$setting=App\Models\Server::findOrFail($binding->serverId)->settings()->where('key',CatalogueAcceptances::KEY)->sole();
-$oldAcceptance=$setting->getRawOriginal();$setting->delete();
+same(false,App\Models\Server::findOrFail($binding->serverId)->settings()->where('key','domains_catalogue_acceptance')->exists(),'B8 removes current legacy acceptance');
 same(null,Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::localHoldReason($binding,$op),'Active worker accepts evidenced order without legacy catalogue acceptance');
 config(['domains.enom_writes.registration'=>false]);
 expect(Paymenter\Extensions\Servers\Domains\Services\EnomTestRegistration::localHoldReason($binding,$op)!==null,'Removing write opt-in still holds active order');
 config(['domains.enom_writes.registration'=>true]);
-DB::table('settings')->insert($oldAcceptance);
 
 $cost=DB::transaction(fn()=>$prices->current($binding->serverId,$binding->fingerprint,'com','register',3,'USD',$now,true,$tlds[0]->fresh()));same([3,'23.40','18.0000'],[$cost->term,$cost->retail,$cost->wholesale],'Locked normalized cost path preserves exact term-total evidence');
 commerceReject(fn()=>DB::transaction(fn()=>$prices->current($binding->serverId,str_repeat('f',64),'com','register',3,'USD',$now,true,$tlds[0]->fresh())));

@@ -20,12 +20,12 @@ $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Acc
 foreach (Account::orderBy('server_id')->get() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a)); }
 $bindings->setProcessing($d->server_id, false);
 $frozen = serialize($original->fresh()->getAttributes());
-$generation = (new UpgradeGate)->pause();
+$generation = UpgradeGate::generation();
 $guard = static function (?int $server = null) use ($generation): void {
     if (DB::transactionLevel() > 0) {
         Server::where('extension', 'Domains')->when($server !== null, fn ($q) => $q->whereKey($server))->orderBy('id')->lockForUpdate()->get();
         Account::when($server !== null, fn ($q) => $q->where('server_id', $server))->orderBy('server_id')->lockForUpdate()->get();
-        UpgradeGate::paused($generation);
+        UpgradeGate::active($generation);
     } elseif (UpgradeGate::generation() !== $generation) { throw new DomainException('Synthetic generation changed.'); }
 };
 $feed = new class($observation) implements PricedFeed {
@@ -47,7 +47,7 @@ $worker = new OfferWork(new Writer(new Projection($native), $clock, static fn ()
     $clock, $budget, static fn () => $feed, static fn () => 25, null, $generation, $guard);
 $observer = new DomainObservation($readBindings, $clock, $budget);
 $scheduler = new OfferScheduler($worker, new HoldingObservationWork($observer, $clock), $clock, $guard);
-same(null, OfferScheduler::routed(), 'Production remains legacy until the whole C6 cutover');
+expect(OfferScheduler::routed() instanceof OfferScheduler,'Fresh lifecycle selects the installed shared consumer');
 $scheduler->enroll($b->serverId); $scheduler->enroll($b->serverId);
 $scheduler->sync($b); $scheduler->sync($b);
 $out = $scheduler->tick(1);
@@ -58,12 +58,12 @@ same($frozen, serialize($original->fresh()->getAttributes()), 'Shared scheduler 
 $reads = count($observation->calls); $scheduler->tick(2);
 same($reads, count($observation->calls), 'Durable due times prevent a duplicate holder read');
 same(1, $feed->accounts[$b->serverId], 'Backoff survives repeated scheduler starts while other accounts get turns');
-commerceReject(fn () => (new ObservationWork($observer, $clock, $budget))->tick(), 'Legacy consumer cannot run in the composed fixture window');
+expect(!is_file(dirname(__DIR__).'/Domains/Services/PriceSync.php'),'Legacy account consumer is deleted');
 $q = DB::table('domains_observation_work')->where('domain_id', $d->id);
 $q->update(['due_at' => $clock->now()->getTimestamp()]);
 $before = $d->fresh()->observation;
 $physical = count($observation->calls);
-$observation->during = static fn () => (new UpgradeGate)->resume();
+$observation->during = static fn () => advanceOfferGeneration();
 $scheduler->tick(2);
 same($physical + 1, count($observation->calls), 'Generation change stops the remaining physical holding reads');
 same($before, $d->fresh()->observation, 'Generation change between read and commit cannot save a holding projection');

@@ -26,7 +26,7 @@ same([['render' => 3]], $cache->remember($render), 'Publication advances the cac
 $before = $offers->cacheFence(); offerCommerceRotate($binding, 'cache-rotation-synthetic');
 expect($before !== $offers->cacheFence(), 'Same binding with new credentials has a distinct namespace');
 same([['render' => 4]], $cache->remember($render), 'Credential rotation cannot reuse old public rows');
-$gate = new UpgradeGate; $gate->pause(); $gate->resume();
+advanceOfferGeneration();
 same([['render' => 5]], $cache->remember($render), 'Generation advance fences an otherwise identical catalogue');
 // Real Writer fact commits advance the shared namespace without scanning every offer on cache hits.
 $clock->instant = $now->modify('+1 second');
@@ -43,7 +43,7 @@ $clock->instant = $now->modify('+31 seconds');
 same([['render' => 7]], $cache->remember($render), 'Display TTL still bounds the freshness lag');
 // A generation change during rendering must not poison the next request's namespace.
 $clock->instant = $now->modify('+62 seconds');
-$cache->remember(static function () use ($gate): array { $gate->pause(); $gate->resume(); return [['raced' => true]]; });
+$cache->remember(static function (): array { advanceOfferGeneration(); return [['raced' => true]]; });
 same(null, $cache->cachedRows(), 'Racing render is not cached in either generation');
 same([['render' => 8]], $cache->remember($render), 'Next request renders under current generation');
 // Real public rendering must isolate one unavailable selected account on cold AND warm caches.
