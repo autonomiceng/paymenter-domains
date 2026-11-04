@@ -45,7 +45,7 @@ same(null,$tld->catalogue_facts,'Bulk prices invent no provider support facts');
 $scheduler->requestFacts($binding,'com');$scheduler->tick(8);
 $facts=OfferState::facts($tld->fresh()->catalogue_facts);
 same([1],$facts->terms['register'],'Cold registry reads prove only returned registration terms');
-same([], $facts->terms['renew'],'Price and registry responses cannot invent annual renewal support');
+same([], $facts->terms['renew']??[],'Price and registry responses cannot invent annual renewal support');
 same([],app(Storefront::class)->endings(),'Unknown renewal support keeps public sales closed');
 // Independently declared fixture support, then real staff intent/publication. Never copy price data into facts.
 $tld=installedOfferEvidence($binding,$clock);
