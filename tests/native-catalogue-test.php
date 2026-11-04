@@ -42,16 +42,16 @@ $registration->settings()->where('key', 'domains_registrar')->update(['value' =>
 commerceReject(static fn () => $native->mapping($registration));
 commerceReject(static fn () => activeFixtureRepublish($native,$enom->id, $now));
 $registration->settings()->where('key', 'domains_registrar')->update(['value' => 'enom']);
-$registration->update(['server_id' => $namesilo->server_id]);
+DB::table('products')->where('id',$registration->id)->update(['server_id' => $namesilo->server_id]);$registration->refresh();
 commerceReject(static fn () => $native->mapping($registration));
-$registration->update(['server_id' => $enom->server_id]);
+DB::table('products')->where('id',$registration->id)->update(['server_id' => $enom->server_id]);$registration->refresh();
 $registration->settings()->where('key', 'domains_action')->delete();
 commerceReject(static fn () => $native->mapping($registration));
 $registration->settings()->create(['key' => 'domains_action', 'value' => 'register', 'type' => 'string']);
-$registration->update(['slug' => 'edited-slug']);
+DB::table('products')->where('id',$registration->id)->update(['slug' => 'edited-slug']);$registration->refresh();
 commerceReject(static fn () => activeFixtureRepublish($native,$enom->id, $now));
 same(4, Product::count(), 'Edited slug cannot create a replacement identity');
-$registration->update(['slug' => NativeCatalogue::slug($enom, 'register')]);
+DB::table('products')->where('id',$registration->id)->update(['slug' => NativeCatalogue::slug($enom, 'register')]);$registration->refresh();
 foreach ([['product_id' => $registration->id, 'upgrade_id' => $transfer->id], ['product_id' => $transfer->id, 'upgrade_id' => $registration->id]] as $link) {
     $id = DB::table('product_upgrades')->insertGetId($link);
     commerceReject(static fn () => $native->mapping($registration));

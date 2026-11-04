@@ -6,7 +6,7 @@ require __DIR__.'/Support/commerce.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, Environment, Query, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{CheckoutEligibility, Rdap, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-extract(commerceFixture(true)); $clock=new FakeClock($now); $calls=0; $status=200;
+extract(commerceFixture(true)); $calls=0; $status=200;
 $rdap=new Rdap(static function($url)use(&$calls,&$status){$calls++;same(0,Illuminate\Support\Facades\DB::transactionLevel(),'RDAP outside locks');
     return ['status'=>str_contains($url,'dns.json')?200:$status,'body'=>json_encode(str_contains($url,'dns.json')
         ?['services'=>[[['com'],['https://rdap.example.com/']]]]
@@ -28,10 +28,11 @@ commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));$setting->upda
 commerceReject(fn()=>$eligibility->require($token,'example.com',[1]));$setting->update(['value'=>'60']);
 $server->settings()->where('key','domains_transfer_endings')->update(['value'=>'net']);commerceReject(fn()=>$eligibility->require($token,'example.com',[1]));
 $server->settings()->where('key','domains_transfer_endings')->update(['value'=>'com']);
-$registry=static function(?array $schema)use($ports,$tlds):void {
+$registry=static function(?array $schema)use($ports,$tlds,$clock):void {
+    $clock->instant=$clock->instant->modify("+1 second");
     $t=$tlds[0]->fresh();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
     $f=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($t->catalogue_facts);$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
-    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($b,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(...array_replace(get_object_vars($f),['registryFields'=>$schema]))),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($b,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(...array_replace(get_object_vars($f),['registryFields'=>$schema,'observedAt'=>$clock->now()]))),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 };
 foreach([null,[['name'=>'unaccepted']]]as$schema){$registry($schema);commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));}$registry([]);$s=$sellers->selection('com','transfer',1,$now);
 foreach(['example.net','sub.example.com','xn--abc.com']as$name){commerceReject(fn()=>$eligibility->observe($name,$s,[1]));}
