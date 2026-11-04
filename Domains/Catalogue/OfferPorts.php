@@ -39,7 +39,7 @@ final class OfferPorts
             $feed = new Enom\OfferFeed(new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token'], $transport), []));
         } else {
             // #386 is an explicit dependency; never silently fall back to the unadmitted cURL transport.
-            if ($binding->environment !== Environment::Live || !is_file(dirname(__DIR__).'/Registrars/NameSilo/AdmittedTransport.php')
+            if ($binding->registrarKey !== 'namesilo' || !is_file(dirname(__DIR__).'/Registrars/NameSilo/AdmittedTransport.php')
                 || !class_exists(NameSilo\AdmittedTransport::class)) {
                 throw new \DomainException('Admitted NameSilo offer transport unavailable.');
             }
@@ -48,11 +48,12 @@ final class OfferPorts
                 $current();
                 return $this->bindings->offerCredentials($binding, $revision);
             });
-            $feed = new NameSilo\OfferFeed(new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key'], $transport), clock: $this->clock));
+            $feed = new NameSilo\OfferFeed(new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key'], $transport), clock: $this->clock),
+                facts: $binding->environment === Environment::Test ? fn(string $tld) => NameSilo\TestCatalogueFacts::read($binding,$revision,$tld,$this->clock) : null);
         }
-        $scope = $binding->environment === Environment::Test
+        $scope = $binding->environment === Environment::Test && $binding->registrarKey === 'enom'
             ? static fn (\Closure $read) => EnomTestSendLimit::withCheckoutHeadroom($identity, $read, 30)
-            : static fn (\Closure $read) => LiveReservations::withCheckoutHeadroom($binding->registrarKey, $identity, $read, 30);
+            : static fn (\Closure $read) => LiveReservations::withCheckoutHeadroom($binding->registrarKey, $identity, $read, 30, $binding->environment);
         return new CredentialFeed($feed, $current, $scope);
     }
 
@@ -63,19 +64,18 @@ final class OfferPorts
         OperationClaims::outside();
         try {
             $this->revision($binding);
-            if ($binding->environment === Environment::Test) {
-                if ($binding->registrarKey !== 'enom') { return 0; }
+            if ($binding->environment === Environment::Test && $binding->registrarKey === 'enom') {
                 $account = Account::where('server_id', $binding->serverId)->sole();
                 $usage = EnomTestSendLimit::usage($account->stable_identity);
                 foreach (['day', 'day_limit', 'minute', 'minute_limit'] as $key) { if (!is_int($usage[$key])) { return 0; } }
                 return max(0, min(25, intdiv($usage['day_limit'] * 3, 10) - $usage['day'], $usage['minute_limit'] - $usage['minute']));
             }
-            $policy = $binding->registrarKey === 'enom' ? new Enom\EnomLiveReservationPolicy : new NameSilo\NameSiloLiveReservationPolicy;
+            $policy = $binding->registrarKey === 'enom' ? new Enom\EnomLiveReservationPolicy : ($binding->environment === Environment::Test ? new NameSilo\TestReservationPolicy : new NameSilo\NameSiloLiveReservationPolicy);
             if ($binding->registrarKey === 'enom' && !EnomLive::enabled($binding, 'catalogue')) { return 0; }
             if ($binding->registrarKey === 'namesilo') { $policy->requireFeature($binding, 'catalogue'); }
             $cap = $policy->limits($binding)['daily_call_cap'] ?? null;
             if (!is_int($cap) || $cap < 1 || $cap > 100000) { return 0; }
-            return max(0, min(25, intdiv($cap * 3, 10) - (new LiveReservations($policy))->usage($binding)['used']));
+            return max(0, min(25, intdiv($cap * 3, 10) - (new LiveReservations($policy,$binding->environment))->usage($binding)['used']));
         } catch (\Throwable) { return 0; }
     }
 }

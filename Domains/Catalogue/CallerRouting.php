@@ -80,12 +80,16 @@ final class CallerRouting
     }
 
     /** Whether this registrar has a sales protocol in the installed catalogue, before price/order setup. */
-    public static function supportsSales(string $registrarKey): bool { return $registrarKey === 'enom'; }
+    public static function supportsSales(string $registrarKey): bool { return in_array($registrarKey, ['enom','namesilo'], true); }
 
     /** Local deployment/protocol gates, independent of price readiness. Missing NS runtime stays closed. */
     private static function feature(AccountBinding $b, ?string $action, bool $setup): bool
     {
         if (!self::supportsSales($b->registrarKey)) { return false; }
+        if ($b->registrarKey === 'namesilo') {
+            $feature = match ($action) { 'register'=>'registration','renew'=>'renewal','transfer'=>'transfer',null=>null,default=>'unsupported' };
+            return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled($b,$feature);
+        }
         return match ($action) {
             'register' => $setup ? EnomTestRegistration::enabled($b) : EnomTestRegistration::sellable($b),
             'renew' => $setup ? EnomTestRenewal::enabled($b) : EnomTestRenewal::accepted($b),

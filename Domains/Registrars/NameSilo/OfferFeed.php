@@ -10,8 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 /** One account getPrices, annual-only. No catalogue row establishes registry/renewal safety. */
 final class OfferFeed implements PricedFeed
 {
-    public function __construct(private readonly Driver $reader, private readonly CatalogueFreshness $freshness = new CatalogueFreshness) {}
-    public function factsReads(): int { return 0; }
+    public function __construct(private readonly Driver $reader, private readonly CatalogueFreshness $freshness = new CatalogueFreshness, private readonly ?\Closure $facts = null) {}
+    public function factsReads(): int { return $this->facts === null ? 0 : 1; }
     public function priceReads(): int { return 1; }
     public function prices(RequestContext $context): iterable
     {
@@ -34,6 +34,10 @@ final class OfferFeed implements PricedFeed
     {
         $this->reader->binding()->requireMatch($context->binding);
         CanonicalName::parse('example.'.$tld, [$tld]);
-        throw new \DomainException('NameSilo offer facts are unverified.');
+        if (!$this->facts) { throw new \DomainException('NameSilo offer facts are unverified.'); }
+        $facts = ($this->facts)($tld);
+        // The cold check confirms this ending is still present; prices never supply or redate facts.
+        if (!array_key_exists($tld,$this->reader->prices($context))) { throw new \DomainException('NameSilo ending unavailable.'); }
+        return new FactsObserved($context->binding,$tld,$facts);
     }
 }
