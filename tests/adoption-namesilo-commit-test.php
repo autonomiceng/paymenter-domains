@@ -62,6 +62,7 @@ $costs=[];foreach(['register','renew','transfer'] as $action){$costs[]=new \Paym
 $offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',$costs),$offerRevision());
 $offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'))),$offerRevision());
 $offerPorts->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,transfers:true)),$offerRevision());
+$offerPorts->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,'com',['register','transfer']),$offerRevision());
 $tld=Tld::where('server_id',$server->id)->sole();$product=$native->product($tld,'register');$plan=$native->annualPlan($product);
 $order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
 // Retained service predates installation; seed it without checkout events.

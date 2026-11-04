@@ -10,11 +10,18 @@ use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimePorts,AccountBindings,CartAdmission,CheckoutEligibility,InvoiceBinding,NativeCatalogue,PriceCatalogue,OwnedDomains,NativePresenter,OwnerPorts,HolderPricing};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
+// Real fresh installed routing; synthetic registry evidence stays independent of native ownership/finances.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $entry=new Domains;$entry->installed();extract(commerceFixture(true,static fn()=>null));$clock=new FakeClock($now);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);app()->instance(PriceCatalogue::class,$prices);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class,$sellers);
+// Use the normal installed adapters rather than binding module-only private ports into the container.
+$prices=new PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules);$native=new NativeCatalogue($prices);$sellers=new \Paymenter\Extensions\Servers\Domains\Services\SellerPolicies($prices,$bindings);
+foreach([PriceCatalogue::class=>$prices,NativeCatalogue::class=>$native,\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true]);
+$enom=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+\App\Models\Server::find($enom->serverId)->settings()->updateOrCreate(['key'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$enom->fingerprint,...\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($enom)])]);
+app()->offsetUnset(RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 $entry->boot();installedPanel();
 $owners=app(OwnedDomains::class);$presenter=app(NativePresenter::class);$user=commerceUser();$user->update(['email'=>'native-owner@example.com']);$foreign=commerceUser();foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}$pairs=[];$checkoutLines=[];$cartEdits=[];
 foreach($tlds as $i=>$t){
