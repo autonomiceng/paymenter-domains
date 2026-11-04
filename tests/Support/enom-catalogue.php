@@ -11,14 +11,14 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Context,OfferScheduler,OfferState,Query};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Context,Facts,FactsObserved,OfferScheduler,OfferState,Query};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,NativeCatalogue,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
 // Retired synchronous import/fill algorithm coverage lives in offer-feed-test.php and
 // offer-work-test.php. Active review/withdrawal/restore coverage: offer-staff-policy-test.php,
 // offer-restore-sales-test.php; physical cap/stale reviews: enom-test-send-limit-test.php.
 // Frozen checkout/funding remains in offer-commerce-test.php and installed registration phases.
-$clock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock { public function now():DateTimeImmutable{return new DateTimeImmutable('2026-11-02T12:00:00Z');} };
+$clock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock { public DateTimeImmutable $at;public function __construct(){$this->at=new DateTimeImmutable('2026-11-02T12:00:00Z');}public function now():DateTimeImmutable{return $this->at;} };
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
     'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true,
@@ -48,7 +48,10 @@ same([1],$facts->terms['register'],'Cold registry reads prove only returned regi
 same([], $facts->terms['renew']??[],'Price and registry responses cannot invent annual renewal support');
 same([],app(Storefront::class)->endings(),'Unknown renewal support keeps public sales closed');
 // Independently declared fixture support, then real staff intent/publication. Never copy price data into facts.
-$tld=installedOfferEvidence($binding,$clock);
+$clock->at=$clock->now()->modify('+1 second');$at=$clock->now();$ports=CallerPorts::routed();
+$ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1],'renew'=>[1],'transfer'=>[]],[],true,false,false,'independent_synthetic_support',$at,$at->modify('+1 day'))),
+    $ports->readOffers(new Query($binding,['com'],'register'),Context::Staff)[0]->revision);
+$tld->refresh();
 $availability=['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true];
 $write('tld_settings',$availability,$tld->id);$write('publish',[],$tld->id);
 $write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);

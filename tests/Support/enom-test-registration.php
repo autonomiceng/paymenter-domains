@@ -181,7 +181,7 @@ same('registration_pending',$paused->domain->fresh()->status,'Processing-off pai
 same('active',$op->domain->fresh()->status,'Captured-order registration completes to active before scheduler check');
 app(ObservationWork::class)->enroll((int)$server->id);$usedBeforePoll=enomTestSendCount();
 $before=count($GLOBALS['enomWire']['forms']);$observation=app(ObservationWork::class)->tick();
-same('read_deferred',$observation[$server->id]??null,'Opted-in TEST registration skips general domain observation');
+same('read_deferred',$observation[$server->id]['holding']??null,'Opted-in TEST registration skips general domain observation');
 same(0,DB::table('domains_observation_work')->where('server_id',$server->id)->count(),'General observation creates no queued domain reads');
 same($before,count($GLOBALS['enomWire']['forms']),'Observation tick sends no Enom reads');same($usedBeforePoll,enomTestSendCount(),'Observation tick reserves no Enom calls');
 $turn=DB::table('domains_runtime_turns')->where('server_id',$server->id)->first();
