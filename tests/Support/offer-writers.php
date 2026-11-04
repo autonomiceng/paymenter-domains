@@ -66,3 +66,22 @@ function activeFixtureStops(object $owner,Tld $t,array $stops): void
     $q=new Query($b,[$t->tld],'register');
     $ports->apply(Edit::override($b,$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(...$raw)),$ports->readOffers($q,Context::Staff)[0]->revision);
 }
+
+/** Independently declared synthetic OTE facts mirror the current production configuration contract.
+ * Price replies never supply these terms. No activation/enrollment receipt is manufactured. */
+function fixtureNameSiloFacts($binding,string $ending,\Paymenter\Extensions\Servers\Domains\Catalogue\Facts $facts): \Paymenter\Extensions\Servers\Domains\Catalogue\Facts
+{
+    if($binding->registrarKey!=='namesilo'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){return $facts;}
+    $account=Account::where('server_id',$binding->serverId)->sole();
+    $copy=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($facts->terms,$facts->registryFields,$facts->renewalSafe,
+        $facts->requiresNameservers,$facts->autoRenewOnly,'namesilo_test_protocol',$facts->observedAt,$facts->freshUntil);
+    $rows=config('domains.namesilo_test.accounts',[]);$row=$rows[$account->stable_identity]??[];
+    $row['fingerprint']=$binding->fingerprint;$row['credential_revision']=app(AccountBindings::class)->credentialRevision($binding);
+    $row['facts'][$ending]=[
+        'terms'=>$copy->terms,'registry_fields'=>$copy->registryFields,'renewal_safe'=>$copy->renewalSafe,
+        'requires_nameservers'=>$copy->requiresNameservers,'auto_renew_only'=>$copy->autoRenewOnly,
+        'observed_at'=>$copy->observedAt->format(DATE_ATOM),'fresh_until'=>$copy->freshUntil->format(DATE_ATOM)];
+    $rows[$account->stable_identity]=$row;
+    config(['domains.namesilo_account.environment'=>'test','domains.namesilo_test.accounts'=>$rows]);
+    return $copy;
+}

@@ -8,15 +8,13 @@ use App\Models\{Category, Currency, Server};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, Evidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class); }
-
-
     // Active fixtures already ran every schema and verification through the native installer.
     if (!$active) {
         FoundationSchema::install(); SalesPolicySchema::install();
@@ -51,6 +49,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $prices=new PriceCatalogue(new PricingRules,$caps,$ports);$native=new NativeCatalogue($prices);
         $offers=new \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers($ports,$bindings,$native);
         $sellers=new SellerPolicies($prices,$bindings,$offers);
+        app()->instance(AccountBindings::class,$bindings);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     }
     foreach (['enom', 'namesilo'] as $key) {
         $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
@@ -79,7 +78,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
                 $costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($a,$n,true,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::units($cost)*$n,4),\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));
             }
             $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,$ending,$costs),$rev());
-            $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$ending,new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$rev());
+            $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$ending,fixtureNameSiloFacts($binding,$ending,new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))),$rev());
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,$ending,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:max($terms),transfers:true)),$rev());
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,$ending,['register','transfer']),$rev());
             $tlds[]=$tld->fresh();continue;
@@ -107,8 +106,8 @@ function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until,?\P
     foreach(Tld::where('catalogue_converted',true)->get() as $t){
         $terms=$t->registrar_key==='enom'?[1,3]:[1];
         Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>
-            \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
-                ['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$until))]);
+            \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(fixtureNameSiloFacts(AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole()),$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+                ['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$until)))]);
         if($ports!==null){
             // Independent scenarios rewind this synthetic clock; discard only observations from its future.
             foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $p){
