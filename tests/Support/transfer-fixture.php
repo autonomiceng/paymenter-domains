@@ -68,7 +68,7 @@ $historicalTransfer = static function(string $name,int $i)use($user,$native,$pri
 };
 $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state,$historicalTransfer): Operation {
     $policy = DB::table('domains_sales_policies')->where('tld','com')->first();
-    if ((int) $policy->server_id !== $tlds[$i]->server_id) { $sellers->change('com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
+    if ((int) $policy->server_id !== $tlds[$i]->server_id) { activeFixtureSeller($sellers,'com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
     if(Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}
     else{$cart = commerceCart($user); commerceAdd($cart,$native->product($tlds[$i],'transfer'),$name);
         // Synthetic retained transfers can have incomplete contacts from the former checkout.

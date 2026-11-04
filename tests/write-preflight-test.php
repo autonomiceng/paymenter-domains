@@ -64,7 +64,7 @@ commerceReject(fn () => (new RegistrationPreflight($freshBindings, new WriteFeat
 commerceReject(fn () => (new RegistrationPreflight($freshBindings, $features, new WriteAcceptance($enomBinding)))->inspect($op, $op->domain, $ctx()));
 same($before, $state->calls, 'Default gates and missing USD/batch acceptance refuse before reads');
 // Change the default seller after checkout: the original accepted holder still owns dispatch.
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now());
 same('6.00', $fresh->inspect($op, $op->domain, $ctx())->cost->amount, 'Frozen holder ignores current seller');
 // Revoke durable acceptance during reads; seal must refuse with zero wire calls.
 $build($enomBinding); $engine = new DomainOperations($claims, $fresh, $proxy, $clock); $state->revoke = true;

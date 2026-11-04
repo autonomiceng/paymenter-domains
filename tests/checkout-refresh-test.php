@@ -45,7 +45,7 @@ $registry->register('namesilo', ['token'], new class implements AccountVerifier 
     public function verify(Environment $environment, array $credentials): string { return $credentials['token']; }
 }, fn($b, $credentials) => new Driver(new Client($b, $credentials['token'], $wire), [], $clock));
 $bindings = new AccountBindings($registry); $sellers = new SellerPolicies($prices, $bindings);
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now());
 $limiter = new AccountReadBudget($clock);
 app()->instance(Runtime::class, new Runtime); app()->instance(ReadLimiter::class, $limiter);
 $expireDuringAdmission = false;

@@ -67,7 +67,7 @@ $policy = $op->fresh()->policy; $policy['review_note'] = 'Additional non-frozen 
 expect($op->fresh()->update(['policy' => $policy]), 'A new non-frozen policy key can save');
 same($policy, $op->fresh()->policy, 'New policy evidence persists alongside frozen checkout facts');
 // A new holder after a seller change stays on its own account. Existing ownership never moves.
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $now); $nsProduct = $native->product($tlds[1], 'register');
+activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $now); $nsProduct = $native->product($tlds[1], 'register');
 $cart = commerceCart($user); commerceAdd($cart, $nsProduct, placeholderComFixtureName('new-account-placeholder.com')); commerceAdd($cart, $nsProduct, placeholderComFixtureName('same-plan-placeholder.com')); commerceCheckout($user, $cart);
 same(2, Order::count(), 'New selected account can bind new names');
 same((int) $tlds[1]->server_id, (int) Domain::where('domain', 'new-account-placeholder.com')->sole()->server_id, 'Selected new account frozen');

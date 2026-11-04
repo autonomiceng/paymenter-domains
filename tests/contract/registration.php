@@ -24,7 +24,7 @@ $prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($b
 $native->publish($tlds[1]->id, $now); $tlds[1]->refresh();
 config(['logging.default' => 'null', 'logging.channels.null' => ['driver' => 'monolog', 'handler' => \Monolog\Handler\NullHandler::class]]);
 $clock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now());
 $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[1], 'register'), $wire->domain); commerceCheckout($user, $cart);
 $op = Domain::where('domain', $wire->domain)->sole()->operations()->sole();
 Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);

@@ -121,7 +121,7 @@ $net=Tld::create(['server_id'=>$other->server_id,'registrar_key'=>$other->regist
 $accepted=CatalogueAcceptances::save($binding,$kept->revision,$kept->endings+['net'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
 $rates=array_map(fn($a)=>new CatalogueRate($a,1,'6.00','synthetic',$clock->now(),$clock->now()->modify('+1 day')),['register','renew','transfer']);
 $prices->import(new CatalogueEntry($binding,'net',$rates,[1],true,true),$accepted,static fn()=>null,$clock->now());
-$native->publish($net->id,$clock->now());$sellers->initialize('net');$sellers->change('net',1,$other->server_id,true,true,$clock->now());
+$native->publish($net->id,$clock->now());$sellers->initialize('net');activeFixtureSeller($sellers,'net',1,$other->server_id,true,true,$clock->now());
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('late-accounts-placeholder.com'));commerceAdd($cart,$native->product($net->fresh(),'register'),reservedFixtureName('example.net'));commerceCheckout($user,$cart);
 $pair=Paymenter\Extensions\Servers\Domains\Models\Operation::whereIn('domain_id',Paymenter\Extensions\Servers\Domains\Models\Domain::whereIn('domain',['late-accounts-placeholder.com','example.net'])->pluck('id'))->orderBy('id')->get();
 same(2,$pair->pluck('server_id')->unique()->count(),'One invoice, two accounts');$bill=Invoice::findOrFail($pair[0]->invoice_id);$total=(string)$bill->total;$before=$cash();$sent=$mails();

@@ -56,11 +56,11 @@ $reject = static function (callable $call): void {
     try { $call(); expect(false, 'Seller guard escaped'); } catch (DomainException|InvalidArgumentException|LogicException|Illuminate\Database\Eloquent\ModelNotFoundException|Illuminate\Database\QueryException $e) { /* expected */ }
 };
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
-$p = $sellers->change('com', 1, 1, true, true, $now);
+$p = activeFixtureSeller($sellers,'com', 1, 1, true, true, $now);
 same(2, $p->revision, 'Enabled seller advances revision');
 $oldCart = $sellers->selection('com', 'register', 1, $now);
 $reject(static fn () => $sellers->admit([$oldCart], $now));
-$sellers->initialize('net'); $sellers->change('net', 1, 2, true, false, $now);
+$sellers->initialize('net'); activeFixtureSeller($sellers,'net', 1, 2, true, false, $now);
 $netCart = $sellers->selection('net', 'register', 1, $now);
 // Inspect the real batch builders and hydrated rows; SQLite itself cannot prove row-lock concurrency.
 $lockQueries = []; $returned = ['domains_tlds' => [], 'domains_prices' => []]; $captureLocks = true;
@@ -111,7 +111,7 @@ foreach ($lockQueries as $table => $query) {
 }
 same([2, 1], array_map(static fn ($price): int => $price->serverId, $batch), 'Batch returns input order after ordered locks');
 $reject(static fn () => DB::transaction(static fn () => $sellers->admit([], $now)));
-$reject(static fn () => $sellers->change('net', 2, 1, true, false, $now)); // no matching TLD
+$reject(static fn () => activeFixtureSeller($sellers,'net', 2, 1, true, false, $now)); // no matching TLD
 $futureNet = new SaleSelection('net', 2, $netCart->registrar, $netCart->fingerprint, $netCart->policyRevision,
     'register', 1, 'USD', $netCart->priceId, $netCart->priceRevision + 1);
 $reject(static fn () => DB::transaction(static function () use ($sellers, $oldCart, $futureNet, $now): void {
@@ -126,7 +126,7 @@ $acquire = static function ($price) use ($accounts): Domain {
 $domain = $admit($oldCart, $acquire);
 same(1, (int) $domain->server_id, 'First admitted holding uses original account');
 Server::findOrFail(1)->update(['enabled' => false]);
-$p = $sellers->change('com', 2, 2, true, false, $now);
+$p = activeFixtureSeller($sellers,'com', 2, 2, true, false, $now);
 Server::findOrFail(1)->update(['enabled' => true]);
 $called = (object) ['value' => false];
 $reject(static fn () => $admit($oldCart, static function () use ($called): void { $called->value = true; }));
@@ -138,7 +138,7 @@ $reject(static fn () => $admit($newCart, $acquire));
 same(1, Domain::count(), 'Cross-account duplicate name stays reserved');
 $reject(static fn () => $sellers->selection('com', 'transfer', 1, $now));
 $bindings->setProcessing(2, false);
-$p = $sellers->change('com', 3, 1, true, true, $now);
+$p = activeFixtureSeller($sellers,'com', 3, 1, true, true, $now);
 $bindings->setProcessing(2, true, syntheticActivation());
 $reject(static fn () => $admit($oldCart, $acquire));
 same(4, $p->revision, 'Switch-back does not revive old tokens');
@@ -151,7 +151,7 @@ same('7.99', $updated->retail, 'Admission uses the newly published retail');
 $wrongRow = new SaleSelection('com', 1, $current->registrar, $current->fingerprint, $current->policyRevision,
     'register', 1, 'USD', $current->priceId + 1000, $current->priceRevision);
 $reject(static fn () => $admit($wrongRow));
-$reject(static fn () => $sellers->change('com', 3, 2, true, true, $now));
+$reject(static fn () => activeFixtureSeller($sellers,'com', 3, 2, true, true, $now));
 $liveCart = $sellers->selection('com', 'register', 1, $now);
 Server::findOrFail(1)->update(['enabled' => false]);
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
@@ -171,19 +171,19 @@ Tld::where('server_id', 1)->firstOrFail()->update(['use_default_rule' => true]);
 expect(!str_contains(json_encode($liveCart, JSON_THROW_ON_ERROR), $accounts[1]['account_fingerprint']), 'Cart JSON hides account binding');
 $reject(static fn () => serialize($liveCart));
 Server::findOrFail(2)->update(['enabled' => false]);
-$reject(static fn () => $sellers->change('com', 4, 2, true, true, $now));
+$reject(static fn () => activeFixtureSeller($sellers,'com', 4, 2, true, true, $now));
 Server::findOrFail(2)->update(['enabled' => true]);
 $bindings->setProcessing(2, false);
-$reject(static fn () => $sellers->change('com', 4, 2, true, true, $now));
+$reject(static fn () => activeFixtureSeller($sellers,'com', 4, 2, true, true, $now));
 $bindings->setProcessing(2, true, syntheticActivation());
 Tld::where('server_id', 2)->firstOrFail()->update(['transfer_enabled' => false]);
-$reject(static fn () => $sellers->change('com', 4, 2, true, true, $now));
+$reject(static fn () => activeFixtureSeller($sellers,'com', 4, 2, true, true, $now));
 Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail()->update(['min_years' => 11, 'max_years' => 12]);
-$reject(static fn () => $sellers->change('com', 4, 2, true, false, $now));
+$reject(static fn () => activeFixtureSeller($sellers,'com', 4, 2, true, false, $now));
 Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail()->update(['min_years' => 1, 'max_years' => 3]);
 Tld::where('server_id', 2)->firstOrFail()->update(['renew_enabled' => false]);
-$reject(static fn () => $sellers->change('com', 4, 2, true, false, $now));
-$reject(static fn () => $sellers->change('com', 4, null, true, false, $now));
+$reject(static fn () => activeFixtureSeller($sellers,'com', 4, 2, true, false, $now));
+$reject(static fn () => activeFixtureSeller($sellers,'com', 4, null, true, false, $now));
 same(4, SalesPolicy::where('tld', 'com')->firstOrFail()->revision, 'Failed seller changes roll back revision');
 // Both extension and native writes disappear when checkout aborts.
 $current = $sellers->selection('com', 'register', 1, $now);
@@ -196,7 +196,7 @@ try {
 } catch (RuntimeException $e) { same('checkout rollback', $e->getMessage(), 'Complete checkout abort'); }
 same(0, App\Models\User::count(), 'Native checkout rolled back');
 same(null, Domain::where('domain', 'rollback-placeholder.com')->first(), 'Reservation write rolled back');
-$p = $sellers->change('com', 4, null, false, false, $now);
+$p = activeFixtureSeller($sellers,'com', 4, null, false, false, $now);
 same(5, $p->revision, 'Disabling seller advances policy');
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
 same('7.99', $holder->renewal($domain, 'USD', $now)->retail, 'No seller does not alter holder renewal');
@@ -204,11 +204,11 @@ same('7.99', $holder->renewal($domain, 'USD', $now)->retail, 'No seller does not
 // The default is shared, so the second account keeps a sellable price for the rows below with its own rule.
 $second = Tld::where('server_id', 2)->where('tld', 'com')->firstOrFail();
 $second->update(['use_default_rule' => false, 'pricing_mode' => 'markup_percent', 'markup' => '30.00', 'round_up' => 'none']);
-$prices->republish($second);
+activeFixtureRepublish($prices,$second);
 saveDefaultRule(['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',
-    'fixed' => ['register' => '7.00', 'renew' => '1.00', 'transfer' => '7.00']], $prices->republish(...));
+    'fixed' => ['register' => '7.00', 'renew' => '1.00', 'transfer' => '7.00']], static fn($ending)=>activeFixtureRepublish($prices,$ending));
 $prices->sync(1, static fn (): array => [$rate('register', 1, '10.00')]);
-$p = $sellers->change('com', 5, 1, true, false, $now);
+$p = activeFixtureSeller($sellers,'com', 5, 1, true, false, $now);
 $reject(static fn () => $sellers->selection('com', 'register', 1, $now));
 $eligible = $sellers->selection('com', 'register', 3, $now);
 same('21.00', $admit($eligible)->retail, 'Eligible term survives held annual acquisition');
@@ -227,18 +227,18 @@ foreach (['register', 'renew'] as $action) {
     $row = Price::where(['server_id' => 2, 'tld' => 'com', 'action' => $action, 'term' => 1])->sole();
     DB::table('domains_prices')->where('id', $row->id)->update(['fresh_until' => $now]);
     $priorRevision = SalesPolicy::where('tld', 'com')->sole()->revision;
-    $selected = $sellers->change('com', $priorRevision, 2, true, false, $now);
+    $selected = activeFixtureSeller($sellers,'com', $priorRevision, 2, true, false, $now);
     same([$priorRevision + 1, 2], [$selected->revision, $selected->server_id], 'Saved '.$action.' cost permits seller selection');
     $prior = SalesPolicy::where('tld', 'com')->sole()->getAttributes();
     DB::table('domains_prices')->where('id', $row->id)->update(['wholesale' => null]);
-    $reject(static fn () => $sellers->change('com', $prior['revision'], 2, true, false, $now));
+    $reject(static fn () => activeFixtureSeller($sellers,'com', $prior['revision'], 2, true, false, $now));
     same($prior, SalesPolicy::where('tld', 'com')->sole()->getAttributes(), 'Missing '.$action.' cost leaves seller and revision unchanged');
     DB::table('domains_prices')->where('id', $row->id)->update($row->only(['wholesale', 'fresh_until']));
 }
 $publish([$rate('register', 1, '5.00'), $rate('register', 3, '4.00'), $rate('renew', 1, '6.00')]);
 DB::table('domains_prices')->where(['server_id' => 1, 'tld' => 'com', 'action' => 'register', 'term' => 1])->update(['fresh_until' => $now]);
 $priorRevision = SalesPolicy::where('tld', 'com')->sole()->revision;
-$p = $sellers->change('com', $priorRevision, 1, true, false, $now);
+$p = activeFixtureSeller($sellers,'com', $priorRevision, 1, true, false, $now);
 same($priorRevision + 1, $p->revision, 'Saved eligible registration terms still permit seller selection');
 $before = DB::table('domains_sales_policies')->get()->toJson();
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000002_create_domains_sales_policies.php';

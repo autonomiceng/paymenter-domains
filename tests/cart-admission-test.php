@@ -58,10 +58,10 @@ foreach ([new CheckoutEligibility($bindings, $clock), new CheckoutEligibility($b
 same($beforeReads + 1, $reads->calls, 'Repeated requests cost no extra registrar reads');
 
 $clock->instant = $now; $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('seller-change-placeholder.com'));
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $now); commerceCheckout($user, $cart);
+activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $now); commerceCheckout($user, $cart);
 same(3, Order::count(), 'Seller switch invalidates old link and receipt');
 commerceReject(static fn () => commerceAdd(commerceCart($user), $product, placeholderComFixtureName('old-link-placeholder.com')));
-$sellers->change('com', 3, $tlds[0]->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com', 3, $tlds[0]->server_id, true, true, $now);
 $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('quantity-placeholder.com'));
 foreach ([['quantity' => 2], ['quantity' => 1.5], ['checkout_config' => ['domain' => ['bad']]], ['config_options' => [['option_id' => 1]]]] as $bad) {
     commerceReject(static function () use ($line, $bad): void { $copy = $line->fresh(); $copy->fill($bad)->save(); });

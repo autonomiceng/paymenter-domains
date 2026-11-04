@@ -22,7 +22,7 @@ $annual = $native->annualPlan($registration);
 same(1, $annual->billing_period, 'Holding plan is annual on same product');
 same($registration->id, $annual->priceable_id, 'Annual transition preserves product');
 $ids = Product::orderBy('id')->pluck('id')->all(); $planIds = Plan::orderBy('id')->pluck('id')->all();
-$sellers->change('com', 2, $namesilo->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com', 2, $namesilo->server_id, true, true, $now);
 $native->publish($enom->id, $now); $native->publish($namesilo->id, $now);
 same($ids, Product::orderBy('id')->pluck('id')->all(), 'Switch/republication never replaces products');
 same($planIds, Plan::orderBy('id')->pluck('id')->all(), 'Switch/republication preserves plans');

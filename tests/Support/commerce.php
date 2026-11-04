@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/FakeRegistrar.php';
 require_once __DIR__.'/offer-generation.php';
+require_once __DIR__.'/offer-writers.php';
 use App\Models\{Category, Currency, Server};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, Evidence, ResultReason, SendState};
@@ -77,6 +78,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $first=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
         $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($first,[$ending],'register');
         $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($first,$ending,['register','transfer']),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+        foreach([$prices,$sellers,$native] as $owner){activeFixturePorts($owner,$ports,$clock);}
         return compact('bindings','prices','sellers','native','now','tlds','reads','clock','ports','caps','offers');
     }
     return compact('bindings', 'prices', 'sellers', 'native', 'now', 'tlds', 'reads');

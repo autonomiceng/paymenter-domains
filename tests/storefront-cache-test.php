@@ -69,8 +69,8 @@ $tld->refresh()->update(['register_enabled' => true]);
 $bindings->setProcessing($tld->server_id, false); same([], $store->endings(), 'Account writer invalidates immediately');
 $bindings->setProcessing($tld->server_id, true, syntheticActivation());
 $policy = SalesPolicy::where('tld', 'com')->sole();
-$sellers->change('com', $policy->revision, null, false, false, $now); same([], $store->endings(), 'Seller writer invalidates immediately');
-$sellers->change('com', $policy->revision + 1, $tld->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com', $policy->revision, null, false, false, $now); same([], $store->endings(), 'Seller writer invalidates immediately');
+activeFixtureSeller($sellers,'com', $policy->revision + 1, $tld->server_id, true, true, $now);
 
 // Native edits are deliberately TTL-bound. Fake time, including the exact expiry boundary.
 $product = $native->product($tld->fresh(), 'register');

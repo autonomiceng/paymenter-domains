@@ -72,7 +72,7 @@ same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller endi
     Illuminate\Support\Facades\Cache::flush();
     same('ai', $controller->search($req([], 'GET'))->getData()['preferred'], 'Without .com the first TLD A to Z stays the default');
     $policies::where('tld', 'com')->update(['register_enabled' => true]);
-    $sellers->change('ai', $policies::where('tld', 'ai')->value('revision'), null, false, false, $now);
+    activeFixtureSeller($sellers,'ai', $policies::where('tld', 'ai')->value('revision'), null, false, false, $now);
     Illuminate\Support\Facades\Cache::flush();
 })();
 same(true, $store->endings()[0]['testEnvironment'], 'D7 public catalogue carries only a test boolean');
@@ -98,10 +98,10 @@ same(null, $store->endings()[0]['register'], 'Owned withdrawal invalidates cache
 $tlds[0]->update(['register_enabled' => true]); $native->publish($tlds[0]->id, $now);
 same('$7.80', $store->endings()[0]['register'], 'Owned publication restoration is visible');
 $tlds[1]->fill(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '9.00', 'fixed_renew' => '11.00', 'fixed_transfer' => '10.00'])->save();
-$prices->republish($tlds[1]); $native->publish($tlds[1]->id, $now);
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $now);
+activeFixtureRepublish($prices,$tlds[1]); $native->publish($tlds[1]->id, $now);
+activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $now);
 same('$9.00', $store->endings()[0]['register'], 'Switched selected seller table');
-$sellers->change('com', 3, $tlds[0]->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com', 3, $tlds[0]->server_id, true, true, $now);
 $result = $check('EXAMPLE.COM.')->getData(true);
 expect(str_contains($result['html'], '>Test</span>'), 'D7 checked AJAX result carries test label');
 same('available', $result['status'], 'Canonical ordinary explicit false premium gets offer');

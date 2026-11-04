@@ -60,7 +60,7 @@ $tld = $tlds[0]; $rule = $tld->only(['use_default_rule', 'pricing_mode', 'fixed_
 try {
     $currency->update(['format' => '1.000,00', 'prefix' => 'US$', 'suffix' => 'USD']);
     $tld->update(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '20.00', 'fixed_renew' => '20.00', 'fixed_transfer' => '1234.56']);
-    $prices->republish($tld->fresh()); $native->publish($tld->id, $now);
+    activeFixtureRepublish($prices,$tld->fresh()); $native->publish($tld->id, $now);
     $clock->instant = $now; $op = $newTransfer(placeholderComFixtureName('custom-native-money-placeholder.com'), 0, true, false);
     expect($reminders->remind($op->domain_id), 'M1 custom-format paid transfer queues its real notice');
     $mail = Mail::queued(DomainNotice::class)->last();
@@ -71,7 +71,7 @@ try {
     same([false, $queued], [$reminders->remind($op->domain_id), Mail::queued(DomainNotice::class)->count()], 'M1 formatted notice remains deduplicated');
 } finally {
     $currency->update($currencyFormat); $tld->update($rule);
-    $prices->republish($tld->fresh()); $native->publish($tld->id, $now);
+    activeFixtureRepublish($prices,$tld->fresh()); $native->publish($tld->id, $now);
 }
 $clock->instant=$now;$op=$newTransfer(placeholderComFixtureName('unknown-payment-time-placeholder.com'),0,true,false);
 $p=$op->policy;unset($p['paid_at']);DB::table('domains_operations')->where('id',$op->id)->update(['policy'=>encrypt(json_encode($p),false)]);

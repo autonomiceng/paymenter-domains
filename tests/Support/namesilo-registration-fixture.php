@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/registration-fixture.php';
 require_once __DIR__.'/namesilo-account-guard.php';
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now()); $nsProduct = $native->product($tlds[1], 'register');
+activeFixtureSeller($sellers,'com', 2, $tlds[1]->server_id, true, true, $clock->now()); $nsProduct = $native->product($tlds[1], 'register');
 $nsNew = static function ($name) use ($nsProduct, $user) {
     $cart = commerceCart($user); commerceAdd($cart, $nsProduct, $name); commerceCheckout($user, $cart);
     $op = Domain::where('domain', $name)->sole()->operations()->sole();

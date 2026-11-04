@@ -147,7 +147,7 @@ foreach (['consume', 'binding'] as $failure) {
 }
 commerceReject(fn () => clone $engine); commerceReject(fn () => serialize($engine));
 // Old bindings survive future seller changes and flags; seller policy is not dispatch authority.
-$op = $recover(); $sellers->change('example.com', 2, $tlds[1]->server_id, true, true, $now);
+$op = $recover(); activeFixtureSeller($sellers,'example.com', 2, $tlds[1]->server_id, true, true, $now);
 $tlds[0]->update(['enabled' => false, 'register_enabled' => false]);
 same('uncertain', $engine->execute($op->id)->state, 'Paid prior seller dispatches after switch and sale withdrawal');
 echo "Operation expiry, late evidence and one-attempt recovery checks passed\n";
