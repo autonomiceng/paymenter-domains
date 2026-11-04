@@ -26,6 +26,7 @@ foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$f
     $fixtureCosts[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($c->action,$c->term,$c->enabled,$c->total,$c->sourceUnit,$c->source,$clock->now(),$clock->now()->modify('+30 days'),normalized:true);
 }
 $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($fixtureBinding,'com',$fixtureCosts),$fixtureRevision());
+activeFixtureRepublish($native,$tlds[0]->id);
 EnomTestSendLimitSchema::install();BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));
 // The registrar edge only: the page, service and balance row are real.
