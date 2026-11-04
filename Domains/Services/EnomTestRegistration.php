@@ -90,6 +90,9 @@ final class EnomTestRegistration
         if($binding->registrarKey!=='enom'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test&&!EnomLive::enabled($binding,'catalogue')){return false;}
         if($binding->environment===\Paymenter\Extensions\Servers\Domains\Data\Environment::Live&&!EnomLiveActivation::current($binding)){return false;}
         try {
+            if (\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed() !== null) {
+                return EnomProtocol::accepts($binding, $protocol);
+            }
             $accepted=CatalogueAcceptances::load($binding,$lock);
             return $protocol['batch_route']===true&&$accepted->registrationRoute===$protocol['route']
                 &&$accepted->registrationIntervalSeconds===$protocol['interval_seconds'];
