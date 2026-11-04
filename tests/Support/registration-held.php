@@ -26,9 +26,15 @@ $ending='test';
 $ports=\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
 $revision=$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,$ending,[new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',new DateTimeImmutable,new DateTimeImmutable('+1 day'))]),new \Paymenter\Extensions\Servers\Domains\Catalogue\Revision(0,0,0));
 $tld=Tld::where('server_id',$server->id)->sole();
-$native=app(NativeCatalogue::class);$native->publish($tld->id);
+$native=app(NativeCatalogue::class);
+// Historical withdrawn mapping is adversarial native input, not a new offer projection.
+$category=App\Models\Category::firstOrCreate(['slug'=>'domains'],['name'=>'Domains','description'=>'Domains']);
+$product=App\Models\Product::create(['name'=>'Withdrawn synthetic domain','slug'=>NativeCatalogue::slug($tld,'register'),
+    'category_id'=>$category->id,'server_id'=>$server->id,'hidden'=>true,'stock'=>null,'per_user_limit'=>0,'allow_quantity'=>'separated']);
+foreach(['domains_catalogue'=>'1','domains_tld_id'=>(string)$tld->id,'domains_action'=>'register','domains_registrar'=>'namesilo'] as $key=>$value){$product->settings()->create(['key'=>$key,'value'=>$value,'type'=>'string','encrypted'=>false]);}
+$product->plans()->create(['name'=>'1 year','type'=>'recurring','billing_period'=>1,'billing_unit'=>'year']);
 $sellers=app(SellerPolicies::class);$sellers->initialize($ending);
-$product=$native->product($tld,'register');same(null,$product->stock,'Fresh withdrawn registration product has unlimited stock');
+same($product->id,$native->product($tld,'register')->id,'Adversarial mapping retains its native route');same(null,$product->stock,'Fresh withdrawn registration product has unlimited stock');
 same([],app(Storefront::class)->endings(),'Configured identity alone publishes no offer');
 commerceReject(fn()=>app(Storefront::class)->offer($ending,'register',1));
 same(null,$tld->fresh()->catalogue_facts,'Identity and prices supply no registry/term facts');
