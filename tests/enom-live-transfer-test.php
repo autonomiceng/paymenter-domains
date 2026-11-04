@@ -30,6 +30,8 @@ config(['domains.enom_live.accounts.live-uid.evidence'=>$evidence,'domains.suppo
 DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['finished_at'=>$clock->now()->getTimestamp()]);
 $activate=static fn()=>$write('activate',['registration'=>false,'renewal'=>true,'management'=>false,'transfer'=>true,'confirmed'=>true]);
 
+// Separate real native admission/payment and runtime scenarios to retain the 65-second per-file budget.
+if(!($liveTransferRuntime??false)){
 $deny(fn()=>$write('live_transfer',['accept'=>true,'verified'=>true]));
 expect(!Policy::accepted($binding),'Activate is required even with verified input');
 $publicOffers=static function(bool $expected,string $stage):void {
@@ -91,6 +93,12 @@ $write('live_transfer',['accept'=>true]);$pay();same('paid',App\Models\Invoice::
 $write('live_transfer',['accept'=>false]);$calls=count($GLOBALS['enomWire']['forms']);
 same(null,app(\Paymenter\Extensions\Servers\Domains\Services\PayCheck::class)->stop(App\Models\Invoice::findOrFail($op->invoice_id)),'A fully paid Live invoice stays outside the pay gate');
 same($calls,count($GLOBALS['enomWire']['forms']),'A fully paid Live invoice makes no name read');$write('live_transfer',['accept'=>true]);
+echo "Live transfer admission and partial-payment refusals passed without sockets.\n";$nativeSuccessful=true;return;
+}
+$activate();$write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class)->product($tld,'transfer');
+expect($transferProduct!==null,'Reviewed active runtime fixture publishes a transfer product');
+$cart=commerceCart($user);commerceAdd($cart,$transferProduct,placeholderComFixtureName('live-transfer-runtime-placeholder.com'));commerceCheckout($user,$cart)->assertHasNoErrors();
+$op=Domain::where('domain',placeholderComFixtureName('live-transfer-runtime-placeholder.com'))->sole()->operations()->sole();App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);
 $request=Illuminate\Http\Request::create('/code','POST',['transfer_code'=>'Live:Case-Sensitive + %']);$request->setUserResolver(fn()=>$user);app(TransferInputs::class)->submitCode($request,$op->id);
 $run=static fn()=>app(RuntimeWork::class)->operation($op->id);
 $reset=static function()use($server,$setupReply):void {Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();\Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$setupReply]);};
@@ -151,21 +159,6 @@ try {
     same(500,(int)$ledger->value('used'),'Refused background reservation spends no checkout headroom');
 }finally{$budget->release($binding,$origin,$token);}
 EnomLiveCalls::reserve($binding);same(501,(int)$ledger->value('used'),'Checkout retains its allowance after the background scope throws');
-// Price readiness uses the same entry time as the other activation checks, even across its age boundary.
-$activation=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::class;
-$entry=$clock->now();$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole();
-DB::table('domains_prices')->where('server_id',$server->id)->where('action','renew')
-    ->update(['observed_at'=>$entry->modify('-172799 seconds')->format('Y-m-d H:i:s')]);
-$missingPrice=static fn(array $problems):bool=>(bool)array_filter($problems,static fn(string $problem):bool=>str_starts_with($problem,'Costs and prices Missing.'));
-$ready=$activation::problems($account,['renewal'=>true]);
-expect(!$missingPrice($ready),'Renewal price at age 172799 seconds is ready');
-$clock->at=$entry->modify('+1 second');
-expect($missingPrice($activation::problems($account,['renewal'=>true])),'Renewal price at age 172800 seconds is missing');
-$advancing=new class($entry) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {
-    public function __construct(private DateTimeImmutable $at) {}
-    public function now():DateTimeImmutable {$at=$this->at;$this->at=$this->at->modify('+1 second');return $at;}
-};
-app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$advancing);
-try{same($ready,$activation::problems($account,['renewal'=>true]),'Advancing clock preserves the activation-entry price readiness');}
-finally{app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);$clock->at=$entry;}
+// Retired fixed 172800-second legacy-column age algorithm: offer-evaluator-test.php proves independent
+// cost/facts freshness at freshUntil and future observations; offer-installed-readiness-test.php proves real local activation routing.
 echo "Live transfer gates, one guarded send and opt-out recovery passed without sockets.\n";$nativeSuccessful=true;

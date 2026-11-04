@@ -128,6 +128,7 @@
     "tests/enom-test-management-guards-test.php",
     "tests/enom-test-transfer-guards-test.php",
     "tests/enom-live-transfer-test.php",
+    "tests/enom-live-transfer-runtime-test.php",
     "tests/renewal-safety-test.php",
     "tests/renewal-cycles-test.php",
     "tests/closed-renewal-summary-test.php",
