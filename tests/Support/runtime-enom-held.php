@@ -77,7 +77,7 @@ $clock->at=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();resetWir
 require_once __DIR__.'/installed-offer-evidence.php';
 activeFixtureClock($sellers)->instant=$clock->now();
 Illuminate\Support\Facades\Auth::setUser(App\Models\User::where('email','fixture-enrollment@example.test')->sole());
-installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
+installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'),'8.0000');
 
 $renewalResult=$held['renewal']->run($renew->id,$held['renewal_writer']);
 same('uncertain',$renewalResult->state,'Renewal timeout after send stays uncertain: '.json_encode([$renewalResult->safe_code,array_column($GLOBALS['enomWire']['forms'],'Command')]));

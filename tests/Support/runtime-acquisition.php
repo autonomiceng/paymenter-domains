@@ -34,12 +34,13 @@ $other=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(A
 $state=(object)['query'=>null,'reads'=>0,'premium'=>false,'writes'=>[],'rdap'=>0];
 $registry=new RegistrarRegistry;
 $verifier=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};
-$registry->register('enom',['token'],$verifier,static function($b)use($clock,$state){
+$reader=static function($b)use($clock,$state){
     same(0,DB::transactionLevel(),'Composition reader runs outside financial locks');$state->reads++;
     $quote=new QuoteEvidence($state->query,new Money($state->query->action===Action::Transfer?'7.00':'6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
     return new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
         new Evidence(quote:$quote,balance:new Money('100.00','USD'),available:true,premium:$state->premium)));
-});
+};
+$registry->register('enom',['token'],$verifier,$reader,null,false,$reader);
 $freshBindings=new AccountBindings($registry);
 $precheck=new TransferPrecheck(new Rdap(static function($url)use($state){
     same(0,DB::transactionLevel(),'Transfer RDAP runs outside financial locks');$state->rdap++;

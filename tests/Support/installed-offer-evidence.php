@@ -17,9 +17,11 @@ function installedOfferEvidence($binding,$clock,bool $transfer=false): Tld
 }
 
 /** Independent renewal-support premise for financial cases advancing to the following year. */
-function installedRenewalFacts($binding,DateTimeImmutable $observedAt,DateTimeImmutable $until): void
+function installedRenewalFacts($binding,DateTimeImmutable $observedAt,DateTimeImmutable $until,string $cost='10.0000'): void
 {
     $ports=CallerPorts::routed();$query=new Query($binding,['com'],'renew');
+    $ports->apply(new FeedObserved($binding,'com',[new Cost('renew',1,true,$cost,CostUnit::TermTotal,'independent_synthetic_annual_cost',$observedAt,$until)]),
+        $ports->readOffers($query,Context::Staff)[0]->revision);
     $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[],'renew'=>[1],'transfer'=>[]],[],true,false,false,'independent_synthetic_annual_support',$observedAt,$until)),
         $ports->readOffers($query,Context::Staff)[0]->revision);
 }
