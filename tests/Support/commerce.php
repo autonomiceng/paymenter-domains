@@ -53,7 +53,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         if ($environment === Environment::Live) { $bindings->confirmLiveSite($server->id, rtrim(config('app.url'), '/')); }
         $bindings->setProcessing($server->id, true, $activation ?? syntheticActivation());
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => $key, 'account_fingerprint' => $binding->fingerprint,
-            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3]);
+            'tld' => $ending, 'enabled' => true, 'min_years' => 1, 'max_years' => 3, ...($active?['catalogue_converted'=>true]:[])]);
         $terms = $key === 'enom' ? [1, 3] : [1];
         if($active){
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$ending],'register');
