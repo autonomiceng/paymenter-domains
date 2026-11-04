@@ -13,9 +13,12 @@ $nativeSuccessful=false;config(['domains.enom_test_sends_per_day'=>1000,'domains
 // The limit counts this login's sends in the rolling 24 hours before the scenario clock.
 $recentSends=static fn():int=>EnomTestSendLimit::usage('test-uid')['day'];
 $clock->at=new DateTimeImmutable('2026-10-22T00:10:00Z');Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();resetWire(['reply'=>$reply]);
-// Discard only the preceding scenario's synthetic transfer acceptance before this independent annual import.
-$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
-$write('probe');$write('import',['ending'=>'com']);$write('publish',[],$tld->id);
+// Independent current annual evidence replaces the preceding transfer fixture's support.
+Auth::setUser($staff);config(['domains.enom_writes.renewal'=>true]);
+$write('test_renewal',['accept'=>true,'verified'=>true]);$write('test_transfer',['accept'=>false]);
+$tld=installedOfferEvidence($binding,$clock);
+$write('acceptance',['sell'=>['terms'=>['com'=>['longest'=>1,'transfer'=>false]]]]);
+$write('probe');$write('publish',[],$tld->id);
 $holders=[];
 foreach(['success','cap','overrun','uncertain','auto','grace','partial','anchor','replacement','calendar','race','issuance'] as $case){
     $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$original=$new(placeholderComFixtureName('renewal-'.$case.'-placeholder.com'));$GLOBALS['testRegisteredName']=$original->domain->domain;
@@ -23,6 +26,7 @@ foreach(['success','cap','overrun','uncertain','auto','grace','partial','anchor'
     same('succeeded',$original->fresh()->state,'Renewal starts with proven original holding');$holders[$case]=$original->domain()->firstOrFail();unset($GLOBALS['testRegisteredName']);
 }
 $money=static fn()=>array_map(static fn($table)=>DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all(),['invoices','invoice_items','invoice_transactions','credits']);
+Auth::setUser($staff);$write('test_renewal',['accept'=>false]);
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.renewal'=>$off]);expect(!EnomTestRenewal::enabled($binding),'Only strict true opts in');}
 try{$write('test_renewal',['accept'=>true,'verified'=>true]);throw new LogicException('Off cannot record acceptance');}catch(DomainException $e){same('TEST renewal deployment is unavailable.',$e->getMessage(),'Off review refuses safely');}
 config(['domains.enom_writes.renewal'=>true]);

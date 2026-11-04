@@ -109,7 +109,7 @@ $old->register($binding->fingerprint,fn()=>$legacy);expect(!$old->accepted($acco
 Illuminate\Support\Facades\Auth::setUser(App\Models\User::where('email','fixture-enrollment@example.test')->sole());
 app()->instance(RuntimePorts::class,$closed);$rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account,['label'=>'Active','reason'=>null]),null,'label');
 same(['Not available yet',null,'This site does not offer this yet. Your site admin can turn it on.'],[$rows['Registrations']['value'],$rows['Registrations']['cause'],$rows['Registrations']['help']],'System checks names a feature that is off in server config');
-same('On',$rows['Transfers']['value'],'System checks describes the exact per-action gates');
+same('On',$rows['Transfers (experimental)']['value'],'System checks describes the exact per-action gates');
 app()->instance(RuntimePorts::class,$ports);
 $inputs=new TransferInputs($clock,new Refunds($clock));
 $new=static function(string $name,string $action)use($user,$native,$tlds,$clock,$state,$inputs):Operation{

@@ -36,12 +36,16 @@ $settings=app(StaffSettingsWrites::class);$write=static function(string $action,
 $write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid'=>$transferUid,'token'=>'TEST-SECRET-TOKEN']);$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 if(isset($transferConfigured)){$transferConfigured();}
 $write('probe');
-$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>true]]]);
+require_once __DIR__.'/installed-offer-evidence.php';
+$tld=installedOfferEvidence($binding,$clock,true);
+if($transferEnvironment==='test'){config(['domains.enom_writes.renewal'=>true]);$write('test_renewal',['accept'=>true,'verified'=>true]);}
+$write('acceptance',['sell'=>['terms'=>['com'=>['longest'=>1,'transfer'=>true]]]]);
 // Default pricing is a business-wide setting, so Paymenter reloads its settings after the next request; keep the shop currency in the table as a real install does.
 App\Models\Setting::create(['key'=>'default_currency','value'=>'USD']);
-saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);$write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
+saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
+$write('tld_settings',['retained_annual_retail'=>'13.00'],$tld->id);
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);$write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>true],$tld->id);
-if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);}$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
+if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);}$transferProduct=null;
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void{$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void{$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
 config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();if($transferEnvironment==='test'){$write('processing',['enabled'=>true,'confirmed'=>true]);}
 $user=commerceUser();$user->update(['email'=>'transfer-owner@example.com']);foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}

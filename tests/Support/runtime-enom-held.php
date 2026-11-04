@@ -74,7 +74,8 @@ config(['settings.credits_auto_use'=>false]);$billing=new DomainBilling($heldBin
 $renew=Operation::where('invoice_id',$invoice->id)->sole();DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 App\Models\InvoiceTransaction::create(['invoice_id'=>$invoice->id,'amount'=>$renew->amount,'fee'=>'0.00','status'=>'succeeded']);
 $clock->at=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();resetWire(['timeout'=>true]);
-same('uncertain',$held['renewal']->run($renew->id,$held['renewal_writer'])->state,'Renewal timeout after send stays uncertain');
+$renewalResult=$held['renewal']->run($renew->id,$held['renewal_writer']);
+same('uncertain',$renewalResult->state,'Renewal timeout after send stays uncertain: '.json_encode([$renewalResult->safe_code,array_column($GLOBALS['enomWire']['forms'],'Command')]));
 same(['Extend'],array_column($GLOBALS['enomWire']['forms'],'Command'),'One genuine renewal monetary send');
 same('no',$GLOBALS['enomWire']['forms'][0]['UseCreditCard'],'Renewal never charges a card');
 $fresh=$heldFactory();Cache::flush();$fresh['renewal']->run($renew->id,$fresh['renewal_writer']);
