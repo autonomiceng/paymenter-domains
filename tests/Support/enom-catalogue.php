@@ -19,7 +19,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,NativeCatalog
 // offer-restore-sales-test.php; physical cap/stale reviews: enom-test-send-limit-test.php.
 // Frozen checkout/funding remains in offer-commerce-test.php and installed registration phases.
 $clock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock { public function now():DateTimeImmutable{return new DateTimeImmutable('2026-11-02T12:00:00Z');} };
-app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
     'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true,
     'domains.enom_test_sends_per_day'=>500,'domains.enom_test_sends_per_minute'=>100000]);
