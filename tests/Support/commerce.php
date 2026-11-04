@@ -14,7 +14,12 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
-    if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class); }
+    if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
+        // Fresh empty ports keep the installed catalogue contract, without retaining provider factories.
+        $runtimePorts=new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
+        $runtimePorts->registerInitialManagedRecordObservations(\Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
+        app()->instance(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class,$runtimePorts);
+    }
     // Active fixtures already ran every schema and verification through the native installer.
     if (!$active) {
         FoundationSchema::install(); SalesPolicySchema::install();
