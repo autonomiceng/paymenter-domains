@@ -26,11 +26,9 @@ final class AccountChecklist
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
     private const NOT_YET='Not available yet';
-    private const NAMESILO='Not offered for NameSilo.';
     private const REGISTRATIONS='Lets customers buy domains on this account. The site sets this, so it has no switch here. Orders must be on too.';
     private const TRANSFERS='Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too. Experimental: it has never run against a real test transfer.';
     private const RENEWALS='Can issue renewal invoices, use customer credit, try saved Auto Pay and send paid renewals. Off: no new invoices. Issued invoices stay payable, and paid renewals wait.';
-    private const BILLING='Controls billing only, not sending renewals to NameSilo. Can issue invoices, use customer credit and try saved Auto Pay. Off: no new invoices. Issued invoices stay payable.';
     private const MANAGEMENT='Sends changes to DNS records, nameservers and contact details to the registrar. Off: those changes are not sent.';
     private static function row(string $label,?string $value,?string $tone=null,string|Htmlable|null $cause=null,?string $action=null,?string $help=null): array
     { return compact('label','value','tone','cause','action','help'); }
@@ -53,12 +51,13 @@ final class AccountChecklist
         $rows[]=$gates['register']===true?self::row('Registrations','On, follows Orders',null,null,null,self::REGISTRATIONS):self::unavailable('Registrations',$off($gates['register']));
         $rows[]=self::transfers($a,$binding,$gates['transfer'],$off);
         foreach(['renewal'=>['Renewals',EnomTestRenewal::class,self::RENEWALS],'management'=>['DNS, nameservers and contacts',EnomTestManagement::class,self::MANAGEMENT]] as $key=>[$label,$feature,$help]){
+            if($key==='management'&&$a->registrar_key==='namesilo'){$help='Sends nameserver and contact changes to NameSilo. DNS records and DNSSEC are not offered for NameSilo.';}
             $rows[]=match(true){
                 $binding===null=>[...self::unavailable($label,$help),'cause'=>'Restore the API connection first.'],
                 !$feature::enabled($binding)&&!$feature::stored($binding)&&!($key==='renewal'&&RenewalBillingSettings::anyOn((int)$a->server_id))=>self::unavailable($label,self::siteOff($a)),
                 default=>self::writeSwitch($a,$label,$key,$key==='renewal'?EnomTestRenewal::on($binding):$feature::stored($binding),$help)};
         }
-        foreach($rows as &$row){if($row['label']==='DNS, nameservers and contacts'&&$row['value']==='On'){$row['cause']='Staff and customers can change these.';}}
+        foreach($rows as &$row){if($row['label']==='DNS, nameservers and contacts'&&$row['value']==='On'){$row['cause']=$a->registrar_key==='namesilo'?'Staff and customers can change nameservers and contacts. DNS records and DNSSEC are not offered for NameSilo.':'Staff and customers can change these.';}}
         unset($row);
         if ($binding !== null && $a->registrar_key === 'enom') {
             $on=\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::stored($binding);
@@ -66,6 +65,7 @@ final class AccountChecklist
             $cause=$ready?'Late renewal is paused until you approve it. Turn on to allow billing for expired domains.':(EnomTestRenewal::accepted($binding)?'Ask your site admin to record Enom’s late renewal evidence.':'Late renewal is paused. Turn on Renewals first.');
             $rows[]=self::paused($a,self::row('Late renewal',$on?'On':'Off',$on?'success':null,$on?null:$cause,$ready||$on?'late_renewal':null,\Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP));
         }
+        if($a->registrar_key==='namesilo'){$rows[]=self::row('Late renewal','Not supported',null,'Late renewal is not offered for NameSilo.');}
         return $rows;
     }
     /** Live stays off until activation; sent transfers keep reconciling after revocation. */
@@ -74,10 +74,10 @@ final class AccountChecklist
         if($a->environment==='live'&&$binding===null){return [...self::unavailable('Transfers',self::TRANSFERS),'cause'=>'Restore the API connection first.'];}
         if($a->environment==='live'){
             if(!EnomTestTransfer::enabled($binding)&&!EnomTestTransfer::stored($binding)){return self::unavailable('Transfers',self::siteOff($a));}
-            return self::writeSwitch($a,'Transfers','transfer',EnomTestTransfer::stored($binding),'Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too.');
+            return self::writeSwitch($a,'Transfers (experimental)','transfer',EnomTestTransfer::stored($binding),'Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too.');
         }
         if($binding!==null&&(EnomTestTransfer::enabled($binding)||EnomTestTransfer::stored($binding))){$on=EnomTestTransfer::stored($binding);return self::row('Transfers (experimental)',$on?'On':'Off',$on?'success':null,null,'test_transfer',self::TRANSFERS);}
-        $help=match(true){$a->registrar_key!=='enom'=>$off($gate),$binding===null=>'Restore the API connection first.',
+        $help=match(true){$a->registrar_key!=='enom'=>self::siteOff($a),$binding===null=>'Restore the API connection first.',
             config('domains.enom_identity.environment')!=='test'=>'Set domains.enom_identity.environment to test in the site config, then reload this page.',
             config('domains.enom_catalogue.enabled')!==true=>'Set domains.enom_catalogue.enabled to true in the site config, then reload this page.',
             default=>'Set domains.enom_writes.transfer to true in the site config, then turn on Transfers here.'};
@@ -92,12 +92,6 @@ final class AccountChecklist
             $live&&!EnomLiveActivation::current(CatalogueAcceptances::binding($a))=>self::row($label,'Off',null,'Paused until setup is approved. Use Activate to see what is missing.',null,$help),
             $key==='renewal'&&RenewalBillingSettings::read((int)$a->server_id)['issue_days']===null=>self::row($label,'Off',null,'Renewal billing is paused. Fix the invoice days first.',null,$help),
             default=>self::row($label,'Off',null,match($key){'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
-    }
-    /** NameSilo has no send permission here, so Renewals is its two billing flags. A bad saved calendar can't be saved back, so it waits for Edit schedule. */
-    private static function billingSwitch(int $server): array
-    {
-        $on=RenewalBillingSettings::anyOn($server);$bad=RenewalBillingSettings::read($server)['issue_days']===null;
-        return self::paused(Account::where('server_id',$server)->sole(),self::row('Renewals',$on?'On':'Off',$on?'success':null,$bad?'Saved invoice days are invalid. Edit schedule to fix them.':($on?null:'Billing is paused. Ask your site admin to set up renewal sending for NameSilo, then turn on Renewals to allow billing.'),$bad?null:'renewals',self::billingHelp($server,self::BILLING)));
     }
     private static function billingHelp(int $server,string $help): string
     {

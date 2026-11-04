@@ -16,33 +16,35 @@ final class EnomLiveActivation
     public static function defaults(Account $a): array
     {
         $b=CatalogueAcceptances::binding($a);$out=[];
-        foreach(self::FEATURES as $feature){$out[$feature]=$feature!=='transfer'&&EnomLive::enabled($b,$feature);}
+        foreach(self::FEATURES as $feature){$out[$feature]=$feature!=='transfer'&&self::featureEnabled($b,$feature);}
         return $out;
     }
-    private static function engine(): LiveActivation
-    {return new LiveActivation(new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ActivationEvidence);}
+    public static function featureEnabled(AccountBinding $b,string $feature): bool
+    {return $b->registrarKey==='namesilo'?NameSiloFeatureSettings::enabled($b,$feature):EnomLive::enabled($b,$feature);}
+    private static function engine(AccountBinding $b): LiveActivation
+    {return new LiveActivation($b->registrarKey==='namesilo'?new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ActivationEvidence:new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ActivationEvidence);}
     public static function stamp(Account $a,bool $balance=false): string
     {
-        $stamp=self::engine()->stamp($a,$balance);$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed();
+        $stamp=self::engine(CatalogueAcceptances::binding($a))->stamp($a,$balance);$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferReadiness::routed();
         return $offers?hash('sha256',json_encode([$stamp,$offers->stamp($a)],JSON_THROW_ON_ERROR)):$stamp;
     }
-    private static function balance(Account $a): ?object {return self::engine()->balance($a);}
-    private static function evidence(AccountBinding $b): array {return self::engine()->evidence($b);}
-    private static function history(AccountBinding $b,array $e,string $feature): HistoryAcceptance {return self::engine()->history($b,$e,$feature);}
-    public static function requireHistory(HistoryAcceptance $h): void {self::engine()->requireHistory($h);}
-    public static function current(AccountBinding $b): bool {return self::engine()->current($b);}
-    public static function registrationAccepted(AccountBinding $b): bool {return self::engine()->registrationAccepted($b);}
-    private static function receipt(Account $a): array {return self::engine()->receipt($a);}
+    private static function balance(Account $a): ?object {return self::engine(CatalogueAcceptances::binding($a))->balance($a);}
+    private static function evidence(AccountBinding $b): array {return self::engine($b)->evidence($b);}
+    private static function history(AccountBinding $b,array $e,string $feature): HistoryAcceptance {return self::engine($b)->history($b,$e,$feature);}
+    public static function requireHistory(HistoryAcceptance $h): void {self::engine($h->binding)->requireHistory($h);}
+    public static function current(AccountBinding $b): bool {return self::engine($b)->current($b);}
+    public static function registrationAccepted(AccountBinding $b): bool {return self::engine($b)->registrationAccepted($b);}
+    private static function receipt(Account $a): array {return self::engine(CatalogueAcceptances::binding($a))->receipt($a);}
     public static function enabling(Account $a,array $features): array
     {
         $b=CatalogueAcceptances::binding($a);
-        return self::engine()->enabling($a,$features,['registration'=>(self::receipt($a)['registration']??false)===true,
+        return self::engine($b)->enabling($a,$features,['registration'=>(self::receipt($a)['registration']??false)===true,
             'renewal'=>EnomTestRenewal::stored($b),'management'=>EnomTestManagement::stored($b),'transfer'=>EnomTestTransfer::stored($b)]);
     }
     public static function problems(Account $a,array $features): array {return self::readiness($a,$features);}
     private static function readiness(Account $a,array $features,?array $projection=null): array
     {
-        return self::engine()->problems($a,$features,static function(AccountBinding $b,\DateTimeImmutable $now)use($a,$features,$projection):void {
+        return self::engine(CatalogueAcceptances::binding($a))->problems($a,$features,static function(AccountBinding $b,\DateTimeImmutable $now)use($a,$features,$projection):void {
             if($projection===null){self::prices($a,$b,$features,$now);}
             elseif($projection['missing']!==null){throw new \DomainException($projection['missing']);}
         });
@@ -150,11 +152,11 @@ final class EnomLiveActivation
         $r->input($features);
         $r->local(static function()use($r,$features):void {
             $a=Account::where('server_id',$r->serverId)->sole();$b=CatalogueAcceptances::binding($a);
-            if($b->registrarKey!=='enom'||$b->environment!==Environment::Live){throw new \DomainException('Live Enom account required.');}
+            if(!in_array($b->registrarKey,['enom','namesilo'],true)||$b->environment!==Environment::Live){throw new \DomainException('Live registrar account required.');}
             $enabling=self::enabling($a,$features);$receipt=self::receipt($a);
             if($enabling){
                 self::requireReady($a,$enabling);$e=self::evidence($b);
-                $receipt=self::engine()->receiptFor($b);
+                $receipt=self::engine($b)->receiptFor($b);
                 if($enabling['registration']??false){HistoryAcceptances::saveLocked(self::history($b,$e,'registration'));}
             }
             foreach(['renewal'=>EnomTestRenewal::class,'management'=>EnomTestManagement::class,'transfer'=>EnomTestTransfer::class] as $feature=>$class){
@@ -174,7 +176,9 @@ final class EnomLiveActivation
         $features??=self::defaults($a);$b=CatalogueAcceptances::binding($a);$balance=self::balance($a);$details=[];
         $details[]=implode(', ',array_map(static fn($feature)=>ucfirst($feature).' '.($features[$feature]?'On':'Off'),self::FEATURES)).'.';
         $details[]='Account '.$b->fingerprint.', site '.($a->live_site??'Missing: verify the API connection').'.';
-        $details[]='Balance '.($balance?->amount??'Missing: use Check balance').' '.($balance?->currency??'USD').'. '.EnomLiveCalls::facts($b);
+        $provider=$a->registrar_key==='namesilo'?'NameSilo':'Enom';
+        $limits=$provider==='Enom'?EnomLiveCalls::facts($b):'Our daily call and spending limits are set by your site admin.';
+        $details[]='Balance '.($balance?->amount??'Missing: use Check balance').' '.($balance?->currency??'USD').'. '.$limits;
         $billing=RenewalBillingSettings::read((int)$a->server_id);
         $details[]='Renewal invoices '.$billing['issue_days'].' days before expiry, due '.$billing['due_days'].' days before. Renewals also enable scheduled invoices and customer early renewals. Late renewal has a separate account switch.';
         $review=self::priceReview($a,$b,$features,app(Clock::class)->now());$costs=$review['costs'];$missing=$review['missing'];
@@ -187,7 +191,7 @@ final class EnomLiveActivation
             if($row['note']!==null){$exceptions[$row['tld']]=['tld'=>$row['tld'],'note'=>$row['note']];}
         }
         foreach(['registration'=>'register','transfer'=>'transfer'] as $feature=>$action){if(($features[$feature]??false)&&!$counts[$action]){$missing=self::PRICE_MISSING;}}
-        return ['text'=>'Activate the selected Live features. Enom takes domain costs from this account’s balance.',
+        return ['text'=>'Activate the selected Live features. '.$provider.' takes domain costs from this account’s balance.',
             'help'=>implode("\n",$details),'costs'=>$costs,'counts'=>$counts,'tlds'=>count(array_unique(array_column($costs,'tld'))),
             'range'=>$min===null?null:[PricingRule::decimal($min,4),PricingRule::decimal($max,4)],'exceptions'=>array_values($exceptions),'failures'=>$review['failures'],
             'missing'=>self::readiness($a,$features,['missing'=>$missing])];

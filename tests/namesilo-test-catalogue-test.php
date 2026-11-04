@@ -128,7 +128,7 @@ same('13.00',$locked[0]->retail,'Locked seller admission uses the same exact ann
 same($before,count($GLOBALS['nsCatalogueCalls']),'Local readiness and locked sale admission never send');
 $checklist=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Connected','reason'=>null]);
 $rows=array_column($checklist,null,'label');same('On, follows Orders',$rows['Registrations']['value'],'Checklist registrations follow the installed TEST engine');
-same('On',$rows['Transfers']['value'],'Checklist accepts installed TEST transfer gate');
+same('On',$rows['Transfers (experimental)']['value'],'Checklist accepts installed TEST transfer gate');
 app(CartAdmission::class)->boot();app(InvoiceBinding::class)->boot();
 $user=commerceUser();$cart=commerceCart($user);commerceAdd($cart,$offer['product'],'ns16-checkout-placeholder.com');
 commerceCheckout($user,$cart);

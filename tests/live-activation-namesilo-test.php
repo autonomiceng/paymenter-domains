@@ -97,4 +97,9 @@ $bindings->configure($server->id,'namesilo',Environment::Live,['api_key'=>'place
 expect(!$engine->current($binding),'Credential rotation invalidates the receipt while preserving lineage');
 expect($stamp!==$engine->stamp($a),'Credential rotation also makes a displayed activation review stale');
 echo "NameSilo local activation evidence and stale-receipt policy passed without registrar transport.\n";
+$full=staffUser(array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()));
+Illuminate\Support\Facades\Auth::setUser($full);
+expect(Paymenter\Extensions\Servers\Domains\Admin\Support\LiveActivationAction::offered($a->fresh()),'NameSilo has the same reviewed Activate entry point');
+$summary=Paymenter\Extensions\Servers\Domains\Admin\Support\LiveActivationAction::summary($a->fresh())->toHtml();
+expect(str_contains($summary,'NameSilo takes domain costs')&&!str_contains($summary,'Enom'),'Activation summary uses this registrar and its readiness gates');
 $nativeSuccessful=true;

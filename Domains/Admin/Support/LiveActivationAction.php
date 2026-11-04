@@ -16,7 +16,7 @@ final class LiveActivationAction
 {
     public static function offered(Account $a): bool
     {
-        if($a->registrar_key!=='enom'||$a->environment!=='live'||!Staff::can(Staff::POLICY)||!Staff::can(Staff::COSTS)||!Staff::can(Review::permission('activate'))){return false;}
+        if(!in_array($a->registrar_key,['enom','namesilo'],true)||$a->environment!=='live'||!Staff::can(Staff::POLICY)||!Staff::can(Staff::COSTS)||!Staff::can(Review::permission('activate'))){return false;}
         try{CatalogueAcceptances::binding($a);return true;}catch(\Throwable){return false;}
     }
     public static function summary(Account $a,?array $features=null): HtmlString
@@ -37,9 +37,9 @@ final class LiveActivationAction
             ->schema(function()use($a,$id,$stamp,$binding):array {
                 $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$id,null,'activate',$stamp)),Html::make(fn(Get $get)=>self::summary($a,array_combine(EnomLiveActivation::FEATURES,array_map(fn($feature)=>(bool)$get($feature),EnomLiveActivation::FEATURES))))];
                 $defaults=EnomLiveActivation::defaults($a);
-                foreach(['registration'=>'Registrations','renewal'=>'Renewals and renewal invoices','management'=>'DNS, nameservers and contacts','transfer'=>'Transfers'] as $feature=>$label){
-                    $fields[]=Checkbox::make($feature)->label($label)->live()->default($defaults[$feature])->disabled(!EnomLive::enabled($binding,$feature))->dehydrated()
-                        ->helperText($feature==='transfer'?'Leave Off until the approved Live pilot is recorded.':null);
+                foreach(['registration'=>'Registrations','renewal'=>'Renewals and renewal invoices','management'=>'DNS, nameservers and contacts','transfer'=>'Transfers (experimental)'] as $feature=>$label){
+                    $fields[]=Checkbox::make($feature)->label($label)->live()->default($defaults[$feature])->disabled(!EnomLiveActivation::featureEnabled($binding,$feature))->dehydrated()
+                        ->helperText($feature==='transfer'?'Experimental. Requires the transfer evidence accepted for this registrar.':null);
                 }
                 return $fields;
             })->action(function(array $data)use($id):void {

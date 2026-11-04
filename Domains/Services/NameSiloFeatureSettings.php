@@ -38,7 +38,7 @@ final class NameSiloFeatureSettings
                 if(!$live&&($data['verified']??false)!==true){throw new \DomainException('Independent TEST feature review required.');}
             }
             Server::findOrFail($b->serverId)->settings()->updateOrCreate(['key'=>'domains_namesilo_'.$feature],['encrypted'=>true,'type'=>'string',
-                'value'=>json_encode(['fingerprint'=>$b->fingerprint,'credential_revision'=>app(AccountBindings::class)->credentialRevision($b),'enabled'=>$on],JSON_THROW_ON_ERROR)]);
+                'value'=>json_encode(['fingerprint'=>$b->fingerprint,'credential_revision'=>$on?app(AccountBindings::class)->credentialRevision($b):null,'enabled'=>$on],JSON_THROW_ON_ERROR)]);
             if($feature==='renewal'){RenewalBillingSettings::setSwitch($b->serverId,$on);}
             StorefrontCatalogueCache::invalidateAfterCommit();
         });

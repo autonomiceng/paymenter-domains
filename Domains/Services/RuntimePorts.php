@@ -18,7 +18,7 @@ final class RuntimePorts
     public function registered(Account $account): bool
     {
         if(isset($this->factories[$account->account_fingerprint])){return true;}
-        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(CatalogueAcceptances::binding($account))||EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||(EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestManagement::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)))||EnomTestRegistration::recoveryEnabled(CatalogueAcceptances::binding($account));}catch(\Throwable){return false;}
+        try{return \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestRuntime::enabled(CatalogueAcceptances::binding($account))||($account->registrar_key==='enom'&&(EnomTestRegistration::enabled(CatalogueAcceptances::binding($account))||(EnomTestRenewal::enabled(CatalogueAcceptances::binding($account))||EnomTestManagement::enabled(CatalogueAcceptances::binding($account))||EnomTestTransfer::enabled(CatalogueAcceptances::binding($account)))||EnomTestRegistration::recoveryEnabled(CatalogueAcceptances::binding($account))));}catch(\Throwable){return false;}
     }
     private function composition(Account $account): array
     {

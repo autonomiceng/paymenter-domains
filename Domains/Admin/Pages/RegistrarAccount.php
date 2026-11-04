@@ -15,7 +15,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,NameSiloAccountAction,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsReview};
@@ -75,7 +75,7 @@ class RegistrarAccount extends Page
     {
         $id=$this->account;$setup=fn(string $name)=>SettingsActions::setup($id,$this->reviewStamp,$name);
         if (!$this->record()) { return [$setup('configure'),$setup('enroll_sandbox')]; }
-        return [...($this->record()->environment==='test'&&!$this->record()->processing_enabled?[$setup('processing')->name('activate_test')->label('Activate')]:[]),ActionGroup::make([$setup('configure'),NameSiloAccountAction::make($id)])
+        return [...($this->record()->environment==='test'&&!$this->record()->processing_enabled?[$setup('processing')->name('activate_test')->label('Activate')]:[]),ActionGroup::make([$setup('configure')])
             ->label('More')->button()->outlined()->color('gray')->size('sm')->icon('heroicon-m-chevron-down')->iconPosition('after')];
     }
     /** Rebuild the page after a System checks action changed what it shows. */

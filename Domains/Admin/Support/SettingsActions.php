@@ -75,8 +75,8 @@ final class SettingsActions
             'tld_settings'=>'You can always offer fewer years or turn sales off. More years, or turning sales back on, must match this account’s setup. Change years and sales under What you sell. Renewals stay on while customers own domains with this TLD. On some test accounts, cart items that no longer fit are removed.',
             'seller'=>'Renewals stay with the registrar that holds the domain. If this one can’t sell, no other takes over. On some test accounts, this TLD’s cart items from the old registrar are removed.',
             'enroll_sandbox'=>'One read-only balance request goes to the NameSilo test system. The balance is not saved. NameSilo does not confirm who owns the key, so the label is your own note. Orders stay paused and no TLDs are chosen. The next background run may send one scheduled balance read, then at most one a day. If NameSilo refuses that read, it shows as Read failed. Test connection can send one more balance request. To change the key or label, use a different test key on a new registrar account. Domains, What you sell and requests stay with the old one.',
-            'configure'=>'Credentials are saved encrypted. Once connected, the account can’t change.',
-            'probe'=>'For a NameSilo test account, a good read shows the key still works. It does not show who owns it. This does not turn on orders or sales.',
+            'configure'=>'Credentials are saved encrypted. The registrar and Test or Live mode stay fixed. You can rotate the key on this account.',
+            'probe'=>'For NameSilo, a successful balance read confirms the key works. It does not confirm who owns the account. Orders and sales stay unchanged.',
             default=>null,
         };
     }
@@ -207,7 +207,7 @@ final class SettingsActions
             $out[]=Action::make($id.($setup&&$server!==Review::ALL_ACCOUNTS?'_'.$server:''))->label($label)->color(fn()=>$name==='processing'&&$processing()?'danger':'gray')->modalWidth('lg')
                 ->visible(fn()=>!($setup&&$blocked())&&(!in_array($name,Review::PUBLISHES,true)||self::canSee(Review::permission('publish')))&&self::canSee(Staff::POLICY)&&(collect(Review::rights($name))->every(fn($right)=>self::canSee($right))||($name==='override'&&self::canSee(Review::permission('remove_override'))))&&self::featureVisible($server,$name))
                 ->requiresConfirmation(!$switch||$popup)->modalHidden($switch&&!$popup)->modalHeading($setup?fn()=>$popup?$turn().' '.self::POPUPS[$id].'?':self::setupHeading($name,$registrar()!==null):$label)
-                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?"NameSilo accounts can't be connected with API credentials.":self::description($name):self::description($name)))))
+                ->modalDescription($popup?fn()=>self::switchWarning($id,$server):($switch?null:($name==='probe'?fn()=>self::description($name).($registrar()==='namesilo'?' '.self::details($name):''):($name==='configure'?fn(Action $action)=>($action->getRawData()['registrar']??null)==='namesilo'?'Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.':self::description($name):self::description($name)))))
                 ->modalSubmitActionLabel($setup?fn()=>$popup?$turn():self::submitLabel($name,$registrar()!==null):($name==='override'?'Save and publish':'Confirm'))->schema($switch?[]:$fields)
                 ->action(function(#[\SensitiveParameter] array $data,$livewire)use($id,$name,$server,$tld,$setup,$stamp,$switch){
                     try{$data=[...$data,...self::saved($id,$server)];
@@ -362,7 +362,7 @@ final class SettingsActions
             if($a->environment!==$m[1]){return false;}
             $b=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a);
             $class=match($m[2]){'renewal'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::class,'management'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::class,default=>EnomTestTransfer::class};
-            return $class::enabled($b)||$class::stored($b);
+            return $class::enabled($b)||$class::stored($b)||($m[2]==='renewal'&&\Paymenter\Extensions\Servers\Domains\Services\RenewalBillingSettings::anyOn($server));
         }catch(\Throwable){return false;}
     }
     /** Renewals, DNS management and transfers are on when their saved acceptance is current. */
@@ -511,7 +511,7 @@ final class SettingsActions
                 'Sandbox key already enrolled.'=>'This test key is already on another registrar account. Each key can be used once. Keep using that account, or use a different key on a new registrar account. '.self::NOT_SENT,
                 'Existing sandbox enrollment unavailable.'=>'Another test account’s saved details can’t be read, so we can’t check this key. Restore those details, then try again. '.self::NOT_SENT,
                 'Sandbox enrollment unavailable.'=>'NameSilo test accounts are off on this site, and live NameSilo accounts can’t be connected. '.self::NOT_SENT,
-                'Sandbox enrollment is immutable.'=>'A test account can’t be changed. To change the key or label, use a different test key on a new registrar account. Domains, What you sell and requests stay with the old one. '.self::NOT_SENT,
+                'Sandbox enrollment is immutable.'=>'This is an older test enrollment. Connect a local account before rotating its key. '.self::NOT_SENT,
                 'Sandbox enrollment requires a fresh server.'=>'This registrar account already has saved settings, records or domains. Use a new registrar account. '.self::NOT_SENT,
                 'Invalid sandbox enrollment input.'=>'Check the label and key. The label must be one line of up to 128 bytes with no spaces at the start or end, and can’t contain the key. The key can be up to 256 characters, with no spaces or control characters. '.self::NOT_SENT,
                 'Sandbox key check failed.'=>'Nothing was saved. NameSilo did not confirm the key. It may be wrong, or the reply may be missing or unclear. Check the key and try again. Trying again may send another key check.',
