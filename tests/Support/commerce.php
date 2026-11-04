@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CatalogueAcceptances, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = false): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install(); }
@@ -68,15 +68,8 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,$ending,['register','transfer']),$rev());
             $tlds[]=$tld->fresh();continue;
         }
-        $accepted = CatalogueAcceptances::save($binding, 0, [$ending => ['register' => $terms, 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]);
-        $rates = [];
-        foreach ([['renew', 1, '8.00'], ['transfer', 1, '7.00'], ...array_map(static fn ($n) => ['register', $n, '6.00'], $terms)] as [$a, $n, $cost]) {
-            $rates[] = new CatalogueRate($a, $n, $cost, 'synthetic', $now, $now->modify('+1 day'));
-        }
-        $prices->import(new CatalogueEntry($binding, $ending, $rates, $terms, true, true), $accepted, static fn () => null, $now);
-        $native->publish($tld->id, $now); $tlds[] = $tld->fresh();
+        throw new LogicException('Final package fixtures require active commerce.');
     }
-    if(!$active){$sellers->initialize($ending); $sellers->change($ending, 1, $tlds[0]->server_id, true, true, $now);}
     if($active){
         $first=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
         $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($first,[$ending],'register');
