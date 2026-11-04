@@ -82,8 +82,6 @@
     "tests/card-fee-settings-test.php",
     "tests/catalogue-test.php",
     "tests/enom-pricing-test.php",
-    "tests/offer-conversion-test.php",
-    "tests/offer-upgrade-gate-test.php",
     "tests/offer-writer-test.php",
     "tests/offer-work-test.php",
     "tests/seller-policy-test.php",
@@ -94,6 +92,7 @@
     "tests/offer-commerce-test.php",
     "tests/offer-staff-test.php",
     "tests/offer-staff-reads-test.php",
+    "tests/offer-installed-staff-test.php",
     "tests/offer-staff-policy-test.php",
     "tests/offer-pay-check-test.php",
     "tests/offer-cache-test.php",
@@ -474,7 +473,9 @@
     "tests/offer-upgrade-generation-test.php",
     "tests/enom-purchase-failure-test.php",
     "tests/registration-send-deadline-test.php",
-    "tests/lost-reply-status-test.php"
+    "tests/lost-reply-status-test.php",
+    "tests/retained-offer-admission-test.php",
+    "tests/retained-offer-package-test.php"
   ],
   "ui": [],
   "runner": [

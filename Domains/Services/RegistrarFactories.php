@@ -41,7 +41,7 @@ final class RegistrarFactories
     }
     /** Enom uses these suffixes for read/reconciliation parsing. Sending has separate fresh-fact gates. */
     private static function endings(AccountBinding $b): array
-    { return ($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) ? $caps->identities($b) : array_keys(CatalogueAcceptances::load($b)->endings); }
+    { return ($caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()) ? $caps->identities($b) : throw new \DomainException(OfferUpgrade::MESSAGE); }
     public static function install(RegistrarRegistry $registry, ?AccountVerifier $enom = null, ?AccountVerifier $namesilo = null): void
     {
         if ($enom) {
@@ -59,11 +59,7 @@ final class RegistrarFactories
                     $actions=array_values(array_filter(['register','renew','transfer'],static fn($action)=>$caps->endings($binding,$action)!==[]));
                     return new NameSilo\Driver(new NameSilo\Client($binding,$credentials['api_key']),$actions);
                 }
-                $accepted = CatalogueAcceptances::load($binding); $actions = [];
-                foreach ($accepted->endings as $row) {
-                    foreach (['register', 'renew', 'transfer'] as $action) { if ($row[$action] === [1]) { $actions[$action] = $action; } }
-                }
-                return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), array_values($actions), acceptedCatalogue: $accepted);
+                throw new \DomainException(OfferUpgrade::MESSAGE);
             });
         }
     }

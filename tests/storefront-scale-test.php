@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 // Native Eloquent product/settings/plan loading is the regression; pure rule tests cannot cover it.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
@@ -73,7 +74,20 @@ DB::table('prices')->whereNotIn('plan_id', Plan::pluck('id'))->delete();
 DB::table('domains_prices')->where('tld', 'com')->delete(); DB::table('domains_tlds')->where('tld', 'com')->delete();
 PslReviewSchema::install(); WatchSchema::install();
 $clock = new FakeClock($now);
-$store = new Storefront($sellers, $prices, $native, $bindings, new CheckoutEligibility($bindings, $clock), $clock);
+// The active storefront keeps the same reseller-scale bound on a directly arranged synthetic offer set.
+(new Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($binding);
+// Independently observed synthetic facts and matching publication, without 599 provider/writer turns.
+$facts = new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]],
+    [], true, false, false, 'synthetic', $now, $now->modify('+1 day'));
+DB::table('domains_tlds')->update(['catalogue_facts' => Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts($facts),
+    'catalogue_intent' => Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(defaultSell:false,sell:true,longest:1,transfers:false)),
+    'catalogue_published_revision' => json_encode(['offer' => 1, 'defaults' => 0, 'selection' => 1])]);
+$ports = new Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),
+    $clock, $bindings, static fn () => null, static fn () => true);
+$offers = new Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers($ports, $bindings, $native);
+$store = new class($sellers, $prices, $native, $bindings, new CheckoutEligibility($bindings, $clock), $clock) extends Storefront { use OfferCommerceRoute; };
+$store->fixtureOffers = $offers;
+
 app()->instance(Storefront::class, $store); app()->instance(Clock::class, $clock);
 require dirname(__DIR__).'/Domains/routes/web.php'; require dirname(__DIR__).'/Domains/routes/owned.php';
 storefrontViews(); $user = commerceUser(); Auth::login($user);
@@ -102,20 +116,7 @@ foreach (['/domains', '/domains/register', '/domains/pricing'] as $url) {
 }
 same($before, $reads->calls, 'All three page GETs make zero registrar calls');
 expect($failures === [], 'At most 64 queries per page at 599 endings: '.implode(', ', $failures));
-// The dormant routed storefront must retain the same reseller-scale bound as legacy pages.
-$conversion = new Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeConversion;
-same(false, $conversion->batch($binding, 500)['complete'], 'First bounded conversion leaves the remaining scale rows');
-same(true, $conversion->batch($binding, 500)['complete'], 'Second bounded conversion completes the same fixture');
-// Independently observed synthetic facts and matching publication, without 599 provider/writer turns.
-$facts = new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]],
-    [], true, false, false, 'synthetic', $now, $now->modify('+1 day'));
-DB::table('domains_tlds')->update(['catalogue_facts' => Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts($facts),
-    'catalogue_published_revision' => json_encode(['offer' => 1, 'defaults' => 0, 'selection' => 1])]);
-$ports = new Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),
-    $clock, $bindings, static fn () => null, static fn () => true);
-$offers = new Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers($ports, $bindings, $native);
-$routed = new class($sellers, $prices, $native, $bindings, new CheckoutEligibility($bindings, $clock), $clock) extends Storefront { use OfferCommerceRoute; };
-$routed->fixtureOffers = $offers;
+$routed=$store;
 $count = 0; $measuring = true;
 try { $answer = $routed->check('example.scaleaa'); } finally { $measuring = false; }
 echo 'Routed check queries: '.$count."\n";

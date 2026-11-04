@@ -36,5 +36,5 @@ $receipt = UpgradeGate::routeState();
 $entry->installed(); $entry->upgraded('0.1.0');
 same($receipt, UpgradeGate::routeState(), 'Repeat lifecycle calls preserve the committed receipt');
 try { (new UpgradeGate)->activate([]); throw new LogicException('Unauthenticated activation unexpectedly succeeded'); }
-catch (DomainException $e) { expect(str_contains($e->getMessage(), 'Authenticated'), 'Fresh initializer does not weaken maintenance authentication'); }
+catch (DomainException $e) { expect(str_contains($e->getMessage(), 'bridge 0.1.0 at 891124421645'), 'Current package directs retained conversion to the bridge'); }
 $nativeSuccessful = true;

@@ -100,11 +100,9 @@ final readonly class RuntimeWork
             $tlds=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('id','>',$row->tld_cursor)->orderBy('id')->limit(25)->get();
             $tldCursor=(int)$row->tld_cursor;
             $this->attempt('publication',function()use($a,$tlds,&$tldCursor):void {
-                if(($scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed())!==null){$scheduler->wake(AccountBindings::binding($a));return;}
-                $catalogue=TestCatalogue::enabled(AccountBindings::binding($a));
-                foreach($tlds as $t){$this->attempt('publication',fn()=>app(NativeCatalogue::class)->keepCurrent($t,$this->clock->now(),$catalogue),(int)$t->id);}
-                // Complete the scan despite individual failures; wrapping retries every retained TLD.
-                $tldCursor=$tlds->count()===25?$tlds->last()->id:0;
+                $scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed()
+                    ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+                $scheduler->wake(AccountBindings::binding($a));
             },(int)$a->server_id);
             DB::table('domains_runtime_turns')->where('id',$row->id)->update(['tld_cursor'=>$tldCursor,'operation_cursor'=>$ops->count()===25?$ops->last()->id:0,'domain_cursor'=>$domains->count()===25?$domains->last()->id:0,'finished_at'=>$this->clock->now()->getTimestamp()]);
         }
@@ -117,8 +115,11 @@ final readonly class RuntimeWork
         // Dispatch every selected account and independent producer before optional registrar I/O.
         foreach($balanceAccounts as $a){
             $this->attempt('registrar_balance',fn()=>app(RegistrarBalances::class)->daily($a),(int)$a->server_id);
-            $this->attempt('price_sync',fn()=>app(PriceSync::class)->daily($a),(int)$a->server_id);
-            $this->attempt('price_fill',fn()=>app(PriceFill::class)->daily($a),(int)$a->server_id);
+            $this->attempt('price_sync',function()use($a):void {
+                $scheduler=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed()
+                    ?? throw new \DomainException(OfferUpgrade::MESSAGE);
+                $scheduler->sync(AccountBindings::binding($a),\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
+            },(int)$a->server_id);
         }
     }
 }

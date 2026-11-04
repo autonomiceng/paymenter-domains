@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -8,7 +9,7 @@ require __DIR__.'/Support/accounts.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferReader, OfferState, Projection, Query, Revision, UpgradeConversion, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferReader, OfferState, Projection, Query, Revision, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation};
@@ -17,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(method_exists(OfferReader::class, 'readBatch'), 'Mixed-account admission requires one shared batch loader');
 // Native SQLite exercises actual binding, projection and local loading. It cannot prove InnoDB
 // current reads or concurrent blocking; the installed two-connection check remains deferred.
-(new Installation)->install(); extract(commerceFixture());
+(new Installation)->install(); extract(commerceFixture(active:true));
 $clock = new FakeClock($now); $allowed = true; $checked = [];
 $authorize = static function ($q, $context) use (&$allowed): void {
     if (!$allowed && $context !== Context::Public) { throw new DomainException('Permission revoked.'); }
@@ -30,7 +31,7 @@ $reader = new OfferReader($clock, $authorize, $ready);
 $writer = new Writer(new Projection($native), $clock, $authorize, static fn () => true);
 $b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
 $n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
-$converter = new UpgradeConversion; $converter->batch($b); $converter->batch($n);
+$converter = new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture; $converter->batch($b); $converter->batch($n);
 $rev = static fn ($binding) => $writer->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
 foreach ([$b, $n] as $binding) {
     $writer->apply(new FactsObserved($binding, 'com', new Facts(['register' => [1, 3], 'renew' => [1], 'transfer' => [1]],

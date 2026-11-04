@@ -14,9 +14,10 @@ final class PriceCatalogue
     /** Daily sync plus one missed run. This is our sales policy, never a registrar price lock. */
     public const MAX_COST_AGE_SECONDS = 172800;
     protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts
-    { return CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::class); }
+    { return $this->reads ?? CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::class); }
 
-    public function __construct(private readonly PricingRules $rules, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null) {}
+    public function __construct(private readonly PricingRules $rules, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null,
+        private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts $reads = null) {}
 
     /** Cost-only legacy import: deliberately drops publication proof on touched rows. Reads finish before locking. Non-selling TLDs retain holder cost data; native-disabled servers are read-only.
      * Callback returns explicit rate/no-price entries; omissions NEVER withdraw existing terms.
@@ -195,27 +196,10 @@ final class PriceCatalogue
             if ($b->fingerprint !== $fingerprint) { throw new \DomainException('Holder binding changed.'); }
             return $caps->holder($b,$tld,$lock ? ($locked ?? throw new \LogicException('Locked holding TLD required.')) : null);
         }
-        return CallerRouting::legacy(fn () => $this->legacyRenewal($serverId, $fingerprint, $tld, $currency, $now, $lock, $locked));
+        throw new \DomainException(OfferUpgrade::MESSAGE);
     }
 
-    private function legacyRenewal(int $serverId, string $fingerprint, string $tld, string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): RenewalPrice
-    {
-        if ($lock && (DB::transactionLevel() !== 1 || !$locked || (int) $locked->server_id !== $serverId
-            || $locked->account_fingerprint !== $fingerprint || $locked->tld !== $tld)) { throw new \LogicException('Locked holding TLD required.'); }
-        $query = Price::where(['server_id' => $serverId, 'account_fingerprint' => $fingerprint, 'tld' => $tld,
-            'action' => 'renew', 'term' => 1, 'currency' => $currency]);
-        if ($lock) { $query->lockForUpdate(); }
-        $price = $query->first();
-        if (!$price || $price->retail === null || $currency !== 'USD' || $price->unit !== 'term_total') { throw new \DomainException('No published annual retail.'); }
-        $retail = self::retail($price->retail);
-        if (PricingRule::minor($retail) <= 0) { throw new \DomainException('Positive published retail required; complimentary authority is separate.'); }
-        try {
-            $current = $this->current($serverId, $fingerprint, $tld, 'renew', 1, $currency, $now, $lock, $locked);
-            return new RenewalPrice($current->id, $current->revision, $current->retail, $currency, false, $current->staffAlert);
-        } catch (\DomainException|\InvalidArgumentException|\Illuminate\Database\Eloquent\ModelNotFoundException) {
-            return new RenewalPrice($price->id, $price->revision, $retail, $currency, true, $price->wholesale === null ? 'unknown_price' : 'stale');
-        }
-    }
+
 
     /** Fresh cost evidence only; does not check seller, ownership, funding or driver eligibility.
      * lock=true requires caller-held server, account, policy and TLD locks in storage.md order.
@@ -230,25 +214,10 @@ final class PriceCatalogue
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$tld],$action,$term,$currency);
             return $ports->loadBatch([$q],\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Holder,$lock)[0][0]->costPrice($now);
         }
-        UpgradeGate::legacy();
-        return CallerRouting::legacy(fn () => $this->legacyCurrent($serverId, $fingerprint, $tld, $action, $term, $currency, $now, $lock, $locked));
+        throw new \DomainException(OfferUpgrade::MESSAGE);
     }
 
-    private function legacyCurrent(int $serverId, string $fingerprint, string $tld, string $action, int $term,
-        string $currency, \DateTimeImmutable $now, bool $lock = false, ?Tld $locked = null): PriceSnapshot
-    {
-        if ($lock && DB::transactionLevel() === 0) { throw new \LogicException('Price locks require an outer transaction.'); }
-        if ($lock && (!$locked || (int) $locked->server_id !== $serverId || $locked->tld !== $tld || $locked->account_fingerprint !== $fingerprint)) {
-            throw new \LogicException('Locked price validation requires its caller-held TLD.');
-        }
-        $tldRow = $locked ?? Tld::where(['server_id' => $serverId, 'tld' => $tld, 'account_fingerprint' => $fingerprint])->firstOrFail();
-        $hash = self::ruleHash($this->rules->rule($tldRow, $lock));
-        $query = Price::where(['server_id' => $serverId, 'account_fingerprint' => $fingerprint, 'tld' => $tld,
-            'action' => $action, 'term' => $term, 'currency' => $currency]);
-        if ($lock) { $query->lockForUpdate(); }
-        $price = $query->first();
-        return self::currentEvidence($price, $hash, $now);
-    }
+
 
     /** Pure saved-price validation for render snapshots; callers qualify the row's binding and action.
      * Saved costs stop authorizing new sales after the daily sync and one missed run. */

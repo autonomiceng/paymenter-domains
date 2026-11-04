@@ -9,6 +9,22 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 /** Our runaway guard. One native setting per environment/login, shared by all server rows using that login. */
 final class ApiCallLimits
 {
+    public static function usage(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): ?array
+    {
+        try {
+            $account = Account::where('server_id', $binding->serverId)->sole();
+            if (EnomLive::deployment($binding)) {
+                $cap = EnomLive::account($binding)['daily_call_cap'] ?? 0;
+                $used = (int) \Illuminate\Support\Facades\DB::table(EnomLiveCallSchema::TABLE)->where(['account' => hash('sha256', (string) $account->stable_identity), 'day' => EnomTestCalls::day()])->value('used');
+                return ['used' => $used, 'limit' => is_int($cap) && $cap > 0 ? $cap : 0];
+            }
+            if (($uid = EnomTestSendLimit::login($account)) === null) { return null; }
+            $usage = EnomTestSendLimit::usage($uid);
+            if ($usage['day'] === null || $usage['day_limit'] === null || $usage['minute_limit'] === null) { return null; }
+            return ['used' => $usage['day'], 'limit' => $usage['minute_limit'] === 0 ? 0 : $usage['day_limit']];
+        } catch (\Throwable) { return null; }
+    }
+
     // Matches the existing TEST physical guard's upper bound. Staff cannot turn either guard off or remove its ceiling.
     public const MAX=100000;
     private static function query(Environment $environment,string $uid): Builder

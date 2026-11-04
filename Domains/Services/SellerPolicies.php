@@ -12,9 +12,9 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tl
 final class SellerPolicies
 {
     protected function catalogue(): ?AcquisitionOffers
-    { return CallerRouting::resolve(AcquisitionOffers::class); }
+    { return $this->offers ?? CallerRouting::resolve(AcquisitionOffers::class); }
 
-    public function __construct(private readonly PriceCatalogue $prices, private readonly AccountBindings $bindings) {}
+    public function __construct(private readonly PriceCatalogue $prices, private readonly AccountBindings $bindings, private readonly ?AcquisitionOffers $offers = null) {}
 
     public function initialize(string $tld, ?int $generation = null): SalesPolicy
     {
@@ -74,24 +74,10 @@ final class SellerPolicies
     public function selection(string $tld, string $action, int $term, \DateTimeImmutable $now): SaleSelection
     {
         if ($offers=$this->catalogue()) { return $offers->selection($tld,$action,$term); }
-        UpgradeGate::legacy();
-        return CallerRouting::legacy(fn () => $this->legacySelection($tld, $action, $term, $now));
+        throw new \DomainException(OfferUpgrade::MESSAGE);
     }
 
-    private function legacySelection(string $tld, string $action, int $term, \DateTimeImmutable $now): SaleSelection
-    {
-        $policy = SalesPolicy::where('tld', $tld)->firstOrFail();
-        $this->requireAction($policy, $action, $term);
-        $account = $this->account($policy->server_id, false);
-        self::requireSale(AccountBindings::binding($account), $action);
-        $catalogue = $this->tld($account, $tld, false);
-        $this->requireTld($catalogue, $action, $term);
-        PublicationEligibility::require($catalogue, $action, $term);
-        $this->prices->current($policy->server_id, $policy->account_fingerprint, $tld, 'renew', 1, 'USD', $now);
-        $price = $this->prices->current($policy->server_id, $policy->account_fingerprint, $tld, $action, $term, 'USD', $now);
-        return new SaleSelection($tld, $policy->server_id, $policy->registrar_key, $policy->account_fingerprint,
-            $policy->revision, $action, $term, 'USD', $price->id, $price->revision);
-    }
+
 
     /** One display invocation only. Account validation is shared across its selected endings, never admission. */
     public function displayCatalogues(array $endings): array
@@ -104,32 +90,10 @@ final class SellerPolicies
             }
             return $out;
         }
-        UpgradeGate::legacy();
-        return CallerRouting::legacy(fn () => $this->legacyDisplayCatalogues($endings));
+        throw new \DomainException(OfferUpgrade::MESSAGE);
     }
 
-    private function legacyDisplayCatalogues(array $endings): array
-    {
-        $policies = SalesPolicy::whereIn('tld', $endings)->get();
-        $tlds = Tld::whereIn('server_id', $policies->pluck('server_id')->filter()->unique())
-            ->whereIn('tld', $endings)->get()->keyBy(static fn (Tld $t) => $t->server_id.':'.$t->tld);
-        $accounts = []; $rows = [];
-        foreach ($policies as $policy) {
-            if (!$policy->server_id || (!$policy->register_enabled && !$policy->transfer_enabled)) { continue; }
-            $id = $policy->server_id;
-            if (!array_key_exists($id, $accounts)) {
-                $accounts[$id] = null;
-                try { $accounts[$id] = $this->account($id, false); }
-                catch (\Throwable) { /* An unavailable account cannot hide another seller. */ }
-            }
-            $account = $accounts[$id]; $tld = $tlds->get($id.':'.$policy->tld);
-            if (!$account || !$tld || $tld->account_fingerprint !== $account->account_fingerprint
-                || $tld->registrar_key !== $account->registrar_key || $policy->account_fingerprint !== $account->account_fingerprint
-                || $policy->registrar_key !== $account->registrar_key) { continue; }
-            $rows[$policy->tld] = [$policy, $account, $tld];
-        }
-        return $rows;
-    }
+
 
     /** Join native checkout AFTER user/coupon/product locks. No nested transaction or per-line commit.
      * Caller binds ALL invoice/service/reservation/operation writes before its outer commit.
@@ -138,80 +102,13 @@ final class SellerPolicies
     public function admit(array $lines, \DateTimeImmutable $now): array
     {
         if ($offers=$this->catalogue()) { return array_column($offers->admit($lines),'snapshot'); }
-        return CallerRouting::legacy(fn () => $this->legacyAdmit($lines, $now));
+        throw new \DomainException(OfferUpgrade::MESSAGE);
     }
 
-    private function legacyAdmit(array $lines, \DateTimeImmutable $now): array
-    {
-        if (DB::transactionLevel() === 0) { throw new \LogicException('Admission joins the native checkout transaction.'); }
-        if ($lines === [] || !array_is_list($lines)) { throw new \DomainException('Domain cart lines required.'); }
-        foreach ($lines as $line) { if (!$line instanceof SaleSelection) { throw new \DomainException('Invalid domain selection.'); } }
-        $ids = array_values(array_unique(array_map(static fn (SaleSelection $s): int => $s->serverId, $lines))); sort($ids, SORT_NUMERIC);
-        $servers = $accounts = [];
-        foreach ($ids as $id) { $servers[$id] = Server::whereKey($id)->lockForUpdate()->firstOrFail(); }
-        foreach ($ids as $id) { $accounts[$id] = Account::where('server_id', $id)->lockForUpdate()->firstOrFail(); }
-        UpgradeGate::legacy();
-        foreach ($ids as $id) {
-            $binding = AccountBindings::binding($accounts[$id]);
-            foreach ($lines as $line) { if ($line->serverId === $id) { self::requireSale($binding, $line->action); } }
-            $hasNonRegistration = array_filter($lines, static fn (SaleSelection $line): bool => $line->serverId === $id && $line->action !== 'register');
-            if (EnomTestRegistration::sellable($binding) && !$hasNonRegistration) {
-                $this->bindings->requireReadableLocked($servers[$id], $accounts[$id]);
-            } else {
-                $this->bindings->requireProcessingLocked($servers[$id], $accounts[$id]);
-            }
-        }
-        $names = array_values(array_unique(array_map(static fn (SaleSelection $s): string => $s->tld, $lines))); sort($names, SORT_STRING);
-        $policies = [];
-        foreach ($names as $name) { $policies[$name] = SalesPolicy::where('tld', $name)->lockForUpdate()->firstOrFail(); }
-        foreach ($lines as $selected) {
-            $policy = $policies[$selected->tld]; $account = $accounts[$selected->serverId];
-            $this->requireAction($policy, $selected->action, $selected->term);
-            if ($policy->revision !== $selected->policyRevision || $policy->server_id !== $selected->serverId
-                || $policy->registrar_key !== $selected->registrar || $policy->account_fingerprint !== $selected->fingerprint
-                || $account->account_fingerprint !== $selected->fingerprint || $selected->currency !== 'USD') {
-                throw new \DomainException('Seller selection changed; refresh checkout.');
-            }
-        }
-        $catalogues = Tld::where(function ($query) use ($lines): void {
-            foreach ($lines as $s) {
-                $query->orWhere(static fn ($tuple) => $tuple->where('server_id', $s->serverId)
-                    ->where('tld', $s->tld)->where('account_fingerprint', $s->fingerprint));
-            }
-        })->orderBy('id')->lockForUpdate()->get()->keyBy(static fn (Tld $t): string => $t->server_id.':'.$t->tld);
-        // Lock the entire batch before reentrant per-line price validation, regardless of cart order.
-        Price::where(function ($query) use ($lines): void {
-            foreach ($lines as $s) {
-                $query->orWhere(static fn ($tuple) => $tuple->where('server_id', $s->serverId)->where('tld', $s->tld)
-                    ->where('account_fingerprint', $s->fingerprint)->where('currency', $s->currency)->where('action', 'renew')->where('term', 1));
-                $query->orWhere(static fn ($tuple) => $tuple->where('server_id', $s->serverId)->where('tld', $s->tld)
-                    ->where('account_fingerprint', $s->fingerprint)->where('currency', $s->currency)->where('action', $s->action)->where('term', $s->term));
-            }
-        })->orderBy('id')->lockForUpdate()->get();
-        $prices = [];
-        foreach ($lines as $selected) {
-            $tld = $catalogues->get($selected->serverId.':'.$selected->tld);
-            if (!$tld || $tld->registrar_key !== $selected->registrar) { throw new \DomainException('Unsupported seller TLD.'); }
-            $this->requireTld($tld, $selected->action, $selected->term);
-            PublicationEligibility::require($tld, $selected->action, $selected->term, true);
-            $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, 'renew', 1, 'USD', $now, true, $tld);
-            $price = $this->prices->current($selected->serverId, $selected->fingerprint, $selected->tld, $selected->action, $selected->term, 'USD', $now, true, $tld);
-            // A price sync bumps the revision; checkout then takes the current row. The cart still refuses when the
-            // shown price no longer matches, and current() refuses a missing cost or a price below cost.
-            if ($price->id !== $selected->priceId || $price->revision < $selected->priceRevision) { throw new \DomainException('Stale price revision.'); }
-            $prices[] = $price;
-        }
-        return $prices;
-    }
+
 
     /** Staff can curate a seller before Activate; customer selection and locked admission cannot sell yet. */
-    private static function requireSale(AccountBinding $binding, string $action): void
-    {
-        if ($binding->registrarKey === 'enom' && $binding->environment === Environment::Live
-            && !($action === 'transfer' ? EnomTestTransfer::accepted($binding) : EnomTestRegistration::sellable($binding))) {
-            throw new \App\Exceptions\DisplayException('Domains can’t be ordered right now. Remove them to check out.');
-        }
-    }
+
 
     private function account(int $serverId, bool $lock): Account
     {
@@ -242,17 +139,7 @@ final class SellerPolicies
         return $query->firstOrFail();
     }
 
-    private function requireTld(Tld $tld, string $action, int $term): void
-    {
-        if (!$tld->enabled || !$tld->{$action.'_enabled'} || !$tld->renew_enabled
-            || ($action === 'register' && ($term < $tld->min_years || $term > $tld->max_years))) {
-            throw new \DomainException('Seller action or term is unavailable.');
-        }
-    }
 
-    private function requireAction(SalesPolicy $policy, string $action, int $term): void
-    {
-        if (!in_array($action, ['register', 'transfer'], true) || $term < 1 || $term > 10 || ($action === 'transfer' && $term !== 1)
-            || !$policy->server_id || !$policy->{$action.'_enabled'}) { throw new \DomainException('This acquisition is unavailable.'); }
-    }
+
+
 }

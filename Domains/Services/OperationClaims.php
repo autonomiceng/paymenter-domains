@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 /** All financial checks run twice: claim and final seal. No provider callback runs under these locks. */
 final class OperationClaims
 {
-    public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock) {}
+    public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $offers = null) {}
 
     public function requireProcessing(AccountBinding $binding): void { $this->bindings->requireProcessing($binding); }
 
@@ -540,7 +540,7 @@ final class OperationClaims
             $funding = InvoiceFunding::lock((int) $route->invoice_id);
             $server = Server::whereKey($route->server_id)->lockForUpdate()->firstOrFail();
             $account = Account::where('server_id', $route->server_id)->lockForUpdate()->firstOrFail();
-            $catalogue = \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class);
+            $catalogue = $this->offers ?? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class);
             // Lock credentials before domain/operation rows (same server mutex as rotation).
             $server->settings()->orderBy('id')->lockForUpdate()->get();
             $catalogueTld = $catalogue === null ? null

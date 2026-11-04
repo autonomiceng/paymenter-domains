@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, SalesPolicy, T
 /** Explicit customer projection. No model, seller, cost, provider text or read evidence reaches Blade. */
 class Storefront
 {
-    /** Fixed legacy route. No production composition selects the dormant adapter. */
+    /** The installed active offer adapter owns all customer price and eligibility policy. */
     protected function catalogue(): ?AcquisitionOffers
     { return \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class); }
 
@@ -140,18 +140,7 @@ class Storefront
     /** Server-only resolution; links and forms never carry native identities. Cart admission rechecks independently. */
     public function offer(string $ending, string $action, int $term): array
     {
-        if ($offers = $this->catalogue()) { return $offers->offer($ending, $action, $term); }
-        $s = $this->sellers->selection($ending, $action, $term, $this->clock->now());
-        $tld = Tld::where(['server_id' => $s->serverId, 'tld' => $ending, 'account_fingerprint' => $s->fingerprint])->firstOrFail();
-        $product = $this->native->product($tld, $action);
-        if (!$product || $product->stock === 0) { throw new \DomainException('Offer unavailable.'); }
-        $plan = $product->plans()->where('billing_period', $term)->sole(); $this->native->mapping($product, $plan);
-        $p = $this->prices->current($s->serverId, $s->fingerprint, $ending, $action, $term, 'USD', $this->clock->now());
-        $native = $plan->prices()->where('currency_code', 'USD')->sole();
-        if (RetailLine::decimal($native->price) !== $p->retail || RetailLine::decimal($native->setup_fee) !== '0.00'
-            || PricingRule::minor($p->retail) <= 0) { throw new \DomainException('Offer changed.'); }
-        $renew = $this->prices->current($s->serverId, $s->fingerprint, $ending, 'renew', 1, 'USD', $this->clock->now());
-        return ['selection' => $s, 'product' => $product, 'plan' => $plan, 'price' => self::money($p->retail), 'renew' => self::money($renew->retail)];
+        return ($this->catalogue() ?? throw new \DomainException(OfferUpgrade::MESSAGE))->offer($ending, $action, $term);
     }
 
     /** Exact two-decimal display; no float conversion even at the integer boundary. */

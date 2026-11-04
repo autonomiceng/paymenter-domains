@@ -8,6 +8,10 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
+// Fresh installation boots the database cache before these real settings actions.
+Illuminate\Support\Facades\Schema::create('cache',static function($t):void {
+    $t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');
+});
 $writes->run($review('processing'),['enabled'=>false,'confirmed'=>true]);
 staffPanel();$panel=Filament::getCurrentPanel();$pages=[RegistrarAccount::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class];$panel->pages($pages);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($pages,$panel){foreach($pages as $p){$p::registerRoutes($panel);}});

@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CatalogueAcceptances, CheckoutEligibility, ContactProfileSchema, DomainOperations, InvoiceBinding, OperationClaims, Rdap, Refunds, RegistrarRegistry, RegistrationProfiles, TransferInputs, TransferPrecheck, TransferPreflight, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
 if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['app.url'=>'https://domains-tests.invalid']); }
-extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test)); $clock = new FakeClock($now);
+extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test,active:$activeCommerceFixture??false)); $clock ??= new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install(); Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'readers'=>[],'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
@@ -26,7 +26,12 @@ $rdap = new Rdap(static function ($url) use ($state): array {
         : ['objectClassName'=>'domain','ldhName'=>$state->query?->name ?? 'example.com','status'=>['active'],'events'=>[
             ['eventAction'=>'registration','eventDate'=>'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-01-01T00:00:00Z']]])];
 });
-$admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,new TransferPrecheck(new Rdap(fn()=>throw new RuntimeException('Synthetic checkout lookup')))),$clock);
+$checkoutTransfer=new TransferPrecheck(new Rdap(fn()=>throw new RuntimeException('Synthetic checkout lookup')));
+if(isset($offers)){
+    require_once __DIR__.'/offer-commerce.php';
+    $eligibility=new class($bindings,$clock,$checkoutTransfer) extends CheckoutEligibility {use OfferCommerceRoute;};$eligibility->fixtureOffers=$offers;
+    $admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {use OfferCommerceRoute;};$admission->fixtureOffers=$offers;
+}else{$admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,$checkoutTransfer),$clock);}
 $invoiceBinding = new InvoiceBinding($admission,$native,$prices,$clock);
 app()->instance(CartAdmission::class,$admission); app()->instance(InvoiceBinding::class,$invoiceBinding);
 $admission->boot(); $invoiceBinding->boot();
@@ -88,7 +93,7 @@ foreach (['enom','namesilo'] as $key) {
         $state->readers[]=$reader;return $reader;
     });
 }
-$freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock);
+$freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock,$caps??null);
 $exchange = static function ($origin,$command,$p,$timeout) use ($state): string {
     if($command==='contactList'&&$p===[]){return nameSiloDefaultContactReply();}
     same(0,DB::transactionLevel(),'Wire outside locks'); expect($timeout > 0 && $timeout <= 25000,'Bounded wire'); $state->calls[] = $command;
@@ -114,10 +119,11 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
     }
     return json_encode(['request'=>['operation'=>$command],'reply'=>$reply]);
 };
-$makeTransfer = static function (int $i=0, ?WriteFeatures $features=null) use ($tlds,$claims,$clock,$freshBindings,$rdap,&$exchange,&$engine,&$bridge,&$protocol,&$fresh,&$accepted,&$profiles,&$binding): void {
+$caps??=null;
+$makeTransfer = static function (int $i=0, ?WriteFeatures $features=null) use ($tlds,$claims,$clock,$freshBindings,$rdap,$caps,&$exchange,&$engine,&$bridge,&$protocol,&$fresh,&$accepted,&$profiles,&$binding): void {
     $binding = CatalogueAcceptances::binding(Account::where('server_id',$tlds[$i]->server_id)->sole()); $features ??= new WriteFeatures(transfer:true);
     if($binding->registrarKey==='namesilo'&&!\App\Models\Server::findOrFail($binding->serverId)->settings()->where('key','domains_namesilo_expected_default_contact_email')->exists()){\App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_namesilo_expected_default_contact_email'],['value'=>'expected@example.com','type'=>'string','encrypted'=>true]);}
-    $profiles = new RegistrationProfiles($binding,$claims,$clock,$exchange); $accepted = new WriteAcceptance($binding,true,true,25,$profiles);
+    $profiles = new RegistrationProfiles($binding,$claims,$clock,$exchange); $accepted = new WriteAcceptance($binding,true,true,25,$profiles,catalogue:$caps??null);
     $fresh = new TransferPreflight($freshBindings,$features,$accepted,new TransferPrecheck($rdap),$profiles);
     $class='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($i===0?'Enom':'NameSilo').'\\';
     $protocol=$i===0?new ($class.'Transfer')($binding,$exchange):new ($class.'Transfer')($binding,$profiles,$exchange);

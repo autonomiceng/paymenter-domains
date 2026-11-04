@@ -78,8 +78,8 @@ final class OfferReader
                 $q->orWhere(static fn ($q) => $q->where('server_id', $query->binding->serverId)->whereIn('tld', $query->tlds));
             }
         };
-        $tlds = $fetch(UpgradeComparison::query('domains_tlds')->where($scope)->orderBy('id'))->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
-        $prices = $fetch(UpgradeComparison::query('domains_prices')->where($scope)->orderBy('id'))->get()->groupBy(static fn ($p) => $p->server_id.':'.$p->tld);
+        $tlds = $fetch(OfferState::query('domains_tlds')->where($scope)->orderBy('id'))->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
+        $prices = $fetch(OfferState::query('domains_prices')->where($scope)->orderBy('id'))->get()->groupBy(static fn ($p) => $p->server_id.':'.$p->tld);
         if ($display) { return $this->displayRows($queries, $servers, $accounts, $defaults, $policies, $tlds, $prices, $context); }
         $result = []; $evaluator = new Evaluator; $now = $this->clock->now();
         foreach ($queries as $i => $query) {

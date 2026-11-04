@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/OfferFixture.php';
 require __DIR__.'/native-app.php';
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/OfferScheduler.php'), 'One shared account scheduler is required');
 (new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
@@ -9,14 +10,14 @@ require __DIR__.'/Support/management.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeConversion, UpgradeGate, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{FactsObserved, OfferScheduler, OfferWork, PricedFeed, Projection, UpgradeGate, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\RequestContext;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, DomainObservation, HoldingObservationWork, ObservationWork};
 
 [$d,,$original] = $holding(placeholderComFixtureName('shared-holder-placeholder.com'));
 $b = CatalogueAcceptances::binding(Account::where('server_id', $d->server_id)->sole());
-foreach (Account::orderBy('server_id')->get() as $a) { (new UpgradeConversion)->batch(CatalogueAcceptances::binding($a)); }
+foreach (Account::orderBy('server_id')->get() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($a)); }
 $bindings->setProcessing($d->server_id, false);
 $frozen = serialize($original->fresh()->getAttributes());
 $generation = (new UpgradeGate)->pause();

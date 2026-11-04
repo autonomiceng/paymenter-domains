@@ -45,7 +45,7 @@ final class FreshInstallation
 
     public static function install(): void
     {
-        OperationClaims::outside(); Installation::legacy();
+        OperationClaims::outside(); OfferUpgrade::requireCompatible(); Installation::legacy();
         Cache::lock('domains-fresh-installation', 60)->block(5, static function (): void {
             // MariaDB DDL commits transactions. A connection lock survives both DDL and cache TTL expiry.
             $connection = DB::connection(); $mysql = in_array($connection->getDriverName(), ['mysql','mariadb'], true);

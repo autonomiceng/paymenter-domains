@@ -43,21 +43,7 @@ final class StaffSettingsReview
     {return Server::where('extension','Domains')->orderBy('id')->pluck('id');}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
     {
-        if(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()!==null){return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($serverId,$tldId);}
-        if($serverId===self::ALL_ACCOUNTS){return hash('sha256',json_encode([BusinessSetting::stamp($lock),self::domainServers()->map(fn($id)=>self::stamp($id,null,$lock))->all()],JSON_THROW_ON_ERROR));}
-        $read=static fn($q)=>($lock?$q->lockForUpdate():$q)->get();
-        $s=$read(Server::whereKey($serverId))->firstOrFail();
-        $accounts=$read(Account::where('server_id',$serverId));$a=$accounts->first();
-        $tlds=$read(Tld::where('server_id',$serverId)->when($tldId,fn($q)=>$q->whereKey($tldId))->orderBy('id'));
-        $policies=$read(SalesPolicy::whereIn('tld',$tlds->pluck('tld'))->orderBy('id'));
-        $prices=$read(Price::where('server_id',$serverId)->when($tldId,fn($q)=>$q->whereIn('tld',$tlds->pluck('tld')))->orderBy('id'));
-        $settings=$read(DB::table('settings')->where('settingable_type',$s->getMorphClass())->where('settingable_id',$serverId)
-            ->where('key','!=',self::KEY)->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',self::KEY).'.%'])->whereRaw("`key` NOT LIKE ? ESCAPE '!'",['domains!_reminder!_audit.%'])->orderBy('id'))->map(fn($v)=>(array)$v)->all();
-        // What staff set on What you sell rows. Prices a fill writes there do not make a save stale.
-        $sell=$tldId?[]:$read(DB::table(SellTableSchema::ROWS)->where('server_id',$serverId)->where(fn($q)=>$q->whereNotNull('choice')->orWhereNotNull('longest')->orWhereNotNull('transfer'))->orderBy('id')->select(['tld','choice','longest','transfer']))->map(fn($v)=>(array)$v)->all();
-        $raw=static fn($rows)=>$rows->map(fn($v)=>$v->getRawOriginal())->all();
-        return hash('sha256',json_encode([$s->getRawOriginal(),$a?->getRawOriginal(),$raw($accounts),$settings,$raw($tlds),$raw($prices),$raw($policies),$tldId,$sell,$a?ApiCallLimits::forAccount($a):null,$a?->environment==='live'?EnomLiveActivation::stamp($a):null,BusinessSetting::stamp($lock)],JSON_THROW_ON_ERROR));
-
+        return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($serverId,$tldId);
     }
 
     public static function ticket(int $actor,int $server,?int $tld,string $action,string $stamp): string
@@ -82,8 +68,8 @@ final class StaffSettingsReview
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
         if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{
             $state=UpgradeGate::routeState();
-            if($state['state']==='active'&&!in_array($this->action,\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::ACTIONS,true)){UpgradeGate::active($state['generation']);}
-            else{UpgradeGate::legacy();}
+            if($state['state']!=='active'){throw new \DomainException(OfferUpgrade::MESSAGE);}
+            UpgradeGate::active($state['generation']);
         }}
         $this->catalogueStamp=$catalogueStamp;
         if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}
@@ -96,7 +82,7 @@ final class StaffSettingsReview
         if(($t['actor']??null)!==$this->actorId||($t['server']??null)!==$this->serverId||($t['tld']??null)!==$this->tldId||($t['action']??null)!==$this->action
             ||!is_int($t['until']??null)||$t['until']<=time()||!is_string($t['key']??null)||!preg_match('/^[a-f0-9]{32}$/D',$t['key'])||!is_string($t['stamp']??null)
             ||($this->action==='activate'&&EnomLiveActivation::enabling(Account::where('server_id',$this->serverId)->sole(),$this->input)&&($t['ready']??null)!==EnomLiveActivation::stamp(Account::where('server_id',$this->serverId)->sole(),true))
-            ||!hash_equals($this->synced??$t['stamp'],($catalogueStamp!==null?$catalogueStamp():($this->action==='acceptance'&&str_starts_with($t['stamp'],'sell:')?SellRule::stamp($this->serverId):self::stamp($this->serverId,$this->tldId,true))))){throw new \DomainException('Settings changed. Reload this page.');}
+            ||!hash_equals($this->synced??$t['stamp'],($catalogueStamp!==null?$catalogueStamp():self::stamp($this->serverId,$this->tldId,true)))){throw new \DomainException('Settings changed. Reload this page.');}
         // The account mutex serializes checks; the primary key also prevents duplicate claims.
         $keys=DB::table(self::KEYS)->where('server_id',$this->serverId)->where('review_key',$t['key']);
         $used=(clone $keys)->lockForUpdate()->exists();
@@ -172,14 +158,13 @@ final class StaffSettingsReview
         $a=Account::where('server_id',$server)->lockForUpdate()->first();$t=$tld?Tld::whereKey($tld)->lockForUpdate()->first():null;
         $rules=new PricingRules;
         try{$rule=$t?$rules->rule($t,true):$rules->defaultRule(true);}catch(\Throwable){$rule='unavailable';}
-        try{$acceptance=$a?CatalogueAcceptances::load(AccountBindings::binding($a),true):null;$accepted=$acceptance?->endings;}catch(\Throwable){$acceptance=null;$accepted='unavailable';}
         $live=null;
         if($a?->environment==='live'){
             try{$b=AccountBindings::binding($a);$live=['current'=>EnomLiveActivation::current($b),'registration'=>EnomLiveActivation::registrationAccepted($b),'renewal'=>EnomTestRenewal::accepted($b),'management'=>EnomTestManagement::accepted($b),'transfer'=>EnomTestTransfer::accepted($b)];}
             catch(\Throwable){$live='unavailable';}
         }
         return [...($this->action==='new_domain_dns'?['dns_template'=>NewDomainDns::profile($server)?->id]:[]),'server_id'=>$server,'binding'=>$a?->account_fingerprint,'processing'=>$a?->processing_enabled,'tld_id'=>$tld,
-            'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'acceptance_revision'=>$acceptance?->revision,'acceptance'=>is_array($accepted)?['count'=>count($accepted),'changes'=>$this->input['changes']??null,'terms'=>array_intersect_key($accepted,$this->input['changes']??[])]:$accepted,
+            'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'offer'=>$t?['revision'=>$t->catalogue_revision,'intent'=>$t->catalogue_intent]:null,
             'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(AccountBindings::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),

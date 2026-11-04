@@ -34,13 +34,7 @@ final readonly class WriteAcceptance
                 $terms = $caps->requireOrder($binding, $name, $query->action->value, $query->years, $t);
             } catch (\Throwable) { throw new WriteHeld('order_not_supported'); }
         } else {
-        $accepted = CatalogueAcceptances::load($binding, $lock);
-        $parts = CanonicalName::parse($query->name, array_keys($accepted->endings));
-        $row = $accepted->endings[$parts['tld']];
-        if (!in_array($query->years, $row[$query->action->value], true) || $row['renew'] !== [1] || !$row['renewal_safe'] || !$row['registry']) {
             throw new WriteHeld('order_not_supported');
-        }
-        $terms = $row[$query->action->value];
         }
         if ($profile && $binding->registrarKey === 'namesilo' && !($this->profileProofCheck instanceof RegistrationProfiles
             ? $this->profileProofCheck->hasProof($op) : ($this->profileProofCheck && ($this->profileProofCheck)($op) === true))) {

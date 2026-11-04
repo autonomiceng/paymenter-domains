@@ -1,7 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, Facts, FactsObserved, Intent, Projection, Query, UpgradeConversion};
+require_once __DIR__.'/OfferFixture.php';
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, Facts, FactsObserved, Intent, Projection, Query};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionOffers, CartAdmission, CatalogueAcceptances, CheckoutEligibility, Installation, InvoiceBinding, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
@@ -14,10 +15,10 @@ trait OfferCommerceRoute
 }
 function offerCommerceFixture(): array
 {
-    (new Installation)->install(); extract(commerceFixture(true)); $clock = new FakeClock($now);
+    (new Installation)->install(); extract(commerceFixture(true,active:true));
     $ports = new CallerPorts(new Projection($native), $clock, $bindings, static fn () => null, static fn () => true);
     $binding = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
-    foreach (Account::all() as $account) { (new UpgradeConversion)->batch(CatalogueAcceptances::binding($account)); }
+    foreach (Account::all() as $account) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($account)); }
     $q = new Query($binding, ['com'], 'register');
     $rev = static fn () => $ports->readOffers($q, Context::Staff)[0]->revision;
     $ports->apply(new FactsObserved($binding, 'com', new Facts(['register' => [1, 3], 'renew' => [1], 'transfer' => [1]],

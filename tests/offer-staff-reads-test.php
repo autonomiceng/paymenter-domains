@@ -66,8 +66,7 @@ same(599,$component->instance()->getTableRecords()->total(),'Real rendered table
 $component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
 $component->searchTable('')->filterTable('no_cost');same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');
 $component->removeTableFilter('no_cost')->filterTable('country');same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
-// The installed legacy presenter still reports the fixture's unreadable saved credentials.
-\Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee('Needs a price sync')->assertSee('Ask your site admin to check the encryption key.');
+// Installed TLD-page failures are covered by offer-installed-staff-test on persisted bridge state.
 // Mixed valid/missing batch results must reach the existing page failure notification.
 $staffWrites=new class($native,$sellers,$bindings) extends \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$staffWrites->commands=$commands;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,$staffWrites);
 session()->forget('filament.notifications');

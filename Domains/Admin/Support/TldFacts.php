@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price,SalesPolicy,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,EnomTestRegistration,PriceCatalogue,PriceSync,PublicationEligibility,SellRule};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomTestRegistration,PriceCatalogue};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Saved facts only. No reader factory, credentials or provider calls. */
 final class TldFacts
@@ -34,84 +34,21 @@ final class TldFacts
     /** One server-only snapshot per row/render; never retain across requests or use as write authority.
      * Each row: action, term, retail (null when missing), flags (below_cost, cost_missing, not_offered, price_missing, needs_sync, unpublished),
      * fresh, observed and until; cost only with the costs permission. */
-    public static function snapshot(Tld $tld, ?StaffGrants $grants = null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue = null): array
-    {
-        $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
-        if($catalogue!==null){return $catalogue->page(collect([$tld]))[$tld->id];}
-        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
-        $grants ??= Staff::requireView();
-        try{$accepted=CatalogueAcceptances::load(AccountBindings::binding(Account::where('server_id',$tld->server_id)->firstOrFail()));}catch(\Throwable){$accepted=null;}
-        try{$ruleHash=self::ruleHash((new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($tld));}catch(\Throwable){$ruleHash=null;}
-        $saved=Price::where(['server_id'=>$tld->server_id,'account_fingerprint'=>$tld->account_fingerprint,'tld'=>$tld->tld])->orderBy('action')->orderBy('term')->get();
-        return self::build($tld,$grants,$accepted,$ruleHash,$saved,static fn():?int=>self::sellerId($tld->tld));
-    }
+    private static function catalogue(): \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue
+    { return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE); }
+    public static function snapshot(Tld $tld, ?StaffGrants $grants=null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null): array
+    { return ($catalogue??self::catalogue())->page(collect([$tld]))[$tld->id]; }
     /** snapshot() for a page of TLD rows in a fixed number of reads: accounts, acceptances and default rules once per
      * account, including card fees; prices, sellers and domain counts once per page. Keyed by TLD id, each with 'seller' and 'holders' added. */
-    public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants = null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue = null): array
-    {
-        $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
-        if($catalogue!==null){return $catalogue->page($tlds);}
-        \Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::legacy();
-        $grants ??= Staff::requireView();
-        if($tlds->isEmpty()){return [];}
-        $servers=$tlds->pluck('server_id')->map(fn($id)=>(int)$id)->unique()->values()->all();$names=$tlds->pluck('tld')->unique()->values()->all();
-        $accounts=Account::whereIn('server_id',$servers)->orderBy('id')->get()->groupBy('server_id')->map->first();
-        $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;$accepted=[];
-        // An invalid snapshot fails fee rules without retrying the setting for every row.
-        try{$fee=CardFee::read();}catch(\Throwable){$fee=[];}
-        try{$default=$tlds->contains(fn(Tld $t)=>$t->use_default_rule)?self::ruleHash($rules->defaultRule(false,$fee)):null;}catch(\Throwable){$default=null;}
-        foreach($servers as $id){
-            try{$accepted[$id]=CatalogueAcceptances::load(AccountBindings::binding($accounts[$id]??throw new \DomainException));}catch(\Throwable){$accepted[$id]=null;}
-        }
-        $key=static fn($row)=>(int)$row->server_id.'|'.$row->account_fingerprint.'|'.$row->tld;
-        $prices=Price::whereIn('server_id',$servers)->whereIn('tld',$names)->orderBy('action')->orderBy('term')->get()->groupBy($key);
-        $sellers=SalesPolicy::whereIn('tld',$names)->pluck('server_id','tld');
-        $holders=Domain::whereIn('server_id',$servers)->whereIn('tld',$names)->whereNotNull('reservation_name')
-            ->selectRaw('server_id, tld, account_fingerprint, count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy($key);
-        $out=[];
-        foreach($tlds as $t){
-            if($t->use_default_rule){$hash=$default;}else{try{$hash=self::ruleHash($rules->rule($t,false,$fee));}catch(\Throwable){$hash=null;}}
-            $seller=isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null;
-            $out[$t->id]=[...self::build($t,$grants,$accepted[(int)$t->server_id],$hash,$prices[$key($t)]??collect(),static fn():?int=>$seller),
-                'seller'=>$seller,'holders'=>(int)($holders[$key($t)]->holders??0),'demo'=>DemoData::is($accounts[(int)$t->server_id]??null),'pricing'=>self::legacyPricing($t)];
-        }
-        return $out;
-    }
-    private static function ruleHash(array $rule): string
-    {return hash('sha256',json_encode($rule,JSON_THROW_ON_ERROR));}
-    private static function build(Tld $tld, StaffGrants $grants, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, ?string $ruleHash, $saved, \Closure $seller): array
-    {
-        $out=[];
-        foreach($saved as $p){
-            $unavailable=($p->eligibility['price_unavailable']??false)===true;
-            $flags=[];
-            if(($p->hold_reason??($p->eligibility['staff_alert']??null))==='below_cost'){$flags[]='below_cost';}
-            if($p->wholesale===null||($p->hold_reason??($p->eligibility['staff_alert']??null))==='unknown_price'){$flags[]='cost_missing';}
-            if($p->wholesale===null&&$p->observed_at<=now()&&$p->fresh_until!==null){$flags[]='not_offered';}
-            if($p->wholesale!==null&&$p->observed_at->getTimestamp()<=now()->getTimestamp()-PriceCatalogue::MAX_COST_AGE_SECONDS){$flags[]='cost_old';}
-            if($unavailable){$flags[]='price_missing';}
-            if($p->action!=='renew'&&($accepted===null||($p->eligibility['catalogue_revision']??null)!==$accepted->revision)){$flags[]='needs_sync';}
-            if($ruleHash===null||($p->eligibility['rule_hash']??null)!==$ruleHash){$flags[]='unpublished';}
-            $row=['action'=>$p->action,'term'=>(int)$p->term,'retail'=>$unavailable&&$p->action!=='renew'?null:self::money($p->retail),'flags'=>$flags,
-                'synced'=>$p->observed_at<=now()&&$p->fresh_until!==null,'observed'=>$p->observed_at];
-            if($grants->costs){$row['cost']=self::money($p->wholesale,4);}
-            $out[]=$row;
-        }
-        return ['prices'=>$out,'sales'=>self::saleStatus($tld,$saved,$accepted,$ruleHash,$out,$seller)];
-    }
+    public static function page(\Illuminate\Support\Collection $tlds, ?StaffGrants $grants=null, ?\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue $catalogue=null): array
+    { return ($catalogue??self::catalogue())->page($tlds); }
+
+
     /** "Default pricing", "Fixed price" or "Custom markup" for a TLD row. */
     public static function pricing(Tld $t): string
-    {
-        if(($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){return !$catalogue->own($t)?'Default pricing':($catalogue->pricing((int)$t->server_id,$t)['mode']==='fixed'?'Fixed price':'Custom markup');}
-        return self::legacyPricing($t);
-    }
+    { $catalogue=self::catalogue();return !$catalogue->own($t)?'Default pricing':($catalogue->pricing((int)$t->server_id,$t)['mode']==='fixed'?'Fixed price':'Custom markup'); }
     /** Label from the already selected legacy page; no mode query per table row. */
-    private static function legacyPricing(Tld $t): string
-    {
-        if($t->use_default_rule){return 'Default pricing';}
-        if($t->pricing_mode!=='fixed'){return 'Custom markup';}
-        try{return (new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->rule($t)['mode']==='fixed'?'Fixed price':'Custom markup';}catch(\Throwable){return 'Custom markup';}
-    }
+
     /** "USD 12.00"; costs keep their exact precision ("USD 12.3456"). Null when there is no amount. */
     public static function money(?string $value,int $places=2): ?string
     { return $value===null?null:'USD '.($places===4?self::exactMoney(PriceCatalogue::cost($value)):PriceCatalogue::retail($value)); }
@@ -126,7 +63,7 @@ final class TldFacts
     /** "1 year", "3 years" or "1 to 3 years". */
     public static function terms(Tld $t): string
     {
-        if(($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){$t=(clone $t)->forceFill(['min_years'=>$catalogue->setting($t,'min_years'),'max_years'=>$catalogue->setting($t,'max_years')]);}
+        $catalogue=self::catalogue();$t=(clone $t)->forceFill(['min_years'=>$catalogue->setting($t,'min_years'),'max_years'=>$catalogue->setting($t,'max_years')]);
         $years=static fn(int $n):string=>$n.' '.($n===1?'year':'years');
         return $t->min_years===$t->max_years?$years((int)$t->min_years):$t->min_years.' to '.$years((int)$t->max_years);
     }
@@ -161,7 +98,7 @@ final class TldFacts
                 default=>self::missing('Use Edit prices.'),
             };
             // Sync never fills a price for sales that are off.
-            $transfer=$first('transfer');$catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$transfer=!($catalogue?->setting($row,'transfer')??$row->transfer_enabled)&&($transfer['retail']??null)===null?'Off':$price($transfer);
+            $transfer=$first('transfer');$catalogue=self::catalogue();$transfer=!$catalogue->setting($row,'transfer')&&($transfer['retail']??null)===null?'Off':$price($transfer);
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
@@ -176,53 +113,15 @@ final class TldFacts
         }
         return new HtmlString($html.'</tbody></table></div>');
     }
-    public static function acceptance(Account $a): string
-    {
-        try{$binding=AccountBindings::binding($a);$accepted=CatalogueAcceptances::load($binding);$count=count($accepted->endings);$text='Revision '.$accepted->revision.', '.$count.' '.($count===1?'TLD':'TLDs');
-            return self::ordersNeedSave($a,$accepted)?$text.'. Save What you sell to take orders':$text;}
-        catch(\Throwable){return \Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL.'. New sales held. Open What you sell and save it.';}
-    }
+
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
-    public static function ordersNeedSave(Account $a,\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted): bool
-    {
-        if($a->registrar_key!=='enom'||!($a->environment==='live'||EnomTestRegistration::deploymentEnabled()||\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::deploymentEnabled())){return false;}
-        $protocol=\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($accepted->binding);
-        return $accepted->registrationRoute!==$protocol['route']||$accepted->registrationIntervalSeconds!==$protocol['interval_seconds'];
-    }
+
     /** The one fix for each reason a TLD with a saved price is not for sale. */
     public const FIXES=['Cost out of date'=>'Use Sync prices.','Cost missing'=>'Use Sync prices.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and read prices again.'];
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}
-    private static function saleStatus(Tld $t, $saved, ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted, ?string $ruleHash, array $rows, \Closure $seller): array
-    {
-        $off=static fn(string $reason):array=>['label'=>'Not for sale','tone'=>'gray','reason'=>$reason];
-        $flagged=static fn(string $flag):bool=>collect($rows)->contains(fn($r)=>in_array($flag,$r['flags'],true));
-        if($flagged('price_missing')){return $off('Prices need checking');}
-        if(!$t->enabled||(!$t->register_enabled&&!$t->transfer_enabled)){return $off('Stopped by staff');}
-        if($seller()===null){return $off('No registrar selected');}
-        if(!$t->renew_enabled){return $off('Renewals off for this registrar');}
-        $action=$t->register_enabled?'register':'transfer';$published=false;
-        $price=static fn($kind,$years)=>$saved->first(fn($p)=>$p->action===$kind&&$p->term===$years&&$p->currency==='USD');
-        $renew=$price('renew',1);
-        try{if(!$accepted||$accepted->binding->serverId!==$t->server_id||$accepted->binding->registrarKey!==$t->registrar_key
-                ||$accepted->binding->fingerprint!==$t->account_fingerprint){throw new \DomainException;}
-            $now=now()->toDateTimeImmutable();
-            PublicationEligibility::firstEligibleTerm($t,$action,static function(int $term)use($t,$action,$accepted,$renew,$price,$ruleHash,$now,&$published):void{
-                $sale=$price($action,$term);
-                PublicationEligibility::requireEvidence($t,$action,$term,$accepted,$renew,$sale);$published=true;
-                PriceCatalogue::currentEvidence($renew,$ruleHash,$now);PriceCatalogue::currentEvidence($sale,$ruleHash,$now);
-            });
-            return ['label'=>'For sale','tone'=>'success','reason'=>null];
-        }catch(\Throwable){
-            if(!$published){return $off(self::NEEDS_SYNC);}
-            if($flagged('cost_missing')||collect($rows)->contains(fn($r)=>!$r['synced'])){return $off('Cost missing');}
-            if($flagged('cost_old')){return $off('Cost out of date');}
-            // Runtime republishes an older rule once costs are in, so this shows only until its next turn.
-            if($flagged('unpublished')){return $off('Prices not published');}
-            return $off($flagged('below_cost')?'Below cost':'Price missing');
-        }
-    }
+
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
     private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Edit default pricing'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to Default pricing',
         'Select seller'=>'Registrar for new orders changed','Change registrar for new orders'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
@@ -309,51 +208,14 @@ final class TldFacts
     }
     /** Latest saved price time for an account, the time of its last good sync. */
     public static function lastPrices(int $serverId): ?\Carbon\CarbonImmutable
-    {
-        $catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
-        if($catalogue!==null){$at=$catalogue->progress($serverId)['succeeded_at']??null;return $at===null?null:\Carbon\CarbonImmutable::createFromTimestamp((int)$at);}
-        $at=Price::where('server_id',$serverId)->max('observed_at');
-        return $at===null?null:\Carbon\CarbonImmutable::parse($at)->utc();
-    }
+    { $at=self::catalogue()->progress($serverId)['succeeded_at']??null;return $at===null?null:\Carbon\CarbonImmutable::createFromTimestamp((int)$at); }
     /** The current price sync failure: an active hold, or a retained failure newer than the latest saved prices.
      * Returns the plain cause and the failure time (null when the stored failure has no time). */
-    public static function syncFailure(int $serverId, ?\Carbon\CarbonImmutable $lastPrices = null): ?array
-    {
-        if(($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){$s=$catalogue->progress($serverId);return empty($s['failure'])?null:['cause'=>self::syncCause($s['failure']),'at'=>isset($s['failed_at'])?gmdate('M j, Y H:i',(int)$s['failed_at']).' UTC':null];}
-        $row=self::queue($serverId);$facts=self::refreshFacts($serverId,$row);
-        if($facts===null){return null;}
-        try{$at=isset($facts['at'])&&is_string($facts['at'])?\Carbon\CarbonImmutable::parse($facts['at'])->utc():null;}catch(\Throwable){$at=null;}
-        if($row->catalogue_hold===null&&($facts['kind']??null)!=='price_sync'){
-            $last=$lastPrices??self::lastPrices($serverId);
-            if($at===null||($last!==null&&$last>=$at)){return null;}
-        }
-        return ['cause'=>self::currentCause($serverId,$facts['code']),'at'=>$at===null?null:$at->format('M j, Y H:i').' UTC'];
-    }
+    public static function syncFailure(int $serverId, ?\Carbon\CarbonImmutable $lastPrices=null): ?array
+    { $s=self::catalogue()->progress($serverId);return empty($s['failure'])?null:['cause'=>self::syncCause($s['failure']),'at'=>isset($s['failed_at'])?gmdate('M j, Y H:i',(int)$s['failed_at']).' UTC':null]; }
     /** The plain cause for a failure code. A call-capacity failure names the calls needed and left when we know them.
      * The TLD list and the staff alert use the same words; the alert keeps the numbers from when it fired. */
-    public static function currentCause(int $serverId, ?string $code): string
-    {
-        $cause=self::syncCause($code);
-        if($code==='catalogue_call_capacity'){
-            // Retain the failed sync, but show capacity under today's saved cap without a provider read.
-            try{
-                $binding=AccountBindings::binding(Account::where('server_id',$serverId)->sole());$accepted=CatalogueAcceptances::load($binding);
-                $needed=PriceSync::batchedCalls($accepted,array_keys($accepted->endings));
-                if(SellRule::saved($binding)!==null){
-                    if(PriceSync::callsToday($binding)===null){
-                        $cause="Couldn't read our call count or limit. Try again.";
-                    }else{
-                        $left=PriceSync::backgroundLeft($binding,app(Clock::class));
-                        $cause='Price sync needs '.$needed.' calls; '.$left.' calls left for automatic price reads';
-                    }
-                }else{
-                    $left=PriceSync::callsLeft($binding);
-                    if($left!==null){$cause=$left>=$needed?'Our daily call limit has room to retry the price sync ('.$left.' calls left)':'Price sync needs '.$needed.' calls; '.$left.' calls left under our current limit';}
-                }
-            }catch(\Throwable){} // Missing acceptance or usage keeps the original failure and its next step.
-        }
-        return $cause;
-    }
+    public static function currentCause(int $serverId, ?string $code): string { return self::syncCause($code); }
     private static function queue(int $serverId): ?object
     {
         if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_queues')){return null;}
