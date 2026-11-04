@@ -15,8 +15,12 @@ final class NameSiloFeatureSettings
     {
         try{
             $s=Server::findOrFail($b->serverId)->settings()->where('key','domains_namesilo_'.$feature)->first();
-            // Preserve the admitted TEST runtime's defaults until staff deliberately change a feature.
-            if(!$s){return $b->environment===Environment::Test&&self::enabled($b,$feature);}
+            // Preserve TEST defaults; an unsaved renewal choice also requires both billing switches.
+            if(!$s){
+                $billing=$feature==='renewal'?RenewalBillingSettings::read($b->serverId):null;
+                return $b->environment===Environment::Test&&self::enabled($b,$feature)
+                    &&($feature!=='renewal'||$billing['scheduled']&&$billing['manual']);
+            }
             $v=$s->encrypted?json_decode($s->value,true,8,JSON_THROW_ON_ERROR):null;
             return ($v['fingerprint']??null)===$b->fingerprint&&($v['enabled']??null)===true;
         }catch(\Throwable){return false;}

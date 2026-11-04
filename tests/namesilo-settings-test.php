@@ -18,6 +18,20 @@ $page->callAction('activate_test')->assertNotified('Orders resumed');
 expect($account->fresh()->processing_enabled,'Activate enables the authenticated TEST account');
 same(1,$GLOBALS['enrollmentCalls'],'Activate is local and makes no provider request');
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
+// An unsaved TEST renewal choice must agree with the native billing switches.
+$binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account->fresh());
+$rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
+same('Off',$rows['Renewals']['value'],'A fresh TEST account with billing Off displays Renewals Off');
+foreach([[false,false],[true,false],[false,true],[true,true]] as [$scheduled,$manual]){
+    foreach(['domains_billing_enabled'=>$scheduled,'domains_manual_renewals_enabled'=>$manual] as $key=>$on){
+        $server->settings()->updateOrCreate(['key'=>$key],['value'=>$on?'1':'0','type'=>'boolean','encrypted'=>false]);
+    }
+    same($scheduled&&$manual,Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::accepted($binding),
+        'An unsaved TEST renewal permission requires both billing switches');
+}
+// Start the existing toggle/rotation cases from an explicitly reviewed On choice.
+$writes->run($review('test_renewal'),['accept'=>true,'verified'=>true]);
+$page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
 $failures=[];
 foreach(['transfer','renewal','management'] as $feature){
     try{
