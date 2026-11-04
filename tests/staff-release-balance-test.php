@@ -275,7 +275,7 @@ config(['domains.enom_writes.registration'=>true]);
 $current=fixtureOfferFacts($binding);$endings=$current->endings;$endings['com']['register']=[3];
 fixtureObserveOfferFacts($binding,$endings);
 $legacy=$lowEngine->execute((int)$legacy->id);
-same(['held','order_not_supported',null,[]],[$legacy->state,$legacy->safe_code,$legacy->started_at,$legacy->attempt??[]],'Acceptance gate stops before a claim');
+same(['held','write_acceptance_required',null,[]],[$legacy->state,$legacy->safe_code,$legacy->started_at,$legacy->attempt??[]],'Acceptance gate stops before a claim');
 $retry=$legacy->policy['balance_retry'];same(null,$retry['claim_key'],'Retained retry has no purchase claim');
 $beforeCredit=$credit();$beforeSend=$writer->calls;$refunds=app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class);
 $refunds->refundHeld($staff,(int)$legacy->id,'acceptance_unavailable');$legacy=$legacy->fresh();
