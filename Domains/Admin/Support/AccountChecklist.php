@@ -112,7 +112,7 @@ final class AccountChecklist
     /** An Off feature needs attention when this account already manages domains. No settings change here. */
     private static function paused(Account $a,array $row): array
     {
-        if($row['value']!=='Off'||$row['label']==='Transfers'){return $row;}
+        if($row['value']!=='Off'||in_array($row['label'],['Transfers','Transfers (experimental)'],true)){return $row;}
         $domains=Domain::where('server_id',$a->server_id)->where('billing_managed',true);
         if($row['label']==='Late renewal'){
             $now=app(Clock::class)->now();
