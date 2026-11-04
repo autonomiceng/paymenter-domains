@@ -183,6 +183,12 @@
     .domains .domains-stackable td[data-label]::before { content: attr(data-label) " "; color: var(--e-muted); font-size: .75rem; }
     .domains .domains-stackable .domains-cell-wide { grid-column: 1 / -1; }
     .domains .domains-stackable .domains-end { text-align: left; }
+    .domains .domains-head-actions { flex-wrap: nowrap; gap: .5rem; }
+    .domains .domains-head-actions .domains-btn { min-width: 0; padding-inline: .625rem; font-size: .8125rem; }
+    .domains .domains-list td[data-label] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: .5rem; }
+    .domains .domains-list td[data-label]::before { grid-column: 1; grid-row: 1 / span 2; }
+    .domains .domains-list td[data-label] > * { grid-column: 2; min-width: 0; text-align: right; }
+    .domains .domains-list td[data-label] > .domains-status { justify-self: end; }
 }
 
 /* Search */
