@@ -67,7 +67,7 @@ $ports->registerInitialManagedRecordObservations(function()use(&$calls){$calls++
 commerceReject(fn()=>$ports->registerInitialManagedRecordObservations(fn()=>null));
 commerceReject(fn()=>app(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>null));
 // Library fixture supplies verified synthetic identities without any transport or account fallback.
-$installedRuntime=app(Runtime::class);$f=commerceFixture(true,static fn()=>null);extract($f);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);
+$installedRuntime=app(Runtime::class);$installedPorts=app(RuntimePorts::class);$f=commerceFixture(true,static fn()=>null);extract($f);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);
 $t=$tlds[0];app(NativeServerGuard::class)->pause($t->server_id);
 same(false,Account::where('server_id',$t->server_id)->sole()->processing_enabled,'Pause persists');
 ReminderSchedules::enroll($t->server_id);$row=DB::table('domains_reminder_schedules')->where('server_id',$t->server_id)->sole();same(true,(bool)$row->enabled,'New connections default reminder schedules On');
@@ -83,7 +83,7 @@ $history=Review::historyRows(Server::findOrFail($t->server_id));$audit=end($hist
 same('Pause or resume orders',$audit['action'],'Processing change audited');
 same($u->id,$audit['actor_id'],'Actual processing actor is retained');
 same([true,false],[$audit['before']['processing'],$audit['after']['processing']],'Audit records the real On to Off transition');
-app()->instance(Runtime::class,$installedRuntime);
+app()->instance(Runtime::class,$installedRuntime);app()->instance(RuntimePorts::class,$installedPorts);
 // Generic native lifecycle changes cannot repurpose or remove retained identities.
 commerceReject(fn()=>Server::findOrFail($t->server_id)->update(['extension'=>'Enom']));
 commerceReject(fn()=>Server::findOrFail($t->server_id)->delete());
