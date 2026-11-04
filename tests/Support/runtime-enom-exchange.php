@@ -44,7 +44,7 @@ foreach(['acquisition','renewal_writer','management_protocol'] as $role){expect(
 // A corrupt encrypted setting must not be read while constructing ports or staff readiness.
 $setting=App\Models\Server::find($binding->serverId)->settings()->where('key','domains_credentials')->sole();$raw=$setting->getRawOriginal('value');
 DB::table('settings')->where('id',$setting->id)->update(['value'=>'invalid-ciphertext']);$factory();
-$ports=new RuntimePorts;$ports->register($binding->fingerprint,$factory);expect($ports->accepted($account),'Pure readiness needs no plaintext');
+$ports=installedRuntimePorts();$ports->register($binding->fingerprint,$factory);expect($ports->accepted($account),'Pure readiness needs no plaintext');
 DB::table('settings')->where('id',$setting->id)->update(['value'=>$raw]);
 $auth->setProcessing($binding->serverId,true,static fn()=>null);
 app()->instance(RuntimePorts::class,$ports);$limiter=new AccountReadBudget($clock,48);app()->instance(ReadLimiter::class,$limiter);
@@ -93,7 +93,7 @@ foreach(['register','transfer','register'] as $i=>$action){
     ]));
     $formsAfterDispatch = count($GLOBALS['enomWire']['forms']);
     same($action==='register'?'pending':'uncertain',$op->fresh()->state,'Acknowledgement never completes acquisition');same('sealed',$op->fresh()->attempt['seal'],'Actual paid operation sealed');if($action==='register'){$registered=$op->fresh();}
-    $freshPorts=new RuntimePorts;$freshPorts->register($binding->fingerprint,$auth->enomRuntimeFactory($binding,$clock,$features,$accepted,$renewalAccepted,$precheck));
+    $freshPorts=installedRuntimePorts();$freshPorts->register($binding->fingerprint,$auth->enomRuntimeFactory($binding,$clock,$features,$accepted,$renewalAccepted,$precheck));
     Cache::flush();(new RuntimeWork($clock,$freshPorts))->operation($op->id);same($formsAfterDispatch,count($GLOBALS['enomWire']['forms']),'Reconstructed worker never replays');
     expect(DB::table('domains_read_budgets')->where('server_id',$binding->serverId)->value('used')>=1,'Physical send counted');
 }

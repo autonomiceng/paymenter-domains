@@ -125,6 +125,7 @@ config(['domains.enom_live.catalogue'=>false]);$before=count($GLOBALS['enomWire'
 $offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts($bindings,$clock);
 $deny(fn()=>$offerPorts->feed($binding));same($before,count($GLOBALS['enomWire']['forms']),'Catalogue off refuses feed construction before send');config(['domains.enom_live.catalogue'=>true]);
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
+$write('tld_settings',['retained_annual_retail'=>'13.00'],$tld->id);
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void {$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});
 Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void {$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});

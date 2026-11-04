@@ -25,3 +25,11 @@ function installedModuleRouting($bindings,$clock,$fixturePorts,$fixtureClock,$pr
     (new \Paymenter\Extensions\Servers\Domains\Domains)->boot();
     return [$prices,$native,$sellers];
 }
+
+/** Synthetic financial ports retain the real installed scheduler producer. */
+function installedRuntimePorts(): \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts
+{
+    $ports=new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
+    $ports->registerInitialManagedRecordObservations(\Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
+    return $ports;
+}
