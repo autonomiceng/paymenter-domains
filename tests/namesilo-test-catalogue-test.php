@@ -44,6 +44,8 @@ Category::create(['name'=>'Domains','slug'=>'domains']);
 Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
     ['type'=>'array','encrypted'=>false,'value'=>PricingRule::DEFAULT]);
 auth()->login($staff);$binding=CatalogueAcceptances::binding($account->fresh());$bindings=app(AccountBindings::class);
+// This commerce fixture needs a reviewed renewal path, including both billing switches.
+$writes->run($review('test_renewal'),['accept'=>true,'verified'=>true]);
 $gate=new UpgradeGate;$gate->pause();$capture=$gate->capture();
 do{$converted=$gate->batch($binding,$capture);}while(!$converted['complete']);
 $gate->activate($capture);
