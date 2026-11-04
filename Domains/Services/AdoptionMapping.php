@@ -86,7 +86,10 @@ final class AdoptionMapping
             if ($caps=($lock ? \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class) : \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed())) { $caps->requireRenewal($binding,$tld->tld,$lock ? $tld : null); } else {
                 throw new \DomainException(OfferUpgrade::MESSAGE);
             }
-            $retail = $this->prices->renewal($binding->serverId, $binding->fingerprint, $tld->tld, 'USD', $this->clock->now(), $lock !== null, $lock ? $tld : null);
+            // Preview and confirmation stamp the same contractual holder basis. Confirmation
+            // uses its retained price prefix, never a new offer read after ledger locks.
+            $holderPrices = $extension['prices'] ?? \Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$binding->serverId,'tld'=>$tld->tld,'action'=>'renew'])->orderBy('id')->get();
+            $retail = $caps->holding($binding,$tld,$holderPrices)['retail'] ?? throw new \DomainException('No retained annual retail.');
             $gross = NativeDomainGuard::gross($retail->retail, $l['tax']);
         } catch (\Throwable) { throw new \DomainException('price_unconfirmed'); }
         $settings = $extension['settings'] ?? \App\Models\Server::findOrFail($binding->serverId)->settings()->orderBy('id')->get();
