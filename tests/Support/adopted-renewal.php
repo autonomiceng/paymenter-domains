@@ -53,7 +53,7 @@ $transport = new class($state) implements Transport {
     $registry->register('enom', ['uid', 'token'], new class implements AccountVerifier {
         public function verify(Environment $e, array $c): string { return $c['uid']; }
     }, fn ($b, $c) => new Driver(new Client($b, $c['uid'], $c['token'], $transport), ['com']));
-    $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,catalogue: $GLOBALS['caps']??null);
+    $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
     $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
     $billing = new DomainBilling($renewBindings, $guard, $clock);
     $state->name = 'example.com'; $state->price = '8.00';

@@ -21,7 +21,7 @@ $a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Se
 $nativePage=$page;$page=static function()use($nativePage):string { storefrontViews();app('view')->getFinder()->flush();return $nativePage(); };
 $runtimePorts=app(RuntimePorts::class);$compositionReady=true;
 $registerRecords=static function()use($runtimePorts,$b,$bindings,$clock,$engine,$reconcile,$management,&$driver,&$compositionReady):void {
-    $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock,catalogue: $GLOBALS['caps']??null);$accept=new RenewalAcceptance($b,true,true,25);
+    $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock,offers: $GLOBALS['caps']??null);$accept=new RenewalAcceptance($b,true,true,25);
     $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
     $composition=['acquisition'=>offlineAcquisition($b,$bindings,$clock,$features,static fn()=>throw new LogicException('No acquisition exchange')),'reconciliation'=>$reconcile,'renewal'=>$renewal,
         'renewal_writer'=>new RenewalWriter($b,$features,$accept,fn()=>$renewal,static fn()=>throw new LogicException('No renewal transport')),

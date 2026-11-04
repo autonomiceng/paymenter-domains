@@ -109,12 +109,12 @@ $counterfactual = $l; $counterfactual['adoption'] = clone $a; $counterfactual['a
 expect(RenewalFunding::requireCurrent($op, $counterfactual)['basis'] === 'paid_invoice', 'Funded fixture has no independent funding refusal masking DNR');
 $refuse(fn () => RenewalFunding::requireCurrent($op, $l), 'Funded issued execution respects DNR');
 $refuse(fn () => RenewalFunding::requireAuthority($op, $l), 'Issued funding authority respects original DNR');
-$refuse(fn () => (new RenewalAuthority($bindings, $clock,catalogue: $GLOBALS['caps']??null))->capture(new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision, $d->provider_expires_at->format('Y-m-d'), $d->provider_domain_id, 1, $op->operation_key)), 'Issued admission respects original DNR');
+$refuse(fn () => (new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null))->capture(new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision, $d->provider_expires_at->format('Y-m-d'), $d->provider_domain_id, 1, $op->operation_key)), 'Issued admission respects original DNR');
 $dispatch = new RuntimeDispatch($clock); same(false, $dispatch->current($op), 'Installed renewal dispatch entry suppresses DNR');
 $queued = count(Queue::pushedJobs()); $dispatch->enqueue($op->id, true); same($queued, count(Queue::pushedJobs()), 'DNR enqueue emits no job hint');
 $accepted = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding, true, true, 25);
 $features = new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(renewal: true);
-$authorityPort = new RenewalAuthority($bindings, $clock,catalogue: $GLOBALS['caps']??null);
+$authorityPort = new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null);
 $admission = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
 $engine = new \Paymenter\Extensions\Servers\Domains\Services\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
 $writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Services\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });

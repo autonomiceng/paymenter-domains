@@ -45,7 +45,7 @@ $transport = new class($state) implements Transport {
 };
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, 'account-enom', $c['token'], $transport), ['com']));
-$renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,catalogue: $GLOBALS['caps']??null);
+$renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
 $service = new RenewalAdmission($authority, $renewBindings, new RenewalAcceptance($binding, true, true, 25, true), $clock);
 $check = static function (?RenewalRequest $r = null) use ($service, $request, $state) {
     Cache::flush(); $state->calls = []; return $service->check($r ?? $request());
@@ -148,7 +148,7 @@ $syntheticGrace = static function (?DateEvidence $expiry) use ($domain,$binding,
                     balance:new Money('100.00','USD'),premium:false,renewal:RenewalStatus::Grace,renewalUntil:$clock->now()->modify('+1 day'))));
     });
     $bindings = new AccountBindings($registry);
-    $admission = new RenewalAdmission(new RenewalAuthority($bindings,$clock,catalogue: $GLOBALS['caps']??null),$bindings,new RenewalAcceptance($binding,true,true,25,true),$clock);
+    $admission = new RenewalAdmission(new RenewalAuthority($bindings,$clock,offers: $GLOBALS['caps']??null),$bindings,new RenewalAcceptance($binding,true,true,25,true),$clock);
     Cache::flush(); return $admission->check($request());
 };
 $expiry = new DateEvidence('2027-10-18T00:00:00+00:00',ExpiryPrecision::Instant,'synthetic_expiry','UTC');
