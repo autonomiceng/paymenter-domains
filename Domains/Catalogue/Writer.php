@@ -216,7 +216,7 @@ final class Writer implements Catalogue
                     'catalogue_converted' => true, 'catalogue_intent' => OfferState::json(new Intent)]);
             }
             $offers = Tld::where('tld', $name)->whereIn('server_id', $ids)->select('*')->selectRaw('CAST(catalogue_retained_annual_retail AS CHAR) AS catalogue_retained_annual_retail')->orderBy('id')->lockForUpdate()->get();
-            $rows = UpgradeComparison::query('domains_prices')->whereIn('server_id', $ids)->where('tld', $name)->orderBy('id')->lockForUpdate()->get();
+            $rows = OfferState::query('domains_prices')->whereIn('server_id', $ids)->where('tld', $name)->orderBy('id')->lockForUpdate()->get();
             $target = $offers->firstWhere('server_id', $binding->serverId) ?? throw new \DomainException('Offer disappeared.');
             $defaults = OfferState::decode($accounts[$binding->serverId]->catalogue_defaults);
             $revision = OfferState::revision($target, $defaults, $policy); $revision->requireMatch($expectedRevision);
@@ -267,7 +267,7 @@ final class Writer implements Catalogue
                 $annual = $offer->catalogue_retained_annual_retail;
                 if (!$command instanceof Edit || $command->kind !== 'retail') { $this->publishPrices($offer, $now); }
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
-                $prices = UpgradeComparison::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
+                $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
                 $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), true);
                 $this->projection->write($offer, $snapshot, $now, $native);
                 $offer->catalogue_published_revision = OfferState::json($snapshot->revision);
@@ -334,7 +334,7 @@ final class Writer implements Catalogue
     private function publishPrices(Tld $tld, \DateTimeImmutable $now): void
     {
         $rule = Pricing::rule($tld);
-        $prices = UpgradeComparison::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
+        $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
         foreach ($prices as $p) {
             if ($p->catalogue_observation === null) { continue; }
             $cost = OfferState::cost(OfferState::decode($p->catalogue_observation));

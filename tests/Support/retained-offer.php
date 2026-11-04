@@ -35,3 +35,14 @@ function retainedOfferObligations(): string
     $rows['sellers']=DB::table('domains_sales_policies')->orderBy('id')->get()->all();
     return serialize($rows);
 }
+
+/** Test-only exact database snapshot, independent of retired upgrade comparison policy. */
+function retainedOfferSnapshot(): string
+{
+    $tables=Illuminate\Support\Facades\Schema::getTableListing();sort($tables);$rows=[];
+    foreach($tables as $table){
+        $values=Illuminate\Support\Facades\DB::table($table)->get()->map(static fn($row)=>(array)$row)->all();
+        usort($values,static fn($a,$b)=>json_encode($a)<=>json_encode($b));$rows[$table]=$values;
+    }
+    return serialize($rows);
+}

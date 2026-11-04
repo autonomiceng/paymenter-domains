@@ -11,6 +11,22 @@ use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices, PricingRule};
 /** Persistence codec. Facts have one independent age; normalized costs never carry fact proofs. */
 final class OfferState
 {
+    /** Read fixed decimals as strings before PDO can turn SQLite amounts into floats. */
+    public static function query(string $table): \Illuminate\Database\Query\Builder
+    {
+        $money = [
+            'domains_prices' => ['wholesale', 'retail'],
+            'domains_tlds' => ['markup', 'fixed_register', 'fixed_renew', 'fixed_transfer', 'catalogue_retained_annual_retail'],
+        ];
+        $query = \Illuminate\Support\Facades\DB::table($table)->select('*');
+        $grammar = \Illuminate\Support\Facades\DB::connection()->getQueryGrammar();
+        foreach ($money[$table] ?? [] as $column) {
+            $name = $grammar->wrap($column);
+            $query->selectRaw('CAST('.$name.' AS CHAR) AS '.$name);
+        }
+        return $query;
+    }
+
     public static function json(mixed $value): string { return json_encode($value, JSON_THROW_ON_ERROR); }
     public static function decode(mixed $value): array
     {
