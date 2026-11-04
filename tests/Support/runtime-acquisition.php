@@ -21,13 +21,10 @@ $clock=new class($now) implements Clock {
 };
 app()->instance(Clock::class,$clock);
 if(getenv('PACKAGE_PHASE')==='enom-exchange'){require __DIR__.'/runtime-enom-exchange.php';return;}
-foreach([AccountBindings::class=>$bindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
+require_once __DIR__.'/installed-module-routing.php';
 $offline=static fn()=>throw new LogicException('No exchange supplied to this fixture');
 $checkoutCheck=new TransferPrecheck(new Rdap($offline));
-$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock,$checkoutCheck),$clock);
-app()->instance(CartAdmission::class,$admission);
-app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
-app()->offsetUnset(RuntimePorts::class);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
+[$prices,$native,$sellers]=installedModuleRouting($bindings,$clock,$ports,activeFixtureClock($sellers),$checkoutCheck);
 Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}

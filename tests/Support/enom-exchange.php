@@ -64,7 +64,8 @@ foreach(['0','synthetic-keylog'] as $value){putenv('SSLKEYLOGFILE='.$value);$den
 foreach([Environment::Test] as $environment){
     $b=new AccountBinding('enom',1,$environment,'synthetic-uid');$f=$make($b,$credentials);$w=(new ReflectionFunction($f))->getStaticVariables()['wire'];
     $url=$environment===Environment::Test?$origin:'https://reseller.enom.com/interface.asp';resetWire();
-    same('xml',$exchange($w,'registration')($url,'Purchase',['SLD'=>'example','TLD'=>'com'],25000),'Complete body');
+    $purchaseReply='<interface-response><Command>Purchase</Command><ErrCount>0</ErrCount><Done>true</Done><RRPCode>200</RRPCode><OrderID>1234</OrderID></interface-response>';
+    resetWire(['chunks'=>[$purchaseReply]]);same($purchaseReply,$exchange($w,'registration')($url,'Purchase',['SLD'=>'example','TLD'=>'com'],25000),'Complete body');
     $options=$GLOBALS['enomWire']['options'];same($url,$options[CURLOPT_URL],'Fixed environment URL');same(['Content-Type: application/x-www-form-urlencoded','Accept: application/xml'],$options[CURLOPT_HTTPHEADER],'Explicit XML form headers');
     same(['Command'=>'Purchase','UID'=>'synthetic-uid','PW'=>'SYNTHETIC-TOKEN','ResponseType'=>'XML','SLD'=>'example','TLD'=>'com'],$GLOBALS['enomWire']['forms'][0],'Credentialed POST');
     foreach([CURLOPT_POST=>true,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_MAXREDIRS=>0,CURLOPT_PROXY=>'',CURLOPT_NOPROXY=>'*',CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTPS,CURLOPT_CONNECTTIMEOUT_MS=>8000,CURLOPT_TIMEOUT_MS=>25000,CURLOPT_VERBOSE=>false,CURLOPT_HEADER=>false,CURLOPT_FRESH_CONNECT=>true,CURLOPT_FORBID_REUSE=>true,CURLOPT_LOW_SPEED_LIMIT=>32,CURLOPT_LOW_SPEED_TIME=>25] as $key=>$value){same($value,$options[$key],'Safe wire option '.$key);}
@@ -78,7 +79,7 @@ try{$exchange($liveWire,'registration')('https://reseller.enom.com/interface.asp
 same([],$GLOBALS['enomWire']['forms'],'Default-off live wire sends nothing');
 foreach(['registration'=>['Purchase','ModifyNS','GetDNS'],'transfer'=>['TP_CreateOrder'],'renewal'=>['Extend','UpdateExpiredDomains'],
     'management'=>array_merge(array_map(fn($c)=>$c->value,Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ManagementCommand::cases()),['GetDomainInfo','GetDNS','GetContacts','GetRegLock','GetWPPSInfo','GetRenew','GetHosts','GetDomainSRVHosts','GetDnsSec','CheckNSStatus','GetBalance','GetOrderDetail'])] as $role=>$commands){
-    foreach($commands as $command){resetWire();same('xml',$exchange($wire,$role)($origin,$command,[],1200),'Reviewed protocol command');same(1200,$GLOBALS['enomWire']['options'][CURLOPT_CONNECTTIMEOUT_MS],'Shortened connect timeout');}
+    foreach($commands as $command){$body=$command==='Purchase'?$purchaseReply:'xml';resetWire(['chunks'=>[$body]]);same($body,$exchange($wire,$role)($origin,$command,[],1200),'Reviewed protocol command');same(1200,$GLOBALS['enomWire']['options'][CURLOPT_CONNECTTIMEOUT_MS],'Shortened connect timeout');}
 }
 resetWire();$before=$sends();$exchange($wire,'management')($origin,'GetBalance',[],25000);
 same([$before+1,1],[$sends(),count($GLOBALS['enomWire']['forms'])],'One TEST exchange send records exactly one attempt');

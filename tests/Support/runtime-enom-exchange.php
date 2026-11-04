@@ -28,13 +28,11 @@ $reader=static function($b)use($clock,$state){
 };
 $registry->register('enom',['uid','token'],$verify,$reader,null,false,$reader);
 $auth=new AccountBindings($registry);$auth->configure($binding->serverId,'enom',Environment::Test,['uid'=>'account-enom','token'=>'SYNTHETIC-WIRE-TOKEN']);
-$sellers=new SellerPolicies($prices,$auth);
-foreach([AccountBindings::class=>$auth,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
+require_once __DIR__.'/installed-module-routing.php';
+[$prices,$native,$sellers]=installedModuleRouting($auth,$clock,$ports,activeFixtureClock($sellers),$precheck);
 expect(\Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($binding,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding)),'Exchange uses the compiled environment route');
 Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($binding,new Money('100.00','USD'),$clock->now(),'manual');
-$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($auth,$clock,$precheck),$clock);app()->instance(CartAdmission::class,$admission);
-app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
-app()->offsetUnset(RuntimePorts::class);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();Illuminate\Support\Facades\Queue::fake();
+Illuminate\Support\Facades\Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 App\Models\Server::find($binding->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
