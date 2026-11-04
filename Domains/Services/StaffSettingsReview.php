@@ -43,7 +43,6 @@ final class StaffSettingsReview
     {return Server::where('extension','Domains')->orderBy('id')->pluck('id');}
     public static function stamp(int $serverId,?int $tldId,bool $lock=false): string
     {
-        if(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()===null){throw new \DomainException(OfferUpgrade::MESSAGE);}
         return \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands::stamp($serverId,$tldId);
     }
 
