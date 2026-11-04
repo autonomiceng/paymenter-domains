@@ -476,6 +476,7 @@
     "tests/lost-reply-status-test.php",
     "tests/retained-offer-admission-test.php",
     "tests/retained-offer-package-test.php",
+    "tests/offer-sync-facts-test.php",
     "tests/offer-store-cleanup-test.php",
     "tests/offer-store-prefix-test.php"
   ],

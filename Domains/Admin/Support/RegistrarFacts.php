@@ -95,9 +95,8 @@ final class RegistrarFacts
         $key=['server_id'=>$server,'account_fingerprint'=>$account->account_fingerprint];
         // Worker turns also run when there is no registrar read. Only completed price reads belong here.
         $at=Price::where($key)->max('observed_at');$price=$at?\Carbon\CarbonImmutable::parse($at)->getTimestamp():0;
-        $fill=Schema::hasTable(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)
-            ?(int)DB::table(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::FILLS)->where($key)->value('filled_at'):0;
-        return max($price,$fill)?:null;
+        $feed=(int)DB::table('domains_observation_queues')->where($key)->value('offer_feed_succeeded_at');
+        return max($price,$feed)?:null;
     }
     /** Verified Enom user ID for the account's mode. NameSilo has no user ID. */
     public static function apiUser(Account $account): ?string
