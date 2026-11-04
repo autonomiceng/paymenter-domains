@@ -22,7 +22,7 @@ NO_RECEIPT = object()
 PREFIX = 'Paymenter\\Extensions\\Servers\\Domains\\'
 FORBIDDEN = {'scripts', 'tests', 'docs', 'private', 'node_modules', 'vendor', 'conversion', 'conversions', 'pins', 'dev'}
 # Runtime conversion files are distinct from the development-only conversion scripts.
-RUNTIME_CONVERSION_FILES = {'Services/ConversionGate.php', 'Catalogue/UpgradeConversion.php',
+RUNTIME_CONVERSION_FILES = {'Services/ConversionGate.php',
                             'database/migrations/2026_11_02_000048_add_offer_conversion.php'}
 RUNTIME_CONVERSION_NAMES = {Path(name).name for name in RUNTIME_CONVERSION_FILES}
 LEGAL = {'LICENSE', 'NOTICE', 'NOTICE.txt', 'ATTRIBUTION', 'ATTRIBUTION.txt'}
