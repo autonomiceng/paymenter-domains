@@ -110,6 +110,14 @@ function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until,?\P
             \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeFacts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
                 ['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$until))]);
         if($ports!==null){
+            // Independent scenarios rewind this synthetic clock; discard only observations from its future.
+            foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $p){
+                if($p->catalogue_observation===null){continue;}
+                $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($p->catalogue_observation));
+                if($cost->observedAt<=$now){continue;}
+                $reset=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($cost->action,$cost->term,$cost->enabled,$cost->total,$cost->sourceUnit,$cost->source,$now,$until,normalized:true);
+                Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$p->id)->update(['catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($reset))]);
+            }
             $b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$t->tld],'register');
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::republish($b,$t->tld),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);

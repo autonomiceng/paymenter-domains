@@ -33,6 +33,7 @@ same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native
 // Subsequent cycle accepts original registration plus completed renewal history.
 $clock->instant = new DateTimeImmutable('2028-09-27T12:00:00Z');
 $settings->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => true, 'type' => 'boolean']);
+activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);$observeRenewalCost($b);
 $bill2 = $billing->invoice($d->id, $user); $op2 = Operation::where('invoice_id', $bill2->id)->sole();
 same('2028-10-18', $op2->base_expires_at->format('Y-m-d'), 'Next debt uses renewed anchor');
 App\Helpers\ExtensionHelper::addProcessingPayment($bill2, null, $op2->amount, '0.00', 'renewal-callback');

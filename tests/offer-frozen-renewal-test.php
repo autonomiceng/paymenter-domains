@@ -11,7 +11,6 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, P
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, ObservationSchema, OfferSchema, OfferWorkSchema};
 ObservationSchema::install(); OfferSchema::install(); OfferWorkSchema::install();
-try {
 [$pending,,$binding]=$makeRenewal(placeholderComFixtureName('offer-paid-renewal-placeholder.com'));
 [$pendingEngine,$pendingWriter,$completion]=$compose($binding);
 $ack=$pendingEngine->run($pending->id,$pendingWriter);same('pending',$ack->state,'Paid renewal retains its acknowledged attempt; state='.$ack->state.' code='.$ack->safe_code);
@@ -59,4 +58,3 @@ same(0,$sends,'Expired independent renewal facts authorize zero physical sends')
 $nativeSuccessful=true;
 echo "Offer frozen renewals: ok\n";
 
-} catch (Throwable $error) { throw new RuntimeException($error->getMessage().' ['.implode(',',array_map(static fn($frame)=>basename($frame['file']??'').':'.($frame['line']??0),array_slice($error->getTrace(),0,35))).']'); }
