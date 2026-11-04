@@ -36,7 +36,7 @@ if ($phase === 'seed') {
     User::create(['first_name'=>'Synthetic','last_name'=>'Staff','email'=>'race-staff@example.test','password'=>'synthetic-password','role_id'=>$role->id]);
     (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b); (new UpgradeGate)->pause();
     Schema::create('offer_fixture_reads', static function ($t): void { $t->id(); });
-} else { $b = CatalogueAcceptances::binding(Account::sole()); }
+} else { $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::sole()); }
 $generation = UpgradeGate::generation();
 $guard = static function (?int $server = null) use ($generation): void {
     if (DB::transactionLevel() > 0) {

@@ -121,7 +121,7 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
 };
 $caps??=null;
 $makeTransfer = static function (int $i=0, ?WriteFeatures $features=null) use ($tlds,$claims,$clock,$freshBindings,$rdap,$caps,&$exchange,&$engine,&$bridge,&$protocol,&$fresh,&$accepted,&$profiles,&$binding): void {
-    $binding = CatalogueAcceptances::binding(Account::where('server_id',$tlds[$i]->server_id)->sole()); $features ??= new WriteFeatures(transfer:true);
+    $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[$i]->server_id)->sole()); $features ??= new WriteFeatures(transfer:true);
     if($binding->registrarKey==='namesilo'&&!\App\Models\Server::findOrFail($binding->serverId)->settings()->where('key','domains_namesilo_expected_default_contact_email')->exists()){\App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_namesilo_expected_default_contact_email'],['value'=>'expected@example.com','type'=>'string','encrypted'=>true]);}
     $profiles = new RegistrationProfiles($binding,$claims,$clock,$exchange); $accepted = new WriteAcceptance($binding,true,true,25,$profiles,catalogue:$caps??null);
     $fresh = new TransferPreflight($freshBindings,$features,$accepted,new TransferPrecheck($rdap),$profiles);

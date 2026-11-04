@@ -155,7 +155,7 @@ $clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmu
 Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $preflight=(object)['supported'=>true];require __DIR__.'/native-paid-acquisition.php';
 $bindings=$paidBindings;$claims=new OperationClaims($bindings,$clock);$features=new WriteFeatures(true,true,true,true);
-$a=Account::where('server_id',Operation::findOrFail($ops[0])->server_id)->sole();$b=CatalogueAcceptances::binding($a);
+$a=Account::where('server_id',Operation::findOrFail($ops[0])->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $authority=new RenewalAuthority($bindings,$clock);$accept=new RenewalAcceptance($b,true,true,25);
 $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
 $composition=['acquisition'=>offlineAcquisition($b,$paidBindings,$clock,$features,$paidExchange,$paidPrecheck),

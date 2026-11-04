@@ -74,7 +74,7 @@ expect(str_contains(SettingsActions::details('enroll_sandbox'),'next background 
 $GLOBALS['enrollmentExpectedContext']='api';$GLOBALS['enrollmentExpectedTimeout']=10000;
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Account connected')->assertSet('mountedActions',[]);
 $page->assertActionDoesNotExist($action('enroll_sandbox',$s));unset($page);gc_collect_cycles();
-same($n+1,$GLOBALS['enrollmentCalls'],'Staff enrollment exactly one OTE read');$a=Account::where('server_id',$s->id)->sole();$binding=CatalogueAcceptances::binding($a);
+same($n+1,$GLOBALS['enrollmentCalls'],'Staff enrollment exactly one OTE read');$a=Account::where('server_id',$s->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 expect(NameSiloSandbox::enrolled($a),'Distinct local enrollment identity');
 foreach(['sandbox@example.test','synthetic-ote-key','123','456','789','999','9876.54'] as $substitute){expect($a->stable_identity!==$substitute,'No identity substitute');}
 same('test',$a->environment,'Fixed sandbox environment');same(false,$a->processing_enabled,'Processing starts off');same(null,$a->live_site,'No live site');
@@ -302,6 +302,6 @@ $race=$fresh();$GLOBALS['enrollmentDuringRead']=static function()use($attempt):v
 $refuse(fn()=>$attempt(['api_key'=>'racing-key'],$race),'Duplicate key enrolled in flight');unset($GLOBALS['enrollmentDuringRead']);same(0,Account::where('server_id',$race->id)->count(),'Final key uniqueness check');
 $s->update(['enabled'=>false]);$n=$GLOBALS['enrollmentCalls'];$refuse(fn()=>$attempt(['api_key'=>'synthetic-ote-key']),'Disabled original retains its key');same($n,$GLOBALS['enrollmentCalls'],'Disabled original sends nothing');$replacement=$attempt(['api_key'=>'rotated-key']);$s->update(['enabled'=>true]);
 $newAccount=Account::where('server_id',$replacement->id)->sole();expect($newAccount->account_fingerprint!==$binding->fingerprint,'Rotated key creates independent enrollment');same(false,$newAccount->processing_enabled,'Replacement processing off');
-$refuse(fn()=>CatalogueAcceptances::load(CatalogueAcceptances::binding($newAccount)),'Replacement inherits no acceptance');
+$refuse(fn()=>CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($newAccount)),'Replacement inherits no acceptance');
 foreach(Review::historyRows($s->fresh()) as $row){$json=json_encode($row);foreach(['sandbox@example.test','synthetic-ote-key','9876.54','key_fingerprint'] as $secret){expect(!str_contains($json,$secret),'Audit omits label/key/balance');}}
 echo "NameSilo OTE enrollment: immutable, explicitly weaker, live refused, redacted; real provider calls: 0.\n";

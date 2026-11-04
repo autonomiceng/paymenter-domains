@@ -18,7 +18,7 @@ $dispatch=new RuntimeDispatch($clock);expect($dispatch->current($debt),'Purchase
 $l=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\HoldingLocks::take($d));
 $alerts=[];$schedule=(object)['before_days'=>'[7]','after_days'=>'[3]'];
 $planned=DB::transaction(fn()=>RenewalReminders::plan($l,$schedule,$clock->now(),$alerts,$bindings));expect($planned!==null,'Purchased renewal notice has genuine eligible debt');
-expect(RenewalAuthority::completed($d->operations()->where('action','register')->sole(),$d,\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($l['account'])),'Purchased completion remains strict and usable');
+expect(RenewalAuthority::completed($d->operations()->where('action','register')->sole(),$d,\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($l['account'])),'Purchased completion remains strict and usable');
 $ob=new DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));
 $before=count($observation->calls);$ob->run($d->id);expect(count($observation->calls)>$before,'Purchased observer performs synthetic reads');
 $original=$d->fresh()->getRawOriginal();$opBefore=$d->operations()->orderBy('id')->get()->map(fn($o)=>$o->getRawOriginal())->all();
@@ -36,7 +36,7 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
     same(null,RenewalReminders::plan($pendingLocks,$schedule,$clock->now(),$alerts,$bindings),'Pending reminder planner excludes even active drift');
     $expired=clone $d;$expired->provider_expires_at=\Carbon\CarbonImmutable::instance($clock->now())->subDays(3);$expiredLocks=[...$l,'domain'=>$expired];
     same(null,RenewalReminders::plan($expiredLocks,$schedule,$clock->now(),$alerts,$bindings),'Pending expired notice is excluded independently of funding proof');
-    same(false,RenewalAuthority::completed($d->operations()->where('action','register')->sole(),$d,\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($l['account'])),'No pending completion authority');
+    same(false,RenewalAuthority::completed($d->operations()->where('action','register')->sole(),$d,\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($l['account'])),'No pending completion authority');
     $work=new \Paymenter\Extensions\Servers\Domains\Services\ObservationWork($ob,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));$work->enroll($d->server_id);
     DB::table('domains_observation_work')->where('domain_id',$d->id)->delete();$work->tick();same(0,DB::table('domains_observation_work')->where('domain_id',$d->id)->count(),'Pending name never enrolled for managed observation');
     $f=$d->observation['followup']??[];$phase=isset($f['operation_key'])&&($f['generation']??null)===$d->authority_generation?hash('sha256',$f['operation_key']):'holding';

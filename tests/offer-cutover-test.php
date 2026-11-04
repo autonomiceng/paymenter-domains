@@ -11,7 +11,7 @@ $caps=Capabilities::routed();same(true,$caps instanceof Capabilities,'The checke
 $ports=CallerPorts::routed();$scheduler=OfferScheduler::routed();
 same($scheduler,Runtime::observations(),'Runtime selects the sole shared consumer');
 same($scheduler,OfferScheduler::routed(),'One generation shares one consumer');
-$binding=CatalogueAcceptances::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
 $storefront=app(Storefront::class);$admission=app(CartAdmission::class);$admission->boot();
 app(InvoiceBinding::class)->boot();
 commerceReject(fn()=>$storefront->offer('com','register',1));

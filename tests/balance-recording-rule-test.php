@@ -11,8 +11,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads,BalanceSchema,Ca
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 FoundationSchema::install();BalanceSchema::install();
 fixtureAccount(1,'enom','synthetic-recording-a');fixtureAccount(2,'enom','synthetic-recording-b');
-$binding=CatalogueAcceptances::binding(Account::where('server_id',1)->sole());
-$other=CatalogueAcceptances::binding(Account::where('server_id',2)->sole());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',1)->sole());
+$other=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',2)->sole());
 $clock=new FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z'));
 $row=static fn($b)=>(array)DB::table(BalanceSchema::TABLE)->where('server_id',$b->serverId)->where('account_fingerprint',$b->fingerprint)->sole();
 $context=static fn($b)=>new RequestContext($b,RequestOrigin::Interactive,$clock->now()->modify('+25 seconds'),new RequestBudget(1),$clock);

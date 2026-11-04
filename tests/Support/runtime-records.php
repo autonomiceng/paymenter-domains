@@ -17,7 +17,7 @@ foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$native,P
 installedPanel();
 [$d,$driver,$original]=$holding(placeholderComFixtureName('record-runtime-placeholder.com'));
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
-$a=Account::where('server_id',$d->server_id)->sole();$b=CatalogueAcceptances::binding($a);
+$a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $nativePage=$page;$page=static function()use($nativePage):string { storefrontViews();app('view')->getFinder()->flush();return $nativePage(); };
 $runtimePorts=app(RuntimePorts::class);$compositionReady=true;
 $registerRecords=static function()use($runtimePorts,$b,$bindings,$clock,$engine,$reconcile,$management,&$driver,&$compositionReady):void {

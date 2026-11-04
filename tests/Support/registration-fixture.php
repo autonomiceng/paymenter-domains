@@ -53,4 +53,4 @@ $assertRetained = static function ($result, array $corrections): void {
     same('paid', App\Models\Invoice::find($result->invoice_id)->status, 'Native paid invoice retained');
     commerceReject(fn () => $result->update(['attempt' => array_replace($result->attempt, ['registration' => null])])); $result->refresh();
 };
-$bindingFor = static fn ($i) => CatalogueAcceptances::binding(Account::where('server_id', $tlds[$i]->server_id)->sole());
+$bindingFor = static fn ($i) => \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[$i]->server_id)->sole());

@@ -25,7 +25,7 @@ $wire=new class($state) implements DeadlineTransport {
 };
 $registry=new RegistrarRegistry;$verifier=new class implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier{public function verify(Environment $e,array $c):string{return $c['token'];}};
 $registry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),[],$clock));
-$reads=new AccountBindings($registry);$b=CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns)->sole());
+$reads=new AccountBindings($registry);$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns)->sole());
 $row=['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true];CatalogueAcceptances::save($b,1,['com'=>$row,'net'=>$row,'org'=>$row]);
 $budget=new AccountReadBudget($clock);$observer=new DomainObservation($reads,$clock,$budget);$work=new ObservationWork($observer,$clock,$budget,new CatalogueSync($reads,$prices));
 $work->enroll($enom);$work->enroll($ns);$bindings->setProcessing($ns,false);$work->tick(1);same(0,$state->calls,'Broken first account bounded');

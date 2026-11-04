@@ -22,7 +22,7 @@ $frozen=static function(): string {
     return serialize($rows);
 };
 $before=$frozen(); $writes=$state->writes;
-foreach(Account::all() as $account){(new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($account));}
+foreach(Account::all() as $account){(new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account));}
 $caps=new Capabilities(new CallerPorts(new Projection($native),$clock,$bindings,static fn()=>null,static fn()=>true),$clock,static fn()=>null);
 same('10.40',$caps->holder($binding,'com')->retail,'Renewal holder keeps retained annual retail with unknown facts');
 commerceReject(fn()=>$caps->requireRenewal($binding,'com'));

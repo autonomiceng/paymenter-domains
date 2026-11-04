@@ -98,7 +98,7 @@ commerceCheckout($user, $guest); same(4, Order::count(), 'Guest eligibility surv
 $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('synced-price-placeholder.com'));
 $history = [DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()];
 $services = DB::table('services')->orderBy('id')->get()->toJson();
-$binding = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+$binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
 $accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
 Illuminate\Support\Once::flush();
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);

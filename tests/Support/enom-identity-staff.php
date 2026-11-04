@@ -54,12 +54,12 @@ $calls=count($GLOBALS['identityCalls']);$configure(['environment'=>'live'],false
 same($calls,count($GLOBALS['identityCalls']),'Staff environment refusal makes no call');
 $configure(['registrar'=>'namesilo','api_key'=>'synthetic-key'],false,'NameSilo accounts can’t be connected here.');
 same(false,$a->fresh()->processing_enabled,'All attempts leave processing off');expect(!app(RuntimePorts::class)->accepted($a->fresh()),'Identity installs no write ports');
-try{app(AccountBindings::class)->requireProcessing(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a->fresh()));expect(false,'Processing guard required');}catch(DomainException){}
+try{app(AccountBindings::class)->requireProcessing(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh()));expect(false,'Processing guard required');}catch(DomainException){}
 try{app(AccountBindings::class)->reader($server->id);expect(false,'Catalogue acceptance still required');}catch(RuntimeException){}
 Log::shouldNotHaveReceived('warning');Log::shouldNotHaveReceived('error');
 foreach(Review::historyRows($server->fresh()) as $row){$json=json_encode($row);foreach(['secret-uid','secret-token','9876.54'] as $secret){expect(!str_contains($json,$secret),'Audit omits identity/token/balance');}}
 // A catalogue acceptance cannot promote the staff-only factory into a scheduler reader.
-$binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($a->fresh());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh());
 Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[],'registry'=>true,'renewal_safe'=>true]]);
 $calls=count($GLOBALS['identityCalls']);app(Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class)->daily($a->fresh());
 same($calls,count($GLOBALS['identityCalls']),'Daily balance stays off wire even with accepted catalogue');

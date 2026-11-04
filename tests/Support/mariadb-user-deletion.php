@@ -72,7 +72,7 @@ foreach(\Paymenter\Extensions\Servers\Domains\Models\Account::all()as$account){
     $server=\App\Models\Server::findOrFail($account->server_id);
     $credentials=json_decode($server->settings()->where('key','domains_credentials')->sole()->value,true,8,JSON_THROW_ON_ERROR);
     $clean=$registry->credentials($account->registrar_key,$credentials);
-    $binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);
+    $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
     same(hash_hmac('sha256',$binding->fingerprint.json_encode($clean,JSON_THROW_ON_ERROR),(string)config('app.key')),$server->settings()->where('key','domains_verified_credentials')->sole()->value,'Synthetic credential contract survives native process boundary');
 }
 $name=placeholderComFixtureName($case.'-user-deletion-placeholder.com');

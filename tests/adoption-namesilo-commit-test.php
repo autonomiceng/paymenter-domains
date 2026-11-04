@@ -33,7 +33,7 @@ $server=Server::create(['name'=>'Synthetic import','type'=>'server','extension'=
 $identity=LocalAccountEnrollment::PREFIX.'import-account';
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','environment'=>'live','stable_identity'=>$identity]));
 Account::withVerifiedBindingWrite(fn()=>$account->update(['live_site'=>rtrim(config('app.url'),'/'),'processing_enabled'=>true]));
-$binding=CatalogueAcceptances::binding($account);$credentials=['api_key'=>'placeholder-import-key'];
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);$credentials=['api_key'=>'placeholder-import-key'];
 $facts=LocalAccountEnrollment::facts($binding,$identity,$credentials);
 $store=function(array $credentials,array $facts)use($server,$binding):void {
     foreach(['domains_credentials'=>json_encode($credentials),LocalAccountEnrollment::KEY=>json_encode($facts),

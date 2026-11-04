@@ -40,7 +40,7 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id
     'registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid','token'=>'catalogue-token','reason'=>'Verify synthetic TEST catalogue'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
 same($before+1,count($GLOBALS['catalogueCalls']),'Configure one authenticated read');
-$a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
+$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$bindings->reader($server->id),'Registrar reader could not be created.');same($before,count($GLOBALS['catalogueCalls']),'No acceptance means no reader or read');
 $write('probe');same($before+1,count($GLOBALS['catalogueCalls']),'Probe one balance read');
 $before=count($GLOBALS['catalogueCalls']);$refuse(fn()=>$write('import',['ending'=>'com']),'Catalogue acceptance is unavailable.');same($before,count($GLOBALS['catalogueCalls']),'Unaccepted import makes no call');

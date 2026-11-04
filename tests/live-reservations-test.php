@@ -16,7 +16,7 @@ $clock=new FakeClock(new DateTimeImmutable('2026-11-01T23:59:59Z'));app()->insta
 $account=static function(string $provider,string $identity,string $environment='live'): AccountBinding {
     $s=Server::create(['name'=>'Synthetic reservation account','type'=>'server','extension'=>'Domains','enabled'=>true]);
     $a=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$s->id,'registrar_key'=>$provider,'environment'=>$environment,'stable_identity'=>$identity]));
-    return CatalogueAcceptances::binding($a);
+    return \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 };
 $enom=$account('enom','shared-local-account');$other=$account('namesilo','shared-local-account');
 config(['app.url'=>'https://billing.example.com','domains.enom_identity.environment'=>'live','domains.enom_live.site'=>'https://billing.example.com',
@@ -40,7 +40,7 @@ $refuses=static function(callable $work):void {try{$work();throw new LogicExcept
 same('2026-11-01',$calls->reserve($other,new Money('0.75','USD')),'A second provider uses the shared UTC reservation path');
 same(['used'=>1,'spend_micros'=>750000],$calls->usage($other),'Providers with equal local identities keep separate counters');
 same(2,DB::table(EnomLiveCallSchema::TABLE)->count(),'Enom historical rows are retained alongside namespaced provider rows');
-$sameAccount=CatalogueAcceptances::binding(Account::where('server_id',$other->serverId)->sole());$calls=new LiveReservations($policy);
+$sameAccount=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$other->serverId)->sole());$calls=new LiveReservations($policy);
 $refuses(fn()=>$calls->reserve($sameAccount,new Money('0.250001','USD')));
 same(['used'=>1,'spend_micros'=>750000],$calls->usage($sameAccount),'A reconstructed binding cannot reset account spend');
 $calls->reserve($sameAccount,new Money('0.25','USD'));

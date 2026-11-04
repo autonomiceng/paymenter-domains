@@ -25,8 +25,8 @@ $authorize = static function ($input, $context) use (&$permission): void {
 };
 $ports = new CallerPorts(new Projection($native), $clock, $bindings, $authorize,
     static function ($b, $action) use (&$feature): bool { return $feature; });
-$b = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
-$n = CatalogueAcceptances::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
+$b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
+$n = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
 $converter = new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture; $converter->batch($b); $converter->batch($n);
 $query = new Query($b, ['com'], 'register', 3); $holder = new Query($b, ['com'], 'renew');
 $rev = static fn () => $ports->readOffers($query, Context::Staff)[0]->revision;

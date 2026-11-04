@@ -17,8 +17,8 @@ function offerCommerceFixture(): array
 {
     (new Installation)->install(); extract(commerceFixture(true,active:true));
     $ports = new CallerPorts(new Projection($native), $clock, $bindings, static fn () => null, static fn () => true);
-    $binding = CatalogueAcceptances::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
-    foreach (Account::all() as $account) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($account)); }
+    $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
+    foreach (Account::all() as $account) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account)); }
     $q = new Query($binding, ['com'], 'register');
     $rev = static fn () => $ports->readOffers($q, Context::Staff)[0]->revision;
     $ports->apply(new FactsObserved($binding, 'com', new Facts(['register' => [1, 3], 'renew' => [1], 'transfer' => [1]],
