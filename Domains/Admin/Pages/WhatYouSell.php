@@ -329,7 +329,7 @@ class WhatYouSell extends Page implements HasTable
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(OfferRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(OfferRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(OfferRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
                     ->description(fn(OfferRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(OfferRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
-                    ->url(fn(OfferRow $record)=>isset($this->reads()->status($record)['open'])&&($id=$this->reads()->tldId($record))!==null?TldResource::getUrl('view',['record'=>$id]):null),
+                    ->url(fn(OfferRow $record)=>match($this->reads()->status($record)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null}),
             ])
             ->checkIfRecordIsSelectableUsing(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)
             ->toolbarActions([

@@ -39,7 +39,7 @@ final class SellTable
     public function rule(int $server): array { return $this->rules[$server]??=$this->source()->rule($server); }
     /** Why this row can't be saved, or null when it can. */
     public function blocked(OfferRow $row): ?string { return EndingChoices::hidden($row->tld)?'This TLD is hidden.':null; }
-    /** @return array{label:string,tone:string,next?:string,open?:bool} */
+    /** @return array{label:string,tone:string,next?:string,open?:?string} */
     public function status(OfferRow $row): array
     {
         $facts=$this->facts()[self::key($row)]??[];
@@ -47,7 +47,7 @@ final class SellTable
         $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];
         if($s['reason']===null){return ['label'=>$s['label'],'tone'=>$s['tone']];}
         $step=$this->nextStep($row,'register');
-        return ['label'=>$step['state']==='checking'?'Checking':$s['label'],'tone'=>$s['tone'],'next'=>$step['next']?:$s['reason'],'open'=>$step['open']==='tld'];
+        return ['label'=>$step['state']==='checking'?'Checking':$s['label'],'tone'=>$s['tone'],'next'=>$step['next']?:$s['reason'],'open'=>$step['open']];
     }
     /** Sale state for the rows on screen, read once. Null when no prices are saved for it yet. */
 
