@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema,StaffSettingsReview as Review};
 $out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
-$f=commerceFixture(nameSiloLocal:false,identities:['namesilo'=>'demo-namesilo']);extract($f);tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
+$f=commerceFixture(nameSiloLocal:false,identities:['namesilo'=>'demo-namesilo']);extract($f);staffSalesFixture();tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 [$enom,$silo]=$tlds;
 // Several registrar accounts: Enom takes new orders, the NameSilo account is demo data.

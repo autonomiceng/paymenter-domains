@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{PricingEditorNotice,Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
-extract(commerceFixture(true)); tldPanel(); Carbon\Carbon::setTestNow($now);
+extract(commerceFixture(true)); staffSalesFixture();tldPanel(); Carbon\Carbon::setTestNow($now);
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now));
 $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS,'admin.products.viewAny','admin.products.view','admin.products.update'];
 foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}

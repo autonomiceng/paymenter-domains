@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Services\{PricingRule,StaffSettingsReview as Review};
 $out=renderOutput($argv[1]??null);
-$f=commerceFixture();extract($f);tldPanel();Carbon\Carbon::setTestNow($now);
+$f=commerceFixture();extract($f);staffSalesFixture();tldPanel();Carbon\Carbon::setTestNow($now);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 [$first,$second]=$tlds;
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true]);
