@@ -95,11 +95,23 @@ final class RegistrarFacts
         if ($undated>0) { return ['text'=>$n($undated).' with no known date, so not counted. Check the invoice days and the domain expiry.','act'=>true,'at'=>null]; }
         if ($b['unpriced']===0) { return null; }
         try { $read=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress((int)$account->server_id)??[]; } catch (\Throwable) { $read=[]; }
+        return self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp());
+    }
+    /** Unpriced renewals by the price read's state. Beco retries a failed read by itself (OfferWork backoff), so only a
+     * cause staff must fix (TldFacts::SYNC_STEPS) is amber, with its step. @return array{text:string,act:bool,at:?int} */
+    public static function readGap(string $count,array $read,int $now): array
+    {
+        $at=isset($read['due_at'])&&(int)$read['due_at']>$now?(int)$read['due_at']:null;
         if (!empty($read['failure'])) {
-            return ['text'=>$n($b['unpriced']).' not priced yet. The daily price read failed: '.rtrim(TldFacts::syncCause($read['failure']),'.').'. Fix that and Beco fills the cost on the next read.','act'=>true,'at'=>null];
+            $cause=strtok(TldFacts::syncCause($read['failure']),'.');
+            if (($step=TldFacts::syncStep($read['failure']))!==null) {
+                return ['text'=>$count.' not priced yet. The price read failed: '.$cause.'. '.$step.' Beco then fills the cost on the next read.','act'=>true,'at'=>null];
+            }
+            return ['text'=>$count.' not priced yet. The price read failed: '.$cause.'. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills('after Beco retries the read'),
+                'act'=>false,'at'=>($read['state']??null)==='retrying'?$at:null];
         }
-        $at=isset($read['due_at'])&&(int)$read['due_at']>app(Clock::class)->now()->getTimestamp()&&($read['state']??null)==='ready'?(int)$read['due_at']:null;
-        return ['text'=>$n($b['unpriced']).' not priced yet. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills($at===null?'after the price read now queued':'after the next price read'),'act'=>false,'at'=>$at];
+        $at=($read['state']??null)==='ready'?$at:null;
+        return ['text'=>$count.' not priced yet. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills($at===null?'after the price read now queued':'after the next price read'),'act'=>false,'at'=>$at];
     }
     /** The gap as a page sub-line: amber when staff act, plain otherwise. */
     public static function dueLine(?array $gap): ?HtmlString
