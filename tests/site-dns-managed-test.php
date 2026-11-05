@@ -30,4 +30,8 @@ same($default->id,ManagedDnsSetup::profile($d,ManagedPublicConfig::find($id))->i
 same('external',ManagedPublicConfig::find($id)->expected_dns,'Explicit domain expectation survives');
 same($before,$d->fresh()->getRawOriginal(),'Reconciliation never changes holding authority or registrar nameservers');
 same($providerCalls,count($wire->calls),'Reconciliation sends zero registrar requests');
+app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
+DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->delete();
+$d->fresh()->update(['confirmed_revision'=>$d->confirmed_revision+1]);
+same(1,DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->count(),'Holding attachment event enrolls local DNS work before daily sweep');
 $nativeSuccessful=true;echo "Managed site DNS reference passed.\n";
