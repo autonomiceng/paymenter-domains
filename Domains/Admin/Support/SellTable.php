@@ -138,7 +138,8 @@ final class SellTable
         if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
         $sold=$this->sold($row,$action);
         $step=$field!=='profit'&&$sold!=='off'&&($saved['prices'][$action][$field]??null)===null?$this->nextStep($row,$action):[];
-        if($field==='cost'&&($saved['prices'][$action]['cost']??null)===null&&$this->retainedRenewal($row,$action)){
+        if($field==='cost'&&($saved['prices'][$action]['cost']??null)===null&&$this->retainedRenewal($row,$action)
+            &&($step['state']??null)!=='checking'&&($step['open']??null)!=='account'){
             $step=['state'=>'missing','next'=>'Use Sync prices.','open'=>null];
         }
         return $this->savedCell($saved['prices'][$action]??null,$field,$sold,$step);

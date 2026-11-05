@@ -280,5 +280,15 @@ same(null,$status['open']??null,'Restricted status avoids the unrelated TLD repa
 } catch (Throwable $error) {$failures[]='Restricted status '.$scenario.': '.$error->getMessage();}
 }
 $actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())]);
+foreach([false,true] as $canRead){
+try {
+$reset();$readable=$canRead;
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','renew')->delete();
+[$table,$row]=nextTable();$cell=$table->cell($row,'renew','cost');
+same($canRead?'Checking':'Missing',$cell['text'],'Retained renewal costs preserve automatic recovery');
+same($canRead?null:'account',$cell['open'],'Retained renewal setup preserves its account destination');
+if(!$canRead){same('Check account setup on Registrar account.',$cell['next'],'Retained renewal cost explains account repair');}
+} catch (Throwable $error) {$failures[]='Retained renewal recovery '.($canRead?'queued':'account').': '.$error->getMessage();}
+}
 expect($failures===[],implode("\n",$failures));
 $nativeSuccessful=true;echo "Staff catalogue next steps: ok\n";
