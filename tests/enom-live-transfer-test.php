@@ -22,12 +22,13 @@ $transferConfigured=static function():void {
 };
 require __DIR__.'/Support/enom-transfer-setup.php';
 $deny=static function(callable $work):void {try{$work();throw new RuntimeException('Expected refusal');}catch(DomainException){}};
-// Synthetic provider answer and pilot, for this offline fixture only. Real P35/P37 evidence is still absent.
+// Synthetic dated history only: activation must not require a paid transfer pilot. No sockets.
 $evidence=['fingerprint'=>$binding->fingerprint,'site'=>'https://billing.example.com','confirmed_on'=>'2026-10-20','reference'=>'OFFLINE synthetic transfer answer','sha256'=>hash('sha256','OFFLINE answer'),'currency'=>'USD','complete_history'=>true,
-    'history'=>['registration'=>['timezone'=>'America/Los_Angeles','lag'=>0,'retention'=>86400],'renewal'=>['timezone'=>'America/Los_Angeles','lag'=>0,'retention'=>86400],'transfer'=>['timezone'=>'America/Los_Angeles','lag'=>0,'retention'=>86400]],
-    'transfer_proof'=>['confirmed_on'=>'2026-10-20','reference'=>'OFFLINE synthetic pilot','sha256'=>hash('sha256','OFFLINE pilot')]];
+    'history'=>['registration'=>['timezone'=>'America/Los_Angeles','lag'=>0,'retention'=>86400],'renewal'=>['timezone'=>'America/Los_Angeles','lag'=>0,'retention'=>86400],'transfer'=>['timezone'=>'America/Los_Angeles','lag'=>0,'retention'=>86400]]];
 config(['domains.enom_live.accounts.live-uid.evidence'=>$evidence,'domains.support_url'=>'https://support.example.com']);
 DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['finished_at'=>$clock->now()->getTimestamp()]);
+same(true,\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::defaults($a->fresh())['transfer'],'Unreviewed Enom activation includes transfers');
+expect(!Policy::accepted($binding)&&!$a->fresh()->processing_enabled,'Proposed defaults do not activate transfers or Orders');
 $activate=static fn()=>$write('activate',['registration'=>false,'renewal'=>true,'management'=>false,'transfer'=>true,'confirmed'=>true]);
 
 // Separate real native admission/payment and runtime scenarios to retain the 65-second per-file budget.
@@ -53,8 +54,14 @@ $protocol=['route'=>EnomLive::route(),'command'=>'TP_CreateOrder','interval'=>25
 $accept(Policy::KEY,$protocol);expect(!Policy::accepted($binding),'TEST acceptance cannot authorize Live');
 $accept('domains_enom_live_transfer',[...$protocol,'route'=>'https://resellertest.enom.com/interface.asp']);expect(!Policy::accepted($binding),'TEST route cannot authorize Live');
 $deny(fn()=>$write('test_transfer',['accept'=>true,'verified'=>true]));
+config(['domains.enom_live.accounts.live-uid.evidence.history.transfer'=>null]);
+$deny($activate);expect(!Policy::accepted($binding),'Missing transfer history still refuses activation without a pilot veto');
+config(['domains.enom_live.accounts.live-uid.evidence'=>$evidence]);
 $activate();expect(Policy::accepted($binding),'Independent Live acceptance');$write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class)->product($tld,'transfer');expect($transferProduct!==null,'Reviewed active Live transfer has its published native product');$publicOffers(true,'After acceptance');config(['domains.enom_live.transfer'=>false]);$publicOffers(false,'Deployment off');config(['domains.enom_live.transfer'=>true]);$publicOffers(true,'Deployment restored');
 $write('live_transfer',['accept'=>false]);expect(!Policy::accepted($binding),'Live acceptance can be revoked');same(false,app(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->hasTransferOffers(),'Revocation invalidates the warm Live offer');$publicOffers(false,'After revoke');
+same(false,\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::defaults($a->fresh())['transfer'],'Saved Enom transfer Off remains the proposed choice');
+$write('activate',[...\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::defaults($a->fresh()),'confirmed'=>true]);
+expect(!Policy::accepted($binding),'Reconfirming defaults preserves deliberate account Off');
 $write('live_transfer',['accept'=>true]);
 same([60,60],TransferPrecheck::rules($selection),'What you sell is used only after Live acceptance');
 $server->settings()->create(['key'=>'domains_transfer_endings','value'=>'net']);
@@ -93,6 +100,12 @@ $write('live_transfer',['accept'=>true]);$pay();same('paid',App\Models\Invoice::
 $write('live_transfer',['accept'=>false]);$calls=count($GLOBALS['enomWire']['forms']);
 same(null,app(\Paymenter\Extensions\Servers\Domains\Services\PayCheck::class)->stop(App\Models\Invoice::findOrFail($op->invoice_id)),'A fully paid Live invoice stays outside the pay gate');
 same($calls,count($GLOBALS['enomWire']['forms']),'A fully paid Live invoice makes no name read');$write('live_transfer',['accept'=>true]);
+$write('live_transfer',['accept'=>false]);
+$write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'max_years'=>1],$tld->id);
+$offIntent=$tld->fresh()->catalogue_intent;
+$write('activate',[...\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::defaults($a->fresh()),'confirmed'=>true]);
+same($offIntent,$tld->fresh()->catalogue_intent,'Activation preserves deliberate TLD transfer Off');
+$publicOffers(false,'Retained account and TLD Off');
 echo "Live transfer admission and partial-payment refusals passed without sockets.\n";$nativeSuccessful=true;return;
 }
 $activate();$write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class)->product($tld,'transfer');

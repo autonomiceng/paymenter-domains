@@ -16,7 +16,13 @@ final class EnomLiveActivation
     public static function defaults(Account $a): array
     {
         $b=AccountBindings::binding($a);$out=[];
-        foreach(self::FEATURES as $feature){$out[$feature]=$feature!=='transfer'&&self::featureEnabled($b,$feature);}
+        foreach(self::FEATURES as $feature){$out[$feature]=self::featureEnabled($b,$feature);}
+        // Suggest transfers only for an unreviewed account. A saved Off (including an old
+        // activation that left transfer unsaved) must never become On merely by reopening Activate.
+        $key=$b->registrarKey==='namesilo'?'domains_namesilo_transfer':EnomLive::key($b,EnomTestTransfer::KEY);
+        if(self::receipt($a)!==[]||Server::findOrFail($b->serverId)->settings()->where('key',$key)->exists()){
+            $out['transfer']=$out['transfer']&&EnomTestTransfer::stored($b);
+        }
         return $out;
     }
     public static function featureEnabled(AccountBinding $b,string $feature): bool
