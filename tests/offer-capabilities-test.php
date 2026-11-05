@@ -54,7 +54,7 @@ $clock->instant=$now;
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::encodeFacts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
     ['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))]);
 $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['net'],'register');
-$revision=fn()=>$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$revision=fn()=>offerCommerceAsStaff(static fn () => $ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $costs=[];
 foreach(['register','renew','transfer'] as $action){$costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($action,1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));}
 $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'net',$costs),$revision());
