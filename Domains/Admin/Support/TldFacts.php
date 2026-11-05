@@ -15,7 +15,7 @@ final class TldFacts
     /** A sync read this term and the registrar has no cost for it, so it does not sell it. Nothing to do. */
     public const NOT_OFFERED='Not offered';
     /** Why a TLD is not for sale when no term has current prices. */
-    public const NEEDS_SYNC='Needs a price sync';
+    public const NEEDS_SYNC='Registrar cost missing';
     public static function bound($query)
     {
         return $query->whereExists(fn($q)=>$q->selectRaw('1')->from('domains_accounts as a')
@@ -144,7 +144,7 @@ final class TldFacts
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
-    public const FIXES=['Cost out of date'=>'Use Sync prices.','Cost missing'=>'Use Sync prices.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and read prices again.'];
+    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.'];
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}

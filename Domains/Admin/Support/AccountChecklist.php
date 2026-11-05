@@ -22,7 +22,7 @@ final class AccountChecklist
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
     public const TRANSFER_LABEL='Transfers (Experimental)';
-    private const PRICES='When this account last read its costs from the registrar. Use Sync prices to read them again.';
+    private const PRICES='The last successful registrar price refresh and the next due time. Sync prices is an optional retry.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
@@ -183,11 +183,11 @@ final class AccountChecklist
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
             $at=$failure['at']===null?'':', '.$failure['at'];
-            $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Fix the connection or our call limit, then use Sync prices. Daily retries continue.',null,self::PRICES);
+            $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Check the saved failure cause. Sync prices is an optional retry.',null,self::PRICES);
             return [...$row,'buttons'=>self::priceButtons($a)];
         }
         $synced=RegistrarFacts::lastSync((int)$a->server_id);
-        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'Not synced yet. Use Sync prices.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
+        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'No successful price refresh recorded. Check the account runtime and scheduled refresh. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
     }
     /** Sync covers every TLD of the account at once. Staff who can't sync can still open the TLD list. */
     private static function priceButtons(Account $a): array

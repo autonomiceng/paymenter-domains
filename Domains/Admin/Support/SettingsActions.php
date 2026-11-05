@@ -345,7 +345,7 @@ final class SettingsActions
         foreach($summary['failed'] as $account=>$tlds){$failed[]=$account.($tlds===[]?'':' ('.implode(', ',$tlds).')');}
         return implode(' ',array_filter([
             $count===0?'No prices changed.':'Published new prices for '.$count.' '.($count===1?'TLD':'TLDs').'.',
-            $failed===[]?null:'Could not publish '.implode(', ',$failed).'. Use Sync prices under What you sell, then save again.',
+            $failed===[]?null:'Could not publish '.implode(', ',$failed).'. Check the exact missing cost or pricing rule on the TLD page. Sync prices is an optional retry.',
             $summary['skipped']===[]?null:'Off in Paymenter, so skipped: '.implode(', ',$summary['skipped']).'.',
             ($summary['audit_failed']??false)?"Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":null,
         ]));
@@ -451,7 +451,7 @@ final class SettingsActions
             'Explicit restoration required.'=>'To turn sales back on, tick the box to confirm this account is set up for them. Check What you sell.',
             'Acquisition acceptance unavailable.'=>($data['transfer']??false)&&$a!==null&&!$a['transfer_allowed']?'Transfers are not set up for '.$ending.' on this account. Change sales under What you sell. Turn off Transfers.'
                 :'These '.$ending.' sales are not set up on this account. Check What you sell.',
-            'Catalogue publication evidence missing.','Catalogue publication evidence changed.'=>'Prices for '.$ending.' are missing or out of date. Use Sync prices on the TLD list, then try again.',
+            'Catalogue publication evidence missing.','Catalogue publication evidence changed.'=>'Prices for '.$ending.' are missing or out of date. See the last successful refresh and next due on the TLD page. Sync prices is an optional retry.',
             'Retained holders require annual renewal support.'=>'Customers still own '.$ending.' domains here, so renewals must stay on.',
             default=>null};
         return $text===null?null:$text.' Nothing was saved.';
@@ -512,7 +512,7 @@ final class SettingsActions
                 'namesilo_identity_unavailable'=>'NameSilo did not confirm the key. Check the API key and account mode. Nothing was saved.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This was already submitted, so no new key check was sent. An earlier try may still be running, and this page can’t show that. Wait for it to finish. '.self::OUTCOME_NEXT:'This was already submitted. Check this page, then try again if you need to.',
                 'This percentage cannot cover the card fee. Lower the markup or card fee.'=>'No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',
-                'Costs required before publication.'=>'Costs are missing. Use Sync prices on the TLD list, then save again. Nothing was changed.',
+                'Costs required before publication.'=>'Exact registrar costs are missing. See the last successful refresh and next due on the TLD page. Sync prices is an optional retry. Nothing was changed.',
                 'Explicit renewal billing confirmation required.'=>'Tick the box to continue. Nothing was saved.',
                 'Invalid renewal billing input.'=>'Check the fields and try again. Nothing was saved.',
                 'Invalid renewal timing.'=>'Enter whole numbers of days. Nothing was saved.',
