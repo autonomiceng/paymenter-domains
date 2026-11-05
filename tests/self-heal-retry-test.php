@@ -16,11 +16,11 @@ $familyViews=static function()use(&$d,$clock,$page):array {
  $facts=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now());
  return ['staff'=>view('domains::partials.record-families',['recordFamilies'=>$facts,'staff'=>true])->render(),'customer'=>$page()];
 };
-$assertFamily=static function(string $label,?int $queued=null,?string $cause=null)use($familyViews):void {
+$assertFamily=static function(string $label,?int $queued=null,?string $cause=null,string $kind='dns')use($familyViews):void {
  foreach($familyViews() as $surface=>$html){
   $dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);
-  $nodes=$xp->query('//span[@data-record-family="dns"]');expect($nodes->length>0,$surface.' renders the DNS family');
-  foreach($nodes as $node){same($label,trim($node->textContent),$surface.' family label');
+  $nodes=$xp->query('//span[@data-record-family="'.$kind.'"]');expect($nodes->length>0,$surface.' renders the '.$kind.' family');
+  foreach($nodes as $node){same($label,trim($node->textContent),$surface.' family label: expected '.$label.', got '.trim($node->textContent));
    same($label==='Missing'?1:0,$xp->query('.//svg',$node)->length,$surface.' warning icon only for Missing');
    $row=$node->parentNode;
    if($queued!==null){expect($xp->query('.//time[@datetime="'.gmdate(DATE_ATOM,$queued).'"]',$row)->length>0,$surface.' shows queued time');}
@@ -47,7 +47,7 @@ for($try=1;$try<=5;$try++){
  same('read_failed',$worker->turn($queue,$guard),'Family failure keeps its safe code');$job=(clone $q)->sole();same($try,(int)$job->tries,'Failure count is durable');
  if($try<5){expect(!HoldingObservationWork::stopped($d->fresh()),'Retry remains active before exhaustion');$clock->instant=$clock->now()->setTimestamp((int)$job->due_at);}
 }
-expect(HoldingObservationWork::stopped($d->fresh()),'Five failures stop with their exact cause');$assertFamily('Missing',cause:'The registrar read failed.');$calls=count($state->calls);$clock->instant=$clock->now()->modify('+2 days');
+expect(HoldingObservationWork::stopped($d->fresh()),'Five failures stop with their exact cause');$assertFamily('Missing',cause:'The registrar read failed.',kind:'srv');$assertFamily('Complete');$calls=count($state->calls);$clock->instant=$clock->now()->modify('+2 days');
 same('idle',$worker->turn($queue,$guard),'Exhausted current work stays stopped');same($calls,count($state->calls),'Exhaustion does not loop');
 // Legacy stopped work has no retry receipt. A repaired, verified account gets one recovery only.
 $p=$d->fresh()->observation;unset($p['read_retry']);$d->fresh()->update(['observation'=>$p]);$q->update(['safe_code'=>'configuration_unverified','tries'=>5]);$state->fault='';
