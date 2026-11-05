@@ -5,10 +5,10 @@ require __DIR__.'/native-app.php';
 
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferPorts, Projection, Writer};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CredentialFeed, OfferPorts, Projection, Writer};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock};
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomTestSendLimit, EnomTestSendLimitSchema, Installation, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomTestCallLimit, EnomTestSendLimit, EnomTestSendLimitSchema, Installation, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\OfferTransport;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand, Transport};
 
@@ -69,9 +69,6 @@ try { $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture'
 catch (DomainException) { $refusedGeneration = true; }
 same(true, $refusedGeneration, 'Generation fence is rechecked for every physical read in a group');
 same(2, $wire->calls, 'A changed generation refuses before a second physical wire send');
-$rows = array_fill(0, 29, ['account' => EnomTestSendLimit::account('offer-fixture'), 'command' => 'Check', 'sent_at' => $clock->now()->getTimestamp() - 120]);
-DB::table(EnomTestSendLimitSchema::SENDS)->insert($rows);
-same(0, $ports->allowance($binding, RequestOrigin::Interactive), 'Our catalogue share counts other origins and leaves checkout headroom');
 config([EnomTestSendLimit::PER_DAY => 'bad']);
 same(0, $ports->allowance($binding, RequestOrigin::Background), 'Unreadable local allowance fails closed');
 // The factory's worker must reserve our cumulative minute cap for manual Sync as well as daily work.
@@ -98,28 +95,38 @@ $lease = $normalMinute->reserve($binding, RequestOrigin::Interactive, 1);
 $normalMinute->release($binding, RequestOrigin::Interactive, $lease);
 same(26, (int) DB::table('domains_read_budgets')->where('server_id', $binding->serverId)->value('used'), 'Ordinary interactive checkout retains its normal allowance above the catalogue ceiling');
 config(['domains.provider_send_guard' => null]);
-// A holding consumes capacity after advisory admission, before catalogue physical sends.
-DB::table(EnomTestSendLimitSchema::SENDS)->where('account', EnomTestSendLimit::account('offer-fixture'))->delete();
-config([EnomTestSendLimit::PER_DAY => 100]);
-DB::table(EnomTestSendLimitSchema::SENDS)->insert(array_fill(0, 25,
-    ['account' => EnomTestSendLimit::account('offer-fixture'), 'command' => 'Check', 'sent_at' => $clock->now()->getTimestamp() - 120]));
-same(5, $ports->allowance($binding, RequestOrigin::Interactive), 'Advisory admission sees room for the five-read catalogue feed');
-EnomTestSendLimit::admit(Environment::Test, 'offer-fixture', 'Check'); // an intervening holding read
-$sent = 0; $refused = false;
-try {
-    EnomTestSendLimit::withCheckoutHeadroom('offer-fixture', static function () use (&$sent): void {
-        for ($i = 0; $i < 5; $i++) {
-            // Even a nested ordinary background scope must not loosen the catalogue's stricter cap.
-            EnomTestSendLimit::withCheckoutHeadroom('offer-fixture', static fn () => EnomTestSendLimit::admit(Environment::Test, 'offer-fixture', 'GetTLDList'));
-            same(0, DB::transactionLevel(), 'Synthetic physical send happens after the atomic admission transaction');
-            $sent++;
-        }
-    }, 30);
-} catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit) { $refused = true; }
-same(4, $sent, 'Our 30% daily catalogue threshold refuses the extra send after another consumer uses capacity');
-same(true, $refused, 'Exhausted daily catalogue headroom refuses rather than exceeding the threshold');
-same(30, EnomTestSendLimit::usage('offer-fixture')['day'], 'Atomic admission counts each synthetic physical attempt exactly once');
-EnomTestSendLimit::admit(Environment::Test, 'offer-fixture', 'Check');
-same(31, EnomTestSendLimit::usage('offer-fixture')['day'], 'The narrowed scope restores ordinary checkout capacity after refusal');
+// Our catalogue share counts catalogue sends only; the whole day still stops at our cap.
+$account = EnomTestSendLimit::account('offer-fixture');
+$reset = static function (int $day, int $older) use ($account, $clock): void {
+    DB::table(EnomTestSendLimitSchema::SENDS)->where('account', $account)->delete();
+    config([EnomTestSendLimit::PER_DAY => $day, EnomTestSendLimit::PER_MINUTE => 100000]);
+    // Rows written before catalogue sends were marked, including old catalogue reads, count as other work.
+    DB::table(EnomTestSendLimitSchema::SENDS)->insert(array_map(static fn (int $i) => ['account' => $account,
+        'command' => $i % 2 ? 'GetTLDList' : 'Check', 'sent_at' => $clock->now()->getTimestamp() - 120], range(1, $older)));
+};
+// The real feed's read scope, driven without a provider send.
+$scope = (new ReflectionProperty(CredentialFeed::class, 'scope'))->getValue($ports->feed($binding));
+$sends = static function (int $count, bool $catalogue) use ($scope): int {
+    $admit = static fn () => EnomTestSendLimit::admit(Environment::Test, 'offer-fixture', 'GetTLDList');
+    for ($sent = 0; $sent < $count; $sent++) {
+        try { $catalogue ? $scope($admit) : $admit(); } catch (EnomTestCallLimit) { return $sent; }
+        same(0, DB::transactionLevel(), 'A physical send happens after the atomic admission transaction');
+    }
+    return $sent;
+};
+$reset(1000, 909);
+same(25, $ports->allowance($binding, RequestOrigin::Interactive), 'Catalogue reads still go at 909 of 1000 sends when none are catalogue sends');
+same(10, $sends(10, true), 'Catalogue sends go at 909 of 1000 total sends');
+same(919, EnomTestSendLimit::usage('offer-fixture')['day'], 'Each catalogue send counts once toward the whole day');
+same(25, $ports->allowance($binding, RequestOrigin::Interactive), 'Catalogue reads still go at 919 of 1000 sends with 10 catalogue sends');
+$reset(100, 50);
+same(30, $sends(31, true), 'Catalogue sends stop once they reach our 30% share');
+same(0, $ports->allowance($binding, RequestOrigin::Interactive), 'No catalogue allowance once catalogue sends reach our share');
+same(20, $sends(25, false), 'Other work still goes after the catalogue share is used, up to our cap');
+$reset(100, 95);
+same(5, $ports->allowance($binding, RequestOrigin::Interactive), 'Catalogue allowance also stops at the room left under our cap');
+same(5, $sends(6, true), 'Catalogue sends stop at our cap even under their share');
+same([0, 0], [$sends(1, false), $ports->allowance($binding, RequestOrigin::Interactive)], 'Everything stops at our cap');
+same(100, EnomTestSendLimit::usage('offer-fixture')['day'], 'Refused sends are not counted');
 echo "offer ports: ok\n";
 $nativeSuccessful = true;
