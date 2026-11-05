@@ -61,7 +61,10 @@ $page=\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertActionHidden('siteDefault');
 \App\Models\Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->delete();
 config(['domains.site_dns_default.nameservers'=>null]);$entry->upgraded();
-\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING)->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors();
+$settings=\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING);
+// ui-r15 R4: the step is said once, in the red callout; the Site DNS default row shows only Missing.
+same(1,substr_count($settings->html(),'Choose a set with Change site DNS default'),'Site DNS default step shows once');
+$settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors();
 same($default->id,SiteDnsDefault::profile()->id,'Site settings save a single global reference');
 app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
 DB::table('domains_watch_work')->where('watch_id',$watch->id)->delete();

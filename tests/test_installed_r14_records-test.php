@@ -24,9 +24,25 @@ $top=\Filament\Schemas\Schema::make($nativePage)->components($rows)->toHtml();
 writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-records.html','<!doctype html><html class="dark"><head><meta charset="utf-8"><style>'.file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css').'</style>'.view('domains::partials.staff-styles')->render().'</head><body><main class="domains-sec">'.$top.$body.'</main></body></html>');
 $dom=new DOMDocument;@$dom->loadHTML($body);$xp=new DOMXPath($dom);$errors=[];
 foreach($xp->query('//span[@data-record-family]//svg')as$icon){if((int)$icon->getAttribute('width')<1||(int)$icon->getAttribute('width')>20||(int)$icon->getAttribute('height')<1||(int)$icon->getAttribute('height')>20){$errors[]='Missing icon has no compact intrinsic size';break;}}
+// ui-r15 R4: the reason shows once, on Last sync; DNS records keeps a plain red Missing.
+same(null,$facts['DNS records']['sub'],'DNS records does not repeat the failed read');
 foreach(['Last sync','DNS records']as$label){$text=json_encode($facts[$label]);
- if(!str_contains($text,'The registrar read failed.')){$errors[]=$label.' does not explain the failed read';}
+ if($label==='Last sync'&&!str_contains($text,'The registrar read failed.')){$errors[]=$label.' does not explain the failed read';}
  if(str_contains($text,'Fills in by itself')||str_contains($text,'Use Sync now')){$errors[]=$label.' promises a day or asks for a manual sync';}}
 expect($errors===[],implode('; ',$errors));
 expect(str_contains($top,'The registrar read failed.')&&str_contains($top,'Next automatic retry:'),'Native top rows render the actual failed read and due time');
+// ui-r15 R4: a registrar read can return contacts while the domain has none saved here (an import). The moved Contacts row
+// shows the read state above its own red Missing, as it did before it moved onto the family row.
+$known=['state'=>'complete','records'=>[]];
+$d->update(['observation'=>['records'=>['identity'=>ObservationRecords::identity($d->fresh()),'at'=>$now->format(DATE_ATOM),'sequence'=>0,'format'=>1,'capability_revision'=>$d->registrar_key.'-records-1',
+    'expected_families'=>array_fill_keys(['dns','srv','ds','glue'],'supported'),'families'=>array_fill_keys(['dns','srv','ds','glue'],$known),
+    'settings'=>['nameservers'=>['state'=>'complete','facts'=>['nameservers'=>['ns1.example.net','ns2.example.net']]],'contacts'=>['state'=>'complete','facts'=>[]],'flags'=>['state'=>'complete','facts'=>[]]]]]]);
+$contactsFamily=array_column(RecordFamilies::read($d->fresh(),$now)['rows'],null,'kind')['contacts'];$contactsFact=DomainFacts::for($d->fresh())['Contacts'];
+same([null,'complete'],[$contactsFact['value'],$contactsFamily['state']],'Fixture: contacts read complete, none saved');
+$familyRow=new ReflectionMethod($nativePage,'familyRow');
+$contactsHtml=\Filament\Schemas\Schema::make($nativePage)->components([$familyRow->invoke($nativePage,$contactsFamily,$contactsFact,[])])->toHtml();
+$contactsDom=new DOMDocument;@$contactsDom->loadHTML($contactsHtml);$contactsXp=new DOMXPath($contactsDom);
+same(1,$contactsXp->query('//span[@data-record-family="contacts"]//*[normalize-space(.)="Complete"]')->length,'The read state stays above the row');
+same(1,$contactsXp->query('//div[contains(@class,"fi-color-danger")][normalize-space(.)="Missing"]')->length,'No saved contacts stays red Missing under the read state');
+expect(str_contains($contactsHtml,DomainFacts::ADD_CONTACTS),'Missing contacts keep their own step during a failed read');
 $nativeSuccessful=true;echo "Compact native staff Missing and consistent failed-read guidance passed.\n";
