@@ -104,6 +104,7 @@ final class Labels
             'stale_claim'=>RequestStatus::UNCONFIRMED,'poll_limit_reached'=>'Status checks stopped. Use Check status.',
             'read_unavailable'=>'Status check failed','budget_exhausted'=>'Status check failed','superseded'=>'Replaced by a newer request',
             'healthy_pending'=>'Waiting for old registrar','refreshed'=>null,'unresolved'=>'Status check failed',
+            'acquisition_definitely_unsent'=>RequestStatus::UNSENT,'management_definitely_unsent'=>RequestStatus::UNSENT,
             'renewal_definitely_unsent'=>'Renewal not sent','renewal_confirmation_required'=>RequestStatus::UNCONFIRMED,
             'awaiting_unique_charge'=>'Registrar has not confirmed the charge','refund_approved'=>'Credit approved',
             'authority'=>'Not sent: registrar account changed',
