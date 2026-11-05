@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-use Paymenter\Extensions\Servers\Domains\Catalogue\Facts;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Facts, TermSupport};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
@@ -42,7 +42,8 @@ final class TestCatalogueFacts
             $facts=new Facts($e['terms'],$e['registry_fields'],$e['renewal_safe']??null,$e['requires_nameservers']??null,
                 $e['auto_renew_only']??null,'namesilo_test_protocol',...$dates);
             if(!$facts->fresh($clock->now())){throw new \DomainException;}
-            return $facts;
+            // Optional reviewed NS17 evidence rides with the same dated row; first-pass suffixes only.
+            return TermSupport::attach($tld,$facts,$e);
         }catch(\Throwable){throw new \DomainException('Current TEST NameSilo protocol facts unavailable.');}
     }
 }
