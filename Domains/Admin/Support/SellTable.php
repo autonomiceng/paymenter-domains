@@ -19,6 +19,7 @@ final class SellTable
     private ?array $savedRows=null;
     private ?int $hiddenWarnings=null;
     private array $filtered=[];
+    private ?StaffGrants $grants=null;
     /** @param array<int,AccountBinding> $bindings by server
      * @param \Closure():array<OfferRow> $page the rows on screen
      * @param ?\Closure():array<OfferRow> $filteredRows all rows kept by search and filters */
@@ -30,6 +31,8 @@ final class SellTable
     { return $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()
         ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE); }
     public function rows(?string $focus): Builder { return $this->source()->rows($this->bindings,$focus); }
+    /** The viewer's rights, read once for this table build: a cell or a saved-price read never asks again. */
+    private function grants(): StaffGrants { return $this->grants??=Staff::requireView(); }
     /** @return array<int,list<string>> accepted TLDs with no sales row yet, by server. Only a projected read shows them; one account's view saves them first. */
 
     /** Derived active offer row; never persisted as a second catalogue. */
@@ -79,7 +82,7 @@ final class SellTable
     /** The saved prices for this view. Staff without costs never read them. */
     public function saved(): array
     {
-        if(!Staff::requireView()->costs){return ['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];}
+        if(!$this->grants()->costs){return ['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];}
         if($this->savedRead!==null){return $this->savedRead;}
         $this->facts();
         return $this->savedRead=$this->costs?$this->source()->matrix(collect($this->rowTlds),$this->years):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];
@@ -87,7 +90,7 @@ final class SellTable
     /** Count omitted TLDs on other filtered pages without loading their offer/price snapshots. */
     public function hiddenWarnings(): int
     {
-        if(!Staff::requireView()->costs||!$this->costs||$this->filteredRows===null){return 0;}
+        if(!$this->grants()->costs||!$this->costs||$this->filteredRows===null){return 0;}
         if($this->hiddenWarnings!==null){return $this->hiddenWarnings;}
         $this->facts();$hidden=$this->tlds(($this->filteredRows)(),['server_id','tld','catalogue_intent','use_default_rule','pricing_mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'])->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]));
         return $this->hiddenWarnings=count($this->source()->omissions($hidden));
@@ -131,7 +134,7 @@ final class SellTable
      * @return array{text:?string,tone:?string,hint:?string,mark:bool} */
     public function cell(OfferRow $row,string $action,string $field): array
     {
-        if(!Staff::requireView()->costs){return self::cellOf(null);}
+        if(!$this->grants()->costs){return self::cellOf(null);}
         $saved=$this->savedRow($row);
         if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
         $sold=$this->sold($row,$action);
