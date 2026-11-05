@@ -40,7 +40,7 @@ function offerCommerceFixture(): array
 }
 
 /** A second selected Enom account avoids pretending NameSilo enrollment was accepted. */
-function offerCommerceSecond(array $fixture): array
+function offerCommerceSecond(array $fixture,string $ending='net'): array
 {
     extract($fixture);
     $server = App\Models\Server::create(['name' => 'Synthetic second account', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
@@ -49,19 +49,19 @@ function offerCommerceSecond(array $fixture): array
         ['type' => 'array', 'encrypted' => false, 'value' => Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT]);
     $bindings->setProcessing($server->id, true, syntheticActivation());
     // New feed/facts commands create an independent converted offer and permanent native projection.
-    $q = new Query($b, ['net'], 'register');
+    $q = new Query($b, [$ending], 'register');
     $rev = static fn () => $ports->readOffers($q, Context::Staff)[0]->revision;
     $costs = [];
     foreach (['register' => '5.0000', 'renew' => '8.0000', 'transfer' => '7.0000'] as $action => $cost) {
         $costs[] = new Paymenter\Extensions\Servers\Domains\Catalogue\Cost($action, 1, true, $cost,
             Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal, 'synthetic', $now, $now->modify('+1 day'));
     }
-    $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($b, 'net', $costs), $rev());
-    $ports->apply(new FactsObserved($b, 'net', new Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]],
+    $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($b, $ending, $costs), $rev());
+    $ports->apply(new FactsObserved($b, $ending, new Facts(['register' => [1], 'renew' => [1], 'transfer' => [1]],
         [], true, false, false, 'synthetic', $now, $now->modify('+1 day'))), $rev());
-    $ports->apply(Edit::override($b, 'net', new Intent(sell: true, transfers: true)), $rev());
-    $ports->apply(Edit::seller($b, 'net', ['register', 'transfer']), $rev());
-    return [$b, $offers->offer('net', 'register', 1)];
+    $ports->apply(Edit::override($b, $ending, new Intent(sell: true, transfers: true)), $rev());
+    $ports->apply(Edit::seller($b, $ending, ['register', 'transfer']), $rev());
+    return [$b, $offers->offer($ending, 'register', 1)];
 }
 
 /** Synthetic authentication proves a same-identity credential rotation, without a provider. */

@@ -15,7 +15,7 @@ $user=commerceUser(); $com=$storefront->offer('com','register',3)['product'];
 $q=new Query($binding,['com'],'register',3);
 $rev=static fn()=>$ports->readOffers($q,Context::Staff)[0]->revision;
 $cart=commerceCart($user); $line=commerceAdd($cart,$com,'reload-price-placeholder.com',3);
-commerceAdd($cart,$second['product'],'reload-removed-placeholder.net');
+commerceAdd($cart,$second['product'],'example.net');
 $views=getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/reload-cart'; mkdir($views,0700,true);
 file_put_contents($views.'/cart.blade.php', '<div>@includeIf(\'domains::cart-notice\')@foreach (\App\Classes\Cart::items() as $item)@includeIf(\'domains::cart-was\',[\'item\'=>$item]){{ $item->price->format($item->price->total) }}@endforeach</div>');
 Illuminate\Support\Facades\View::getFinder()->prependLocation($views);
@@ -37,7 +37,7 @@ $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,trans
 $ports->apply(Edit::override($secondBinding,'net',new Intent(sell:false,transfers:true)),$ports->readOffers(new Query($secondBinding,['net'],'register'),Context::Staff)[0]->revision);
 $page=$open(); $dom=storefrontDom($page->html());
 same('Your cart changed',trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'Reload announces the changed cart even when another line was removed');
-expect(str_contains($page->html(),'reload-removed-placeholder.net'),'The notice still identifies the removed domain');
+expect(str_contains($page->html(),'example.net'),'The notice still identifies the removed domain');
 same('Was $23.40',trim($dom->query('//s')->item(0)?->textContent??''),'Reload strikes the amount the customer last saw');
 same('27.00',number_format((float)$page->get('total')->total,2,'.',''),'Reload shows the new price');
 Illuminate\Support\Once::flush(); $page->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
