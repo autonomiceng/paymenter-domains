@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{List
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema,PriceCatalogue,StaffSettingsReview as Review};
-$f=commerceFixture(identities:['namesilo'=>'demo-namesilo']);extract($f);tldPanel();ObservationSchema::install();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');Carbon\Carbon::setTestNow($now);
+$f=commerceFixture(identities:['namesilo'=>'demo-namesilo']);extract($f);staffSalesFixture();tldPanel();ObservationSchema::install();Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');Carbon\Carbon::setTestNow($now);
 [$enom,$silo]=$tlds;
 DB::table('extensions')->where('id',$enom->server_id)->update(['name'=>'Enom TEST identity check']);
 DB::table('extensions')->where('id',$silo->server_id)->update(['name'=>'OFFLINE DEMO NameSilo (synthetic)']);
