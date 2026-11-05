@@ -70,12 +70,17 @@ $stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped domain work remains resumable after purchase completion');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
 commerceReject(fn()=>$run($check->fresh(),'resume_observation'));
-// Record-only holds also recover when the current scheduler job is healthy.
+// 875ef5d4 keeps a healthy queued retry automatic; only stopped work needs staff resume.
 ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
+$retryBefore=(array)DB::table('domains_observation_work')->where('id',$stopped)->first();
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
+same($retryBefore,(array)DB::table('domains_observation_work')->where('id',$stopped)->first(),'Viewing a queued record hold cannot reset its retry');
+expect(ObservationRecords::held($check->domain->fresh()),'The record hold waits for a real successful read');
+DB::table('domains_observation_work')->where('id',$stopped)->update(['safe_code'=>'records_incomplete']);
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation')
     ->callAction('resume_observation')->assertNotified('Sync resumed');
 expect(!ObservationRecords::held($check->domain->fresh()),'Domain recovery clears the record hold');
-same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Record hold resumes current healthy job');
+same(2,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped record hold resumes its current job');
 // Sync now reads outside a job row and can set a hold, so with no row its own button is the way back, and a complete read clears the hold.
 DB::table('domains_observation_work')->where('id',$stopped)->delete();ObservationRecords::hold($check->domain->fresh(),'records_unavailable',$clock->now());
 $noRow=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation')->assertSee('Use Sync now.')->assertDontSee('Use Resume sync');
