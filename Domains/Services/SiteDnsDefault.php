@@ -40,6 +40,7 @@ final class SiteDnsDefault
                 $names=config('domains.site_dns_default.nameservers');
                 if(!is_array($names) || !$names){return;}
                 try{$routing=new RoutingProfile($names,[],[]);}catch(\InvalidArgumentException|\TypeError){return;}
+                try{self::validateRegistrars($routing->nameservers);}catch(\DomainException){return;}
                 // System installation has no staff actor. Quiet maintenance preserves normal staff validation.
                 $p=new WatchProfile(['name'=>'Beco DNS','nameservers'=>$routing->nameservers,'website_endpoints'=>[],
                     'email_endpoints'=>[],'enabled'=>true,'edited_by'=>0,'reason'=>'Deployment DNS default']);
@@ -83,6 +84,21 @@ final class SiteDnsDefault
                 throw new \DomainException($rule.' Update this DNS template before saving the site default.',0,$e);
             }
         }
+    }
+    /** Re-evaluate connected accounts on every read, including accounts added after installation.
+     * Keep the saved reference and all domain/watch choices intact; only staff can replace the default.
+     */
+    public static function refusal(): ?string
+    {
+        $p=self::profile();
+        if($p){$names=$p->nameservers;}
+        else{
+            $names=config('domains.site_dns_default.nameservers');
+            if(!is_array($names) || !$names){return null;}
+            try{$names=(new RoutingProfile($names,[],[]))->nameservers;}catch(\InvalidArgumentException|\TypeError){return null;}
+        }
+        try{self::validateRegistrars($names);}catch(\DomainException $e){return $e->getMessage();}
+        return null;
     }
     private static function write(WatchProfile $p): void
     {

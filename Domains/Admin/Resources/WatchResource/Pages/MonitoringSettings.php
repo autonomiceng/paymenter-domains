@@ -72,14 +72,15 @@ class MonitoringSettings extends Page
         abort_unless(self::canAccess(),403);
         [$endpoint,$reason,$forced]=app(DnsResolverSettings::class)->configuration();
         $default=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile();
+        $refusal=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::refusal();
         $fix=Staff::can(PublicSuffixList::MANAGE)?$this->edit('edit')->link():null;
         $resolver=TextEntry::make('resolver')->label('Resolver')->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
             ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
-            ...(!$default?[Callout::make(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING)->status('danger')->columnSpanFull()]:[]),
+            ...(!$default||$refusal?[Callout::make($refusal??\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING)->status('danger')->columnSpanFull()]:[]),
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
             Sheet::split([Sheet::section('Monitoring',[
-                Sheet::row(TextEntry::make('site_dns')->label('Site DNS default')->state($default?->name??Missing::LABEL)->belowContent($default?implode(', ',$default->nameservers):'Installation has not supplied the expected nameservers.')),
+                Sheet::row(MissingEntry::apply(TextEntry::make('site_dns')->label('Site DNS default')->state($refusal?Missing::LABEL:($default?->name??Missing::LABEL))->belowContent($default?implode(', ',$default->nameservers):null),cause:$refusal??(!$default?'Installation has not supplied the expected nameservers.':null))),
                 Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Supported registrar families are read independently. Unsupported families remain unsupported.')),
                 Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Daily')->belowContent('Record comparisons run daily. Nameserver delegation is checked more often; failed checks retry automatically.')),
                 Sheet::row(TextEntry::make('read_failures')->label('Registrar read failures')->state('No separate alert switch')->belowContent('Read failures appear on the domain, with the failed family and resume action. Separate registrar-failure email alerts are not available.')),
