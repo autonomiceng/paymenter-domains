@@ -328,7 +328,7 @@ final class DomainFacts
         if (!self::account($d)) { return ['title'=>self::NO_ACCOUNT,'tone'=>'warning']; }
         $op=$d->latestAcquisition;
         if ($op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)) {
-            $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code)),'.');
+            $cause=rtrim(preg_replace('/^Not sent: /','',(string)Labels::reason($op->safe_code,$op->funding_basis==='complimentary')),'.');
             $title=Labels::action($op->action).($op->state==='held'?' not sent'.($cause===''?'':': '.(preg_match('/\A(?:Enom|NameSilo)\b/',$cause)?$cause:lcfirst($cause))).'.':' not confirmed by the registrar.');
             try{$title=RequestFacts::readyMessage($op)??$title;}catch(\Throwable){}
             return ['title'=>$title,'tone'=>'warning','action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];

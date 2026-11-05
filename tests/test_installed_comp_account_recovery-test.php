@@ -65,7 +65,7 @@ $check('elapsed complimentary funds wait closes without payment or refund',funct
     FundsWaits::sweep($account,$clock->now());same($before,$money(),'Repeated sweep changes no invoice, transaction or credit');
     same('paid',Invoice::findOrFail($wait->invoice_id)->status,'The zero receipt stays Paid');
 });
- $check('complimentary missing-code transfer closes exactly at its cutoff without credit',function()use($transfer,$transfers,$clock,$money):void {
+$check('complimentary missing-code transfer closes exactly at its cutoff without credit',function()use($transfer,$transfers,$clock,$money):void {
     $deadline=Paymenter\Extensions\Servers\Domains\Services\TransferInputs::deadline($transfer->fresh(),$clock->now());
     expect($deadline!==null,'Issued complimentary transfer has a verified cutoff');
     $before=$money();$open=$transfer->fresh()->getRawOriginal();
@@ -92,5 +92,20 @@ $check('elapsed complimentary funds wait closes without payment or refund',funct
 });
 same(0,InvoiceTransaction::count(),'All recovery paths leave complimentary receipts without payments');same(0,Credit::count(),'No refund credit is invented');
 same(0,$writer->calls,'No recovery action sends to the registrar');
+$check('ordinary paid transfer timeout still adds its exact account credit once',function()use($clock,$now,$user,$staff,$newRegistration,$transfers,$money):void {
+    $clock->instant=$now;ComplimentaryAccounts::set($user->id,$staff,false,'Return future terms to paid pricing',$clock);
+    $paid=$newRegistration(placeholderComFixtureName('paid-code-timeout-placeholder.com'),'transfer');
+    same('paid_invoice',$paid->funding_basis,'Switch-off admits an ordinary paid term');
+    DB::table('invoices')->where('id',$paid->invoice_id)->update(['status'=>'paid']);
+    InvoiceTransaction::create(['invoice_id'=>$paid->invoice_id,'amount'=>$paid->amount,'fee'=>'0.00','status'=>'succeeded']);
+    $transfers->paymentAccepted($paid->id);$clock->instant=$now->modify('+30 days');
+    same(['amount'=>$paid->amount,'currency'=>'USD'],$transfers->expireMissingCode($paid->id),'Paid timeout returns the actual paid amount');
+    same('cancelled',Service::findOrFail($paid->service_id)->status,'Paid timeout still cancels its native service');
+    same('transfer_code_timeout',$paid->fresh()->funding['refund']['reason'],'Paid credit retains its timeout audit');
+    same(1,Credit::count(),'Only the paid transfer receives account credit');
+    same(Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($paid->amount),Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)Credit::sole()->amount),'Credit equals the paid transfer line');
+    $closed=$money();same(null,$transfers->expireMissingCode($paid->id),'Paid timeout cannot credit twice');
+    same($closed,$money(),'Paid replay preserves native money history');
+});
 expect($failures===[],implode("\n",$failures));
 echo "Complimentary held setup, audited release, funds cutoff and transfer notices passed\n";$nativeSuccessful=true;
