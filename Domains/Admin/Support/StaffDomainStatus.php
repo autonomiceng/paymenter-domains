@@ -73,7 +73,7 @@ final class StaffDomainStatus
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
             if (($ready=RequestFacts::readyMessage($op))!==null) {
-                if ($op->state==='queued'&&OperationQueries::ordersOff($op)) { $ready.=' Turn Orders on in Registrars.'; }
+                if ($op->state==='queued'&&OperationQueries::ordersOff($op)) { $ready.=RequestFacts::ordersStep($ready); }
                 return [$ready.self::check($op->id),true,$op->id];
             }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op), true, $op->id]; }

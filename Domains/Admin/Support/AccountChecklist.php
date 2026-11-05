@@ -245,7 +245,7 @@ final class AccountChecklist
     /** The way to Settings, for staff who can open it. */
     private static function creditsCause(): string|HtmlString
     {
-        $hidden='Customer credits are off. Refunds issued as credit go to the customer account balance; the Credits page is hidden.';
+        $hidden='Credit refunds still reach the customer’s balance, but customers can’t see it.';
         try { $url=Settings::canAccess()?Settings::getUrl():null; } catch (\Throwable) { $url=null; }
         return $url?new HtmlString(e($hidden).' <a class="fi-link domains-link" href="'.e($url).'">Turn on Credits in Settings</a>'):$hidden.' Turn on Credits in Settings.';
     }
