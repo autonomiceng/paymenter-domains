@@ -143,7 +143,7 @@ final class FreshInstallation
     /** The source-bound package owns only this storage, not every empty domains_* table. */
     private static function progress(): void
     {
-        $allowed = ['domains_domains','domains_operations','domains_tlds','domains_accounts','domains_prices',
+        $allowed = ['domains_complimentary_accounts','domains_complimentary_approvals','domains_domains','domains_operations','domains_tlds','domains_accounts','domains_prices',
             'domains_sales_policies','domains_contact_profiles','domains_read_budgets','domains_observation_queues','domains_observation_work',
             'domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations',
             'domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit',
