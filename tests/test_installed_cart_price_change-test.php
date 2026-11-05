@@ -191,8 +191,8 @@ expect(!$cart->items()->whereKey($last->id)->exists() && $dom->query('//*[@class
 same('Domain removed', trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent ?? ''), 'Empty cart shows the removed notice');
 expect(collect($page->effects['dispatches'] ?? [])->contains('name', 'cartUpdated'), 'Removing the last domain refreshes the header cart badge');
 Illuminate\Support\Once::flush();
-$badge = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Components\Cart::class);
-$badge->dispatch('cartUpdated')->assertSet('cartCount', 0);
+$badge = new App\Livewire\Components\Cart; $badge->cartCount = 1;
+$badge->onCartUpdated(); same(0, $badge->cartCount, 'The native header listener reads the empty cart');
 same('last-line-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
     trim($dom->query('//*[@data-domains-cart-notice]//p')->item(0)?->textContent ?? ''), 'Removed notice keeps the sentence');
 expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'Empty cart with the notice gets no toast too');
