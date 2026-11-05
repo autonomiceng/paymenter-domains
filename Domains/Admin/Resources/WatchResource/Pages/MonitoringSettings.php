@@ -51,9 +51,10 @@ class MonitoringSettings extends Page
             ->schema([Select::make('profile')->label('DNS template')->required()
                 ->default(fn()=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id)
                 ->options(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::where('enabled',true)->get()->filter(fn($p)=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($p))->pluck('name','id')->all())])
-            ->visible(fn()=>Staff::canEditDefaultDns())->action(function(array $data):void {
+            ->visible(fn()=>Staff::canEditDefaultDns())->action(function(array $data,Action $action):void {
                 abort_unless(Staff::canEditDefaultDns(),403);
-                \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::save(\Illuminate\Support\Facades\Auth::user(),(int)$data['profile']);
+                try{\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::save(\Illuminate\Support\Facades\Auth::user(),(int)$data['profile']);}
+                catch(\DomainException $e){Notification::make()->warning()->title($e->getMessage())->send();$action->halt();return;}
                 unset($this->cachedSchemas['content']);Notification::make()->title('Site DNS default saved')->success()->send();
             });
     }
