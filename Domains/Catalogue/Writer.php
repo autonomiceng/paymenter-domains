@@ -85,7 +85,8 @@ final class Writer implements Catalogue
                 try{
                     $rows=DB::table('domains_prices')->where('server_id',$a->server_id)->where('tld',$t->tld)->where('account_fingerprint',$a->account_fingerprint)->where('currency','USD')->get();
                     if($rows->isEmpty()){throw new \DomainException('Current costs required.');}
-                    foreach($rows as $p){if($p->catalogue_observation===null||!OfferState::cost(OfferState::decode($p->catalogue_observation))->fresh($this->clock->now())){throw new \DomainException('Current costs required.');}}
+                    $freshness=\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$a->server_id);
+                    foreach($rows as $p){if($p->catalogue_observation===null||!$freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)))->fresh($this->clock->now())){throw new \DomainException('Current costs required.');}}
                     $b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
                     $this->apply(Edit::republish($b,$t->tld),OfferState::revision($t,OfferState::decode($a->catalogue_defaults),DB::table('domains_sales_policies')->where('tld',$t->tld)->first()));
                     $summary['published']++;
