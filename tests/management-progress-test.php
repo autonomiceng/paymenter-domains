@@ -207,7 +207,8 @@ $inventory=static fn()=>['dns'=>['state'=>'complete','records'=>$state->dns],'sr
 $dnsOp=$submit($dnsDomain,$dnsDriver,'dns',['records'=>[['name'=>'@','type'=>'TXT','address'=>'saved record','mx_pref'=>10]],
     'preimage_digest'=>\Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::digest([])]);
 same('succeeded',$management->run($dnsOp->id,$dnsDriver)->state,'DNS change completes before the later failed sync');
-\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::failPrimary($dnsDomain->fresh(),$clock->now()->modify('+1 minute'));
+$clock->instant=$clock->now()->modify('+1 minute');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::failPrimary($dnsDomain->fresh(),$clock->now());
 $dnsPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$dnsDomain->id]);
 $factRow=static fn($html,$label)=>storefrontDom($html)->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-in-entry ")][.//*[@role="term"][normalize-space(.)="'.$label.'"]]')->item(0);
 $missing=$factRow($dnsPage->html(),'DNS records');
@@ -215,7 +216,8 @@ expect($missing&&str_contains($missing->textContent,'Not read yet')&&str_contain
 expect(str_contains($missing->textContent,'Saved.'),'The saved request remains a separate progress line under unread DNS');
 same('Saved.',ManagementProgress::for($dnsDomain->fresh())['dns']['text'],'Failed sync does not rewrite the completed request');
 $dnsPage->assertSee('DNS records')->assertSee('Saved.');
-$readAt=$clock->now()->modify('+2 minutes');
+// Current observations reject future timestamps (325ab97c); recovery advances the engine and UI clocks together.
+$readAt=$clock->now()->modify('+1 minute');$clock->instant=$readAt;Carbon\Carbon::setTestNow($readAt);Carbon\CarbonImmutable::setTestNow($readAt);
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($dnsDomain->fresh(),$inventory(),$readAt);
 $dnsPage->call('pollManagement');$available=$factRow($dnsPage->html(),'DNS records');
 expect($available&&str_contains($available->textContent,'1 record')&&str_contains($available->textContent,'1 SRV')
