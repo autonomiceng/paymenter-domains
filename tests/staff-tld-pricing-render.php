@@ -11,13 +11,12 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema,StaffSettingsReview as Review};
 $out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
-$f=commerceFixture();extract($f);tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
+$f=commerceFixture(nameSiloLocal:false,identities:['namesilo'=>'demo-namesilo']);extract($f);tldPanel();ObservationSchema::install();Carbon\Carbon::setTestNow($now);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 [$enom,$silo]=$tlds;
 // Several registrar accounts: Enom takes new orders, the NameSilo account is demo data.
 DB::table('extensions')->where('id',$enom->server_id)->update(['name'=>'Enom TEST identity check']);
 DB::table('extensions')->where('id',$silo->server_id)->update(['name'=>'OFFLINE DEMO NameSilo (synthetic)']);
-DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['stable_identity'=>Illuminate\Support\Facades\Crypt::encryptString('demo-namesilo')]);
 Domain::create(['server_id'=>$enom->server_id,'registrar_key'=>'enom','account_fingerprint'=>$enom->account_fingerprint,
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);
 $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
