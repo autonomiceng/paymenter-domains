@@ -100,12 +100,10 @@ foreach([1,2] as $i){
     foreach(Price::where('server_id',$enom->server_id)->get() as $price){$saved=$price->getRawOriginal();unset($saved['id']);$detailPrices[]=DB::table('domains_prices')->insertGetId([...$saved,...$binding]);}
 }
 [$detail,$fourAccounts]=$detailRead($grants);
-// The default rule is one row for the business, so more accounts add no account reads.
-same(1,$twoAccounts['domains_accounts'],'Two accounts use one shared read');
-same(1,$fourAccounts['domains_accounts'],'Four accounts use one shared read, with no default-rule or demo-tag reads');
-unset($twoAccounts['domains_accounts'],$fourAccounts['domains_accounts']);
-same($twoAccounts,$fourAccounts,'Price, holder and seller reads stay fixed across detail accounts');
-foreach($fourAccounts as $table=>$count){same(1,$count,'One detail query for '.$table);}
+// Active snapshots use two account batches and three credential-fenced NameSilo fact reads.
+// Rendering more account rows must add no account, policy, holder or price queries.
+same($twoAccounts,$fourAccounts,'All detail query counts stay fixed as accounts grow');
+same(['domains_prices'=>1,'domains_domains'=>1,'domains_sales_policies'=>2,'domains_accounts'=>5],$fourAccounts,'Only the active batch and credential-fence reads remain');
 expect(str_contains($detail,'&lt;Extra &amp; 1&gt;'),'Account names remain escaped');
 $dom=new DOMDocument();@$dom->loadHTML($detail);$xpath=new DOMXPath($dom);$rendered=$xpath->query('//tbody/tr');
 $all=Paymenter\Extensions\Servers\Domains\Models\Tld::where('tld','com')->orderBy('server_id')->get();same($all->count(),$rendered->length,'One rendered row per bound account');
