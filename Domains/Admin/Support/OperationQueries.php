@@ -25,6 +25,8 @@ final class OperationQueries
             if (in_array('on_hold',$keys,true)) { $q->orWhere(fn($held)=>self::heldRegistration($held)); }
             $q->orWhere(function($q) use ($in) {
             $q->whereNot(fn($held)=>self::heldRegistration($held))->where(function($q) use ($in) {
+            // Matches nothing until a state matches. An empty group would be dropped and match every request.
+            $q->whereRaw('0 = 1');
             foreach (array_keys(RequestStatus::STATES) as $state) {
                 if (!$in($state)) { continue; }
                 $q->orWhere(function($q) use ($state) {

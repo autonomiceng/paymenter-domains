@@ -19,11 +19,22 @@ final class DomainQueries
     public static function status(Builder $q, array $keys): Builder
     {
         if (!$keys) { return $q; }
+        return self::rows($q,fn(array $status)=>in_array($status['key'],$keys,true));
+    }
+    /** Alerting rows: an open alert that still applies, on a row that asks staff to act. OK, outdated and ended rows are not alerting.
+     * The account page's count, the Open alerts filter and the menu badge all use this one rule. */
+    public static function alerting(Builder $q): Builder
+    {
+        return self::rows(self::openAlerts($q),fn(array $status,array $inputs)=>$inputs['alerts']!==[]&&$status['act']);
+    }
+    /** Rows whose staff status (DomainFacts::status) and its inputs pass $keep. */
+    private static function rows(Builder $q, \Closure $keep): Builder
+    {
         $ids=[];
-        (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keys): void {
+        (clone $q)->reorder()->with('latestAcquisition')->chunkById(200,function ($page) use (&$ids,$keep): void {
             $inputs=StaffDomainInputs::for($page);
             foreach ($page as $d) {
-                if (in_array(DomainFacts::status($d,$inputs[$d->id])['key'],$keys,true)) { $ids[]=$d->id; }
+                if ($keep(DomainFacts::status($d,$inputs[$d->id]),$inputs[$d->id])) { $ids[]=$d->id; }
             }
         },'domains_domains.id','id');
         return $q->whereIntegerInRaw('domains_domains.id',$ids);
@@ -38,10 +49,10 @@ final class DomainQueries
         return $q->whereExists(ObligationAlerts::open()->selectRaw('1')
             ->whereColumn('domains_obligation_alerts.domain_id','domains_domains.id'));
     }
-    /** Two fixed queries on a cold cache: release candidates, then the SQL aggregate. */
+    /** Domains whose row shows an alert. The SQL alert rows only pick the candidates. */
     public static function openAlertCount(Builder $q): int
     {
-        return self::openAlerts($q)->count();
+        return self::alerting($q)->count();
     }
     public static function creditReview(Builder $q): Builder
     {

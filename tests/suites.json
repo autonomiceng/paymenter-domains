@@ -478,7 +478,8 @@
     "tests/offer-restore-sales-test.php",
     "tests/catalogue-history-label-test.php",
     "tests/staff-catalogue-next-step-test.php",
-    "tests/native-service-edit-test.php"
+    "tests/native-service-edit-test.php",
+    "tests/registrar-account-counts-test.php"
   ],
   "ui": [],
   "runner": [

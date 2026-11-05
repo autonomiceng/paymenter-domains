@@ -159,7 +159,7 @@ BalanceReads::record($binding,new Money('8.00','USD'),$clock->now()->modify('-1 
 same('read_failed',$row($a)->last_error_code,'Old completion cannot replace newer failure');
 $rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=$rate->wholesale;
 $rate->update(['wholesale'=>null,'revision'=>$rate->revision+1]);same(1,$forecast()['unknown'],'Unknown cost is counted');
-same(1,RegistrarBalances::facts($a,$clock->now())['unknown'],'Facts count renewals without a cost');$rate->update(['wholesale'=>$saved,'revision'=>$rate->revision+1]);
+same(1,RegistrarBalances::facts($a,$clock->now())['unknown'],'Facts count renewals without a cost');same(1,$forecast()['unpriced'],'A dated renewal without a cost waits on the price read');$rate->update(['wholesale'=>$saved,'revision'=>$rate->revision+1]);
 $d->update(['billing_managed'=>false]);
 $overdue=$make(placeholderComFixtureName('balance-overdue-placeholder.com'),'2026-10-20');
 same('8.000000',$forecast()['total'],'Past Paymenter due date and future expiry without open invoice counts as due now');
