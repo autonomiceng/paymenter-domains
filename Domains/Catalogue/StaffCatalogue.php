@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffGrants,TldFac
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule,PricingRules};
 
 /** Bounded Staff snapshots over converted identities; recovery only hints the existing read queue. */
 final class StaffCatalogue
@@ -38,14 +38,16 @@ final class StaffCatalogue
         });
         return ['count'=>$count,'highest'=>$highest,'filled'=>$this->progress($server)['succeeded_at']??null];
     }
-    /** Staff-only recovery hints. Enqueue on the retained worker; never resolve a feed or change sale intent. */
-    public function nextSteps(Collection $tlds,array $rows,string $action,int $term): array
+    /** Staff-only recovery hints. Enqueue on the retained worker; never resolve a feed or change sale intent.
+     * @param ?array $once account and settings reads (binding, readable, queue status and sync, pricing defaults) shared by
+     * every action of one table build. The caller owns it for one request; this routed catalogue never keeps it. */
+    public function nextSteps(Collection $tlds,array $rows,string $action,int $term,?array &$once=null): array
     {
-        Staff::requireView();$out=[];
-        foreach($tlds as $t){$key=$t->server_id.':'.$t->tld;$out[$key]=$this->nextStep($t,$rows[$key]['offers']??[],$action,$term);}
+        Staff::requireView();$out=[];$once??=[];
+        foreach($tlds as $t){$key=$t->server_id.':'.$t->tld;$out[$key]=$this->nextStep($t,$rows[$key]['offers']??[],$action,$term,$once);}
         return $out;
     }
-    private function nextStep(Tld $t,array $offers,string $action,int $term): array
+    private function nextStep(Tld $t,array $offers,string $action,int $term,array &$once): array
     {
         $offer=$offers[$action.':'.$term]??null;$reason=$offer?->decision->reason;$now=$this->clock->now();
         $names=['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'];
@@ -55,18 +57,21 @@ final class StaffCatalogue
             $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?'Next check '.gmdate('M j, Y H:i',$s['due_at']).' UTC.':'Queued for the next background run.');
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
-        try{$rule=Pricing::rule($t);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
+        try{$rule=self::ruleOnce($t,$once);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
         if(in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)){return $step('off','Stopped in What you sell.');}
-        $binding=static fn()=>AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
+        // Account reads and queue hints are per account, so the rows of one page share them.
+        $server=(int)$t->server_id;
+        $binding=static function()use($server,&$once){return $once['binding'][$server]??=AccountBindings::binding(Account::where('server_id',$server)->sole());};
+        $readable=function($b)use($server,&$once):bool {return $once['readable'][$server]??=$this->readable($b);};
         if($reason==='publication_pending'&&$this->work){
-            $this->work->wake($b=$binding());$status=$this->work->status($b);
+            if(!isset($once['woken'][$server])){$this->work->wake($b=$binding());$once['woken'][$server]=$this->work->status($b);}
             // Local publication is due on the next turn, independently of the feed date.
-            unset($status['due_at']);return $waiting($status);
+            $status=$once['woken'][$server];unset($status['due_at']);return $waiting($status);
         }
         try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
         $human=null;
         if(!$facts||!$facts->fresh($now)){
-            if(!$this->work||!$this->readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
+            if(!$this->work||!$readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
             $this->work->requestFacts($b,$t->tld);$status=$this->work->status($b,$t->tld);
             if($status['state']!=='unsupported'){return $waiting($status);}
             $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
@@ -83,14 +88,14 @@ final class StaffCatalogue
                     $quote=Retail::quote($observation,$rule);
                     if($quote===null||PricingRule::units($quote,2)<1){return $missing('Set a positive '.$names[$observation->action].' price in Edit prices on .'.$t->tld.'.');}
                 }
-                if(!$this->work||!$this->readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
-                $status=$this->work->status($b);
+                if(!$this->work||!$readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
+                $status=$once['synced'][$server]??$once['status'][$server]??=$this->work->status($b);
                 if(!$observation&&($status['succeeded_at']??0)>$now->getTimestamp()-86400&&empty($status['remaining'])){
                     [$needed,$years]=explode(':',$key);$name=$names[$needed];
                     return $missing('Ask the registrar for a '.$years.'-year '.$name.' cost for .'.$t->tld.'.',null);
                 }
-                $this->work->sync($b,RequestOrigin::Background);
-                return $waiting($this->work->status($b));
+                if(!isset($once['synced'][$server])){$this->work->sync($b,RequestOrigin::Background);$once['synced'][$server]=$this->work->status($b);}
+                return $waiting($once['synced'][$server]);
             }
         }
         if($human!==null){return $human;}
@@ -101,6 +106,15 @@ final class StaffCatalogue
             'unpublished_price'=>$missing('Set a positive '.$names[$action].' price in Edit prices on .'.$t->tld.'.'),
             default=>$step('ready',''),
         };
+    }
+    /** The row's pricing rule. The business default and card fee are read once per call; if either can't be read,
+     * each row reads them itself so its own rule still decides. */
+    private static function ruleOnce(Tld $t,array &$once): array
+    {
+        if(!array_key_exists('pricing',$once)){
+            try{$fee=CardFee::read();$once['pricing']=[(new PricingRules)->defaultRule(false,$fee),$fee];}catch(\Throwable){$once['pricing']=null;}
+        }
+        return $once['pricing']===null?Pricing::rule($t):Pricing::rule($t,...$once['pricing']);
     }
     /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
     public function preview(Tld $t,array $rule): array
@@ -159,15 +173,17 @@ final class StaffCatalogue
     public function fee(int $server): array
     {Staff::requireView();return CardFee::read();}
     /** Each call is at most one table page. Same evaluator and observation evidence as the public adapter. */
-    public function page(Collection $tlds): array
+    public function page(Collection $tlds): array { return $this->pageFor($tlds,Staff::requireView()); }
+    /** One rights read covers the page: snapshot costs and the offers left for staff without costs. */
+    private function pageFor(Collection $tlds,StaffGrants $grants): array
     {
-        $out=$this->snapshots($tlds);
-        if(!Staff::requireView()->costs){foreach($out as &$row){$row['offers']=[];}}
+        $out=$this->snapshots($tlds,$grants);
+        if(!$grants->costs){foreach($out as &$row){$row['offers']=[];}}
         return $out;
     }
-    private function snapshots(Collection $tlds): array
+    private function snapshots(Collection $tlds,?StaffGrants $grants=null): array
     {
-        $grants=Staff::requireView();if($tlds->count()>100){throw new \DomainException('Staff page exceeds 100 rows.');}
+        $grants??=Staff::requireView();if($tlds->count()>100){throw new \DomainException('Staff page exceeds 100 rows.');}
         if($tlds->isEmpty()){return [];}
         $accounts=Account::whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');$queries=[];
         foreach($tlds->groupBy('server_id') as $server=>$rows){$queries[]=new Query(AccountBindings::binding($accounts[$server]),$rows->pluck('tld')->all(),'register');}
@@ -225,9 +241,9 @@ final class StaffCatalogue
     /** The matrix/CSV contract uses the exact same page snapshots, chunked without an unbounded SQL IN. */
     public function matrix(Collection $tlds,int $years,string $filter='all'): array
     {
-        abort_unless(Staff::requireView()->costs,403);$rows=[];$accounts=[];$skipped=[];$warnings=[];
-        $fee=CardFee::read();$default=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule(false,$fee);
-        foreach($tlds->chunk(100) as $chunk){$page=$this->page($chunk);$settings=[];
+        $grants=Staff::requireView();abort_unless($grants->costs,403);$rows=[];$accounts=[];$skipped=[];$warnings=[];
+        $fee=CardFee::read();$default=(new PricingRules)->defaultRule(false,$fee);
+        foreach($tlds->chunk(100) as $chunk){$page=$this->pageFor($chunk,$grants);$settings=[];
             foreach($chunk as $t){$s=$page[$t->id];$id=(int)$t->server_id;$own=$s['own'];
                 if($filter==='default'&&$own||$filter==='own'&&!$own){continue;}
                 if(!isset($settings[$id])){$a=Account::where('server_id',$id)->sole();$d=OfferState::decode($a->catalogue_defaults);$settings[$id]=[$d,Server::whereKey($id)->value('name')];}
