@@ -17,7 +17,7 @@
 @endif
 @endif
 @if ($domain->renewalPrice && !($domain->renewNow['late'] ?? false) && $domain->renewal === 'On' && !$domain->setupPending)
-<div><dt>Renewal price</dt><dd><span class="domains-card__v">{{ $domain->renewalPrice }}/yr</span></dd></div>
+<div><dt>Renewal price</dt><dd><span class="domains-card__v">{{ $domain->renewalPrice }}@if($domain->renewalPrice !== \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL)/yr@endif</span></dd></div>
 @endif
 @if ($invoice)
 <div><dt>Next invoice</dt><dd>@if ($invoice['missing'] ?? false)@include('domains::partials.missing', ['cause' => $invoice['cause'] ?? null, 'fix' => $invoice['fix'] ?? null, 'stack' => true])@elseif (isset($invoice['tone']))@include('domains::partials.status-pill', ['pill' => ['label' => $invoice['value'], 'tone' => $invoice['tone']]]) <span class="domains-sub">{{ $invoice['note'] }}</span>@else<span class="domains-card__v">{{ $invoice['value'] }}</span>@isset($invoice['action']) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $invoice['action']['url'] }}">{{ $invoice['action']['label'] }}</a></span>@endisset @endif</dd></div>

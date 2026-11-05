@@ -131,7 +131,10 @@ class CartAdmission
                     $batch->wait($delay);
                 }
             }
-            if (ComplimentaryAccounts::authorization((int) Auth::id())) { $item->plan->prices->where('currency_code','USD')->sole()->price='0.00'; }
+            if (ComplimentaryAccounts::authorization((int) Auth::id())) {
+                $item->plan->prices->where('currency_code','USD')->sole()->price='0.00';
+                $item->offsetUnset('price'); // Native object accessor caches the prior priced line.
+            }
             if ($token === ($config['domains_check'] ?? null)) { continue; }
             $item->checkout_config = [...$config, 'domains_check' => $token];
             $updated = CartItem::whereKey($item->id)->where('cart_id', $cart->id)->where('product_id', $item->product_id)
