@@ -153,6 +153,9 @@ class ViewDomain extends ViewRecord
     private function notices(Domain $d): array
     {
         $out=[];
+        if(Staff::can('admin.domains.fund')){foreach($d->operations()->where('state','held')->get() as $op){
+            if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op)){$out[]=Callout::make($message)->status('danger')->columnSpanFull();}
+        }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
         if($sync!==null&&$sync['title']!=='Domain synced'){
             $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
