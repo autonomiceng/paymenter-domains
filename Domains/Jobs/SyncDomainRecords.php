@@ -32,6 +32,12 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $job=new self(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
         return Cache::has($job->pendingKey());
     }
+    /** Last bounded completion notice, also shown beside the facts it did or did not refresh. */
+    public static function result(Domain $d): ?array
+    {
+        $job=new self(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
+        return Cache::get($job->uniqueId().':result');
+    }
     public static function enqueue(int $actor,Domain $d): bool
     {
         $connection=config('queue.connections.'.config('queue.default'),[]);
@@ -44,7 +50,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $lock=app(UniqueLock::class);
         if (!$lock->acquire($job)) { return false; }
         // Dispatch directly after admission: PendingDispatch would try to acquire the same lock again.
-        try { Cache::put($job->pendingKey(),true,self::UNIQUE_FOR); app(Dispatcher::class)->dispatch($job); }
+        try { Cache::forget($job->uniqueId().':result'); Cache::put($job->pendingKey(),true,self::UNIQUE_FOR); app(Dispatcher::class)->dispatch($job); }
         catch (\Throwable $error) { Cache::forget($job->pendingKey()); $lock->release($job); throw $error; }
         return true;
     }
@@ -66,6 +72,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     { Cache::forget($this->pendingKey()); $this->notice("Couldn't sync domain",'The background read stopped. Ask your site admin to check the queue worker, then try Sync now again.'); }
     private function notice(string $title,string $body): void
     {
+        Cache::put($this->uniqueId().':result',compact('title','body'),self::UNIQUE_FOR);
         if (!Staff::allows(User::find($this->actor))) { return; }
         $route='filament.admin.resources.domains.view';
         Notification::create(['user_id'=>$this->actor,'title'=>$title,'body'=>$body,'url'=>Route::has($route)?route($route,['record'=>$this->domain]):null]);

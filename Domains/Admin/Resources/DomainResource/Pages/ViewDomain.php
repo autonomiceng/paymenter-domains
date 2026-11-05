@@ -144,6 +144,10 @@ class ViewDomain extends ViewRecord
     private function notices(Domain $d): array
     {
         $out=[];
+        $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
+        if($sync!==null&&$sync['title']!=='Domain synced'){
+            $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
+        }
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
             $out[]=Callout::make('Set a default DNS template on the registrar account to start DNS monitoring.')->status('info')->columnSpanFull()
                 ->footer(Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && Staff::canEditDefaultDns()?new HtmlString('<a class="fi-link domains-link" href="'.e(\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$d->server_id]).'#switch-template').'">Set account DNS template</a>'):null);
