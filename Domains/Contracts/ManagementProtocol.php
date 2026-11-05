@@ -48,6 +48,8 @@ abstract class ManagementProtocol
     public function plan(ManagementRequest $request, RequestContext $context): array
     { throw new \DomainException('Management sequence unsupported.'); }
     abstract public function prepare(ManagementRequest $request, RequestContext $context): array;
+    /** Local-only provider preconditions, rechecked under the holding locks before sealing a send. */
+    public function requireAtSeal(ManagementRequest $request): void {}
     abstract public function observe(ManagementRequest $request, RequestContext $context): ManagementResult;
     abstract protected function apply(ManagementRequest $request, RequestContext $context): ManagementResult;
     abstract protected function readCommands(): array;

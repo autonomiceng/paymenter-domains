@@ -59,6 +59,10 @@ class Management extends ManagementProtocol
             throw new \DomainException('Registry contact schema unsupported.');
         }
     }
+    public function requireAtSeal(ManagementRequest $request): void
+    {
+        if (in_array($request->action, ['contacts','contact_profile'], true)) { $this->contactsAllowed($request->name, $request->domainId); }
+    }
     protected function origin(RequestContext $context): string
     { return ($this->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Live ? Environment::Live : Environment::Sandbox)->origin().($context->origin === RequestOrigin::Interactive ? '/api' : '/apibatch'); }
     protected function readCommands(): array { return ['getDomainInfo','contactList','listRegisteredNameServers']; }
