@@ -99,6 +99,7 @@
     "tests/offer-installed-staff-test.php",
     "tests/offer-staff-policy-test.php",
     "tests/offer-pay-check-test.php",
+    "tests/offer-pay-staff-save-test.php",
     "tests/offer-cache-test.php",
     "tests/checkout-refresh-test.php",
     "tests/invoice-binding-test.php",
