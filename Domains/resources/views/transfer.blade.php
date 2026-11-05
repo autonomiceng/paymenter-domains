@@ -19,7 +19,7 @@
 @if ($error)<p id="domains-transfer-error" class="domains-error" role="alert">{{ $error }}</p>@endif
 </form>
 @if ($results)
-<ul class="domains-results" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}">@foreach ($results as $result)@include('domains::partials.result', ['first' => true])@endforeach</ul>
+<ul class="domains-results" data-mode="transfer" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}">@foreach ($results as $result)@include('domains::partials.result', ['first' => true])@endforeach</ul>
 @endif
 <div class="domains-panel"><section class="domains-section" aria-labelledby="domains-before-heading">
 <h2 id="domains-before-heading" class="domains-h2">Before you start</h2><p>Do these at your current registrar.</p>

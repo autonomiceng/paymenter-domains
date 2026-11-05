@@ -2,7 +2,8 @@
 @php
     $state = $result['status'];
     [$label, $tone] = match ($state) {
-        'available' => ['Available', 'ok'], 'transferable', 'taken' => ['Taken', 'muted'],
+        'available' => ['Available', 'ok'], 'transferable' => [($result['transferPage'] ?? false) ? 'Can transfer' : 'Taken', 'muted'],
+        'taken' => ['Taken', 'muted'], 'transfer_refused' => ['Can’t transfer', 'muted'],
         'premium' => ['Premium name', 'muted'], 'held' => ['Not available', 'muted'],
         'busy' => ['Try again in a moment', 'warn'],
         'idle' => ['Checking', 'muted'], 'in_cart' => ['In your cart', 'ok'], default => ['Couldn’t check', 'warn'],

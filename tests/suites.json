@@ -493,7 +493,8 @@
     "tests/test_installed_offer_rule_repair-test.php",
     "tests/test_installed_native_service_edit-test.php",
     "tests/test_installed_registrar_account_counts-test.php",
-    "tests/test_installed_cart_price_change-test.php"
+    "tests/test_installed_cart_price_change-test.php",
+    "tests/storefront-transfer-reason-test.php"
   ],
   "ui": [],
   "runner": [
