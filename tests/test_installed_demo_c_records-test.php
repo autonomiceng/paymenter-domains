@@ -31,13 +31,13 @@ $editHtml=view('domains::partials.owner-dns',['domain'=>$page,'section'=>$sectio
 same(1,$editDom->query('//table[contains(@class,"domains-records")]')->length,'Editable and fixed DNS rows share one table');
 same(1,$editDom->query('//tr[td[normalize-space(.)="CAA"] and td[normalize-space(.)="3600"]]')->length,'The shared DNS table keeps the CAA TTL');
 same(0,$editDom->query('//tr[td[normalize-space(.)="CAA"]]//input | //tr[td[normalize-space(.)="CAA"]]//button')->length,'The CAA sibling has no mutation controls');
-expect(!str_contains($html,'call limit')&&!str_contains($html,'Resume refresh'),'Customer has no staff recovery chore');
+expect(!str_contains($html,'call limit')&&!str_contains($html,'Resume refresh')&&!str_contains($html,'Resume sync'),'Customer has no staff recovery chore');
 $s=$d->observation;$s['records']['settings']['contacts']=['state'=>'partial','facts'=>['registrant'=>['first_name'=>'Test']]];$s['records']['last_complete_at']='2026-11-03T09:00:00+00:00';$s['record_hold']=['identity'=>ObservationRecords::identity($d),'reason'=>'budget_exhausted','family'=>'dns'];$d->observation=$s;
 $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true])->render();
 expect(str_contains($html,'Registrant returned; some contacts did not.'),'Staff names the returned contact role');
 expect(str_contains($html,'Refresh contacts before editing.'),'Staff gets a contacts-specific next step');
 expect(str_contains($html,'Last complete read:'),'Staff sees the last complete timestamp');
-expect(str_contains($html,'Failed family: dns')&&str_contains($html,'Resume refresh'),'Staff sees failed family and resume step');
+expect(str_contains($html,'Failed family: dns')&&str_contains($html,'Resume sync'),'Staff sees failed family and resume step');
 expect(str_contains($html,RecordFamilies::EVIDENCE),'Staff sees public versus registrar evidence distinction');
 $s=$d->observation;$s['records']['families']['dns']=['state'=>'unknown','records'=>[],'last_good'=>['at'=>'2026-11-03T09:00:00+00:00','records'=>$record['families']['dns']['records']]];$d->observation=$s;
 $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-families',['recordFamilies'=>$state])->render();
