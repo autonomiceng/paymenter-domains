@@ -28,7 +28,7 @@ $exchange=static function($origin,$cmd,$p,$timeout)use($state):string {
     $state->calls[]=$cmd;
     if ($state->during) { $f=$state->during; $state->during=null; $f(); }
     $reply=['code'=>300, 'detail'=>'synthetic'];
-    if ($cmd==='getDomainInfo') { $reply+=['created'=>'2020-01-01', 'expires'=>'2028-01-01', 'status'=>'Active']; }
+    if ($cmd==='getDomainInfo') { $reply+=['created'=>'2020-01-01', 'expires'=>'2028-01-01', 'status'=>'Active', 'locked'=>'Yes', 'private'=>'No', 'auto_renew'=>'No']; }
     elseif ($cmd==='dnsSecListRecords') {
         if ($state->fault!=='missing') { $reply['ds_record']=$state->rows; }
         if ($state->fault==='partial') { $reply['more']=true; }
