@@ -44,9 +44,9 @@ final class WatchNoticePlan
         }
         $out['state']=$state;return $out;
     }
-    /** Keep episode continuity across relink, without carrying any predecessor evidence. */
+    /** Keep episode continuity across relink, retaining historical matches but not current confirmation evidence. */
     public static function relinked(array $state): array
-    { return array_intersect_key($state,array_flip(['lineage','episode','delivered'])); }
+    { return array_intersect_key($state,array_flip(['lineage','episode','delivered','matched_at','previously_matched'])); }
     /** ns_confirmed is the current observer's two-sample proof, never a predecessor pointer. */
     public static function dns(array $state,?array $fact,int $now,bool $expectedPlatform): array
     {
@@ -70,8 +70,9 @@ final class WatchNoticePlan
         if ($fact['dns']==='external') {
             if ($confirmed && !isset($state['episode'])) {
                 $episode=(string)$fact['at'];$state['episode']=$episode;$state['delivered']=[];
+                $state['previously_matched']=isset($state['matched_at']) && $state['matched_at']<$fact['at'];
                 $out['notices'][]=['kind'=>'ns_changed','episode'=>$episode,'threshold'=>null,
-                    'date'=>gmdate('Y-m-d',$fact['at']),'observation_id'=>$fact['id'],'priority'=>1];
+                    'date'=>gmdate('Y-m-d',$fact['at']),'observation_id'=>$fact['id'],'priority'=>1,'previously_matched'=>$state['previously_matched']];
             }
             $out['portal']=[isset($state['episode'])?'ns_changed':'ns_pending'];
         } elseif ($confirmed && isset($state['episode'])) {
@@ -82,6 +83,8 @@ final class WatchNoticePlan
             }
             unset($state['episode'],$state['delivered']);
         }
+        // A complete current match proves prior use; it does not borrow the observer's confirmation authority.
+        if ($fact['dns']==='platform') { $state['matched_at']=$fact['at']; }
         if (isset($state['episode'])) { $out['portal']=['ns_changed']; }
         $out['state']=$state;return $out;
     }

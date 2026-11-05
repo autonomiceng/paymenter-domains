@@ -67,4 +67,31 @@ app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
 DB::table('domains_watch_work')->where('watch_id',$watch->id)->delete();
 DB::transaction(fn()=>$source->fresh()->fill(['revision'=>$source->revision+1,'last_seen_at'=>$at+1])->save());
 same(2,DB::table('domains_watch_work')->where('watch_id',$watch->id)->whereIn('kind',['delegation','points'])->count(),'Source attachment events enroll DNS work before the daily sweep');
+// Connected registrar rules also apply while processing is paused. No provider verification or send is faked here:
+// privileged immutable bindings supply only the native relationship used by these local policy writes.
+$connect=static function(string $key):void {
+    $s=\App\Models\Server::create(['name'=>'Synthetic '.$key,'extension'=>'Domains','type'=>'server','enabled'=>true]);
+    \Paymenter\Extensions\Servers\Domains\Models\Account::withVerifiedBindingWrite(fn()=>\Paymenter\Extensions\Servers\Domains\Models\Account::create([
+        'server_id'=>$s->id,'registrar_key'=>$key,'environment'=>'test','stable_identity'=>'synthetic-'.$key,'processing_enabled'=>false]));
+};
+$servers=static fn(int $count)=>array_map(static fn($n)=>'ns'.$n.'.registrar.test',range(1,$count));
+$make=static fn(int $count)=>DB::transaction(fn()=>WatchProfile::create(['name'=>'Count '.$count,'enabled'=>true,'nameservers'=>$servers($count),
+    'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic registrar limit']));
+$refuse=static function(Closure $write,string $rule):void {
+    $before=[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()];
+    $error=null;try{$write();}catch(DomainException $e){$error=$e->getMessage();}
+    expect($error!==null && str_contains($error,$rule),'Save refuses with the registrar rule: '.$rule);
+    same($before,[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()],'Refused save preserves selection, templates and audit');
+};
+$connect('namesilo');$one=$make(1);$thirteen=$make(13);
+$refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'NameSilo requires 2 to 13');
+SiteDnsDefault::save($manager,$thirteen->id);same(13,count(SiteDnsDefault::profile()->nameservers),'NameSilo accepts thirteen');
+$refuse(fn()=>DB::transaction(fn()=>$thirteen->fresh()->update(['nameservers'=>$servers(1),'revision'=>$thirteen->revision+1])),'NameSilo requires 2 to 13');
+SiteDnsDefault::save($manager,$default->id);$connect('enom');
+$refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'Enom requires 2 to 12');
+$refuse(fn()=>SiteDnsDefault::save($manager,$thirteen->id),'Enom requires 2 to 12');
+foreach([1,13]as$count){$refuse(fn()=>DB::transaction(fn()=>$default->fresh()->update(['nameservers'=>$servers($count),'revision'=>$default->revision+1])),'Enom requires 2 to 12');}
+$twelve=$make(12);SiteDnsDefault::save($manager,$twelve->id);same(12,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept twelve');
+DB::transaction(fn()=>$twelve->fresh()->update(['nameservers'=>$servers(2),'revision'=>$twelve->revision+1]));
+same(2,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept editing to two');
 $nativeSuccessful=true;echo "Site DNS installation default passed.\n";

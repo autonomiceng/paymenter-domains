@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use App\Models\{Setting,User};
 use Illuminate\Support\Facades\{Cache,DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
-use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,WatchName,WatchAudit};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,WatchProfile,WatchName,WatchAudit};
 /** One live site reference. Null domain/watch assignments inherit it without being rewritten. */
 final class SiteDnsDefault
 {
@@ -64,6 +64,7 @@ final class SiteDnsDefault
                 self::authorize($actor);Setting::orderBy('id')->lockForUpdate()->get();
                 $p=WatchProfile::whereKey($id)->lockForUpdate()->first();
                 if(!ManagedDnsSetup::usable($p)){throw new \DomainException('Choose an enabled DNS template.');}
+                self::validateRegistrars($p->nameservers);
                 $before=self::profile()?->id;self::write($p);
                 WatchAudit::create(['subject_type'=>'site_dns','subject_id'=>0,'actor_id'=>$actor->id,'event'=>'site_dns_default_changed',
                     'reason'=>'Site DNS default changed','before_revision'=>(string)$before,'after_revision'=>(string)$id,
@@ -71,6 +72,17 @@ final class SiteDnsDefault
             });
         });
         self::reconcile();
+    }
+    /** Paused processing still represents a connected registrar and must support the saved default. */
+    public static function validateRegistrars(array $nameservers): void
+    {
+        foreach(Account::orderBy('registrar_key')->distinct()->pluck('registrar_key') as $registrar){
+            try{NewDomainDns::validate($registrar,$nameservers);}
+            catch(\InvalidArgumentException $e){
+                $rule=$registrar==='enom'?'Enom requires 2 to 12 valid nameservers.':'NameSilo requires 2 to 13 valid nameservers.';
+                throw new \DomainException($rule.' Update this DNS template before saving the site default.',0,$e);
+            }
+        }
     }
     private static function write(WatchProfile $p): void
     {
