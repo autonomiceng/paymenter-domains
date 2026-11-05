@@ -319,7 +319,7 @@ final class DomainFacts
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { $step=self::restart($d); return ['title'=>$hold,'body'=>str_contains($hold,lcfirst($step))?null:$step,'tone'=>'warning','resume'=>true]; }
+        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::restart($d),'tone'=>'warning','resume'=>true]; }
         if (AcquisitionPaymentReview::count($d)>0) {
             $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
                 ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
@@ -347,8 +347,8 @@ final class DomainFacts
     private static function readCause(Domain $d): string
     {
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
-        // The records head shows the error code, so the notice keeps only the cause and the one step.
-        return trim(($read['read_cause']??'Registrar read stopped.').' Fix the cause, then '.lcfirst(self::restart($d)));
+        // The records head shows the error code, and the notice body the one step.
+        return $read['read_cause']??'Registrar read stopped.';
     }
     public static function recordHold(Domain $d): ?string
     {
