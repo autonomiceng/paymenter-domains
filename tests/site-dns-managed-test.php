@@ -32,6 +32,6 @@ same($before,$d->fresh()->getRawOriginal(),'Reconciliation never changes holding
 same($providerCalls,count($wire->calls),'Reconciliation sends zero registrar requests');
 app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
 DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->delete();
-$d->fresh()->update(['confirmed_revision'=>$d->confirmed_revision+1]);
+$d->fresh()->update(['status'=>'grace']);
 same(1,DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->count(),'Holding attachment event enrolls local DNS work before daily sweep');
 $nativeSuccessful=true;echo "Managed site DNS reference passed.\n";

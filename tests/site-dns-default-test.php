@@ -13,6 +13,8 @@ same(1,WatchProfile::where('name','Beco DNS')->where('enabled',true)->count(),'I
 $default=SiteDnsDefault::profile();
 same(['ns1.deployment.test','ns2.deployment.test'],$default->nameservers,'Deployment owns the nameservers');
 same($default->id,NewDomainDns::profile($server->id)->id,'Site default works independently of registrar account');
+same([],NewDomainDns::capture($server->id,'transfer'),'Site DNS default never supplies transfer nameservers');
+same('site_default',NewDomainDns::capture($server->id,'register')['nameservers_origin']['source'],'Registration freezes site-default provenance');
 $entry->upgraded();same($default->id,SiteDnsDefault::profile()->id,'Upgrade keeps one stable default reference');
 same(1,WatchProfile::where('name','Beco DNS')->count(),'Upgrade does not duplicate the deployment template');
 // Null watch choices inherit the site reference without storing a per-watch assignment.
