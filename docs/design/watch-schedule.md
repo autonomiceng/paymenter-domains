@@ -99,7 +99,7 @@ and a product staff turned off stays off. Domain monitoring lists every hosting 
 Monitored, Not monitored, No domain found or No services yet. Staff switch a product on or off,
 and pick a field on No domain found or Not monitored, because the system can't tell that a
 saved field is wrong. Without a DNS template a monitored domain gets expiry checks only; DNS
-checks need a template on the domain.
+checks use an explicit template or inherit the site default.
 
 The explicit two-jobs-per-owner/five-minute-turn ceiling permits at most 576 jobs/day per
 owner and 2,880 globally. Rough baseline capacity is 96 watched names/owner or 480 globally

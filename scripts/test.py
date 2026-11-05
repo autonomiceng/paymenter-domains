@@ -670,6 +670,12 @@ def main():
                             'tests/observation-test.php',
                             'tests/offer-scheduler-test.php',
                             'tests/storefront-cart-handoff-test.php',
+                            'tests/site-dns-default-test.php',
+                            'tests/site-dns-managed-test.php',
+                            'tests/managed-dns-setup-test.php',
+                            'tests/managed-public-relink-test.php',
+                            'tests/owner-actions-test.php',
+                            'tests/registration-enom-test.php',
                         }
                         for path in requested
                     )
