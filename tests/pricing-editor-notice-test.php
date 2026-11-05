@@ -14,7 +14,6 @@ $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS,'admin.products.viewAny','a
 foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions); Auth::setUser($u);
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings,true));
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class,$sellers);
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class,$native);
 app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 same(null,PricingEditorNotice::missing(),'Pinned pricing notice hooks are available');
