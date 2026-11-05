@@ -37,6 +37,11 @@ $r=$d->fresh()->observation;same(1,$r['records']['format'],'Wired refresh writes
 same(array_fill_keys(['dns','srv','ds','glue'],'supported'),$r['records']['expected_families'],'Wired refresh writes all four expectations');
 same(['records_unavailable','srv'],$hold(),'Failed family is named on the hold');
 $status=ObservationProjection::recordStatus($d->fresh(),$clock->now());same([true,'srv'],[$status['resume'],$status['failed_family']],'Staff status offers resume for the failed family');
+same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",DomainFacts::recordHold($d->fresh()),'Staff copy names the failed record family');
+// A failed Enom contacts read names contacts, not DNS records.
+$state->fault='GetContacts';$tick();$wired->run($d->id,readRecords:true);
+same(['records_unavailable','contacts'],$hold(),'Failed contacts read is named on the hold');
+same("Sync stopped: couldn't read contacts. Other domain facts were saved. Use Sync now to try again.",DomainFacts::recordHold($d->fresh()),'Staff copy names the failed contacts read');
 $state->fault='';$tick();
 $wired->run($d->id,readRecords:true);
 expect(!ObservationRecords::held($d->fresh()),'Complete wired refresh clears the hold');
