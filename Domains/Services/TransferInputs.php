@@ -125,9 +125,9 @@ final class TransferInputs
     public function expireMissingCode(int $id): ?array
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $rejected = DB::transaction(function () use ($seed, $id): bool {
+        $credit = DB::transaction(function () use ($seed, $id): bool {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
-            if ($op->state === 'rejected') { return $op->safe_code === 'transfer_code_timeout'; }
+            if ($op->state === 'rejected') { return $op->safe_code === 'transfer_code_timeout' && $op->funding_basis !== 'complimentary'; }
             self::open($op, $l); $this->payment($op, $l);
             $deadline = self::deadline($op, $this->clock->now());
             if (!$deadline || $this->clock->now() < $deadline || array_key_exists('epp', $op->payload ?? []) && $op->payload['epp'] !== null) { return false; }
@@ -138,8 +138,8 @@ final class TransferInputs
                 $l['invoices']->firstWhere('id',$op->invoice_id)?->status,$this->clock->now(),cancelled:true);
             $l['domain']->update(['status' => 'transfer_rejected']);
             NativeDomainGuard::terminal($l, $op);
-            return true;
+            return $op->funding_basis !== 'complimentary';
         });
-        return $rejected ? $this->refunds->creditRejected($id) : null;
+        return $credit ? $this->refunds->creditRejected($id) : null;
     }
 }

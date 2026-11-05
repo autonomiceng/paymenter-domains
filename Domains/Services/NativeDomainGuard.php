@@ -196,7 +196,8 @@ final class NativeDomainGuard
     {
         if (($locked['advisory'] ?? true) || $op->state !== 'rejected' || !in_array($op->action, ['register', 'transfer'], true)
             || !$locked['operations']->contains(static fn ($row) => $row === $op)) { throw new \DomainException('No retained refund disposition.'); }
-        RefundProof::requireReturnable($op, $locked['domain']); RefundPayment::requireCurrent($op, $locked);
+        RefundProof::requireReturnable($op, $locked['domain']);
+        if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$locked);}else{RefundPayment::requireCurrent($op, $locked);}
         $service = $locked['service'];
         self::persist($service, ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
     }
