@@ -13,6 +13,6 @@ final class OfferRow extends Model
     protected $hidden=['account_fingerprint','register_cost','renew_cost','transfer_cost','high_cost','prices'];
     /** MariaDB projects JSON booleans as 'false'/'true'; SQLite returns 0/1. */
     protected function transfer(): \Illuminate\Database\Eloquent\Casts\Attribute
-    { return \Illuminate\Database\Eloquent\Casts\Attribute::get(static fn($value)=>$value===null?null:filter_var($value,FILTER_VALIDATE_BOOLEAN)); }
+    { return \Illuminate\Database\Eloquent\Casts\Attribute::get(static fn($value)=>$value===null?null:filter_var($value,FILTER_VALIDATE_BOOLEAN,FILTER_NULL_ON_FAILURE)); }
     protected $casts=['longest'=>'integer','prices'=>'array','register_cost'=>'decimal:4','renew_cost'=>'decimal:4','transfer_cost'=>'decimal:4','high_cost'=>'decimal:4'];
 }
