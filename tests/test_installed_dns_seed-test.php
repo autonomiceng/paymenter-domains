@@ -21,7 +21,7 @@ $connect=static function(string $registrar):void {
     Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>$registrar,
         'environment'=>'test','stable_identity'=>'synthetic-'.$registrar,'processing_enabled'=>false]));
 };
-$names=static fn(int $n)=>array_map(fn($i)=>'ns'.$i.'.seed.test',range(1,$n));
+$names=static fn(int $n)=>array_map(fn($i)=>sprintf('ns%02d.seed.test',$i),range(1,$n));
 $unset=static fn()=>Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->whereNull('settingable_id')->delete();
 $reject=static function(int $n,string $rule)use($names,$staff):void {
     config(['domains.site_dns_default.nameservers'=>$names($n)]);
@@ -33,8 +33,8 @@ $reject=static function(int $n,string $rule)use($names,$staff):void {
     $page=Livewire::actingAs($staff)->test(MonitoringSettings::class)->assertSee('Missing')->assertSee($rule);
     $row=$page->instance()->getSchema('content')->getComponent('site_dns',withHidden:true);
     same('Missing',$row->getState(),'Rejected seed is Missing on the actual settings row');
-    same('danger',$row->getColor(),'Rejected seed is red');
-    unset($page);gc_collect_cycles();gc_mem_caches();
+    same('danger',$row->getColor($row->getState()),'Rejected seed is red');
+    unset($row,$page);gc_collect_cycles();gc_mem_caches();
 };
 $connect('namesilo');
 $reject(1,'NameSilo requires 2 to 13 valid nameservers. Update this DNS template before saving the site default.');
