@@ -87,7 +87,7 @@ foreach (['enom','namesilo'] as $key) {
     $registry->register($key,['token'],$verifier,static function ($b,$c) use ($state,$clock) {
         same(0,DB::transactionLevel(),'Fresh reads outside locks'); $state->reads++;
         if ($state->during) { ($state->during)($state->reads); }
-        $q = new QuoteEvidence($state->query,new Money($state->quote??'99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
+        $q = new QuoteEvidence($state->query,($state->missingCost??false)?null:new Money($state->quote??'99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
         $reader = new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
             new Evidence(quote:$q,balance:new Money($state->funds,'USD'),available:$state->available,premium:$state->premium)));
         $state->readers[]=$reader;return $reader;

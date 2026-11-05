@@ -41,7 +41,7 @@ $prepare=static function($label)use($newTransfer,$makeTransfer,&$engine,&$bindin
     DB::table('domains_read_budgets')->delete(); // Each synthetic transfer starts an independent account-minute scenario.
     $clock->instant=$now; $state->rdapUnknown=false; $state->mode=''; $op=$newTransfer(placeholderComFixtureName('ns-transfer-'.$label.'-placeholder.com'),1);
     $payload=$op->payload; unset($payload['privacy']); $op->update(['payload'=>$payload]); // Actual checkout defaults privacy off at dispatch.
-    $makeTransfer(1); $op=$engine->execute($op->id); same(false,$op->attempt['transfer_admission']['privacy'],'Dispatch default frozen at seal');
+    $makeTransfer(1); $op=$engine->execute($op->id); expect(isset($op->attempt['transfer_admission']),'Transfer fixture '.$label.' requires a sealed attempt: '.$op->state.'/'.$op->safe_code); same(false,$op->attempt['transfer_admission']['privacy'],'Dispatch default frozen at seal');
     HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,86400,'namesilo_transfer_v1'));
     $observe->name=$op->domain->domain; $observe->fault=''; $observe->status='Transfer Completed'; $observe->expiration=['expiration'=>'2028-01-01']; $observe->calls=[];
     $clock->instant=$now->modify('+6 minutes'); return $op;

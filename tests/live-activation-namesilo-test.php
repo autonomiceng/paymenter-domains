@@ -21,7 +21,7 @@ $registry->register('namesilo',['api_key'],new NameSilo\AccountVerifier,
         public function authenticate(Environment $environment,#[SensitiveParameter] array $credentials): void {}
     });
 $bindings=new AccountBindings($registry);app()->instance(AccountBindings::class,$bindings);
-$staff=staffUser(['admin.domains.view','admin.domains.manage-policy',Review::permission('configure')]);
+$staff=staffUser(['admin.domains.view','admin.domains.manage-policy',Review::permission('configure'),Review::permission('live_transfer')]);
 $server=Server::create(['name'=>'Synthetic activation','type'=>'server','extension'=>'Domains','enabled'=>true]);
 config(['app.url'=>'https://billing.example.com','domains.namesilo_account.environment'=>'live']);
 $configure=static fn()=>new Review($staff->id,$server->id,null,'configure',
@@ -38,6 +38,10 @@ $row=['fingerprint'=>$binding->fingerprint,'currency'=>'USD','balance_funding'=>
 config(['domains.namesilo_live'=>['site'=>'https://billing.example.com','catalogue'=>true,'registration'=>true,
     'renewal'=>true,'management'=>true,'transfer'=>true,'runtime_revision'=>'OFFLINE-v1','accounts'=>[$a->stable_identity=>$row]]]);
 $engine=new LiveActivation(new NameSilo\ActivationEvidence);
+same(true,Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::defaults($a)['transfer'],
+    'An unsaved transfer choice is included in the reviewed activation defaults');
+expect(!Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::accepted($binding)&&!$a->fresh()->processing_enabled,
+    'Reading proposed defaults grants neither account permission nor Orders');
 $denied=static function(callable $work,string $message):void {
     try{$work();throw new LogicException($message);}catch(DomainException){}
 };
@@ -56,6 +60,8 @@ foreach(['fingerprint'=>'wrong','site'=>'https://copied.example.com','confirmed_
     $setEvidence([...$evidence,$key=>$value]);$denied(fn()=>$engine->evidence($binding),'Unbound, undated or incomplete evidence refuses');
 }
 $setEvidence($evidence);
+$withoutTransfer=$evidence;unset($withoutTransfer['history']['transfer']);
+$denied(fn()=>$engine->history($binding,$withoutTransfer,'transfer'),'Missing transfer history refuses NameSilo activation');
 foreach(['registration','renewal','transfer'] as $feature){
     $h=$engine->history($binding,$engine->evidence($binding),$feature);
     same('namesilo_'.$feature.'_v1',$h->vocabulary,'NameSilo uses its own history vocabulary');
@@ -80,7 +86,15 @@ $saveReceipt=static function()use($engine,$binding,$server):void {
     $server->settings()->updateOrCreate(['key'=>LiveActivation::KEY],['encrypted'=>true,'type'=>'string',
         'value'=>json_encode([...$engine->receiptFor($binding),'registration'=>true],JSON_THROW_ON_ERROR)]);
 };
-$saveReceipt();expect($engine->current($binding)&&$engine->registrationAccepted($binding),'Synthetic current receipt is bound to the local key and deployment');
+// A local reviewed Off is retained even before an activation receipt exists.
+$offReview=new Review($staff->id,$server->id,null,'live_transfer',
+    Review::ticket($staff->id,$server->id,null,'live_transfer',Review::stamp($server->id,null)),'Keep transfers Off');
+Paymenter\Extensions\Servers\Domains\Services\NameSiloFeatureSettings::review($offReview,['accept'=>false],'transfer');
+same(false,Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::defaults($a)['transfer'],'Saved NameSilo transfer Off is not preselected');
+$server->settings()->where('key','domains_namesilo_transfer')->delete();
+$saveReceipt();
+same(false,Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::defaults($a)['transfer'],'Older reviewed accounts with no transfer setting retain Off');
+expect($engine->current($binding)&&$engine->registrationAccepted($binding),'Synthetic current receipt is bound to the local key and deployment');
 expect(!$a->fresh()->processing_enabled,'Reading readiness or receipts grants no processing authority');
 $before=['registration'=>true,'renewal'=>false,'management'=>false,'transfer'=>false];
 config(['domains.namesilo_live.runtime_revision'=>'OFFLINE-v2']);
