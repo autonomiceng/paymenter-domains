@@ -527,7 +527,8 @@
     "tests/test_installed_comp_account_checkout-test.php",
     "tests/test_installed_comp_account_renewal-test.php",
     "tests/test_installed_comp_account_views-test.php",
-    "tests/test_installed_comp_account_transfer-test.php"
+    "tests/test_installed_comp_account_transfer-test.php",
+    "tests/test_installed_comp_account_recovery-test.php"
   ],
   "ui": [],
   "runner": [

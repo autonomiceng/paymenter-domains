@@ -13,7 +13,7 @@ final class TransferNotifications
             if($op->action!=='transfer'||!in_array($op->state,['awaiting_payment','awaiting_code','queued','held'],true)
                 ||$op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation
                 ||array_key_exists('epp',$op->payload??[])&&$op->payload['epp']!==null){continue;}
-            try{RefundProof::requireUnsent($op,$d);RefundPayment::requireCurrent($op,$l);}catch(\Throwable){continue;}
+            try{RefundProof::requireUnsent($op,$d);if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}}catch(\Throwable){continue;}
             $deadline=TransferInputs::deadline($op,$now);
             if(!$deadline){$alerts[]=ObligationAlerts::record($d,'unknown_payment_time',$now->getTimestamp(),(int)$op->id);continue;}
             if($now>=$deadline){continue;}
