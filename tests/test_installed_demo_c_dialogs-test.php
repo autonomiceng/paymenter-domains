@@ -20,7 +20,7 @@ $probe=new ReflectionProperty(CallerRouting::class,'probe');
 $probe->setValue(null,[StaffCatalogue::class=>new StaffCatalogue($ports,$clock),Capabilities::class=>new Capabilities($ports,$clock,static fn()=>null)]);
 $row=(new StaffCatalogue($ports,$clock))->rows([$binding],'com')->sole();
 $terms=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
-// Mount already returns the real dialog partial; an extra refresh renders the whole page again.
+// Mount returns the real dialog in full HTML or a modal partial; avoid a redundant full-page refresh.
 $terms->mountTableBulkAction('edit',[$terms->instance()->getTableRecordKey($row)]);
 $termsAction=$terms->instance()->getMountedAction();
 same(['Cancel','Save terms'],array_values(array_map(fn($a)=>$a->getLabel(),$termsAction->getModalFooterActions())),'Terms footer has logical Cancel then Save order');
@@ -42,7 +42,7 @@ $gift=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d-
 $giftAction=$gift->instance()->getMountedAction();
 same(['Cancel','Confirm complimentary renewal'],array_values(array_map(fn($a)=>$a->getLabel(),$giftAction->getModalFooterActions())),'Complimentary footer has logical Cancel then Confirm order');
 same(Filament\Support\Enums\Alignment::End,$giftAction->getModalFooterActionsAlignment(),'Complimentary actions align right');
-$dialog=$gift->effects['partials']['action-modals.0']??'';
+$dialog=$gift->effects['partials']['action-modals.0']??$gift->effects['html']??'';
 $failures=[];
 if(!str_contains($dialog,'before '.Carbon\CarbonImmutable::parse($options['horizon'])->format('M j, Y').'.')){$failures[]='Complimentary horizon uses readable month, day and year';}
 // Optional offline browser artifacts contain actual native modal DOM and shipped CSS, with no application access.
@@ -56,7 +56,7 @@ if(isset($argv[1])){
     $skin=$skinPath===null?'':'<style>'.file_get_contents($skinPath).'</style>';
     file_put_contents($argv[1].'/css-inputs.json',json_encode(['panel_sha256'=>hash_file('sha256',$panelCss),'skin_sha256'=>$skinPath===null?null:hash_file('sha256',$skinPath),'domains_sha256'=>hash('sha256',(string)view('domains::partials.staff-styles')->render())],JSON_PRETTY_PRINT));
     foreach(['terms'=>$terms,'complimentary'=>$gift] as $name=>$test){
-        $body=$test->effects['partials']['action-modals.0']??'';
+        $body=$test->effects['partials']['action-modals.0']??$test->effects['html']??'';
         $body=str_replace('class="fi-modal fi-absolute-positioning-context"','class="fi-modal fi-absolute-positioning-context fi-modal-open"',$body);
         $html='<!doctype html><html class="dark"><head><meta charset="utf-8"><style>'.$css.'</style>'.view('domains::partials.staff-styles')->render().$skin.'</head><body>'.$body.'</body></html>';
         file_put_contents($argv[1].'/'.$name.'.html',$html);
