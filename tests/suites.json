@@ -492,7 +492,8 @@
     "tests/staff-price-cost-alert-test.php",
     "tests/staff-purchase-price-label-test.php",
     "tests/staff-pricing-preview-cost-test.php",
-    "tests/staff-transfer-keep-off-test.php"
+    "tests/staff-transfer-keep-off-test.php",
+    "tests/staff-hidden-tld-link-test.php"
   ],
   "ui": [],
   "runner": [
