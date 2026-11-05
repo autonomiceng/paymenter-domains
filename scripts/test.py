@@ -682,6 +682,7 @@ def main():
                             'tests/namesilo-enrollment-test.php',
                             'tests/staff-domain-edits-namesilo-test.php',
                             'tests/binding-test.php',
+                            'tests/watch-scheduler-test.php',
                             'tests/registrars-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',
                             'tests/owner-records-test.php',

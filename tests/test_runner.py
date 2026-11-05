@@ -676,9 +676,10 @@ class RunnerTests(unittest.TestCase):
                     self.assertEqual(run.call_args.args[1]['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
                     self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))
 
-    def test_account_regressions_share_vendor_only_for_focused_serial_reads(self):
+    def test_focused_regressions_share_vendor_only_for_serial_reads(self):
         focused = ['tests/namesilo-enrollment-test.php',
-                   'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php']
+                   'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php',
+                   'tests/watch-scheduler-test.php']
         cases = [(1, [path], True) for path in focused]
         cases += [(1, focused, True), (2, focused, False),
                   (1, [focused[0], 'tests/offer-routing-test.php'], False)]
