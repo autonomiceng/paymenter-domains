@@ -637,11 +637,17 @@ def main():
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
+                # Focused serial regressions also reuse verified, immutable vendor bytes.
                 shared = (
                     args.jobs == 1
                     and requested
                     and all(
-                        Path(path).name.startswith("test_installed_")
+                        (Path(path).name.startswith("test_installed_")
+                         or path in {
+                             "tests/storefront-busy-test.php",
+                             "tests/sales-audit-changes-test.php",
+                             "tests/cart-price-change-test.php",
+                         })
                         for path in requested
                     )
                 )
