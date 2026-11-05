@@ -295,11 +295,11 @@ final class Writer implements Catalogue
             return $result;
     }
 
-    /** Only current registrar terms can say no; unknown terms leave the evaluator to wait for them. */
+    /** Only current registrar terms that list 1-year transfers allow them; missing or stale terms leave the row off. */
     private static function transfersSupported(Tld $t, \DateTimeImmutable $now): bool
     {
         $facts = OfferState::facts($t->catalogue_facts);
-        return !$facts?->fresh($now) || in_array(1, $facts->terms['transfer'] ?? [], true);
+        return $facts?->fresh($now) === true && in_array(1, $facts->terms['transfer'] ?? [], true);
     }
 
     private function mutate(Command $command, Tld $target, $prices, \DateTimeImmutable $now): bool
