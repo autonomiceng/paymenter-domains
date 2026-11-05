@@ -8,7 +8,7 @@ use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Queue\{ShouldQueue,ShouldBeUnique};
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\{InteractsWithQueue,SerializesModels};
-use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\{Cache,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,ObservationRecords,ReadFailure};
@@ -25,11 +25,12 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public bool $failOnTimeout=true;
     public function __construct(public int $actor,public int $domain,public int $generation,public string $fingerprint) {}
     public function uniqueId(): string { return 'domains-record-sync:'.$this->domain.':'.$this->generation.':'.$this->fingerprint; }
-    /** The same unique job lock covers queued and running reads. This check never starts a read. */
+    private function pendingKey(): string { return $this->uniqueId().':pending'; }
+    /** Bounded UI signal; no provider read or lock acquisition while rendering the page. */
     public static function pending(Domain $d): bool
     {
         $job=new self(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
-        return \Illuminate\Support\Facades\Cache::has(app(UniqueLock::class)->getKey($job));
+        return Cache::has($job->pendingKey());
     }
     public static function enqueue(int $actor,Domain $d): bool
     {
@@ -43,24 +44,26 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $lock=app(UniqueLock::class);
         if (!$lock->acquire($job)) { return false; }
         // Dispatch directly after admission: PendingDispatch would try to acquire the same lock again.
-        try { app(Dispatcher::class)->dispatch($job); }
-        catch (\Throwable $error) { $lock->release($job); throw $error; }
+        try { Cache::put($job->pendingKey(),true,self::UNIQUE_FOR); app(Dispatcher::class)->dispatch($job); }
+        catch (\Throwable $error) { Cache::forget($job->pendingKey()); $lock->release($job); throw $error; }
         return true;
     }
     public function handle(DomainObservation $observer): void
     {
-        if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { return; }
-        $d=Domain::find($this->domain);
-        if (!$d||$d->status!=='active'||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { $this->notice('Sync stopped','Domain changed. Reload its page before trying Sync now again.'); return; }
         try {
-            $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true);
-            if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
-            $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
-            $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'Refresh the domain page to see the saved records.');
-        } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }
+            if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { return; }
+            $d=Domain::find($this->domain);
+            if (!$d||$d->status!=='active'||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { $this->notice('Sync stopped','Domain changed. Reload its page before trying Sync now again.'); return; }
+            try {
+                $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true);
+                if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
+                $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
+                $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'Refresh the domain page to see the saved records.');
+            } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }
+        } finally { Cache::forget($this->pendingKey()); }
     }
     public function failed(?\Throwable $error): void
-    { $this->notice("Couldn't sync domain",'The background read stopped. Ask your site admin to check the queue worker, then try Sync now again.'); }
+    { Cache::forget($this->pendingKey()); $this->notice("Couldn't sync domain",'The background read stopped. Ask your site admin to check the queue worker, then try Sync now again.'); }
     private function notice(string $title,string $body): void
     {
         if (!Staff::allows(User::find($this->actor))) { return; }
