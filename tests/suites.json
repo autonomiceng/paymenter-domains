@@ -485,7 +485,8 @@
     "tests/test_installed_catalogue_freshness-test.php",
     "tests/offer-rule-isolation-test.php",
     "tests/offer-rule-repair-test.php",
-    "tests/native-service-edit-test.php"
+    "tests/native-service-edit-test.php",
+    "tests/registrar-account-counts-test.php"
   ],
   "ui": [],
   "runner": [

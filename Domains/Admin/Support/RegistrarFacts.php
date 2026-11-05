@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{RegistrarAccount,RegistrarSetup};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
 use Filament\Schemas\View\Components\TextComponent;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\{Blade,DB,Schema};
@@ -11,7 +12,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\AccountStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountSpendingHolds,EnomLive,EnomTestSendLimit,NameSiloSandbox,RegistrarBalances};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,EnomLive,EnomTestSendLimit,NameSiloSandbox,RegistrarBalances};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** Facts shared by the Registrars list and the registrar account page. Values are null when Missing; 'cause' says why. */
 final class RegistrarFacts
@@ -34,9 +35,12 @@ final class RegistrarFacts
         return $url?new HtmlString(Blade::render('<x-filament::link :href="$url" size="sm">{{ $label }}</x-filament::link>',['url'=>$url,'label'=>$label])):null;
     }
     public static function warn(string $text): HtmlString { return self::tone($text,'warning'); }
-    /** A sub-line in the danger or warning colour. Filament's own colour classes, so it reads the same without a skin. */
-    public static function tone(string $text,string $tone): HtmlString
-    { return new HtmlString('<span class="'.e(Arr::toCssClasses(['domains-'.($tone==='danger'?'err':'warn'),...\Filament\Support\get_component_color_classes(TextComponent::class,$tone)])).'">'.e($text).'</span>'); }
+    /** A sub-line in the danger or warning colour. Filament's own colour classes, so it reads the same without a skin. With $url it links there. */
+    public static function tone(string $text,string $tone,?string $url=null): HtmlString
+    {
+        $class=e(Arr::toCssClasses(['domains-'.($tone==='danger'?'err':'warn'),...\Filament\Support\get_component_color_classes(TextComponent::class,$tone),'underline'=>$url!==null]));
+        return new HtmlString($url===null?'<span class="'.$class.'">'.e($text).'</span>':'<a class="'.$class.'" href="'.e($url).'">'.e($text).'</a>');
+    }
     /** The account's own state. A request that needs review shows on the Registrar requests row, not here.
      * @return array{label:string,tone:string,reason:?string} */
     public static function status(Server $server, ?Account $account): array
@@ -52,9 +56,22 @@ final class RegistrarFacts
         if (DemoData::paused($account)) { return AccountStatus::for($configuration,false,AccountStatus::DEMO_PAUSED); }
         return AccountStatus::for($configuration,(bool)$account->processing_enabled);
     }
-    /** @return array{total:int,review:int} Requests on this account, and those paid but not confirmed by the registrar. */
+    /** Registrar requests list words that are still open: all but Completed, Failed and Cancelled. */
+    public const OPEN_REQUESTS=['awaiting_payment','action_required','in_progress','on_hold','under_review'];
+    /** Requests on this account, counted with the Registrar requests list's own query and Status filter, so each count's link opens exactly
+     * those rows. 'staff': On hold and Under review, the statuses that wait on staff (the menu count), by status.
+     * @return array{open:int,staff:array<string,int>} */
     public static function requests(int $server): array
-    { return ['open'=>Operation::where('server_id',$server)->whereNotIn('state',\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::FINISHED)->count(),'review'=>AccountSpendingHolds::query(Operation::where('server_id',$server))->where('state','uncertain')->count()]; }
+    {
+        $count=fn(array $keys)=>OperationQueries::status(OperationResource::getEloquentQuery()->where('server_id',$server),$keys)->count();
+        return ['open'=>$count(self::OPEN_REQUESTS),'staff'=>array_combine(OperationResource::NEEDS_STAFF,array_map(fn(string $key)=>$count([$key]),OperationResource::NEEDS_STAFF))];
+    }
+    /** The Registrar requests list for this account with these statuses ticked in its Status filter. Null without access. */
+    public static function requestsUrl(int $server,array $statuses): ?string
+    {
+        try { return OperationResource::getUrl('index',['filters'=>['server_id'=>['values'=>[(string)$server]],'status'=>['values'=>array_values($statuses)]]]); }
+        catch (\Throwable) { return null; }
+    }
     /** Add funds and balance checks apply once the account is set up and its server is on. */
     public static function connected(?Account $account, array $status): bool
     { return $account!==null&&$status['label']!==AccountStatus::SET['not_connected'][0]; }
@@ -64,8 +81,32 @@ final class RegistrarFacts
     public static function balance(Account $account): array
     {
         $f=RegistrarBalances::facts($account,app(Clock::class)->now());
-        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],
+        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],'unpriced'=>$f['unpriced'],
             'funds'=>RegistrarBalances::fundsUrl($account->registrar_key,$account->environment)];
+    }
+    /** Why Due in 30 days leaves renewals out, and who fills them. Only a gap staff must fix acts (amber).
+     * A renewal waiting on the daily price read fills in by itself; 'at' is when that read is next due.
+     * @return ?array{text:string,act:bool,at:?int} */
+    public static function dueGap(Account $account,array $b): ?array
+    {
+        $n=static fn(int $count)=>$count.' '.($count===1?'renewal':'renewals');
+        if ($b['unreadable']>0) { return ['text'=>DomainFacts::UNREADABLE_RENEWAL,'act'=>true,'at'=>null]; }
+        $undated=$b['without_cost']-$b['unpriced'];
+        if ($undated>0) { return ['text'=>$n($undated).' with no known date, so not counted. Check the invoice days and the domain expiry.','act'=>true,'at'=>null]; }
+        if ($b['unpriced']===0) { return null; }
+        try { $read=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress((int)$account->server_id)??[]; } catch (\Throwable) { $read=[]; }
+        if (!empty($read['failure'])) {
+            return ['text'=>$n($b['unpriced']).' not priced yet. The daily price read failed: '.rtrim(TldFacts::syncCause($read['failure']),'.').'. Fix that and Beco fills the cost on the next read.','act'=>true,'at'=>null];
+        }
+        $at=isset($read['due_at'])&&(int)$read['due_at']>app(Clock::class)->now()->getTimestamp()&&($read['state']??null)==='ready'?(int)$read['due_at']:null;
+        return ['text'=>$n($b['unpriced']).' not priced yet. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills($at===null?'after the price read now queued':'after the next price read'),'act'=>false,'at'=>$at];
+    }
+    /** The gap as a page sub-line: amber when staff act, plain otherwise. */
+    public static function dueLine(?array $gap): ?HtmlString
+    {
+        if ($gap===null) { return null; }
+        if ($gap['act']) { return self::warn($gap['text']); }
+        return new HtmlString(e($gap['text']).($gap['at']===null?'':', '.Sheet::moment($gap['at'])->toHtml()).'.');
     }
     /** Each Enom login shares our saved cap; TEST rolls for 24 hours and Live resets at UTC midnight. @return ?array{value:?string,tone:?string,sub:?string,help:?string} */
     public static function calls(Account $account): ?array
