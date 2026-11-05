@@ -77,7 +77,7 @@ class ViewDomain extends ViewRecord
         $op=$d->operations()->where('state','held')->latest('id')->get()->first(fn($op)=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op)!==null);
         return Action::make('approveComplimentaryCost')->label('Approve registrar cost')->color('danger')
             ->visible(fn()=>$op&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage'))
-            ->modalHeading($op?\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op):'Approve registrar cost')
+            ->modalHeading('Approve registrar cost')->modalDescription($op?\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,true):null)
             ->schema([\Filament\Forms\Components\TextInput::make('reason')->label('Reason')->required()->maxLength(500)])
             ->action(fn(array $data)=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::approve($op->id,Auth::user(),$op->policy['complimentary_cost_review']['amount'],$data['reason'],app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)));
     }
@@ -154,7 +154,7 @@ class ViewDomain extends ViewRecord
     {
         $out=[];
         if(Staff::can('admin.domains.fund')){foreach($d->operations()->where('state','held')->get() as $op){
-            if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op)){$out[]=Callout::make($message)->status('danger')->columnSpanFull();}
+            if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can('admin.domains.manage'))){$out[]=Callout::make($message)->status('danger')->columnSpanFull();}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
         if($sync!==null&&$sync['title']!=='Domain synced'){

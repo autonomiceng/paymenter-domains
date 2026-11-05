@@ -21,7 +21,7 @@ final class TransferNotifications
             $kind=$now>=$deadline->modify('-7 days')?'reminder':'paid';$identity='transfer:'.$op->id.':'.$kind;
             return ['identity'=>$identity,'template'=>'domains_transfer_code_'.$kind,'data'=>['domain'=>$d->domain,
                 'deadline'=>$deadline->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y, g:i A').' UTC',
-                'amount'=>RenewalReminders::money($op->amount),'domain_url'=>url('/domains/'.$d->id.'/transfer-code')]];
+                'amount'=>$op->funding_basis==='complimentary'?'$0.00':RenewalReminders::money($op->amount),'domain_url'=>url('/domains/'.$d->id.'/transfer-code')]];
         }
         return null;
     }
