@@ -67,7 +67,9 @@ final class StaffCommands
         if(!$defaults||$names!==[]){foreach($rows as $t){
             if($defaults&&!in_array($t->tld,$names,true)){continue;}
             try{
-                $raw=OfferState::decode($t->catalogue_intent);$intent=$this->intent($raw);$rule=Pricing::own($t);
+                $raw=OfferState::decode($t->catalogue_intent);$intent=$this->intent($raw);
+                // Replacing or removing a rule must not require reading the broken old rule.
+                $rule=in_array($review->action,['override','remove_override'],true)?null:Pricing::own($t);
                 $command=match($review->action){
                     'publish'=>Edit::republish($binding,$t->tld),
                     'import'=>Edit::requestSync($binding,$t->tld),

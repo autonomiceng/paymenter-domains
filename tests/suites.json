@@ -83,6 +83,7 @@
     "tests/offer-writer-test.php",
     "tests/offer-work-test.php",
     "tests/offer-rule-isolation-test.php",
+    "tests/offer-rule-repair-test.php",
     "tests/processing-republish-test.php",
     "tests/staff-legacy-disable-test.php",
     "tests/namesilo-pricing-test.php",

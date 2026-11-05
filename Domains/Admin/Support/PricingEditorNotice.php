@@ -71,7 +71,7 @@ final class PricingEditorNotice
                 }
                 $status[$label]=$available;
             }
-            if(!$native&&!($status['Registration']??true)&&Staff::can(Staff::VIEW)
+            if(!($status['Registration']??true)&&Staff::can(Staff::VIEW)
                 &&($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){
                 $key=$tld->server_id.':'.$tld->tld;
                 $row=$catalogue->page(collect([$tld]))[$tld->id];
