@@ -21,8 +21,9 @@ $assertFamily=static function(string $label,?int $queued=null,?string $cause=nul
   foreach($nodes as $node){same($label,trim($node->textContent),$surface.' family label: expected '.$label.', got '.trim($node->textContent));
    same($label==='Missing'?1:0,$xp->query('.//svg',$node)->length,$surface.' warning icon only for Missing');
    $row=$node->parentNode;
-   if($queued!==null){expect($xp->query('.//time[@datetime="'.gmdate(DATE_ATOM,$queued).'"]',$row)->length>0,$surface.' shows queued time');}
-   if($cause!==null){expect(str_contains($row->textContent,$cause),$surface.' shows safe cause');}
+   // ui-r15 R3: the queued time and the cause are said once above the rows, not on each row.
+   if($queued!==null){expect($xp->query('//time[@datetime="'.gmdate(DATE_ATOM,$queued).'"]')->length>0&&$xp->query('.//time',$row)->length===0,$surface.' shows queued time once, above the rows');}
+   if($cause!==null){expect(str_contains($dom->textContent,$cause)&&!str_contains($row->textContent,$cause),$surface.' shows safe cause once, above the rows');}
   }
  }
 };
