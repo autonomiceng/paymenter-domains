@@ -83,9 +83,9 @@ final class DomainObservation
             if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
             if ($records!==null) { ObservationRecords::save($l['domain'],$records,$this->clock->now(),$capabilities); }
             if ($snapshot || $transfer!==TransferStatus::Unknown) { ObservationProjection::save($l['domain'],$snapshot,$transfer,$this->clock->now()); }
-            $incomplete=$records!==null && ObservationRecords::incomplete($l['domain']);
+            $incomplete=$records!==null && ObservationRecords::incomplete($l['domain'],$this->clock->now());
             if ($incomplete && $failedFamily===null) {
-                $inventory=ObservationRecords::current($l['domain']);
+                $inventory=ObservationRecords::current($l['domain'],$this->clock->now());
                 foreach (['dns','srv','ds','glue'] as $kind) {
                     if (($inventory['expected_families'][$kind]??'supported')==='supported' && ($inventory['families'][$kind]['state']??null)!=='complete'
                         && !($binding->registrarKey==='enom' && $kind==='glue' && ($inventory['families'][$kind]['state']??null)==='partial' && !($inventory['families'][$kind]['read_failed']??false))) { $failedFamily=$kind;break; }
