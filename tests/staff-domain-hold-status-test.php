@@ -42,9 +42,10 @@ foreach([false,true] as $ordersOn){
         $check(str_contains($request,'In progress'),'Running orders leave the request activity in progress');
     }else{
         $check(str_contains($head,'Pending transfer')&&str_contains($head,'Orders are off for this account.'),'Paused orders are the current header cause: '.$head);
-        $check(str_contains($head,'Turn Orders on in Registrars'),'Paused header names the next step');
+        // slop-sweep: after "Orders are off for this account." the step says only "Turn them on in Registrars."
+        $check(str_contains($head,'Turn them on in Registrars'),'Paused header names the next step');
         $check(str_contains($request,'Under review')&&str_contains($request,'Orders are off for this account.'),'Paused orders are the current request activity cause');
-        $check(str_contains($request,'Turn Orders on in Registrars'),'Paused request activity names the next step');
+        $check(str_contains($request,'Turn them on in Registrars'),'Paused request activity names the next step');
     }
     same(1,$entry('Hold released')->length,'One release event appears in Activity');
     $released=$text($entry('Hold released')->item(0));
