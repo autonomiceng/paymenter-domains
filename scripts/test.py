@@ -690,6 +690,7 @@ def main():
                             'tests/transfer-completion-namesilo-test.php',
                             'tests/transfer-completion-namesilo-refusals-test.php',
                             'tests/transfer-completion-namesilo-finance-test.php',
+                            'tests/watch-scheduler-test.php',
                             'tests/registrars-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',
                             'tests/owner-records-test.php',
