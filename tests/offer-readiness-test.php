@@ -18,7 +18,7 @@ $a=Account::where('server_id',$binding->serverId)->sole();
 $features=['registration'=>true,'renewal'=>false,'transfer'=>false];
 $r=$ready->review($a,$features);
 expect($r['costs']!==[]&&$r['missing']===null,'Current selected offers are ready');
-$q=new Query($binding,['net'],'register');$revision=fn()=>$ports->readOffers($q,Context::Staff)[0]->revision;
+$q=new Query($binding,['net'],'register');$revision=fn()=>offerCommerceAsStaff(static fn () => $ports->readOffers($q,Context::Staff)[0]->revision);
 $costs=[];
 foreach(['register','renew','transfer'] as $action){$costs[]=new Cost($action,1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));}
 $ports->apply(new FeedObserved($binding,'net',$costs),$revision());

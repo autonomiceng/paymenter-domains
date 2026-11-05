@@ -16,7 +16,7 @@ $mutate = null;
 Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$mutate): void { if ($mutate) { $mutate(); } });
 $fixture = offerCommerceFixture(); extract($fixture);
 $public = $storefront->offer('com', 'register', 3);
-$staff = $ports->readOffers(new Query($binding, ['com'], 'register', 3), Context::Staff)[0];
+$staff = offerCommerceAsStaff(static fn () => $ports->readOffers(new Query($binding, ['com'], 'register', 3), Context::Staff)[0]);
 same(['$23.40', '$10.40', $binding->serverId, 3, '23.40'], [$public['price'], $public['renew'], $public['selection']->serverId,
     $public['selection']->term, $staff->retail], 'Public offer and Staff reader use the selected account and exact term total');
 $user = commerceUser(); $cart = commerceCart($user);
@@ -107,7 +107,7 @@ $q = new Query($binding, ['com'], 'register', 3);
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
     new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register', 3, true, '21.0000',
         Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+1 day'))
-]), $ports->readOffers($q, Context::Staff)[0]->revision);
+]), offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision));
 expect($cart->items()->whereKey($line->id)->exists(), 'Cost observation retains the actual cart line for total review');
 $counts = [Order::count(), Invoice::count(), Operation::count()];
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);

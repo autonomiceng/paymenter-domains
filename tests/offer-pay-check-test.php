@@ -20,14 +20,14 @@ $cart = commerceCart($user); commerceAdd($cart, $public['product'], 'payment-fen
 expect(Operation::count()===1,'Initial payment fixture checkout: '.json_encode($initialCheckout->effects['dispatches']??[]));
 $op = Operation::sole(); $invoice = Invoice::findOrFail($op->invoice_id); $before = $reads->calls;
 Cache::put('domains.pay-check.'.$op->id, 'clear', 60);
-$revision = $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
+$revision = offerCommerceAsStaff(static fn () => $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision);
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false)), $revision);
 same('unavailable', $pay->stop($invoice)['why'] ?? null, 'Stale local evidence refuses payment instead of trusting the old clear cache');
 same(['pending', 'awaiting_payment', $before], [$invoice->fresh()->status, $op->fresh()->state, $reads->calls], 'Local staleness neither retires nor reads the provider');
 $op->update(['state'=>'held']);same('unavailable',$pay->stop($invoice)['why']??null,'An unsent held invoice still checks the current local offer before payment');same($before,$reads->calls,'Held payment refusal is local only');$op->update(['state'=>'awaiting_payment']);
 // Restore public selling, then use the same native fixture for unsent/frozen payment behavior.
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true)),
-    $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision);
+    offerCommerceAsStaff(static fn () => $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision));
 NativeIntentSchema::install(); ReminderSchema::install(); NativeIdentity::boot(); NativeCancellation::boot();
 app()->instance(AcquisitionRetirement::class, new AcquisitionRetirement($clock));
 $live = (object)['available' => true, 'reads' => 0, 'duringRead' => null];
@@ -63,6 +63,8 @@ same('pending', $invoice->fresh()->status, 'Provider unknown quote keeps frozen 
 $before = $live->reads; $pay->stop($invoice); same($before, $live->reads, 'Current unknown answer is coalesced for the minute');
 // Credential rotation invalidates even a current namespaced cache at unchanged retail/revisions.
 offerCommerceRotate($binding, 'rotated-synthetic-token');
+// Resumed processing withdraws the offer until local work republishes it; republish through the real writer.
+$ports->apply(Edit::republish($binding, 'com'), offerCommerceAsStaff(static fn () => $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision));
 same('unavailable', $pay->stop($invoice)['why'] ?? null, 'Same-identity rotation invalidates the cached pay answer');
 same($before, $live->reads, 'Rotated local evidence stops before a provider read');
 // A provider answer obtained before a local change is never classified as taken.

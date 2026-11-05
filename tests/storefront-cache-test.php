@@ -19,7 +19,7 @@ DB::beginTransaction();DB::beginTransaction();$t->refresh()->update(['catalogue_
 same($healthy,$storefront->endings(),'Rolled-back savepoint cannot invalidate committed display');
 DB::transaction(fn()=>$t->refresh()->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]));
 same([],$storefront->endings(),'Committed pending offer revision withdraws cached public rows');
-$q=new Query($binding,['com'],'register');$ports->apply(Edit::republish($binding,'com'),$ports->readOffers($q,Context::Staff)[0]->revision);
+$q=new Query($binding,['com'],'register');$ports->apply(Edit::republish($binding,'com'),offerCommerceAsStaff(static fn () => $ports->readOffers($q,Context::Staff)[0]->revision));
 same($healthy,$storefront->endings(),'Real active publication restores next display');
 // An unrevisioned native edit is display-only until TTL; it cannot change authoritative cart pricing.
 $product=$native->product($t->fresh(),'register');$price=$product->plans()->where('billing_period',1)->sole()->prices()->sole();

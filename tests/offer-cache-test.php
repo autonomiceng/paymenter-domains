@@ -18,10 +18,10 @@ $render = static function () use (&$renders): array { return [['render' => ++$re
 same([['render' => 1]], $cache->remember($render), 'New cache cannot reuse an old caller namespace');
 same([['render' => 1]], $cache->remember($render), 'Current evidence reuses a warm public cache');
 $q = new Query($binding, ['com'], 'register');
-$ports->apply(Edit::defaults($binding, 'com', new Intent(defaultLongest: 3, defaultTransfers: true)), $ports->readOffers($q, Context::Staff)[0]->revision);
+$ports->apply(Edit::defaults($binding, 'com', new Intent(defaultLongest: 3, defaultTransfers: true)), offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision));
 same([['render' => 2]], $cache->remember($render), 'Default revision fences public display even before republication');
 commerceReject(static fn () => $storefront->offer('com', 'register', 1));
-$ports->apply(Edit::republish($binding, 'com'), $ports->readOffers($q, Context::Staff)[0]->revision);
+$ports->apply(Edit::republish($binding, 'com'), offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision));
 same([['render' => 3]], $cache->remember($render), 'Publication advances the cache namespace');
 $before = $offers->cacheFence(); offerCommerceRotate($binding, 'cache-rotation-synthetic');
 expect($before !== $offers->cacheFence(), 'Same binding with new credentials has a distinct namespace');
@@ -32,13 +32,13 @@ same([['render' => 5]], $cache->remember($render), 'Generation advance fences an
 $clock->instant = $now->modify('+1 second');
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com',
     new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1, 3], 'renew' => [1], 'transfer' => [1]],
-        null, true, false, false, 'synthetic', $clock->now(), $now->modify('+1 day'))), $ports->readOffers($q, Context::Staff)[0]->revision);
+        null, true, false, false, 'synthetic', $clock->now(), $now->modify('+1 day'))), offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision));
 same([['render' => 6]], $cache->remember($render), 'Unknown registry facts fence cached public rows');
 commerceReject(static fn () => $storefront->offer('com', 'register', 1));
 $clock->instant = $now->modify('+2 seconds');
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com',
     new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1, 3], 'renew' => [1], 'transfer' => [1]],
-        [], true, false, false, 'synthetic', $clock->now(), $now->modify('+1 day'))), $ports->readOffers($q, Context::Staff)[0]->revision);
+        [], true, false, false, 'synthetic', $clock->now(), $now->modify('+1 day'))), offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision));
 $clock->instant = $now->modify('+31 seconds');
 same([['render' => 7]], $cache->remember($render), 'Display TTL still bounds the freshness lag');
 // A generation change during rendering must not poison the next request's namespace.
