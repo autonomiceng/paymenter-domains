@@ -63,11 +63,23 @@ same('The price of staff-save-placeholder.com went up after this invoice was iss
 same($issued, $frozen(), 'Refused pay leaves the issued invoice and receipt untouched');
 $log = array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.'));
 same([(int)$invoice->id, 'price_changed'], [$log[0][1]['invoice_id'] ?? null, $log[0][1]['reason'] ?? null], 'Refused pay logs its reason');
+// A fixed retail below the new cost withdraws the offer itself; that refusal is still the price message.
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true),
+    PricingRule::validate([...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '10.40', 'renew' => '10.40', 'transfer' => '10.40']])), $revision());
+commerceReject(fn () => $storefront->offer('com', 'register', 1));
+$refused = $pay->stop($invoice);
+same(['unavailable', 'The price of staff-save-placeholder.com went up after this invoice was issued. You have not been charged. Try again later, or contact us for a new invoice.'],
+    [$refused['why'] ?? null, $refused['text'] ?? null], 'A fixed-price cost refusal shows the plain no-charge message');
+$log = array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.'));
+same('price_changed', $log[1][1]['reason'] ?? null, 'A fixed-price cost refusal logs the price reason');
+same($issued, $frozen(), 'A fixed-price cost refusal leaves the issued invoice untouched');
 // Taking the ending off sale is a temporary refusal, also logged with its cause.
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false)), $revision());
-same('unavailable', $pay->stop($invoice)['why'] ?? null, 'An ending off sale still refuses pay');
+$stopped = $pay->stop($invoice);
+same(['unavailable', 'Domains can’t be ordered right now. Please try again later.'], [$stopped['why'] ?? null, $stopped['text'] ?? null],
+    'An ending off sale still refuses pay, and a staff stop is not called a price change');
 $log = array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.'));
-same(['unavailable', DomainException::class], [$log[1][1]['reason'] ?? null, $log[1][1]['exception_class'] ?? null], 'Every refused pay logs its reason');
+same(['unavailable', DomainException::class], [$log[2][1]['reason'] ?? null, $log[2][1]['exception_class'] ?? null], 'Every refused pay logs its reason');
 same('pending', $invoice->fresh()->status, 'Temporary refusals keep the invoice open');
 $nativeSuccessful = true;
 echo "Offer pay after staff save: ok\n";

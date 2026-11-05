@@ -101,16 +101,34 @@ final class AcquisitionOffers
      * issued total and the frozen spending ceiling. Revisions and retail may move; the issued amount stands. */
     public function paymentSelection(SaleSelection $frozen, string $name, string $ceiling, string $total): SaleSelection
     {
-        $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
-            new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
+        try {
+            $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
+                new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
+        } catch (\DomainException $e) { $this->costRefusal($frozen, $name, $ceiling, $total); throw $e; }
         $sale = static fn (SaleSelection $s) => [$s->tld, $s->serverId, $s->registrar, $s->fingerprint, $s->action, $s->term,
             $s->currency, $s->catalogue['generation'] ?? null, $s->catalogue['credential'] ?? null];
         if ($sale($frozen) !== $sale($current)) { throw new \DomainException('Seller or account changed.'); }
         $price = $this->load([$current], false, true)[0]['snapshot'];
-        if (!PricingRule::covers($total, $price->wholesale) || PricingRule::units($price->wholesale) > PricingRule::units($ceiling)) {
+        if (!self::fits($price->wholesale, $ceiling, $total)) { throw new PaymentPriceChanged($name); }
+        return $current;
+    }
+
+    private static function fits(string $cost, string $ceiling, string $total): bool
+    { return PricingRule::covers($total, $cost) && PricingRule::units($cost) <= PricingRule::units($ceiling); }
+
+    /** A refused current offer whose fresh cost no longer fits the invoice is a price change (a fixed retail
+     * below the new cost, for example), not a temporary stop. Staff or seller stops keep their own refusal. */
+    private function costRefusal(SaleSelection $s, string $name, string $ceiling, string $total): void
+    {
+        try {
+            $b = AccountBindings::binding(Account::where('server_id', $s->serverId)->sole());
+            if ($b->fingerprint !== $s->fingerprint || $b->registrarKey !== $s->registrar) { return; }
+            $row = $this->ports->loadBatch([new Query($b, [$s->tld], $s->action, $s->term)], Context::Public)[0][0];
+            $cost = $row->closed() ? null : $row->observation();
+        } catch (\Throwable) { return; }
+        if ($cost?->enabled && $cost->total !== null && $cost->fresh(app(Clock::class)->now()) && !self::fits($cost->total, $ceiling, $total)) {
             throw new PaymentPriceChanged($name);
         }
-        return $current;
     }
 
     /** Native list row still has to match its original publication, even for a cart-only quote. */

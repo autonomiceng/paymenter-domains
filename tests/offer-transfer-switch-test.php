@@ -25,6 +25,20 @@ $hint=static function()use($ports,$clock,$binding,$tlds):string{
 $ports->apply(Edit::seller($binding,'com',['register']),$revision());
 $run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>false]]]]);
 commerceReject(fn()=>$storefront->offer('com','transfer',1));
+// Without current registrar terms that list transfers, Transfers On leaves the seller row off and the hint names it.
+$facts=DB::table('domains_tlds')->where('id',$tlds[0]->id)->value('catalogue_facts');
+expect(str_contains($facts,'"transfer":[1]'),'Fixture terms list 1-year transfers');
+$setFacts=static fn(?string $json)=>DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_facts'=>$json]);
+$changed=static function(array $edit)use($facts):string{$f=json_decode($facts,true);return json_encode(array_replace_recursive($f,$edit));};
+foreach(['missing'=>null,
+    'stale'=>$changed(['observedAt'=>$now->modify('-2 days')->format(DATE_ATOM),'freshUntil'=>$now->modify('-1 second')->format(DATE_ATOM)]),
+    'unsupported'=>str_replace('"transfer":[1]','"transfer":[]',$facts)] as $case=>$json){
+    $setFacts($json);
+    try{$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);}catch(DomainException){/* Widening against current unsupported terms is refused outright. */}
+    same(0,(int)$policy()->transfer_enabled,$case.' registrar terms leave the seller row transfer flag off');
+    $setFacts($facts);
+    same('Allow transfers in More → Change registrar on .com.',$hint(),$case.' terms: the staff hint names the real next step');
+}
 // Transfers On in What you sell is the one switch: the chosen registrar's seller row now allows them too.
 $run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);
 same([1,1,(int)$binding->serverId],[(int)$policy()->register_enabled,(int)$policy()->transfer_enabled,(int)$policy()->server_id],'Transfers On allows transfers on the seller row and keeps registrations');
