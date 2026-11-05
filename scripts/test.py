@@ -647,6 +647,10 @@ def main():
                             # These focused catalogue checks only write their private app/SQLite fixture.
                             "tests/offer-cutover-test.php", "tests/offer-writer-test.php",
                             "tests/offer-work-test.php", "tests/offer-frozen-renewal-test.php",
+                            "tests/enom-test-send-limit-test.php", "tests/glossary-sweep-test.php",
+                            "tests/native-lifecycle-test.php", "tests/offer-installed-staff-test.php",
+                            "tests/offer-ports-test.php", "tests/registrar-balances-test.php",
+                            "tests/registrars-page-test.php", "tests/storefront-test.php",
                         }
                         for path in requested
                     )
