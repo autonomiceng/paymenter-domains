@@ -676,6 +676,25 @@ class RunnerTests(unittest.TestCase):
                     self.assertEqual(run.call_args.args[1]['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
                     self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))
 
+    def test_account_regressions_share_vendor_only_for_focused_serial_reads(self):
+        focused = ['tests/namesilo-enrollment-test.php',
+                   'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php']
+        cases = [(1, [path], True) for path in focused]
+        cases += [(1, focused, True), (2, focused, False),
+                  (1, [focused[0], 'tests/offer-routing-test.php'], False)]
+        for jobs, requested, shared in cases:
+            with self.subTest(jobs=jobs, requested=requested), tempfile.TemporaryDirectory() as temp, \
+                 mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
+                 mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', str(jobs), '--only', *requested]), \
+                 mock.patch.object(runner.test_workers, 'environments', return_value=([{}]*jobs, None, None)), \
+                 mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
+                 mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')), \
+                 mock.patch.object(runner, 'run', return_value=0), contextlib.redirect_stdout(io.StringIO()):
+                (Path(temp)/'runtime').mkdir()
+                self.assertEqual(runner.main(), 0)
+                native_prepare.assert_called_once_with('pristine', Path(temp)/'paymenter', share_vendor=shared)
+
     def test_only_unknown_paths_and_missing_native_source_refuse_before_preparing(self):
         for path, message in [('tests/unregistered-test.php', 'Unregistered'),
                               ('../tests/test_runner.py', 'Unregistered'),
