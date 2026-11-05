@@ -648,6 +648,10 @@ def main():
                             'tests/management-namesilo-test.php',
                             'tests/renewal-cycles-test.php',
                             'tests/renewal-billing-test.php',
+                            'tests/observation-records-test.php',
+                            'tests/observation-namesilo-test.php',
+                            'tests/demo-c-terms-native-test.php',
+                            'tests/staff-domain-page-test.php',
                         }
                         for path in requested
                     )
