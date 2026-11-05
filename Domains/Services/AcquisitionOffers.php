@@ -94,11 +94,11 @@ final class AcquisitionOffers
     {
         $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
             new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
-        $old = get_object_vars($frozen); $new = get_object_vars($current);
-        unset($old['catalogue']['order_quote'], $new['catalogue']['order_quote']);
         $price = $this->load([$current], false, true)[0]['snapshot'];
-        if ($old !== $new || !PricingRule::covers($total, $price->wholesale)
-            || PricingRule::units($price->wholesale) > PricingRule::units($ceiling)) {
+        if (($frozen->catalogue['retail'] ?? null) !== $price->retail
+            || ($frozen->catalogue['renewal'] ?? null) !== $current->catalogue['renewal']
+            || !PricingRule::covers($total, $price->wholesale)
+            || PricingRule::units($price->wholesale) !== PricingRule::units($ceiling)) {
             throw new \DomainException('Frozen order price or spending ceiling changed.');
         }
         return $current;
