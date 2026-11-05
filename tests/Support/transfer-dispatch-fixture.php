@@ -31,7 +31,7 @@ $assertTransferGuards=static function(int $i)use($state,$newTransfer,$makeTransf
     $op=$newTransfer(placeholderComFixtureName('guard-'.$i.'-placeholder.com'),$i);
     $unsent=$op->getRawOriginal();
     foreach(['deployment','account','orders','reservation','balance','cost','funding'] as $fault){
-        $state->calls=[];$state->reads=0;$state->mode='';$state->missingCost=false;$state->quote='99.00';$state->funds='100.00';
+        $state->calls=[];$state->reads=0;$state->mode='';$state->missingCost=false;$state->quote='7.00';$state->funds='100.00';
         $op->refresh();
         if($fault==='deployment'){
             $policy=\Illuminate\Support\Facades\DB::table('domains_sales_policies')->where('tld','com')->first();
@@ -59,7 +59,7 @@ $assertTransferGuards=static function(int $i)use($state,$newTransfer,$makeTransf
             $accounts->update(['account_fingerprint'=>$before->account_fingerprint,'processing_enabled'=>$before->processing_enabled]);
             \Illuminate\Support\Facades\DB::table('domains_domains')->where('id',$op->domain_id)->update(['reservation_name'=>$reservation]);
             if($fault!=='funding'){\Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update($unsent);}
-            $state->missingCost=false;$state->quote='99.00';$state->funds='100.00';
+            $state->missingCost=false;$state->quote='7.00';$state->funds='100.00';
         }
     }
     \Illuminate\Support\Facades\DB::table('domains_read_budgets')->where('server_id',$op->server_id)->delete();
