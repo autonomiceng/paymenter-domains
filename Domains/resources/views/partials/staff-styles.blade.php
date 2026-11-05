@@ -65,4 +65,5 @@ a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),a:focus-visib
 .domains-scroll{max-height:24rem;overflow:auto}
 .domains-scroll-short{max-height:8rem}
 .domains-disclosure{cursor:pointer}
+.domains-total{display:block;font-size:1.5rem;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
 </style>

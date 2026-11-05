@@ -459,7 +459,11 @@
 .domains .domains-confirm__facts dt { font-size: .8125rem; color: var(--e-muted); }
 .domains .domains-confirm__facts dd { margin: .125rem 0 0; }
 .domains .domains-confirm__facts dd span { display: block; font-weight: 600; }
-.domains .domains-confirm .domains-buttons { margin-top: 1.25rem; }
+.domains .domains-confirm .domains-buttons { margin-top: 1.25rem; justify-content:flex-end; }
+.domains .domains-confirm:has([data-renewal-form]) { padding:0; border-radius:.375rem; }
+.domains .domains-confirm:has([data-renewal-form]) > h3 { padding:1rem 1.25rem; border-bottom:1px solid var(--e-line); }
+.domains [data-renewal-form] .domains-card>div { padding:.75rem 1.25rem; }
+.domains [data-renewal-form] .domains-buttons { padding:1rem 1.25rem; border-top:1px solid var(--e-line); }
 @media (prefers-reduced-motion: no-preference) { .domains .domains-confirm:modal { animation: domains-confirm-in .15s ease-out; } }
 @keyframes domains-confirm-in { from { opacity: 0; transform: translateY(.5rem); } }
 /* Help popovers and the help page */
@@ -560,5 +564,16 @@
     .domains .domains-sheet .domains-btn--block { width: calc(100% - 2rem); margin-inline: 1rem; }
     .domains .domains-row__a .domains-a { min-height: 2.75rem; }
 }
+.domains-total{display:block;font-size:1.5rem;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
+/* Labeled term choices share the sheet's quiet label/value rhythm. */
+.domains .domains-term-rows{display:grid;gap:.5rem;margin:0}
+.domains .domains-term-rows>div{display:grid;grid-template-columns:7rem minmax(0,1fr);align-items:center;gap:.75rem}
+.domains .domains-term-rows dt{color:var(--e-muted)}
+.domains .domains-term-rows dd{min-width:0;margin:0;text-align:right}
+.domains .domains-term-rows .domains-result__price{text-align:right}
+.domains .domains-result:has(.domains-term-rows){grid-template-columns:minmax(0,1fr) auto}
+.domains .domains-result:has(.domains-term-rows) .domains-result__action{grid-column:1 / -1;grid-row:auto;width:100%;min-width:0}
+.domains .domains-result:has(.domains-term-rows) .domains-result__action form{display:grid;gap:.75rem}
+.domains .domains-result:has(.domains-term-rows) .domains-btn{justify-self:end;width:auto}
 </style>
 @endonce

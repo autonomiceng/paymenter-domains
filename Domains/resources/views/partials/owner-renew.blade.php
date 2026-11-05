@@ -39,12 +39,12 @@
 <div><dt>Expires</dt><dd>@include('domains::partials.date', ['date' => $domain->expiry])</dd></div>
 <div><dt><label for="renew-years">Years</label></dt><dd><select id="renew-years" class="domains-input domains-term-select" name="years">@foreach ($domain->renewNow['terms'] as $years)@php $line=$renewalChoices['lines'][$years]??null; @endphp<option value="{{ $years }}" data-expiry="{{ isset($line['expiry']) ? \Carbon\CarbonImmutable::parse($line['expiry'])->format('M j, Y') : '' }}" data-breakdown="{{ $breakdown($line) }}" data-total="{{ $line ? '$'.$line['total'] : '' }}">{{ $years }} {{ $years === 1 ? 'year' : 'years' }}</option>@endforeach</select></dd></div>
 <div><dt>New expiry</dt><dd data-renewal-expiry>{{ isset($renewalChoices['lines']) ? \Carbon\CarbonImmutable::parse(reset($renewalChoices['lines'])['expiry'])->format('M j, Y') : 'Confirmed at payment' }}</dd></div>
-<div><dt>Total</dt><dd><strong class="domains-card__v" data-renewal-total>{{ isset($renewalChoices['lines']) ? '$'.reset($renewalChoices['lines'])['total'] : 'Confirmed at payment' }}</strong><span class="domains-sub" data-renewal-breakdown>{{ $breakdown(isset($renewalChoices['lines']) ? reset($renewalChoices['lines']) : null) }}</span></dd></div>
+<div><dt>Total</dt><dd><strong class="domains-total" data-renewal-total>{{ isset($renewalChoices['lines']) ? '$'.reset($renewalChoices['lines'])['total'] : 'Confirmed at payment' }}</strong><span class="domains-sub" data-renewal-breakdown>{{ $breakdown(isset($renewalChoices['lines']) ? reset($renewalChoices['lines']) : null) }}</span></dd></div>
 @if (isset($renewalChoices['next_annual']))<div><dt>Next annual renewal</dt><dd>${{ $renewalChoices['next_annual'] }} / year<span class="domains-sub">Renewal invoices stay annual. Renewal prices may change.</span></dd></div>@endif
 </dl>
 @if ($domain->renewNow['late'] ?? false)<p class="domains-hint">Late renewal @include('domains::partials.help', ['id' => 'late-renewal', 'label' => 'Late renewal', 'helpText' => \Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP])</p>@endif
 @if ($domain->renewNow['order_by'] ?? null)<p class="domains-hint">You can renew online until @include('domains::partials.date', ['date' => $domain->renewNow['order_by']]).</p>@endif
-<div class="domains-buttons"><a class="domains-btn domains-btn--ghost" href="{{ $show }}">Cancel</a><button type="submit" class="domains-btn domains-btn--primary">Continue to payment</button></div></form>
+<div class="domains-buttons"><button type="button" class="domains-btn domains-btn--secondary" data-dialog-close>Cancel</button><noscript><a href="{{ $show }}">Cancel</a></noscript><button type="submit" class="domains-btn domains-btn--primary">Continue to payment</button></div></form>
 </dialog>
 @endif
 </div></section>

@@ -42,6 +42,12 @@ final class WatchFacts
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
         $e=\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read(\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::domain($w),$w->points,$w->canonical_name);
+        // Comparison needs a template; saved public answers do not. Never label retained evidence Missing.
+        if($s?->website===null && $s?->email===null && $e['public']){
+            $at=$e['public_at'];
+            $checks['DNS records']=self::fact(implode('; ',$e['public']),
+                ($at?'Checked '.self::date(is_int($at)?$at:strtotime($at)).'. ':'').'Choose a DNS template to compare these records.');
+        }
         $domain['Registrar records']=self::fact($e['state'],$e['at']?'Checked '.self::date(strtotime($e['at'])):'No registrar read for this monitored name.');
         $domain['Billing and ownership']=self::fact('Separate checks',$e['separation']);
         $checks['Registrar refresh']=self::fact($e['state'],$e['at']?self::date(strtotime($e['at'])):'No registrar read yet.');
