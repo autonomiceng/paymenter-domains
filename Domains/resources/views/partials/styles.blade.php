@@ -110,6 +110,16 @@
 .domains .domains-notice--bad { --tone: var(--e-bad); }
 .domains .domains-notice strong { font-weight: 700; }
 .domains .domains-notice ul { margin-top: .25rem; }
+.domains[data-domains-cart-notice] { max-width: none; margin-inline: 0; }
+.domains .domains-notice--cart { display: grid; grid-template-columns: 1.375rem minmax(0, 1fr); column-gap: .75rem; padding: .875rem 1.125rem .875rem .875rem;
+    border-radius: .375rem; border-left: 4px solid var(--e-info); font-size: .9375rem; background: color-mix(in srgb, var(--e-info) 12%, transparent); }
+.dark .domains .domains-notice--cart { background: color-mix(in srgb, var(--e-info) 9%, transparent); }
+.domains .domains-notice__ic { display: grid; place-items: center; width: 1.375rem; height: 1.375rem; border-radius: 50%; background: var(--e-info); color: var(--e-bg); }
+.domains .domains-notice__ic svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.domains .domains-notice .domains-notice__title { display: block; font: 600 1rem/1.375rem var(--font-display, inherit); }
+.domains .domains-notice--cart p { margin-top: .125rem; }
+@media (max-width: 40rem) { .domains .domains-notice--cart { padding: .75rem .875rem .75rem .75rem; } }
+.domains-was { margin-right: .625rem; color: hsl(var(--color-muted)); font: 400 .9375rem/1 var(--font-sans, inherit); letter-spacing: 0; text-decoration-thickness: 1px; }
 .domains .domains-testbar { display: flex; align-items: center; gap: .5rem; padding: .5rem .875rem; font-size: .8125rem; border-radius: .5rem;
     color: var(--e-warn); border: 1px dashed color-mix(in srgb, var(--e-warn) 55%, transparent); background: color-mix(in srgb, var(--e-warn) 7%, transparent); }
 .domains .domains-testbar span { color: var(--e-fg); }
