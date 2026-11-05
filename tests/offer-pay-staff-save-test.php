@@ -42,10 +42,10 @@ same(null, $pay->stop($invoice), 'A retail change after issue keeps the issued i
 same($issued, $frozen(), 'The issued invoice amount stands after a retail change');
 same([], array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.')), 'Allowed pay logs no refusal');
 // A cost rise past the issued total and spending ceiling refuses pay, says what to do, and logs why.
-$costs = [];
+$clock->instant = $now->modify('+1 minute'); $costs = [];
 foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'com')->whereNotNull('catalogue_observation')->get() as $row) {
     $c = OfferState::cost(OfferState::decode($row->catalogue_observation));
-    $costs[] = $c->key() === 'register:1' ? new Cost($c->action, $c->term, true, '20.0000', $c->sourceUnit, $c->source, $c->observedAt, $c->freshUntil) : $c;
+    $costs[] = $c->key() === 'register:1' ? new Cost($c->action, $c->term, true, '20.0000', $c->sourceUnit, $c->source, $clock->now(), $c->freshUntil) : $c;
 }
 $ports->apply(new FeedObserved($binding, 'com', $costs), $revision());
 $refused = $pay->stop($invoice);
