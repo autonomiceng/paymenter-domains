@@ -126,6 +126,8 @@ same('The name can be at most 63 characters.', StorefrontController::parseName(s
 expect($controller->search($req(['name' => 'example'], 'GET'))->getData()['results'][0]['testEnvironment'], 'D7 initial idle result carries test flag');
 expect($controller->search($req([], 'GET'))->getData()['testEnvironment'] === true, 'Test mode flag without seller identity');
 $transferState = (object) ['calls' => 0, 'fail' => false]; $transferBindings = storefrontTransferReader($transferState);
+// The transfer reader swaps only the provider driver; offers stay on the shared active fixture.
+activeFixtureOffers($transferBindings, activeFixtureOffers($bindings));
 $transferEligibility = activeFixtureEligibility($transferBindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
 $transferController = new StorefrontController(new Storefront($sellers, $prices, $native, $transferBindings, $transferEligibility, $clock));
 App\Models\Server::findOrFail($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);

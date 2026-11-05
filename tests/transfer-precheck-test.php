@@ -34,7 +34,8 @@ $registry=static function(?array $schema)use($ports,$tlds,$clock):void {
     $f=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($t->catalogue_facts);$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
     $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($b,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(...array_replace(get_object_vars($f),['registryFields'=>$schema,'observedAt'=>$clock->now()]))),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 };
-foreach([null,[['name'=>'unaccepted']]]as$schema){$registry($schema);commerceReject(fn()=>$eligibility->observe('example.com',$s,[1]));}$registry([]);$s=$sellers->selection('com','transfer',1,$now);
+// Each facts change advances the offer revision; select fresh so only the schema can refuse.
+foreach([null,[['name'=>'unaccepted']]]as$schema){$registry($schema);commerceReject(fn()=>$eligibility->observe('example.com',$sellers->selection('com','transfer',1,$now),[1]));}$registry([]);$s=$sellers->selection('com','transfer',1,$now);
 foreach(['example.net','sub.example.com','xn--abc.com']as$name){commerceReject(fn()=>$eligibility->observe($name,$s,[1]));}
 $ns=App\Models\Server::find($tlds[1]->server_id);
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$ns->id,true,true,$now);$nsSelection=$sellers->selection('com','transfer',1,$now);
