@@ -179,11 +179,13 @@ final class HoldingObservationWork
         $pending=$code==='healthy_pending'; $start=$d->operations()->where('action','transfer')->where('authority_generation',$d->authority_generation)->orderBy('id')->get()->first(fn($o)=>($o->attempt['seal']??null)==='sealed'&&in_array($o->state,['pending','uncertain','held'],true))?->started_at;
         $startAt=$start instanceof \DateTimeInterface?$start->getTimestamp():($start===null?null:(new \DateTimeImmutable($start))->getTimestamp());
         $within=$pending&&$startAt!==null&&$now<$startAt+7*86400;
-        $exhausted=$pending?(!$within||$tries>=28):($code!=='refreshed'&&$tries>=5);
+        // A closed record gate still completed the ordinary core read. Keep its own code so stale-family discovery cannot wake it early.
+        $coreRead=in_array($code,['refreshed','records_disabled'],true);
+        $exhausted=$pending?(!$within||$tries>=28):(!$coreRead&&$tries>=5);
         $follow=($d->observation['followup']['state']??null)==='pending';
         DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
-            'claim'=>null,'lease_until'=>0,'tries'=>$code==='refreshed'?0:$tries,
-            'due_at'=>$now+($pending?21600:($code==='refreshed'?($follow?300:86400):HoldingReadRetry::delay($tries))),
+            'claim'=>null,'lease_until'=>0,'tries'=>$coreRead?0:$tries,
+            'due_at'=>$now+($pending?21600:($coreRead?($code==='refreshed'&&$follow?300:86400):HoldingReadRetry::delay($tries))),
             'safe_code'=>in_array($code,HoldingReadRetry::STOPPED,true)?$code:($exhausted?'budget_exhausted':$code)]);
     }
     public static function phase(Domain $d): string

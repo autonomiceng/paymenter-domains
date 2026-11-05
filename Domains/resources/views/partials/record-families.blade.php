@@ -1,7 +1,7 @@
 {{-- Registrar evidence, independent of public DNS and of DS mutation eligibility. --}}
 @php $staff ??= false; @endphp
 <div class="domains">
-@if ($recordFamilies['stale'])<p class="domains-hint">{{ $staff ? 'Registrar records are stale. Last-good data and its time are retained.' : 'These records are waiting for an update. We’re checking them.' }}</p>@endif
+@if ($recordFamilies['stale'])<p class="domains-hint">{{ $staff ? 'Registrar records are stale. Last-good data and its time are retained.' : 'Registrar records are waiting for an update. Last confirmed data is retained.' }}</p>@endif
 @if ($recordFamilies['at'])<p class="domains-hint">Last registrar read: @include('domains::partials.moment', ['at'=>$recordFamilies['at']])</p>@endif
 @if ($staff && $recordFamilies['failed_family'])<p class="domains-hint">Failed family: {{ $recordFamilies['failed_family'] }}. {{ $recordFamilies['staff_hold'] }} {{ $recordFamilies['read_stopped'] ? 'Read stopped. Use Resume sync after fixing the cause.' : 'See the next read below.' }}</p>@endif
 @if ($staff)
@@ -14,7 +14,7 @@
 @else
 <dl class="domains-card">
 @foreach ($recordFamilies['rows'] as $family)
-<div><dt>{{ $family['label'] }}</dt><dd><span data-record-family="{{ $family['kind'] }}">@if ($family['state'] === 'unknown')@include('domains::partials.missing', ['cause'=>null])@else @include('domains::partials.status-pill', ['pill'=>['label'=>$family['value'],'tone'=>match($family['state']){'complete'=>'ok','partial'=>$staff?'warn':'info',default=>'muted'}]])@endif</span><span class="domains-sub">{{ $staff && $family['state']==='unknown' ? 'No current complete read for this family. '.($recordFamilies['next_read'] ? 'The next scheduled registrar read will try to fill it.' : ($recordFamilies['read_stopped'] ? 'Fix the read cause and use Resume sync.' : 'No read queued; check the active domain and registrar read setup.')) : $family[$staff ? 'staff' : 'customer'] }}@if ($family['kind'] === 'glue' && $family['at']) Checked @include('domains::partials.moment', ['at'=>$family['at']]).@endif</span>@if ($family['last_good_at'] && $family['state'] !== 'complete')<span class="domains-sub">Last confirmed: @include('domains::partials.moment', ['at'=>$family['last_good_at']])</span>@endif</dd></div>
+<div><dt>{{ $family['label'] }}</dt><dd>@include('domains::partials.record-family-status',['family'=>$family,'staff'=>$staff])</dd></div>
 @endforeach
 </dl>
 @endif
