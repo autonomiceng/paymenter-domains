@@ -15,8 +15,17 @@ final class CartCheckoutRefresh
     {
         Livewire::listen('mount', static function ($component) use ($admission): void {
             if ($component::class !== Cart::class) { return; }
-            try { $admission->refresh(); }
-            catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
+            try {
+                $held = session()->get(self::shownKey(), []);
+                $admission->refresh();
+                $was = self::changedAmounts($held);
+                if ($was) { self::changed($component, self::cartTotal(), $was); }
+            }
+            catch (CartLinesRemoved $e) {
+                self::show($component, self::cartTotal()); self::removed($component, $e);
+                $was = self::changedAmounts($held);
+                if ($was) { self::changed($component, self::cartTotal(), $was, $e); }
+            }
             catch (\Throwable $e) { self::unavailable($component, $e); }
         });
         Livewire::listen('hydrate', static function ($component, $memo): void {
@@ -39,12 +48,10 @@ final class CartCheckoutRefresh
                 if (\Livewire\store($component)->get('domains.offers') !== $offers
                     || !$component->total || $component->total->total !== $total->total) {
                     // Only the customer can accept a changed retail price; the existing checkout click does that.
-                    self::show($component, $total);
                     // Strike the amount the buyer last saw on the line (coupon and tax included), never the list price.
                     $held = (array) \Livewire\store($component)->get('domains.shown'); $was = [];
                     foreach (self::shown() as $id => $now) { if (isset($held[$id]) && $held[$id] !== $now) { $was[$id] = $held[$id]; } }
-                    CartNotice::set($component, 'Your cart changed', 'Review the total, then check out again.',
-                        'Your cart changed. Review the total, then check out again.', 'warning', was: $was);
+                    self::changed($component, $total, $was);
                     OrderContact::clear(); $returnEarly();
                 }
             } catch (ContactValidation $e) {
@@ -70,8 +77,20 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             try { $shown = self::shown(); } catch (\Throwable) { $shown = null; }
             $context->addMemo('domains_shown', $shown);
+            if ($shown !== null) { session()->put(self::shownKey(), self::snapshot($shown)); }
             OrderContact::clear();
         });
+    }
+
+    private static function shownKey(): string
+    { return 'domains.cart_shown.'.NativeCart::get()->ulid; }
+
+    private static function changed(Cart $component, ?Price $total, array $was, ?CartLinesRemoved $removed = null): void
+    {
+        self::show($component, $total);
+        $text = ($removed ? $removed->getMessage().' ' : '').'Review the total, then check out again.';
+        CartNotice::set($component, 'Your cart changed', $text,
+            'Your cart changed. '.$text, 'warning', $removed?->names ?? [], $was);
     }
 
     private static function cartTotal(): ?Price
@@ -84,6 +103,25 @@ final class CartCheckoutRefresh
     private static function shown(): array
     {
         return NativeCart::items()->mapWithKeys(fn ($item) => [$item->id => number_format($item->price->total * $item->quantity, 2, '.', '')])->all();
+    }
+
+    /** Session reloads may follow the customer's own Edit, which retains the line id. */
+    private static function snapshot(array $shown): array
+    {
+        return NativeCart::items()->mapWithKeys(fn ($item) => [$item->id => [
+            'plan_id' => (int) $item->plan_id, 'quantity' => (int) $item->quantity, 'amount' => $shown[$item->id],
+        ]])->all();
+    }
+
+    private static function changedAmounts(array $held): array
+    {
+        $was = [];
+        foreach (self::snapshot(self::shown()) as $id => $now) {
+            $before = $held[$id] ?? null;
+            if (is_array($before) && $before['plan_id'] === $now['plan_id'] && $before['quantity'] === $now['quantity']
+                && $before['amount'] !== $now['amount']) { $was[$id] = $before['amount']; }
+        }
+        return $was;
     }
 
     /** Native updateTotal() is private; mirror it so the page shows what the next click buys. */

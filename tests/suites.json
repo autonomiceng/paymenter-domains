@@ -49,7 +49,8 @@
     "tests/test_staff_docs.py",
     "tests/ote-order-window-test.php",
     "tests/ote-collection-shapes-test.php",
-    "tests/owned-style-test.php"
+    "tests/owned-style-test.php",
+    "tests/renewal-ready-copy-test.php"
   ],
   "native": [
     "tests/offer-queued-trigger-test.php",
@@ -501,7 +502,13 @@
     "tests/staff-hidden-tld-link-test.php",
     "tests/staff-adopted-price-label-test.php",
     "tests/staff-open-renewal-invoice-test.php",
-    "tests/staff-nameserver-refusal-label-test.php"
+    "tests/staff-nameserver-refusal-label-test.php",
+    "tests/cart-reload-price-test.php",
+    "tests/customer-nameserver-refusal-test.php",
+    "tests/customer-lock-history-test.php",
+    "tests/customer-deferred-progress-test.php",
+    "tests/customer-registration-history-test.php",
+    "tests/cart-removal-checkout-test.php"
   ],
   "ui": [],
   "runner": [

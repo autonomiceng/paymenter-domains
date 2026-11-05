@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require __DIR__.'/Support/owner-pages.php';
+// Preserve the installed routing contract while exercising the real owner renewal path.
+app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class);
 use App\Models\Invoice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB, Queue};
@@ -120,7 +122,7 @@ $refused($d,['years'=>'3'],'This domain already has a renewal invoice for a diff
 same($issued,$ledger(),'Different term on an issued cycle creates no invoice');
 same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Issued cycle links its invoice instead of a form');
 $html=$page($d);expect(str_contains($html,'Pay invoice')&&str_contains($html,'href="'.route('invoices.show',$invoice).'"')&&!str_contains($html,'Create invoice'),'Issued page links the invoice');
-expect(str_contains($html,'Early renewal not paid. Nothing is due until Oct 11, 2027.')&&!str_contains($html,'Due Oct 11, 2027'),'Customer reads the same early renewal words as staff');
+expect(str_contains($html,'Invoice ready. Due Oct 11, 2027.')&&!str_contains($html,'Early renewal not paid'),'Customer reads the same early renewal words as staff');
 $setting('domains_manual_renewals_enabled',false);
 same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Off retains the issued-invoice link');
 same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Turning requests off still returns the issued invoice');
