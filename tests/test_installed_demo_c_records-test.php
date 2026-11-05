@@ -71,7 +71,9 @@ $unreadManagement=$existing;foreach(['dns','srv','ds'] as $key){$unreadManagemen
 $unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$unreadManagement]),RecordFamilies::read($unknown,$now));
 $unreadHtml=view('domains::partials.owner-management',['domain'=>$unread,'caps'=>['dns','srv','ds'],'keys'=>array_fill_keys(['dns','srv','ds','ds_delete'],str_repeat('b',64))])->render();
 expect(!str_contains($unreadHtml,'Contact support to sync')&&str_contains($unreadHtml,'domains-missing'),'Unqueued unknown registrar families show Missing without a support chore');
-expect(str_contains($unreadHtml,'No registrar read is queued for this family.'),'Unknown family explains the absence of queued read work');
+// ui-r15 R3: the rows keep Missing; why is said once above them.
+$unreadNote=view('domains::partials.record-read-note',['recordFamilies'=>RecordFamilies::read($unknown,$now)])->render();
+expect(str_contains($unreadNote,'No registrar read is queued.')&&!str_contains($unreadHtml,'No registrar read is queued'),'Unknown families explain the absence of queued read work once');
 // Enom partial glue is a bounded known-host check, not a promise of enumeration.
 $enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];
 $g=array_column(RecordFamilies::read($enom,$now)['rows'],null,'kind')['glue'];

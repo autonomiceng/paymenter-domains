@@ -40,8 +40,9 @@ foreach(['staff'=>view('domains::partials.record-families',['recordFamilies'=>$g
  foreach($nodes as $node){
   $check(trim($node->textContent)==='Missing',$surface.' gated never-read family must stay Missing');
   $check($xp->query('.//svg',$node)->length===1,$surface.' gated Missing needs its warning icon');
-  $text=$node->parentNode->textContent;
-  $check(str_contains($text,'Record checks are paused or not set up for this registrar account.'),$surface.' gated Missing needs its cause');
+  // ui-r15 R3: the cause and next step are said once above the rows, not on each row.
+  $text=$dom->textContent;$cause='Record checks are paused or not set up for this registrar account.';
+  $check(substr_count($text,$cause)===1&&!str_contains($node->parentNode->textContent,$cause),$surface.' gated Missing needs its cause, once');
   $check($surface==='staff'?str_contains($text,'Check Processing and record-read setup.'):!str_contains($text,'Processing'),$surface.' gated Missing has the correct audience next step');
  }
 }
