@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/OfferFixture.php';
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, Facts, FactsObserved, Intent, Projection, Query};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Facts, FactsObserved, Intent, Query};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionOffers, CartAdmission, CheckoutEligibility, Installation, InvoiceBinding, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
@@ -23,16 +23,16 @@ function offerCommerceAuthorize(): Closure
 /** Staff arranging steps sign in a Domains viewer, then restore the customer (or nobody). */
 function offerCommerceAsStaff(callable $body): mixed
 {
-    static $staff; $previous = Auth::user();
-    $staff ??= App\Models\User::create(['first_name' => 'Synthetic', 'last_name' => 'Staff', 'email' => 'offer-commerce-staff@example.test',
-        'password' => 'synthetic-password', 'role_id' => App\Models\Role::create(['name' => 'Synthetic Domains viewer', 'permissions' => [Staff::VIEW]])->id]);
+    $previous = Auth::user();
+    $staff = App\Models\User::firstOrCreate(['email' => 'offer-commerce-staff@example.test'], ['first_name' => 'Synthetic', 'last_name' => 'Staff',
+        'password' => 'synthetic-password', 'role_id' => App\Models\Role::firstOrCreate(['name' => 'Synthetic Domains viewer'], ['permissions' => [Staff::VIEW]])->id]);
     Auth::setUser($staff);
     try { return $body(); } finally { $previous !== null ? Auth::setUser($previous) : Auth::forgetUser(); }
 }
 function offerCommerceFixture(): array
 {
-    (new Installation)->install(); extract(commerceFixture(true,active:true));
-    $ports = new CallerPorts(new Projection($native), $clock, $bindings, offerCommerceAuthorize(), static fn () => true);
+    // One protected composition: every returned adapter and owner registration uses the installed staff rule.
+    (new Installation)->install(); extract(offerCommerceAsStaff(static fn () => commerceFixture(true, active: true, authorize: offerCommerceAuthorize())));
     $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
     foreach (Account::all() as $account) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account)); }
     $q = new Query($binding, ['com'], 'register');
@@ -41,7 +41,6 @@ function offerCommerceFixture(): array
         [], true, false, false, 'synthetic', $now, $now->modify('+1 day'))), $rev());
     $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true)), $rev());
     $ports->apply(Edit::seller($binding, 'com', ['register', 'transfer']), $rev());
-    $offers = new AcquisitionOffers($ports, $bindings, $native);
     App\Models\Server::find($binding->serverId)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
     $transfer = new Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline lookup')));
     $eligibility = new class($bindings, $clock, $transfer) extends CheckoutEligibility { use OfferCommerceRoute; };
