@@ -67,7 +67,7 @@ same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller endi
     $typed = $controller->search($req(['name' => 'example.unsold'], 'GET'))->getData();
     expect(str_contains((string) $typed['notice'], '.unsold isn’t available here.') && !in_array('unsold', array_column($typed['results'], 'tld'), true), 'A typed unsold TLD is refused');
     $transferred = $transfer->show($req(['name' => 'example.unsold'], 'GET'))->getData();
-    same(['Choose a TLD from the list.', []], [$transferred['error'], $transferred['results']], 'Transfer refuses an unsold TLD');
+    same(['We don’t offer transfers for .unsold domains. Contact support for help transferring this domain.', []], [$transferred['error'], $transferred['results']], 'Transfer names the unsupported TLD and gives a next step');
     $policies::where('tld', 'com')->update(['register_enabled' => false]);
     Illuminate\Support\Facades\Cache::flush();
     same('ai', $controller->search($req([], 'GET'))->getData()['preferred'], 'Without .com the first TLD A to Z stays the default');
