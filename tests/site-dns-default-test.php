@@ -18,23 +18,29 @@ same('site_default',NewDomainDns::capture($server->id,'register')['nameservers_o
 $entry->upgraded();same($default->id,SiteDnsDefault::profile()->id,'Upgrade keeps one stable default reference');
 same(1,WatchProfile::where('name','Beco DNS')->count(),'Upgrade does not duplicate the deployment template');
 // Null watch choices inherit the site reference without storing a per-watch assignment.
-DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0]);
+DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null]);
 $checks=new WatchDnsChecks(true);$at=1800000000;
 expect($checks->enroll($watch->id,$owner->id,$at),'An unassigned hosting watch enrolls with the site default');
 $ticket=$checks->begin($watch->id,$owner->id,'delegation',$at);
 same($default->id,$ticket?->profileId,'Public DNS worker uses inherited site default');
 same(null,$watch->fresh()->ns_profile_id,'Inheritance never stores an automatic profile choice');
+expect($checks->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform'),$at+1),'Inherited watch observation commits');
+$notice=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeTarget::capture('watch',$watch->id,$owner->id,$at+1));
+same('platform',$notice['delegation']['dns']??null,'Inherited watch notice target uses the same stamp as its DNS reader');
+DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','delegation')->update(['due_at'=>$at+2]);
+$ticket=$checks->begin($watch->id,$owner->id,'delegation',$at+2);
+
 $manager=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.new_domain_dns','admin.domains.watch.view','admin.domains.watch.manage']);
 \Illuminate\Support\Facades\Auth::setUser($manager);
 same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($default->id),'Template usage includes an inherited active watch');
 $viewer=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);
 $fake=new \Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
-app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($fake,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(fn()=>0),true,fn()=>$at));
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($fake,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(fn()=>0),true,fn()=>$at+2));
 $replacement=DB::transaction(fn()=>WatchProfile::create(['name'=>'Explicit replacement','enabled'=>true,'nameservers'=>['ns1.other.test','ns2.other.test'],
     'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic site change']));
 SiteDnsDefault::save($manager,$replacement->id);
-expect(!$checks->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform'),$at+1),'Site change rejects an in-flight old comparison');
-same($replacement->id,$checks->begin($watch->id,$owner->id,'delegation',$at)?->profileId,'Site change queues a current comparison');
+expect(!$checks->finish($ticket,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('delegation','platform'),$at+3),'Site change rejects an in-flight old comparison');
+same($replacement->id,$checks->begin($watch->id,$owner->id,'delegation',$at+2)?->profileId,'Site change queues a current comparison');
 foreach(['paused','retired']as$state){
     DB::table('domains_watch_names')->where('id',$watch->id)->update(['state'=>$state]);
     $before=$watch->fresh()->getRawOriginal();$work=DB::table('domains_watch_work')->where('watch_id',$watch->id)->get()->toJson();
