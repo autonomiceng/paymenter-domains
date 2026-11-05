@@ -293,7 +293,7 @@ $excluded=[
     'ManagedDnsSetup.php'=>['external','platform'], // DNS intent values, not staff reason codes.
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.
     'ProviderSendGuard.php'=>['not_callable','clock_failed','guard_threw'], // Structured log fields.
-    'CartHandoffFailure.php'=>['unclassified'], // Structured cart handoff log key, never a staff reason.
+    'CartHandoffFailure.php'=>['unclassified','eligibility_unconfirmed'], // Structured cart handoff log keys, never request safe codes.
     'PriceSync.php'=>['call_cap'], // Daily sync log context, covered by Support/enom-catalogue.php.
     'StaffSettingsReview.php'=>['unavailable'], // Configuration snapshot sentinel.
     'TransferInputs.php'=>['transfer_code'], // Request field name.
@@ -301,9 +301,13 @@ $excluded=[
     'RefundProof.php'=>['unsent'], // Driver execution disposition.
     'NativeCatalogue.php'=>['registration','transfer'], // Product slug suffixes.
     'RenewalStop.php'=>['cancellation','staff','adopted','unreadable'], // Renewal intent/read state; the domain policy notice presents unreadable data.
+    // Shared workers also emit phase names and audit events without a request reason.
     'ObservationWork.php'=>['holding'], // Work phase identity.
-    'HoldingObservationWork.php'=>['holding','idle'], // Work phase identity and worker result; no saved request reason.
-    'RegistrarAnswers.php'=>['registrar_not_processed'], // Refund authorization audit reason; request safe_code is refund_approved.
+    'HoldingObservationWork.php'=>['holding','idle','configuration_restored','records_incomplete'], // Phase, turn result, audit event and HoldingReadRetry cause.
+    'SiteDnsDefault.php'=>['platform'], // Inherited DNS intent, as in ManagedDnsSetup.
+    'AccountComplimentaryRenewals.php'=>['account_complimentary'], // Funding authorization reason, not request safe_code.
+    'AdoptionRenewalEligibility.php'=>['imported_renewal_unproven'], // Import eligibility snapshot; requireBilling refuses independently.
+    'RegistrarAnswers.php'=>['registrar_not_processed'], // Refund authorization audit reason, not request safe_code.
     'SellRule.php'=>['limit','sell','skipped','waiting'], // Row decisions, shown by What you sell.
     'EnomTestCalls.php'=>['send_check'],'EnomTestCallLimit.php'=>['send_check'], // Refusal reasons, shown by SettingsActions::testRefusal.
 ];
@@ -323,6 +327,9 @@ foreach($holds[1] as $code){$emitted[$code][]='WriteHeld whitelist';}
 $missing=array_diff_key($emitted,$mapped);ksort($missing);
 expect($missing===[],'Service reason codes need explicit staff mappings: '.json_encode($missing));
 echo 'Explicit staff reason mapping coverage: '.count($emitted)." codes.\n";
+foreach(['acquisition_definitely_unsent','management_definitely_unsent'] as $code){
+    same('Not sent. Nothing changed at the registrar.',Labels::reason($code),'Proven unsent request has the existing outcome sentence: '.$code);
+}
 // Every known reason has its own cause text, or is one of the internal codes that show no reason line.
 // An unknown one is Missing, with its safe code for staff.
 preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",preg_split('/\\n    (?:public|private) static function /',$reasonSource,2)[0],$known);
