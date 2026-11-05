@@ -35,7 +35,7 @@ final class NativeEditorNotice
     {
         if(!$record instanceof Service||!NativeIdentity::routed($record)){return '';}
         $d=Domain::where('service_id',$record->getRawOriginal('id')??$record->id)->first();
-        $url=$d&&Staff::can()?DomainResource::getUrl('view',['record'=>$d->id]):DomainResource::getUrl('index');
+        $url=$d&&Staff::can()?DomainResource::getUrl('view',['record'=>$d->id]):null;
         return view('domains::admin.native-editor-notice',['url'=>$url])->render();
     }
 }
