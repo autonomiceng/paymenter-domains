@@ -667,6 +667,8 @@ def main():
                             'tests/owner-records-test.php',
                             'tests/self-heal-records-test.php',
                             'tests/self-heal-retry-test.php',
+                            'tests/observation-test.php',
+                            'tests/offer-scheduler-test.php',
                             'tests/storefront-cart-handoff-test.php',
                         }
                         for path in requested
