@@ -15,13 +15,16 @@ extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $source=new StaffCatalogue($ports,$clock);$t=$tlds[0]->fresh();
 
+$defaults=OfferState::decode(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
+DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$defaults,'defaultTransfers'=>true])]);
+
 // MariaDB JSON_EXTRACT returns JSON boolean text; SQLite returns integer 0/1.
 // Replay both native database representations through the exact Eloquent record used by the form.
 $page=new Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 $edit=new ReflectionMethod($page,'editFields');
 $probe=new ReflectionProperty(Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>$source]);
 try{
-    foreach(['false',0,false,'true',1,true] as $databaseValue){
+    foreach(['false',0,false,'true',1,true,'null',null] as $databaseValue){
         $row=Paymenter\Extensions\Servers\Domains\Models\OfferRow::hydrate([['id'=>$t->id,'server_id'=>$t->server_id,'tld'=>'com','longest'=>3,'transfer'=>$databaseValue]])->first();
         $fields=$edit->invoke($page,$row);$field=collect($fields)->first(fn($f)=>$f->getName()==='transfer');
         $expected=in_array($databaseValue,['false',0,false],true)?'Off':'On';
