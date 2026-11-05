@@ -26,6 +26,16 @@ final class ComplimentaryCosts
         if(DB::transactionLevel()===0){DB::transaction($save);}else{$save();}
         throw new WriteHeld('registrar_price_increased',$cost);
     }
+    /** Exact unsent acquisition claim retained by a completed cost approval, including NameSilo. */
+    public static function readmitted(Operation $op):bool
+    {
+        $a=$op->attempt??[];$f=$op->funding??[];
+        if(!isset($op->policy['account_complimentary'])||$op->state!=='queued'||$op->safe_code!==null||!ExecutionWindow::priceReleased($op)
+            ||($a['seal']??null)!=='absent'||($a['send_state']??null)!=='definitely_unsent'||!isset($a['claim_key'],$f['claim'])
+            ||array_diff(array_keys($a),['claim_key','seal','send_state','capacity_deferrals','test_call_refusals'])||array_diff(array_keys($f),['claim'])
+            ||isset($op->cost['actual'])||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null||$op->lease_expires_at!==null){return false;}
+        return DB::table('domains_complimentary_approvals')->where('operation_id',$op->id)->exists();
+    }
     public static function message(Operation $op):?string
     {
         $review=$op->policy['complimentary_cost_review']??null;

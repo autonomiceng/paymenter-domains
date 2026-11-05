@@ -11,7 +11,7 @@ final class ComplimentaryInvoices
     {
         $invoice=new Invoice(['user_id'=>$user,'currency_code'=>'USD','status'=>'pending','due_at'=>now()]);
         $invoice->send_create_email=false;$invoice->save();
-        return $invoice->items()->create(['description'=>$description.': complimentary, registrar cost awaiting confirmation','price'=>'0.00','quantity'=>1,
+        return $invoice->items()->create(['description'=>mb_substr($description,0,190).': complimentary, registrar cost awaiting confirmation','price'=>'0.00','quantity'=>1,
             'reference_type'=>$service===null?null:(new \App\Models\Service)->getMorphClass(),'reference_id'=>$service]);
     }
     public static function paid(Invoice $invoice):void
@@ -24,7 +24,9 @@ final class ComplimentaryInvoices
         $a=$op->policy['account_complimentary']??[];ComplimentaryAccounts::require($a,(int)$l['domain']->user_id);
         $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);$item=$l['items']->firstWhere('id',$op->invoice_item_id);
         $items=$l['items']->where('invoice_id',$op->invoice_id);
-        if($op->funding_basis!=='complimentary'||PricingRule::minor($op->amount)!==0||!$invoice||!$item||$invoice->status!=='paid'
+        if($op->domain_id!==$l['domain']->id||$op->service_id!==$l['domain']->service_id||$op->server_id!==$l['domain']->server_id
+            ||$op->account_fingerprint!==$l['domain']->account_fingerprint||$op->authority_generation!==$l['domain']->authority_generation
+            ||$op->funding_basis!=='complimentary'||PricingRule::minor($op->amount)!==0||!$invoice||!$item||$invoice->status!=='paid'
             ||(int)$invoice->user_id!==(int)$l['domain']->user_id||$invoice->currency_code!=='USD'||(int)$item->invoice_id!==$op->invoice_id
             ||$items->sum(fn($i)=>PricingRule::minor($i->price)*(int)$i->quantity)!==0||$items->contains(fn($i)=>(string)$i->quantity!=='1')
             ||$l['transactions']->where('invoice_id',$op->invoice_id)->isNotEmpty()) {throw new \DomainException('Complimentary receipt authority changed.');}
@@ -36,7 +38,7 @@ final class ComplimentaryInvoices
         if(!isset($op->policy['account_complimentary'])||$op->state!=='succeeded'){return;}
         $cost=$op->cost['actual']??null;if(!$cost||$cost['currency']!=='USD'){throw new \DomainException('Actual registrar charge required.');}
         $invoice=Invoice::findOrFail($op->invoice_id);$item=InvoiceItem::findOrFail($op->invoice_item_id);
-        $description=$op->domain->domain.' '.(['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'][$op->action]).', '.$op->term.' '.($op->term===1?'year':'years');
+        $description=InvoiceDescription::complimentary($op->domain->domain,$op->action,(int)$op->term);
         $amount=PricingRule::decimal(PricingRule::minor($cost['amount']));
         if($invoice->items()->count()===2){return;}
         if($invoice->status!=='paid'||(float)$invoice->total!==0.0||$invoice->items()->count()!==1||$invoice->transactions()->exists()){throw new \DomainException('Complimentary receipt changed.');}

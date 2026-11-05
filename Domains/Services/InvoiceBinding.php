@@ -32,12 +32,17 @@ final class InvoiceBinding
                 $this->services[$e->service->id] = $this->creating[$e->service]; $this->nativeServices[$e->service->id]=$e->service; unset($this->creating[$e->service]);
             }
         });
-        \App\Models\Property::created(function($property):void {
-            $line=$property->model_type===(new Service)->getMorphClass()?($this->services[$property->model_id]??null):null;
-            if(!$line||!$line['complimentary']||$property->key!=='domains_check'){return;}
-            $service=$this->nativeServices[$property->model_id];
-            $item=ComplimentaryInvoices::create((int)$service->user_id,$line['name'].' '.$line['selection']->action.', '.$line['selection']->term.' year', (int)$service->id);
-            ComplimentaryInvoices::paid($item->invoice);
+        $finalizing=[];
+        Service::saving(function(Service $service)use(&$finalizing):void {
+            $line=$this->services[$service->id]??null;
+            if(!$line||!$line['complimentary']||isset($finalizing[$service->id])){return;}
+            // Native free checkout saves Active after its property savepoints have closed.
+            // Bind inside the original outer transaction, using the same service object.
+            $finalizing[$service->id]=true;$status=$service->status;$service->setRawAttributes($service->getRawOriginal(),true);
+            try{
+                $item=ComplimentaryInvoices::create((int)$service->user_id,$line['name'].' '.$line['selection']->action.', '.$line['selection']->term.' year',(int)$service->id);
+                ComplimentaryInvoices::paid($item->invoice);
+            }finally{$service->status=$status;unset($finalizing[$service->id]);}
         });
         Event::listen(\App\Events\InvoiceItem\Creating::class, function ($e): void {
             $line = $e->invoiceItem->reference_type === (new Service)->getMorphClass() ? ($this->services[$e->invoiceItem->reference_id] ?? null) : null;

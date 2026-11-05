@@ -22,7 +22,7 @@ final class ComplimentaryAccountSetting
             return $page instanceof $scope?self::render($page->getRecord()):'';
         },scopes:[$scope]);
     }
-    public static function allowed():bool {return Auth::user() instanceof User&&User::with('role')->find(Auth::id())?->hasPermission('admin.domains.fund');}
+    public static function allowed():bool {return Auth::user() instanceof User&&(bool)User::with('role')->find(Auth::id())?->hasPermission('admin.domains.fund');}
     public static function render(User $user):string
     {
         if(!self::allowed()){return '';}

@@ -1,6 +1,9 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/bootstrap.php';
+expect(is_file(__DIR__.'/../Domains/Services/ComplimentaryAccounts.php'),'Account complimentary funding must be implemented');
+// Native checkout, invoice observers and retained financial locks require the real Paymenter fixture.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
@@ -9,8 +12,7 @@ use Illuminate\Support\Facades\{DB,Event,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,CartAdmission,InvoiceBinding,InvoiceFunding,NativeDomainGuard,HolderPricing};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-extract(commerceFixture(true)); $clock=new FakeClock($now); Queue::fake();
-expect(is_file(__DIR__.'/../Domains/Services/ComplimentaryAccounts.php'),'Account complimentary funding must be implemented');
+extract(commerceFixture(true)); $clock=new FakeClock($now);Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now); Queue::fake();
 $staff=commerceUser();$role=Role::create(['name'=>'Fund domains','permissions'=>['admin.domains.fund']]);$staff->update(['role_id'=>$role->id]);
 $user=commerceUser();$other=commerceUser();
 commerceReject(fn()=>ComplimentaryAccounts::set($user->id,$other,true,'Approved gift',$clock));
@@ -34,6 +36,24 @@ Event::dispatch(new App\Events\Invoice\Paid($gift));Event::dispatch(new App\Even
 same(1,$d->operations()->count(),'Repeated invoice events cannot create another funding obligation');
 ComplimentaryAccounts::set($user->id,$staff,false,'Gift ended',$clock);
 same('standard',$d->fresh()->price_mode,'Switch off restores future standard terms');same('complimentary',$proof()['basis'],'An issued term retains its funding after switch off');
+// The real native claim and preflight accept the frozen account grant at zero, after switch-off.
+$claims=new \Paymenter\Extensions\Servers\Domains\Services\OperationClaims($bindings,$clock,$caps);
+$claim=$claims->claim($op->id);expect($claim!==null,'Complimentary acquisition receives the existing guarded claim');
+[$claimed,$held,$binding]=$claim;
+$registry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+$registry->register('enom',['token'],new class implements \Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
+    public function verify(\Paymenter\Extensions\Servers\Domains\Data\Environment $environment,array $credentials):string{return $credentials['token'];}
+},function($b)use($op,$clock){
+    $query=\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op,$op->domain);
+    $quote=new \Paymenter\Extensions\Servers\Domains\Data\QuoteEvidence($query,new \Paymenter\Extensions\Servers\Domains\Data\Money('6.00','USD'),\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
+    return new \Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar($b,new \Paymenter\Extensions\Servers\Domains\Data\Capabilities($b,[]),new \Paymenter\Extensions\Servers\Domains\Data\DriverResult($b,\Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted,\Paymenter\Extensions\Servers\Domains\Data\SendState::Sent,\Paymenter\Extensions\Servers\Domains\Data\ResultReason::Acknowledged,new \Paymenter\Extensions\Servers\Domains\Data\Evidence(quote:$quote,balance:new \Paymenter\Extensions\Servers\Domains\Data\Money('100.00','USD'),available:true,premium:false)));
+});
+$features=new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(registration:true);
+$accepted=new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,catalogue:$caps);
+$preflight=new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight(new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry),$features,$accepted);
+$context=new \Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$clock->now()->modify('+300 seconds'),new \Paymenter\Extensions\Servers\Domains\Data\RequestBudget(10),$clock);
+$ready=$preflight->inspect($claimed,$held,$context);$sealed=$claims->seal($claimed,$ready,$clock->now(),$preflight);
+expect($sealed!==null,'Complimentary registration seals through existing registrar safeguards');same('complimentary',$sealed->funding['seal']['basis'],'The invoice did not supply a second payment basis');
 $history=DB::table('domains_complimentary_accounts')->where('user_id',$user->id)->orderBy('id')->get();
 same([1,0],$history->pluck('enabled')->map(fn($v)=>(int)$v)->all(),'Every change retains on/off history');same($staff->id,(int)$history->last()->actor_id,'Audit records the staff actor');
 $cart=commerceCart($other);commerceAdd($cart,$product,placeholderComFixtureName('ordinary-account-placeholder.com'));commerceCheckout($other,$cart);
