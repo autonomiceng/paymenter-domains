@@ -149,6 +149,7 @@
     "tests/transfer-inputs-test.php",
     "tests/transfer-precheck-test.php",
     "tests/transfer-dispatch-test.php",
+    "tests/transfer-ceiling-test.php",
     "tests/transfer-completion-test.php",
     "tests/transfer-completion-namesilo-test.php",
     "tests/registrar-transfer-answer-test.php",

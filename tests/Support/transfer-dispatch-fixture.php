@@ -19,7 +19,7 @@ $assertTransferDispatch = static function (int $i) use ($state,$newTransfer,$mak
         commerceReject(fn()=>RefundProof::requireUnsent($r,$r->domain)); commerceReject(fn()=>$refunds->refundHeld($user,$r->id,'staff_review'));
         commerceReject(fn()=>$r->update(['attempt'=>[...$r->attempt,'transfer_admission'=>null]])); $r->refresh();
         commerceReject(fn()=>$r->update(['payload'=>[...$r->payload,'epp'=>null]]));
-        commerceReject(fn()=>$bridge->transferIn(new Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation($binding,$state->query,$op->operation_key,$r->attempt['claim_key'],1,'operation:'.$r->id.':seal',Paymenter\Extensions\Servers\Domains\Services\OperationClaims::payloadDigest($r),new Paymenter\Extensions\Servers\Domains\Data\Money('99.00','USD')),
+        commerceReject(fn()=>$bridge->transferIn(new Paymenter\Extensions\Servers\Domains\Data\AdmittedOperation($binding,$state->query,$op->operation_key,$r->attempt['claim_key'],1,'operation:'.$r->id.':seal',Paymenter\Extensions\Servers\Domains\Services\OperationClaims::payloadDigest($r),new Paymenter\Extensions\Servers\Domains\Data\Money('7.00','USD')),
             new Paymenter\Extensions\Servers\Domains\Data\RequestContext($binding,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background,$clock->now()->modify('+25 seconds'),new Paymenter\Extensions\Servers\Domains\Data\RequestBudget(1),$clock)));
     }
 };
