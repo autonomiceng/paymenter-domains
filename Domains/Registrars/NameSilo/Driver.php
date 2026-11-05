@@ -56,11 +56,11 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     {
         return $reply->outcome === Outcome::Success
             ? new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, $facts)
-            : $this->unknown($reply->code !== null ? SendState::Sent : SendState::PossiblySent);
+            : $this->unknown($reply->code !== null ? SendState::Sent : SendState::PossiblySent, $reply->code===null?null:(string)$reply->code);
     }
-    private function unknown(SendState $sent = SendState::PossiblySent): DriverResult
+    private function unknown(SendState $sent = SendState::PossiblySent, ?string $code=null): DriverResult
     {
-        return new DriverResult($this->binding(), Disposition::Unknown, $sent, ResultReason::Unresolved);
+        return new DriverResult($this->binding(), Disposition::Unknown, $sent, ResultReason::Unresolved, registrarCode:$code);
     }
     private function unsent(ResultReason $reason): DriverResult
     {

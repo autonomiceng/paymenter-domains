@@ -76,7 +76,7 @@ class CheckoutEligibility
             try { $token = $this->observeFresh($name, $selection, $identity, batch: $batch); }
             catch (\DomainException $e) {
                 // Coalesce failed reads briefly too; retain every other guard's typed refusal.
-                if ($e::class === \DomainException::class && $e->getMessage() === 'Domain eligibility could not be confirmed.') { Cache::put($key, false, 10); }
+                if (in_array($e::class,[\DomainException::class,EligibilityUnconfirmed::class],true) && $e->getMessage() === 'Domain eligibility could not be confirmed.') { Cache::put($key, false, 10); }
                 throw $e;
             }
             Cache::put($key, $token, 300);
@@ -112,7 +112,7 @@ class CheckoutEligibility
         if ($batch && $deadline < $started->modify('+10 seconds') && $this->clock->now() >= $deadline) { throw new CheckoutRefreshTimeout; }
         $driver->binding()->requireMatch($result->binding);
         if ($result->disposition !== Disposition::Accepted || $result->evidence()->premium !== false || $result->evidence()->available !== true
-            || $this->clock->now() >= $deadline) { throw new \DomainException('Domain eligibility could not be confirmed.'); }
+            || $this->clock->now() >= $deadline) { throw new EligibilityUnconfirmed($result->registrarCode); }
         }
         $comparison = $comparison || $this->comparisonName === $name;
         if ($comparison && (!$transfer || !WatchTransferPolicy::eligible($transfer, $this->clock->now()->getTimestamp()))) {
