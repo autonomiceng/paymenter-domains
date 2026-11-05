@@ -25,6 +25,7 @@ final class StaffCommands
         return 'offer:'.hash('sha256',OfferState::json([UpgradeGate::generation(),
             $raw(DB::table((new Server)->getTable())->whereIn('id',$ids)->orderBy('id')),
             $raw(DB::table('domains_accounts')->whereIn('server_id',$ids)->orderBy('server_id')),
+            Account::whereIn('server_id',$ids)->orderBy('server_id')->get()->map(\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::forAccount(...))->all(),
             $raw(DB::table('settings')->where('settingable_type',(new Server)->getMorphClass())->whereIn('settingable_id',$ids)
                 ->whereRaw("`key` NOT LIKE ? ESCAPE '!'",[str_replace('_','!_',Review::KEY).'%'])->orderBy('id')),
             $raw(DB::table('domains_tlds')->when($ending,fn($q)=>$q->where('tld',$ending),fn($q)=>$q->when($server!==Review::ALL_ACCOUNTS,fn($q)=>$q->where('server_id',$server)))->orderBy('id')),

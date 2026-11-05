@@ -3,7 +3,7 @@
 declare(strict_types=1);
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, SalesPolicy, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Storefront, StorefrontCatalogueRead};
+use Paymenter\Extensions\Servers\Domains\Services\{Storefront, StorefrontCatalogueRead};
 
 function storefrontMeasure(Closure $read): array
 {

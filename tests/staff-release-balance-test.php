@@ -8,10 +8,25 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts;
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,CatalogueAcceptance,Capabilities,CostUnit,Disposition,DriverResult,Environment,Evidence,HistoryAcceptance,Money,QuoteEvidence,ResultReason,SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,CostUnit,Disposition,DriverResult,Environment,Evidence,HistoryAcceptance,Money,QuoteEvidence,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,BalanceSchema,CatalogueAcceptances,EnomTestRegistration,EnomTestSendLimitSchema,RegistrarRegistry,DomainOperations,HistoryAcceptances,OperationClaims,RegistrationPreflight,RenewalAuthority,WriteAcceptance,WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,BalanceRetries,BalanceSchema,EnomTestRegistration,EnomTestSendLimitSchema,RegistrarRegistry,DomainOperations,HistoryAcceptances,OperationClaims,RegistrationPreflight,RenewalAuthority,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
+// These independent recovery cases span days; arrange dated synthetic facts/costs for that window.
+$fixtureBinding=AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
+$clock->instant=$clock->now()->modify('+1 second');
+$fixtureQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($fixtureBinding,['com'],'register');
+$fixtureRevision=fn()=>$ports->readOffers($fixtureQuery,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$fixtureFacts=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tlds[0]->fresh()->catalogue_facts);
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($fixtureBinding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+    $fixtureFacts->terms,[] ,true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+30 days'))),$fixtureRevision());
+$fixtureCosts=[];
+foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$fixtureBinding->serverId)->get() as $rate){
+    $c=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($rate->catalogue_observation));
+    $fixtureCosts[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($c->action,$c->term,$c->enabled,$c->total,$c->sourceUnit,$c->source,$clock->now(),$clock->now()->modify('+30 days'),normalized:true);
+}
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($fixtureBinding,'com',$fixtureCosts),$fixtureRevision());
+activeFixtureRepublish($native,$tlds[0]->id);
 EnomTestSendLimitSchema::install();BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock));
 // The registrar edge only: the page, service and balance row are real.
@@ -22,6 +37,7 @@ app()->instance(AccountBindings::class,new AccountBindings($registry));
 $account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.transfer'=>true]);
 DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
 expect(EnomTestRegistration::enabled($binding),'Real TEST registration policy on');
 $open=fn($op)=>Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])->assertSuccessful();
 // Stored pre-claim checks share automatic recovery, including pause words and stale-action rejection.
@@ -39,6 +55,7 @@ foreach(['usd_balance_required','enom_test_transfer_usd_balance_required'] as $c
     commerceReject(fn()=>$run($op,'release'));
     same('held',$engine->execute($op->id)->state,'Paused stored hold cannot send');
     DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>true]);
+    same(null,OperationClaims::balanceAdmissionReason($op->fresh()),'Current balance retry authority is valid: '.OperationClaims::balanceAdmissionReason($op->fresh()));
     $open($op)->assertSee('Not sent. It will retry automatically.')->assertDontSee('Open account')->assertActionHidden('release');
     commerceReject(fn()=>$run($op,'release'));
     DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);
@@ -255,10 +272,10 @@ same(false,$claims->readmitBalance((int)$legacy->id),'Stored pre-claim check get
 $clock->instant=$clock->now()->modify('+900 seconds');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 // This is the real pre-claim deployment gate, not a synthetic terminal row.
 config(['domains.enom_writes.registration'=>true]);
-$current=CatalogueAcceptances::load($binding);$endings=$current->endings;$endings['com']['register']=[3];
-DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new CatalogueAcceptance($binding,$current->revision,$endings,'https://resellertest.enom.com/interface.asp',25)));
+$current=fixtureOfferFacts($binding);$endings=$current->endings;$endings['com']['register']=[3];
+fixtureObserveOfferFacts($binding,$endings);
 $legacy=$lowEngine->execute((int)$legacy->id);
-same(['held','order_not_supported',null,[]],[$legacy->state,$legacy->safe_code,$legacy->started_at,$legacy->attempt??[]],'Acceptance gate stops before a claim');
+same(['held','write_acceptance_required',null,[]],[$legacy->state,$legacy->safe_code,$legacy->started_at,$legacy->attempt??[]],'Acceptance gate stops before a claim');
 $retry=$legacy->policy['balance_retry'];same(null,$retry['claim_key'],'Retained retry has no purchase claim');
 $beforeCredit=$credit();$beforeSend=$writer->calls;$refunds=app(\Paymenter\Extensions\Servers\Domains\Services\Refunds::class);
 $refunds->refundHeld($staff,(int)$legacy->id,'acceptance_unavailable');$legacy=$legacy->fresh();

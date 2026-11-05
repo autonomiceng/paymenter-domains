@@ -5,7 +5,7 @@ require __DIR__.'/native-app.php';
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier, Clock};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, CatalogueAcceptance, CatalogueFreshness, Environment, Query, RequestBudget, RequestContext, RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, CatalogueFreshness, Environment, Query, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client, Driver, Prices};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DeadlineTransport, Environment as WireEnvironment, RegistrarRequest, RequestContext as WireContext, TransportResponse};

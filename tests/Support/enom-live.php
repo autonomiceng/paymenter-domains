@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,DispatchSeal,Environment,ExecutionRecord,HistoryAcceptance,Query,RequestOrigin,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,EnomLive,EnomLiveCalls,EnomTestManagement,EnomTestCalls,EnomTestCallLimit,EnomTestRegistration,Installation,NativeCatalogue,ObservationWork,Runtime,RuntimePorts,RuntimeWork,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, EnomLive, EnomLiveCalls, EnomTestManagement, EnomTestCalls, EnomTestCallLimit, EnomTestRegistration, Installation, NativeCatalogue, ObservationWork, Runtime, RuntimePorts, RuntimeWork, StaffSettingsReview as Review, StaffSettingsWrites, Storefront};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 $clock=new class implements Clock {
     public DateTimeImmutable $at;
@@ -99,7 +99,7 @@ config(['domains.enom_live.accounts'=>['live-uid'=>[...$accountConfig,'fingerpri
 expect(!$ports->accepted($a->fresh()),'Wrong account binding refuses composition');
 config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);
 try{EnomLive::account(new AccountBinding('enom',$server->id,Environment::Test,'live-uid'));throw new LogicException('TEST account must be refused live');}catch(DomainException $error){same('Live Enom account required.',$error->getMessage(),'TEST environment refused before account resolution');}
-foreach([[$binding,'https://resellertest.enom.com/interface.asp'],[new AccountBinding('enom',$server->id,Environment::Test,'live-uid'),EnomLive::route()]] as [$routeBinding,$route]){try{new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance($routeBinding,1,[],$route,25);throw new LogicException('Crossed route must be refused');}catch(InvalidArgumentException){}}
+foreach([[$binding,'https://resellertest.enom.com/interface.asp'],[new AccountBinding('enom',$server->id,Environment::Test,'live-uid'),EnomLive::route()]] as [$routeBinding,$route]){expect(!Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($routeBinding,['batch_route'=>true,'route'=>$route,'interval_seconds'=>25]),'Crossed TEST/LIVE route refuses compiled protocol');}
 // A retained TEST identity cannot be rebound through a different live server.
 $testServer=Server::create(['name'=>'Retained TEST','type'=>'server','extension'=>'Domains','enabled'=>true]);
 Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$testServer->id,'registrar_key'=>'enom','environment'=>'test','stable_identity'=>'live-uid']));

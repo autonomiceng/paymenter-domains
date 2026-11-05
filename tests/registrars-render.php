@@ -10,7 +10,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\{PublicSuffixList as PslPage,RegistrarAccount,RegistrarSetup};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Data\Money;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads,CatalogueAcceptances,StaffSettingsReview};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceReads, StaffSettingsReview};
 $out=$argv[1]??'';expect(is_dir($out)&&is_writable($out),'Output directory required');
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString(''))->brandName('Paymenter');
 $save=function(string $name,$test)use($out,$css):void{

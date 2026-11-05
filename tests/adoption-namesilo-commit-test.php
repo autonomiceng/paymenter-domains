@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry,CatalogueRate,Environment};
 use Paymenter\Extensions\Servers\Domains\Data\Adoption\Target;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Adoption,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AdoptionCommit,AdoptionMapping,AdoptionReader,CatalogueAcceptances,DomainBilling,HolderPricing,LiveReservations,LocalAccountEnrollment,NativeDomainGuard,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AdoptionCommit, AdoptionMapping, AdoptionReader, DomainBilling, HolderPricing, LiveReservations, LocalAccountEnrollment, NativeDomainGuard, RegistrarRegistry};
 function hrtime(bool $number=false): int {return 0;}
 function curl_init(): object {return new \stdClass;}
 function curl_setopt_array($h,array $options): bool {$GLOBALS['importOptions']=array_replace($GLOBALS['importOptions']??[],$options);return true;}
@@ -43,16 +43,6 @@ $store=function(array $credentials,array $facts)use($server,$binding):void {
 };$store($credentials,$facts);
 config(['domains.namesilo_live.site'=>rtrim(config('app.url'),'/'),'domains.namesilo_live.catalogue'=>true,
     'domains.namesilo_live.accounts'=>[$identity=>['fingerprint'=>$binding->fingerprint,'currency'=>'USD','balance_funding'=>true,'daily_call_cap'=>100,'daily_spend_limit_usd'=>'20.00']]]);
-$accepted=CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
-$tld=Tld::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>'com','enabled'=>true]);
-$rates=[];foreach(['register','renew','transfer'] as $action){$rates[]=new CatalogueRate($action,1,'8.00','synthetic',$clock->now(),$clock->now()->modify('+1 day'));}
-$prices->import(new CatalogueEntry($binding,'com',$rates,[1],true,true),$accepted,static fn()=>null,$clock->now());
-activeFixtureRepublish($native,$tld->id,$clock->now());$product=$native->product($tld->fresh(),'register');$plan=$native->annualPlan($product);
-$order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
-// Retained service predates installation; seed it without checkout events.
-$service=Service::withoutEvents(function()use($owner,$order,$product,$plan){
-$service=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']);
-$service->properties()->create(['key'=>'domain','value'=>'example-import.com']);return $service;});
 $registry=new RegistrarRegistry;$bindings=new AccountBindings($registry);$allow=true;$revision=$facts['credential_revision'];
 // Mutable acceptance must revoke already-created handles as well as future factories.
 $accept=static function($b,$r)use(&$allow,&$revision,$binding):bool{return $allow&&$b->matches($binding)&&$r===$revision;};
@@ -60,6 +50,25 @@ $factory=NameSiloAdoptionReader::factory($bindings->nameSiloRuntimeReaderFactory
 // Retained local enrollment requires its original authenticator composition; import never invokes it.
 $registry->register('namesilo',['api_key'],new AccountVerifier,static fn()=>throw new \LogicException('No general reader fallback'),
     adoptionReaderFactory:$factory,authenticator:new CredentialAuthenticator(Environment::Live));
+// Normal active routing for the admitted read handle; pricing evidence is a separate module fixture.
+app()->instance(AccountBindings::class,$bindings);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
+$baseNative=new \Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules));
+$offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($baseNative),$clock,$bindings,static fn()=>null,static fn()=>true);
+$offerCaps=new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($offerPorts,$clock,static fn()=>null);
+$prices=new \Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules,$offerCaps,$offerPorts);
+$native=new \Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue($prices);
+$query=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');$offerRevision=fn()=>$offerPorts->readOffers($query,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$costs=[];foreach(['register','renew','transfer'] as $action){$costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($action,1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+1 day'));}
+$offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',$costs),$offerRevision());
+$offerPorts->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'))),$offerRevision());
+$offerPorts->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,transfers:true)),$offerRevision());
+$offerPorts->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,'com',['register','transfer']),$offerRevision());
+$tld=Tld::where('server_id',$server->id)->sole();$product=$native->product($tld,'register');$plan=$native->annualPlan($product);
+$order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
+// Retained service predates installation; seed it without checkout events.
+$service=Service::withoutEvents(function()use($owner,$order,$product,$plan){
+$service=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$plan->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']);
+$service->properties()->create(['key'=>'domain','value'=>'example-import.com']);return $service;});
 $mapping=new AdoptionMapping($native,$prices,$clock,$bindings);$reader=new AdoptionReader($bindings,$mapping,$clock);$commit=new AdoptionCommit($mapping,$bindings,$clock);
 $target=new Target('example-import.com',$service->id,$owner->id,$server->id,Environment::Live);
 $GLOBALS['importCalls']=0;$GLOBALS['importReply']=['code'=>300,'detail'=>'success','created'=>'2020-01-01','expires'=>'2027-11-02','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',

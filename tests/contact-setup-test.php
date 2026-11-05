@@ -13,17 +13,17 @@ use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{ContactProfile, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactDetails, ContactProfiles, ContactProfileSchema,
-    ContactRecovery, ContactSetup, ContactValidation, InvoiceBinding, PublicationEligibility, RegistryInputs};
+    ContactRecovery, ContactSetup, ContactValidation, InvoiceBinding, RegistryInputs};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $fixtureEnding = 'test';
 extract(commerceFixture(true, ending: $fixtureEnding)); ContactProfileSchema::install(); ContactProfileSchema::verify();
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000003_create_domains_contact_profiles.php';
 $migration->down(); ContactProfileSchema::verify();
-$clock = new FakeClock($now); $admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock);
-$admission->boot(); (new InvoiceBinding($admission, $native, $prices, $clock))->boot();
+$clock ??= new FakeClock($now); $admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock);
+$admission->boot(); $invoiceBinding=new InvoiceBinding($admission,$native,$prices,$clock);$invoiceBinding->boot();app()->instance(InvoiceBinding::class,$invoiceBinding);
 $user = commerceUser(); $user->update(['email' => 'contact@example.com']); $other = commerceUser();
 $staff = commerceUser(); $role = Role::create(['name' => 'Domain manager', 'permissions' => ['admin.domains.manage']]); $staff->update(['role_id' => $role->id]);
-tldPanel();$panel = Filament\Facades\Filament::getCurrentPanel();
+app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();tldPanel();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);$panel = Filament\Facades\Filament::getCurrentPanel();
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn () => App\Admin\Resources\CustomPropertyResource::registerRoutes($panel));
 app('router')->getRoutes()->refreshNameLookups();
 DB::beginTransaction();
@@ -115,8 +115,8 @@ same('4165550100', ContactDetails::validate('namesilo', ContactDetails::collect(
 contactProperty($user, 'country', 'United Kingdom'); contactProperty($user, 'phone', '+44 20 7946 0123'); contactProperty($user, 'state', '');
 same('+44.2079460123', ContactDetails::validate('enom', ContactDetails::collect($user))['tech']['phone'], 'International phone without required state');
 $contactError(ContactDetails::collect($user), 'contacts.registrant.state_province', 'namesilo');
-expect(ContactSetup::capture($user, $tlds[1])['setup_required'], 'NameSilo GB state missing keeps setup incomplete');
-expect(!ContactSetup::capture($user, $tlds[0])['setup_required'], 'Enom GB blank state remains valid');
+expect(ContactSetup::capture($user, $offers->contactTld($tlds[1]->fresh()))['setup_required'], 'NameSilo GB state missing keeps setup incomplete');
+expect(!ContactSetup::capture($user, $offers->contactTld($tlds[0]->fresh()))['setup_required'], 'Enom GB blank state remains valid');
 $countries = config('app.countries'); config(['app.countries' => ['AA' => 'Duplicate', 'BB' => 'Duplicate']]);
 contactProperty($user, 'country', 'Duplicate'); same('', ContactDetails::collect($user)['admin']['country'], 'Ambiguous country never guessed');
 config(['app.countries' => $countries]); contactProperty($user, 'country', 'US'); contactProperty($user, 'state', 'WA'); contactProperty($user, 'phone', "\t2065550100");
@@ -136,11 +136,12 @@ foreach (['enom', 'namesilo'] as $registrar) {
     foreach ([null, [['name' => 'us_nexus', 'required' => true]]] as $schema) { contactReject(static fn () => RegistryInputs::validate($registrar, 'com', $schema, [])); }
     contactReject(static fn () => RegistryInputs::validate($registrar, 'com', [], ['command' => 'override']));
 }
-DB::transaction(static function () use ($tlds): void {
-    $tld = $tlds[0]->fresh(); $tld->registry_fields = [['name' => 'us_nexus']]; $tld->save();
-    contactReject(static fn () => PublicationEligibility::require($tld, 'register', 1));
-    $tld->registry_fields = []; $tld->save();
-});
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+$facts=fixtureOfferFacts($binding);$unsupported=$facts->endings;$unsupported[$fixtureEnding]['registry']=false;
+fixtureObserveOfferFacts($binding,$unsupported);
+contactReject(static fn () => $caps->requireOrder($binding,$fixtureEnding,'register',1));
+contactReject(static fn () => $offers->contactTld($tlds[0]->fresh()));
+fixtureObserveOfferFacts($binding,$facts->endings);
 // Native checkout binds the real snapshot, no customer contact/EPP/profile IDs enter the cart.
 $frozenName = reservedFixtureName('frozen-contact.test');
 $product = $native->product($tlds[0], 'register'); $cart = commerceCart($user); commerceAdd($cart, $product, $frozenName); commerceCheckout($user, $cart);

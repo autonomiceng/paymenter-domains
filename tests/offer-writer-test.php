@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Installation, PricingRule, StaffSettingsReview};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation, PricingRule, StaffSettingsReview};
 
 // Native SQLite is necessary to prove projection/audit rollback, native identities and frozen
 // financial rows. All registrar data and callbacks are synthetic; no transport is installed.
@@ -41,7 +41,11 @@ $writer = new Writer(new Projection($native), $clock, $authorize, static fn () =
 $revision = static function ($binding) use ($writer): Revision {
     return $writer->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
 };
-$apply = static fn ($command) => $writer->apply($command, $revision($command->binding()));
+app()->instance(Clock::class,$clock);
+$apply = static function($command)use($writer,$revision){
+    if($command instanceof FactsObserved){$command=new FactsObserved($command->binding(),$command->tld(),fixtureNameSiloFacts($command->binding(),$command->tld(),$command->facts));}
+    return $writer->apply($command,$revision($command->binding()));
+};
 $facts = static fn ($time, array $terms = [1, 3]) => new Facts(['register' => $terms, 'renew' => [1], 'transfer' => [1]],
     [], true, false, false, 'synthetic_facts', $time, $time->modify('+1 day'));
 // Discover a new offer through observations, without inventing facts or selecting a seller.

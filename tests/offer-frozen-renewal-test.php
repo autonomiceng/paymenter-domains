@@ -9,7 +9,7 @@ require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Projection};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, ObservationSchema, OfferSchema, OfferWorkSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{ObservationSchema, OfferSchema, OfferWorkSchema};
 ObservationSchema::install(); OfferSchema::install(); OfferWorkSchema::install();
 [$pending,,$binding]=$makeRenewal(placeholderComFixtureName('offer-paid-renewal-placeholder.com'));
 [$pendingEngine,$pendingWriter,$completion]=$compose($binding);

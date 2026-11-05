@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,IdentityRefused,RegistrarRegistry,Runtime,RuntimePorts,StaffSettingsReview as Review,StaffSettingsWrites};
 require_once __DIR__.'/staff-tlds.php';
-config(['domains.enom_identity.environment'=>'test']);
+config(['domains.enom_identity.environment'=>'test','domains.namesilo_account.environment'=>'']);
 // Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();
@@ -58,9 +58,12 @@ try{app(AccountBindings::class)->requireProcessing(\Paymenter\Extensions\Servers
 try{app(AccountBindings::class)->reader($server->id);expect(false,'Catalogue acceptance still required');}catch(RuntimeException){}
 Log::shouldNotHaveReceived('warning');Log::shouldNotHaveReceived('error');
 foreach(Review::historyRows($server->fresh()) as $row){$json=json_encode($row);foreach(['secret-uid','secret-token','9876.54'] as $secret){expect(!str_contains($json,$secret),'Audit omits identity/token/balance');}}
-// A catalogue acceptance cannot promote the staff-only factory into a scheduler reader.
+// Saved acquisition intent cannot promote the staff-only factory into a scheduler reader.
 $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh());
-Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::save($binding,0,['com'=>['register'=>[1],'renew'=>[1],'transfer'=>[],'registry'=>true,'renewal_safe'=>true]]);
+$catalogue=Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
+$query=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+$catalogue->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1)),
+    $catalogue->readOffers($query,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $calls=count($GLOBALS['identityCalls']);app(Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class)->daily($a->fresh());
 same($calls,count($GLOBALS['identityCalls']),'Daily balance stays off wire even with accepted catalogue');
 // Keep unrelated public data updating socket-free while exercising the actual scheduler turn.

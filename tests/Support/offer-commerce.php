@@ -4,7 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/OfferFixture.php';
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Edit, Facts, FactsObserved, Intent, Projection, Query};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionOffers, CartAdmission, CatalogueAcceptances, CheckoutEligibility, Installation, InvoiceBinding, Storefront};
+use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionOffers, CartAdmission, CheckoutEligibility, Installation, InvoiceBinding, Storefront};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 /** Only this synthetic fixture overrides the fixed legacy routing seam. No installed switch exists. */

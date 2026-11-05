@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{Action,Environment,Query,RequestBudget,RequestContext as Context,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{Client,Driver};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,Installation,RegistrarFactories,RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{Installation, RegistrarFactories, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 function hrtime(bool $number=false): int {return 0;}
 function curl_init(): object {++$GLOBALS['installedQuoteWire']['inits'];return new \stdClass;}
@@ -35,10 +35,7 @@ $server=Server::create(['name'=>'Synthetic installed quote','type'=>'server','ex
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo',
     'environment'=>'live','stable_identity'=>'synthetic-installed-quote-account']));
 $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
-CatalogueAcceptances::save($binding,0,[
-    'com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true],
-    'net'=>['register'=>[],'renew'=>[],'transfer'=>[],'registry'=>true,'renewal_safe'=>true],
-]);
+
 $verifier=new class implements AccountVerifier {
     public function verify(Environment $environment,#[\SensitiveParameter] array $credentials): string {return 'synthetic-installed-quote-account';}
 };
@@ -50,12 +47,11 @@ $refused=$reader->quote(new Query('example.net',Action::Register,1),$context());
 $actual=[$refused->disposition->value,$refused->sendState->value,$refused->evidence()->quote?->cost->amount,$GLOBALS['installedQuoteWire']['calls']];
 same(['rejected','definitely_unsent',null,0],$actual,'Installed factory must refuse an unaccepted priced ending without reads: '.json_encode($actual));
 same(0,$GLOBALS['installedQuoteWire']['inits'],'Unaccepted installed quote creates no transport handle');
-same('12.34',$reader->quote(new Query('example.com',Action::Register,1),$context())->evidence()->quote?->cost->amount,
-    'Installed factory retains the accepted ending price');
-same(1,$GLOBALS['installedQuoteWire']['calls'],'Accepted installed quote reads prices once');
+same(null,$reader->quote(new Query('example.com',Action::Register,1),$context())->evidence()->quote?->cost->amount,'Installed Live quote remains closed without active Live capability');
+same(0,$GLOBALS['installedQuoteWire']['calls'],'No active Live capability grants a quote read');
 $legacy=new Driver(new Client($binding,'synthetic-key'),['register'],$clock);
 same('13.34',$legacy->quote(new Query('example.net',Action::Register,1),$context())->evidence()->quote?->cost->amount,
     'Legacy direct action-list construction retains its quote behavior');
-same(2,$GLOBALS['installedQuoteWire']['calls'],'Legacy direct quote makes its own single price read');
+same(1,$GLOBALS['installedQuoteWire']['calls'],'Legacy direct quote makes its own single price read');
 echo "Installed NameSilo quotes retain per-ending acceptance and legacy direct constructor behavior.\n";
 $nativeSuccessful=true;

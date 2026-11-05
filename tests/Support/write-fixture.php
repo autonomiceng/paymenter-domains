@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/operation-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Contracts\{AdmittedRegistrarDriver, RegistrationTransport, WriteGate};
 use Paymenter\Extensions\Servers\Domains\Data\{Action, AdmittedOperation, Disposition, DriverResult, RequestContext, ResultReason, SendState};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, DomainOperations, WriteAcceptance, WriteFeatures};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, WriteAcceptance, WriteFeatures};
 $transport = new class extends RegistrationTransport {
     public array $calls = []; public bool $fail = false;
     protected function sendRegistration(AdmittedOperation $op, RequestContext $context, #[SensitiveParameter] array $payload, string $origin, int $timeoutMs): DriverResult

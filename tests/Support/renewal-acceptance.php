@@ -2,7 +2,6 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 use Paymenter\Extensions\Servers\Domains\Data\RenewalCode;
-use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 
 return static function ($binding, Closure $check, Closure $refresh, Closure $calls, Closure $during): void {
     $accepted = fixtureOfferFacts($binding);

@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{Action,AdmittedOperation,Environment,Money,Query,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,NativeCatalogue,OperationClaims,RegistrationProfiles,RuntimePorts,RuntimeWork,SellerPolicies,StaffSettingsReview as Review,StaffSettingsWrites,Storefront,WriteAcceptance,WriteFeatures,WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, NativeCatalogue, OperationClaims, RegistrationProfiles, RuntimePorts, RuntimeWork, SellerPolicies, StaffSettingsReview as Review, StaffSettingsWrites, Storefront, WriteAcceptance, WriteFeatures, WriteHeld};
 PHPUnit\TextUI\Configuration\Registry::init((new PHPUnit\TextUI\CliArguments\Builder)->fromParameters([]),PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration::create());
 $entry=new Paymenter\Extensions\Servers\Domains\Domains;$entry->boot();
 same([],app(Storefront::class)->endings(),'Fresh installed catalogue exposes no registration offers');

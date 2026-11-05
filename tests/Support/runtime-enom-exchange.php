@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,ReadLimiter};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,CostUnit,Disposition,DriverResult,Environment,Evidence,Money,QuoteEvidence,RequestBudget,RequestContext,RequestOrigin,ResultReason,SendState};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,CatalogueAcceptances,OperationClaims,RegistrarRegistry,RenewalAcceptance,RuntimePorts,RuntimeWork,TransferInputs,Refunds,WriteAcceptance,WriteFeatures,NativeCatalogue,PriceCatalogue,SellerPolicies,CartAdmission,CheckoutEligibility,InvoiceBinding,TransferPrecheck,Rdap};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, OperationClaims, RegistrarRegistry, RenewalAcceptance, RuntimePorts, RuntimeWork, TransferInputs, Refunds, WriteAcceptance, WriteFeatures, NativeCatalogue, PriceCatalogue, SellerPolicies, CartAdmission, CheckoutEligibility, InvoiceBinding, TransferPrecheck, Rdap};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 // Exercise the TEST Purchase scope used by the deployment composition. The

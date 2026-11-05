@@ -4,7 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/reserved-fixtures.php';
 use Illuminate\Support\Facades\{Auth,Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,DomainBilling,EnomTestRenewal,EnomTestSendLimit,EnomTestSendLimitSchema,NativeDomainGuard,Refunds,RuntimePorts,RuntimeWork,StaffOperationReview,StaffOperations};
+use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, EnomTestRenewal, EnomTestSendLimit, EnomTestSendLimitSchema, NativeDomainGuard, Refunds, RuntimePorts, RuntimeWork, StaffOperationReview, StaffOperations};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 // The preceding registration scenario proves this holder's real native checkout,
 // synthetic payment, captured-order charge and expiry. It leaves renewals off.

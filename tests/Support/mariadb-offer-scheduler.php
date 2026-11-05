@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Jobs\SyncPrices;
 use Paymenter\Extensions\Servers\Domains\Data\{Environment, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, CatalogueAcceptances, DomainObservation, HoldingObservationWork, Installation, NativeCatalogue, ObservationWork, PriceCatalogue, PricingRules, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, DomainObservation, HoldingObservationWork, Installation, NativeCatalogue, ObservationWork, PriceCatalogue, PricingRules, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 $phase = getenv('OFFER_PHASE'); $prefix = (string)getenv('SCHEMA_PREFIX');
 if ($phase === 'seed') {

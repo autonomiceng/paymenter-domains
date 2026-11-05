@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php'; require __DIR__.'/Support/commerce.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,CatalogueAcceptances,ObservationSchema,ReadDeferred};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, ObservationSchema, ReadDeferred};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture()); ObservationSchema::install(); ObservationSchema::verify();
 $clock=new FakeClock($now); $budget=new AccountReadBudget($clock); $other=new AccountReadBudget($clock);
