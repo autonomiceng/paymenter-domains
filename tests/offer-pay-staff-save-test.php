@@ -10,9 +10,9 @@ use App\Models\Invoice;
 use Illuminate\Support\Facades\{Auth, DB, Event};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, FeedObserved, Intent, OfferState, Query};
-use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, Disposition, DriverResult, Evidence, ResultReason, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, Capabilities, CostUnit, Disposition, DriverResult, Evidence, Money, Query as OrderQuery, QuoteEvidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, PayCheck, PricingRule, RegistrarRegistry};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, PayCheck, PricingRule, RegistrarRegistry};
 require __DIR__.'/Support/offer-commerce.php';
 extract(offerCommerceFixture());
 $registry = new RegistrarRegistry;
@@ -73,13 +73,37 @@ same(['unavailable', 'The price of staff-save-placeholder.com went up after this
 $log = array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.'));
 same('price_changed', $log[1][1]['reason'] ?? null, 'A fixed-price cost refusal logs the price reason');
 same($issued, $frozen(), 'A fixed-price cost refusal leaves the issued invoice untouched');
+// The daily cost expires and pay refreshes it with a name quote above the fixed retail: still the price message.
+$quoting = new RegistrarRegistry;
+$quoting->register('enom', ['token'], new class implements Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
+    public function verify($environment, array $credentials): string { return $credentials['token']; }
+}, static fn ($b) => new Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar($b, new Capabilities($b, []),
+    new DriverResult($b, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, new Evidence(quote: new QuoteEvidence(
+        new OrderQuery('staff-save-placeholder.com', Action::Register, 1), new Money('20.0000', 'USD'), CostUnit::TermTotal,
+        'enom_product_price', $clock->now(), $clock->now()->modify('+5 minutes'))))));
+$clock->instant = $now->modify('+2 minutes'); $costs = [];
+foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'com')->whereNotNull('catalogue_observation')->get() as $row) {
+    $c = OfferState::cost(OfferState::decode($row->catalogue_observation));
+    $costs[] = $c->key() === 'register:1' ? new Cost($c->action, $c->term, true, '9.0000', $c->sourceUnit, $c->source, $clock->now(), $clock->now()->modify('+1 second')) : $c;
+}
+$ports->apply(new FeedObserved($binding, 'com', $costs), $revision());
+$clock->instant = $now->modify('+2 minutes 5 seconds');
+$pay->fixtureOffers = new AcquisitionOffers($ports, new AccountBindings($quoting), $native);
+$refused = $pay->stop($invoice);
+same(['unavailable', 'The price of staff-save-placeholder.com went up after this invoice was issued. You have not been charged. Try again later, or contact us for a new invoice.'],
+    [$refused['why'] ?? null, $refused['text'] ?? null], 'A refreshed quote above the fixed retail shows the plain no-charge message');
+$log = array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.'));
+same(['price_changed', Paymenter\Extensions\Servers\Domains\Services\PaymentPriceChanged::class], [$log[2][1]['reason'] ?? null, $log[2][1]['exception_class'] ?? null],
+    'A refreshed-quote cost refusal logs the price reason');
+same($issued, $frozen(), 'A refreshed-quote cost refusal leaves the issued invoice untouched');
+$pay->fixtureOffers = $offers;
 // Taking the ending off sale is a temporary refusal, also logged with its cause.
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false)), $revision());
 $stopped = $pay->stop($invoice);
 same(['unavailable', 'Domains can’t be ordered right now. Please try again later.'], [$stopped['why'] ?? null, $stopped['text'] ?? null],
     'An ending off sale still refuses pay, and a staff stop is not called a price change');
 $log = array_values(array_filter($logged, static fn ($l) => $l[0] === 'Domains pay refused.'));
-same(['unavailable', DomainException::class], [$log[2][1]['reason'] ?? null, $log[2][1]['exception_class'] ?? null], 'Every refused pay logs its reason');
+same(['unavailable', DomainException::class], [$log[3][1]['reason'] ?? null, $log[3][1]['exception_class'] ?? null], 'Every refused pay logs its reason');
 same('pending', $invoice->fresh()->status, 'Temporary refusals keep the invoice open');
 $nativeSuccessful = true;
 echo "Offer pay after staff save: ok\n";

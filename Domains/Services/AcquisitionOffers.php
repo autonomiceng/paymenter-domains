@@ -93,7 +93,11 @@ final class AcquisitionOffers
         Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
             'native_retail' => $acquire->listedRetail()], 300);
         $seed = new SaleSelection(...[...get_object_vars($seed), 'catalogue' => ['order_quote' => $token]]);
-        return $this->load([$seed], false, false)[0]['selection'];
+        try { return $this->load([$seed], false, false)[0]['selection']; }
+        catch (\DomainException $e) {
+            $quoted = $costs[$acquire->observation()->key()] ?? null;
+            throw $quoted === null ? $e : new OrderQuoteRefused($e, OfferState::cost($quoted));
+        }
     }
 
     /** Pending invoices outlive cart quotes and staff saves. Recheck the same sale against the current offer:
@@ -104,7 +108,9 @@ final class AcquisitionOffers
         try {
             $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
                 new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
-        } catch (\DomainException $e) { $this->costRefusal($frozen, $name, $ceiling, $total); throw $e; }
+        } catch (\DomainException $e) {
+            $this->costRefusal($frozen, $name, $ceiling, $total, $e instanceof OrderQuoteRefused ? $e->cost : null); throw $e;
+        }
         $sale = static fn (SaleSelection $s) => [$s->tld, $s->serverId, $s->registrar, $s->fingerprint, $s->action, $s->term,
             $s->currency, $s->catalogue['generation'] ?? null, $s->catalogue['credential'] ?? null];
         if ($sale($frozen) !== $sale($current)) { throw new \DomainException('Seller or account changed.'); }
@@ -116,15 +122,16 @@ final class AcquisitionOffers
     private static function fits(string $cost, string $ceiling, string $total): bool
     { return PricingRule::covers($total, $cost) && PricingRule::units($cost) <= PricingRule::units($ceiling); }
 
-    /** A refused current offer whose fresh cost no longer fits the invoice is a price change (a fixed retail
-     * below the new cost, for example), not a temporary stop. Staff or seller stops keep their own refusal. */
-    private function costRefusal(SaleSelection $s, string $name, string $ceiling, string $total): void
+    /** A refused current offer whose fresh cost (daily table, or this request's refreshed quote) no longer fits
+     * the invoice is a price change (a fixed retail below the new cost, for example), not a temporary stop.
+     * Staff or seller stops keep their own refusal. */
+    private function costRefusal(SaleSelection $s, string $name, string $ceiling, string $total, ?Cost $quoted = null): void
     {
         try {
             $b = AccountBindings::binding(Account::where('server_id', $s->serverId)->sole());
             if ($b->fingerprint !== $s->fingerprint || $b->registrarKey !== $s->registrar) { return; }
             $row = $this->ports->loadBatch([new Query($b, [$s->tld], $s->action, $s->term)], Context::Public)[0][0];
-            $cost = $row->closed() ? null : $row->observation();
+            $cost = $row->closed() ? null : ($quoted ?? $row->observation());
         } catch (\Throwable) { return; }
         if ($cost?->enabled && $cost->total !== null && $cost->fresh(app(Clock::class)->now()) && !self::fits($cost->total, $ceiling, $total)) {
             throw new PaymentPriceChanged($name);
