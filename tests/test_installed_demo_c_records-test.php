@@ -66,4 +66,10 @@ foreach(['never_read','wrong_identity','failed_read'] as $case){
     same(1,$ownerDom->query('//form[@action="/domains/1/dns"]')->length,$case.' keeps the supplied DNS editor on the owner page');
 }
 $partial=RecordFamilies::owner($editable,RecordFamilies::read($d,$now));same([],$partial->management['contacts']['actions'],'A current partial contact read still holds whole-list editing');
+$unknown=new Domain(['domain'=>'example.com','registrar_key'=>'enom','server_id'=>1,'authority_generation'=>1,'account_fingerprint'=>str_repeat('a',64),'observation'=>[]]);
+$unreadManagement=$existing;foreach(['dns','srv','ds'] as $key){$unreadManagement[$key]['records']=null;$unreadManagement[$key]['actions']=[];}
+$unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$unreadManagement]),RecordFamilies::read($unknown,$now));
+$unreadHtml=view('domains::partials.owner-management',['domain'=>$unread,'caps'=>['dns','srv','ds'],'keys'=>array_fill_keys(['dns','srv','ds','ds_delete'],str_repeat('b',64))])->render();
+expect(!str_contains($unreadHtml,'Contact support to sync')&&!str_contains($unreadHtml,'domains-missing'),'Unknown registrar families show checking without a red Missing or support chore');
+expect(str_contains($unreadHtml,'checking'),'Unknown family keeps its checking explanation');
 $nativeSuccessful=true;echo "Demo C record-family UI passed.\n";

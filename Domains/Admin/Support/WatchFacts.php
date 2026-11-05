@@ -78,7 +78,8 @@ final class WatchFacts
     {
         $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:Missing::fills('after the next check'));}
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
-        $same=!$w->expected_dns || $o->dns===$w->expected_dns;
+        if(!$w->ns_profile_id || !WatchProfile::whereKey($w->ns_profile_id)->exists() || !$w->expected_dns){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
+        $same=$o->dns===$w->expected_dns;
         return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':'Changed',$same?null:'warning');
     }
     private static function records(?DomainSummary $s,bool $active): array
