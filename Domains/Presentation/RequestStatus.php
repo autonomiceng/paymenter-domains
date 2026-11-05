@@ -61,7 +61,7 @@ final class RequestStatus
     { return 'Paid after this invoice closed. We added '.$amount.' to account credit. You can apply it on an invoice.'; }
     /** One sentence for an unpaid early renewal, on both sides. */
     public static function earlyRenewal(string $due): string
-    { return 'Early renewal not paid. Nothing is due until '.gmdate('M j, Y', strtotime($due.' 00:00:00 UTC')).'.'; }
+    { return 'Invoice ready. Due '.gmdate('M j, Y', strtotime($due.' 00:00:00 UTC')).'.'; }
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $cause = null): array
     {
