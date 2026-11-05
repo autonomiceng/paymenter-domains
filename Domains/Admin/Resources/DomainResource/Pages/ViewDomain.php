@@ -137,8 +137,10 @@ class ViewDomain extends ViewRecord
         if ($button&&!isset($facts['Renewal invoices'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }
         $slot=isset($facts['Renewal invoices'])?'Renewal invoices':'Open alerts';
         $placed=array_filter(DomainFacts::SECTIONS,fn(array $labels)=>array_intersect($labels,array_keys($facts))!==[]);
+        // Contacts and DNS rows sit on their registrar record rows, with their edit buttons, as in the approved mock.
+        $recordsHeld=isset($placed[self::HELD_SECTION]);unset($placed[self::HELD_SECTION]);
         // The rows that stay blocked are said once, at the head of their section. A request's head line names it, so only a page with no such section and no request needs the note elsewhere.
-        $held=isset($placed[self::HELD_SECTION])?self::HELD_SECTION:($edits['request']===null?array_key_first($placed):null);
+        $held=$recordsHeld?null:($edits['request']===null?array_key_first($placed):null);
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
@@ -148,7 +150,7 @@ class ViewDomain extends ViewRecord
             $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
         // Like the approved mock, an active domain leads with its registrar records. Other states lead with registration and billing.
-        $records=[$this->recordFamilies($d),Sheet::section('DNSSEC',[$this->row('DS records',\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d),[])])];
+        $records=[$this->recordFamilies($d,$facts,$edits,$recordsHeld?$edits['note']:null)];
         // The registrar records section above already shows each family's state and the last read, so Monitoring keeps only the public DNS evidence.
         $monitoring=Sheet::section('Monitoring',[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true]))]);
         $sheet=$d->status==='active'?[...$records,...$sections]:[...$sections,...$records];
@@ -180,11 +182,41 @@ class ViewDomain extends ViewRecord
         $facts[$row]['setup']=true;
         return $facts;
     }
-    private function recordFamilies(Domain $d): Section
+    /** One row per registrar record family. A family's saved values, its DNSSEC state and its edit buttons sit on the same row. */
+    private function recordFamilies(Domain $d, array $facts, array $edits, string|Htmlable|null $note): Section
     {
         $state=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
         $resume=$this->getAction('resume_observation',false);
-        return Sheet::section('Registrar records',[Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true]))],after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+        $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part]));
+        $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
+        $rows=[$view('head')];$shown=[];
+        foreach (($state['cancelled_without_records']??false)?[]:$state['rows'] as $family) {
+            $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;
+            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[]);
+        }
+        foreach (array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); }
+        $rows[]=$view('tail');
+        return Sheet::section('Registrar records',$rows,$note,after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+    }
+    /** The family's read state, then the saved value staff edit with the row's button. */
+    private function familyRow(array $family, ?array $fact, array|Html $side): Flex
+    {
+        $html=view('domains::partials.record-family-status',['family'=>$family,'staff'=>true])->render();
+        if ($fact!==null&&($line=self::factLine($family['label'],$fact))!==null) { $html.='<span class="domains-sub">'.$line.'</span>'; }
+        $entry=TextEntry::make('family_'.$family['kind'])->label($family['label'])->state(new HtmlString('<div class="domains">'.$html.'</div>'));
+        if ($fact['help']??null) { $entry->hintAction(HelpHint::make($fact['help'])); }
+        return Sheet::row($entry,$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($family['label']));
+    }
+    /** The saved value and its words, as one line under the family state. */
+    private static function factLine(string $label, array $fact): ?string
+    {
+        $value=$fact['value'];$below=self::below($fact);$parts=[];
+        if ($value!==null) {
+            $text=implode(', ',array_map('e',(array)$value));
+            $parts[]=match ($label) { 'Nameservers'=>'<span class="font-mono domains-mono">'.$text.'</span>', 'DS records'=>'DNSSEC: '.$text, default=>$text };
+        }
+        if ($below!==null) { $parts[]=$below instanceof HtmlString?$below->toHtml():e($below); }
+        return $parts===[]?null:implode('<br>',$parts);
     }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section

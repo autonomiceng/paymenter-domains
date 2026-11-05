@@ -63,6 +63,9 @@ final class Labels
         if (\Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::legacyHold($op)) {
             return \Paymenter\Extensions\Servers\Domains\Services\BalanceRetries::pending($op) ? 'Not sent: checking this order again' : 'Not sent: reason not saved';
         }
+        // The domain page notice names one step for this hold. The reason names the same one, not Cancel or Release hold.
+        if ($op->funding_basis==='complimentary'&&$op->safe_code==='registrar_price_increased'
+            &&($need=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op,Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')))!==null) { return $need; }
         $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
