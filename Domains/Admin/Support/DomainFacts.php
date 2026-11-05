@@ -343,6 +343,7 @@ final class DomainFacts
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
                 'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
                 'records_unavailable'=>"Sync stopped: couldn't read DNS records.",
+                'caa_unsupported'=>"Sync stopped: this domain has CAA records, which can't be read from Enom here. Other domain facts were saved. Manage this domain's DNS at Enom.",
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }
     }
