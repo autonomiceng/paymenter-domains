@@ -123,7 +123,7 @@ final class ManagedDnsSetup
             }
         }
         catch(\Illuminate\Contracts\Encryption\DecryptException){$offer(null,1,PHP_INT_MAX);}
-        return $intent['order']=== [-1,0,0]?'platform':$intent['expected'];
+        return $intent['expected'];
     }
     public static function usable(?WatchProfile $profile): bool
     { return $profile?->enabled && $profile->readProfile()!==null; }

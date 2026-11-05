@@ -18,7 +18,11 @@ final class WatchDnsChecks
             if ($target === null) { return false; }
             foreach (['delegation', 'points'] as $kind) {
                 $q = DB::table('domains_watch_work')->where('watch_id', $watchId)->where('kind', $kind);
-                if (!$q->lockForUpdate()->exists()) {
+                $work=$q->lockForUpdate()->first();
+                if ($work && (int)$work->watch_revision!==(int)$target['watch']->revision){
+                    $q->update(['due_at'=>$now,'claim'=>null,'lease_until'=>null,'backoff_until'=>null,'attempts'=>0,'safe_code'=>null,'watch_revision'=>$target['watch']->revision]);
+                }
+                if (!$work) {
                     DB::table('domains_watch_work')->insert(['watch_id' => $watchId, 'kind' => $kind, 'due_at' => $now,
                         'watch_revision' => $target['watch']->revision, 'attempts' => 0, 'cursor' => 0]);
                 }
