@@ -158,9 +158,10 @@ final class DomainFacts
         }
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
         // A failed read leaves the unread rows red Missing without a sentence each. Why, and what to do, is said once:
-        // a stopped read in the page notice, a read still retrying on Last sync.
+        // a stopped read in the page notice, a read still retrying on Last sync. Contacts come from saved requests, not the read,
+        // so their Missing keeps its own step.
         if($registered && ($problem=self::readProblem($d))!==null){
-            foreach(['Expires','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
+            foreach(['Expires','In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
                 if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=null;}
             }
             if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&self::recordHold($d)!==null?null:$problem;}
