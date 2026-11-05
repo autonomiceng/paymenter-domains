@@ -64,6 +64,7 @@ config(['domains.namesilo_sandbox_enrollment.enabled'=>false,'domains.namesilo_a
 // Recompose the same installed services after the deployment switches from the old opt-in to local TEST.
 $registry=new RegistrarRegistry;LocalAccountEnrollment::bootstrap($registry);
 app()->instance(RegistrarRegistry::class,$registry);app()->instance(AccountBindings::class,new AccountBindings($registry));
+app()->forgetInstance(StaffSettingsWrites::class);
 $bindings=app(AccountBindings::class);$writes=app(StaffSettingsWrites::class);
 $refuse=static function(callable $work):void {
     $before=[$GLOBALS['enrollmentCalls'],$GLOBALS['rebindReads']??0];$caught=null;
@@ -74,7 +75,7 @@ $refuse=static function(callable $work):void {
 $input=['registrar'=>'namesilo','environment'=>'test','api_key'=>$credentials['api_key'],'reason'=>'Authenticate retained TEST account'];
 // Exercise the existing staff action: before the fix it catches the immutable-binding refusal and saves nothing.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])
-    ->callAction('configure_'.$server->id,data:$input)->assertHasNoActionErrors();
+    ->callAction('configure_'.$server->id,data:$input)->assertHasNoActionErrors()->assertNotified('Saved');
 same(2,$GLOBALS['enrollmentCalls'],'Existing staff action re-authenticates the same key once');
 same('matched',$bindings->configurationStatus($server->id),'Upgraded account has a verified authenticated TEST connection');
 $after=$account->fresh()->getRawOriginal();unset($after['updated_at'],$retained[0]['updated_at']);
