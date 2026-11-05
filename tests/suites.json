@@ -490,6 +490,7 @@
     "tests/test_lint.py",
     "tests/test_blade_verbatim.py",
     "tests/test_native.py",
+    "tests/test_native_cache.py",
     "tests/test_conversion_inventory.py",
     "tests/test_conversion_mariadb_guards.py",
     "tests/test_runner_speed.py",
