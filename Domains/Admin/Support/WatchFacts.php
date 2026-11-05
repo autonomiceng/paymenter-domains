@@ -31,7 +31,7 @@ final class WatchFacts
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active,$w);}
         $sid=$w->sources()->where('user_id',$w->user_id)->where('state','watch')->orderBy('id')->value('service_id');$service=$sid?\App\Models\Service::with('product')->find($sid):null;
         if($service){$domain['Hosting service']=self::fact($service->product?->name??'Service #'.$service->id,'Service #'.$service->id,url:Staff::can('admin.services.update')?\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]):null);}
-        $checks=['Evidence'=>self::fact('Public DNS and registry checks',\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE),'Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active,$missing)];
+        $checks=['Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active,$missing)];
         if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:$missing);}
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
         if($active){$checks['Next check']=self::nextCheck($w);}
@@ -48,11 +48,18 @@ final class WatchFacts
             $checks['DNS records']=self::fact(implode('; ',$e['public']),
                 new \Illuminate\Support\HtmlString(($at?Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked')->toHtml().'. ':'').'Choose a DNS template to compare these records.'));
         }
-        $domain['Registrar records']=self::fact($e['state'],$e['at']?Sheet::moment((int)strtotime($e['at']),'Checked'):'No registrar read for this monitored name.');
-        $domain['Billing and ownership']=self::fact('Separate checks',$e['separation']);
-        $checks['Registrar refresh']=self::fact($e['state'],$e['at']?Sheet::moment((int)strtotime($e['at'])):'No registrar read yet.');
-        $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){$at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked'):'No saved observation.');}
-        return ['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence];
+        // Registrar records exist only for a domain we register. The Domain section says their state once.
+        if($w->managed_domain_id!==null){
+            $domain['Registrar records']=self::fact($e['state'],$e['at']?Sheet::moment((int)strtotime($e['at']),'Checked'):'No registrar read yet.');
+            $domain['Billing and ownership']=self::fact('Separate checks',$e['separation']);
+        }
+        // A paused or stopped name with no saved result has nothing to show; its status already says why.
+        if(!$active){foreach(['Nameservers','Registry','Last check'] as $label){if(isset($checks[$label])&&$checks[$label]['value']===null){$checks[$label]['value']='';}}}
+        // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
+        $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
+            if(!$e[$key]&&($key==='registrar'||!$active)){continue;}
+            $at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked'):'No saved observation.');}
+        return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
     public static function missingCause(WatchName $w): string
     {
