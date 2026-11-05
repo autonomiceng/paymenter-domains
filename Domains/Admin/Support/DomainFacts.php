@@ -141,6 +141,8 @@ final class DomainFacts
         $service=\App\Models\Service::find($d->service_id);
         $f['Service']=$service?self::fact($d->domain.' registration',sub:'Service #'.$service->id,
             url:self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]))):self::fact(null,sub:'Service #'.$d->service_id.' not found. Check the Services page.');
+        $invoice=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)
+            ->where('o.service_id',$d->service_id)->where('i.status','pending')->orderByDesc('i.id')->first(['i.id','i.due_at','o.action']);
         if ($policy!==null&&!self::ended($d)) {
             try { $renewal=RenewalStop::read($d); } catch (\Throwable) { $renewal=null; }
             $cancel=$renewal&&$renewal['cancel']->contains('service_id',$d->service_id);
@@ -150,11 +152,11 @@ final class DomainFacts
             $f['Renewal invoices']=$renewal===null?self::fact(null,sub:self::UNREADABLE_RENEWAL,help:self::help()['Renewal invoices']):self::fact($off?'Off':'On',sub:$off,help:self::help()['Renewal invoices']);
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
-            if (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
+            // An issued renewal is due even when future automatic renewals have been stopped.
+            if ($invoice?->action==='renew') { $f['Next invoice']=self::fact($invoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($invoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
+            elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
         }
-        $invoice=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)
-            ->where('o.service_id',$d->service_id)->where('i.status','pending')->orderByDesc('i.id')->value('i.id');
-        if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice)); }
+        if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
         return self::alerts($d,$f);
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. */
@@ -392,9 +394,17 @@ final class DomainFacts
         if (!$service) { return self::fact(null,sub:'Needs the linked service. Check the Services page.'); }
         if (!in_array($d->price_mode,['standard','complimentary'],true)) { return self::fact(null,sub:'No renewal price set. Check the linked service.'); }
         $code=$observation['adoption_review']['price']??null;
+        if ($code==='retained_renewal') { $code=null; }
         return self::fact($service->currency_code.' '.number_format((float)$service->price,2).' / year',
-            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>'Complimentary',default=>'Standard pricing'},
+            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>'Complimentary',self::purchasePrice($d,$service)=>'Price kept from purchase until the next renewal invoice.',default=>'Standard pricing'},
             tone:$code===null?null:'danger');
+    }
+    /** The native service keeps checkout's annual gross until a renewal invoice projects current pricing. */
+    private static function purchasePrice(Domain $d,\App\Models\Service $service): bool
+    {
+        $checkout=$d->snapshot['checkout']??[];
+        return isset($checkout['annual_price'])&&($checkout['currency']??null)===$service->currency_code
+            &&\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($checkout['annual_price'])===\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$service->price);
     }
     private static function nextInvoice(Domain $d): array
     {
