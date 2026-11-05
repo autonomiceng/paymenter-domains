@@ -525,7 +525,9 @@
     "tests/test_installed_demo_c_selection_feed-test.php",
     "tests/test_installed_demo_c_selection_conversion-test.php",
     "tests/test_installed_comp_account_checkout-test.php",
-    "tests/test_installed_comp_account_renewal-test.php"
+    "tests/test_installed_comp_account_renewal-test.php",
+    "tests/test_installed_comp_account_views-test.php",
+    "tests/test_installed_comp_account_transfer-test.php"
   ],
   "ui": [],
   "runner": [

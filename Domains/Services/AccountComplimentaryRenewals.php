@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 final class AccountComplimentaryRenewals
 {
     /** Same frozen complimentary authorization shape consumed by RenewalFunding and RenewalExecution. */
-    public static function issue(array $l,string $key,int $years,array $calendar,Clock $clock):Invoice
+    public static function issue(array $l,string $key,int $years,array $calendar,Clock $clock,?array $late=null):Invoice
     {
         $d=$l['domain'];$s=$l['service'];$a=ComplimentaryAccounts::authorization((int)$d->user_id);
         if(!$a||$d->price_mode!=='complimentary'){throw new \DomainException('Complimentary account setting required.');}
@@ -27,7 +27,7 @@ final class AccountComplimentaryRenewals
             'authorized_by'=>$a['actor'],'funding_reason'=>'account_complimentary','base_expires_at'=>$d->provider_expires_at,
             'expected_expires_at'=>$d->provider_expires_at->addYearsNoOverflow($years),'payload'=>[],
             'policy'=>['account_complimentary'=>$a,'complimentary'=>$auth,'calendar'=>$calendar,'renewal'=>['confirmed_revision'=>$d->confirmed_revision,
-                'provider_domain_id'=>$d->provider_domain_id,'term'=>$years,'product_id'=>(int)$s->product_id,'annual_plan_id'=>(int)$s->plan_id,
+                'provider_domain_id'=>$d->provider_domain_id,...($late!==null?['late'=>['expiry'=>$late['expiry'],'deadline'=>$late['deadline']]]:[]),'term'=>$years,'product_id'=>(int)$s->product_id,'annual_plan_id'=>(int)$s->plan_id,
                 'user_id'=>(int)$s->user_id,'order_id'=>(int)$s->order_id,'cost_cap'=>$cap,...($years!==1?['term_rule'=>$terms[$years]['rule']]:[])]]]);
         ComplimentaryInvoices::paid($invoice);return $invoice->fresh();
     }

@@ -43,10 +43,6 @@ final class DomainBilling
             if($existing){RenewalReplacements::recover($existing,$l,$this->clock);}
             if ($existing && $existing->safe_code !== 'renewal_cancelled_unpaid' && !RenewalReplacements::reviewed($existing,$d)) {
                 if ($actor && self::expired($d, $this->clock->now()) && (!isset($existing->policy['renewal']['late']) || RenewalCycles::expiredInvoice($existing, $this->clock->now()))) { throw new RuntimeIneligible(RuntimeReason::OutsideCalendar); }
-                if(isset($existing->policy['account_complimentary'])){
-                    if($years!==null&&$years!==(int)$existing->term){throw new \DomainException('Complimentary term is fixed.');}
-                    ComplimentaryInvoices::require($existing,$l);return $l['invoices']->firstWhere('id',$existing->invoice_id);
-                }
                 return self::existingInvoice($existing, $l, $years);
             }
             $key = RenewalCycles::next($l);
@@ -54,7 +50,10 @@ final class DomainBilling
             // Scheduled renewals stay annual; longer terms are owner requests only.
             if ($actor === null && $years !== 1) { throw new \DomainException('Scheduled renewals are annual.'); }
             $calendar = $this->requireRequest($l, $actor !== null, $years, $late !== null);
-            if($d->price_mode==='complimentary'){return AccountComplimentaryRenewals::issue($l,$key,$years,$calendar,$this->clock);}
+            if($d->price_mode==='complimentary'){
+                if($late!==null&&($l['stamp']!==$late['stamp']||$late['valid_until']<=$this->clock->now()->modify('+25 seconds'))){throw new \DomainException('Renewal quote changed. Try again.');}
+                return AccountComplimentaryRenewals::issue($l,$key,$years,$calendar,$this->clock,$late);
+            }
             // NS17: a longer term needs reviewed evidence and an exact-term cost, frozen below as its cap.
             $term = null; $terms = $years === 1 ? null : self::renewalTerms($l, $this->catalogue);
             if ($terms !== null) { $cap = TermSupport::cap($terms, $years); $term = $terms[$years]['rule']; }
@@ -158,6 +157,10 @@ final class DomainBilling
     /** Validate retained debt without changing the invoice or operation. Writers pass their locked rows. */
     public static function existingInvoice(Operation $op, array $l, ?int $years = null): Invoice
     {
+        if(isset($op->policy['account_complimentary'])){
+            if($years!==null&&$years!==(int)$op->term){throw new \DomainException('Complimentary term is fixed.');}
+            ComplimentaryInvoices::require($op,$l);return $l['invoices']->firstWhere('id',$op->invoice_id);
+        }
         $invoice = $l['invoices']->firstWhere('id', $op->invoice_id); $item = $l['items']->firstWhere('id', $op->invoice_item_id); $d = $l['domain'];
         if (!$invoice || !$item || !$invoice->due_at || !$op->base_expires_at || !$op->expected_expires_at || $l['items']->where('invoice_id', $op->invoice_id)->count() !== 1 || $op->action !== 'renew' || $op->funding_basis !== 'paid_invoice' || ($years !== null && (int) $op->term !== $years)
             || $op->service_id !== $d->service_id || $op->server_id !== $d->server_id || $op->registrar_key !== $d->registrar_key

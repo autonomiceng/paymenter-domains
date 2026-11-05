@@ -1,11 +1,13 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/bootstrap.php';
+expect(is_file(__DIR__.'/../Domains/Services/ComplimentaryAccounts.php'),'Account complimentary renewal must be implemented');
+// Native checkout, invoice observers and retained financial locks require the real Paymenter fixture.
 require __DIR__.'/Support/renewal-execution.php';
 use App\Models\{Invoice,Role};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,ComplimentaryCosts,ComplimentaryInvoices,HoldingLocks,RenewalFunding};
-expect(is_file(__DIR__.'/../Domains/Services/ComplimentaryAccounts.php'),'Account complimentary renewal must be implemented');
 $staff=commerceUser();$role=Role::create(['name'=>'Complimentary funding','permissions'=>['admin.domains.manage','admin.domains.fund']]);$staff->update(['role_id'=>$role->id]);
 $enable=fn()=>ComplimentaryAccounts::set($user->id,$staff,true,'Staff account gift',$clock);
 $disable=fn()=>ComplimentaryAccounts::set($user->id,$staff,false,'Gift ended',$clock);
@@ -28,7 +30,9 @@ same('Needs approval: registrar cost $8.01 is above the usual $8.00',Complimenta
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$user,'8.01','Approved',$clock));
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$staff,'8.02','Stale quote',$clock));
 ComplimentaryCosts::approve($over->id,$staff,$over->fresh()->policy['complimentary_cost_review']['amount'],'Reviewed registrar increase',$clock);
-same('pending',$runRenewal($over,$binding)->state,'Approved exact cost can send through the same path');same($writes+1,$state->writes,'Approval permits exactly one registrar send');
+// Advance the synthetic account slot without waiting for real cache time.
+Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$binding->fingerprint);
+$approved=$runRenewal($over,$binding);same('pending',$approved->state,'Approved exact cost can send through the same path: '.$approved->safe_code);same($writes+1,$state->writes,'Approval permits exactly one registrar send');
 same(1,DB::table('domains_complimentary_approvals')->where('operation_id',$over->id)->count(),'Cost approval is audited once');
 $disable();
 echo "Account renewal, switch-off, actual receipt and cost approval passed\n";$nativeSuccessful=true;
