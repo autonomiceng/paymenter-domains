@@ -165,7 +165,7 @@ final class DomainSummaries
                     if (!$expiry) { $waits=$pending?'import':(['registration_pending'=>'registration','transfer_pending'=>'transfer'][$t->status]??null); }
                 }
                 $choices=$dnsChoices->get($id,collect());
-                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?$t->expected_dns:ManagedDnsSetup::expected($c->configs[$id]??null,$c->managedProfile($id),$t,...ManagedDnsSetup::choices($t,$choices));
+                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?SiteDnsDefault::watchExpected($t):ManagedDnsSetup::expected($c->configs[$id]??null,$c->managedProfile($id),$t,...ManagedDnsSetup::choices($t,$choices));
                 $scope=WatchNoticePreferences::scope($uid,$kind==='watch'?$t->canonical_name:$t->domain);$episode=$noticeStates[$scope]??null;if ($episode && (int)$episode->user_id!==$uid) { $episode=null; }
                 try { $episode=$episode?json_decode(Crypt::decryptString($episode->data),true,64,JSON_THROW_ON_ERROR):[]; if (!is_array($episode) || !is_array($episode['portal']??[]) || array_filter($episode['portal']??[],fn($v)=>!is_array($v) || array_filter($v,fn($key)=>!is_string($key)))) { $episode=[]; } } catch (\Throwable) { $episode=[]; }
                 $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];

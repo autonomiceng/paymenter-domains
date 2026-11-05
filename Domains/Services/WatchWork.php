@@ -25,12 +25,19 @@ final class WatchWork
     private function signals(): ManagedPublicSignals { return new ManagedPublicSignals($this->reader,$this->active(),$this->clock,$this->managedProfile); }
     public function enrollManaged(int $id,int $owner): void
     { $this->signals()->enqueue($id,$owner,($this->clock)()); }
+    public function enrollWatch(int $id,int $owner): void
+    {
+        if(!$this->active()){return;}
+        $now=($this->clock)();
+        $this->stage(fn()=>(new WatchRegistryChecks(true))->enroll($id,$owner,$now));
+        $this->stage(fn()=>(new WatchDnsChecks(true))->enroll($id,$owner,$now));
+    }
     public function reconcileDefaults(): void
     {
         if(!$this->active() || DB::transactionLevel()!==0){return;}
         $now=($this->clock)();
-        (new ManagedPublicReconciliation($this->signals()))->sweep($now);
-        $this->enroll($now);
+        $this->stage(fn()=>(new ManagedPublicReconciliation($this->signals()))->sweep($now));
+        $this->stage(fn()=>$this->enroll($now));
     }
     public function tick(): int
     {

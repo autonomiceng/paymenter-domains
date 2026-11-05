@@ -51,7 +51,6 @@ final class SettingsActions
     public static function description(string $name): string
     {
         return match($name){
-            'new_domain_dns'=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::HELP,
             'renewal_billing'=>'Set when renewal invoices go out.',
             'unpaid_hold'=>'Set how long an unpaid new domain order keeps its name.',
             'default_pricing'=>'Sets the pricing every TLD uses unless it has its own, and the estimated card fee. Saving publishes new prices at once. Issued invoices keep their prices.',
@@ -137,10 +136,6 @@ final class SettingsActions
                     $fields[]=\Filament\Schemas\Components\Text::make(fn()=>$reach()['own'].' '.($reach()['own']===1?'TLD':'TLDs').' with '.($reach()['own']===1?'its':'their').' own pricing '.($reach()['own']===1?'counts':'count').' the card fee and also '.($reach()['own']===1?'changes':'change').'.')->key('reach_own')->visible(fn($get)=>$reach()['own']>0&&$feeMoves($get));
                     $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Off in Paymenter, so skipped: '.implode(', ',$reach()['off']).'. Prices there catch up once it is back on.')->key('reach_off')->visible(fn()=>$reach()['off']!==[]);
                 }
-            }
-            if($name==='new_domain_dns'){
-                $fields[]=Select::make('dns_template')->label('DNS template')->options(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::where('enabled',true)->orderBy('name')->get()->filter(fn($p)=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($p))->pluck('name','id')->all())
-                    ->default(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::profile($server)?->id)->placeholder(Account::where('server_id',$server)->value('registrar_key')==='enom'?'None: keep registrar defaults':'None: Finish setup needs customer nameservers');
             }
             if($name==='tld_settings'){
                 // Offer only what the saved account terms allow; the writer still checks every change.
@@ -396,7 +391,7 @@ final class SettingsActions
     /** Dialog title: what the button does, as a question. */
     private static function setupHeading(string $name,bool $connected): string
     {
-        return match(true){$name==='new_domain_dns'=>'New domains use',$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_pricing'=>'Edit default pricing?',
+        return match(true){$name==='renewal_billing'=>'Edit renewal schedule?',$name==='default_pricing'=>'Edit default pricing?',
             default=>self::setupLabel($name,$connected).'?'};
     }
     private static function submitLabel(string $name,bool $connected): string

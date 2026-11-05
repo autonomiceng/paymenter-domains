@@ -24,7 +24,7 @@ final class WatchFacts
         $s=$row['summary'];$keys=$row['keys'];
         $c=WatchFindings::customers([$w->user_id])[$w->user_id];$profile=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w);
         $domain=['Customer'=>self::fact($c['label'],$c['email'],null,$c['url']),
-            'Expected nameservers'=>self::fact(WatchFindings::who($w->expected_dns),cause:'Choose it in Change DNS template'),
+            'Expected nameservers'=>self::fact(WatchFindings::who(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w)),cause:'Choose it in Change DNS template'),
             'DNS template'=>self::fact($profile?->name,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
             'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:Missing::fills('after the next check'))];
         // Hidden when the registry does not publish an expiry date.

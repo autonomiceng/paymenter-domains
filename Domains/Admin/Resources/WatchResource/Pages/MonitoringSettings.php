@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages;
 use Filament\Actions\Action;
-use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\{TextInput,Select};
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
@@ -45,9 +45,21 @@ class MonitoringSettings extends Page
     }
     /** Missing: no saved resolver although the server could use one. */
     private static function missing(): bool{[$endpoint,,$forced]=app(DnsResolverSettings::class)->configuration();return $endpoint===null&&!$forced;}
+    private function siteDefault(): Action
+    {
+        return Action::make('siteDefault')->label('Change site DNS default')->modalHeading('Site DNS default')
+            ->schema([Select::make('profile')->label('DNS template')->required()
+                ->default(fn()=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id)
+                ->options(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::where('enabled',true)->get()->filter(fn($p)=>\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable($p))->pluck('name','id')->all())])
+            ->visible(fn()=>Staff::canEditDefaultDns())->action(function(array $data):void {
+                abort_unless(Staff::canEditDefaultDns(),403);
+                \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::save(\Illuminate\Support\Facades\Auth::user(),(int)$data['profile']);
+                unset($this->cachedSchemas['content']);Notification::make()->title('Site DNS default saved')->success()->send();
+            });
+    }
     protected function getHeaderActions(): array
     {
-        return [$this->edit('configure')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
+        return [$this->siteDefault(),$this->edit('configure')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null),
             Action::make('check')->label('Test resolver')->color('gray')->visible(fn()=>Staff::can(PublicSuffixList::MANAGE)&&app(DnsResolverSettings::class)->configuration()[0]!==null)
                 ->action(function(): void{
                     self::requireManage();$result=app(DnsResolverSettings::class)->check();
@@ -58,12 +70,15 @@ class MonitoringSettings extends Page
     {
         abort_unless(self::canAccess(),403);
         [$endpoint,$reason,$forced]=app(DnsResolverSettings::class)->configuration();
+        $default=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile();
         $fix=Staff::can(PublicSuffixList::MANAGE)?$this->edit('edit')->link():null;
         $resolver=TextEntry::make('resolver')->label('Resolver')->state($endpoint?->host??($forced?'Server default':Missing::LABEL))
             ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
+            ...(!$default?[Callout::make(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING)->status('danger')->columnSpanFull()]:[]),
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
             Sheet::split([Sheet::section('Monitoring',[
+                Sheet::row(TextEntry::make('site_dns')->label('Site DNS default')->state($default?->name??Missing::LABEL)->belowContent($default?implode(', ',$default->nameservers):'Installation has not supplied the expected nameservers.')), 
                 Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Supported registrar families are read independently. Unsupported families remain unsupported.')),
                 Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Daily')->belowContent('Record comparisons run daily. Nameserver delegation is checked more often; failed checks retry automatically.')),
                 Sheet::row(TextEntry::make('read_failures')->label('Registrar read failures')->state('No separate alert switch')->belowContent('Read failures appear on the domain, with the failed family and resume action. Separate registrar-failure email alerts are not available.')),
