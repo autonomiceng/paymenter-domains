@@ -126,4 +126,19 @@ $records=Livewire::actingAs($staff)->withQueryParams($query)->test(ListDomains::
 same([$live->id,$held->id],collect($records->items())->pluck('id')->sort()->values()->all(),'View domains opens exactly the alerting rows');
 expect(DomainFacts::status($live)['alert']!==null&&DomainFacts::status($held)['act'],'Each listed row asks staff to act');
 same('2',(string)DomainResource::getNavigationBadge(),'The menu badge counts the same rows');
+// Native encrypted casts must contain one unreadable request without breaking every candidate row.
+foreach(['queued','held'] as $state){
+    $bad=$request('unreadable-'.$state.'-placeholder','transfer',$state,['safe_code'=>$state==='held'?'processing':null]);
+    Domain::whereKey($bad->domain_id)->update(['status'=>'transfer_pending']);
+    DB::table('domains_operations')->where('id',$bad->id)->update(['payload'=>'synthetic-unreadable-ciphertext']);
+    $domain=$bad->domain()->firstOrFail();
+    $status=DomainFacts::status($domain);
+    same(DomainFacts::UNREADABLE.' Check request #'.$bad->id.'.',$status['step'],'Unreadable request has a named recovery step');
+    expect($status['act'],'Unreadable request requires staff');
+    ObligationAlerts::record($domain,'operation_review',now()->getTimestamp(),(int)$bad->id);
+    same(1,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainQueries::status(Domain::whereKey($domain->id),[$status['key']])->count(),
+        'Status filtering survives the unreadable request');
+    expect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::alerts($account)['value']!==null,
+        'Account alert counting survives the unreadable request');
+}
 echo "Registrar account counts and links agree.\n";$nativeSuccessful=true;
