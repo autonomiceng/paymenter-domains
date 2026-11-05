@@ -126,3 +126,5 @@ foreach (['host','record'] as $container) {
 // NS14 paired wire regression, kept here until C1 serializes suite registration.
 (static function (): void { require __DIR__.'/Support/demo-c-ds-inventory.php'; })();
 (static function (): void { require __DIR__.'/Support/demo-c-ds-policy.php'; })();
+(static function (): void { require __DIR__.'/Support/demo-c-ds-readback.php'; })();
+(static function (): void { require __DIR__.'/Support/demo-c-ds-management.php'; })();
