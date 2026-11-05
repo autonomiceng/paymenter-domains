@@ -40,20 +40,9 @@ $check('staff releases and engine re-admits the same funded term',function()use(
     $claim=$claims->claim($op->id);expect($claim!==null,'The normal engine re-admits the existing complimentary term');
     same('complimentary',$claim[0]->funding['claim']['basis'],'Re-admission retains the audited complimentary basis');
     expect(!isset($claim[0]->attempt['execution']),'Re-admission grants no provider send');
+    $claims->finish($claim[0],holdReason:'registrar_balance_insufficient');
 });
 same($before,$money(),'Setup/release/re-admission do not collect money or change the receipt');
-$wait=$newRegistration(placeholderComFixtureName('comp-expired-wait-placeholder.com'));
-$wait->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','policy'=>[...$wait->policy,'funds_wait_at'=>$clock->now()->modify('-3 days')->format(DATE_ATOM)]]);
-$check('elapsed complimentary funds wait closes without payment or refund',function()use($wait,$clock,$money):void {
-    $before=$money();$account=Account::where('server_id',$wait->server_id)->sole();
-    FundsWaits::sweep($account,$clock->now());
-    same('rejected',$wait->fresh()->state,'Elapsed unsent complimentary acquisition closes');
-    same('registration_rejected',$wait->domain->fresh()->status,'The domain shows the terminal outcome');
-    expect(Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::safe($wait->fresh(),$wait->domain->fresh()),'Closure retains negative proof');
-    same(0,DB::table('domains_obligation_alerts')->where('operation_id',$wait->id)->whereNull('resolved_at')->whereIn('code',['funds_wait_review','refund_repair'])->count(),'Complimentary closure never asks for nonexistent payment/refund repair');
-    FundsWaits::sweep($account,$clock->now());same($before,$money(),'Repeated sweep changes no invoice, transaction or credit');
-    same('paid',Invoice::findOrFail($wait->invoice_id)->status,'The zero receipt stays Paid');
-});
 $transfer=$newRegistration(placeholderComFixtureName('comp-code-notice-placeholder.com'),'transfer');
 $check('complimentary transfer receives missing-code and deadline notices',function()use($transfer,$transfers,$clock):void {
     $transfers->paymentAccepted($transfer->id);$transfer->refresh();
@@ -62,6 +51,19 @@ $check('complimentary transfer receives missing-code and deadline notices',funct
         same($template,$plan['template']??null,'Missing-code mail is planned at '.$offset);
         same('$0.00',$plan['data']['amount'],'Notice never asks the complimentary customer to pay');
     }
+});
+$wait=$op->fresh();
+$wait->update(['state'=>'held','safe_code'=>'registrar_balance_insufficient','policy'=>[...$wait->policy,'funds_wait_at'=>$clock->now()->format(DATE_ATOM)]]);
+$check('elapsed complimentary funds wait closes without payment or refund',function()use($wait,$clock,$money):void {
+    $clock->instant=$clock->now()->modify('+3 days');
+    $before=$money();$account=Account::where('server_id',$wait->server_id)->sole();
+    FundsWaits::sweep($account,$clock->now());
+    same('rejected',$wait->fresh()->state,'Elapsed unsent complimentary acquisition closes');
+    same('registration_rejected',$wait->domain->fresh()->status,'The domain shows the terminal outcome');
+    expect(Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::safe($wait->fresh(),$wait->domain->fresh()),'Closure retains negative proof');
+    same(0,DB::table('domains_obligation_alerts')->where('operation_id',$wait->id)->whereNull('resolved_at')->whereIn('code',['funds_wait_review','refund_repair'])->count(),'Complimentary closure never asks for nonexistent payment/refund repair');
+    FundsWaits::sweep($account,$clock->now());same($before,$money(),'Repeated sweep changes no invoice, transaction or credit');
+    same('paid',Invoice::findOrFail($wait->invoice_id)->status,'The zero receipt stays Paid');
 });
 same(0,InvoiceTransaction::count(),'All recovery paths leave complimentary receipts without payments');same(0,Credit::count(),'No refund credit is invented');
 same(0,$writer->calls,'No recovery action sends to the registrar');

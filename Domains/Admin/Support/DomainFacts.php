@@ -417,8 +417,8 @@ final class DomainFacts
         if (!in_array($d->price_mode,['standard','complimentary'],true)) { return self::fact(null,sub:'No renewal price set. Check the linked service.'); }
         $code=$observation['adoption_review']['price']??null;
         if ($code==='retained_renewal') { $code=null; }
-        return self::fact($service->currency_code.' '.number_format((float)$service->price,2).' / year',
-            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL,self::purchasePrice($d,$service)=>'Price kept from purchase until the next renewal invoice.',default=>'Standard pricing'},
+        return self::fact(($d->price_mode==='complimentary'?'Standard renewal price ':'').$service->currency_code.' '.number_format((float)$service->price,2).' / year'.($d->price_mode==='complimentary'?', complimentary':''),
+            sub:match(true) {$code==='below_cost'=>'Below cost',$code!==null=>'Cost missing',$d->price_mode==='complimentary'=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL.'. Beco covers registrar costs.',self::purchasePrice($d,$service)=>'Price kept from purchase until the next renewal invoice.',default=>'Standard pricing'},
             tone:$code===null?null:'danger');
     }
     /** The native service keeps checkout's annual gross until a renewal invoice projects current pricing. */
