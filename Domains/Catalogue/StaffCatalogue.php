@@ -25,19 +25,6 @@ final class StaffCatalogue
         Staff::requireView();
         return $this->work?->status(AccountBindings::binding(Account::where('server_id',$server)->sole()))??['state'=>'idle'];
     }
-    /** Same sale decisions as the page; bounded chunks, no legacy acceptance/price-fill reads. */
-    public function summary(int $server,int $years): array
-    {
-        $costs=Staff::requireView()->costs;$count=0;$highest=null;
-        Tld::where('server_id',$server)->where('catalogue_converted',true)->orderBy('id')->chunkById(100,function($rows)use(&$count,&$highest,$years,$costs):void {
-            foreach($this->page($rows) as $s){$offer=$s['offers']['register:'.$years]??null;
-                $sold=$costs?$offer?->decision->available:collect($s['prices'])->contains(fn($p)=>$p['action']==='register'&&$p['term']===$years&&$p['flags']===[]);
-                if(!$sold){continue;}$count++;
-                if($costs){$annual=bcdiv($offer->observation()->total,(string)$years,4);if($highest===null||bccomp($annual,$highest,4)>0){$highest=$annual;}}
-            }
-        });
-        return ['count'=>$count,'highest'=>$highest,'filled'=>$this->progress($server)['succeeded_at']??null];
-    }
     /** Staff-only recovery hints. Enqueue on the retained worker; never resolve a feed or change sale intent.
      * @param ?array $once account and settings reads (binding, readable, queue status and sync, pricing defaults) shared by
      * every action of one table build. The caller owns it for one request; this routed catalogue never keeps it. */
@@ -237,7 +224,7 @@ final class StaffCatalogue
             $selected=!$unreadable&&$policy&&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key
                 &&\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::chosen($t,(array)$policy,$d);
             $chosen=$invalidRule?null:$chosen;
-            if(!$selected&&!isset($sellers[$t->tld])){$label='No registrar selected; not for sale';}
+            if(!$selected&&!isset($sellers[$t->tld])){$label='No registrar selected';}
             $queue=$refresh[$t->server_id]??null;
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
