@@ -123,21 +123,14 @@ class ViewTld extends ViewRecord
     {
         $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
         $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
-        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':'No registrar selected. Use Change registrar.',color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
+        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):'Not for sale',$seller?'Existing domains stay with their registrar':'No registrar selected; not for sale',color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
             self::entry('Terms',TldFacts::terms($t))];
-        // Saved costs stop authorizing new sales at the sales-policy age cap.
-        $synced=TldFacts::lastSynced($snapshot['prices']);$failure=TldFacts::syncFailure((int)$t->server_id);
-        $old=$synced!==null&&$synced->lte(now()->subDays(TldFacts::SYNC_WARN_DAYS));
-        $rule='New sales stop when saved costs reach 48 hours old. Sync prices to resume.';
-        $sync=[];
-        if($failure){
-            $link=RegistrarFacts::accountLink((int)$t->server_id,'Open account');
-            $sync[]=self::entry('Last price sync','Sync failed',new HtmlString(e($failure['cause']).($failure['at']?'. '.Sheet::moment($failure['at'])->toHtml():'')),'danger',side:$link?Html::make(Sheet::buttons([$link->toHtml()])):[]);
-        }
-        $syncNow=$this->button($this->getAction('syncPrices',false),'Sync prices');
-        $sync[]=self::entry('Prices last synced',$synced?->format('M j, Y'),$synced===null?($syncNow?'Not synced yet.':'Not synced yet. Use Sync prices on the TLD list.'):new HtmlString(
-            ($old?'<div>'.RegistrarFacts::warn('At least '.TldFacts::SYNC_WARN_DAYS.' days ago. Sync prices to get current costs.')->toHtml().'</div>':'').'<div>'.e($rule).'</div>'),$old?'warning':null,
-            at:$synced?->getTimestamp(),side:($old||$synced===null)&&$syncNow?Html::make(Sheet::buttons([$syncNow->toHtml()])):[]);
+        $refresh=$snapshot['refresh']??[];
+        $sync=[self::entry('Last successful refresh',isset($refresh['succeeded_at'])?gmdate('M j, Y H:i',(int)$refresh['succeeded_at']).' UTC':'None recorded',
+            TldFacts::refreshText($refresh),side:[$this->syncPricesAction()->label('Sync prices')]),
+            self::entry('Next due',isset($refresh['due_at'])?gmdate('M j, Y H:i',(int)$refresh['due_at']).' UTC':'Not scheduled',
+                isset($refresh['due_at'])?'Background refresh is scheduled.':'Check the registrar account runtime and background worker.')];
+        if($failure=TldFacts::syncFailure((int)$t->server_id)){$sync[]=self::entry('Last refresh failure','Refresh failed',$failure['cause'],'danger');}
         return $schema->components([
             Sheet::split([Sheet::section('Sales',$sales),Sheet::section('Price sync',$sync)],[$this->activity()]),
             // A copy renders as a button here; the menu keeps its own item view.

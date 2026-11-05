@@ -198,10 +198,12 @@ final class StaffCatalogue
         foreach($tlds->groupBy('server_id') as $server=>$rows){$queries[]=new Query(AccountBindings::binding($accounts[$server]),$rows->pluck('tld')->all(),'register');}
         $loaded=$this->ports->staffBatch($queries);$offers=[];
         foreach($queries as $i=>$q){foreach($loaded[$i] as $name=>$offer){$offers[$q->binding->serverId.':'.$name]=$offer;}}
-        $sellers=DB::table('domains_sales_policies')->whereIn('tld',$tlds->pluck('tld'))->pluck('server_id','tld');
+        $policies=DB::table('domains_sales_policies')->whereIn('tld',$tlds->pluck('tld'))->get()->keyBy('tld');
+        $sellers=$policies->pluck('server_id','tld');
+        $refresh=DB::table('domains_observation_queues')->whereIn('server_id',$tlds->pluck('server_id'))->get()->keyBy('server_id');
         $holders=Domain::whereIn('server_id',$tlds->pluck('server_id'))->whereIn('tld',$tlds->pluck('tld'))->whereNotNull('reservation_name')
             ->selectRaw('server_id,tld,account_fingerprint,count(*) as holders')->groupBy('server_id','tld','account_fingerprint')->get()->keyBy(fn($r)=>$r->server_id.':'.$r->tld.':'.$r->account_fingerprint);
-        $out=[];
+        $out=[];$pricingOnce=[];
         foreach($tlds as $t){
             $d=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$unreadable=false;
             try{
@@ -209,13 +211,15 @@ final class StaffCatalogue
                 new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));
                 $own=Pricing::hasOwn($t);
             }catch(\Throwable){$raw=[];$own=!$t->use_default_rule;$unreadable=true;}
+            $invalidRule=false;try{self::ruleOnce($t,$pricingOnce);}catch(\DomainException|\InvalidArgumentException){$invalidRule=true;}
             $all=$unreadable?[]:($offers[$t->server_id.':'.$t->tld]??[]);$prices=[];
             foreach($all as $offer){$decision=$offer->decision;$cost=$offer->observation();$flags=[];
                 if($decision->reason!==null){$flags[]=$decision->reason;}
+                if($cost!==null&&!$cost->enabled){$flags[]='not_offered';}
                 if(!$cost||$cost->total===null){$flags[]='cost_missing';}
                 if(!$cost?->fresh($this->clock->now())){$flags[]='cost_old';}
-                $retail=$offer->staffRetail();
-                if($decision->action==='renew'&&$decision->term===1){$retail=OfferState::money($t->catalogue_retained_annual_retail,2);}
+                $retail=$invalidRule?null:$offer->staffRetail();
+                if(!$invalidRule&&$decision->action==='renew'&&$decision->term===1){$retail=OfferState::money($t->catalogue_retained_annual_retail,2);}
                 $prices[]=['action'=>$decision->action,'term'=>$decision->term,'retail'=>$retail===null?null:TldFacts::money($retail),
                     'flags'=>$flags,'synced'=>$cost!==null,'observed'=>$cost?->observedAt,
                     ...($grants->costs?['cost'=>$cost?->total===null?null:TldFacts::money($cost->total,4)]:[])];
@@ -225,7 +229,18 @@ final class StaffCatalogue
             $reason=(in_array('register',$raw['stops']??[],true)?$transfer?->decision->reason:($all['register:1']->decision->reason??null))??'unknown_facts';
             $label=match($reason){'staff_stopped','staff_term_stopped'=>'Stopped by staff','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>'Checking registrar terms','unsupported_facts'=>'Registrar requirements need checking','unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
             try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}
-            $out[$t->id]=['prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
+            $policy=$policies[$t->tld]??null;
+            $selected=$policy&&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key
+                &&\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::chosen($t,(array)$policy,$d);
+            $chosen=$invalidRule?null:$chosen;
+            if(!$selected&&!isset($sellers[$t->tld])){$label='No registrar selected; not for sale';}
+            elseif(!collect($prices)->contains(fn($price)=>$price['synced'])){$label="Not in the registrar's price feed; not for sale";}
+            $queue=$refresh[$t->server_id]??null;
+            if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
+            $work=$queue?OfferState::decode($queue->offer_work):[];
+            $out[$t->id]=['selected'=>(bool)$selected,'invalid_rule'=>$invalidRule,
+                'refresh'=>['succeeded_at'=>$queue->offer_feed_succeeded_at??null,'due_at'=>$work['feed_due']??null],
+                'prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':(($selected||$invalidRule)?'danger':'gray'),'reason'=>$chosen?null:($invalidRule?'Invalid fixed price rule. Use Edit prices.':$label)],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
