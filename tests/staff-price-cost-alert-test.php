@@ -18,6 +18,7 @@ expect(!DB::table('domains_obligation_alerts')->whereIn('alert_key',$keys)->wher
 ObligationAlerts::record($active,'unknown_cost',time(),$op->id);
 Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Cost missing')->assertDontSee('Check request #'.$op->id);
 same(1,DB::table('domains_obligation_alerts')->where('code','unknown_cost')->count(),'Read filtering keeps historical evidence');
-$op->update(['policy'=>['price'=>['retained'=>true,'staff_alert'=>'unknown_cost']]]);
+// A second persisted synthetic case; production checkout evidence remains immutable.
+DB::table('domains_operations')->where('id',$op->id)->update(['policy'=>encrypt(json_encode(['price'=>['retained'=>true,'staff_alert'=>'unknown_cost']]),false)]);
 Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Cost missing');
 $nativeSuccessful=true;echo "Retained retail and real missing cost are distinct.\n";

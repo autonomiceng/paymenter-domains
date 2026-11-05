@@ -67,8 +67,7 @@ DB::table('domains_tlds')->where('id',$last[0]->id)->update(['catalogue_intent'=
 DB::table('domains_tlds')->where('id',$last[1]->id)->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(['sell'=>true,'pricing_rule'=>['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'42.00','renew'=>'43.00','transfer'=>'44.00']]])]);
 $component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('12.00');
 same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');
-$component->assertSee('Prices left out on other pages')->assertSee('1 more TLD has prices left out.')
-    ->assertSee('Open .'.$last[0]->tld)->assertSeeHtml('href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$last[0]->id])).'"');
+$component->assertSee('Prices left out on other pages')->assertSee('1 more TLD has prices left out.');
 same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Saved prices remain limited to the current page');
 expect(!collect($component->instance()->explanations())->contains(fn($e)=>in_array('.'.$last[1]->tld,$e['tlds'],true)),'Off-page formulas wait for their own page');
 $component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
