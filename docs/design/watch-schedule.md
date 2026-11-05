@@ -129,7 +129,8 @@ No Beco hosts live in the generic extension. Missing or invalid deployment names
 System seeding uses actor 0 on the template and a system audit with no staff actor; later edits use
 normal staff attribution. There is no schema migration. Existing account settings are retained but ignored.
 
-Domain monitoring > Settings is the sole default selector. Unassigned domains and watches resolve the
+Domain monitoring > Settings is the sole default selector, retaining the policy and existing
+`admin.domains.settings.new_domain_dns` grants. Unassigned domains and watches resolve the
 live reference; explicit choices keep their profiles. Captured registration payloads retain their origin,
 including historical `account_default` provenance. Transfers retain delegation and monitoring never sends
 registrar changes. No zones or wildcard templates are created.

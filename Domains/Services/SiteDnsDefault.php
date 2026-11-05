@@ -10,6 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,WatchName,WatchAud
 final class SiteDnsDefault
 {
     public const KEY='domains_site_dns_template';
+    public const MANAGE='admin.domains.settings.new_domain_dns';
     public const MISSING='Beco DNS default Missing: installation has not supplied the expected nameservers';
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
@@ -50,12 +51,17 @@ final class SiteDnsDefault
         });
         self::reconcile();
     }
+    private static function authorize(User $actor): void
+    {
+        $staff=\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::class;
+        abort_unless($staff::allows($actor,$staff::POLICY) && $staff::allows($actor,self::MANAGE),403);
+    }
     public static function save(User $actor,int $id): void
     {
-        StaffWatchWrites::authorize($actor);
+        self::authorize($actor);
         Cache::lock('domains-site-dns-default',30)->block(5,static function()use($actor,$id):void {
             DB::transaction(static function()use($actor,$id):void {
-                StaffWatchWrites::authorize($actor);Setting::orderBy('id')->lockForUpdate()->get();
+                self::authorize($actor);Setting::orderBy('id')->lockForUpdate()->get();
                 $p=WatchProfile::whereKey($id)->lockForUpdate()->first();
                 if(!ManagedDnsSetup::usable($p)){throw new \DomainException('Choose an enabled DNS template.');}
                 $before=self::profile()?->id;self::write($p);

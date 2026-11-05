@@ -24,10 +24,10 @@ expect($checks->enroll($watch->id,$owner->id,$at),'An unassigned hosting watch e
 $ticket=$checks->begin($watch->id,$owner->id,'delegation',$at);
 same($default->id,$ticket?->profileId,'Public DNS worker uses inherited site default');
 same(null,$watch->fresh()->ns_profile_id,'Inheritance never stores an automatic profile choice');
-$manager=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);
+$manager=staffUser(['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.new_domain_dns','admin.domains.watch.view','admin.domains.watch.manage']);
 \Illuminate\Support\Facades\Auth::setUser($manager);
 same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($default->id),'Template usage includes an inherited active watch');
-$viewer=staffUser(['admin.domains.view','admin.domains.watch.view']);
+$viewer=staffUser(['admin.domains.view','admin.domains.watch.view','admin.domains.watch.manage']);
 $fake=new \Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork($fake,new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(fn()=>0),true,fn()=>$at));
 $replacement=DB::transaction(fn()=>WatchProfile::create(['name'=>'Explicit replacement','enabled'=>true,'nameservers'=>['ns1.other.test','ns2.other.test'],

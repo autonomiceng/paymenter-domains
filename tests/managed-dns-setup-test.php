@@ -63,10 +63,10 @@ DB::table('domains_domains')->where('id',$id)->update(['status'=>$d->status,'pro
 Livewire::actingAs($owner)->test(ListManagedDns::class)->assertForbidden();
 staffTableStandard($setup=Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d])->assertTableActionHidden('assignTemplate',$d),'Search domain',['domain','user.email']);staffRowsStandard($setup);
 app()->instance(WatchWork::class,new WatchWork($fake,new WatchDiscoveryWork(fn()=>0),true,fn()=>$time->now));
-$templateEditor=$manager;
+$templateEditor=staffUser([Staff::VIEW,StaffWatchWrites::VIEW,StaffWatchWrites::MANAGE,Staff::POLICY,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MANAGE]);
 $page=Livewire::actingAs($manager)->test(ListManagedDns::class);
 expect($page->instance()->getTable()->getAction('accountTemplate')===null,'Account DNS control removed');
-Livewire::actingAs($manager)->test(ListWatches::class)->assertSee('Site DNS settings');
+Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('Site DNS settings');
 Livewire::actingAs($viewer)->test(ListWatches::class)->assertDontSee('Site DNS settings');
 
 DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['enabled'=>true]);
