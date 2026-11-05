@@ -253,8 +253,8 @@ final class AccountChecklist
     /** Domains on this account with an open alert, linked to the filtered list. */
     public static function alerts(Account $a): array
     {
-        $count=Schema::hasTable('domains_obligation_alerts')?DB::table('domains_obligation_alerts as a')->join('domains_domains as d','d.id','=','a.domain_id')
-            ->where('d.server_id',$a->server_id)->whereNull('a.resolved_at')->distinct()->count('a.domain_id'):0;
+        // The same rule as the list's Open alerts filter it links to, so the count matches the rows.
+        $count=Schema::hasTable('domains_obligation_alerts')?DomainQueries::openAlertCount(Domain::where('server_id',$a->server_id)):0;
         $help='Domains on this account with a problem that needs a person.';
         if ($count===0) { return self::row('Domain alerts','OK','success',null,null,$help); }
         try { $url=DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$a->server_id],'alerts'=>['isActive'=>true]]]); } catch (\Throwable) { $url=null; }

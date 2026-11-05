@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,DomainFacts,EmptyTable,OneLine,RegistrarFacts,Sheet,Staff,StaffDomainStatus,StatusMark,TableColumns,TldFacts};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,EmptyTable,OneLine,RegistrarFacts,Sheet,Staff,StaffDomainStatus,StatusMark,TableColumns,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\ContactDetails;
@@ -101,17 +101,19 @@ class RegistrarSetup extends Page implements HasTable
         $a=Account::where('server_id',$s->id)->first();$status=RegistrarFacts::status($s,$a);$connected=RegistrarFacts::connected($a,$status);
         $balance=$connected?RegistrarFacts::balance($a):null;
         return $this->rows[$s->id]=['account'=>$a,'status'=>$status,'connected'=>$connected,'domains'=>Domain::where('server_id',$s->id)->count(),
-            'demo'=>$a!==null&&DemoData::is($a),'balance'=>$balance,'note'=>self::note($status['reason'],$balance)];
+            'demo'=>$a!==null&&DemoData::is($a),'balance'=>$balance,'note'=>self::note($status['reason'],$balance,$a)];
     }
     /** The account's Note: why it is in this state, then any job on its money, each with its step. @return array{text:?string,act:bool} */
-    private static function note(?string $reason,?array $b): array
+    private static function note(?string $reason,?array $b,?Account $account): array
     {
         $jobs=$b===null?[]:array_filter([
             $b['value']===null?$b['cause']:null,
             $b['value']!==null&&$b['low']?'Low balance. Add funds.':null,
-            $b['unreadable']>0?DomainFacts::UNREADABLE_RENEWAL:($b['without_cost']>0?$b['without_cost'].' '.($b['without_cost']===1?'renewal':'renewals').' without a cost. Use Sync prices on the TLD list.':null),
         ]);
-        $parts=array_map(StaffDomainStatus::sentence(...),array_filter([$reason,...$jobs]));
+        // A renewal waiting on Beco's price read is told, not a job: it fills in by itself.
+        $gap=$b===null?null:RegistrarFacts::dueGap($account,$b);
+        if ($gap!==null&&$gap['act']) { $jobs[]=$gap['text']; }
+        $parts=array_map(StaffDomainStatus::sentence(...),array_filter([$reason,...$jobs,$gap!==null&&!$gap['act']?$gap['text']:null]));
         return ['text'=>$parts===[]?null:implode(' ',$parts),'act'=>$jobs!==[]];
     }
     private static function accounts(): Builder { return Server::query()->where('extension','Domains'); }
