@@ -162,6 +162,14 @@ foreach(['GetHosts','GetDomainInfo','CheckNSStatus']as$fault){
  }
 }
 $state->fault='';$clearRecords();
+// Enom CAA stays held (fail closed) with its own staff reason and next step.
+$state->dns[]=['name'=>'@','type'=>'CAA','address'=>'0 issue "ca.example"','mx_pref'=>10];$clock->instant=$clock->now()->modify('+61 seconds');
+same('refreshed',$observer->run($d->id,readRecords:true),'Legacy Enom CAA read holds only records');
+same(['caa_unsupported','dns'],[$d->fresh()->observation['record_hold']['reason'],$d->fresh()->observation['record_hold']['family']],'Legacy Enom CAA names its reason and family');
+expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'CAA keeps the DNS editor off');
+\Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
+same("Sync stopped: this domain has CAA records, which can't be read from Enom here. Other domain facts were saved. Manage this domain's DNS at Enom.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'CAA hold gives staff a plain reason and next step');
+\Illuminate\Support\Facades\Auth::login($user);array_pop($state->dns);$clearRecords();
 $state->glue=[];$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);same([],OwnerRecords::forDomain($d->fresh())['glue'],'Exact missing-host proof removes local history');
 // Driver refresh is bounded and retains known hosts beyond its per-run child read cap.
 $known=[];foreach(range(1,14)as$i){$known['ns'.$i.'.discovery-placeholder.com']='8.8.8.8';}$state->glue=$known;$state->calls=[];
@@ -224,7 +232,7 @@ for($i=0;$i<101;$i++){$row['operation_key']=hash('sha256','overflow-'.$i);DB::ta
 $prior=$d->fresh()->observation['records'];$io=count($state->calls);$observation->years=2;
 DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp(),'safe_code'=>null]);
 $observer->run($d->id,readRecords:true);
-same('unresolved',$work->tick(2)[$d->server_id],'Overflow holds records while domain work continues and reports drift');
+same('unresolved',$work->tick(2)[$d->server_id]['holding'],'Overflow holds records while domain work continues and reports drift');
 same($prior,$d->fresh()->observation['records'],'Overflow does not advance inventory or its watermark');same($io,count($state->calls),'Overflow skips record provider reads');
 same('2028-10-18',$d->fresh()->observation['facts']['expiry'],'Overflow still refreshes domain drift facts');expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Overflow does not present stale whole-list records');
 $domainIo=count($observation->calls);$observation->years=3;$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);expect(count($observation->calls)>$domainIo,'Overflow retains daily domain refresh');same($io,count($state->calls),'Overflow never retries record discovery automatically');same('2029-10-18',$d->fresh()->observation['facts']['expiry'],'Overflow cannot freeze daily expiry facts');
@@ -399,5 +407,25 @@ expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'Reader stops a
 $state->fault='';
 $future=$d->fresh()->observation;$future['records']['at']=$clock->now()->modify('+1 hour')->format(DATE_ATOM);$d->update(['observation'=>$future]);
 same(null,ObservationRecords::current($d->fresh(),$clock->now()),'Future inventory grants no current authority');
+$d->update(['observation'=>[...$future,'records'=>$good]]);
+
+// C1: the runtime resolver drives the dedicated reader through DomainObservation::run, with no registrar writes.
+$wired=new DomainObservation($readBindings,$clock,$budget,$ports,null,static fn($binding)=>new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader($binding,$exchange));
+$writes=static fn()=>array_values(array_filter(array_column($state->calls,0),static fn($c)=>!str_starts_with($c,'Get')&&$c!=='CheckNSStatus'));
+$state->calls=[];$state->fault='GetDomainSRVHosts';$clock->instant=$clock->now()->modify('+61 seconds');
+$wired->run($d->id,readRecords:true);
+$r=$d->fresh()->observation;same(1,$r['records']['format'],'Wired refresh writes versioned records');
+same(array_fill_keys(['dns','srv','ds','glue'],'supported'),$r['records']['expected_families'],'Wired refresh writes all four expectations');
+same(['records_unavailable','srv'],[$r['record_hold']['reason'],$r['record_hold']['family']],'Failed family is named on the hold');
+$status=ObservationProjection::recordStatus($d->fresh(),$clock->now());same([true,'srv'],[$status['resume'],$status['failed_family']],'Staff status offers resume for the failed family');
+$state->fault='';$clock->instant=$clock->now()->modify('+61 seconds');
+$wired->run($d->id,readRecords:true);
+expect(!ObservationRecords::held($d->fresh()),'Complete wired refresh clears the hold');
+same($clock->now()->format(DATE_ATOM),ObservationProjection::recordStatus($d->fresh(),$clock->now())['last_complete_at'],'Complete wired refresh advances last complete time');
+$state->dns[]=['name'=>'@','type'=>'CAA','address'=>'0 issue "ca.example"','mx_pref'=>10];$clock->instant=$clock->now()->modify('+61 seconds');
+$wired->run($d->id,readRecords:true);
+same(['caa_unsupported','dns'],[$d->fresh()->observation['record_hold']['reason'],$d->fresh()->observation['record_hold']['family']],'Wired Enom CAA keeps its own reason');
+array_pop($state->dns);
+same([],$writes(),'Wired observation cycle and resume send no registrar writes');
 
 $nativeSuccessful=true;echo "Initial managed records: complete/unknown, identity, encryption, sequence, owner gates, glue and fair held work passed.\n";
