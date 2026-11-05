@@ -67,8 +67,12 @@ final class StaffCatalogue
             if($status['state']!=='unsupported'){return $waiting($status);}
             $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
         }
-        if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)){return $step('off','Not offered by this registrar for this term.');}
-        if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)){return $step('off','This registrar does not offer annual renewal for this TLD.');}
+        $expiredRefusal=static function(string $key)use($offers,$now):bool {
+            $cost=($offers[$key]??null)?->observation();
+            return $cost!==null&&!$cost->enabled&&!$cost->fresh($now);
+        };
+        if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)&&!$expiredRefusal($action.':'.$term)){return $step('off','Not offered by this registrar for this term.');}
+        if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)&&!$expiredRefusal('renew:1')){return $step('off','This registrar does not offer annual renewal for this TLD.');}
         if($reason==='unsupported_facts'){$human=$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null);}
         foreach(array_unique(['renew:1',$action.':'.$term]) as $key){
             $cost=$offers[$key]??null;$observation=$cost?->observation();

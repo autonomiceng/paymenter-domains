@@ -325,5 +325,22 @@ DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld',
 [$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'An expired disabled cost queues a new price read');
 same($now->getTimestamp(),$work->status($binding)['due_at'],'Expired refusal schedules the existing price worker');
 } catch (Throwable $error) {$failures[]='Expired disabled cost: '.$error->getMessage();}
+foreach(['renew','transfer'] as $action){foreach([true,false] as $canRead){
+try {
+$reset();$readable=$canRead;
+$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action===$action&&(int)$p->term===1)->catalogue_observation);
+$cost['source']='enom_bulk_bucket_1';$cost['enabled']=false;$cost['total']=null;
+$cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action',$action)->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+$metadata=OfferState::facts($original['catalogue_facts']);
+$refusal=new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[OfferState::cost($cost)]);
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::encodeFacts($refusal->facts($metadata))]);
+$current=$t->fresh();$key=$current->server_id.':'.$current->tld;$page=$source->page(collect([$current]));
+$step=$source->nextSteps(collect([$current]),[$key=>$page[$current->id]],$action,1)[$key];
+same($canRead?'checking':'missing',$step['state'],'Expired disabled '.$action.' terms reach price recovery');
+if($canRead){same($now->getTimestamp(),$work->status($binding)['due_at'],'Expired annual refusal queues the price feed');}
+else{same('account',$step['open'],'Unreadable accounts retain the setup repair');same(null,$work->status($binding)['due_at'],'Unreadable accounts do not queue reads');}
+} catch(Throwable $error){$failures[]='Expired annual refusal '.$action.': '.$error->getMessage();}
+}}
 expect($failures===[],implode("\n",$failures));
 $nativeSuccessful=true;echo "Staff catalogue next steps: ok\n";
