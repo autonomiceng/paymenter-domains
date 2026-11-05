@@ -75,8 +75,18 @@ final class CartHandoffFailure
         ],
     ];
 
+    /** Closed context only. Unknown messages, nested exceptions and names never enter logs. */
+    public static function context(\Throwable $error,string $phase): array
+    {
+        if(!in_array($phase,['cart_handoff','checkout_check','search'],true)){throw new \InvalidArgumentException('Unknown read phase.');}
+        $key=self::key($error);
+        return ['exception_class'=>$error::class,'exception_message_key'=>$key,'phase'=>$phase,
+            'cause'=>$error instanceof WriteHeld?$error->reason:($error instanceof ReadDeferred?'read_deferred':$key),
+            'disposition'=>$error instanceof ReadDeferred||$error instanceof EnomTestCallLimit?'deferred':'refused',
+            ...($error instanceof EligibilityUnconfirmed&&$error->registrarCode!==null?['registrar_code'=>$error->registrarCode]:[])];
+    }
     public static function key(\Throwable $error): string
     {
-        return self::MESSAGES[$error::class][$error->getMessage()] ?? 'unclassified';
+        return $error instanceof EligibilityUnconfirmed?'eligibility_unconfirmed':(self::MESSAGES[$error::class][$error->getMessage()] ?? 'unclassified');
     }
 }
