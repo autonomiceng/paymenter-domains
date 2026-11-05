@@ -403,6 +403,7 @@
     "tests/provider-send-guard-test.php",
     "tests/provider-send-guard-operation-test.php",
     "tests/staff-hold-release-audit-test.php",
+    "tests/staff-domain-hold-status-test.php",
     "tests/staff-hold-unpaid-test.php",
     "tests/staff-stale-click-test.php",
     "tests/staff-completed-story-test.php",
