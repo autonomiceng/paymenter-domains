@@ -267,8 +267,8 @@ final class Writer implements Catalogue
                 $d = OfferState::decode($account->catalogue_defaults);
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;
-                $published = true;
-                if (!$command instanceof Edit || $command->kind !== 'retail') { $published = $this->publishPrices($offer, $now); }
+                $published = $command instanceof Edit && $command->kind === 'retail'
+                    ? $this->pricingRule($offer) !== null : $this->publishPrices($offer, $now);
                 // Keep unreadable own pricing closed, including when the feed/facts change.
                 if (!$published) { $offer->catalogue_published_revision = null; }
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
@@ -345,7 +345,7 @@ final class Writer implements Catalogue
         return $changed;
     }
 
-    private function publishPrices(Tld $tld, \DateTimeImmutable $now): bool
+    private function pricingRule(Tld $tld): ?array
     {
         // Shared settings fail the account. Only an unreadable TLD override is isolated.
         $fee = \Paymenter\Extensions\Servers\Domains\Services\CardFee::read();
@@ -353,8 +353,15 @@ final class Writer implements Catalogue
         try { $rule = Pricing::rule($tld, $default, $fee); }
         catch (\DomainException|\InvalidArgumentException $error) {
             if (!Pricing::hasOwn($tld)) { throw $error; }
-            return false;
+            return null;
         }
+        return $rule;
+    }
+
+    private function publishPrices(Tld $tld, \DateTimeImmutable $now): bool
+    {
+        $rule = $this->pricingRule($tld);
+        if ($rule === null) { return false; }
         $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int) $tld->server_id);
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
         foreach ($prices as $p) {

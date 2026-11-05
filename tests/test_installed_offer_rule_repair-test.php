@@ -7,7 +7,7 @@ require __DIR__.'/Support/staff-tlds.php';
 require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,OfferState,Pricing,Query,StaffCommands};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,OfferState,Pricing,Query,StaffCommands};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
 
@@ -20,6 +20,16 @@ DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>Offer
     'catalogue_published_revision'=>null]);
 try{Pricing::own($t->fresh());expect(false,'The legacy fixture must have unreadable pricing');}
 catch(InvalidArgumentException $error){same('Enter all three prices, at least $0.01 each.',$error->getMessage(),'The fixture reaches the reported legacy rule refusal');}
+// Saving retained renewal retail must not reopen stale acquisition retail under an unreadable own rule.
+$query=new Query($binding,[$t->tld],'register');
+$revision=$ports->readOffers($query,Context::Staff)[0]->revision;
+$ports->apply(Edit::retainRenewal($binding,$t->tld,'15.00'),$revision);
+same(null,$t->fresh()->catalogue_published_revision,'Retained renewal edits keep unreadable custom pricing unpublished');
+foreach(['register','transfer'] as $action){
+    same(false,$ports->readOffers(new Query($binding,[$t->tld],$action),Context::Public)[0]->available,
+        'Retained renewal edits cannot reopen '.$action.' under an unreadable rule');
+}
+same('15.00',OfferState::money($t->fresh()->catalogue_retained_annual_retail,2),'The retained renewal edit still saves');
 $staff=new StaffCommands($ports->writer(),$bindings,static fn()=>null);
 $review=static fn()=>new Review($actor->id,$binding->serverId,$t->id,'override',
     Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id)),
