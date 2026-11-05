@@ -256,5 +256,15 @@ same(0,$calls,'All states render without provider resolution or a send');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);[$table,$row]=nextTable();same(null,$table->cell($row,'register','price')['text'],'Staff without cost permission do not see money-cell reasons');
 
 } catch (Throwable $error) {$failures[]='Case 17: '.$error->getMessage();}
+try {
+$reset();
+$intent=OfferState::decode($original['catalogue_intent']);$intent['stops']=['register'];
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','transfer')->update(['retail'=>'0.00']);
+$actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())]);
+[$table,$row]=nextTable();$status=$table->status($row);
+same('Set a positive transfer price in Edit prices on .com.',$status['next'],'Stopped registration keeps the active transfer repair step');
+same('tld',$status['open'],'Transfer repair links to Edit prices');
+} catch (Throwable $error) {$failures[]='Transfer status repair: '.$error->getMessage();}
 expect($failures===[],implode("\n",$failures));
 $nativeSuccessful=true;echo "Staff catalogue next steps: ok\n";

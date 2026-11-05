@@ -46,7 +46,8 @@ final class SellTable
         if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
         $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];
         if($s['reason']===null){return ['label'=>$s['label'],'tone'=>$s['tone']];}
-        $step=$this->nextStep($row,'register');
+        $action=in_array('register',$facts['intent']['stops']??[],true)?'transfer':'register';
+        $step=$this->nextStep($row,$action);
         return ['label'=>$step['state']==='checking'?'Checking':$s['label'],'tone'=>$s['tone'],'next'=>$step['next']?:$s['reason'],'open'=>$step['open']];
     }
     /** Sale state for the rows on screen, read once. Null when no prices are saved for it yet. */
