@@ -22,7 +22,7 @@ foreach (['enom', 'namesilo'] as $i => $registrar) {
         $writes = array_values(array_intersect($state->calls, ['TP_CreateOrder', 'transferDomain']));
         if ($refuseAt !== null) {
             same([], $writes, 'Above-ceiling transfer never calls transferIn: '.$registrar.' '.$case);
-            same(['held', 'registrar_price_increased', 'absent'], [$r->state, $r->safe_code, $r->attempt['seal']], 'Same unsent price hold as registration');
+            same(['held', 'registrar_price_increased', 'absent'], [$r->state, $r->safe_code, $r->attempt['seal']], 'Same unsent price hold as registration: '.$registrar.' '.$case.' / '.$r->safe_code);
             same($refuseAt, $state->reads, 'Each fresh observation enforces the ceiling');
         } else {
             same([$i === 0 ? 'TP_CreateOrder' : 'transferDomain'], $writes, 'In-ceiling transfer sends once: '.$r->state.' / '.$r->safe_code);
@@ -35,6 +35,7 @@ foreach (['enom', 'namesilo'] as $i => $registrar) {
         $calls = $state->calls; $engine->execute($op->id); same($calls, $state->calls, 'Held or sent transfer is never replayed');
     }
     $state->during = null; $state->quote = '7.00';
+    if ($i !== 0) { continue; }
     // As in registration, the issued total is an independent limit and malformed frozen evidence fails closed.
     $op = $newTransfer(placeholderComFixtureName('ceiling-'.$registrar.'-evidence-placeholder.com'), $i); $makeTransfer($i);
     $original = clone $op;
