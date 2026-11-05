@@ -5,8 +5,10 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
+require_once __DIR__.'/Support/staff-panel.php';
 use App\Models\Invoice;
-use Illuminate\Support\Facades\{DB, Event};
+use Illuminate\Support\Facades\{Auth, DB, Event};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, FeedObserved, Intent, OfferState, Query};
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities, Disposition, DriverResult, Evidence, ResultReason, SendState};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -27,7 +29,13 @@ $cart = commerceCart($user); commerceAdd($cart, $public['product'], 'staff-save-
 $op = Operation::latest('id')->firstOrFail(); $invoice = Invoice::findOrFail($op->invoice_id);
 $frozen = static fn () => [$op->fresh()->policy, $op->fresh()->cost, (string)$op->fresh()->amount, $invoice->fresh()->status];
 $issued = $frozen();
-$revision = static fn () => $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
+// Staff reads need a staff viewer; the customer stays signed in for pay.
+$staff = staffUser([Staff::VIEW]);
+$revision = static function () use ($ports, $binding, $staff) {
+    $customer = Auth::user(); Auth::setUser($staff);
+    try { return $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision; }
+    finally { $customer !== null ? Auth::setUser($customer) : Auth::forgetUser(); }
+};
 $receipt = $op->policy['checkout']['catalogue']['catalogue']['revision'];
 // R5: Restore sales saves the same intent, which still moves the ending's offer revision.
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true)), $revision());
