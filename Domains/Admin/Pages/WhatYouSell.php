@@ -264,7 +264,7 @@ class WhatYouSell extends Page implements HasTable
     {
         if(!$this->narrowed()){return 'No prices yet';}
         $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
-        return $only&&$this->reads()->leftOutExplains($this->show())?'No prices to show. Some TLDs are left out; see above.':'No TLDs match';
+        return $only&&$this->reads()->leftOutExplains($this->show())?'No prices to show. Some TLDs are left out.':'No TLDs match';
     }
     private function focused(): bool {return $this->tld!==null&&$this->getTableSearch()===$this->tld;}
     private function switchedOn(string $filter): bool {return (bool)($this->getTableFilterState($filter)['isActive']??false);}
