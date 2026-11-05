@@ -15,6 +15,8 @@ config(['domains.site_dns_default.nameservers'=>['ns1.beco.test','ns2.beco.test'
 extract(dnsFixture());
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null]);
 $now=time()-1200;
+// Align the synthetic pool window with the injected worker clock.
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->where('id',1)->update(['window_at'=>$now]);
 config(['queue.default'=>'database','queue.connections.database.driver'=>'database','queue.connections.database.retry_after'=>180]);
 $fake=new \Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader(['example.com|NS'=>static fn($q)=>DnsAnswer::rrset($q,[['host'=>'example.com','class'=>'IN','type'=>'NS','target'=>'ns.cloudflare.test','ttl'=>900]])]);
 $sent=[];$work=null;
