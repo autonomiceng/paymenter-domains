@@ -209,7 +209,7 @@ class ViewDomain extends ViewRecord
     {
         $state=$this->familyState();
         $resume=$this->getAction('resume_observation',false);
-        $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part]));
+        $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d)]));
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         $rows=[$view('head')];$shown=[];
         foreach (($state['cancelled_without_records']??false)?[]:$state['rows'] as $family) {
