@@ -89,7 +89,7 @@ DB::table('domains_watch_profiles')->where('id',$profile->id)->update(['nameserv
 expect($profile->fresh()->enabled && $profile->fresh()->readProfile()===null,'Retained enabled template is unreadable');
 same(1,ManagedDnsSetup::affected($now)->count(),'Unreadable template returns to setup count');
 Livewire::actingAs($viewer)->test(ListManagedDns::class)->assertCanSeeTableRecords([$d]);
-Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set a default DNS template on the registrar account.');
+Livewire::actingAs($templateEditor)->test(ListWatches::class)->assertSee('DNS monitoring is not set up for 1 domain. Set the site DNS default in monitoring settings.');
 $unreadableSummary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->one($owner,'managed',$id,$now);
 expect(in_array('domain.dns.not_configured',$unreadableSummary->stateKeys,true),'Customer sees unreadable template as not configured');
 same([], (new ManagedPublicReconciliation($signals))->due($now),'Unreadable template has no configured runnable work');

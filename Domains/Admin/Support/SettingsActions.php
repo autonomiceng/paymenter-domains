@@ -87,7 +87,7 @@ final class SettingsActions
     { return self::make(Review::ALL_ACCOUNTS,null,fn()=>Review::stamp(Review::ALL_ACCOUNTS,null),true,['default_pricing'])[0]; }
     public static function make(int $server,?int $tld,string|\Closure $stamp,bool $setup=false,?array $only=null): array
     {
-        $out=[];$names=$setup?['new_domain_dns','enroll_sandbox','configure','probe','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','late_renewal','processing','renew_early','renewal_billing','unpaid_hold','default_pricing']:['override','tld_settings','seller'];
+        $out=[];$names=$setup?['enroll_sandbox','configure','probe','renewals','test_renewal','test_management','test_transfer','live_renewal','live_management','live_transfer','late_renewal','processing','renew_early','renewal_billing','unpaid_hold','default_pricing']:['override','tld_settings','seller'];
         if($only!==null){$names=array_values(array_intersect($names,$only));}
         $target=fn()=>\App\Models\Server::find($server)?->name ?? 'Server #'.$server;
         foreach($names as $id){
@@ -209,7 +209,7 @@ final class SettingsActions
                         if($switch){$data+=['review_key'=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)),'reason'=>self::switchOn($id,$server)?'Turned off':'Turned on'];}
 
                         $default=$name==='override'&&($data['pricing']??null)==='default';
-                        $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??($name==='new_domain_dns'?'New domain DNS template changed.':''))));
+                        $r=new Review((int)Auth::id(),$server,$tld,$default?'remove_override':$name,(string)($data[$default?'default_key':'review_key']??''),trim((string)($data['reason']??'')));
                         $summary=app(StaffSettingsWrites::class)->run($r,$data);$account=Account::where('server_id',$server)->first();
                         Notification::make()->status(($summary['audit_failed']??false)||($summary['failed']??[])!==[]?'warning':'success')->title(match(true){($summary['audit_failed']??false)=>"Saved, but the result wasn't recorded",$name==='processing'=>$account->processing_enabled?'Orders resumed':'Orders paused',$name==='probe'=>'Balance updated',
                                 $name==='enroll_sandbox'=>'Account connected',$name==='override'=>'Prices published',$setup=>'Saved',default=>'Change recorded'})
@@ -384,7 +384,7 @@ final class SettingsActions
     }
     private static function setupLabel(string $name,bool $connected): string
     {
-        return match(true){$name==='new_domain_dns'=>'Change',$name==='late_renewal'=>'Late renewal',$name==='processing'=>'Orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
+        return match(true){$name==='late_renewal'=>'Late renewal',$name==='processing'=>'Orders',$name==='configure'=>$connected?'Edit API credentials':'Connect account',
             $name==='enroll_sandbox'=>'Connect NameSilo test account',$name==='probe'=>'Test connection',
             $name==='renewal_billing'=>'Edit schedule',$name==='unpaid_hold'=>'Edit unpaid hold',$name==='default_pricing'=>'Default pricing',default=>Review::ACTIONS[$name]??$name};
     }
@@ -453,10 +453,6 @@ final class SettingsActions
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
     {
-        if($name==='new_domain_dns' && $error instanceof \DomainException && in_array($error->getMessage(),[
-            'Choose an enabled DNS template. Create or turn on a template under DNS templates first.',
-            'This DNS template needs at least two valid nameservers supported by this registrar. Edit it under DNS templates, then try again.',
-        ],true)){return $error->getMessage();}
         if($name==='tld_settings'&&$error instanceof \DomainException&&($text=self::termsRefusal($error->getMessage(),$data,$server,$tld))!==null){return $text;}
         if($name==='acceptance'&&$error->getMessage()==='Audit entry too large. Changes held.'){return 'That is too many changes for one save. Save fewer at a time. Nothing was saved.';}
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}

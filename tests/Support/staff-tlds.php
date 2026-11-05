@@ -31,7 +31,7 @@ function tldRefusal(callable $call,string $message): void
 /** Account actions shared by write assertions and rendered fixtures. */
 function staffSetupActions(): array
 {
-    return ['new_domain_dns','configure','probe','import','processing','enroll_sandbox',
+    return ['configure','probe','import','processing','enroll_sandbox',
         'test_renewal','test_transfer','test_management','live_renewal','live_management','live_transfer','late_renewal','renewal_billing','unpaid_hold'];
 }
 
