@@ -74,6 +74,9 @@ commerceReject(static fn () => activeFixtureRepublish($native,$enom->id, $now));
 commerceReject(static fn () => $native->product($enom, 'register'));
 same($before, [$hosting->fresh()->getAttributes(), $hostingPlan->fresh()->getAttributes(), $hostingPlan->prices()->sole()->getAttributes()], 'Reserved-slug collision leaves hosting unchanged');
 DB::table('prices')->where('plan_id',$hostingPlan->id)->delete();DB::table('plans')->where('id',$hostingPlan->id)->delete();DB::table('products')->where('id',$hosting->id)->delete();
+// Select Enom again so the disabled-account withdrawal starts from a priced registration.
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$enom->server_id,true,true,$now);activeFixtureRepublish($native,$enom->id,$now);
+expect($registration->plans()->whereHas('prices')->count()>0,'Selected Enom seller prices registration before its account is disabled');
 Server::findOrFail($enom->server_id)->update(['enabled' => false]);
 activeFixtureRepublish($native,$enom->id,$now);same(0,$registration->plans()->whereHas('prices')->count(),'Disabled account withdraws every native acquisition price');
 $nativeSuccessful = true;

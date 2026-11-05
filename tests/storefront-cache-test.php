@@ -9,14 +9,17 @@ use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,Query};
 extract(offerCommerceFixture());
 Cache::flush();$healthy=$storefront->endings();same(['com'],array_column($healthy,'tld'),'Known active offer renders before cache tests');
-DB::enableQueryLog();DB::flushQueryLog();same($healthy,$storefront->endings(),'Warm display retains current active rows');
-$queries=DB::getQueryLog();DB::disableQueryLog();
-foreach($queries as $q){expect(!preg_match('/\b(domains_tlds|domains_prices|products|plans|prices)\b/i',$q['query']),'Warm account fence avoids per-offer/native catalogue reads');}
+$warm=static function(string $label)use($storefront):array{
+    DB::enableQueryLog();DB::flushQueryLog();try{$rows=$storefront->endings();$queries=DB::getQueryLog();}finally{DB::disableQueryLog();}
+    foreach($queries as $q){expect(!preg_match('/\b(domains_tlds|domains_prices|products|plans|prices)\b/i',$q['query']),$label.' avoids per-offer/native catalogue reads');}
+    return $rows;
+};
+same($healthy,$warm('Warm account fence'),'Warm display retains current active rows');
 $t=$tlds[0]->fresh();
 DB::beginTransaction();$t->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]);DB::beginTransaction();$t->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]);DB::commit();DB::rollBack();
-same($healthy,$storefront->endings(),'Rolled-back outer mutation preserves warm display');
+same($healthy,$warm('Rolled-back outer mutation'),'Rolled-back outer mutation preserves warm display');
 DB::beginTransaction();DB::beginTransaction();$t->refresh()->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]);DB::rollBack();DB::commit();
-same($healthy,$storefront->endings(),'Rolled-back savepoint cannot invalidate committed display');
+same($healthy,$warm('Rolled-back savepoint'),'Rolled-back savepoint cannot invalidate committed display');
 DB::transaction(fn()=>$t->refresh()->update(['catalogue_revision'=>(int)$t->catalogue_revision+1]));
 same([],$storefront->endings(),'Committed pending offer revision withdraws cached public rows');
 $q=new Query($binding,['com'],'register');$ports->apply(Edit::republish($binding,'com'),$ports->readOffers($q,Context::Staff)[0]->revision);
