@@ -4,7 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Cost, Facts, OfferState};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Capabilities, CallerPorts, Cost, Facts, OfferState, Pricing, Retail, Writer};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CostUnit, Environment};
 use Paymenter\Extensions\Servers\Domains\Models\{Price, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\Installation;
@@ -36,13 +36,14 @@ foreach (['enom', 'namesilo'] as $registrar) {
     expect(OfferState::facts($tld->catalogue_facts) == $facts, $registrar.': stored evidence round-trips through domains_tlds');
     $terms = $caps->renewalTerms($binding, $tld, $prices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     same(range(1, 8), array_keys($terms), $registrar.': stored holding years stay inside the horizon');
-    same($registrar === 'enom' ? [true, '24.0000', null] : [false, null, 'no_exact_quote'],
-        [$terms[2]['available'], $terms[2]['cost'], $terms[2]['reason']], $registrar.': exact stored two-year renewal');
-    same(['14.0000', 'term_unreviewed'], [$terms[1]['cost'], $registrar === 'enom' ? $terms[3]['reason'] : 'term_unreviewed'], $registrar.': annual path and unreviewed year');
+    // No registrar quotes an exact multi-year total before the send yet (Enom quotes annual x years), so even a
+    // reviewed, exactly priced two-year renewal stays held for both registrars.
+    same([false, null, 'no_exact_quote'], [$terms[2]['available'], $terms[2]['cost'], $terms[2]['reason']], $registrar.': stored two-year renewal held without an exact quote');
+    same([true, '14.0000'], [$terms[1]['available'], $terms[1]['cost']], $registrar.': annual path unchanged');
     // Staff Off (sell false) is sales intent; holder renewal terms and the retained annual path do not depend on it.
     same($terms, $caps->renewalTerms($binding, $tld, $prices, new DateTimeImmutable('2027-11-20T00:00:00+00:00')), $registrar.': reads are repeatable');
     $ready = $caps->termReadiness($binding, 'com');
-    same([range(1, 10), $registrar === 'enom' ? null : 'no_exact_quote', $registrar === 'enom' ? 'reviewed' : 'reviewed'],
+    same([range(1, 10), 'no_exact_quote', 'reviewed'],
         [array_keys($ready['renew']), $ready['renew'][2]['reason'], $ready['families']['ordinary']['state']], $registrar.': staff readiness');
     // A row from another account or a changed TLD binding refuses instead of mixing evidence.
     $foreign = clone $prices->first(); $foreign->account_fingerprint = str_repeat('f', 64);
@@ -53,7 +54,14 @@ foreach (['enom', 'namesilo'] as $registrar) {
     catch (DomainException) {}
     // Empty inventory: no stored prices leaves only the annual path, with no known cost.
     $empty = $caps->renewalTerms($binding, $tld, [], new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
-    same([true, null, $registrar === 'enom' ? 'unknown_price' : 'no_exact_quote'], [$empty[1]['available'], $empty[1]['cost'], $empty[2]['reason']], $registrar.': empty inventory');
+    same([true, null, 'no_exact_quote'], [$empty[1]['available'], $empty[1]['cost'], $empty[2]['reason']], $registrar.': empty inventory');
+    // Publishing a renew:2 observation after renew:1 never replaces the stored annual retail.
+    $publish = new ReflectionMethod(Writer::class, 'publishPrices');
+    $publish->invoke((new ReflectionClass(Writer::class))->newInstanceWithoutConstructor(), $tld, $now);
+    $annual = Retail::quote(OfferState::cost(OfferState::decode($observe('renew', 1, '14.0000'))), Pricing::rule($tld));
+    $longer = Retail::quote(OfferState::cost(OfferState::decode($observe('renew', 2, '24.0000'))), Pricing::rule($tld));
+    expect($annual !== $longer, $registrar.': fixture separates annual and two-year retail');
+    same($annual, $tld->catalogue_retained_annual_retail, $registrar.': retained annual retail comes from renew:1 only');
 }
 $nativeSuccessful = true;
 echo "demo-c terms native: ok\n";

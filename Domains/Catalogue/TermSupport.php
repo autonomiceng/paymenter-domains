@@ -8,14 +8,17 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
 /** NS17 term and renewal-family rules. Pure: no database, provider or clock access.
  * Annual renewal and provider registration terms keep their existing authority. A longer renewal needs a
- * first-pass suffix, a registrar that quotes exact multi-year totals, current facts, current reviewed
+ * first-pass suffix, a registrar whose pre-send read quotes exact multi-year totals (none yet), current facts, current reviewed
  * ordinary-family and term evidence in `term_total` units and a fresh exact-term cost. Anything else is held. */
 final class TermSupport
 {
     /** Reviewed first-pass suffixes. Every other suffix keeps today's annual renewal. */
     public const FIRST_PASS = ['com', 'net', 'org'];
-    /** Admission reads quote the exact multi-year total. NameSilo getPrices has no years parameter. */
-    public const EXACT_QUOTES = ['enom'];
+    /** Registrars whose pre-send admission read quotes the exact multi-year renewal total. None yet:
+     * Enom GetExtendInfo/Check give one annual price (the admission quote is annual x years) and PE_GetProductPrice
+     * is a selected-term annual rate; NameSilo getPrices has no years parameter. Longer terms stay held
+     * (`no_exact_quote`) until NS18 adds a reviewed exact-term read. */
+    public const EXACT_QUOTES = [];
     public const HORIZON_YEARS = 10;
 
     /** Producers attach reviewed evidence. Other suffixes carry none, so a refresh drops it. */
@@ -34,14 +37,14 @@ final class TermSupport
     /** Renewal years for one holding, keyed by years, inside the registry horizon from today.
      * Year 1 is today's annual renewal. Each entry names its new expiry, exact cost and frozen rule, or why it is held. */
     public static function renewal(string $registrar, string $tld, ?Facts $facts, array $costs,
-        \DateTimeImmutable $expiry, \DateTimeImmutable $now): array
+        \DateTimeImmutable $expiry, \DateTimeImmutable $now, array $exactQuotes = self::EXACT_QUOTES): array
     {
         $registry = $now->modify('+'.self::HORIZON_YEARS.' years'); $out = [];
         $annual = self::current($costs['renew:1'] ?? null, $now);
         foreach (range(1, self::HORIZON_YEARS) as $years) {
             $until = self::addYears($expiry, $years);
             if ($until > $registry) { break; }
-            [$reason, $rule] = $years === 1 ? [null, null] : self::held($registrar, $tld, $facts, $costs, $years, $until, $now);
+            [$reason, $rule] = $years === 1 ? [null, null] : self::held($registrar, $tld, $facts, $costs, $years, $until, $now, $exactQuotes);
             $out[$years] = ['years' => $years, 'available' => $reason === null, 'reason' => $reason,
                 'expiry' => $until->format('Y-m-d'), 'cost' => $years === 1 ? $annual?->total : ($rule['cost']['amount'] ?? null), 'rule' => $rule];
         }
@@ -64,10 +67,11 @@ final class TermSupport
     }
 
     /** Staff readiness for one ending's renewal years, from today's date as the expiry. */
-    public static function readiness(string $registrar, string $tld, ?Facts $facts, array $costs, \DateTimeImmutable $now): array
+    public static function readiness(string $registrar, string $tld, ?Facts $facts, array $costs, \DateTimeImmutable $now,
+        array $exactQuotes = self::EXACT_QUOTES): array
     {
         $today = new \DateTimeImmutable($now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'));
-        return ['renew' => self::renewal($registrar, $tld, $facts, $costs, $today, $now), 'families' => self::families($facts, $now)];
+        return ['renew' => self::renewal($registrar, $tld, $facts, $costs, $today, $now, $exactQuotes), 'families' => self::families($facts, $now)];
     }
 
     /** Exact cap for one new renewal debt: the annual cost for 1 year, the frozen exact-term cost otherwise. */
@@ -109,10 +113,10 @@ final class TermSupport
     }
 
     private static function held(string $registrar, string $tld, ?Facts $facts, array $costs, int $years,
-        \DateTimeImmutable $until, \DateTimeImmutable $now): array
+        \DateTimeImmutable $until, \DateTimeImmutable $now, array $exactQuotes): array
     {
         if (!in_array($tld, self::FIRST_PASS, true)) { return ['not_reviewed', null]; }
-        if (!in_array($registrar, self::EXACT_QUOTES, true)) { return ['no_exact_quote', null]; }
+        if (!in_array($registrar, $exactQuotes, true)) { return ['no_exact_quote', null]; }
         if ($facts === null) { return ['unknown_facts', null]; }
         if (!$facts->fresh($now)) { return ['stale_facts', null]; }
         if ($facts->renewalSafe !== true || $facts->autoRenewOnly !== false || !in_array(1, $facts->terms['renew'] ?? [], true)) { return ['unsupported_facts', null]; }
