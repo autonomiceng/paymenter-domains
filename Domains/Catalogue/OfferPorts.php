@@ -53,13 +53,14 @@ final class OfferPorts
                 facts: $binding->environment === Environment::Test ? fn(string $tld) => NameSilo\TestCatalogueFacts::read($binding,$revision,$tld,$this->clock) : null);
         }
         $scope = $binding->environment === Environment::Test && $binding->registrarKey === 'enom'
-            ? static fn (\Closure $read) => EnomTestSendLimit::withCheckoutHeadroom($identity, $read, 30)
+            ? static fn (\Closure $read) => EnomTestSendLimit::withCatalogueShare($identity, $read)
             : static fn (\Closure $read) => LiveReservations::withCheckoutHeadroom($binding->registrarKey, $identity, $read, 30, $binding->environment);
         return new CredentialFeed($feed, $current, $scope);
     }
 
-    /** Our catalogue share is 30% of our daily cap, enforced again atomically by each transport send.
-     * The minute lease reserves the whole group once. Neither number claims a registrar limit. */
+    /** Our catalogue share is 30% of our daily cap, enforced again atomically by each transport send. On Enom TEST
+     * it counts catalogue sends only, and every send still stops at our cap; Live counts all calls toward the share.
+     * The minute lease reserves the whole group once. These are our runaway guards, not registrar limits. */
     public function allowance(AccountBinding $binding, RequestOrigin $origin): int
     {
         OperationClaims::outside();
@@ -69,8 +70,8 @@ final class OfferPorts
             if ($binding->environment === Environment::Test && $binding->registrarKey === 'enom') {
                 $account = Account::where('server_id', $binding->serverId)->sole();
                 $usage = EnomTestSendLimit::usage($account->stable_identity);
-                foreach (['day', 'day_limit', 'minute', 'minute_limit'] as $key) { if (!is_int($usage[$key])) { return 0; } }
-                return max(0, min(25, intdiv($usage['day_limit'] * 3, 10) - $usage['day'], $usage['minute_limit'] - $usage['minute']));
+                foreach (['day', 'day_limit', 'minute', 'minute_limit', 'catalogue', 'catalogue_limit'] as $key) { if (!is_int($usage[$key])) { return 0; } }
+                return max(0, min(25, $usage['catalogue_limit'] - $usage['catalogue'], $usage['day_limit'] - $usage['day'], $usage['minute_limit'] - $usage['minute']));
             }
             $policy = $binding->registrarKey === 'enom' ? new Enom\EnomLiveReservationPolicy : ($binding->environment === Environment::Test ? new NameSilo\TestReservationPolicy : new NameSilo\NameSiloLiveReservationPolicy);
             if ($binding->registrarKey === 'enom' && !EnomLive::enabled($binding, 'catalogue')) { return 0; }
