@@ -15,10 +15,8 @@ final class NewDomainDns
     /** A saved None is a choice, but supplies no template. @return array{chosen:bool,profile:?WatchProfile} */
     public static function selection(int $server): array
     {
-        $setting=Server::find($server)?->settings()->where('key',self::KEY)->first();$id=$setting?->value;
-        $profile=$id?WatchProfile::find($id):null;
-        if(!ManagedDnsSetup::usable($profile)){$profile=null;}
-        return ['chosen'=>$setting!==null && ($id==='' || $profile!==null),'profile'=>$profile];
+        $profile=SiteDnsDefault::profile();
+        return ['chosen'=>$profile!==null,'profile'=>$profile];
     }
     public static function nameservers(int $server,string $action): array
     { return $action==='register'?(self::profile($server)?->nameservers??[]):[]; }
@@ -26,7 +24,7 @@ final class NewDomainDns
     public static function capture(int $server,string $action): array
     {
         if($action!=='register' || !($profile=self::profile($server))){return [];}
-        return ['nameservers'=>$profile->nameservers,'nameservers_origin'=>['source'=>'account_default',
+        return ['nameservers'=>$profile->nameservers,'nameservers_origin'=>['source'=>'site_default',
             'profile_id'=>(int)$profile->id,'profile_revision'=>(int)$profile->revision]];
     }
     /** Captured choices survive account changes; legacy editable orders may use the current template. */
