@@ -68,6 +68,8 @@ a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),a:focus-visib
 .domains-table th{padding:8px 12px;text-align:start;white-space:nowrap;font-weight:500}
 .domains-table td{padding:8px 12px;vertical-align:top}
 .domains-table tbody tr{border-top:1px solid color-mix(in srgb,currentColor 20%,transparent)}
+.domains-table tbody tr.domains-table-note{border-top:0}
+.domains-table tr.domains-table-note td{padding-top:0}
 .domains-table-tag{margin-inline-start:6px;padding:1px 6px;border-radius:4px;border:1px solid currentColor;font-size:11px;opacity:.8;white-space:nowrap}
 .domains-space{margin-top:.75rem}
 .domains-list{list-style:disc;padding-inline-start:1.25rem}
