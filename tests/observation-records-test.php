@@ -152,6 +152,8 @@ foreach(['GetHosts','GetDomainInfo','CheckNSStatus']as$fault){
  same('refreshed',$observer->run($d->id,readRecords:true),'Failed record read holds only records: '.$fault);
  same('1.1.1.1',OwnerRecords::forDomain($d->fresh())['glue'][0]['ip'],'Failed read retains confirmed partial child history');
  if($fault==='CheckNSStatus') {
+  same('glue_unavailable',$d->fresh()->observation['record_hold']['reason'],'Legacy Enom glue-only failure retains its specific hold reason');
+  same('glue',$d->fresh()->observation['record_hold']['family'],'Legacy Enom glue-only failure identifies the failed family');
   same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Glue parser failure still saves fresh core facts');
   foreach(['dns','srv','ds'] as $kind) { same('complete',$d->fresh()->observation['records']['families'][$kind]['state'],'Glue parser failure preserves completed '.$kind); }
   \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));

@@ -96,6 +96,11 @@ foreach (['enom','namesilo'] as $registrar) {
     };
     $class='Paymenter\\Extensions\\Servers\\Domains\\Registrars\\'.($registrar==='enom'?'Enom':'NameSilo').'\\ObservationReader';
     $reader=new $class($b,$wire);
+    if ($registrar==='namesilo') {
+        try { $reader->validate('nameservers',['nameservers'=>['ns1.dnsowl.com','ns2.dnsowl.com']],'example.com');expect(false,'Observation reader must refuse management writes'); }
+        catch (DomainException $e) { same('Observation reader is read-only.',$e->getMessage(),'Observation reader refuses its inherited write command'); }
+        same([],$calls,'Refused observation write makes no wire request');
+    }
     $ctx=fn($budget=25)=>new RequestContext($b,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget($budget),$clock,stopOnReadFailure:true);
     $request=new ManagementRequest($b,'ns15-read',$registrar==='enom'?'example.com':'example.com','discovery',[],$registrar==='enom'?'456':null);
     $out=$reader->discover($request,$ctx());

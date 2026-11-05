@@ -9,6 +9,8 @@ final class ObservationReader extends Management
 {
     public function observationCapabilities(): array
     { return ['revision'=>'namesilo-records-1','families'=>['dns'=>'supported','srv'=>'unsupported','ds'=>'unsupported','glue'=>'supported']]; }
+    protected function writeCommand(string $action): string
+    { throw new \DomainException('Observation reader is read-only.'); }
     protected function readCommands(): array { return [...parent::readCommands(),'dnsListRecords']; }
     protected function validateRead(string $command,array $p): void
     { parent::validateRead($command==='dnsListRecords'?'getDomainInfo':$command,$p); }
