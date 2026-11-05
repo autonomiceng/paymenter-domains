@@ -52,10 +52,18 @@ final class OfferWork
         $this->editQueue($binding, function ($q, $row) use ($binding, $tld, $soldOnly): void {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail();
             $this->offerBinding($binding, $t); $work = OfferState::decode($row->offer_work);
-            if (isset($work['facts'][$tld])) { return; }
-            if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
             $facts = OfferState::facts($t->catalogue_facts);
-            $work['facts'][$tld] = ['sold_only' => $soldOnly, 'due_at' => $facts && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
+            $rejected = !OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock);
+            if (isset($work['facts'][$tld])) {
+                $state = $work['facts'][$tld];
+                // Promote an old freshness deadline, while preserving failures and unsupported readers.
+                if (!$rejected || !empty($state['tries']) || !empty($state['unsupported'])
+                    || ($state['due_at'] ?? 0) <= $this->at()) { return; }
+                $work['facts'][$tld]['due_at'] = $this->at();
+            } else {
+                if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
+                $work['facts'][$tld] = ['sold_only' => $soldOnly, 'due_at' => !$rejected && $facts && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
+            }
             $q->update(['offer_work' => OfferState::json($work)]);
         });
     }
@@ -92,7 +100,7 @@ final class OfferWork
         if ($tld !== null) {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
-            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
+            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) && OfferState::testFactsAccepted($binding, $tld, $facts, $this->clock) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
                 'due_at' => $state['due_at'] ?? null];
         }
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }

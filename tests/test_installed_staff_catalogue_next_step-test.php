@@ -290,5 +290,32 @@ same($canRead?null:'account',$cell['open'],'Retained renewal setup preserves its
 if(!$canRead){same('Check account setup on Registrar account.',$cell['next'],'Retained renewal cost explains account repair');}
 } catch (Throwable $error) {$failures[]='Retained renewal recovery '.($canRead?'queued':'account').': '.$error->getMessage();}
 }
+try {
+$reset();
+$nt=$tlds[1]->fresh();$ns=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$nt->server_id)->sole());
+$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($ns,['com'],'register');
+$rev=static fn()=>$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$nf=fixtureNameSiloFacts($ns,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')));
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($ns,'com',$nf),$rev());
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($ns,'com',['register','transfer']),$rev());$nt=$nt->fresh();
+$key=$nt->server_id.':'.$nt->tld;
+$page=$source->page(collect([$nt]));
+same('ready',$source->nextSteps(collect([$nt]),[$key=>$page[$nt->id]],'register',1)[$key]['state'],'Current NameSilo TEST facts remain usable');
+$originalAccounts=$accounts=config('domains.namesilo_test.accounts');$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns->serverId)->sole();
+unset($accounts[$account->stable_identity]['facts'][$nt->tld]);config(['domains.namesilo_test.accounts'=>$accounts]);
+$nsQueue=DB::table('domains_observation_queues')->where('server_id',$ns->serverId);
+foreach([false,true] as $alreadyQueued){
+    $nsQueue->update(['offer_work'=>OfferState::json($alreadyQueued?['facts'=>[$nt->tld=>['sold_only'=>true,'due_at'=>$now->getTimestamp()+86400]]]:[])]);
+    $page=[];$table=new SellTable([$ns->serverId=>$ns],1,true,static function()use(&$page){return $page;},false,$source);
+    $page=$table->rows('com')->get()->all();$status=$table->status($page[0]);
+    same('Checking',$status['label'],'Rejected fresh TEST facts need recovery rather than a ready step');
+    same($now->getTimestamp(),$work->status($ns,$nt->tld)['due_at'],'Rejected TEST evidence is scheduled now, including an existing freshness deadline');
+}
+$future=$now->getTimestamp()+120;
+$nsQueue->update(['offer_work'=>OfferState::json(['facts'=>[$nt->tld=>['due_at'=>$future,'tries'=>2,'failure'=>'read_failed']]])]);
+$work->requestFacts($ns,$nt->tld);same($future,$work->status($ns,$nt->tld)['due_at'],'Rejected TEST evidence still respects failure backoff');
+same(0,$calls,'Rejected TEST evidence only queues local recovery');
+config(['domains.namesilo_test.accounts'=>$originalAccounts]);
+} catch (Throwable $error) {$failures[]='NameSilo TEST facts recovery: '.$error->getMessage();}
 expect($failures===[],implode("\n",$failures));
 $nativeSuccessful=true;echo "Staff catalogue next steps: ok\n";

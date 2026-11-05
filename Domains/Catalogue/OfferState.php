@@ -67,6 +67,12 @@ final class OfferState
         return new Facts($v['terms'], $v['registryFields'], $v['renewalSafe'], $v['requiresNameservers'],
             $v['autoRenewOnly'], $v['source'], new \DateTimeImmutable($v['observedAt']), new \DateTimeImmutable($v['freshUntil']));
     }
+    /** TEST NameSilo evidence is an extra gate; callers still check ordinary freshness. */
+    public static function testFactsAccepted(AccountBinding $binding, string $tld, ?Facts $facts, Clock $clock): bool
+    {
+        return $binding->registrarKey !== 'namesilo' || $binding->environment !== Environment::Test
+            || TestCatalogueFacts::current($binding, $tld, $facts, $clock);
+    }
     public static function encodeFacts(Facts $f): string
     { return self::json([...get_object_vars($f), 'observedAt' => $f->observedAt->format(DATE_ATOM), 'freshUntil' => $f->freshUntil->format(DATE_ATOM)]); }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
@@ -93,8 +99,7 @@ final class OfferState
         $actions = [];
         foreach (['register', 'transfer'] as $action) { if ($policy?->{$action.'_enabled'}) { $actions[] = $action; } }
         $facts = self::facts($tld->catalogue_facts);
-        if ($binding->registrarKey === 'namesilo' && $binding->environment === Environment::Test
-            && !TestCatalogueFacts::current($binding, $tld->tld, $facts, app(Clock::class))) { $facts = null; }
+        if (!self::testFactsAccepted($binding, $tld->tld, $facts, app(Clock::class))) { $facts = null; }
         return new Snapshot(new FeedObserved($binding, $tld->tld, $costs), $facts, new Intent(...$intent),
             $revision, $publishing ? $revision : $published, $retail, $selected ? $binding : null, $actions,
             $ready, hidden: EndingChoices::hidden($tld->tld),

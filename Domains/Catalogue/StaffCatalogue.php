@@ -60,7 +60,8 @@ final class StaffCatalogue
         if($reason==='publication_pending'&&$this->work){$this->work->wake($binding());return $waiting([]);}
         try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
         $human=null;
-        if(!$facts||!$facts->fresh($now)){
+        if(!$facts||!$facts->fresh($now)||$t->registrar_key==='namesilo'
+            &&!OfferState::testFactsAccepted($binding(),$t->tld,$facts,$this->clock)){
             if(!$this->work||!$this->readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
             $this->work->requestFacts($b,$t->tld);$status=$this->work->status($b,$t->tld);
             if($status['state']!=='unsupported'){return $waiting($status);}
