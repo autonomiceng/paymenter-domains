@@ -700,6 +700,8 @@ def main():
                             'tests/registration-namesilo-profile-test.php',
                             'tests/transfer-inputs-test.php',
                             'tests/storefront-test.php',
+                            'tests/storefront-corruption-test.php',
+                            'tests/storefront-queries-test.php',
                         }
                         for path in requested
                     )
