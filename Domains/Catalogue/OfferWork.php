@@ -348,6 +348,13 @@ final class OfferWork
             if (isset($values['offer_work'])) {
                 // Hints may arrive outside locks while the provider read is in flight.
                 $stored = OfferState::decode((clone $q)->value('offer_work')); $next = OfferState::decode($values['offer_work']);
+                $copied = OfferState::decode($job->offer_work)['facts'] ?? [];
+                foreach ($next['facts'] ?? [] as $tld => $state) {
+                    // Keep hints promoted since the claim unless this turn actually processed the entry.
+                    if (isset($stored['facts'][$tld], $copied[$tld]) && $state === $copied[$tld]) {
+                        $next['facts'][$tld] = $stored['facts'][$tld];
+                    }
+                }
                 $next['facts'] = [...array_diff_key($stored['facts'] ?? [], array_flip($next['facts_removed'] ?? [])), ...($next['facts'] ?? [])];
                 unset($next['facts_removed']);
                 if (!empty($stored['feed_hint'])) {

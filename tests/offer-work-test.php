@@ -297,6 +297,15 @@ $clock->time = $clock->time->modify('+31 days'); $before = count($wire->calls);
 $worker->tick(2); $worker->tick(2); $worker->tick(2); $worker->tick(2);
 same(2, count($wire->calls) - $before, 'Sold-set facts expire independently and refresh automatically');
 
+// A local sold-set hint can promote TEST facts while the worker still holds an older copy.
+DB::table('domains_tlds')->where('server_id',$n->serverId)->where('tld','com')->update(['catalogue_intent'=>json_encode(['sell'=>true]),'catalogue_facts'=>null]);
+DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$n->serverId,'registrar_key'=>$n->registrarKey,'account_fingerprint'=>$n->fingerprint,'register_enabled'=>true]);
+$future=$clock->now()->getTimestamp()+86400;
+DB::table('domains_observation_queues')->where('server_id',$n->serverId)->update(['offer_work'=>json_encode(['facts'=>['com'=>['sold_only'=>true,'due_at'=>$future]]]),'offer_claim'=>null,'offer_lease'=>0]);
+$worker->accountTurn($n->serverId);
+same($clock->now()->getTimestamp(),$worker->status($n,'com')['due_at'],'Worker save preserves an earlier facts hint created during republication');
+$worker->accountTurn($n->serverId);
+same('unsupported',$worker->status($n,'com')['state'],'The promoted hint reaches the existing unsupported-reader path');
 // Upgrade an actual retained B2 schema, preserving all catalogue/native identities.
 $ids = Tld::orderBy('id')->pluck('id')->all();
 Schema::table('domains_observation_queues', static fn ($t) => $t->dropColumn(['offer_work', 'offer_claim', 'offer_lease', 'offer_turn']));
