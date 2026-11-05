@@ -53,7 +53,7 @@ final class Runtime
     public function boot(): void
     {
         ConversionGate::requireComplete();if($this->booted){return;}$this->booted=true;
-        View::addNamespace('domains',dirname(__DIR__).'/resources/views');HostingDomainRow::boot();
+        View::addNamespace('domains',dirname(__DIR__).'/resources/views');HostingDomainRow::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\ComplimentaryAccountSetting::boot();
         require dirname(__DIR__).'/routes/web.php';require dirname(__DIR__).'/routes/owned.php';
         app(NativeServerGuard::class)->boot();app(NativeDomainGuard::class)->boot();
         NativeCancellation::boot();AcquisitionRetirement::boot();PayCheck::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\NativeEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\SellToolbar::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\TableMenus::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\DemoTag::boot();\Paymenter\Extensions\Servers\Domains\Admin\Support\StaffStyles::boot();

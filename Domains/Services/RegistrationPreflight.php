@@ -59,7 +59,8 @@ final readonly class RegistrationPreflight implements SealPreflight
                 || !is_string($saved['estimated'] ?? null)) { throw new \InvalidArgumentException; }
             $ceiling = new Money($saved['estimated'], 'USD'); $total = new Money((string) $op->amount, 'USD');
         } catch (\InvalidArgumentException) { throw new WriteHeld('registrar_price_missing'); }
-        if (WriteMoney::compare($q->cost->amount, $ceiling->amount) > 0 || WriteMoney::compare($q->cost->amount, $total->amount) > 0) {
+        ComplimentaryCosts::require($op,$q->cost,$ceiling->amount);
+        if (!isset($op->policy['account_complimentary']) && (WriteMoney::compare($q->cost->amount, $ceiling->amount) > 0 || WriteMoney::compare($q->cost->amount, $total->amount) > 0)) {
             // We cannot absorb a higher cost by changing a paid customer's frozen order.
             throw new WriteHeld('registrar_price_increased');
         }

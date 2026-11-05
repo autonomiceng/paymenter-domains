@@ -70,7 +70,16 @@ class ViewDomain extends ViewRecord
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+        return [$this->approveComplimentaryCost($d),self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+    }
+    private function approveComplimentaryCost(Domain $d):Action
+    {
+        $op=$d->operations()->where('state','held')->latest('id')->get()->first(fn($op)=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op)!==null);
+        return Action::make('approveComplimentaryCost')->label('Approve registrar cost')->color('danger')
+            ->visible(fn()=>$op&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage'))
+            ->modalHeading($op?\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op):'Approve registrar cost')
+            ->schema([\Filament\Forms\Components\TextInput::make('reason')->label('Reason')->required()->maxLength(500)])
+            ->action(fn(array $data)=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::approve($op->id,Auth::user(),$op->policy['complimentary_cost_review']['amount'],$data['reason'],app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)));
     }
     /** Named as on the Users page, so a skin that records impersonation sees this one too. */
     private function customerView(Domain $d): Action

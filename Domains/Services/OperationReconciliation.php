@@ -156,7 +156,7 @@ final class OperationReconciliation
             $cost = $proof['charge']; $expected = $attempt->expectedCharge;
             $difference = $expected && ($expected->currency !== 'USD' || rtrim($expected->amount, '0') !== rtrim($cost['amount'], '0'));
             $corrections = ($op->attempt['corrections'] ?? $op->attempt['evidence']['registration']['corrections'] ?? []) !== [] || $proof['observed_corrections'] !== [];
-            $below = strcmp(self::decimal($cost['amount']), self::decimal($op->amount)) > 0;
+            $below = $op->funding_basis!=='complimentary' && strcmp(self::decimal($cost['amount']), self::decimal($op->amount)) > 0;
             $nameserversHeld=RenewalStop::blocksExisting($funding->initialFacts($domain))||($domain->renewal_policy['automatic_spend_paused']??false);
             $staffCorrections=$op->action==='register'?array_diff(RegistrationDns::corrections($op,$proof['observed_corrections']),$nameserversHeld?[]:['nameservers'])!==[]:$corrections;
             $policy['reconciliation']['observed_corrections'] = $proof['observed_corrections']; $policy['reconciliation']['staff_alert'] = $difference || $staffCorrections || $below;
@@ -169,6 +169,7 @@ final class OperationReconciliation
                 'provider_domain_id' => $proof['provider_domain_id'], 'confirmed_revision' => $domain->confirmed_revision + 1,
                 'renewal_policy' => [...($domain->renewal_policy ?? []), 'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key]],
                 'observation' => ObservationProjection::acquired($domain, $op->operation_key, $nameservers), 'last_synced_at' => $this->clock->now()]);
+            ComplimentaryInvoices::complete($op);
             return $op;
         });
         if ($completed->action === 'transfer' && $completed->state === 'succeeded') {

@@ -45,6 +45,7 @@ final readonly class TransferPreflight implements SealPreflight
         $quote = $reader->quote($query, $context); $balance = $retryBalance??BalanceReads::read($reader, $context, 'preflight');
         WriteMoney::requireRead($context->binding, $quote, $balance);
         $q = $quote->evidence()->quote; WriteMoney::requireFunds($q, $balance->evidence()->balance, $query, $observed, $context->now());
+        ComplimentaryCosts::require($op,$q->cost,$op->cost['estimated']);
         return new DispatchReadiness($context->binding, $query, new Capabilities($context->binding, ['transfer' => $capability]),
             $q->cost, true, false, $observed, min($q->validUntil, $observed->modify('+120 seconds')), OperationClaims::payloadDigest($op),
             [...$transfer, 'premium' => false, 'privacy' => $privacy, 'name' => $query->name, 'years' => 1, 'cost' => ['amount' => $q->cost->amount, 'currency' => 'USD']]);

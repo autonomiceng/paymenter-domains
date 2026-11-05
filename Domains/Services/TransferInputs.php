@@ -73,7 +73,8 @@ final class TransferInputs
             || $l['operations']->contains(static fn ($peer) => $peer->id !== $op->id && !OperationTerminalProof::safe($peer, $l['domain']))) {
             throw new \DomainException('Transfer inputs unavailable.');
         }
-        RefundProof::requireUnsent($op, $l['domain']); RefundPayment::requireLine($op, $l);
+        RefundProof::requireUnsent($op, $l['domain']);
+        if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireLine($op, $l);}
     }
     private function payment(Operation $op, array $l): void
     {
@@ -82,9 +83,9 @@ final class TransferInputs
             if (array_key_exists('paid_at', $op->policy ?? [])) { throw new \DomainException('Transfer payment changed.'); }
             return;
         }
-        RefundPayment::requireCurrent($op, $l);
+        if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op, $l);}
         if (!array_key_exists('paid_at', $op->policy ?? [])) {
-            $at = TransferPayments::recover($op, $l, $this->clock->now());
+            $at = $op->funding_basis==='complimentary'?$op->created_at->utc()->format(DATE_ATOM):TransferPayments::recover($op, $l, $this->clock->now());
             if ($at === null) { throw new \DomainException('Transfer payment time is unverified.'); }
             self::write(fn () => $op->update(['policy' => [...($op->policy ?? []), 'paid_at' => $at]]));
         }

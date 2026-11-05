@@ -62,7 +62,8 @@ final class InvoiceFunding
 
     public static function requireInitialFacts(Operation $op,array $l): array
     {
-        $paid=self::requirePaidFacts($op,$l);$service=$l['service'];$plan=$l['plan'];
+        $paid=$op->funding_basis==='complimentary'?ComplimentaryInvoices::require($op,$l):self::requirePaidFacts($op,$l);
+        if($op->funding_basis==='complimentary'){InvoiceBinding::requireIdentity($op,$l['domain'],$l['service'],$l['invoices']->firstWhere('id',$op->invoice_id),$l['items']->firstWhere('id',$op->invoice_item_id),$l['product']);}$service=$l['service'];$plan=$l['plan'];
         if (!in_array($service->status, [Service::STATUS_PENDING, Service::STATUS_ACTIVE], true)
             || $l['cancel']->contains('service_id', $service->id) || !$plan
             || $plan->priceable_type !== (new Product)->getMorphClass() || (int) $plan->priceable_id !== (int) $service->product_id

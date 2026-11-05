@@ -15,6 +15,7 @@ final class InvoiceBinding
     private \WeakMap $creating;
     private array $prepared = [];
     private array $services = [];
+    private array $nativeServices = [];
     public function __construct(private readonly CartAdmission $admission, private readonly NativeCatalogue $native,
         private readonly PriceCatalogue $prices, private readonly Clock $clock) { $this->creating = new \WeakMap; }
 
@@ -28,8 +29,15 @@ final class InvoiceBinding
         });
         Event::listen(\App\Events\Service\Created::class, function ($e): void {
             if (isset($this->creating[$e->service])) {
-                $this->services[$e->service->id] = $this->creating[$e->service]; unset($this->creating[$e->service]);
+                $this->services[$e->service->id] = $this->creating[$e->service]; $this->nativeServices[$e->service->id]=$e->service; unset($this->creating[$e->service]);
             }
+        });
+        \App\Models\Property::created(function($property):void {
+            $line=$property->model_type===(new Service)->getMorphClass()?($this->services[$property->model_id]??null):null;
+            if(!$line||!$line['complimentary']||$property->key!=='domains_check'){return;}
+            $service=$this->nativeServices[$property->model_id];
+            $item=ComplimentaryInvoices::create((int)$service->user_id,$line['name'].' '.$line['selection']->action.', '.$line['selection']->term.' year', (int)$service->id);
+            ComplimentaryInvoices::paid($item->invoice);
         });
         Event::listen(\App\Events\InvoiceItem\Creating::class, function ($e): void {
             $line = $e->invoiceItem->reference_type === (new Service)->getMorphClass() ? ($this->services[$e->invoiceItem->reference_id] ?? null) : null;
@@ -42,7 +50,7 @@ final class InvoiceBinding
         foreach ([\Illuminate\Database\Events\TransactionCommitted::class, \Illuminate\Database\Events\TransactionRolledBack::class] as $event) {
             Event::listen($event, function ($e): void {
                 if ($e->connection === DB::connection() && $e->connection->transactionLevel() === 0) {
-                    $this->prepared = $this->services = []; $this->creating = new \WeakMap;
+                    $this->prepared = $this->services = $this->nativeServices = []; $this->creating = new \WeakMap;
                     OrderContact::clear();
                 }
             });
@@ -97,7 +105,7 @@ final class InvoiceBinding
     {
         $item = $item->fresh() ?? throw new \DomainException('Invoice item must be persisted.');
         if ($item->reference_type !== (new Service)->getMorphClass()) { return; }
-        $service = Service::findOrFail($item->reference_id);
+        $service = $this->nativeServices[$item->reference_id] ?? Service::findOrFail($item->reference_id);
         $existing = Operation::where('invoice_item_id', $item->id)->first();
         if ($existing) {
             // Repeated delivery is read-only. It never refreshes snapshots or reprojects a service.
@@ -123,20 +131,20 @@ final class InvoiceBinding
         $domain = DomainReservations::reserve(['service_id' => $service->id, 'user_id' => $service->user_id,
             'domain' => $line['name'], 'server_id' => $s->serverId, 'registrar_key' => $s->registrar,
             'account_fingerprint' => $s->fingerprint, 'authority_generation' => 1, 'status' => $s->action === 'register' ? 'registration_pending' : 'transfer_pending',
-            'snapshot' => ['checkout' => $checkout], 'renewal_policy' => $line['renewal']], [$s->tld]);
+            'snapshot' => ['checkout' => $checkout], 'renewal_policy' => $line['renewal'], 'price_mode'=>$line['complimentary']?'complimentary':'standard'], [$s->tld]);
         $defaults=$line['default_dns'];
         $operation = Operation::create(['domain_id' => $domain->id, 'service_id' => $service->id, 'server_id' => $s->serverId,
             'registrar_key' => $s->registrar, 'account_fingerprint' => $s->fingerprint, 'authority_generation' => 1,
             'invoice_id' => $invoice->id, 'invoice_item_id' => $item->id, 'operation_key' => 'invoice-item:'.$item->id,
-            'action' => $s->action, 'term' => $s->term, 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment',
-            'amount' => $line['retail']['total'], 'currency' => 'USD', 'policy' => ['checkout' => $checkout, 'price' => self::price($s), 'seller_revision' => $line['selection']->policyRevision],
+            'action' => $s->action, 'term' => $s->term, 'funding_basis' => $line['complimentary']?'complimentary':'paid_invoice', 'state' => $line['complimentary']?'queued':'awaiting_payment',
+            'amount' => $line['retail']['total'], 'currency' => 'USD', 'policy' => ['checkout' => $checkout, 'price' => self::price($s), 'seller_revision' => $line['selection']->policyRevision, ...($line['complimentary']?['account_complimentary'=>$line['complimentary']]:[])],
             'cost' => ['estimated' => $s->wholesale, 'currency' => 'USD', 'unit' => 'term_total'], 'payload' => OrderContact::capture($service->user()->firstOrFail(), $line['setup_tld']) + $defaults]);
         $service->forceFill(['plan_id' => $line['annual_plan_id'], 'price' => $line['annual_price'], 'label' => $line['name'], 'expires_at' => null]);
         NativeDomainGuard::initial($service, $domain);
         self::requireIdentity($operation, $domain, $service->fresh(), $invoice, $item);
         // Opaque cart evidence is temporary; never persist it as native customer properties.
         $service->properties()->where('key', 'domains_check')->delete();
-        unset($this->services[$service->id]);
+        unset($this->services[$service->id],$this->nativeServices[$service->id]);
     }
 
     /** Current native rows must match the frozen operation; no DTO alone grants authority. */
@@ -162,7 +170,7 @@ final class InvoiceBinding
             || $op->server_id !== $domain->server_id || $op->registrar_key !== $domain->registrar_key || $op->account_fingerprint !== $domain->account_fingerprint
             || (int) $product->id !== (int) $service->product_id || (int) $product->server_id !== (int) $domain->server_id
             || ($domain->snapshot['checkout'] ?? null) !== $c
-            || PricingRule::minor($item->price) !== PricingRule::minor($op->amount) || PricingRule::minor($c['total']) !== PricingRule::minor($op->amount)) {
+            || ($op->funding_basis!=='complimentary' && PricingRule::minor($item->price) !== PricingRule::minor($op->amount)) || PricingRule::minor($c['total']) !== PricingRule::minor($op->amount)) {
             throw new \DomainException('Frozen domain invoice binding changed.');
         }
     }
