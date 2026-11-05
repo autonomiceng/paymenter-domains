@@ -16,7 +16,7 @@ final class CartCheckoutRefresh
         Livewire::listen('mount', static function ($component) use ($admission): void {
             if ($component::class !== Cart::class) { return; }
             try { $admission->refresh(); }
-            catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); $component->notify($e->getMessage(), 'warning'); }
+            catch (CartLinesRemoved $e) { self::removed($component, $e); }
             catch (\Throwable $e) { self::unavailable($component, $e); }
         });
         Livewire::listen('hydrate', static function ($component, $memo): void {
@@ -28,7 +28,7 @@ final class CartCheckoutRefresh
             if (!\Illuminate\Support\Facades\Auth::check()) { return; }
             try {
                 try { $admission->refresh(); }
-                catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); $component->notify($e->getMessage(), 'warning'); $returnEarly(); return; }
+                catch (CartLinesRemoved $e) { self::removed($component, $e); $returnEarly(); return; }
                 if ($params !== []) { OrderContact::begin(\Illuminate\Support\Facades\Auth::user(), $params[0] ?? null); }
                 foreach ($admission->contactTlds() as $tld) { OrderContact::capture(\Illuminate\Support\Facades\Auth::user(), $tld); }
                 $offers = $admission->offers();
@@ -55,6 +55,15 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             OrderContact::clear();
         });
+    }
+
+    private static function removed(Cart $component, CartLinesRemoved $removed): void
+    {
+        try { self::show($component, self::cartTotal()); }
+        catch (\Throwable $error) {
+            \Illuminate\Support\Facades\Log::warning('Domains cart recalculation failed after removal.', ['exception_class' => $error::class]);
+        }
+        $component->notify($removed->getMessage(), 'warning');
     }
 
     private static function cartTotal(): ?Price

@@ -129,5 +129,21 @@ expect(!$mixedCart->items()->whereKey($mixedCom->id)->exists() && $mixedCart->it
     'Mixed checkout removes only the off-sale line');
 same('mixed-checkout-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
     $notice($mixedPage), 'A paused line cannot swallow the checkout removal notice');
+// Invoke the registered extension mount listener with native cart totals, gateway lookup and notification storage.
+// A stub admission supplies the already-covered removal result without calling unrelated native mount hooks.
+$noticeCart = commerceCart($user); commerceAdd($noticeCart, $replacement, 'unused.example');
+Illuminate\Support\Once::flush(); app('request')->cookies->set('cart', $noticeCart->ulid);
+App\Models\Gateway::create(['name' => 'Synthetic missing gateway', 'type' => 'gateway', 'extension' => 'MissingFixtureGateway', 'enabled' => true]);
+$noticeAdmission = new class($native, $sellers, $eligibility, $clock) extends Paymenter\Extensions\Servers\Domains\Services\CartAdmission {
+    public function refresh(): void { throw new Paymenter\Extensions\Servers\Domains\Services\CartLinesRemoved(['notice-placeholder.com']); }
+};
+Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::boot($noticeAdmission);
+$listeners = (new ReflectionProperty(Livewire\EventBus::class, 'listeners'))->getValue(app(Livewire\EventBus::class));
+$mount = end($listeners['mount']); $component = new App\Livewire\Cart; $escaped = null;
+try { $mount($component); } catch (Throwable $error) { $escaped = $error; }
+expect($escaped === null, 'Gateway recalculation failure cannot escape the removal-notice listener');
+$dispatches = array_map(static fn ($event) => $event->serialize(), Livewire\store($component)->get('dispatched', []));
+$notification = collect($dispatches)->firstWhere('name', 'notify');
+expect(str_contains($notification['params'][0]['message'] ?? '', 'notice-placeholder.com'), 'Removal notice survives a failing gateway recalculation');
 $nativeSuccessful = true;
 echo "Cart price change: ok\n";
