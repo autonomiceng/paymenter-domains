@@ -14,13 +14,13 @@
 @if ($readScheduling ?? true)
 @include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies, 'staff' => $staff])
 @endif
-@if ($staff)<p class="domains-hint">Last complete read: @if ($recordFamilies['last_complete_at'])@include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])@else Unknown @endif</p>@endif
+@if ($staff && !($recordFamilies['cancelled_without_records'] ?? false))<p class="domains-hint">Last complete read: @if ($recordFamilies['last_complete_at'])@include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])@else Unknown @endif</p>@endif
 @if ($recordFamilies['cancelled_without_records'] ?? false)
 <p class="domains-hint">Registration cancelled; no registrar records to check</p>
 @elseif ($part === null)
 <dl class="domains-card">
 @foreach ($recordFamilies['rows'] as $family)
-<div><dt>{{ $family['label'] }}</dt><dd>@include('domains::partials.record-family-status',['family'=>$family,'staff'=>$staff])</dd></div>
+<div><dt>{{ $family['label'] }}</dt><dd>@include('domains::partials.record-family-status',['family'=>$family,'staff'=>$staff,'readAt'=>$recordFamilies['at']])</dd></div>
 @endforeach
 </dl>
 @endif

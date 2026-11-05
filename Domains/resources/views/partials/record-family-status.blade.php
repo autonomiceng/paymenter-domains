@@ -1,4 +1,9 @@
-@php $staff ??= false; @endphp
+@php
+    $staff ??= false;
+    // The read time is said once above the rows; a family checked at another time keeps its own.
+    $instant = static fn ($at) => $at === null ? null : (is_numeric($at) ? (int) $at : strtotime((string) $at));
+    $ownTime = $family['at'] && $instant($family['at']) !== $instant($readAt ?? null);
+@endphp
 <span data-record-family="{{ $family['kind'] }}">
 @if ($family['state'] === 'unknown')
     @if ($family['read_checking'] ?? false)
@@ -12,6 +17,6 @@
 </span>
 {{-- An unread family shows only Missing or Checking. Why is the same for every family, so record-read-note says it once above the rows. --}}
 @if ($family['state'] !== 'unknown')
-<span class="domains-sub">{{ $family[$staff ? 'staff' : 'customer'] }} @if ($family['at'])Checked @include('domains::partials.moment',['at'=>$family['at']]).@endif</span>
+<span class="domains-sub">{{ $family[$staff ? 'staff' : 'customer'] }} @if ($ownTime)Checked @include('domains::partials.moment',['at'=>$family['at']]).@endif</span>
 @endif
 @if ($family['last_good_at'] && $family['state'] !== 'complete')<span class="domains-sub">Last confirmed: @include('domains::partials.moment',['at'=>$family['last_good_at']])</span>@endif
