@@ -28,7 +28,8 @@ foreach(['paused'=>'Paused','retired'=>'Monitoring stopped; no further checks']a
  $list=\Livewire\Livewire::test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ListWatches::class);
  $record=$w->fresh();
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
-  if($column->getState()!==$expected){$failures[]=$state.' '.$name.' still has Missing or no stopped/paused explanation';}
+  // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.
+  if($column->getState()!==''){$failures[]=$state.' '.$name.' still has Missing or repeats the row state';}
   if(str_contains((string)$column->getDescriptionBelow(),'Fills in by itself')){$failures[]=$state.' '.$name.' promises checks';}
  }
  $html=\Illuminate\Support\Facades\Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$list->instance(),'body'=>$list->html()]);

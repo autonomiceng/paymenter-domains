@@ -36,11 +36,18 @@ final class ComplimentaryCosts
             ||isset($op->cost['actual'])||$op->provider_order_id!==null||$op->confirmed_expires_at!==null||$op->completed_at!==null||$op->lease_expires_at!==null){return false;}
         return DB::table('domains_complimentary_approvals')->where('operation_id',$op->id)->exists();
     }
+    /** The red notice on the domain page. need() is its first two sentences, the request reason everywhere else. */
     public static function message(Operation $op,bool $canApprove=false):?string
+    {
+        $need=self::need($op,$canApprove);
+        return $need===null?null:$need.' Nothing is charged until approval.';
+    }
+    /** What is wrong and the one next step, for a held complimentary request whose registrar cost is above the usual. */
+    public static function need(Operation $op,bool $canApprove=false):?string
     {
         $review=$op->policy['complimentary_cost_review']??null;
         $next=$canApprove?'Use Approve registrar cost to continue.':'Ask staff with domain management and funding permissions to approve this cost.';
-        return $op->state==='held'&&$review?'Needs approval: registrar cost $'.number_format((float)$review['amount'],2,'.','').' is above the usual $'.number_format((float)$review['usual'],2,'.','').'. '.$next.' Nothing is charged until approval.':null;
+        return $op->state==='held'&&$review?'Needs approval: registrar cost $'.number_format((float)$review['amount'],2,'.','').' is above the usual $'.number_format((float)$review['usual'],2,'.','').'. '.$next:null;
     }
     public static function approve(int $id,User $actor,string $amount,string $reason,Clock $clock):void
     {
