@@ -26,8 +26,8 @@
                 <input type="hidden" name="action" value="{{ $state === 'available' ? 'register' : 'transfer' }}">
                 @if ($state === 'available' && count($result['terms'] ?? []) > 1)
                     <label class="domains-sr" for="domains-term-{{ $result['domain'] }}">Register for</label>
-                    <select class="domains-input" id="domains-term-{{ $result['domain'] }}" name="term">
-                        @foreach ($result['terms'] as $years => $total)<option value="{{ $years }}" @selected($years === $result['term'])>{{ $total }} for {{ $years }} {{ $years === 1 ? 'year' : 'years' }}</option>@endforeach
+                    <select class="domains-input domains-term-select" id="domains-term-{{ $result['domain'] }}" name="term">
+                        @foreach ($result['terms'] as $years => $total)<option value="{{ $years }}" data-total="{{ $total }} for {{ $years }} {{ $years === 1 ? 'year' : 'years' }}" @selected($years === $result['term'])>{{ $years }} {{ $years === 1 ? 'year' : 'years' }}</option>@endforeach
                     </select>
                 @else<input type="hidden" name="term" value="{{ $result['term'] }}">@endif
                 <button type="submit" class="domains-btn domains-btn--{{ $state === 'available' ? 'primary' : 'secondary' }}" aria-label="{{ $replace ? 'Use '.$result['domain'].($replace['name'] ? ' instead of '.$replace['name'] : '') : ($state === 'available' ? 'Register '.$result['domain'] : 'Transfer '.$result['domain'].' to us') }}">{{ $replace ? 'Use this name' : ($state === 'available' ? 'Register' : 'Transfer') }}</button>

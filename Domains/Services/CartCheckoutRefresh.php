@@ -137,11 +137,11 @@ final class CartCheckoutRefresh
     {
         \Illuminate\Support\Facades\Log::warning('Domains checkout check unavailable.', ['exception_class' => $e::class]);
         if ($e instanceof \App\Exceptions\DisplayException) { $component->notify($e->getMessage(), 'error'); return; }
-        if ($e instanceof CheckoutRefreshTimeout || ($e instanceof ReadDeferred && $e->retryAfterMicros !== null)) {
-            $text = 'The domain check is taking too long. Your cart is saved. Try checkout again shortly.';
-            CartNotice::set($component, 'Try again shortly', $text, $text, 'error'); return;
+        if ($e instanceof CheckoutRefreshTimeout || $e instanceof ReadDeferred) {
+            CartNotice::set($component, 'We could not get your price', 'Try again shortly.', 'We could not get your price. Try again shortly.', 'error');
+            return;
         }
-        $component->notify('We couldn’t check this domain. Try checkout again, or edit or remove it from your cart.', 'error');
+        $component->notify('We could not check this domain. Edit or remove it from your cart, then try checkout again.', 'error');
     }
 
     private static function removed(Cart $component, CartLinesRemoved $e): void

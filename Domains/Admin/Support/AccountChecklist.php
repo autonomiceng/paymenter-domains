@@ -200,6 +200,13 @@ final class AccountChecklist
         }
         $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,null,'unpaid_hold',SettingsActions::details('unpaid_hold'));
         $rows[]=self::renewEarly($server);
+        try{$a=Account::where('server_id',$server)->sole();$binding=AccountBindings::binding($a);
+            foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$server)->where('account_fingerprint',$binding->fingerprint)->orderBy('tld')->limit(10)->get() as $t){
+                $terms=self::termReadiness($binding,$t->tld)[0];$unknown=$terms[1]==='1 year';
+                $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::getUrl(['account'=>$server,'tld'=>$t->tld]))]];
+            }
+        }catch(\Throwable){/* Current setup remains visible when term facts cannot be read. */}
+        $rows[]=self::row('Scheduled renewals','1 year',null,null,null,'Scheduled renewal invoices remain annual.');
         $rows[]=ReminderFacts::emails($server);
         if(($schedule=ReminderFacts::scheduleRow($server))!==null){$rows[]=$schedule;}
         return $rows;
@@ -275,5 +282,53 @@ final class AccountChecklist
         if (!$last) { return self::row('Background worker','Not running','danger','No run recorded yet. Start the scheduler and the queue worker.',null,self::WORKER); }
         $stale=app(Clock::class)->now()->getTimestamp()-(int)$last>self::WORKER_STALE_SECONDS;
         return $stale?self::row('Background worker','Not running','danger','Last run '.self::date((int)$last).'. Check the scheduler and the queue worker.',null,self::WORKER):self::row('Background worker','OK',null,Sheet::moment((int)$last,'Last run'),null,self::WORKER);
+    }
+    public static function termReadiness(?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding,string $ending): array
+    {
+        try {
+            if($binding===null){throw new \DomainException;}
+            $caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed() ?? throw new \DomainException;
+            $ready=$caps->termReadiness($binding,$ending);
+            $facts=$caps->facts($binding,$ending);
+            $register=$facts->terms['register']??[];
+            $renew=array_keys(array_filter($ready['renew'],fn($t)=>$t['available']));
+            $held=array_values(array_filter($ready['renew'],fn($t)=>!$t['available']));
+            return [
+                ['Registration',self::termYears($register),$register===[1]?'Only the annual term is confirmed. Longer terms stay off.':null],
+                ['Early renewal',self::termYears($renew),$held?self::termReason($held[0]['reason']):null],
+                ['Renewal horizon','10 years from today','The time left on the registration reduces the years that can be added.'],
+                ['Grace renewal','Off',self::termReason($ready['families']['grace']['reason'])],
+                ['Redemption','Off','Restoration is separate. Review the restoration options on the domain.'],
+            ];
+        } catch (\Throwable) {
+            return [['Supported terms','Missing','Sync prices to read current registrar terms. Longer terms stay off.']];
+        }
+    }
+    public static function termYears(array $years): string
+    { sort($years);return $years===[]?'Off':(count($years)>1&&$years===range(min($years),max($years))?min($years).' to '.max($years):implode(', ',$years)).' '.($years===[1]?'year':'years'); }
+    public static function termReason(?string $reason): string
+    {
+        return match($reason) {
+            'no_exact_quote'=>'Longer renewals are held: the registrar does not provide an accepted exact-term quote yet.',
+            'family_unreviewed'=>'Registry renewal-family rules are not reviewed. Review the registry facts before enabling this family.',
+            'live_proof_required'=>'Live renewal proof is still required.',
+            'not_reviewed','term_unreviewed'=>'Longer terms have not been reviewed for this ending.',
+            'annual_unit'=>'An annual estimate cannot prove an exact-term total.',
+            'stale_facts','stale_price'=>'The saved evidence is out of date. Sync prices.',
+            default=>'Current term evidence is missing. Sync prices and review the registrar terms.',
+        };
+    }
+    /** The saved sales choice is independent of whether pricing follows the default rule. */
+    public static function savedTransfers(\Paymenter\Extensions\Servers\Domains\Models\Tld $t,array $rule): bool
+    {
+        $intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);
+        $seller=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->where('server_id',$t->server_id)->where('registrar_key',$t->registrar_key)->where('account_fingerprint',$t->account_fingerprint)->first();
+        return $seller?->transfer_enabled===true&&($intent['transfers']??$rule['transfers']??false)&&!in_array('transfer',$intent['stops']??[],true);
+    }
+    public static function termPrices(\Paymenter\Extensions\Servers\Domains\Models\Tld $t): array
+    {
+        if(!Staff::can(Staff::COSTS)){return [];}
+        try{return array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->preview($t,\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::rule($t))??[],fn($r)=>$r['action']==='register'));}
+        catch(\Throwable){return [];}
     }
 }

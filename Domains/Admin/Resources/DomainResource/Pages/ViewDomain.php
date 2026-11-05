@@ -68,7 +68,7 @@ class ViewDomain extends ViewRecord
     {
         $d=$this->getRecord();
         // Import domain for a pending import sits in the page notice.
-        return [$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
+        return [self::complimentaryRenewal($d),$this->syncNow(),...AcquisitionActions::make($d),...AcquisitionPaymentReview::actions($d),$this->customerView($d)];
     }
     /** Named as on the Users page, so a skin that records impersonation sees this one too. */
     private function customerView(Domain $d): Action
@@ -229,5 +229,39 @@ class ViewDomain extends ViewRecord
     {
         if (!$waiting) { return [...$fact,'mark'=>$fact['value']==='On'?'success':'gray']; }
         return [...$fact,'value'=>$fact['progress']['text'],'sub'=>'Was '.strtolower($fact['value']).'.','mark'=>'info','progress'=>null];
+    }
+    private static function complimentaryTerms(Domain $d): array
+    {
+        if(!Staff::can('admin.domains.manage')||!Staff::can('admin.domains.fund')||!Staff::can(Staff::COSTS)||$d->status!=='active'||$d->service?->status!=='active'){return [];}
+        try{if(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::stopped(\Paymenter\Extensions\Servers\Domains\Services\RenewalStop::read($d))||($d->renewal_policy['automatic_spend_paused']??false)){return [];}
+            return array_filter(app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user())['terms'],fn($t)=>$t['cost']!==null);
+        }catch(\Throwable){return [];}
+    }
+    private static function complimentaryRenewal(Domain $d): Action
+    {
+        return Action::make('complimentary_renewal')->label('Complimentary renewal')->color('gray')
+            ->visible(fn()=>self::complimentaryTerms($d)!==[])
+            ->modalHeading('Complimentary renewal')->modalSubmitActionLabel('Confirm complimentary renewal')->modalWidth('lg')
+            ->schema(function()use($d):array {
+                try{$options=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user());}catch(\Throwable){$options=['terms'=>[]];}
+                $terms=self::complimentaryTerms($d);
+                try{$annual=app(\Paymenter\Extensions\Servers\Domains\Services\DomainBilling::class)->renewalChoices($d)['next_annual']??null;}catch(\Throwable){$annual=null;}
+                $term=fn(\Filament\Schemas\Components\Utilities\Get $get)=>$terms[(int)$get('years')]??null;
+                return [Text::make('Domain: '.$d->domain),Text::make('Expires: '.($d->provider_expires_at?->format('M j, Y')??'Missing')),
+                    \Filament\Forms\Components\Select::make('years')->label('Years')->options(array_combine(array_keys($terms),array_map(fn($t)=>$t['years'].' '.($t['years']===1?'year':'years'),$terms)))->default(array_key_first($terms))->required()->live(),
+                    Text::make(fn(\Filament\Schemas\Components\Utilities\Get $get)=>'New expiry: '.($term($get)['expiry']??'Missing')),
+                    Text::make('Up to '.($options['max_years']??0).' added years fit before '.($options['horizon']??'the registration horizon').'.'),
+                    Text::make('Customer total: $0.00'),
+                    Text::make(fn(\Filament\Schemas\Components\Utilities\Get $get)=>isset($term($get)['cost'])?'Beco covers the $'.$term($get)['cost'].' registrar renewal cost.':'Missing. Sync prices before renewing.'),
+                    Text::make('Next annual renewal: '.($annual===null?'Missing — Sync prices':'$'.$annual.' / year').'. Renewal prices may change.')];
+            })->action(function(array $data)use($d):void {
+                try {
+                    $cycles=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class);$options=$cycles->complimentaryOptions((int)$d->id,Auth::user());
+                    $term=$options['terms'][(int)($data['years']??0)]??null;
+                    if(!$term||$term['cost']===null){throw new \DomainException('Current registrar cost is missing. Sync prices.');}
+                    $cycles->complimentary((int)$d->id,Auth::user(),$term['years'],new \Paymenter\Extensions\Servers\Domains\Data\Money($term['cost'],'USD'),'staff_complimentary_renewal');
+                    \Filament\Notifications\Notification::make()->success()->title('Renewal queued')->send();
+                } catch(\Throwable){\Filament\Notifications\Notification::make()->danger()->title('Could not renew')->body('Reload the domain and check its renewal terms and registrar cost.')->send();}
+            });
     }
 }

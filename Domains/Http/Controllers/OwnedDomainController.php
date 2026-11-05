@@ -52,6 +52,8 @@ final readonly class OwnedDomainController
         $holding=$this->owners->owned($request->user(),$id);
         $summary=$page==='show'?(new DomainSummaries())->one($request->user(),'managed',$id,now('UTC')->getTimestamp()):null;
         $domain=$this->owners->present($holding);
+        $renewalChoices=[];
+        if(isset($domain->renewNow['url'])){try{$renewalChoices=app(\Paymenter\Extensions\Servers\Domains\Services\DomainBilling::class)->renewalChoices($holding);}catch(\Throwable){}}
         abort_if($page==='code'&&!isset($domain->actions['code']),404);
         abort_if($page==='setup'&&!isset($domain->actions['setup']),404);
         $keys=[];
@@ -61,6 +63,6 @@ final readonly class OwnedDomainController
         $recoveryContact=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($request->user())['registrant'];
         $recoveryLimits=\Paymenter\Extensions\Servers\Domains\Services\ContactDetails::limits($holding->registrar_key);
         $recoveryStateRequired=$holding->registrar_key==='namesilo';
-        return view('domains::'.$page,compact('domain','summary','keys','recoveryContact','recoveryLimits','recoveryStateRequired'));
+        return view('domains::'.$page,compact('domain','summary','renewalChoices','keys','recoveryContact','recoveryLimits','recoveryStateRequired'));
     }
 }
