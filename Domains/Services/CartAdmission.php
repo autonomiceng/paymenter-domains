@@ -78,19 +78,23 @@ class CartAdmission
         $item->checkout_config = ['domain' => $name, 'domains_check' => $token];
     }
 
-    /** Before native mount/checkout only. Quiet CAS avoids update hooks and stale-tab overwrites. */
+    /** Before native mount/checkout only. Quiet CAS avoids update hooks and stale-tab overwrites.
+     * Lines staff took off sale are removed, then reported once with CartLinesRemoved. */
     public function refresh(): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Refresh requires an unlocked cart.'); }
         $cart = NativeCart::get();
         if (!$cart->exists || ($cart->user_id !== null && (int) $cart->user_id !== (int) Auth::id())) { return; }
-        $batch = new CheckoutRefreshBudget;
+        $batch = new CheckoutRefreshBudget; $removed = [];
         foreach ($cart->items as $item) {
             $batch->remainingMilliseconds();
             $product = Product::findOrFail($item->product_id);
             $mapping = $this->native->mapping($product, $item->plan);
             if (!$mapping || !in_array($mapping['action'], ['register', 'transfer'], true)) { continue; }
             $this->validate($item, $product); $name = $this->name($item, $mapping);
+            if ($this->catalogue()?->offSale((int) $product->server_id, $mapping['tld']->tld, $mapping['action'], $mapping['term'])) {
+                CartItem::whereKey($item->id)->where('cart_id', $cart->id)->delete(); $removed[$item->id] = $name; continue;
+            }
             $config = $item->checkout_config;
             while (true) {
                 try {
@@ -132,6 +136,11 @@ class CartAdmission
                 if (!$current || (int) $current->product_id !== (int) $item->product_id || (int) $current->plan_id !== (int) $item->plan_id
                     || $current->checkout_config !== $item->checkout_config) { throw new \DomainException('Cart changed. Try checkout again.'); }
             }
+        }
+        if ($removed) {
+            // The native page and checkout read this same memoized cart.
+            $cart->setRelation('items', $cart->items->reject(static fn ($item) => isset($removed[$item->id]))->values());
+            throw new CartLinesRemoved(array_values($removed));
         }
     }
 

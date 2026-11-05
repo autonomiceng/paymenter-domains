@@ -16,6 +16,7 @@ final class CartCheckoutRefresh
         Livewire::listen('mount', static function ($component) use ($admission): void {
             if ($component::class !== Cart::class) { return; }
             try { $admission->refresh(); }
+            catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); $component->notify($e->getMessage(), 'warning'); }
             catch (\Throwable $e) { self::unavailable($component, $e); }
         });
         Livewire::listen('hydrate', static function ($component, $memo): void {
@@ -26,18 +27,17 @@ final class CartCheckoutRefresh
             OrderContact::clear();
             if (!\Illuminate\Support\Facades\Auth::check()) { return; }
             try {
-                $admission->refresh();
+                try { $admission->refresh(); }
+                catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); $component->notify($e->getMessage(), 'warning'); $returnEarly(); return; }
                 if ($params !== []) { OrderContact::begin(\Illuminate\Support\Facades\Auth::user(), $params[0] ?? null); }
                 foreach ($admission->contactTlds() as $tld) { OrderContact::capture(\Illuminate\Support\Facades\Auth::user(), $tld); }
                 $offers = $admission->offers();
                 if (!$offers) { return; }
-                $total = new Price(['price' => NativeCart::items()->sum(fn ($item) => $item->price->total * $item->quantity), 'currency' => NativeCart::get()->currency]);
+                $total = self::cartTotal();
                 if (\Livewire\store($component)->get('domains.offers') !== $offers
                     || !$component->total || $component->total->total !== $total->total) {
                     // Only the customer can accept a changed retail price; the existing checkout click does that.
-                    $component->total = $total;
-                    $component->gateways = ExtensionHelper::getCheckoutGateways($total->total, $total->currency->code, 'cart', NativeCart::items());
-                    if (!in_array($component->gateway, array_column($component->gateways, 'id'))) { $component->gateway = $component->gateways[0]['id'] ?? null; }
+                    self::show($component, $total);
                     $component->notify('Your cart changed. Review the total, then check out again.', 'warning');
                     OrderContact::clear(); $returnEarly();
                 }
@@ -55,6 +55,21 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             OrderContact::clear();
         });
+    }
+
+    private static function cartTotal(): ?Price
+    {
+        return NativeCart::items()->isEmpty() ? null
+            : new Price(['price' => NativeCart::items()->sum(fn ($item) => $item->price->total * $item->quantity), 'currency' => NativeCart::get()->currency]);
+    }
+
+    /** Native updateTotal() is private; mirror it so the page shows what the next click buys. */
+    private static function show(Cart $component, ?Price $total): void
+    {
+        $component->total = $total;
+        if (!$total) { return; }
+        $component->gateways = ExtensionHelper::getCheckoutGateways($total->total, $total->currency->code, 'cart', NativeCart::items());
+        if (!in_array($component->gateway, array_column($component->gateways, 'id'))) { $component->gateway = $component->gateways[0]['id'] ?? null; }
     }
 
     private static function unavailable(Cart $component, \Throwable $e): void
