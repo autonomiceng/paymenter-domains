@@ -102,7 +102,7 @@ final class HoldingObservationWork
                     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
                 $this->recover($d);
                 // Legacy healthy ownership-only jobs must not postpone a missing or stale family read.
-                if($d->status==='active'&&ObservationProjection::recordStatus($d,$this->clock->now())['stale']){
+                if($this->observer->readsRecords()&&$d->status==='active'&&ObservationProjection::recordStatus($d,$this->clock->now())['stale']){
                     self::current($d)->where('safe_code','refreshed')->where('lease_until','<=',$this->clock->now()->getTimestamp())
                         ->update(['due_at'=>$this->clock->now()->getTimestamp()]);
                 }
