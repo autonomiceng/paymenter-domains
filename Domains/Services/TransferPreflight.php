@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\SealPreflight;
-use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Action, Capabilities, DispatchReadiness, RequestContext, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Data\{BalanceRetry, Action, Capabilities, DispatchReadiness, Money, RequestContext, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Both observations are unlocked. The second immediately precedes the seal and local consumption. */
 final readonly class TransferPreflight implements SealPreflight
@@ -45,7 +45,18 @@ final readonly class TransferPreflight implements SealPreflight
         $quote = $reader->quote($query, $context); $balance = $retryBalance??BalanceReads::read($reader, $context, 'preflight');
         WriteMoney::requireRead($context->binding, $quote, $balance);
         $q = $quote->evidence()->quote; WriteMoney::requireFunds($q, $balance->evidence()->balance, $query, $observed, $context->now());
-        ComplimentaryCosts::require($op,$q->cost,$op->cost['estimated']);
+        // Neither a higher live quote nor a later sync can enlarge this order's frozen spending authority.
+        $saved = $op->cost ?? [];
+        try {
+            if ($op->currency !== 'USD' || ($saved['currency'] ?? null) !== 'USD' || ($saved['unit'] ?? null) !== 'term_total'
+                || !is_string($saved['estimated'] ?? null)) { throw new \InvalidArgumentException; }
+            $ceiling = new Money($saved['estimated'], 'USD'); $total = new Money((string) $op->amount, 'USD');
+        } catch (\InvalidArgumentException) { throw new WriteHeld('registrar_price_missing'); }
+        ComplimentaryCosts::require($op,$q->cost,$ceiling->amount);
+        if (!isset($op->policy['account_complimentary']) && (WriteMoney::compare($q->cost->amount, $ceiling->amount) > 0 || WriteMoney::compare($q->cost->amount, $total->amount) > 0)) {
+            // We cannot absorb a higher cost by changing a paid customer's frozen order.
+            throw new WriteHeld('registrar_price_increased');
+        }
         return new DispatchReadiness($context->binding, $query, new Capabilities($context->binding, ['transfer' => $capability]),
             $q->cost, true, false, $observed, min($q->validUntil, $observed->modify('+120 seconds')), OperationClaims::payloadDigest($op),
             [...$transfer, 'premium' => false, 'privacy' => $privacy, 'name' => $query->name, 'years' => 1, 'cost' => ['amount' => $q->cost->amount, 'currency' => 'USD']]);
