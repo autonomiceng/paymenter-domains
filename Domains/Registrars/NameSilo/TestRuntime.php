@@ -43,7 +43,7 @@ final class TestRuntime
             $renewal=new RenewalAcceptance($binding,true,true,25,localCheck:static fn($b)=>$check($b)&&NameSiloFeatureSettings::accepted($b,'renewal'));
             $registration=new Registration($binding,$profiles,$exchange);$registration->useReservation($transport->reservation);
             $transfer=new Transfer($binding,$profiles,$exchange);$transfer->useReservation($transport->reservation);
-            $management=new Management($binding,$exchange);$management->useReservation($transport->reservation);
+            $management=new DsManagement($binding,$exchange,DsRegistryPolicy::DEPLOYMENT_FACTS,$clock);$management->useReservation($transport->reservation);
             $ports=RuntimeComposition::make($binding,$bindings,$clock,$features,$accepted,$renewal,app(TransferPrecheck::class),
                 $registration,$transfer,$exchange,$management,$features->management,$profiles);
             $ports['renewal_writer']->useReservation($transport->reservation);
