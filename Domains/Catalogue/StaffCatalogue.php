@@ -38,14 +38,15 @@ final class StaffCatalogue
         });
         return ['count'=>$count,'highest'=>$highest,'filled'=>$this->progress($server)['succeeded_at']??null];
     }
-    /** Staff-only recovery hints. Enqueue on the retained worker; never resolve a feed or change sale intent. */
-    public function nextSteps(Collection $tlds,array $rows,string $action,int $term): array
+    /** Staff-only recovery hints. Enqueue on the retained worker; never resolve a feed or change sale intent.
+     * @param ?array $once account and settings reads (binding, readable, queue status and sync, pricing defaults) shared by
+     * every action of one table build. The caller owns it for one request; this routed catalogue never keeps it. */
+    public function nextSteps(Collection $tlds,array $rows,string $action,int $term,?array &$once=null): array
     {
-        Staff::requireView();$out=[];$once=[];
+        Staff::requireView();$out=[];$once??=[];
         foreach($tlds as $t){$key=$t->server_id.':'.$t->tld;$out[$key]=$this->nextStep($t,$rows[$key]['offers']??[],$action,$term,$once);}
         return $out;
     }
-    /** @param array $once account and settings reads shared by the rows of one nextSteps() call */
     private function nextStep(Tld $t,array $offers,string $action,int $term,array &$once): array
     {
         $offer=$offers[$action.':'.$term]??null;$reason=$offer?->decision->reason;$now=$this->clock->now();

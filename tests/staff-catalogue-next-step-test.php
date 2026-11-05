@@ -184,6 +184,15 @@ same($now->getTimestamp(),$work->status($binding)['due_at'],'Missing retained re
 // Render the actual staff cell. Visible descriptions and real links cannot be proved by a helper-only assertion.
 
 } catch (Throwable $error) {$failures[]='Case 16: '.$error->getMessage();}
+// One table build shares the account price read across its actions: Register and Renew hints queue one sync.
+$syncs=0;$countSyncs=false;DB::listen(static function($q)use(&$syncs,&$countSyncs):void {if($countSyncs&&preg_match('/^update [`"]domains_observation_queues[`"]/i',$q->sql)){$syncs++;}});
+try {
+$reset();$clearPrice();DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_retained_annual_retail'=>null]);
+[$table,$row]=nextTable();$countSyncs=true;
+$hints=[$table->cell($row,'register','price')['text'],$table->cell($row,'renew','price')['text']];$countSyncs=false;
+same(['Checking','Checking'],$hints,'Register and Renew both wait on the account price read');
+same(1,$syncs,'One table build queues the account price read once across Register and Renew');
+} catch (Throwable $error) {$countSyncs=false;$failures[]='Shared account sync: '.$error->getMessage();}
 // Review probe A/B: an unreadable saved rule is a staff edit, never automatic recovery.
 foreach([false,true] as $pending){
 try {
