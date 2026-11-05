@@ -66,7 +66,7 @@ class CheckoutEligibility
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Eligibility reads require an unlocked cart.'); }
         // Transfer and comparison semantics remain on their existing path.
-        if ($selection->action !== 'register' || $comparison || $this->comparisonName !== null) { return $this->observeFresh($name, $selection, $identity, $comparison); }
+        if ($selection->action !== 'register' || $comparison || $this->comparisonName !== null) { return $this->observeFresh($name, $selection, $identity, $comparison, $batch); }
         $key = 'domains.checkout.refresh.'.hash('sha256', json_encode([$name, $identity, get_object_vars($selection)], JSON_THROW_ON_ERROR));
         $read = function () use ($key, $name, $selection, $identity, $batch): string {
             $batch?->remainingMilliseconds();
@@ -102,8 +102,10 @@ class CheckoutEligibility
         $started = $this->clock->now();
         $transfer = null;
         if ($selection->action === 'transfer') {
+            $deadline = $started->modify('+'.min(25000, $batch?->remainingMilliseconds() ?? 25000).' milliseconds');
             $transfer = ($this->transfers ?? throw new \DomainException('Transfer eligibility is not configured.'))->check($name, $selection, $driver,
-                new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+25 seconds'), new RequestBudget(3), $this->clock, Runtime::limiter()));
+                new RequestContext($driver->binding(), RequestOrigin::Interactive, $deadline, new RequestBudget(3), $this->clock, Runtime::limiter()));
+            $batch?->remainingMilliseconds();
         } else {
         $deadline = $started->modify('+'.min(10000, $batch?->remainingMilliseconds() ?? 10000).' milliseconds');
         $result = $driver->availability(new Query($name, Action::Register, $selection->term),
