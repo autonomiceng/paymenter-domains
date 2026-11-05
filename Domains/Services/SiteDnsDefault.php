@@ -28,8 +28,8 @@ final class SiteDnsDefault
         // An explicit watch choice, including an unusable one, is never silently replaced.
         return $watch->ns_profile_id===null?self::profile($lock):WatchProfile::whereKey($watch->ns_profile_id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
     }
-    public static function watchExpected(WatchName $watch): ?string
-    { return $watch->expected_dns??($watch->ns_profile_id===null && self::profile()?'platform':null); }
+    public static function watchExpected(WatchName $watch,?bool $configured=null): ?string
+    { return $watch->expected_dns??($watch->ns_profile_id===null && ($configured??(self::profile()!==null))?'platform':null); }
     /** Called only after lifecycle initialization has proved and installed the retained schema. */
     public static function ensure(): void
     {
