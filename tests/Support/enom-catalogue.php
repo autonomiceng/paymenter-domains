@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts,Context,Facts,Fa
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,NativeCatalogue,StaffSettingsReview as Review,StaffSettingsWrites,Storefront};
 // Retired synchronous import/fill algorithm coverage lives in offer-feed-test.php and
-// offer-work-test.php. Active review/withdrawal/restore coverage: offer-staff-policy-test.php,
+// test_installed_offer_work-test.php. Active review/withdrawal/restore coverage: offer-staff-policy-test.php,
 // offer-restore-sales-test.php; physical cap/stale reviews: enom-test-send-limit-test.php.
 // Frozen checkout/funding remains in offer-commerce-test.php and installed registration phases.
 $clock=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock { public DateTimeImmutable $at;public function __construct(){$this->at=new DateTimeImmutable('2026-11-02T12:00:00Z');}public function now():DateTimeImmutable{return $this->at;} };
