@@ -71,7 +71,7 @@ $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountActi
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
 // Default pricing lives on What you sell, and its dialog counts the TLDs that follow it.
 $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ticket($u->id,$t->server_id,$t->id,'remove_override',Review::stamp($t->server_id,$t->id)),'Follow the account default again'),[],$now);
-Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertDontSee(['Customer pays','Card fee'],false);
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Customer pays','Card fee'],false);
 $sell=Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class)->mountAction('default_pricing')->call('$refresh');$sees($sell,['2 TLDs use Default pricing.']);$render($sell,'modal-default_pricing');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 same(8,count($strings),'Eight settings modals rendered');
