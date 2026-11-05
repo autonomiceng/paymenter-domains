@@ -104,6 +104,10 @@ class CartAdmission
                     }
                     $token = $this->eligibility->refresh((string) ($config['domains_check'] ?? ''), $name, $selected, $this->identity($item), $batch);
                     if (isset($selected->catalogue['order_quote'])) {
+                        // Eager-loaded same-plan lines share models; isolate each transient quote.
+                        $plan = clone $item->plan;
+                        $plan->setRelation('prices', $plan->prices->map(static fn ($price) => clone $price));
+                        $item->setRelation('plan', $plan);
                         // In-memory native plan only: native tax/coupon/invoice arithmetic stays intact.
                         $item->plan->prices->where('currency_code', 'USD')->sole()->price = $selected->catalogue['retail'];
                     }
