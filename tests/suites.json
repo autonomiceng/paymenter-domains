@@ -518,7 +518,8 @@
     "tests/test_installed_demo_c_activation-test.php",
     "tests/test_installed_demo_c_monitoring-test.php",
     "tests/test_installed_demo_c_r10_layout-test.php",
-    "tests/cart-session-price-test.php"
+    "tests/cart-session-price-test.php",
+    "tests/test_installed_demo_c_dialogs-test.php"
   ],
   "ui": [],
   "runner": [

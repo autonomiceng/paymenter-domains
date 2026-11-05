@@ -1,5 +1,7 @@
 {{-- MIT, Copyright (c) 2026 Autonomic Engineering. Staff page layout that holds without a skin. Unlayered, so it sits over Filament; a skin's own rules on these classes are more specific. --}}
 <style>
+/* Filament reverses end-aligned footers. Keep the configured Cancel-first DOM and keyboard order visible. */
+.domains-dialog .fi-modal-footer:is(.fi-align-end,.fi-align-right) .fi-modal-footer-actions{flex-direction:row;justify-content:flex-end}
 .domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
 .domains-missing-mark{display:block;margin-top:.1875rem;color:var(--danger-500)}

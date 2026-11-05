@@ -7,7 +7,7 @@ use Filament\Actions\Action;
 final class DialogFooter
 {
     public static function boot(): void
-    { Action::configureUsing(fn(Action $action)=>$action->modalFooterActions(self::cancelFirst(...))); }
+    { Action::configureUsing(fn(Action $action)=>$action->modalFooterActions(self::cancelFirst(...))->extraModalWindowAttributes(['class'=>'domains-dialog'],merge:true)); }
     /** @return list<Action> */
     public static function cancelFirst(Action $action): array
     { return array_values(array_filter([$action->getModalCancelAction(),...$action->getExtraModalFooterActions(),$action->getModalSubmitAction()])); }
