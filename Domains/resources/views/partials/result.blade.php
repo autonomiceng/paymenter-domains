@@ -14,7 +14,7 @@
 <li class="domains-result {{ ($first ?? false) ? 'is-first' : '' }}" data-domains-result data-domain="{{ $result['domain'] }}" data-state="{{ $state }}">
     <div class="domains-result__name"><span>{{ $result['sld'] }}</span><wbr><span class="domains-tld">.{{ $result['tld'] }}</span>@if ($result['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</div>
     <div class="domains-result__status"><span class="{{ $state === 'idle' ? 'domains-checking' : 'domains-badge domains-tone-'.$tone }}">{{ $label }}</span></div>
-    @if (!in_array($state,['available','transferable'],true))<div class="domains-result__price">{{ $state==='premium' ? 'Not sold here' : '' }}</div>@endif
+    <div class="domains-result__price">{{ $state==='premium' ? 'Not sold here' : '' }}</div>
     <div class="domains-result__action">
         @if (in_array($state, ['available', 'transferable'], true))
             <form method="POST" action="{{ route('domains.domains.order') }}">
@@ -23,7 +23,7 @@
                 <input type="hidden" name="domain" value="{{ $result['domain'] }}">
                 <input type="hidden" name="action" value="{{ $state === 'available' ? 'register' : 'transfer' }}">
                 <dl class="domains-term-rows">
-                <div><dt><label for="domains-term-{{ $result['domain'] }}">Years</label></dt><dd>
+                <div><dt>@if ($state==='available' && count($result['terms']??[])>1)<label for="domains-term-{{ $result['domain'] }}">Years</label>@else Years @endif</dt><dd>
                 @if ($state === 'available' && count($result['terms'] ?? []) > 1)
                     <select class="domains-input domains-term-select" id="domains-term-{{ $result['domain'] }}" name="term">
                         @foreach ($result['terms'] as $years => $total)<option value="{{ $years }}" data-total="{{ $total }}" @selected($years === $result['term'])>{{ $years }} {{ $years === 1 ? 'year' : 'years' }}</option>@endforeach

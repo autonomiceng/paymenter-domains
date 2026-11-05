@@ -302,7 +302,7 @@ class WhatYouSell extends Page implements HasTable
                 ->options($keep($longest===null?null:$longest.' '.($longest===1?'year':'years'))+array_combine(range(1,10),array_map(fn(int $y)=>$y.' '.($y===1?'year':'years'),range(1,10)))),
             Select::make('transfer')->label('Transfers')->inlineLabel()->required()->selectablePlaceholder(false)->default(self::KEEP)->options($keep($transfer===null?null:($transfer?'On':'Off'))+['on'=>'On','off'=>'Off']),
             ...($tld!==null?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-prices',['prices'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($tld)]))]:[]),
-            ...($readiness?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-readiness',compact('readiness')))]:[]),
+            ...($readiness?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-readiness',['readiness'=>$readiness]))]:[]),
         ];
     }
     public function table(Table $table): Table
@@ -342,7 +342,7 @@ class WhatYouSell extends Page implements HasTable
             ->toolbarActions([
                 // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
                 BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
-                    ->modalHeading(fn($records)=>$records->count()===1?'Edit terms: .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save terms')->modalFooterActions(self::cancelFirst())->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)->modalWidth('3xl')
+                    ->modalHeading(fn($records)=>$records->count()===1?'Edit terms: .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save terms')->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)->modalWidth('3xl')
                     ->schema(fn($records)=>$this->editFields($records->count()===1?$records->first():null))
                     ->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
             ]);

@@ -43,7 +43,8 @@ a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),a:focus-visib
 .domains-sec .domains-card{margin:0}
 .domains-sec .domains-card>div{display:grid;grid-template-columns:156px minmax(0,1fr);gap:16px;align-items:start;min-height:44px;padding:8px 24px;border-top:1px solid var(--beco-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
 .domains-sec .domains-card dt{font-weight:400;color:var(--beco-fg-2,inherit)}
-.domains-sec .domains-card dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.domains-sec .domains-card dd{color:var(--beco-fg,inherit);margin:0;min-width:0;overflow-wrap:anywhere}
+.domains-sec .domains-card .domains-mono{font-family:var(--beco-font-mono,ui-monospace,monospace);font-weight:600}
 .domains-sub{display:block;margin-top:3px;font-size:.75rem;line-height:1.125rem;color:var(--beco-fg-2,inherit)}
 .domains-hint{margin:6px 24px;font-size:.75rem;line-height:1.125rem;color:var(--beco-fg-2,inherit)}
 .domains-h3{margin:12px 24px 8px;font-size:.875rem;font-weight:600}

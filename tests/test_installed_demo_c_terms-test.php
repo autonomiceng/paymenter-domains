@@ -41,6 +41,12 @@ $r10Check(count(array_filter($accountRows,fn($r)=>$r['label']==='.com'))===1,'On
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
 $editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
 same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
+$opened=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
+$key=$opened->instance()->getTableRecordKey($row);
+$opened->mountTableBulkAction('edit',[$key])->call('$refresh');
+$dialog=$opened->effects['partials']['action-modals.0']??'';
+expect(str_contains($dialog,'Registration')&&str_contains($dialog,'Ordinary')&&str_contains($dialog,'Redemption'),'Opening the actual terms dialog renders both term and renewal rows');
+
 $prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
 $priceHtml=view('domains::admin.term-prices',compact('prices'))->render();
 expect(str_contains($priceHtml,'<dl')&&str_contains($priceHtml,'Registration'),'Term totals use labeled registration rows');

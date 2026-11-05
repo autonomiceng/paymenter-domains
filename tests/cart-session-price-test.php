@@ -47,6 +47,7 @@ $html=$get();$x=storefrontDom($html);
 same('Your cart changed',trim($x->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'HTTP reload announces the changed price');
 same('Was $23.40',trim($x->query('//s')->item(0)?->textContent??''),'HTTP reload strikes the total the browser last saw');
 expect(str_contains($html,'$27.00'),'HTTP reload shows the new quote');
+if(isset($argv[1])){require __DIR__.'/Support/demo-c-r11-cart-render.php';}
 // Checkout rechecks the signed page even if another publish follows the reload.
 $snapshot=json_decode($x->query('//*[@*[name()="wire:snapshot"]]')->item(0)->getAttribute('wire:snapshot'),true);
 $rev=$ports->readOffers($q,Context::Staff)[0]->revision;
