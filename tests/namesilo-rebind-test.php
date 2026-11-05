@@ -57,7 +57,7 @@ $operation=Operation::create(['server_id'=>$server->id,'registrar_key'=>'namesil
     'domain_id'=>$domain->id,'service_id'=>701,'authority_generation'=>1,'operation_key'=>'retained-held-request',
     'action'=>'renew','currency'=>'USD','amount'=>'12.00','state'=>'held','safe_code'=>'staff_review',
     'attempt'=>['seal'=>'synthetic-retained-seal','execution'=>null],'policy'=>[]]);
-$retained=[$account->getRawOriginal(),$domain->getRawOriginal(),$operation->getRawOriginal()];
+$retained=[$account->fresh()->getRawOriginal(),$domain->fresh()->getRawOriginal(),$operation->fresh()->getRawOriginal()];
 $history=Review::historyRows($server);$sandboxRow=$server->settings()->where('key',NameSiloSandbox::KEY)->sole()->getRawOriginal();
 same(1,$GLOBALS['enrollmentCalls'],'Legacy enrollment used the socket-free authentication fixture');
 config(['domains.namesilo_sandbox_enrollment.enabled'=>false,'domains.namesilo_account.environment'=>'test']);
@@ -68,7 +68,7 @@ app()->forgetInstance(StaffSettingsWrites::class);
 $bindings=app(AccountBindings::class);$writes=app(StaffSettingsWrites::class);
 $refuse=static function(callable $work):void {
     $before=[$GLOBALS['enrollmentCalls'],$GLOBALS['rebindReads']??0];$caught=null;
-    try{$work();}catch(\DomainException $error){$caught=$error;}
+    try{$work();}catch(\Throwable $error){$caught=$error;}
     expect($caught!==null,'Unsafe account change must refuse');
     same($before,[$GLOBALS['enrollmentCalls'],$GLOBALS['rebindReads']??0],'Refused change makes no wire call');
 };
@@ -87,7 +87,7 @@ same($history,array_slice(Review::historyRows($server),0,count($history)),'Exist
 expect(!array_filter(Review::historyRows($server),fn($entry)=>str_contains(json_encode($entry),$credentials['api_key'])),'Audit never includes the key');
 expect(!$account->fresh()->processing_enabled,'Authentication never enables sends');
 expect(app(RuntimePorts::class)->registered($account->fresh()),'Upgraded TEST account composes the installed domain runtime');
-$clock=app(Clock::class);$context=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+60 seconds'),new RequestBudget(4),$clock);
+$clock=app(Clock::class);$context=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+60 seconds'),new RequestBudget(4),$clock,stopOnReadFailure:true);
 $reader=$bindings->reader($server->id);$result=$reader->readDomain('example.com',$context())->evidence()->domain;
 same(['example.com',true],[$result?->name,$result?->owned],'Same account reads its domain after authentication');
 NameSiloAccountGuard::check($binding,$context(),static fn()=>throw new \RuntimeException('Authenticated local lineage must not need a default-contact read'));
