@@ -77,7 +77,7 @@ final class StorefrontController extends Controller
             $result = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending) - 1), 'tld' => $ending, 'status' => 'in_cart'];
             return response()->json(['status' => 'in_cart', 'html' => view('domains::partials.result', ['result' => $result, 'first' => false])->render()]);
         }
-        try { $result = $this->storefront->check($input); }
+        try { $result = $this->storefront->check($input, $request->input('mode') === 'transfer'); }
         catch (\InvalidArgumentException) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
         catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('Domains search failed.',['exception_class'=>$e::class]); return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
         if (in_array($result['status'], ['available', 'transferable'], true)) {
