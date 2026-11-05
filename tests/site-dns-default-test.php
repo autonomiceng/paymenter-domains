@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/watch-dns.php';
+require __DIR__.'/Support/FakeDnsReader.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,NewDomainDns,WatchDnsChecks};
@@ -52,4 +53,8 @@ $page=\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\
 config(['domains.site_dns_default.nameservers'=>null]);$entry->upgraded();
 \Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING)->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors();
 same($default->id,SiteDnsDefault::profile()->id,'Site settings save a single global reference');
+app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
+DB::table('domains_watch_work')->where('watch_id',$watch->id)->delete();
+DB::transaction(fn()=>$source->fresh()->fill(['revision'=>$source->revision+1,'last_seen_at'=>$at+1])->save());
+same(2,DB::table('domains_watch_work')->where('watch_id',$watch->id)->whereIn('kind',['delegation','points'])->count(),'Source attachment events enroll DNS work before the daily sweep');
 $nativeSuccessful=true;echo "Site DNS installation default passed.\n";
