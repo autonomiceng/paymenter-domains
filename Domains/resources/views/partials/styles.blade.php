@@ -194,9 +194,11 @@
     .domains .domains-stackable .domains-cell-wide { grid-column: 1 / -1; }
     .domains .domains-stackable .domains-end { text-align: left; }
     .domains .domains-dns-inventory td { min-width: 0; overflow-wrap: anywhere; }
-    .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; }
-    .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; }
-    .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); }
+    .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; text-align: right; }
+    .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; text-align: left; }
+    .domains .domains-dns-inventory td[data-label="Host"] { display: block; text-align: left; font-weight: 600; }
+    .domains .domains-dns-inventory td[data-label="Host"]::before { content: none; }
+    .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); background: var(--e-panel); }
     .domains .domains-head-actions { flex-wrap: nowrap; gap: .5rem; }
     .domains .domains-head-actions .domains-btn { min-width: 0; padding-inline: .625rem; font-size: .8125rem; }
     .domains .domains-list td[data-label] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: .5rem; }
