@@ -162,6 +162,8 @@
     "tests/transfer-ceiling-test.php",
     "tests/transfer-completion-test.php",
     "tests/transfer-completion-namesilo-test.php",
+    "tests/transfer-completion-namesilo-refusals-test.php",
+    "tests/transfer-completion-namesilo-finance-test.php",
     "tests/registrar-transfer-answer-test.php",
     "tests/registrar-purchase-answer-test.php",
     "tests/registrar-renewal-answer-test.php",
