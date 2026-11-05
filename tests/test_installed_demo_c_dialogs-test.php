@@ -47,11 +47,17 @@ if(!str_contains($dialog,'before '.Carbon\CarbonImmutable::parse($options['horiz
 // Optional offline browser artifacts contain actual native modal DOM and shipped CSS, with no application access.
 if(isset($argv[1])){
     expect(is_dir($argv[1]),'Dialog output directory exists');
-    $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
+    $panelCss=getenv('DOMAINS_RENDER_PANEL_CSS')?:$fixture.'/vendor/filament/filament/dist/theme.css';
+    $skinPath=getenv('DOMAINS_RENDER_STAFF_SKIN')?:null;
+    expect(is_file($panelCss),'Supplied panel CSS exists');
+    expect($skinPath===null||is_file($skinPath),'Supplied Landing skin exists');
+    $css=file_get_contents($panelCss);
+    $skin=$skinPath===null?'':'<style>'.file_get_contents($skinPath).'</style>';
+    file_put_contents($argv[1].'/css-inputs.json',json_encode(['panel_sha256'=>hash_file('sha256',$panelCss),'skin_sha256'=>$skinPath===null?null:hash_file('sha256',$skinPath),'domains_sha256'=>hash('sha256',(string)view('domains::partials.staff-styles')->render())],JSON_PRETTY_PRINT));
     foreach(['terms'=>$terms,'complimentary'=>$gift] as $name=>$test){
         $body=$test->effects['partials']['action-modals.0']??'';
         $body=str_replace('class="fi-modal fi-absolute-positioning-context"','class="fi-modal fi-absolute-positioning-context fi-modal-open"',$body);
-        $html='<!doctype html><html class="dark"><head><meta charset="utf-8"><style>'.$css.'</style>'.view('domains::partials.staff-styles')->render().'</head><body>'.$body.'</body></html>';
+        $html='<!doctype html><html class="dark"><head><meta charset="utf-8"><style>'.$css.'</style>'.view('domains::partials.staff-styles')->render().$skin.'</head><body>'.$body.'</body></html>';
         file_put_contents($argv[1].'/'.$name.'.html',$html);
     }
 }
