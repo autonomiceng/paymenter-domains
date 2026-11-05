@@ -92,7 +92,8 @@ same(false,$facts['provider_confirmed_account'],'Stored ownership disclaimer');s
 same('matched',$bindings->configurationStatus($s->id),'Enrolled sandbox API connection remains matched');
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSeeInOrder(['API connection','OK'])->assertDontSee('Verified')->assertDontSee('OTE only')->assertDontSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
 $configurePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('configure',$s))->assertActionMounted($action('configure',$s));
-same("NameSilo accounts can't be connected with API credentials.",$configurePage->instance()->getMountedAction()->getModalDescription(),'NameSilo identity refusal remains unchanged');
+// Local account enrollment replaced the identity-refusal modal in 9d4f0094.
+same('Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.',$configurePage->instance()->getMountedAction()->getModalDescription(),'NameSilo connection describes key authentication without ownership proof');
 $configurePage->setActionData(['registrar'=>'enom']);same(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::description('configure'),$configurePage->instance()->getMountedAction()->getModalDescription(),'Changing registrar updates description');
 unset($configurePage);gc_collect_cycles();
 // A separate read works without processing or acceptance. It is not ownership proof.
