@@ -179,7 +179,7 @@ class ViewDomain extends ViewRecord
     {
         $state=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
         $resume=$this->getAction('resume_observation',false);
-        return Sheet::section('Record families',[Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true]))],after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+        return Sheet::section('Record families',[Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'readScheduling'=>!DomainFacts::ended($d)]))],after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
     }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section
