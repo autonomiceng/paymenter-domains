@@ -38,7 +38,7 @@ final class CardFee
     public static function saveLocked(array $fee): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer card fee transaction required.');}
-        UpgradeGate::legacy();
+        UpgradeGate::active(UpgradeGate::generation());
         BusinessSetting::saveLocked(self::KEY,self::validate($fee));
         StorefrontCatalogueCache::invalidateAfterCommit();
     }

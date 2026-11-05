@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, Observa
 ObservationSchema::install(); OfferSchema::install(); OfferWorkSchema::install();
 [$pending,,$binding]=$makeRenewal(placeholderComFixtureName('offer-paid-renewal-placeholder.com'));
 [$pendingEngine,$pendingWriter,$completion]=$compose($binding);
-same('pending',$pendingEngine->run($pending->id,$pendingWriter)->state,'Paid renewal retains its acknowledged attempt');
+$ack=$pendingEngine->run($pending->id,$pendingWriter);same('pending',$ack->state,'Paid renewal retains its acknowledged attempt; state='.$ack->state.' code='.$ack->safe_code);
 [$uncertain]=$makeRenewal(placeholderComFixtureName('offer-uncertain-renewal-placeholder.com'));
 [$uncertainEngine,$uncertainWriter]=$compose($binding); $state->lost=true;
 same('uncertain',$uncertainEngine->run($uncertain->id,$uncertainWriter)->state,'Lost renewal reply retains uncertain attempt');

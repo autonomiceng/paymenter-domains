@@ -14,7 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission,CheckoutEligibi
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 Queue::fake();extract(commerceFixture(true));$clock=new FakeClock($now);
 ReminderSchema::install();NativeIdentity::boot();
-$admission=new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock),$clock);$admission->boot();
+$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock),$clock);$admission->boot();
 $binder=new InvoiceBinding($admission,$native,$prices,$clock);app()->instance(InvoiceBinding::class,$binder);$binder->boot();
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $user=commerceUser();$cart=commerceCart($user);$product=$native->product($tlds[0],'register');

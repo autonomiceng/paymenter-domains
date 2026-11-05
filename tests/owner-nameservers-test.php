@@ -70,7 +70,7 @@ $r=$request($d,['nameservers'=>"NS1.EXAMPLE.COM.\r\nns2.example.com."]);$action-
 same(['ns1.example.com','ns2.example.com'],$op->fresh()->payload['nameservers']??null,'Trailing root dots are removed before setup validation');
 // Purchase rules differ from existing-domain management at this provider.
 $policy=DB::table('domains_sales_policies')->where('tld','com')->first();
-$sellers->change('com',$policy->revision,$tlds[1]->server_id,true,true,$clock->now());
+activeFixtureSeller($sellers,'com',$policy->revision,$tlds[1]->server_id,true,true,$clock->now());
 $name=placeholderComFixtureName('owner-nameservers-purchase-placeholder.com');
 $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[1],'register'),$name);commerceCheckout($user,$cart);storefrontViews();
 $d=Domain::where('domain',$name)->sole();$op=$d->operations()->sole();

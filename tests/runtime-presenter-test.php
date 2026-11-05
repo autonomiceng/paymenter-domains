@@ -18,7 +18,7 @@ app()->instance(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::c
 $entry->boot();installedPanel();
 $owners=app(OwnedDomains::class);$presenter=app(NativePresenter::class);$user=commerceUser();$user->update(['email'=>'native-owner@example.com']);$foreign=commerceUser();foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}$pairs=[];$checkoutLines=[];$cartEdits=[];
 foreach($tlds as $i=>$t){
-    if($i){$p=DB::table('domains_sales_policies')->where('tld','com')->sole();$sellers->change('com',$p->revision,$t->server_id,true,true,$now);}
+    if($i){$p=DB::table('domains_sales_policies')->where('tld','com')->sole();activeFixtureSeller($sellers,'com',$p->revision,$t->server_id,true,true,$now);}
     $created=placeholderComFixtureName(str_repeat('a',47).'-placeholder-'.$i.'.com');$edited=placeholderComFixtureName(str_repeat('a',46).'x-placeholder-'.$i.'.com');
     same(61,strlen(explode('.',$created)[0]),'Created cart fixture retains its label length');same(61,strlen(explode('.',$edited)[0]),'Edited cart fixture retains its label length');expect($created!==$edited,'Create and edit retain distinct names');
     $cart=commerceCart($user);$item=commerceAdd($cart,$native->product($t,'register'),$created);

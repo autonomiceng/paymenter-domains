@@ -39,7 +39,7 @@ final class PricingRules
     public function saveDefaultRuleLocked(array $rule): void
     {
         if (DB::transactionLevel() !== 1) { throw new \LogicException('Outer rule transaction required.'); }
-        UpgradeGate::legacy();
+        UpgradeGate::active(UpgradeGate::generation());
         BusinessSetting::saveLocked(self::KEY, PricingRule::validate($rule));
         StorefrontCatalogueCache::invalidateAfterCommit();
     }

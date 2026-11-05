@@ -24,7 +24,7 @@ $bindings=app(AccountBindings::class);$binding=$bindings->configure($server->id,
 $account=Account::where('server_id',$server->id)->sole();same(false,$account->processing_enabled,'Verified identity starts with processing off');
 $ending='test';
 $tld=Tld::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','account_fingerprint'=>$binding->fingerprint,'tld'=>$ending]);
-$native=app(NativeCatalogue::class);$native->publish($tld->id,new DateTimeImmutable);
+$native=app(NativeCatalogue::class);activeFixtureRepublish($native,$tld->id,new DateTimeImmutable);
 $sellers=app(SellerPolicies::class);$sellers->initialize($ending);
 $product=$native->product($tld,'register');same(null,$product->stock,'Fresh withdrawn registration product has unlimited stock');
 same([],app(Storefront::class)->endings(),'Configured identity alone publishes no offer');

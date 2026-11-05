@@ -5,13 +5,13 @@ require __DIR__.'/Support/owned.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,StorefrontController};
 use Paymenter\Extensions\Servers\Domains\Services\{Storefront,CheckoutEligibility};
-$store=new Storefront($sellers,$prices,$native,$bindings,new CheckoutEligibility($bindings,$clock),$clock);
+$store=new Storefront($sellers,$prices,$native,$bindings,activeFixtureEligibility($bindings,$clock),$clock);
 app()->instance(Storefront::class,$store);
 $controller=new OwnedDomainController($owners);$search=new StorefrontController($store);
 $request=Request::create('/domains','GET');$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());
 $newTransfer('entry-placeholder.com',0,false,false);storefrontViews();
 foreach([false,true,false] as $enabled){
-    $tlds[0]->update(['transfer_enabled'=>$enabled]);$native->publish($tlds[0]->id,$clock->now());
+    $tlds[0]->update(['transfer_enabled'=>$enabled]);activeFixtureRepublish($native,$tlds[0]->id,$clock->now());
     $rows=$store->endings();same($enabled,$rows[0]['transfer']!==null,'Displayed transfer offer follows publication');
     $pricing=storefrontDom(view('domains::pricing',['rows'=>$rows,'guest'=>false,'testEnvironment'=>false])->render());
     same($enabled?$rows[0]['transfer']:'Transfers off',trim($pricing->query('//td[@data-label="Transfer"]')->item(0)->textContent),'Price list is the offer source');

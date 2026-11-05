@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligib
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 extract(commerceFixture(true)); $clock = new FakeClock($now);
-$eligibility = new CheckoutEligibility($bindings, $clock);
+$eligibility = activeFixtureEligibility($bindings, $clock);
 $store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $measure = static function (Closure $read): array {
     DB::enableQueryLog(); DB::flushQueryLog();
@@ -69,8 +69,8 @@ $tld->refresh()->update(['register_enabled' => true]);
 $bindings->setProcessing($tld->server_id, false); same([], $store->endings(), 'Account writer invalidates immediately');
 $bindings->setProcessing($tld->server_id, true, syntheticActivation());
 $policy = SalesPolicy::where('tld', 'com')->sole();
-$sellers->change('com', $policy->revision, null, false, false, $now); same([], $store->endings(), 'Seller writer invalidates immediately');
-$sellers->change('com', $policy->revision + 1, $tld->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com', $policy->revision, null, false, false, $now); same([], $store->endings(), 'Seller writer invalidates immediately');
+activeFixtureSeller($sellers,'com', $policy->revision + 1, $tld->server_id, true, true, $now);
 
 // Native edits are deliberately TTL-bound. Fake time, including the exact expiry boundary.
 $product = $native->product($tld->fresh(), 'register');
@@ -85,7 +85,7 @@ $nativePrice->update(['price' => '20.00']); $clock->instant = $now->modify('+60 
 same('$20.00', $store->endings()[0]['register'], 'Restored native price appears after the TTL');
 
 // Native cart admission and checkout independently refuse stale or withdrawn prices while display stays warm.
-$adapter = new CartAdmission($native, $sellers, $eligibility, $clock); $adapter->boot();
+$adapter = activeFixtureAdmission($native, $sellers, $eligibility, $clock); $adapter->boot();
 $user = commerceUser(); $cart = commerceCart($user); commerceAdd($cart, $product, placeholderComFixtureName('cached-checkout-placeholder.com'));
 $nativePrice->update(['price' => '19.00']);
 same('$20.00', $store->endings()[0]['register'], 'Admission refusal is exercised against a warm stale display');
@@ -127,7 +127,7 @@ $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::bindi
 $accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
 Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::save($binding, $accepted->revision, $accepted->endings);
 same([4], $display->remember($render), 'Standalone acceptance save forgets warm display');
-$native->publish($tld->id, $now);
+activeFixtureRepublish($native,$tld->id, $now);
 same([5], $display->remember($render), 'Native publication without review forgets warm display');
 
 // A cache outage after commit cannot turn a committed writer into an error or suppress later callbacks.

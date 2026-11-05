@@ -38,7 +38,7 @@ $nativeBeforeReplay = nativeFinancialSnapshot($op);
 $engine->execute($op->id); same(2, count($transport->calls), 'No replay');
 same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
 // NameSilo profile proof is unavailable by default even with explicit catalogue acceptance.
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
 $product = $native->product($tlds[1], 'register');
 $nsNew = static function ($name) use ($product, $user) {
     $cart = commerceCart($user); commerceAdd($cart, $product, $name); commerceCheckout($user, $cart);

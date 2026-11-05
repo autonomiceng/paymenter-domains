@@ -143,7 +143,7 @@ $live = new AccountBinding('enom', $tld->server_id, Environment::Live, 'account-
 DB::table('domains_accounts')->where('server_id', $tld->server_id)->update(['environment' => 'live', 'account_fingerprint' => $live->fingerprint]);
 DB::table('domains_tlds')->where('id', $tld->id)->update(['account_fingerprint' => $live->fingerprint]);
 DB::table('domains_prices')->where('server_id', $tld->server_id)->update(['account_fingerprint' => $live->fingerprint]);
-$server->settings()->where('key', CatalogueAcceptances::KEY)->delete();
+$server->settings()->where('key', 'domains_catalogue_acceptance')->delete();
 CatalogueAcceptances::save($live, 0, ['com' => ['register' => [1, 3], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]);
 $bindings->configure($tld->server_id, 'enom', Environment::Live, ['uid' => 'account-enom', 'token' => 'synthetic-secret']);
 $liveTarget = new Target('example.com', $service->id, $owner->id, $tld->server_id, Environment::Live);

@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CatalogueAcceptances, CheckoutEligibility, ContactProfileSchema, DomainOperations, InvoiceBinding, OperationClaims, Rdap, Refunds, RegistrarRegistry, RegistrationProfiles, TransferInputs, TransferPrecheck, TransferPreflight, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
 if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['app.url'=>'https://domains-tests.invalid']); }
-extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test,active:$activeCommerceFixture??false)); $clock ??= new FakeClock($now);
+extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test,active:$activeCommerceFixture??true)); $clock ??= new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install(); Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'readers'=>[],'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
@@ -31,9 +31,9 @@ if(isset($offers)){
     require_once __DIR__.'/offer-commerce.php';
     $eligibility=new class($bindings,$clock,$checkoutTransfer) extends CheckoutEligibility {use OfferCommerceRoute;};$eligibility->fixtureOffers=$offers;
     $admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {use OfferCommerceRoute;};$admission->fixtureOffers=$offers;
-}else{$admission = new CartAdmission($native,$sellers,new CheckoutEligibility($bindings,$clock,$checkoutTransfer),$clock);}
+}else{$admission = activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock,$checkoutTransfer),$clock);}
 $invoiceBinding = new InvoiceBinding($admission,$native,$prices,$clock);
-app()->instance(CartAdmission::class,$admission); app()->instance(InvoiceBinding::class,$invoiceBinding);
+app()->instance(InvoiceBinding::class,$invoiceBinding);
 $admission->boot(); $invoiceBinding->boot();
 $user = commerceUser(); $user->update(['email'=>'transfer-owner@example.com']);
 foreach (['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value) { $user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]); }
@@ -68,7 +68,7 @@ $historicalTransfer = static function(string $name,int $i)use($user,$native,$pri
 };
 $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=true) use ($user,$native,$sellers,$tlds,$clock,$inputs,$state,$historicalTransfer): Operation {
     $policy = DB::table('domains_sales_policies')->where('tld','com')->first();
-    if ((int) $policy->server_id !== $tlds[$i]->server_id) { $sellers->change('com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
+    if ((int) $policy->server_id !== $tlds[$i]->server_id) { activeFixtureSeller($sellers,'com',$policy->revision,$tlds[$i]->server_id,true,true,$clock->now()); }
     if(Account::where('server_id',$tlds[$i]->server_id)->sole()->environment==='live'){$op=$historicalTransfer($name,$i);}
     else{$cart = commerceCart($user); commerceAdd($cart,$native->product($tlds[$i],'transfer'),$name);
         // Synthetic retained transfers can have incomplete contacts from the former checkout.

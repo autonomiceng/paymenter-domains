@@ -18,9 +18,9 @@ $template=new App\Models\NotificationTemplate;$template->forceFill(Database\Seed
 $mail=(new App\Mail\Mail($template,['service'=>$mixed->domain->service,'user'=>$user]))->render();
 expect(str_contains($mail,'Your domain registration or transfer is in progress.')&&str_contains($mail,'Transfers can take several days.'),'Native activation mail renders approved product information');
 expect(str_contains($mail,'href="'.e(route('services.show',$mixed->service_id)).'"'),'Native activation mail links to the service page');
-foreach(['Staff-owned wording','',null]as$text){$product->fresh()->update(['email_template'=>$text]);$native->publish($tlds[0]->id,$clock->now());same($text,$product->fresh()->email_template,'Publication preserves staff edit including blank/null');}
+foreach(['Staff-owned wording','',null]as$text){$product->fresh()->update(['email_template'=>$text]);activeFixtureRepublish($native,$tlds[0]->id,$clock->now());same($text,$product->fresh()->email_template,'Publication preserves staff edit including blank/null');}
 $transferProduct=$native->product($tlds[0],'transfer');$transferProduct->update(['email_template'=>'Existing staff information']);
-$transferProduct->settings()->where('key','domains_activation_information_initialized')->delete();$native->publish($tlds[0]->id,$clock->now());same('Existing staff information',$transferProduct->fresh()->email_template,'First publication preserves existing custom text');
+$transferProduct->settings()->where('key','domains_activation_information_initialized')->delete();activeFixtureRepublish($native,$tlds[0]->id,$clock->now());same('Existing staff information',$transferProduct->fresh()->email_template,'First publication preserves existing custom text');
 $host=Service::where('product_id',$hosting->id)->sole();
 $invoice->items()->create(['reference_type'=>Credit::class,'reference_id'=>null,'description'=>'Account credit','price'=>'3.00','quantity'=>1]);
 $early=[];Service::updating(static function($s)use(&$early,$mixed,$writer):void {if($s->id===$mixed->service_id&&$s->status==='active'){$early[]=['stored'=>Service::find($s->id)->status,'writes'=>$writer->calls];}});

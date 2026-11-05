@@ -16,8 +16,6 @@ $staff=staffUser(['admin.domains.view']);
 $notices=static fn()=>App\Models\Notification::where('user_id',$staff->id)->count();
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
-$catalogue=CatalogueAcceptances::load($binding);
-DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new CatalogueAcceptance($binding,$catalogue->revision,$catalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
 // Independent paid-order cases span several days; simulate scheduled cost sync before each later checkout.
 // The live quote stays within the fixture's frozen USD 6 cost; funding recovery cannot raise that ceiling.
 $checkout=$new;

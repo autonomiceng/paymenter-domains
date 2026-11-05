@@ -34,7 +34,7 @@ $acceptedCatalogue=CatalogueAcceptances::load($binding);
 DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
     $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
 Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($binding,new Money('100.00','USD'),$clock->now(),'manual');
-$admission=new CartAdmission($native,$sellers,new CheckoutEligibility($auth,$clock,$precheck),$clock);app()->instance(CartAdmission::class,$admission);
+$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($auth,$clock,$precheck),$clock);app()->instance(CartAdmission::class,$admission);
 app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
 (new Paymenter\Extensions\Servers\Domains\Domains)->boot();Illuminate\Support\Facades\Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);

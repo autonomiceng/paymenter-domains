@@ -43,15 +43,20 @@ $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, 'account-enom', $c['token'], $transport), ['com']));
 $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,$caps??null);
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); Queue::fake();
-$billing = new DomainBilling($bindings, $guard, $clock); $cycles = new RenewalCycles($bindings, $clock);
+$billing = new DomainBilling($bindings, $guard, $clock, $caps??null); $cycles = new RenewalCycles($bindings, $clock);
 $caps??=null;
-$makeRenewal = static function (string $name, bool $paid = true, int $years = 1, bool $credit = false, ?Closure $beforeBill = null) use ($prepare, $reconcile, $clock, $billing, $state, $product, $user,$caps,$ports) {
+$observeRenewalCost=static function($binding)use($ports,$clock):void{
+        $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+        $cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+        $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+};
+$makeRenewal = static function (string $name, bool $paid = true, int $years = 1, bool $credit = false, ?Closure $beforeBill = null) use ($prepare, $reconcile, $clock, $billing, $state, $product, $user,$caps,$ports,$observeRenewalCost) {
     [$original, $binding] = $prepare($name); same('succeeded', $reconcile->run($original->id)->state, 'Real original charge and expiry anchor');
     $d = $original->domain()->firstOrFail(); $state->name = $name; $state->expiry = '10/18/2027 5:00:00 AM'; $state->day = '10/18/2027';
     $state->years = $years; $state->after = (2027 + $years).'-10-18'; $state->orderYear = '2027'; $state->billTime = '5:00:01 AM'; $state->billDate = null; $state->charge = '8.95'; $state->price = '8.00'; $state->auto = '0';
     $state->owner = 'account-enom'; $state->id = '456'; $state->during = null; $state->calls = []; $state->lost = false; $state->afterWrite = null;
     $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
-    if($caps!==null){activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);}
+    if($caps!==null){activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);$observeRenewalCost($binding);}
     $product->server->settings()->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => true, 'type' => 'boolean']);
     if ($credit) { $user->credits()->create(['currency_code'=>'USD','amount'=>'100.00']); }
     if ($beforeBill) { $beforeBill($d); }

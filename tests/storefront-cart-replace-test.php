@@ -14,10 +14,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligib
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 require dirname(__DIR__).'/Domains/routes/web.php';
 extract(commerceFixture(true)); $clock = new FakeClock($now); app()->instance(Clock::class, $clock);
-$eligibility = new CheckoutEligibility($bindings, $clock);
+$eligibility = activeFixtureEligibility($bindings, $clock);
 $store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $controller = new StorefrontController($store, new CartLines($native)); storefrontViews();
-(new CartAdmission($native, $sellers, $eligibility, $clock))->boot();
+(activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
 $user = commerceUser(); $cart = commerceCart($user);
 app('request')->cookies->set('cart', $cart->ulid);
 $session = app('request')->session();

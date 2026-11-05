@@ -280,6 +280,6 @@ DB::connection()->getPdo()->exec('update orders set user_id = '.(int)$other->id.
 same($other->id,(int)$order->fresh()->user_id,'Direct PDO maintenance excluded');
 DB::table('orders')->where('id',$order->id)->update(['user_id'=>$owner->id]);
 // Publication still creates products/plans/markers through ordinary native models.
-$native->publish($tlds[0]->id,$now);
+activeFixtureRepublish($native,$tlds[0]->id,$now);
 echo 'Model-event native identity guards: '.count($rejects)." refusals, pre-ledger/malformed route and hosting controls passed.\n";
 $nativeSuccessful=true;

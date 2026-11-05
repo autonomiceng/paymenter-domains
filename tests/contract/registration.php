@@ -21,10 +21,10 @@ foreach ([['register', '6.00'], ['renew', '8.00'], ['transfer', '7.00']] as [$ac
 }
 $prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding, 'com', $rates, [1], true, true),
     CatalogueAcceptances::load($binding), static fn () => null, $now);
-$native->publish($tlds[1]->id, $now); $tlds[1]->refresh();
+activeFixtureRepublish($native,$tlds[1]->id, $now); $tlds[1]->refresh();
 config(['logging.default' => 'null', 'logging.channels.null' => ['driver' => 'monolog', 'handler' => \Monolog\Handler\NullHandler::class]]);
 $clock = new \Paymenter\Extensions\Servers\Domains\Data\SystemClock;
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $clock->now());
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
 $cart = commerceCart($user); commerceAdd($cart, $native->product($tlds[1], 'register'), $wire->domain); commerceCheckout($user, $cart);
 $op = Domain::where('domain', $wire->domain)->sole()->operations()->sole();
 Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);

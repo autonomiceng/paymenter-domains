@@ -20,7 +20,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 expect(!Route::has('domains.domains.search'), 'Storefront remains dormant before explicit test registration');
 require dirname(__DIR__).'/Domains/routes/web.php';
 extract(commerceFixture(true)); $clock = new FakeClock($now);
-$eligibility = new CheckoutEligibility($bindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
+$eligibility = activeFixtureEligibility($bindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
 $store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 storefrontCorruptionChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);
 storefrontQueryChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);
@@ -72,7 +72,7 @@ same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller endi
     Illuminate\Support\Facades\Cache::flush();
     same('ai', $controller->search($req([], 'GET'))->getData()['preferred'], 'Without .com the first TLD A to Z stays the default');
     $policies::where('tld', 'com')->update(['register_enabled' => true]);
-    $sellers->change('ai', $policies::where('tld', 'ai')->value('revision'), null, false, false, $now);
+    activeFixtureSeller($sellers,'ai', $policies::where('tld', 'ai')->value('revision'), null, false, false, $now);
     Illuminate\Support\Facades\Cache::flush();
 })();
 same(true, $store->endings()[0]['testEnvironment'], 'D7 public catalogue carries only a test boolean');
@@ -93,15 +93,15 @@ $before = $reads->calls; $bindings->setProcessing($tlds[0]->server_id, false);
 same([], $store->endings(), 'Processing pause invalidates cached catalogue');
 same('held', $store->check('paused-placeholder.com')['status'], 'Engine processing guard already protects selection');
 same($before, $reads->calls, 'Paused seller never reads availability'); $bindings->setProcessing($tlds[0]->server_id, true, syntheticActivation());
-$product = $native->product($tlds[0], 'register'); $tlds[0]->update(['register_enabled' => false]); $native->publish($tlds[0]->id, $now);
+$product = $native->product($tlds[0], 'register'); $tlds[0]->update(['register_enabled' => false]); activeFixtureRepublish($native,$tlds[0]->id, $now);
 same(null, $store->endings()[0]['register'], 'Owned withdrawal invalidates cached registration');
-$tlds[0]->update(['register_enabled' => true]); $native->publish($tlds[0]->id, $now);
+$tlds[0]->update(['register_enabled' => true]); activeFixtureRepublish($native,$tlds[0]->id, $now);
 same('$7.80', $store->endings()[0]['register'], 'Owned publication restoration is visible');
 $tlds[1]->fill(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '9.00', 'fixed_renew' => '11.00', 'fixed_transfer' => '10.00'])->save();
-$prices->republish($tlds[1]); $native->publish($tlds[1]->id, $now);
-$sellers->change('com', 2, $tlds[1]->server_id, true, true, $now);
+activeFixtureRepublish($prices,$tlds[1]); activeFixtureRepublish($native,$tlds[1]->id, $now);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $now);
 same('$9.00', $store->endings()[0]['register'], 'Switched selected seller table');
-$sellers->change('com', 3, $tlds[0]->server_id, true, true, $now);
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[0]->server_id, true, true, $now);
 $result = $check('EXAMPLE.COM.')->getData(true);
 expect(str_contains($result['html'], '>Test</span>'), 'D7 checked AJAX result carries test label');
 same('available', $result['status'], 'Canonical ordinary explicit false premium gets offer');
@@ -126,7 +126,9 @@ same('The name can be at most 63 characters.', StorefrontController::parseName(s
 expect($controller->search($req(['name' => 'example'], 'GET'))->getData()['results'][0]['testEnvironment'], 'D7 initial idle result carries test flag');
 expect($controller->search($req([], 'GET'))->getData()['testEnvironment'] === true, 'Test mode flag without seller identity');
 $transferState = (object) ['calls' => 0, 'fail' => false]; $transferBindings = storefrontTransferReader($transferState);
-$transferEligibility = new CheckoutEligibility($transferBindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
+// The transfer reader swaps only the provider driver; offers stay on the shared active fixture.
+activeFixtureOffers($transferBindings, activeFixtureOffers($bindings));
+$transferEligibility = activeFixtureEligibility($transferBindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
 $transferController = new StorefrontController(new Storefront($sellers, $prices, $native, $transferBindings, $transferEligibility, $clock));
 App\Models\Server::findOrFail($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $transfer = $transferController->check($req(['domain' => 'transfer-placeholder.com', '_request_key' => $key]))->getData(true);
@@ -167,7 +169,7 @@ same($guest, $check('private-placeholder.com')->getData(true), 'D7 private live 
 Illuminate\Support\Facades\DB::table('domains_accounts')->where('id', $holdingAccount->id)->update(['environment' => $holdingEnvironment]);
 Illuminate\Support\Facades\DB::table('domains_domains')->where('id', $domain->id)->update(['server_id' => $tlds[0]->server_id]);
 // Actual native cart hook is explicitly booted only by this fixture.
-$admission = new CartAdmission($native, $sellers, $eligibility, $clock); $admission->boot();
+$admission = activeFixtureAdmission($native, $sellers, $eligibility, $clock); $admission->boot();
 $cart = commerceCart($user); $orderKey = FormKeys::issue($req(), 'order:purchase-placeholder.com');
 $response = $controller->order($req(['domain' => 'purchase-placeholder.com', 'action' => 'register', 'term' => '3', '_request_key' => $orderKey], user: $user));
 same(route('cart'), $response->getTargetUrl(), 'Neutral handoff reaches native cart');

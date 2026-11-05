@@ -24,8 +24,8 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
             new CatalogueRate('transfer', 1, '7.00', 'synthetic', $now, $now->modify('+1 day'))];
         foreach ($terms as $term) { $rates[] = new CatalogueRate('register', $term, '6.00', 'synthetic', $now, $now->modify('+1 day')); }
         $prices->import(new CatalogueEntry($binding, $ending, $rates, $terms, true, true), $accepted, static fn () => null, $now);
-        $native->publish($tld->id, $now); $catalogueTlds[$ending] = $tld->fresh();
-        $policy = $sellers->initialize($ending); $sellers->change($ending, $policy->revision, $server->id, true, true, $now);
+        activeFixtureRepublish($native,$tld->id, $now); $catalogueTlds[$ending] = $tld->fresh();
+        $policy = $sellers->initialize($ending); activeFixtureSeller($sellers,$ending, $policy->revision, $server->id, true, true, $now);
     }
     return compact('server', 'binding', 'catalogueTlds');
 }
@@ -87,6 +87,6 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
     DB::table('prices')->where('id', $onlyTransfer->id)->update(['price' => $transferPrice]);
     Cache::flush(); $repaired = array_column($store->endings(), null, 'tld');
     same('$22.00', $repaired['test']['transfer'], 'Restored test transfer price is visible');
-    foreach (array_keys($catalogueTlds) as $ending) { $sellers->change($ending, 2, null, false, false, $now); }
+    foreach (array_keys($catalogueTlds) as $ending) { activeFixtureSeller($sellers,$ending, 2, null, false, false, $now); }
     Cache::flush();
 }

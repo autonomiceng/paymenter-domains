@@ -26,7 +26,7 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     extract(storefrontCatalogueFixture($fixture, ['qnet', 'qorg', 'qxyz'], range(1, 10)));
     foreach (array_values($catalogueTlds) as $index => $tld) {
         $tld->update(['fixed_register' => (string) (20 + 10 * $index), 'fixed_renew' => (string) (21 + $index), 'fixed_transfer' => (string) (22 + $index)]);
-        $prices->republish($tld); $native->publish($tld->id, $now);
+        activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
     }
     $before = $reads->calls;
     Tld::where('server_id', $server->id)->update(['max_years' => 1]);
@@ -126,9 +126,9 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     $catalogueTlds['qnet']->update(['fixed_register' => '20.00']);
     $policy = SalesPolicy::where('tld', 'qnet')->firstOrFail();
     $old = $store->offer('qnet', 'register', 1)['selection'];
-    $sellers->change('qnet', $policy->revision, $server->id, false, true, $now);
+    activeFixtureSeller($sellers,'qnet', $policy->revision, $server->id, false, true, $now);
     same([], array_column($store->endings(), null, 'tld')['qnet']['terms'], 'Current seller revision and action flags are read');
-    $sellers->change('qnet', $policy->revision + 1, $server->id, true, true, $now);
+    activeFixtureSeller($sellers,'qnet', $policy->revision + 1, $server->id, true, true, $now);
     expect($store->offer('qnet', 'register', 1)['selection']->policyRevision > $old->policyRevision, 'Switch-back never reuses old seller revision');
     $freshSelection = (new StorefrontCatalogueRead($sellers, $native, new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now)))->offer('qnet', 'register', 1)['selection'];
     same($old->policyRevision + 2, $freshSelection->policyRevision, 'Display selection carries current seller revision');
@@ -154,7 +154,7 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
     same($before, $reads->calls, 'Revoked publication proof has no provider I/O');
     foreach (array_keys($catalogueTlds) as $ending) {
         $policy = SalesPolicy::where('tld', $ending)->firstOrFail();
-        $sellers->change($ending, $policy->revision, null, false, false, $now);
+        activeFixtureSeller($sellers,$ending, $policy->revision, null, false, false, $now);
     }
     Cache::flush();
 }

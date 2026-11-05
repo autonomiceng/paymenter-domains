@@ -10,7 +10,7 @@ use App\Models\Server;
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SellTable,Staff,StaffGrants,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{StaffCatalogue,StaffCommands,Writer,Projection};
-use Paymenter\Extensions\Servers\Domains\Models\{Account,SellRow,Tld};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{PriceList,StaffSettingsReview as Review};
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/StaffCatalogue.php'),'Staff tables and CSV need the shared offer snapshot adapter');
 require __DIR__.'/Support/offer-commerce.php';
@@ -25,7 +25,7 @@ $matrix=$list->read();same('12.00',$matrix['rows'][0]['prices']['register']['pri
 expect(str_contains($list->csv(),'12.00'),'CSV exports reviewed price');
 $facts=$source->page(collect([$t->fresh()]));same('For sale',$facts[$t->id]['sales']['label'],'TLD label uses shared evaluator');
 // The old cost and acceptance columns cannot change the new Staff projection.
-DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['wholesale'=>'999.0000','eligibility'=>null]);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['wholesale'=>'999.0000']);
 same('6.0000',$source->matrix(collect([$t->fresh()]),1)['rows'][0]['prices']['register']['cost'],'Normalized observation supplies cost, not obsolete columns');
 $key=Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id));
 $commands->run(new Review($actor->id,$binding->serverId,$t->id,'override',$key,'Synthetic below cost'),['mode'=>'fixed','fixed_register'=>'2.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
@@ -45,14 +45,14 @@ same(25,count($multiTable->saved()['rows']),'Bounded saved-price snapshot contai
 $seed=$t->fresh()->getRawOriginal();unset($seed['id']);$batch=[];
 for($i=0;$i<598;$i++){$batch[]=[...$seed,'tld'=>'scale'.chr(97+intdiv($i,26)).chr(97+$i%26)];}
 foreach(array_chunk($batch,100) as $chunk){DB::table('domains_tlds')->insert($chunk);}
-$before=SellRow::count();$writes=0;DB::listen(static function($q)use(&$writes):void {if(preg_match('/^(insert|update|delete)/i',$q->sql)){$writes++;}});
+$before=\Illuminate\Support\Facades\Schema::hasTable('domains_sell_rows');same(false,$before,'Retired sales store stays absent');$writes=0;DB::listen(static function($q)use(&$writes):void {if(preg_match('/^(insert|update|delete)/i',$q->sql)){$writes++;}});
 $page=[];$table=new SellTable([$binding->serverId=>$binding],1,true,static function()use(&$page){return $page;},false,$source);
 DB::enableQueryLog();DB::flushQueryLog();
 $pager=$table->rows(null)->orderBy('tld')->paginate(25);$page=$pager->items();
 foreach($page as $row){$table->status($row);$table->terms($row);$table->cell($row,'register','price');}
 $count=count(DB::getQueryLog());DB::disableQueryLog();
 same(599,$pager->total(),'Converted identities paginate without shadow sales rows');expect($count<100,'Bounded 25-row Staff page, got '.$count.' queries');
-same($before,SellRow::count(),'Staff reads never create SellRows');same(0,$writes,'Staff table/price reads have no writes');
+same($before,\Illuminate\Support\Facades\Schema::hasTable('domains_sell_rows'),'Staff reads never recreate the retired store');same(0,$writes,'Staff table/price reads have no writes');
 same(1,$table->rows('com')->count(),'Focused ending remains a query filter');same(598,$table->rows(null)->where('tld','like','scale%')->count(),'Search remains a query filter');
 // Render the real Filament table against the converted query, including search, filters and paging.
 $GLOBALS['staffSource']=$source;

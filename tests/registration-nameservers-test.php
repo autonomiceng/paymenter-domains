@@ -12,7 +12,7 @@ $staff = commerceUser(); $role = Role::create(['name' => 'Nameserver refunds', '
 $staff->update(['role_id' => $role->id]); $refunds = new Refunds($clock);
 
 foreach (['enom', 'namesilo'] as $index => $registrar) {
-    if ($index) { $sellers->change('com', 2, $tlds[$index]->server_id, true, true, $clock->now()); }
+    if ($index) { activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[$index]->server_id, true, true, $clock->now()); }
     $binding = $bindingFor($index);
     $acceptance = new WriteAcceptance($binding, true, true, 25, static fn () => true);
     $fresh = new RegistrationPreflight($freshBindings, new WriteFeatures(registration: true), $acceptance);

@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, SalesPolicy}
 function scenarioSwitch($sellers, $clock, ?int $server): void
 {
     $policy = SalesPolicy::where('tld', 'com')->sole();
-    $sellers->change('com', $policy->revision, $server, $server !== null, $server !== null, $clock->now());
+    activeFixtureSeller($sellers,'com', $policy->revision, $server, $server !== null, $server !== null, $clock->now());
 }
 function scenarioMoney(): array
 {

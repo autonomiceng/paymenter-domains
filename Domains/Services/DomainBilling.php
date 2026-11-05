@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 /** Native renewal debts and collection. Late debt requires fresh reads; only execution can dispatch. */
 final class DomainBilling
 {
-    public function __construct(private readonly AccountBindings $bindings, private readonly NativeDomainGuard $native, private readonly Clock $clock) {}
+    public function __construct(private readonly AccountBindings $bindings, private readonly NativeDomainGuard $native, private readonly Clock $clock, private readonly ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $catalogue = null) {}
 
     public static function calendar(Domain $domain, int $issueDays = 21, int $dueDays = 7): array
     {
@@ -26,7 +26,7 @@ final class DomainBilling
         if ($actor && (int)$actor->id !== (int)$seed->user_id) { throw new \DomainException('Domain renewal is unavailable.'); }
         $late = $this->lateQuote($seed, $actor !== null, $years);
         return DB::transaction(function () use ($seed, $actor, $years, $late): ?Invoice {
-            $l = HoldingLocks::take($seed); $d = $l['domain']; $s = $l['service'];
+            $l = HoldingLocks::take($seed, catalogue: $this->catalogue); $d = $l['domain']; $s = $l['service'];
             if ($l['identity_source']['kind'] === 'adoption') { HoldingAnchor::resolve($l); }
             if ($actor && (int) $actor->id !== (int) $l['user']->id) { throw new \DomainException('Domain renewal is unavailable.'); }
             if (RenewalStop::adopted($l)) {
@@ -55,8 +55,7 @@ final class DomainBilling
             $invoice->send_create_email = false; $invoice->save();
             $item = $invoice->items()->create(['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => $amount,
                 'description' => InvoiceDescription::renewal($d->domain, $d->provider_expires_at, $years)]);
-            $rate = $l['prices']->where('action', 'renew')->where('term', 1)->where('currency', 'USD')->where('account_fingerprint', $d->account_fingerprint)->first();
-            $cost = isset($l['offer']) ? $l['offer']['cost']?->total : ($rate?->wholesale === null ? null : PriceCatalogue::cost($rate->wholesale));
+            $cost = $l['offer']['cost']?->total ?? null;
             $cap = $cost !== null ? ['amount' => PricingRule::decimal(PricingRule::units($cost) * $years, 4), 'currency' => 'USD'] : null;
             if ($late !== null) { $cap = $late['cost']; }
             $operation = Operation::create(['domain_id' => $d->id, 'service_id' => $s->id, 'server_id' => $d->server_id,
@@ -90,7 +89,7 @@ final class DomainBilling
     {
         if(!DomainBilling::expired($d,$this->clock->now())){return null;}
         $captured=DB::transaction(function()use($d,$manual,$years):?array{
-            $l=HoldingLocks::take($d);$d=$l['domain'];
+            $l=HoldingLocks::take($d, catalogue: $this->catalogue);$d=$l['domain'];
             if(!$manual&&RenewalStop::stopped($l)){return null;}
             // Existing payable debt keeps its frozen terms, even when the feature is switched off.
             if($l['operations']->contains(fn($op)=>$op->action==='renew'&&$op->base_expires_at==$d->provider_expires_at&&$op->safe_code!=='renewal_cancelled_unpaid'&&!RenewalReplacements::reviewed($op,$d))){return null;}
@@ -165,7 +164,7 @@ final class DomainBilling
     public function requestOptions(Domain $d): array
     {
         return DB::transaction(function () use ($d): array {
-            $l = HoldingLocks::take($d, advisory: true);
+            $l = HoldingLocks::take($d, advisory: true, catalogue: $this->catalogue);
             $l['settings'] = $l['server']->settings()->orderBy('id')->get();
             // Replacement proof needs all invoice members, including unexpected retained items.
             $l['items'] = \App\Models\InvoiceItem::whereIn('invoice_id', $l['invoices']->pluck('id'))->orderBy('id')->get();

@@ -23,10 +23,10 @@ if(isset($offers)){
     require_once __DIR__.'/offer-commerce.php';
     $eligibility=new class($bindings,$clock,$transferCheck) extends CheckoutEligibility {use OfferCommerceRoute;};$eligibility->fixtureOffers=$offers;
     $admission=new class($native,$sellers,$eligibility,$clock) extends CartAdmission {use OfferCommerceRoute;};$admission->fixtureOffers=$offers;
-}else{$admission = new CartAdmission($native, $sellers, new CheckoutEligibility($bindings, $clock, $transferCheck), $clock);}
+}else{$admission = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock, $transferCheck), $clock);}
 $admission->boot();
 $invoiceBinding = new InvoiceBinding($admission, $native, $prices, $clock); $invoiceBinding->boot();
-if(app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)){app()->instance(InvoiceBinding::class,$invoiceBinding);}
+app()->instance(InvoiceBinding::class,$invoiceBinding);
 $user = commerceUser(); $user->update(['email' => 'finance-owner@example.com']);
 foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA', 'zip' => '98101',
     'country' => 'US', 'phone' => '(206) 555-0100'] as $key => $value) {
@@ -34,12 +34,17 @@ foreach (['address' => '1 Synthetic Street', 'city' => 'Seattle', 'state' => 'WA
 }
 $product = $native->product($tlds[0], 'register');
 $new = static function (string $name, bool $paid = true, bool $setup = true, string $action = 'register', int $term = 1) use ($user, $product, $native, $tlds, $clock, $transfers): Operation {
+    // Checkout belongs to this explicit module composition; later physical-send probes keep their Runtime.
+    $runtime=app()->bound(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)?app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class):null;
+    app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
+    try {
     Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
     $cart = commerceCart($user); commerceAdd($cart, $action === 'register' ? $product : $native->product($tlds[0], $action), $name, $term);
     // Retained invalid-contact scenarios predate the new checkout gate.
     try { \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::validate('enom', \Paymenter\Extensions\Servers\Domains\Services\ContactDetails::collect($user)); $legacyContacts=false; }
     catch (\Paymenter\Extensions\Servers\Domains\Services\ContactValidation) { $legacyContacts=true; }
-    $legacyContacts?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart);
+    $checkout=$legacyContacts?commerceLegacyCheckout($user,$cart):commerceCheckout($user,$cart);
+    $checkout->assertHasNoErrors();
     $op = Domain::where('domain', $name)->sole()->operations()->sole();
     if (!$setup) { \Paymenter\Extensions\Servers\Domains\Services\ContactSetup::recoveryWrite(static fn () => $op->update(['payload' => array_replace($op->payload, ['setup_required' => true])])); }
     if ($paid) {
@@ -51,6 +56,7 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
         $request->setUserResolver(static fn () => $user); $transfers->submitCode($request, $op->id);
     }
     return $op->fresh();
+    } finally { if($runtime!==null){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class,$runtime);} }
 };
 // Raw rows retain invoice/item/payment/credit/job bytes, including native timestamps.
 $nativeMoney = static function (): array {
