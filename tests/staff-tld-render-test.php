@@ -49,7 +49,7 @@ foreach(array_intersect_key(Review::ACTIONS,array_flip(array_diff([...$tldAction
     $setup=in_array($action,$accountActions,true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
     $name=$setup?setupAction($action,$t->server_id):$action;$page->mountAction($name)->assertActionMounted($name)->call('$refresh');$render($page,'modal-'.$action);
     // Orders is a switch: its words depend on whether it is on.
-    $strings[$action]=['label'=>$label,'description'=>$action==='processing'?null:SettingsActions::description($action)];
+    $strings[$action]=['label'=>$label,'description'=>in_array($action,['processing','price_freshness'],true)?null:SettingsActions::description($action)];
 }
 app()->instance(StaffSettingsWrites::class,$writer);
 // Edit prices with the live preview: own prices, with one below-cost row, then the account default.
