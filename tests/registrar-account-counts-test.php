@@ -78,6 +78,32 @@ expect($undated['act']&&str_contains((string)RegistrarFacts::dueLine($undated),'
 $note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'USD 9.00','low'=>false,'cause'=>null,...$unpriced],$account);
 expect(!$note['act']&&str_contains((string)$note['text'],'not priced yet')&&!str_contains((string)$note['text'],'Sync prices'),'The Note waits on Beco too: '.json_encode($note));
 
+// A failed price read that Beco retries by itself (registrar timeout) stays grey and shows the retry time;
+// only a cause staff must fix is amber, with its step.
+$retryAt=now()->getTimestamp()+600;
+$failRead=static function(string $code)use($server,$account,$retryAt):void {
+    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server],['account_fingerprint'=>$account->account_fingerprint,'offer_lease'=>0,
+        'offer_feed_failure'=>$code,'offer_feed_failed_at'=>now()->getTimestamp(),'offer_feed_succeeded_at'=>null,
+        'offer_work'=>json_encode(['feed_due'=>$retryAt,'tries'=>1,'upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation()])]);
+};
+$failRead('read_deadline');
+$progress=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress($server)??[];
+same(['retrying','read_deadline',$retryAt],[$progress['state']??null,$progress['failure']??null,$progress['due_at']??null],'The fixture read is retrying a timeout');
+$retry=RegistrarFacts::dueGap($account,$unpriced);
+same(["1 renewal not priced yet. The price read failed: Registrar didn't answer in time. Fills in by itself after Beco retries the read",false,$retryAt],
+    [$retry['text']??null,$retry['act']??null,$retry['at']??null],'A timeout Beco retries is not a staff job and shows the retry time');
+$retryLine=(string)RegistrarFacts::dueLine($retry);
+expect(!str_contains($retryLine,'domains-warn')&&!str_contains($retryLine,'Fix that'),'A retried read is not amber: '.$retryLine);
+$note=(new ReflectionMethod(RegistrarSetup::class,'note'))->invoke(null,null,['value'=>'USD 9.00','low'=>false,'cause'=>null,...$unpriced],$account);
+expect(!$note['act'],'The Note does not make a retried read a job: '.json_encode($note));
+$failRead('configuration_unverified');
+$fix=RegistrarFacts::dueGap($account,$unpriced);
+same(["1 renewal not priced yet. The price read failed: Couldn't verify the registrar account settings. Use More, then Edit API credentials. Beco then fills the cost on the next read.",true],
+    [$fix['text']??null,$fix['act']??null],'A cause staff must fix is amber with its step');
+expect(str_contains((string)RegistrarFacts::dueLine($fix),'domains-warn'),'A staff-fix read failure is amber');
+same([],array_diff(array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::SYNC_STEPS),array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::CAUSES)),'Every staff step names a known cause');
+DB::table('domains_observation_queues')->where('server_id',$server)->update(['offer_feed_failure'=>null,'offer_work'=>null]);
+
 // Domain alerts: the count, the Open alerts filter and the rows use one rule.
 $alerted=static function(string $name,string $status,string $state,string $action='update_nameservers')use($bind):Domain {
     static $m=0;$m++;
