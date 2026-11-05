@@ -24,7 +24,8 @@ final class RuntimeFactory
         $wire=new self($binding,$credentials,EnomTestTransfer::enabled($binding));
         return static fn()=>RuntimeComposition::make($binding,$bindings,$clock,$features,$accepted,$renewalAccepted,$precheck,
             new Registration($binding,$wire->exchange('registration')),new Transfer($binding,$wire->exchange('transfer')),
-            $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted,testManagement:$testManagement);
+            $wire->exchange('renewal'),new Management($binding,$wire->exchange('management')),$managementAccepted,testManagement:$testManagement,
+            observationReader:new ObservationReader($binding,$wire->exchange('management')));
     }
 
     /** Environment permission and worker interval only; this is not executed protocol evidence. */

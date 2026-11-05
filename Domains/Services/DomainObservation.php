@@ -57,9 +57,12 @@ final class DomainObservation
             if ($snapshot?->owned===true) {
                 try {
                     if($current){$current();}
-                    $port=$this->observationReader?($this->observationReader)($binding):$this->records->forDomain($seed);
+                    // A resolver may return null: that runtime has no dedicated reader, so the legacy read and row format stay.
+                    $port=$this->observationReader?($this->observationReader)($binding):null;
+                    if ($port!==null && (!$port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader || !$port->bindsTo($binding))) { throw new \DomainException('Observation reader binding changed.'); }
+                    $capabilities=$port?->observationCapabilities();
+                    $port??=$this->records?->forDomain($seed);
                     if (!$port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader || !$port->bindsTo($binding)) { throw new \DomainException('Observation reader binding changed.'); }
-                    $capabilities=$this->observationReader?$port->observationCapabilities():null;
                     if ($binding->registrarKey==='enom') { $knownGlue=GlueRecords::known($seed,$knownGlue,$snapshot?->nameservers?->nameservers??[]); }
                     $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id,domainId:(int)$seed->id);
                     $records=$port->discover($r,$ctx,$knownGlue);

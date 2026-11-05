@@ -45,7 +45,8 @@ final class TestRuntime
             $transfer=new Transfer($binding,$profiles,$exchange);$transfer->useReservation($transport->reservation);
             $management=new DsManagement($binding,$exchange,DsRegistryPolicy::DEPLOYMENT_FACTS,$clock);$management->useReservation($transport->reservation);
             $ports=RuntimeComposition::make($binding,$bindings,$clock,$features,$accepted,$renewal,app(TransferPrecheck::class),
-                $registration,$transfer,$exchange,$management,$features->management,$profiles);
+                $registration,$transfer,$exchange,$management,$features->management,$profiles,
+                observationReader:new ObservationReader($binding,$exchange));
             $ports['renewal_writer']->useReservation($transport->reservation);
             return $ports;
         };
