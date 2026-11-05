@@ -21,6 +21,9 @@ $clock->instant=$clock->now()->modify('+1 day');$worker->turn($queue,$guard);
 expect($at!==$d->fresh()->observation['records']['at'],'Daily due turn replaces stale family evidence');
 same($before,$original->fresh()->getAttributes(),'Automatic family reads preserve all original attempt evidence');same($money,$nativeMoney(),'Automatic reads create no financial writes');
 foreach($state->calls as [$command]){expect(str_starts_with($command,'Get')||$command==='CheckNSStatus','Only read commands are sent');}
+storefrontViews();
+$recordPage=view('domains::partials.record-families',['recordFamilies'=>\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now()),'staff'=>true])->render();
+expect(str_contains($recordPage,'Last registrar read:')&&str_contains($recordPage,'Next registrar read:'),'Existing record rows show last and next reads');
 DB::table('services')->where('id',$d->service_id)->update(['status'=>'cancelled']);
 $dto=(new \Paymenter\Extensions\Servers\Domains\Services\NativePresenter($owners,$native,new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices)))->service($user,(int)$d->service_id);
 same('Cancelled',$dto->serviceStatus,'Presenter carries the native cancellation separately');
