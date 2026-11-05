@@ -637,27 +637,10 @@ def main():
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
-                shared = (
-                    args.jobs == 1
-                    and requested
-                    and all(
-                        Path(path).name.startswith("test_installed_")
-                        or path in {
-                            "tests/checkout-refresh-test.php", "tests/offer-reader-batch-test.php",
-                            # These focused catalogue checks only write their private app/SQLite fixture.
-                            "tests/offer-cutover-test.php", "tests/offer-writer-test.php",
-                            "tests/offer-work-test.php", "tests/offer-frozen-renewal-test.php",
-                            "tests/enom-test-send-limit-test.php", "tests/glossary-sweep-test.php",
-                            "tests/native-lifecycle-test.php", "tests/offer-installed-staff-test.php",
-                            "tests/offer-ports-test.php", "tests/registrar-balances-test.php",
-                            "tests/registrars-page-test.php", "tests/storefront-test.php",
-                        }
-                        for path in requested
-                    )
-                )
-                # These serial checks mutate only their app/SQLite fixture. Keep the pinned,
-                # verified vendor tree read-only instead of copying 27,000 dependency files.
-                snapshot = native.prepare(source, fixture, share_vendor=bool(shared))
+                # Focused serial native-only selections share the verified vendor tree instead of
+                # copying 27,000 files. Full runs, parallel workers and mixed selections keep a copy.
+                shared = args.jobs == 1 and bool(requested) and requested <= set(suites['native'])
+                snapshot = native.prepare(source, fixture, share_vendor=shared)
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:

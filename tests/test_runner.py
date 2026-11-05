@@ -656,19 +656,21 @@ class RunnerTests(unittest.TestCase):
                  (['tests/checkout-refresh-test.php'], ['native'], True),
                  (['tests/offer-reader-batch-test.php'], ['native'], True),
                  (['tests/checkout-refresh-test.php', 'tests/offer-reader-batch-test.php'], ['native'], True),
-                 (['tests/offer-reader-batch-test.php', 'tests/native-fixture-test.php'], ['native'], False),
+                 (['tests/offer-reader-batch-test.php', 'tests/native-fixture-test.php'], ['native'], True),
                  (['tests/offer-cutover-test.php'], ['native'], True),
                  (['tests/offer-writer-test.php'], ['native'], True),
                  (['tests/offer-work-test.php'], ['native'], True),
                  (['tests/offer-frozen-renewal-test.php'], ['native'], True),
-                 (['tests/offer-work-test.php', 'tests/native-fixture-test.php'], ['native'], False)]
+                 (['tests/offer-work-test.php', 'tests/native-fixture-test.php'], ['native'], True)]
         b2_checks = ['tests/enom-test-send-limit-test.php', 'tests/glossary-sweep-test.php',
                      'tests/native-lifecycle-test.php', 'tests/offer-installed-staff-test.php',
                      'tests/offer-ports-test.php', 'tests/registrar-balances-test.php',
                      'tests/registrars-page-test.php', 'tests/storefront-test.php']
         cases = [(*case, 1) for case in cases]
         cases += [([path], ['native'], jobs == 1, jobs) for path in b2_checks for jobs in (1, 2)]
-        cases += [([path, 'tests/native-fixture-test.php'], ['native'], False, 1) for path in b2_checks]
+        cases += [([path, 'tests/native-fixture-test.php'], ['native'], True, 1) for path in b2_checks]
+        cases += [(['tests/offer-commerce-test.php', 'tests/test_runner.py'], ['native', 'runner'], False, 1),
+                  (['tests/checkout-refresh-test.php'], ['native'], False, 2)]
         for requested, selected, shared, jobs in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
