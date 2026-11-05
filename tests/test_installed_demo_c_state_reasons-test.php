@@ -34,8 +34,10 @@ $case('D01 complete selected terms count',function()use($t,$actor,$tlds){
     Livewire::actingAs($actor)->test(ListTlds::class)->filterTable('server_id',(string)$t->server_id)->filterTable('needs_attention')->assertCountTableRecords(1);
     Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Selected TLD terms')->assertDontSee('Supported terms');
 });
-$case('D05 D06 feed absence and no seller',function()use($t,$actor){
+$case('D05 D06 feed absence and no seller',function()use($t,$actor,$now){
     $missing=Tld::where('tld','statefjj')->sole();
+    DB::table('domains_sales_policies')->where('tld',$missing->tld)->update(['updated_at'=>$now->modify('-1 hour')]);
+    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_feed_succeeded_at'=>$now->getTimestamp()+1]);
     $list=Livewire::actingAs($actor)->test(ListTlds::class)->searchTable($missing->tld)->instance();$col=$list->getTable()->getColumn('renewal')->record($list->getTableRecords()->first());
     expect(str_contains((string)$col->getDescriptionBelow(),'Not in the registrar\'s price feed; not for sale'),'Feed gap says why: '.(string)$col->getDescriptionBelow()); same('danger',$col->getColor($col->getState()),'Selected gap stays red');
     DB::table('domains_sales_policies')->where('tld',$missing->tld)->delete();
@@ -43,7 +45,7 @@ $case('D05 D06 feed absence and no seller',function()use($t,$actor){
     expect(str_contains($state['cause'],'No registrar selected; not for sale'),'Unsold without a registrar says why');same(null,$state['tone'],'Unsold gap is quiet');
 });
 $case('D02 automatic refresh times',function()use($t,$actor,$now){
-    DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint,'offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp(),'turn'=>0]);
+    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp(),'turn'=>0]);
     $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);$html=$page->html();expect(str_contains($html,'Last successful refresh')&&str_contains($html,'Next due')&&!str_contains($html,'Sync prices to resume'),'Refresh facts and scheduled due time visible');expect(str_contains($html,gmdate('M j, Y H:i',$now->getTimestamp()))&&str_contains($html,gmdate('M j, Y H:i',$now->getTimestamp()+86400)),'Account refresh times are exact, even when this ending has no separate read');
 });
 $case('D03 legacy TEST blocker',function()use($t){

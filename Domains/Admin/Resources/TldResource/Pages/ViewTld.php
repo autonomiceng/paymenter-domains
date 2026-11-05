@@ -124,7 +124,7 @@ class ViewTld extends ViewRecord
         $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
         $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
         $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):'Not for sale',$seller?'Existing domains stay with their registrar':'No registrar selected; not for sale',color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
-            self::entry('Terms',TldFacts::terms($t))];
+            self::entry('Terms',$snapshot['unreadable']?null:TldFacts::terms($t),$snapshot['unreadable']?'Saved TLD terms unreadable. Use Edit prices to repair them.':null)];
         $refresh=$snapshot['refresh']??[];
         $sync=[self::entry('Last successful refresh',isset($refresh['succeeded_at'])?gmdate('M j, Y H:i',(int)$refresh['succeeded_at']).' UTC':'None recorded',
             TldFacts::refreshText($refresh),side:[$this->syncPricesAction()->label('Sync prices')]),

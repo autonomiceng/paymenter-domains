@@ -654,6 +654,7 @@ def main():
                             'tests/demo-c-terms-native-test.php',
                             'tests/staff-domain-page-test.php',
                             'tests/staff-invalid-tld-detail-test.php',
+                            'tests/staff-hidden-tld-link-test.php',
                             'tests/management-runtime-recovery-test.php',
                             'tests/staff-sync-worker-test.php',
                             'tests/storefront-busy-test.php',

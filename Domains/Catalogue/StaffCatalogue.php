@@ -163,12 +163,14 @@ final class StaffCatalogue
     }
     public function setting(Tld $t,string $key): bool|int
     {
-        Staff::requireView();$raw=OfferState::decode($t->catalogue_intent);$d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
+        Staff::requireView();
+        try{$raw=OfferState::decode($t->catalogue_intent);$d=OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);}
+        catch(\Throwable){return in_array($key,['min_years','max_years'],true)?1:false;}
         return match($key){'min_years'=>1,'max_years'=>(int)($raw['longest']??$d['defaultLongest']??1),
             'enabled'=>($raw['sell']??$d['defaultSell']??true)&&($raw['stops']??[])!==['register','renew','transfer'],
             default=>!in_array($key,$raw['stops']??[],true)&&($key!=='transfer'||($raw['transfers']??$d['defaultTransfers']??false))};
     }
-    public function own(Tld $t): bool {Staff::requireView();return Pricing::hasOwn($t);}
+    public function own(Tld $t): bool {Staff::requireView();try{return Pricing::hasOwn($t);}catch(\Throwable){return !$t->use_default_rule;}}
     public function rule(int $server): array
     {
         $grants=Staff::requireView();$d=OfferState::decode(Account::where('server_id',$server)->sole()->catalogue_defaults);
@@ -211,7 +213,9 @@ final class StaffCatalogue
                 new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));
                 $own=Pricing::hasOwn($t);
             }catch(\Throwable){$raw=[];$own=!$t->use_default_rule;$unreadable=true;}
-            $invalidRule=false;try{self::ruleOnce($t,$pricingOnce);}catch(\DomainException|\InvalidArgumentException){$invalidRule=true;}
+            $invalidRule=$unreadable;
+            $ruleKind=$unreadable?'unreadable':(!$own?'default':match($raw['pricing_rule']['mode']??$t->pricing_mode){'fixed'=>'fixed','markup_amount','markup_percent','markup_fee_percent'=>'markup',default=>'pricing'});
+            if(!$unreadable){try{self::ruleOnce($t,$pricingOnce);}catch(\Throwable){$invalidRule=true;}}
             $all=$unreadable?[]:($offers[$t->server_id.':'.$t->tld]??[]);$prices=[];
             foreach($all as $offer){$decision=$offer->decision;$cost=$offer->observation();$flags=[];
                 if($decision->reason!==null){$flags[]=$decision->reason;}
@@ -230,17 +234,28 @@ final class StaffCatalogue
             $label=match($reason){'staff_stopped','staff_term_stopped'=>'Stopped by staff','seller_changed'=>'No registrar selected','publication_pending'=>'Prices not published','stale_price'=>'Cost out of date','below_cost'=>'Below cost','unknown_price'=>'Cost missing','unknown_facts','stale_facts'=>'Checking registrar terms','unsupported_facts'=>'Registrar requirements need checking','unsupported_term','provider_disabled'=>'Not offered by this registrar','unpublished_price'=>'Price missing','account_unavailable'=>'Check registrar account','cost_limit'=>'Over the cost limit',default=>'Check TLD settings'};
             try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}
             $policy=$policies[$t->tld]??null;
-            $selected=$policy&&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key
+            $selected=!$unreadable&&$policy&&(int)$policy->server_id===(int)$t->server_id&&$policy->account_fingerprint===$t->account_fingerprint&&$policy->registrar_key===$t->registrar_key
                 &&\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::chosen($t,(array)$policy,$d);
             $chosen=$invalidRule?null:$chosen;
             if(!$selected&&!isset($sellers[$t->tld])){$label='No registrar selected; not for sale';}
-            elseif(!collect($prices)->contains(fn($price)=>$price['synced'])){$label="Not in the registrar's price feed; not for sale";}
             $queue=$refresh[$t->server_id]??null;
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
-            $out[$t->id]=['selected'=>(bool)$selected,'invalid_rule'=>$invalidRule,
-                'refresh'=>['succeeded_at'=>$queue->offer_feed_succeeded_at??null,'due_at'=>$work['feed_due']??null],
-                'prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':(($selected||$invalidRule)?'danger':'gray'),'reason'=>$chosen?null:($invalidRule?'Invalid fixed price rule. Use Edit prices.':$label)],
+            // A successful account read proves omission only after the saved selection. Unknown chronology stays unknown.
+            $selectedAt=$policy?->updated_at??$policy?->created_at;
+            try{$selectedAt=$selectedAt?max(\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp(),$t->created_at?->getTimestamp()??0,$t->updated_at?->getTimestamp()??0):null;}catch(\Throwable){$selectedAt=null;}
+            $refreshed=['succeeded_at'=>$queue->offer_feed_succeeded_at??null,'due_at'=>$work['feed_due']??null,
+                'failure'=>$queue->offer_feed_failure??null,'selected_at'=>$selectedAt];
+            $confirmed=$selectedAt!==null&&($refreshed['succeeded_at']??0)>$selectedAt;
+            if(!$unreadable&&!collect($prices)->contains(fn($price)=>$price['synced'])&&($selected||isset($sellers[$t->tld]))){
+                if($confirmed){$label="Not in the registrar's price feed; not for sale";}
+                // Keep an account-unavailable status. A first read failure cannot establish a missing feed entry.
+                elseif($reason==='account_unavailable'||$refreshed['failure']){$label='Check registrar account';}
+            }
+            $error=['invalid_rule_kind'=>$ruleKind];
+            $out[$t->id]=['selected'=>(bool)$selected,'invalid_rule'=>$invalidRule,...$error,
+                'refresh'=>$refreshed,
+                'prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':(($selected||$invalidRule)?'danger':'gray'),'reason'=>$chosen?null:($invalidRule?TldFacts::ruleProblem($error):$label)],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
                 'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
