@@ -334,6 +334,7 @@
     "tests/managed-public-stamp-test.php",
     "tests/managed-dns-setup-test.php",
     "tests/native-paid-baseline-test.php",
+    "tests/native-paid-runtime-ports-test.php",
     "tests/seller-switch-lifecycle-enom-register-test.php",
     "tests/seller-switch-lifecycle-enom-transfer-test.php",
     "tests/seller-switch-lifecycle-namesilo-register-test.php",

@@ -24,7 +24,8 @@ $composition=['acquisition'=>offlineAcquisition($b,$paidBindings,$clock,$feature
     'renewal'=>$renewal,'renewal_writer'=>new RenewalWriter($b,$features,$accept,fn()=>$renewal,static fn()=>throw new LogicException('No renewal wire in payment matrix')),
     'renewal_completion'=>new RenewalCompletion($bindings,$clock),'management'=>new DomainManagement($bindings,$clock,$features,true),
     'management_protocol'=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($b,static fn()=>throw new LogicException('No management wire in payment matrix'))];
-$ports->register($b->fingerprint,fn()=>$composition);expect($ports->accepted($a),'Complete offline composition accepted');
+$runtimeCompositionWitness??=static fn()=>null;
+$ports->register($b->fingerprint,static function()use($composition,$runtimeCompositionWitness):array {$runtimeCompositionWitness();return $composition;});expect($ports->accepted($a),'Complete offline composition accepted');
 $paid=static function($op)use($clock):void {
     $clock->instant=$clock->now()->modify('+61 seconds');Illuminate\Support\Facades\Cache::flush();
     $invoice=App\Models\Invoice::findOrFail($op->invoice_id);

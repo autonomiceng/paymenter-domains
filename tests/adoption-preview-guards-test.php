@@ -136,7 +136,10 @@ $offerPorts=activeFixturePorts($native);$offerQuery=new Paymenter\Extensions\Ser
 $offerRevision=fn()=>$offerPorts->readOffers($offerQuery,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
 $retained=$tld->fresh()->catalogue_retained_annual_retail;
 $offerPorts->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($binding,'com','1.00'),$offerRevision());
-same('below_cost', $run()->details['price_notice'], 'Below-cost retail is reviewed without a floor');
+$belowCost = $run();
+same('below_cost', $belowCost->details['price_notice'], 'Below-cost retail is reviewed without a floor');
+same('1.00', $belowCost->details['annual_charge'], 'Reviewed annual charge preserves the below-cost edit');
+same('1.00', Adoption::findOrFail($belowCost->previewId)->evidence['retail']['annual_net'], 'Stored annual net preserves the below-cost edit');
 $offerPorts->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($binding,'com',$retained),$offerRevision());
 $server = Server::findOrFail($tld->server_id);
 $setting = $server->settings()->create(['key' => 'domains_due_days', 'value' => '14', 'type' => 'string']);
