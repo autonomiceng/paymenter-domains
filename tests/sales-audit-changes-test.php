@@ -7,7 +7,7 @@ require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,StaffCommands};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,OfferState,Query,StaffCommands};
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 $fixture = offerCommerceFixture(); extract($fixture);
 [$netBinding, $netOffer] = offerCommerceSecond($fixture);
@@ -36,4 +36,17 @@ $save(['terms' => ['com' => ['transfer' => false]]]);
 $history = TldFacts::history($t->server_id, null);
 same('No sales settings changed', $history[0]['change'], 'No-op does not claim a sales change');
 same('', $history[0]['reason'], 'No-op invents no changed fields');
+// Intent can already allow transfers while the chosen registrar sells registration only.
+$save(['terms' => ['com' => ['transfer' => true]]]);
+$revision = $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
+$ports->apply(Edit::seller($binding, 'com', ['register']), $revision);
+$policy = Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld', 'com');
+same(true, OfferState::decode($t->fresh()->catalogue_intent)['transfers'], 'Transfers intent is already on');
+same(false, $policy->sole()->transfer_enabled, 'The chosen registrar initially sells registration only');
+$save(['terms' => ['com' => ['transfer' => true]]]);
+same(true, $policy->sole()->transfer_enabled, 'Transfers On enables the chosen registrar row');
+foreach ([null, $t->id] as $scope) {
+    $history = TldFacts::history($t->server_id, $scope);
+    same('.com: transfers on', $history[0]['reason'], 'Seller-only transfer change names its TLD and changed flag');
+}
 $nativeSuccessful = true; echo "Sales history records only actual changes with the TLD.\n";
