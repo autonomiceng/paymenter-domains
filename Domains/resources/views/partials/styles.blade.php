@@ -540,7 +540,7 @@
 .domains .domains-sheet .domains-card > div { display: grid; grid-template-columns: 9.75rem minmax(0, 1fr); gap: 0 1rem; align-items: center; min-height: 2.75rem; padding: .5rem 1.5rem; border-top: 1px solid var(--e-line); border-bottom: 0; }
 /* Renewal and Settings labels: one size and weight, as in the mock. */
 .domains .domains-sheet .domains-card dt, .domains .domains-sheet .domains-row__l { font-size: inherit; font-weight: 400; }
-.domains .domains-ns-list { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.domains .domains-ns-list { display: flex; flex-direction: column; gap: 2px; font-size: .8125rem; overflow-wrap: anywhere; }
 .domains .domains-sheet .domains-card dd { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 1rem; align-items: center; text-align: left; font-weight: 400; }
 .domains .domains-sheet .domains-card dd > * { grid-column: 1; }
 .domains .domains-sheet .domains-card dd > .domains-card__a { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; }

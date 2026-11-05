@@ -10,6 +10,10 @@ final class DomainPage
 {
     /** The cause on each value while reads are stopped. The page notice carries the one fix, so the rows stay calm. */
     public const TEAM_CHECK = 'Our team needs to check this domain. '.Missing::NO_ACTION;
+    /** The page notice while reads are stopped. When it shows, the rows need not repeat it. */
+    public const READ_HELD = 'We can’t read this domain’s details right now. '.DomainStatus::ON_IT.'.';
+    public static function readHeldSaid(?array $notice): bool
+    { return ($notice['text'] ?? null) === self::READ_HELD; }
     public static function checkHeld(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['recordCheckHeld'] ?? false); }
     /** The one notice at the top of the page: text, tone and its one action, or null when nothing needs doing.
@@ -36,9 +40,10 @@ final class DomainPage
             isset($d->actions['code']) && ($d->transfer['open'] ?? false) && !($d->transfer['received'] ?? false) => ['tone' => 'warn', 'text' => 'Enter the auth code from your current registrar.', 'action' => ['label' => 'Enter auth code', 'url' => $d->actions['code']]],
             ($d->transfer['notice']['tone'] ?? null) === 'warning' => ['tone' => 'warn', 'text' => $d->transfer['notice']['title'].' '.$d->transfer['notice']['body'], 'action' => $contact],
             $order === 'paid' && isset($d->order['check']) => ['tone' => $d->order['check']['tone'] ?? 'warn', 'text' => $d->order['check']['title'].'. '.$d->order['check']['body'], 'action' => $contact],
-            $order === 'paid' && !isset($d->order['next']) => self::ours('Paid. We’re finishing the '.$word.'. There’s nothing you need to do.', $contact),
+            // A complimentary order has nothing paid, so it says what it is, as its receipt does.
+            $order === 'paid' && !isset($d->order['next']) => self::ours((($d->order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ').'We’re finishing the '.$word.'. There’s nothing you need to do.', $contact),
             // An Off switch is why changes stop, so its own notice below wins over a stopped read, which the rows already say.
-            self::checkHeld($d) && !($d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF) => self::ours('We can’t read this domain’s details right now. '.DomainStatus::ON_IT.'.', $contact),
+            self::checkHeld($d) && !($d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF) => self::ours(self::READ_HELD, $contact),
             $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],
             $d->dnsCorrection => ['tone'=>'info','text'=>'Your domain is registered, but the registrar could not confirm your chosen nameservers. '.(isset($d->management['nameservers'])?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>isset($d->management['nameservers'])?['label'=>'Change nameservers','url'=>$d->actions['show'].'?edit=nameservers#edit-nameservers']:$contact],
             $d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF => ['tone' => 'info', 'text' => 'Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.', 'action' => $contact],
