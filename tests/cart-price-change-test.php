@@ -23,8 +23,9 @@ $open = static function ($cart) use ($user) {
     Illuminate\Support\Once::flush();
     return Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 };
-$checkout = static function ($page) use ($user) {
-    Illuminate\Support\Once::flush();
+// Livewire test calls reuse the last request's cookies (Testable::update), so name the page's own cart.
+$checkout = static function ($page, $cart) use ($user) {
+    Illuminate\Support\Once::flush(); app('request')->cookies->set('cart', $cart->ulid);
     return $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 };
 $changed = 'Your cart changed. Review the total, then check out again.';
@@ -34,7 +35,7 @@ $cart = commerceCart($user); $line = commerceAdd($cart, $com, 'same-price-placeh
 $page = $open($cart); $before = $counts();
 $ports->apply(Edit::republish($binding, 'com'), $rev());
 expect($cart->items()->whereKey($line->id)->exists(), 'Same-price publish keeps the cart line');
-$checkout($page);
+$checkout($page, $cart);
 expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'Same price shows no notice');
 same($before[2] + 1, Operation::count(), 'Same price checks out on the first click');
 same('23.40', Operation::latest('id')->first()->policy['price']['retail'], 'Same price keeps the shown total');
@@ -44,11 +45,11 @@ $cart = commerceCart($user); $line = commerceAdd($cart, $com, 'changed-price-pla
 $page = $open($cart); same('23.40', $total($page), 'Held page shows the old total');
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
 expect($cart->items()->whereKey($line->id)->exists(), 'Published price change keeps the cart line');
-$before = $counts(); $checkout($page);
+$before = $counts(); $checkout($page, $cart);
 same($before, $counts(), 'First click after a price change places no order');
 same($changed, $notice($page), 'Changed price shows the changed-cart notice');
 same('27.00', $total($page), 'Changed price shows the new total');
-$checkout($page);
+$checkout($page, $cart);
 same($before[2] + 1, Operation::count(), 'Second click checks out');
 same('27.00', Operation::latest('id')->first()->policy['price']['retail'], 'Second click buys at the new total');
 
@@ -57,15 +58,21 @@ $cart = commerceCart($user); $closed = commerceAdd($cart, $com, 'closed-sale-pla
 $kept = commerceAdd($cart, $second['product'], 'example.net');
 $page = $open($cart);
 $loaded = commerceCart($user); $loadedLine = commerceAdd($loaded, $com, 'closed-load-placeholder.com', 3);
+// Mixed carts: .com goes off sale and the .net account is paused later; the removal notice must still arrive.
+$mixedLoad = commerceCart($user); $mixedLoadCom = commerceAdd($mixedLoad, $com, 'mixed-load-placeholder.com', 3);
+$mixedLoadNet = commerceAdd($mixedLoad, $second['product'], 'mixed-load-placeholder.net');
+$mixedCart = commerceCart($user); $mixedCom = commerceAdd($mixedCart, $com, 'mixed-checkout-placeholder.com', 3);
+$mixedNet = commerceAdd($mixedCart, $second['product'], 'mixed-checkout-placeholder.net');
+$mixedPage = $open($mixedCart);
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
-$before = $counts(); $checkout($page);
+$before = $counts(); $checkout($page, $cart);
 same($before, $counts(), 'Removing a line places no order');
 expect(!$cart->items()->whereKey($closed->id)->exists(), 'The TLD off sale loses only its own line');
 expect($cart->items()->whereKey($kept->id)->exists(), 'Other cart lines stay');
 same('closed-sale-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
     $notice($page), 'Off-sale checkout says what happened and what to do next');
 same(ltrim($second['price'], '$'), $total($page), 'Total now covers only the remaining line');
-$checkout($page);
+$checkout($page, $cart);
 same($before[2] + 1, Operation::count(), 'Remaining line checks out on the next click');
 same('net', Operation::latest('id')->first()->domain->tld, 'Only the remaining line is bought');
 Illuminate\Support\Once::flush();
@@ -74,5 +81,18 @@ expect(!$loaded->items()->whereKey($loadedLine->id)->exists(), 'Page load also r
 same('closed-load-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
     $notice($page), 'Page load uses the same words');
 same(null, $total($page), 'Empty cart after removal has no total');
+$bindings->setProcessing($secondBinding->serverId, false);
+Illuminate\Support\Once::flush();
+$page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $mixedLoad->ulid])->test(App\Livewire\Cart::class);
+expect(!$mixedLoad->items()->whereKey($mixedLoadCom->id)->exists() && $mixedLoad->items()->whereKey($mixedLoadNet->id)->exists(),
+    'Mixed page load removes only the off-sale line');
+same('mixed-load-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
+    $notice($page), 'A paused line cannot swallow the page-load removal notice');
+$before = $counts(); $checkout($mixedPage, $mixedCart);
+same($before, $counts(), 'Mixed checkout with a removal places no order');
+expect(!$mixedCart->items()->whereKey($mixedCom->id)->exists() && $mixedCart->items()->whereKey($mixedNet->id)->exists(),
+    'Mixed checkout removes only the off-sale line');
+same('mixed-checkout-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
+    $notice($mixedPage), 'A paused line cannot swallow the checkout removal notice');
 $nativeSuccessful = true;
 echo "Cart price change: ok\n";
