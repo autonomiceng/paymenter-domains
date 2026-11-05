@@ -94,8 +94,11 @@ final class RegistrarFacts
         $undated=$b['without_cost']-$b['unpriced'];
         $gap=$undated>0?['text'=>$n($undated).' with no known date, so not counted. Check the invoice days and the domain expiry.','act'=>true,'at'=>null]:null;
         if ($b['unpriced']===0) { return $gap; }
-        try { $read=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress((int)$account->server_id)??[]; } catch (\Throwable) { $read=[]; }
-        $priced=self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp(),$b['unobserved']??[]);
+        try { $catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();$read=$catalogue?->progress((int)$account->server_id)??[]; }
+        catch (\Throwable) { $catalogue=null;$read=[]; }
+        $priced=$catalogue===null
+            ?['text'=>$n($b['unpriced']).' not priced yet. '.\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,'act'=>true,'at'=>null]
+            :self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp(),$b['unobserved']??[]);
         return $gap===null?$priced:[...$gap,'text'=>$gap['text'].' '.$priced['text']];
     }
     /** Unpriced renewals by the price read's state. Beco retries a failed read by itself (OfferWork backoff), so only a
