@@ -13,7 +13,8 @@ final class ComplimentaryCosts
     public static function cap(Operation $op,string $usual):string
     {
         $approved=DB::table('domains_complimentary_approvals')->where('operation_id',$op->id)->orderByDesc('id')->value('amount');
-        return $approved!==null&&WriteMoney::compare($approved,$usual)>0?(str_contains(rtrim($approved,'0'),'.')?rtrim($approved,'0').'0':rtrim($approved,'0').'.0'):$usual;
+        if($approved===null||WriteMoney::compare($approved,$usual)<=0){return $usual;}
+        [$whole,$fraction]=explode('.',$approved);return $whole.'.'.(rtrim($fraction,'0')?:'0');
     }
     public static function require(Operation $op,Money $cost,string $usual):void
     {

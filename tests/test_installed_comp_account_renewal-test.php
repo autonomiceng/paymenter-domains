@@ -27,7 +27,7 @@ $state->price='8.01';$writes=$state->writes;same('held',$runRenewal($over,$bindi
 same('Needs approval: registrar cost $8.01 is above the usual $8.00',ComplimentaryCosts::message($over->fresh()),'Staff see exact approval amounts');
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$user,'8.01','Approved',$clock));
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$staff,'8.02','Stale quote',$clock));
-ComplimentaryCosts::approve($over->id,$staff,'8.01','Reviewed registrar increase',$clock);
+ComplimentaryCosts::approve($over->id,$staff,$over->fresh()->policy['complimentary_cost_review']['amount'],'Reviewed registrar increase',$clock);
 same('pending',$runRenewal($over,$binding)->state,'Approved exact cost can send through the same path');same($writes+1,$state->writes,'Approval permits exactly one registrar send');
 same(1,DB::table('domains_complimentary_approvals')->where('operation_id',$over->id)->count(),'Cost approval is audited once');
 $disable();
