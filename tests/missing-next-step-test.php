@@ -69,8 +69,8 @@ same(route('tickets.create'),Missing::supportUrl(),'Tickets on: the ticket form'
 same(null,$staffCheck(),'Tickets on: nothing for staff to fix');
 config(['domains.support_url'=>null]);
 
-// Checkout's line stays byte for byte as it was: the cart lane owns its words.
-same('<span class="domains-missing"><svg class="domains-i" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>Missing</span> <span class="domains-missing__cause">Not set for this TLD yet</span>',str_replace("\n",'',view('domains::partials.missing',['cause'=>'Not set for this TLD yet'])->render()),'Checkout Missing line is unchanged');
+// df63efb6 adopted the shared red hexagon; keep the checkout label and cause byte for byte.
+same('<span class="domains-missing"><svg class="domains-missing-mark" width="14" height="16" viewBox="0 0 16 18" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M8 .3l7.7 4.3v8.8L8 17.7.3 13.4V4.6zM8 7.8l2.4-2.4 1.2 1.2L9.2 9l2.4 2.4-1.2 1.2L8 10.2l-2.4 2.4-1.2-1.2L6.8 9 4.4 6.6l1.2-1.2z"/></svg>Missing</span> <span class="domains-missing__cause">Not set for this TLD yet</span>',str_replace("\n",'',view('domains::partials.missing',['cause'=>'Not set for this TLD yet'])->render()),'Checkout Missing keeps the approved marker and existing cause');
 
 // Auth code row: the fix fits the phase.
 $support=Missing::support('/tickets/create');
