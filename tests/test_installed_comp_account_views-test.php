@@ -30,10 +30,12 @@ $managed->assertSee($compReason)->assertDontSee('Cancel and add credit');
 // Both saved first holds and subsequent engine holds use the term's retained funding basis.
 $story=clone $op;$story->policy=[...$op->policy,'first_hold'=>['at'=>$clock->now()->format(DATE_ATOM),'reason'=>'registrar_price_increased'],
     'staff_actions'=>[['action'=>'engine_hold','at'=>$clock->now()->format(DATE_ATOM),'reason'=>'registrar_price_increased']]];
-foreach([['complimentary',$compReason],['paid_invoice',$paidReason]] as [$basis,$reason]){
+// History keeps the saved hold reason; only the current reason names the approval step (ui-r15 R2).
+$compHistory='Not sent: the registrar price is above the limit saved with the order. Cancel, or use Release hold after the price falls.';
+foreach([['complimentary',$compReason,$compHistory],['paid_invoice',$paidReason,$paidReason]] as [$basis,$reason,$held]){
     $story->funding_basis=$basis;same($reason,Labels::operationReason($story),'Request wording follows the funded term');
     $subs=array_column(StaffReviewHistory::timeline($story,StaffReviewHistory::rows($story)),'sub');
-    same(2,count(array_filter($subs,fn($sub)=>$sub===$reason)),'Both retained history holds use the correct cancellation wording');
+    same(2,count(array_filter($subs,fn($sub)=>$sub===$held)),'Both retained history holds use the correct cancellation wording');
 }
 $costManagedHtml=$managed->html();
 $fundOnly=staffUser([Staff::VIEW,Staff::COSTS,'admin.domains.fund']);
