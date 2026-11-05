@@ -642,9 +642,12 @@ def main():
                     and requested
                     and all(
                         Path(path).name.startswith("test_installed_")
+                        or path in {"tests/checkout-refresh-test.php", "tests/offer-reader-batch-test.php"}
                         for path in requested
                     )
                 )
+                # These serial checks mutate only their app/SQLite fixture. Keep the pinned,
+                # verified vendor tree read-only instead of copying 27,000 dependency files.
                 snapshot = native.prepare(source, fixture, share_vendor=bool(shared))
             dependency = (source, snapshot)
         binary = extension = None
