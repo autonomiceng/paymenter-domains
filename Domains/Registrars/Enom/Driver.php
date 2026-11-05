@@ -10,7 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolRe
 use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 
 /** Named read adapter only; no admission, charging, persistence or account adoption. */
-final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
+final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\AcquisitionPriceReader, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
 {
     private array $suffixes;
     public function __construct(private readonly Client $client, array $suffixes, private readonly int $priceMaxAgeSeconds = 300)
@@ -220,6 +220,13 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
     public function quote(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
     {
         if ($query->action === Action::Renew) { return $this->renewalAssessment($query, $context); }
+        return $this->acquisitionQuote($query, $context);
+    }
+
+    /** Account price for acquisition and its future annual renewal, without owned-domain reads. */
+    public function acquisitionQuote(Query $query, #[\SensitiveParameter] RequestContext $context): DriverResult
+    {
+        if ($query->action === Action::Renew && $query->years !== 1) { return $this->unsupported($context); }
         if ($query->action === Action::Transfer && $query->years !== 1) { return $this->unsupported($context); }
         $parts = $this->parts($query->name);
         $price = $this->productPrice($parts['TLD'], $query->action->value, $query->years, $context);

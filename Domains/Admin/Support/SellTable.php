@@ -46,7 +46,9 @@ final class SellTable
         if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
         $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];
         if($s['reason']===null){return ['label'=>$s['label'],'tone'=>$s['tone']];}
-        $step=$this->nextStep($row,'register');
+        if(!Staff::requireView()->costs){return ['label'=>$s['label'],'tone'=>$s['tone'],'next'=>$s['reason'],'open'=>null];}
+        $action=in_array('register',$facts['intent']['stops']??[],true)?'transfer':'register';
+        $step=$this->nextStep($row,$action);
         return ['label'=>$step['state']==='checking'?'Checking':$s['label'],'tone'=>$s['tone'],'next'=>$step['next']?:$s['reason'],'open'=>$step['open']];
     }
     /** Sale state for the rows on screen, read once. Null when no prices are saved for it yet. */
@@ -136,7 +138,8 @@ final class SellTable
         if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
         $sold=$this->sold($row,$action);
         $step=$field!=='profit'&&$sold!=='off'&&($saved['prices'][$action][$field]??null)===null?$this->nextStep($row,$action):[];
-        if($field==='cost'&&($saved['prices'][$action]['cost']??null)===null&&$this->retainedRenewal($row,$action)){
+        if($field==='cost'&&($saved['prices'][$action]['cost']??null)===null&&$this->retainedRenewal($row,$action)
+            &&($step['state']??null)!=='checking'&&($step['open']??null)!=='account'){
             $step=['state'=>'missing','next'=>'Use Sync prices.','open'=>null];
         }
         return $this->savedCell($saved['prices'][$action]??null,$field,$sold,$step);

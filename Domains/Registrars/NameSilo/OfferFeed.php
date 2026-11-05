@@ -10,13 +10,13 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 /** One account getPrices, annual-only. No catalogue row establishes registry/renewal safety. */
 final class OfferFeed implements PricedFeed
 {
-    public function __construct(private readonly Driver $reader, private readonly CatalogueFreshness $freshness = new CatalogueFreshness, private readonly ?\Closure $facts = null) {}
+    public function __construct(private readonly Driver $reader, private readonly ?CatalogueFreshness $freshness = null, private readonly ?\Closure $facts = null) {}
     public function factsReads(): int { return $this->facts === null ? 0 : 1; }
     public function priceReads(): int { return 1; }
     public function prices(RequestContext $context): iterable
     {
         $this->reader->binding()->requireMatch($context->binding);
-        $at = $context->now(); $until = $at->modify('+'.$this->freshness->maxAge().' seconds'); $commands = [];
+        $at = $context->now(); $until = $at->modify('+'.($this->freshness ?? CatalogueFreshness::forAccount($context->binding->serverId))->maxAge().' seconds'); $commands = [];
         foreach ($this->reader->prices($context) as $tld => $row) {
             CanonicalName::parse('example.'.$tld, [$tld]);
             $costs = []; $amounts = $this->amounts($row);

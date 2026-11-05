@@ -4,13 +4,14 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,CatalogueFreshness,Capabilities,DriverResult,Environment,Query,ReconciliationResult,RequestContext};
 /** Built-in reader permits sealed-attempt reconciliation while ordinary domain polling stays closed. */
-final readonly class EnomTestReconciliationReader implements \Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver
+final readonly class EnomTestReconciliationReader implements \Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\AcquisitionPriceReader
 {
     public function __construct(private CataloguePreview $preview,private Driver $reconciler) {}
     public function binding():AccountBinding{return $this->preview->binding();}
     public function accountCapabilities(RequestContext $c):Capabilities{return $this->preview->accountCapabilities($c);}
     public function balance(RequestContext $c):DriverResult{return $this->reconciler->balance($c);}
     public function quote(Query $q,RequestContext $c):DriverResult{return $this->preview->quote($q,$c);}
+    public function acquisitionQuote(Query $q,RequestContext $c):DriverResult{return $this->preview->acquisitionQuote($q,$c);}
     public function availability(Query $q,RequestContext $c):DriverResult{return $this->preview->availability($q,$c);}
     public function readDomain(string $name,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())||\Paymenter\Extensions\Servers\Domains\Services\EnomTestManagement::accepted($this->binding())?$this->reconciler->readDomain($name,$c):$this->preview->readDomain($name,$c);}
     public function readRenewalDomain(string $name,RequestContext $c):DriverResult{return \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::enabled($this->binding())?$this->reconciler->readRenewalDomain($name,$c):$this->preview->readRenewalDomain($name,$c);}

@@ -75,8 +75,8 @@ $writer->apply(Edit::republish($b, 'org'), $orgRead()->revision);
 $apply(Edit::seller($b, 'com', ['register', 'transfer']));
 foreach (['register', 'transfer'] as $action) {
     same(false, $read($b, Context::Public, $action)->available, 'Automatic changes cannot release master-stopped '.$action);
-    same(0, DB::table('prices')->whereIn('plan_id', $native->product($enom, $action)->plans()->pluck('id'))->count(),
-        'Master-stopped '.$action.' has no native acquisition prices');
+    expect(DB::table('prices')->whereIn('plan_id', $native->product($enom, $action)->plans()->pluck('id'))->exists(),
+        'Master-stopped '.$action.' retains native prices while admission stays closed');
 }
 same(['register', 'renew', 'transfer'], json_decode(DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_intent'), true)['stops'],
     'Feed, defaults, seller selection and republication preserve the explicit master stop');
@@ -246,8 +246,8 @@ $hiddenLocked = DB::transaction(static fn () => $writer->readOffers(new Query($b
 same(false, $hiddenLocked->available, 'Configured hidden ending refuses locked admission with current revisions');
 $apply(Edit::republish($b, 'com'));
 foreach (['register', 'transfer'] as $action) {
-    same(0, DB::table('prices')->whereIn('plan_id', $native->product($enom, $action)->plans()->pluck('id'))->count(),
-        'Hidden-ending republication withdraws native '.$action.' prices');
+    expect(DB::table('prices')->whereIn('plan_id', $native->product($enom, $action)->plans()->pluck('id'))->exists(),
+        'Hidden-ending republication retains native '.$action.' prices while admission stays closed');
 }
 same([true, $holderRetail, 'retained_renewal'], [$read($b, Context::Holder, 'renew')->available,
     $read($b, Context::Holder, 'renew')->retail, $read($b, Context::Holder, 'renew')->warning],

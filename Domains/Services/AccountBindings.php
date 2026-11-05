@@ -255,6 +255,11 @@ final class AccountBindings
             $server=$this->server($serverId, true);
             $account = Account::where('server_id', $serverId)->lockForUpdate()->firstOrFail();
             if ($enabled) { $acceptance?->__invoke($server,$account);$this->configuration($account, true,$server); }
+            if ($enabled && !$account->processing_enabled) {
+                // Paused publication withdraws native USD rows. Let bounded local work restore them.
+                DB::table('domains_tlds')->where('server_id', $serverId)->where('catalogue_converted', true)
+                    ->increment('catalogue_revision');
+            }
             $account->processing_enabled = $enabled; Account::withVerifiedBindingWrite(static fn () => $account->save());
         });
     }

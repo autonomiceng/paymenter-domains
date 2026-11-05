@@ -256,5 +256,91 @@ same(0,$calls,'All states render without provider resolution or a send');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);[$table,$row]=nextTable();same(null,$table->cell($row,'register','price')['text'],'Staff without cost permission do not see money-cell reasons');
 
 } catch (Throwable $error) {$failures[]='Case 17: '.$error->getMessage();}
+try {
+$reset();
+$intent=OfferState::decode($original['catalogue_intent']);$intent['stops']=['register'];
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','transfer')->update(['retail'=>'0.00']);
+$actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())]);
+[$table,$row]=nextTable();$status=$table->status($row);
+same('Set a positive transfer price in Edit prices on .com.',$status['next'],'Stopped registration keeps the active transfer repair step');
+same('tld',$status['open'],'Transfer repair links to Edit prices');
+} catch (Throwable $error) {$failures[]='Transfer status repair: '.$error->getMessage();}
+foreach(['stopped','account'] as $scenario){
+try {
+$reset();
+if($scenario==='stopped'){
+    $intent=OfferState::decode($original['catalogue_intent']);$intent['sell']=false;
+    DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
+}else{\App\Models\Server::whereKey($binding->serverId)->update(['enabled'=>false]);}
+$actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);
+[$table,$row]=nextTable();$status=$table->status($row);
+same($scenario==='stopped'?'Stopped by staff':'Check registrar account',$status['next'],'Restricted viewers retain the specific sale reason');
+same(null,$status['open']??null,'Restricted status avoids the unrelated TLD repair link');
+} catch (Throwable $error) {$failures[]='Restricted status '.$scenario.': '.$error->getMessage();}
+}
+$actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())]);
+foreach([false,true] as $canRead){
+try {
+$reset();$readable=$canRead;
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','renew')->delete();
+[$table,$row]=nextTable();$cell=$table->cell($row,'renew','cost');
+same($canRead?'Checking':'Missing',$cell['text'],'Retained renewal costs preserve automatic recovery');
+same($canRead?null:'account',$cell['open'],'Retained renewal setup preserves its account destination');
+if(!$canRead){same('Check account setup on Registrar account.',$cell['next'],'Retained renewal cost explains account repair');}
+} catch (Throwable $error) {$failures[]='Retained renewal recovery '.($canRead?'queued':'account').': '.$error->getMessage();}
+}
+try {
+$reset();
+$nt=$tlds[1]->fresh();$ns=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$nt->server_id)->sole());
+$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($ns,['com'],'register');
+$rev=static fn()=>$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision;
+$nf=fixtureNameSiloFacts($ns,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>[1],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')));
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($ns,'com',$nf),$rev());
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($ns,'com',['register','transfer']),$rev());$nt=$nt->fresh();
+$key=$nt->server_id.':'.$nt->tld;
+$page=$source->page(collect([$nt]));
+same('ready',$source->nextSteps(collect([$nt]),[$key=>$page[$nt->id]],'register',1)[$key]['state'],'Current NameSilo TEST facts remain usable');
+$originalAccounts=$accounts=config('domains.namesilo_test.accounts');$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns->serverId)->sole();
+unset($accounts[$account->stable_identity]['facts'][$nt->tld]);config(['domains.namesilo_test.accounts'=>$accounts]);
+$nsQueue=DB::table('domains_observation_queues')->where('server_id',$ns->serverId);
+foreach([false,true] as $alreadyQueued){
+    $nsQueue->update(['offer_work'=>OfferState::json($alreadyQueued?['facts'=>[$nt->tld=>['sold_only'=>true,'due_at'=>$now->getTimestamp()+86400]]]:[])]);
+    $page=[];$table=new SellTable([$ns->serverId=>$ns],1,true,static function()use(&$page){return $page;},false,$source);
+    $page=$table->rows('com')->get()->all();$status=$table->status($page[0]);
+    same('Checking',$status['label'],'Rejected fresh TEST facts need recovery rather than a ready step');
+    same($now->getTimestamp(),$work->status($ns,$nt->tld)['due_at'],'Rejected TEST evidence is scheduled now, including an existing freshness deadline');
+}
+$future=$now->getTimestamp()+120;
+$nsQueue->update(['offer_work'=>OfferState::json(['facts'=>[$nt->tld=>['due_at'=>$future,'tries'=>2,'failure'=>'read_failed']]])]);
+$work->requestFacts($ns,$nt->tld);same($future,$work->status($ns,$nt->tld)['due_at'],'Rejected TEST evidence still respects failure backoff');
+same(0,$calls,'Rejected TEST evidence only queues local recovery');
+config(['domains.namesilo_test.accounts'=>$originalAccounts]);
+} catch (Throwable $error) {$failures[]='NameSilo TEST facts recovery: '.$error->getMessage();}
+try {
+$reset();$clearPrice();
+$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)->catalogue_observation);
+$cost['enabled']=false;$cost['total']=null;$cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+[$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'An expired disabled cost queues a new price read');
+same($now->getTimestamp(),$work->status($binding)['due_at'],'Expired refusal schedules the existing price worker');
+} catch (Throwable $error) {$failures[]='Expired disabled cost: '.$error->getMessage();}
+foreach(['renew','transfer'] as $action){foreach([true,false] as $canRead){
+try {
+$reset();$readable=$canRead;
+$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action===$action&&(int)$p->term===1)->catalogue_observation);
+$cost['source']='enom_bulk_bucket_1';$cost['enabled']=false;$cost['total']=null;
+$cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action',$action)->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+$metadata=OfferState::facts($original['catalogue_facts']);
+$refusal=new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[OfferState::cost($cost)]);
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::encodeFacts($refusal->facts($metadata))]);
+$current=$t->fresh();$key=$current->server_id.':'.$current->tld;$page=$source->page(collect([$current]));
+$step=$source->nextSteps(collect([$current]),[$key=>$page[$current->id]],$action,1)[$key];
+same($canRead?'checking':'missing',$step['state'],'Expired disabled '.$action.' terms reach price recovery');
+if($canRead){same($now->getTimestamp(),$work->status($binding)['due_at'],'Expired annual refusal queues the price feed');}
+else{same('account',$step['open'],'Unreadable accounts retain the setup repair');same(null,$work->status($binding)['due_at'],'Unreadable accounts do not queue reads');}
+} catch(Throwable $error){$failures[]='Expired annual refusal '.$action.': '.$error->getMessage();}
+}}
 expect($failures===[],implode("\n",$failures));
 $nativeSuccessful=true;echo "Staff catalogue next steps: ok\n";

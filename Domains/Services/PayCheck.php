@@ -82,14 +82,15 @@ class PayCheck
             // A partial receipt freezes money; it does not authorize collecting more after a Live opt-out.
             foreach ($ops as $op) { if (self::sellingStopped($op)) { return $unavailable; } }
             if (self::moneyMoving((int)$invoice->id)) { return null; }
-            $selections = $ops->map(static function ($op) {
+            $selections = $ops->map(static function ($op) use ($offers) {
                 $receipt = $op->policy['checkout']['catalogue'] ?? throw new \DomainException('No catalogue receipt.');
                 $s = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$receipt);
                 if ($s->serverId !== (int)$op->server_id || $s->fingerprint !== $op->account_fingerprint
                     || $s->action !== $op->action || $s->term !== (int)$op->term || $s->tld !== $op->domain->tld) {
                     throw new \DomainException('Frozen catalogue binding changed.');
                 }
-                return $s;
+                return isset($s->catalogue['order_quote'])
+                    ? $offers->paymentSelection($s, $op->domain->domain, $op->cost['estimated'], (string)$op->amount) : $s;
             })->values()->all();
             foreach ($selections as $s) { $offers->validate($s); }
             $deadline = $this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');

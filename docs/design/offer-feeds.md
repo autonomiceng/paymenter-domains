@@ -1,8 +1,8 @@
-# Dormant offer feeds
+# Offer feeds
 
 `Registrars/Enom/OfferFeed` and `Registrars/NameSilo/OfferFeed` implement B1's `Feed` via
 `PricedFeed`; `priceReads()` supplies the bounded physical read count without registrar branching.
-Nothing registers or invokes these adapters in the current catalogue, jobs, billing or staff UI.
+The shared account worker invokes them through the checked catalogue routing.
 
 Enom reads reseller pricing for Years 1/2/5/10 and the suffix list once. Each requested bucket
 is an evidenced exact term by default. Additional terms require an explicit bucket-to-term map
@@ -16,11 +16,34 @@ never a free price. Failed bucket/list reads return no commands. A listed unpric
 an empty discovery command; it cannot erase costs or refresh facts. NameSilo uses one account
 `getPrices` without the retail flag. A quarantined row is an empty observation, annual-only.
 
-Enom cold facts use two existing named reads. Facts have independent times and preserve unknowns;
-registration terms come from TLD metadata. These reads do not prove annual renewal/transfer term
-support, so those fact terms remain absent. The later facts policy must supply separately evidenced
-annual support before publication. NameSilo's current reader has no independent TLD facts endpoint;
-`facts()` refuses without a wire request. Prices never establish registry or renewal safety.
+The annual bulk row proves one renewal/transfer year only when its reseller amount is positive
+and that action is enabled. No missing/zero amount grants a term. Enom `facts()` combines a
+completed bulk read with the two metadata reads when available; the writer also combines saved
+bulk rows with later metadata, so separate worker turns and restarts behave identically. Cost
+observations retain the annual proof's source and original dates. Metadata keeps its independent
+30-day age, registration terms and unknown registry fields. Bulk prices never prove extra fields,
+nameserver requirements or auto-renew-only safety. NameSilo already has annual protocol terms;
+its independently bound TEST protocol gate stays required, and unverified facts stay closed.
+
+The registrar account Overview shows “Prices stay current for”, in hours (default 48, range
+24–168), using the neighbouring account row and Edit dialog. The setting uses the existing
+configure permission, actor-bound revision ticket and encrypted audit. No environment override
+exists. `Data/CatalogueFreshness` reads the setting; feeds and normalized bulk-price checks apply
+the same policy to the original observation time. Metadata retains its independent lifetime.
+The account feed remains daily, leaving room for one missed run at the default age.
+Staff can record selling intent while metadata is unknown or expired; the offer stays closed.
+Selected, enabled staff sales request facts after a staff edit and when the bounded account
+rotation finds unknown/expired metadata. Discovery alone never queues the whole catalogue.
+Turning sales off stops those automatic facts reads; original send caps and read-group budgets stay.
+Native price rows survive unavailable offers; the evaluator and admission still refuse purchases.
+
+Registration and one-year transfer checkout automatically re-quote stale daily prices for the
+exact name, action, term and selected account. Customer reads use public catalogue authority;
+price observation ages decide which acquisition/annual renewal costs need a fresh quote. `AcquisitionOffers` applies the current staff pricing rule and rechecks the
+ordinary sale guards with temporary order evidence; neither daily nor native list prices change.
+An unchanged total continues on the same click. A changed total uses the existing cart review
+notice and next-click confirmation. Unreadable, below-cost and over-ceiling quotes stay blocked.
+Pending invoices recheck expired order quotes without changing frozen amounts or cost ceilings.
 
 B5 owns queue start/generation, policy selection, daily allowance/headroom and context construction.
 `AccountReadBudget::reserve` atomically reserves a complete local group with one shared account

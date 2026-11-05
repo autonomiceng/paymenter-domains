@@ -8,17 +8,38 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, PriceSnapshot, Re
 /** Server-only mapping evidence. Never accepts posted prices or synthesizes cost/row identity. */
 final readonly class ReadOffer implements \JsonSerializable
 {
-    public function __construct(public Decision $decision, private AccountBinding $binding, private ?object $row, private Context $context) {}
+    public function __construct(public Decision $decision, private AccountBinding $binding, private ?object $row, private Context $context, private ?\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness = null,
+        private ?Snapshot $snapshot = null, private ?Query $query = null, private ?Cost $orderCost = null) {}
 
     /** Original observation, including source unit/age, is not a spending grant. */
     public function observation(): ?Cost
-    { return $this->row?->catalogue_observation === null ? null : OfferState::cost(OfferState::decode($this->row->catalogue_observation)); }
+    { return $this->orderCost ?? ($this->row?->catalogue_observation === null ? null : ($this->freshness ?? \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($this->binding->serverId))->cost(OfferState::cost(OfferState::decode($this->row->catalogue_observation)))); }
+
+    /** Local row fence for a server-held order quote; never a price or spending grant. */
+    public function identity(): array { return [$this->row?->id, $this->row?->revision]; }
+
+    /** Re-evaluate every ordinary sale guard using server-held, exact-name order costs.
+     * This transient snapshot never reaches Writer or the daily price table. */
+    public function forOrder(array $costs, array $retail, \DateTimeImmutable $now): self
+    {
+        $s = $this->snapshot ?? throw new \LogicException('Order snapshot missing.');
+        $q = $this->query ?? throw new \LogicException('Order query missing.');
+        $feed = new FeedObserved($this->binding, $s->feed->tld(), array_values(array_replace($s->costs, $costs)));
+        $snapshot = new Snapshot($feed, $s->facts, $s->intent, $s->revision, $s->publishedRevision,
+            array_replace($s->retail, $retail), $s->seller, $s->sellerActions, $s->accountReady, $s->hidden, $s->retainedAnnualRetail);
+        return new self((new Evaluator)->evaluate($snapshot, $q, $this->context, $now), $this->binding,
+            $this->row, $this->context, $this->freshness, orderCost: $costs[$q->action.':'.$q->term] ?? null);
+    }
+
+    /** Server-only native list fence; saved retail alone never grants a purchase. */
+    public function listedRetail(): ?string
+    { return OfferState::money($this->row?->retail, 2); }
 
     /** Staff display only: saved retail remains visible when the offer cannot be purchased. */
     public function staffRetail(): ?string
     {
         if ($this->context !== Context::Staff) { throw new \LogicException('Staff snapshot required.'); }
-        return OfferState::money($this->row?->retail, 2);
+        return $this->listedRetail();
     }
 
     public function price(): PriceSnapshot

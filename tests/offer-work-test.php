@@ -26,6 +26,7 @@ extract(commerceFixture(active:true));
 $b = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[0]->server_id)->sole());
 $n = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
 (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($b); (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch($n);
+DB::table('domains_tlds')->where('server_id', $b->serverId)->update(['catalogue_intent' => json_encode(['sell' => false])]);
 $clock = new class($now->modify('+1 minute')) implements Clock {
     public function __construct(public DateTimeImmutable $time) {}
     public function now(): DateTimeImmutable { return $this->time; }
@@ -148,7 +149,7 @@ same(false, Schema::hasColumn('domains_tlds', 'offer_facts_work'), 'Queue owns f
 // Local rule fan-out shares the worker without consuming any provider allowance.
 $read = static fn ($binding = null, $tld = 'com') => $writer->readOffers(new Query($binding ?? $b, [$tld], 'register'), Context::Staff)[0];
 $writer->apply(Edit::defaults($b, 'com', new Intent(defaultSell: true)), $read()->revision);
-same('publication_pending', $read()->reason, 'Changed defaults fence old publication immediately');
+same('staff_stopped', $read()->reason, 'Explicit staff Off keeps automatic metadata discovery stopped during default changes');
 $before = count($wire->calls); $worker->wake($b); $worker->tick(1); $worker->tick(1);
 expect($read()->reason !== 'publication_pending', 'Bounded local rotation clears publication fences');
 same($before, count($wire->calls), 'Rule fan-out needs no registrar reads');
@@ -284,6 +285,27 @@ $clock->time = $clock->time->modify('+301 seconds'); $before = count($wire->call
 $worker->tick(2);
 same(5, count($wire->calls) - $before, 'A later worker recovers an expired superseded claim with a fresh credential-bound feed');
 
+
+// Production caller: a selected sold row with expired/unknown facts schedules its own metadata refresh.
+$q->update(['offer_work' => json_encode(['credential_revision' => $credential]), 'offer_claim' => null, 'offer_lease' => 0]);
+DB::table('domains_tlds')->where('server_id', $b->serverId)->where('tld', 'com')->update(['catalogue_facts' => null, 'catalogue_intent' => json_encode(['sell' => true])]);
+$clock->time = $clock->time->modify('+301 seconds'); $before = count($wire->calls);
+$worker->wake($b); $worker->tick(2); $worker->tick(2);
+same('ready', $worker->status($b, 'com')['state'], 'Sold set automatically requests unknown metadata');
+same(2, count($wire->calls) - $before, 'Sold-set warming uses two metadata reads and no full-list sweep');
+$clock->time = $clock->time->modify('+31 days'); $before = count($wire->calls);
+$worker->tick(2); $worker->tick(2); $worker->tick(2); $worker->tick(2);
+same(2, count($wire->calls) - $before, 'Sold-set facts expire independently and refresh automatically');
+
+// A local sold-set hint can promote TEST facts while the worker still holds an older copy.
+DB::table('domains_tlds')->where('server_id',$n->serverId)->where('tld','com')->update(['catalogue_intent'=>json_encode(['sell'=>true]),'catalogue_facts'=>null]);
+DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$n->serverId,'registrar_key'=>$n->registrarKey,'account_fingerprint'=>$n->fingerprint,'register_enabled'=>true]);
+$future=$clock->now()->getTimestamp()+86400;
+DB::table('domains_observation_queues')->where('server_id',$n->serverId)->update(['offer_work'=>json_encode(['facts'=>['com'=>['sold_only'=>true,'due_at'=>$future]]]),'offer_claim'=>null,'offer_lease'=>0]);
+$worker->accountTurn($n->serverId);
+same($clock->now()->getTimestamp(),$worker->status($n,'com')['due_at'],'Worker save preserves an earlier facts hint created during republication');
+$worker->accountTurn($n->serverId);
+same('unsupported',$worker->status($n,'com')['state'],'The promoted hint reaches the existing unsupported-reader path');
 // Upgrade an actual retained B2 schema, preserving all catalogue/native identities.
 $ids = Tld::orderBy('id')->pluck('id')->all();
 Schema::table('domains_observation_queues', static fn ($t) => $t->dropColumn(['offer_work', 'offer_claim', 'offer_lease', 'offer_turn']));

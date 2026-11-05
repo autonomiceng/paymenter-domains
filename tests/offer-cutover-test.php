@@ -24,7 +24,68 @@ expect(!is_file(dirname(__DIR__).'/Domains/Services/PublicationEligibility.php')
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true]);
 App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>EnomTestRenewal::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$binding->fingerprint,...EnomTestRenewal::protocol($binding)])]);
 $q=new Query($binding,['com'],'register');$revision=fn()=>$ports->readOffers($q,Context::Staff)[0]->revision;
-$ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$revision());
+
+// Real bridge replay starts with unknown facts and retained native rows. One bounded account feed
+// plus metadata for its selected sold set must reopen at the original retail, without deleting IDs.
+$nativePricesBefore = DB::table('prices')->orderBy('id')->get()->keyBy('id')->map(fn($p) => [$p->plan_id, $p->currency_code, $p->price])->all();
+$bulkClock = app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
+$bulkClock->instant = $now = $now->modify('+1 second');
+$bulkFeed = new class implements Paymenter\Extensions\Servers\Domains\Catalogue\PricedFeed {
+    public int $prices = 0; public array $facts = [];
+    public function priceReads(): int { return 5; }
+    public function factsReads(): int { return 2; }
+    public function prices(Paymenter\Extensions\Servers\Domains\Data\RequestContext $c): iterable {
+        $this->prices++; $costs = [];
+        foreach ([['register',1,'6.0000'],['register',3,'18.0000'],['renew',1,'8.0000'],['transfer',1,'7.0000']] as [$a,$n,$cost]) {
+            $costs[] = new Paymenter\Extensions\Servers\Domains\Catalogue\Cost($a,$n,true,$cost,Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,
+                'enom_bulk_bucket_'.($n === 3 ? 2 : 1),$c->now(),$c->now()->modify('+48 hours'));
+        }
+        return [new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($c->binding,'com',$costs),new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($c->binding,'org',[])];
+    }
+    public function facts(string $tld,Paymenter\Extensions\Servers\Domains\Data\RequestContext $c): FactsObserved {
+        $this->facts[] = $tld;
+        return new FactsObserved($c->binding,$tld,new Facts(['register'=>[1,3]],[],true,false,false,'enom_tld_facts',$c->now(),$c->now()->modify('+30 days')));
+    }
+};
+
+// Staff can enable a selected ending before its first metadata read; intent alone cannot open it.
+$pendingIntent=json_decode($tlds[0]->fresh()->catalogue_intent,true);$pendingIntent['sell']=false;
+DB::table('domains_tlds')->where('id',$tlds[0]->id)->update(['catalogue_intent'=>json_encode($pendingIntent)]);
+$enableReview=new StaffSettingsReview($staff->id,$binding->serverId,null,'acceptance',StaffSettingsReview::ticket($staff->id,$binding->serverId,null,'acceptance',StaffSettingsReview::stamp($binding->serverId,null)),'');
+app(StaffSettingsWrites::class)->run($enableReview,['sell'=>['choices'=>['com'=>'sell']]]);
+same(null,$tlds[0]->fresh()->catalogue_facts,'Enable records intent without fabricating registry metadata');
+same(false,$ports->readOffers($q,Context::Public)[0]->available,'Pending staff intent remains closed');
+same('queued',$scheduler->status($binding,'com')['state'],'Actual staff enable queues selected-set facts');
+$bulkWork = new Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->writer(),$bulkClock,
+    new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($bulkClock,25),fn()=>$bulkFeed,fn()=>25);
+$bulkWork->sync($binding); $bulkWork->accountTurn($binding->serverId); $bulkWork->accountTurn($binding->serverId);
+// Newly queued hints survive the claim and are consumed on the following bounded turn.
+$bulkWork->accountTurn($binding->serverId);
+same([1,['com']],[$bulkFeed->prices,$bulkFeed->facts],'One bulk read warms only the sold set, never discovered org');
+same(['$7.80','$10.40'],[$storefront->offer('com','register',1)['price'],$storefront->offer('com','register',1)['renew']],'Moved bulk prices restore the same annual retail');
+foreach ($nativePricesBefore as $id=>$values) {
+    $p=DB::table('prices')->where('id',$id)->first();same($values,$p?[$p->plan_id,$p->currency_code,$p->price]:null,'Every bridge native price identity and amount survives closed publication');
+}
+// The real account row reuses the neighbouring permissions, one-use revision ticket and audit path.
+require_once __DIR__.'/Support/staff-tlds.php'; tldPanel();
+$accountPage = Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class, ['account'=>$binding->serverId]);
+$accountPage->assertSee('Prices stay current for')->assertSee('48 hours');
+$bulkClock->instant = $now->modify('+49 hours');
+same('stale_price',$ports->readOffers($q,Context::Staff)[0]->reason,'Default 48-hour bulk observation expires');
+$accountPage->mountAction(Filament\Actions\Testing\TestAction::make('price_freshness_'.$binding->serverId)->schemaComponent(true,'content'))->setActionData(['hours'=>72,'reason'=>'Allow a missed daily catalogue read'])->callMountedAction()->assertHasNoActionErrors();
+// The saved policy invalidates publication; finish the local republish before checking offers.
+$ports->apply(Edit::republish($binding,'com'),$revision());
+same(true,$ports->readOffers($q,Context::Public)[0]->available,'Saving 72 hours changes freshness of the same original observation');
+same(72,Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($binding->serverId)->hours,'Account setting is saved');
+$bulkClock->instant = $now;
+$ageHistory = StaffSettingsReview::historyRows(App\Models\Server::findOrFail($binding->serverId));
+expect(count(array_filter($ageHistory,fn($h)=>($h['action']??null)===StaffSettingsReview::ACTIONS['price_freshness']))===1,'Setting save records its audited action');
+foreach ([23,169] as $hours) {
+    $review=new StaffSettingsReview($staff->id,$binding->serverId,null,'price_freshness',StaffSettingsReview::ticket($staff->id,$binding->serverId,null,'price_freshness',StaffSettingsReview::stamp($binding->serverId,null)),'Synthetic invalid freshness');
+    commerceReject(fn()=>app(StaffSettingsWrites::class)->run($review,['hours'=>$hours]));
+}
+
+
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3)),$revision());
 $ports->apply(Edit::seller($binding,'com',['register']),$revision());
 expect($storefront->endings()!==[],'Committed evidence invalidates the cached empty display');
@@ -114,4 +175,14 @@ $review=new StaffSettingsReview($staff->id,StaffSettingsReview::ALL_ACCOUNTS,nul
 $result=app(StaffSettingsWrites::class)->run($review,['mode'=>'fixed','fixed_register'=>'40.00','fixed_renew'=>'41.00','fixed_transfer'=>'42.00','fee_percent'=>'3.00','fee_fixed'=>'0.30'],$now);
 same('$40.00',$storefront->offer('com','register',1)['price'],'Installed global pricing save reaches active catalogue publication');
 expect($result['published']>0,'Installed global command returns main publication result');
+
+// Discovered .org has metadata but no annual renewal price. It stays closed with the existing staff next step.
+$orgQuery=new Query($binding,['org'],'register');$orgRevision=fn()=>$ports->readOffers($orgQuery,Context::Staff)[0]->revision;
+$ports->apply(new FactsObserved($binding,'org',new Facts(['register'=>[1],'renew'=>[1]],[],true,false,false,'enom_tld_facts',$now,$now->modify('+30 days'))),$orgRevision());
+$ports->apply(Edit::override($binding,'org',new Intent(sell:true)),$orgRevision());
+$ports->apply(Edit::seller($binding,'org',['register']),$orgRevision());
+same(false,$ports->readOffers($orgQuery,Context::Public)[0]->available,'Missing renewal price never enables an offer');
+$org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();
+same('unknown_price',$ports->readOffers($orgQuery,Context::Staff)[0]->reason,'Supported annual renewal without its cost stays a missing-price hold');
+same('Cost missing',StaffCatalogue::routed()->page(collect([$org]))[$org->id]['sales']['reason'],'Closed unknown renewal names the missing registrar cost');
 $nativeSuccessful=true;echo "Installed checked cutover caller matrix passed.\n";

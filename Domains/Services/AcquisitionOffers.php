@@ -3,12 +3,13 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
-use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, OfferState, Query, Revision, UpgradeGate};
-use Paymenter\Extensions\Servers\Domains\Data\SaleSelection;
+use Illuminate\Support\Facades\{Cache, DB};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerPorts, Context, Cost, OfferState, Pricing, Query, Retail, Revision, UpgradeGate};
+use Paymenter\Extensions\Servers\Domains\Contracts\{AcquisitionPriceReader, Clock};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, Query as OrderQuery, RequestBudget, RequestContext, RequestOrigin, SaleSelection};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, SalesPolicy, Tld};
 
-/** Dormant commerce adapter. No registration, provider factory, activation or price fallback.
+/** Shared commerce authority. Public prices come only from the daily table; checkout can re-quote.
  * Native checkout owns ALL native locks before admit(); the reader takes the whole catalogue prefix. */
 final class AcquisitionOffers
 {
@@ -20,6 +21,102 @@ final class AcquisitionOffers
 
     public function offer(string $ending, string $action, int $term): array
     { return $this->offers([[$ending, $action, $term]])[0]; }
+
+    /** Checkout alone may repair stale prices. Public/search offers remain daily-table only. */
+    public function checkoutSelection(string $name, string $ending, string $action, int $term, ?SaleSelection $previous, CheckoutRefreshBudget $batch, int $serverId, string $fingerprint): SaleSelection
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Order quotes require unlocked reads.'); }
+        if (!in_array($action, ['register', 'transfer'], true) || $action === 'transfer' && $term !== 1) { throw new \DomainException('Acquisition term unavailable.'); }
+        if (isset($previous?->catalogue['order_quote'])) {
+            try {
+                $quote = $this->orderQuote($previous);
+                if ($quote['name'] !== $name || $previous->action !== $action) { throw new \DomainException('Order quote name changed.'); }
+                $this->validate($previous); return $previous;
+            } catch (\DomainException) { /* Expired or changed local evidence needs a new quote. */ }
+        }
+        $policy = SalesPolicy::where('tld', $ending)->sole();
+        $account = Account::where('server_id', $policy->server_id)->sole(); $b = AccountBindings::binding($account);
+        if ($b->serverId !== $serverId || $b->fingerprint !== $fingerprint
+            || $policy->account_fingerprint !== $b->fingerprint || $policy->registrar_key !== $b->registrarKey) { throw new \DomainException('Seller changed.'); }
+        $seed = new SaleSelection($ending, $b->serverId, $b->registrarKey, $b->fingerprint, $policy->revision, $action, $term, 'USD', 0, 0);
+        $rows = $this->ports->loadBatch([new Query($b, [$ending], $action, $term), new Query($b, [$ending], 'renew')], Context::Public);
+        [$acquire, $renew] = [$rows[0][0], $rows[1][0]];
+
+        $clock = app(Clock::class);
+        if ($acquire->observation()?->fresh($clock->now()) && $renew->observation()?->fresh($clock->now())) {
+            return $this->selection($ending, $action, $term);
+        }
+        $tld = Tld::where(['server_id' => $b->serverId, 'tld' => $ending])->sole();
+        $rule = Pricing::rule($tld);
+        $stamp = ['binding' => [$b->serverId, $b->registrarKey, $b->fingerprint, $ending, $action, $term],
+            'generation' => UpgradeGate::generation(), 'credential' => $this->bindings->offerCredentialRevision($b),
+            'revision' => get_object_vars($acquire->decision->revision), 'prices' => [$acquire->identity(), $renew->identity()], 'rule' => $rule];
+        $costs = $retail = []; $driver = null;
+        foreach ([$acquire, $renew] as $row) {
+            $cost = $row->observation();
+            if (!$cost?->enabled) { throw new \DomainException('Order price unavailable.'); }
+            if ($cost->fresh($clock->now())) { continue; }
+            // A successful first quote survives a pacing deferral on the second read.
+            $key = 'domains.order-price.'.hash('sha256', OfferState::json([$name, $stamp, $cost->key()]));
+            $saved = Cache::get($key);
+            $fresh = is_array($saved) ? OfferState::cost($saved) : null;
+            if (!$fresh?->fresh($clock->now())) {
+                $driver ??= $this->bindings->reader($b->serverId); $b->requireMatch($driver->binding());
+                $q = new OrderQuery($name,
+                    Action::from($cost->action), $cost->term);
+                $deadline = $clock->now()->modify('+'.min(10000, $batch->remainingMilliseconds()).' milliseconds');
+                $context = new RequestContext($b,
+                    RequestOrigin::Interactive, $deadline,
+                    new RequestBudget(3), $clock, Runtime::limiter());
+                $result = $driver instanceof AcquisitionPriceReader ? $driver->acquisitionQuote($q, $context) : $driver->quote($q, $context);
+                $batch->remainingMilliseconds();
+                $rate = CatalogueMapper::quote($result, $b, $q, $ending, $clock->now());
+                if ($clock->now() >= $deadline) { throw new CheckoutRefreshTimeout; }
+                $until = min($rate->freshUntil ?? $clock->now()->modify('+5 minutes'), $clock->now()->modify('+5 minutes'));
+                $evidence = $result->evidence()->quote;
+                $fresh = new Cost($cost->action, $cost->term, true, $evidence->cost->amount,
+                    $evidence->unit, $rate->source, $rate->observedAt, $until);
+                Cache::put($key, OfferState::encodeCost($fresh), 300);
+            }
+            $costs[$cost->key()] = OfferState::encodeCost($fresh);
+            $retail[$cost->key()] = Retail::quote($fresh, $rule);
+        }
+        $token = bin2hex(random_bytes(32));
+        Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
+            'native_retail' => $acquire->listedRetail()], 300);
+        $seed = new SaleSelection(...[...get_object_vars($seed), 'catalogue' => ['order_quote' => $token]]);
+        return $this->load([$seed], false, false)[0]['selection'];
+    }
+
+    /** Pending invoices may outlive their cart quote. Recheck the same sale without enlarging
+     * frozen retail or spending authority, then use that current selection for the pay guard. */
+    public function paymentSelection(SaleSelection $frozen, string $name, string $ceiling, string $total): SaleSelection
+    {
+        $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
+            new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
+        $price = $this->load([$current], false, true)[0]['snapshot'];
+        if (($frozen->catalogue['retail'] ?? null) !== $price->retail
+            || ($frozen->catalogue['renewal'] ?? null) !== $current->catalogue['renewal']
+            || !PricingRule::covers($total, $price->wholesale)
+            || PricingRule::units($price->wholesale) !== PricingRule::units($ceiling)) {
+            throw new \DomainException('Frozen order price or spending ceiling changed.');
+        }
+        return $current;
+    }
+
+    /** Native list row still has to match its original publication, even for a cart-only quote. */
+    public function listedRetail(SaleSelection $s): string
+    { return isset($s->catalogue['order_quote']) ? $this->orderQuote($s)['native_retail'] : $s->catalogue['retail']; }
+
+    private function orderQuote(SaleSelection $s): array
+    {
+        $token = $s->catalogue['order_quote'] ?? '';
+        $quote = is_string($token) && preg_match('/^[a-f0-9]{64}$/D', $token) ? Cache::get('domains.order-quote.'.$token) : null;
+        if (!is_array($quote) || $quote['binding'] !== [$s->serverId, $s->registrar, $s->fingerprint, $s->tld, $s->action, $s->term]) {
+            throw new \DomainException('Order quote expired or changed.');
+        }
+        return $quote;
+    }
 
     public function transfersOn(string $ending): bool
     { try { $this->offer($ending, 'transfer', 1); return true; } catch (\DomainException) { return false; } }
@@ -60,8 +157,13 @@ final class AcquisitionOffers
     }
 
     /** Receipt reuse and post-provider reads validate locally, without another provider call. */
-    public function validate(SaleSelection $selection, bool $locked = false): void
-    { $this->load([$selection], $locked, true); }
+    public function validate(SaleSelection $selection, bool $locked = false, ?string $name = null): void
+    {
+        if ($name !== null && isset($selection->catalogue['order_quote']) && $this->orderQuote($selection)['name'] !== $name) {
+            throw new \DomainException('Order quote name changed.');
+        }
+        $this->load([$selection], $locked, true);
+    }
 
     /** Per-invocation display only. Shared evaluator and batched native mapping, never cart authority. */
     public function display(array $endings): array
@@ -124,10 +226,24 @@ final class AcquisitionOffers
         $generation = UpgradeGate::generation(); $result = [];
         foreach ($selections as $i => $s) {
             $acquire = $loaded[2*$i][0]; $renew = $loaded[2*$i+1][0];
+            $quote = isset($s->catalogue['order_quote']) ? $this->orderQuote($s) : null;
+            if ($quote !== null) {
+                $tld = Tld::where(['server_id' => $s->serverId, 'tld' => $s->tld])->sole();
+                if ($quote['generation'] !== $generation || $quote['credential'] !== $this->bindings->offerCredentialRevision($bindings[$i])
+                    || $quote['revision'] !== get_object_vars($acquire->decision->revision)
+                    || $quote['prices'] !== [$acquire->identity(), $renew->identity()]
+                    || $quote['rule'] !== Pricing::rule($tld)) {
+                    throw new \DomainException('Order quote authority changed.');
+                }
+                $costs = array_map(OfferState::cost(...), $quote['costs']);
+                $now = app(Clock::class)->now();
+                $acquire = $acquire->forOrder($costs, $quote['retail'], $now);
+                $renew = $renew->forOrder($costs, $quote['retail'], $now);
+            }
             $price = $acquire->price(); $annual = $renew->price();
             $fence = ['generation' => $generation, 'credential' => $this->bindings->offerCredentialRevision($bindings[$i]),
                 'revision' => get_object_vars($acquire->decision->revision), 'retail' => $price->retail,
-                'renewal' => $annual->retail];
+                'renewal' => $annual->retail, ...($quote === null ? [] : ['order_quote' => $s->catalogue['order_quote']])];
             if ($expected && ($s->catalogue !== $fence || $s->priceId !== $price->id || $s->priceRevision !== $price->revision
                 || $s->policyRevision !== $acquire->decision->revision->selection)) {
                 throw new \DomainException('Refresh the domain offer.');

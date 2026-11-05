@@ -14,7 +14,7 @@ final class StaffSettingsReview
     public const HISTORY_LIMIT=50;
     /** Stands in for a server id for business-wide pricing. */
     public const ALL_ACCOUNTS=0;
-    public const ACTIONS=['call_limits'=>'Edit call limits','new_domain_dns'=>'Change new domain nameservers','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Enter Enom’s answer','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','default_pricing'=>'Edit default pricing','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+    public const ACTIONS=['price_freshness'=>'Edit price freshness','call_limits'=>'Edit call limits','new_domain_dns'=>'Change new domain nameservers','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Enter Enom’s answer','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','default_pricing'=>'Edit default pricing','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
 
         'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
@@ -25,7 +25,7 @@ final class StaffSettingsReview
     private ?string $synced=null;
     private ?\Closure $catalogueStamp=null;
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','retained_annual_retail','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
+    { $this->input=array_intersect_key($data,array_flip(['hours','dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','retained_annual_retail','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason,private readonly ?\Closure $current=null) {}
     /** Syncing prices, saving what you sell, DNS template selection and testing the connection ask no reason; the audit still records who, when and what. */
@@ -35,7 +35,7 @@ final class StaffSettingsReview
     /** Rights an action needs instead of its own. Staff who could edit the rule and the fee keep Default pricing, with no role changes. */
     public const NEEDS=['default_pricing'=>['default_rule','card_fee']];
     public static function permission(string $action): string
-    {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return $action==='call_limits'?'admin.domains.settings.configure':'admin.domains.settings.'.$action;}
+    {if(!isset(self::ACTIONS[$action])){throw new \DomainException('Unknown settings action.');}return in_array($action,['call_limits','price_freshness'],true)?'admin.domains.settings.configure':'admin.domains.settings.'.$action;}
     public static function rights(string $action): array
     {return array_map(self::permission(...),self::NEEDS[$action]??[$action]);}
     /** Every Domains server, on or off. */
@@ -68,8 +68,17 @@ final class StaffSettingsReview
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer staff transaction required.');}
         if($catalogueStamp===null){if($this->current!==null){($this->current)();}else{
             $state=UpgradeGate::routeState();
-            if($state['state']!=='active'){throw new \DomainException(OfferUpgrade::MESSAGE);}
-            UpgradeGate::active($state['generation']);
+            // A replaced package can still encounter legacy state after a failed native upgrade hook.
+            $disable=match($this->action){
+                'processing'=>($this->input['enabled']??null)===false,
+                'renewal_billing'=>($this->input['scheduled']??null)===false&&($this->input['manual']??null)===false,
+                default=>false,
+            };
+            if($state['state']==='legacy'&&$disable){UpgradeGate::legacy($state['generation']);}
+            else{
+                if($state['state']!=='active'){throw new \DomainException(OfferUpgrade::MESSAGE);}
+                UpgradeGate::active($state['generation']);
+            }
         }}
         $this->catalogueStamp=$catalogueStamp;
         if($this->serverId===self::ALL_ACCOUNTS){if(self::domainServers()->isEmpty()){throw new \DomainException('Registrar unavailable.');}}
@@ -169,6 +178,7 @@ final class StaffSettingsReview
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
             'prices'=>Price::where('server_id',$server)->when($t,fn($q)=>$q->where('tld',$t->tld))->orderBy('id')->limit($t?12:0)->lockForUpdate()->get()->map(fn($p)=>['id'=>$p->id,'revision'=>$p->revision,'retail'=>$p->retail,'hold'=>$p->hold_reason])->all(),
             ...(in_array($this->action,['activate','renewal_billing','test_renewal','live_renewal'],true)?['renewal_billing'=>RenewalBillingSettings::read($server,true)]:[]),
+            ...($this->action==='price_freshness'?['price_freshness'=>\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($server)->hours]:[]),
             ...($this->action==='call_limits'?['call_limits'=>$a?ApiCallLimits::forAccount($a):null]:[]),
             ...($this->action==='unpaid_hold'?['unpaid_hold'=>UnpaidHoldSetting::minutes($server)]:[]),
             'live_activation'=>$live,

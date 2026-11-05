@@ -60,18 +60,23 @@ final class StaffCatalogue
         if($reason==='publication_pending'&&$this->work){$this->work->wake($binding());return $waiting([]);}
         try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
         $human=null;
-        if(!$facts||!$facts->fresh($now)){
+        if(!$facts||!$facts->fresh($now)||$t->registrar_key==='namesilo'
+            &&!OfferState::testFactsAccepted($binding(),$t->tld,$facts,$this->clock)){
             if(!$this->work||!$this->readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
             $this->work->requestFacts($b,$t->tld);$status=$this->work->status($b,$t->tld);
             if($status['state']!=='unsupported'){return $waiting($status);}
             $human=$missing('Ask the registrar to confirm terms for .'.$t->tld.'.',null);
         }
-        if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)){return $step('off','Not offered by this registrar for this term.');}
-        if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)){return $step('off','This registrar does not offer annual renewal for this TLD.');}
+        $expiredRefusal=static function(string $key)use($offers,$now):bool {
+            $cost=($offers[$key]??null)?->observation();
+            return $cost!==null&&!$cost->enabled&&!$cost->fresh($now);
+        };
+        if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)&&!$expiredRefusal($action.':'.$term)){return $step('off','Not offered by this registrar for this term.');}
+        if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)&&!$expiredRefusal('renew:1')){return $step('off','This registrar does not offer annual renewal for this TLD.');}
         if($reason==='unsupported_facts'){$human=$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null);}
         foreach(array_unique(['renew:1',$action.':'.$term]) as $key){
             $cost=$offers[$key]??null;$observation=$cost?->observation();
-            if($observation&&!$observation->enabled){return $step('off','Not offered by this registrar for this term.');}
+            if($observation&&$observation->fresh($now)&&!$observation->enabled){return $step('off','Not offered by this registrar for this term.');}
             if(!$observation||!$observation->fresh($now)||$cost->staffRetail()===null
                 ||$key==='renew:1'&&OfferState::money($t->catalogue_retained_annual_retail,2)===null){
                 if($observation?->fresh($now)){
