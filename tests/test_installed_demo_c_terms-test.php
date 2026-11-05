@@ -40,7 +40,7 @@ $r10Check($accountRows[4]['label']==='.com','Sold TLD readiness precedes the alp
 $r10Check(count(array_filter($accountRows,fn($r)=>$r['label']==='.com'))===1,'One compact row per TLD');
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
 $editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
-same(Filament\Support\Enums\Width::ThreeExtraLarge,$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
+same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
 $prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
 $priceHtml=view('domains::admin.term-prices',compact('prices'))->render();
 expect(str_contains($priceHtml,'<dl')&&str_contains($priceHtml,'Registration'),'Term totals use labeled registration rows');

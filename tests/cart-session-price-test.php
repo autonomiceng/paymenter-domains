@@ -58,6 +58,7 @@ same(0,App\Models\Order::count(),'Checkout cannot invoice a quote the customer h
 $x=storefrontDom($effects['html']);same('Was $27.00',trim($x->query('//s')->item(0)?->textContent??''),'Checkout strikes the latest displayed quote');
 expect(str_contains($effects['html'],'Your cart changed'),'Checkout requires review after a later publish');
 Illuminate\Support\Once::flush();
+request()->headers->set('X-Livewire','true');
 app('livewire')->update($reviewed,[],$calls);
 same(1,App\Models\Order::count(),'A second checkout accepts the reviewed quote exactly once');
 same('30.60',Paymenter\Extensions\Servers\Domains\Models\Operation::sole()->policy['price']['retail'],'Invoice freezes the reviewed quote');
