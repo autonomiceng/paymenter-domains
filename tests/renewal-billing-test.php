@@ -42,7 +42,12 @@ $bindings->setProcessing($server->id, true, syntheticActivation());
 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]);
 commerceReject(fn () => $billing->invoice($d->id, $user, 3));
 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => false]]);
-$renewal = $billing->invoice($d->id, $user, 3); $op = Operation::where('invoice_id', $renewal->id)->sole();
+// Without reviewed exact-term evidence a longer owner renewal is refused (demo-c-plan line 28); one year still bills.
+$invoiceCount = Invoice::count();
+try { $billing->invoice($d->id, $user, 3); expect(false, 'Unevidenced 3-year renewal invoice refused'); }
+catch (DomainException $e) { same('Renewals longer than 1 year aren’t available for this domain yet. Renew for 1 year at a time.', Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerRenewalController::refusal($e), 'Owner sees plain copy with the next step'); }
+same($invoiceCount, Invoice::count(), 'Refused longer term issues no invoice');
+$renewal = $billing->invoice($d->id, $user, 1); $op = Operation::where('invoice_id', $renewal->id)->sole();
 // Staff calendar and gate reviews after issue apply to later invoices only.
 require_once __DIR__.'/Support/staff-panel.php';
 $staff = staffUser(['admin.domains.view', 'admin.domains.manage-policy', StaffSettingsReview::permission('renewal_billing')]);
@@ -54,7 +59,7 @@ foreach ([[true, false, 60, 30], [false, true, 21, 7]] as [$scheduled, $manual, 
     $staffWrites->run(new StaffSettingsReview($staff->id, $server->id, null, 'renewal_billing', $ticket, 'Move the renewal calendar after issue'),
         ['scheduled' => $scheduled, 'manual' => $manual, 'issue_days' => $issue, 'due_days' => $due, 'confirmed' => true]);
     same(['issue' => $issue, 'due' => $due], Paymenter\Extensions\Servers\Domains\Services\BillingCalendar::timing($server->settings()->get()), 'Reviewed calendar '.$issue.'/'.$due.' saved');
-    same($renewal->id, $billing->invoice($d->id, $user, 3)->id, 'Calendar '.$issue.'/'.$due.' returns the issued invoice');
+    same($renewal->id, $billing->invoice($d->id, $user, 1)->id, 'Calendar '.$issue.'/'.$due.' returns the issued invoice');
     same($debtBefore, $issuedDebt(), 'Calendar '.$issue.'/'.$due.' leaves issued due date, term and amount unchanged');
 }
 // Cancellation skips scheduled work without erasing an already issued obligation.
@@ -64,14 +69,14 @@ same(null,$billing->invoice($d->id),'Scheduled cancellation also skips an issued
 same($issuedBefore,serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),$op->fresh()->getRawOriginal()]),'Cancellation never rewrites retained debt');
 DB::table('service_cancellations')->where('id',$issuedCancel->id)->delete();
 
-same('31.20', $op->amount, 'Saved retail bills the same exact three-year total after a year');
+same('10.40', $op->amount, 'Saved retail bills the same exact one-year total after a year');
 same(true, $op->policy['price']['retained'], 'Expired costs retain the existing holder retail');
+same(1, (int) $op->term, 'Obligation fixes requested term independently of annual plan');
+same('2028-10-18', $op->expected_expires_at->format('Y-m-d'), 'Exact expected term expiry recorded');
+same('Domain renewal: billing-held-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $renewal->items->sole()->description, 'Renewal dates use frozen registrar expiry and requested years');
 same('stale', $d->fresh()->observation['renewal_price_alert']['code'] ?? null, 'Expired cost uses the existing retained-price notice');
-same(3, (int) $op->term, 'Obligation fixes requested term independently of annual plan');
-same('2030-10-18', $op->expected_expires_at->format('Y-m-d'), 'Exact expected term expiry recorded');
-same('Domain renewal: billing-held-placeholder.com (3 years, Oct 18, 2027 to Oct 18, 2030)', $renewal->items->sole()->description, 'Renewal dates use frozen registrar expiry and requested years');
 DB::table('domains_domains')->where('id', $d->id)->update(['provider_expires_at' => '2031-01-01']);
-same('Domain renewal: billing-held-placeholder.com (3 years, Oct 18, 2027 to Oct 18, 2030)', $renewal->fresh()->items->sole()->description, 'Renewal text stays frozen after expiry changes');
+same('Domain renewal: billing-held-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $renewal->fresh()->items->sole()->description, 'Renewal text stays frozen after expiry changes');
 DB::table('domains_domains')->where('id', $d->id)->update(['provider_expires_at' => '2027-10-18']);
 same('renew:'.$d->id.':g1:2027-10-18', $op->operation_key, 'One obligation key per expiry and generation');
 same('2027-10-11', $renewal->due_at->format('Y-m-d'), 'Due calendar frozen');
@@ -106,7 +111,7 @@ $delete = (new ReflectionMethod($invoicePage, 'getHeaderActions'))->invoke($invo
 $delete->record($renewal);
 commerceReject(fn () => $delete->evaluate($delete->getActionFunction()));
 expect(Invoice::whereKey($renewal->id)->exists(), 'Actual native delete action retains issued invoice');
-commerceReject(fn () => $op->update(['term' => 1]));
+commerceReject(fn () => $op->update(['term' => 2]));
 commerceReject(fn () => $op->fresh()->update(['base_expires_at' => '2028-10-18']));
 commerceReject(fn () => $op->fresh()->update(['expected_expires_at' => '2031-10-18']));
 commerceReject(fn () => $op->update(['policy' => [...$op->policy, 'calendar' => []]]));
