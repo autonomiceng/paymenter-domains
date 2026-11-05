@@ -184,7 +184,7 @@ class PackageTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'license must match'):
                         builder.runtime_members(source)
     def test_one_time_converter_is_excluded(self):
-        runtime_conversion = {'Services/ConversionGate.php', 'Catalogue/UpgradeConversion.php',
+        runtime_conversion = {'Services/ConversionGate.php',
                               'database/migrations/2026_11_02_000048_add_offer_conversion.php'}
         for source in [ROOT/'scripts/convert-enom-05.php', ROOT/'scripts/collect-conversion-evidence.php', *(ROOT/'scripts/conversion').rglob('*')]:
             self.assertFalse(source.is_relative_to(ROOT/'Domains'))
@@ -207,6 +207,9 @@ class PackageTests(unittest.TestCase):
                     self.assertIn('Domains/'+name, package.namelist())
                 for name in runtime_conversion:
                     self.assertIn('Domains/'+name, package.namelist())
+                for name in ['Catalogue/UpgradeConversion.php', 'Catalogue/UpgradeEvidence.php']:
+                    self.assertNotIn('Domains/'+name, package.namelist())
+                    self.assertFalse((ROOT/'Domains'/name).exists())
                 self.assertEqual(package.read('Domains/LICENSE'), (ROOT/'LICENSE').read_bytes())
             source = root/'Domains'
             shutil.copytree(ROOT/'Domains', source)
