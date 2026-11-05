@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{PricingEditorNotice,Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
-extract(commerceFixture(true)); tldPanel(); Carbon\Carbon::setTestNow($now);
+extract(commerceFixture(true)); staffSalesFixture();tldPanel(); Carbon\Carbon::setTestNow($now);
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now));
 $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS,'admin.products.viewAny','admin.products.view','admin.products.update'];
 foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
@@ -41,13 +41,15 @@ $ending=collect($store->endings())->firstWhere('tld',$tlds[0]->tld);
 expect($ending!==null,'The edited fixture TLD remains in the storefront');
 expect($ending['terms']!==[],'The edited fixture TLD has registration terms');
 // Retained pre-publication edits must also be clear when reopening the page.
-$tlds[0]->fresh()->update(['fixed_register'=>'23.00']);
+$intent=json_decode($tlds[0]->fresh()->catalogue_intent,true);$intent['pricing_rule']['fixed']['register']='23.00';$tlds[0]->fresh()->update(['catalogue_intent'=>json_encode($intent,JSON_THROW_ON_ERROR),'catalogue_revision'=>$tlds[0]->fresh()->catalogue_revision+1]);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
 expect(str_contains($page->html(),'Registration: Not for sale'),'Reopening a saved unpublished rule shows paused registration');
 // The sweep puts a saved rule on sale by itself and says so in the history.
-$native->keepCurrent($tlds[0]->fresh(),$now,false);
+$systemPublications=static fn()=>count(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id),static fn($row)=>$row['change']==='Prices published'&&$row['by']==='System'));
+$publishedBefore=$systemPublications();
+activeFixtureRepublish($native,$tlds[0]->fresh(),$now);
 expect(str_contains(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id])->html(),'Registration: For sale'),'The sweep restores sale when saved and published prices differ');
-same(['Prices published','System'],(static fn($row)=>[$row['change'],$row['by']])(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id)[0]),'The audit log shows the system did it');
+same($publishedBefore+1,$systemPublications(),'The new publication has its own System audit event');
 $product=$native->product($tlds[0],'register');
 $edit=Livewire::actingAs($u)->test(App\Admin\Resources\ProductResource\Pages\EditProduct::class,['record'=>$product->id])->assertStatus(200);
 expect(str_contains($edit->html(),'Don’t change this product’s server'),'What not to change stays on the page');
