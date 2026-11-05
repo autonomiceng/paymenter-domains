@@ -18,14 +18,18 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmissio
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require dirname(__DIR__).'/Domains/routes/web.php';
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+extract(commerceFixture(true)); $fixtureOffers=activeFixtureOffers($bindings); $clock = new FakeClock($now);
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], new class implements AccountVerifier {
     public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
 }, static fn ($binding, $credentials) => new Driver(new Client($binding, $credentials['token'], 'synthetic'), ['com']));
-$bindings = new AccountBindings($registry); app()->instance(Clock::class, $clock);
+$bindings = new AccountBindings($registry); activeFixtureOffers($bindings,$fixtureOffers); app()->instance(Clock::class, $clock);
 $eligibility = activeFixtureEligibility($bindings, $clock);
-$store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+$store = new class($sellers, $prices, $native, $bindings, $eligibility, $clock) extends Storefront {
+    public \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers $fixtureOffers;
+    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers { return $this->fixtureOffers; }
+};
+$store->fixtureOffers=$fixtureOffers;
 $controller = new StorefrontController($store); storefrontViews();
 (activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
 EnomTestSendLimitSchema::install(); config(['domains.enom_test_sends_per_day' => 200, 'domains.enom_test_sends_per_minute' => 100000]);
@@ -119,7 +123,7 @@ $faultStore=new class extends Storefront {
 };
 $failureController=new StorefrontController($faultStore);
 foreach([new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('registrar_read_failed'),new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred($secret),new \Paymenter\Extensions\Servers\Domains\Services\EligibilityUnconfirmed('115')] as $failure){
- $faultStore->fault=$failure;$req=$request(['domain'=>'diagnostic-placeholder.com']);$failureController->check($req);
+ $faultStore->fault=$failure;$req=$request(['domain'=>'diagnostic-placeholder.com']);$req->request->set('_request_key',FormKeys::issue($req,'search'));$failureController->check($req);
  $context=end($logger->warnings)[1];same('search',$context['phase'],'Search failure carries its phase');
  $expected=$failure instanceof \Paymenter\Extensions\Servers\Domains\Services\WriteHeld?'registrar_read_failed':($failure instanceof \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred?'read_deferred':'eligibility_unconfirmed');
  same($expected,$context['cause'],'Search logs keep structured safe cause');expect(!str_contains(json_encode($context),$secret),'Search logs contain no arbitrary message');

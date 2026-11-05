@@ -11,14 +11,14 @@ $queue=DB::table('domains_observation_queues')->sole();$guard=static fn()=>null;
 $observation->during=static fn()=>throw new DomainException('Registrar read failed.');
 same('read_failed',$worker->turn($queue,$guard),'Transient primary failure is retained');
 expect(!HoldingObservationWork::stopped($d->fresh()),'First transient failure schedules an automatic retry');
-$q=HoldingObservationWork::current($d->fresh());$job=$q->sole();same(60,$job->due_at-$clock->now()->getTimestamp(),'First retry uses bounded backoff');
+$q=HoldingObservationWork::current($d->fresh());$job=(clone $q)->sole();same(60,$job->due_at-$clock->now()->getTimestamp(),'First retry uses bounded backoff');
 same('idle',$worker->turn($queue,$guard),'No retry before due time');
 $clock->instant=$clock->now()->modify('+60 seconds');same('refreshed',$worker->turn($queue,$guard),'Transient recovery needs no staff action');
 expect(!ObservationRecords::held($d->fresh()),'Successful full-family retry clears stale failure hold');
 // A family failure is also retried, even though the primary domain facts succeeded.
 $q->update(['due_at'=>0]);$clock->instant=$clock->now()->modify('+61 seconds');$state->fault='GetDomainSRVHosts';
 for($try=1;$try<=5;$try++){
- same('read_failed',$worker->turn($queue,$guard),'Family failure keeps its safe code');$job=$q->sole();same($try,(int)$job->tries,'Failure count is durable');
+ same('read_failed',$worker->turn($queue,$guard),'Family failure keeps its safe code');$job=(clone $q)->sole();same($try,(int)$job->tries,'Failure count is durable');
  if($try<5){expect(!HoldingObservationWork::stopped($d->fresh()),'Retry remains active before exhaustion');$clock->instant=$clock->now()->setTimestamp((int)$job->due_at);}
 }
 expect(HoldingObservationWork::stopped($d->fresh()),'Five failures stop with their exact cause');$calls=count($state->calls);$clock->instant=$clock->now()->modify('+2 days');
