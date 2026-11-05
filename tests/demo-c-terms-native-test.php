@@ -62,6 +62,24 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $longer = Retail::quote(OfferState::cost(OfferState::decode($observe('renew', 2, '24.0000'))), Pricing::rule($tld));
     expect($annual !== $longer, $registrar.': fixture separates annual and two-year retail');
     same($annual, $tld->catalogue_retained_annual_retail, $registrar.': retained annual retail comes from renew:1 only');
+    // Native writer mutations reconstruct and store facts on both metadata and bulk-price refreshes.
+    // Real SQLite rows are needed to exercise the second path's independent stored-price read.
+    $mutate = new ReflectionMethod(Writer::class, 'mutate');
+    $writer = (new ReflectionClass(Writer::class))->newInstanceWithoutConstructor();
+    $target = clone $tld; $target->catalogue_facts = null;
+    $command = new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com', $facts);
+    same(true, $mutate->invoke($writer, $command, $target, $prices, $now), $registrar.': metadata refresh changes facts');
+    DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => $target->catalogue_facts]);
+    same($evidence, OfferState::facts($target->fresh()->catalogue_facts)->expansion,
+        $registrar.': metadata writer preserves reviewed term and family evidence');
+    $bulk = new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
+        new Cost('renew', 1, true, '15.0000', CostUnit::TermTotal,
+            $registrar === 'enom' ? 'enom_bulk_bucket_1' : 'namesilo_account_annual', $now, $now->modify('+48 hours'))]);
+    same(true, $mutate->invoke($writer, $bulk, $target, $prices, $now), $registrar.': bulk refresh changes cost');
+    DB::table('domains_tlds')->where('id', $target->id)->update(['catalogue_facts' => $target->catalogue_facts]);
+    $saved = OfferState::facts($target->fresh()->catalogue_facts);
+    same([[1], $evidence, $facts->observedAt->format(DATE_ATOM)], [$saved->terms['renew'], $saved->expansion, $saved->observedAt->format(DATE_ATOM)],
+        $registrar.': bulk writer preserves reviewed evidence and metadata age while deriving annual support');
 }
 $nativeSuccessful = true;
 echo "demo-c terms native: ok\n";
