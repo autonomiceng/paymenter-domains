@@ -14,7 +14,7 @@ final class ComplimentaryAccountSchema
     }
     private static function approvals(Blueprint $t):void
     {
-        $t->id();$t->unsignedBigInteger('operation_id');$t->decimal('amount',20,8);$t->unsignedBigInteger('actor_id');
+        $t->id();$t->unsignedBigInteger('operation_id');$t->string('amount',32);$t->unsignedBigInteger('actor_id');
         $t->string('reason',500);$t->dateTime('created_at');$t->index(['operation_id','id']);
     }
     private static function definitions():array {return ['domains_complimentary_accounts'=>self::accounts(...),'domains_complimentary_approvals'=>self::approvals(...)];}
