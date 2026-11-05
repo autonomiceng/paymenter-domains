@@ -20,7 +20,8 @@ $probe=new ReflectionProperty(CallerRouting::class,'probe');
 $probe->setValue(null,[StaffCatalogue::class=>new StaffCatalogue($ports,$clock),Capabilities::class=>new Capabilities($ports,$clock,static fn()=>null)]);
 $row=(new StaffCatalogue($ports,$clock))->rows([$binding],'com')->sole();
 $terms=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
-$terms->mountTableBulkAction('edit',[$terms->instance()->getTableRecordKey($row)])->call('$refresh');
+// Mount already returns the real dialog partial; an extra refresh renders the whole page again.
+$terms->mountTableBulkAction('edit',[$terms->instance()->getTableRecordKey($row)]);
 $termsAction=$terms->instance()->getMountedAction();
 same(['Cancel','Save terms'],array_values(array_map(fn($a)=>$a->getLabel(),$termsAction->getModalFooterActions())),'Terms footer has logical Cancel then Save order');
 same(Filament\Support\Enums\Alignment::End,$termsAction->getModalFooterActionsAlignment(),'Terms actions align right');
@@ -37,7 +38,7 @@ same([1],array_keys($options['terms']),'Complimentary retains one evidenced year
 $panel=Filament\Facades\Filament::getCurrentPanel();$panel->resources([DomainResource::class,WatchResource::class]);
 Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){DomainResource::registerRoutes($panel);WatchResource::registerRoutes($panel);});
 app('router')->getRoutes()->refreshNameLookups();
-$gift=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id])->mountAction('complimentary_renewal')->call('$refresh');
+$gift=Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id])->mountAction('complimentary_renewal');
 $giftAction=$gift->instance()->getMountedAction();
 same(['Cancel','Confirm complimentary renewal'],array_values(array_map(fn($a)=>$a->getLabel(),$giftAction->getModalFooterActions())),'Complimentary footer has logical Cancel then Confirm order');
 same(Filament\Support\Enums\Alignment::End,$giftAction->getModalFooterActionsAlignment(),'Complimentary actions align right');
