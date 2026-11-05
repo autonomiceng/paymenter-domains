@@ -96,7 +96,15 @@ $op=new Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>$can
 $op->attempt=Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::attempt($op);$cancelled->setRelation('operations',collect([$op]));
 $facts=RecordFamilies::read($cancelled,$now);$cancelHtml=view('domains::partials.record-families',['recordFamilies'=>$facts,'staff'=>true])->render();
 expect(str_contains($cancelHtml,'Registration cancelled; no registrar records to check')&&!str_contains($cancelHtml,'Sync this domain'),'No-send cancellation has no fictional inventory');
+
+require_once __DIR__.'/Support/staff-panel.php';staffPanel();\Illuminate\Support\Facades\Auth::setUser(staffUser(array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions())));
+$fact=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($cancelled);
+$nativePage=new \Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
+$row=(new ReflectionMethod($nativePage,'row'))->invoke($nativePage,'DS records',$fact,[]);
+$dnssec=\Filament\Schemas\Schema::make($nativePage)->components([$row])->toHtml();
+expect(str_contains($dnssec,'Registration cancelled; no registrar records to check')&&!str_contains($dnssec,'Sync this domain'),'Native staff DNSSEC agrees with proven no-send cancellation');
 $op->attempt=['seal'=>'sealed','send_state'=>'possibly_sent'];
+expect(!str_contains(json_encode(\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($cancelled)),'Registration cancelled; no registrar records to check'),'Possible send cannot hide DS uncertainty');
 expect(!str_contains(json_encode(RecordFamilies::read($cancelled,$now)),'Registration cancelled; no registrar records to check'),'Possible send cannot use cancellation explanation');
 $cancelled->observation=['records'=>$r];
 expect(RecordFamilies::read($cancelled,$now)['at']!==null,'Cancellation preserves real historical inventory');

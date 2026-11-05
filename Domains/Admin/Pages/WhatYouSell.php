@@ -301,7 +301,7 @@ class WhatYouSell extends Page implements HasTable
             Select::make('longest')->label('Longest term')->inlineLabel()->required()->selectablePlaceholder(false)->default(self::KEEP)
                 ->options($keep($longest===null?null:$longest.' '.($longest===1?'year':'years'))+array_combine(range(1,10),array_map(fn(int $y)=>$y.' '.($y===1?'year':'years'),range(1,10)))),
             Select::make('transfer')->label('Transfers')->inlineLabel()->required()->selectablePlaceholder(false)->default(self::KEEP)->options($keep($transfer===null?null:($transfer?'On':'Off'))+['on'=>'On','off'=>'Off']),
-            ...($tld!==null?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-prices',['prices'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($tld)]))]:[]),
+            ...($tld!==null?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-prices',['prices'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($tld),'refresh'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::snapshot($tld)['refresh']??[]]))]:[]),
             ...($readiness?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-readiness',['readiness'=>$readiness]))]:[]),
         ];
     }

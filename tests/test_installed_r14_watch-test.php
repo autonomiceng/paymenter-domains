@@ -37,7 +37,7 @@ $manager=staffUser([Staff::VIEW,'admin.domains.watch.view']);Auth::setUser($mana
 $summary=(new DomainSummaries())->one($owner,'watch',$watch->id,$now);
 $staff=WatchFacts::for($watch->fresh(),['keys'=>[],'summary'=>$summary]);
 $customer=view('domains::partials.summary',['summary'=>$summary])->render();
-writeRenderArtifact(sys_get_temp_dir().'/r14-watch-customer.html',$customer);
+writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-watch-customer.html',$customer);
 $errors=[];
 if(!str_contains(json_encode($staff),'does not use Beco nameservers')){$errors[]='Staff does not explain inherited mismatch';}
 if(str_contains(json_encode($staff),'Choose a DNS template to compare nameservers')){$errors[]='Staff asks for a template already inherited';}
@@ -48,6 +48,6 @@ $page=\Livewire\Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$page->instance(),'body'=>$page->html()]);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $html=preg_replace('~<script\b[^>]*>.*?</script>|<link\b[^>]*>~si','',$html);
-writeRenderArtifact(sys_get_temp_dir().'/r14-watch-staff.html',str_replace('</head>','<style>'.$css.'</style>'.view('domains::partials.staff-styles')->render().'</head>',$html));
+writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-watch-staff.html',str_replace('</head>','<style>'.$css.'</style>'.view('domains::partials.staff-styles')->render().'</head>',$html));
 expect($errors===[],implode('; ',$errors));
 $nativeSuccessful=true;echo "Scheduled inherited mismatch and native staff/customer copy passed.\n";
