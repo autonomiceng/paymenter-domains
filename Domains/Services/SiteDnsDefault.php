@@ -80,8 +80,8 @@ final class SiteDnsDefault
         foreach(Account::orderBy('registrar_key')->distinct()->pluck('registrar_key') as $registrar){
             try{NewDomainDns::validate($registrar,$nameservers);}
             catch(\InvalidArgumentException $e){
-                $rule=$registrar==='enom'?'Enom requires 2 to 12 valid nameservers.':'NameSilo requires 2 to 13 valid nameservers.';
-                throw new \DomainException($rule.' Update this DNS template before saving the site default.',0,$e);
+                $rule=$registrar==='enom'?'Enom takes 2 to 12 nameservers.':'NameSilo takes 2 to 13 nameservers.';
+                throw new \DomainException($rule.' Update this DNS template or choose another one.',0,$e);
             }
         }
     }
