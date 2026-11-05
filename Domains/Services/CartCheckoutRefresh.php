@@ -15,7 +15,12 @@ final class CartCheckoutRefresh
     {
         Livewire::listen('mount', static function ($component) use ($admission): void {
             if ($component::class !== Cart::class) { return; }
-            try { $admission->refresh(); }
+            try {
+                $held = session()->get(self::shownKey(), []);
+                $admission->refresh();
+                $was = array_intersect_key(array_diff_assoc($held, self::shown()), self::shown());
+                if ($was) { self::changed($component, self::cartTotal(), $was); }
+            }
             catch (CartLinesRemoved $e) { self::removed($component, $e); }
             catch (\Throwable $e) { self::unavailable($component, $e); }
         });
@@ -43,8 +48,7 @@ final class CartCheckoutRefresh
                     // Strike the amount the buyer last saw on the line (coupon and tax included), never the list price.
                     $held = (array) \Livewire\store($component)->get('domains.shown'); $was = [];
                     foreach (self::shown() as $id => $now) { if (isset($held[$id]) && $held[$id] !== $now) { $was[$id] = $held[$id]; } }
-                    CartNotice::set($component, 'Your cart changed', 'Review the total, then check out again.',
-                        'Your cart changed. Review the total, then check out again.', 'warning', was: $was);
+                    self::changed($component, $total, $was);
                     OrderContact::clear(); $returnEarly();
                 }
             } catch (ContactValidation $e) {
@@ -70,6 +74,7 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             try { $shown = self::shown(); } catch (\Throwable) { $shown = null; }
             $context->addMemo('domains_shown', $shown);
+            if ($shown !== null) { session()->put(self::shownKey(), $shown); }
             OrderContact::clear();
         });
     }
@@ -82,6 +87,15 @@ final class CartCheckoutRefresh
         }
         $component->dispatch('cartUpdated');
         CartNotice::set($component, 'Domain removed', $removed->getMessage(), $removed->getMessage(), 'warning', $removed->names);
+
+    private static function shownKey(): string
+    { return 'domains.cart_shown.'.NativeCart::get()->ulid; }
+
+    private static function changed(Cart $component, ?Price $total, array $was): void
+    {
+        self::show($component, $total);
+        CartNotice::set($component, 'Your cart changed', 'Review the total, then check out again.',
+            'Your cart changed. Review the total, then check out again.', 'warning', was: $was);
     }
 
     private static function cartTotal(): ?Price
