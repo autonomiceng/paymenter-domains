@@ -72,4 +72,23 @@ $unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentat
 $unreadHtml=view('domains::partials.owner-management',['domain'=>$unread,'caps'=>['dns','srv','ds'],'keys'=>array_fill_keys(['dns','srv','ds','ds_delete'],str_repeat('b',64))])->render();
 expect(!str_contains($unreadHtml,'Contact support to sync')&&!str_contains($unreadHtml,'domains-missing'),'Unknown registrar families show checking without a red Missing or support chore');
 expect(str_contains($unreadHtml,'checking'),'Unknown family keeps its checking explanation');
+// Enom partial glue is a bounded known-host check, not a promise of enumeration.
+$enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];
+$g=array_column(RecordFamilies::read($enom,$now)['rows'],null,'kind')['glue'];
+expect(str_contains($g['staff'],"Known glue checked; this registrar can't list every child host"),'Enom known glue explains bounded coverage');
+expect(str_contains($g['staff'],'2 known child hosts')&&str_contains($g['staff'],'2026-11-04'),'Coverage and checked time shown');
+expect(!str_contains($g['staff'],'some did not')&&!str_contains($g['staff'],'Sync this domain before editing'),'Impossible glue prerequisite removed');
+$safe=$existing;$safe['glue']['actions']=['glue_add'=>'/add','glue_update'=>'/update','glue_delete'=>'/delete','glue'=>'/replace'];
+$projected=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$safe]),RecordFamilies::read($enom,$now));
+same(['glue_add','glue_update','glue_delete'],array_keys($projected->management['glue']['actions']),'Partial glue preserves individual controls and blocks whole-list replacement');
+// Cancellation alone never proves no send. Reuse the engine's terminal no-send proof.
+$cancelled=clone $enom;$cancelled->status='cancelled';$cancelled->observation=[];$cancelled->service_id=1;
+$op=new Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>$cancelled->id,'service_id'=>1,'server_id'=>$cancelled->server_id,'registrar_key'=>'enom','account_fingerprint'=>$cancelled->account_fingerprint,'authority_generation'=>1,'action'=>'register','funding_basis'=>'paid_invoice','state'=>'rejected','safe_code'=>'acquisition_cancelled_unpaid','completed_at'=>$now,'funding'=>[],'cost'=>[],'policy'=>[]]);
+$op->attempt=Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::attempt($op);$cancelled->setRelation('operations',collect([$op]));
+$facts=RecordFamilies::read($cancelled,$now);$cancelHtml=view('domains::partials.record-families',['recordFamilies'=>$facts,'staff'=>true])->render();
+expect(str_contains($cancelHtml,'Registration cancelled; no registrar records to check')&&!str_contains($cancelHtml,'Sync this domain'),'No-send cancellation has no fictional inventory');
+$op->attempt=['seal'=>'sealed','send_state'=>'possibly_sent'];
+expect(!str_contains(json_encode(RecordFamilies::read($cancelled,$now)),'Registration cancelled; no registrar records to check'),'Possible send cannot use cancellation explanation');
+$cancelled->observation=['records'=>$r];
+expect(RecordFamilies::read($cancelled,$now)['at']!==null,'Cancellation preserves real historical inventory');
 $nativeSuccessful=true;echo "Demo C record-family UI passed.\n";

@@ -280,7 +280,7 @@ final class SettingsActions
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         $now=now()->toDateTimeImmutable();
         try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
-        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No saved costs to preview. Use Sync prices on the TLD list first.</p>');}
+        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[])).'</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
         $html='<div class="domains-preview"><table cellpadding="6"><thead><tr>';

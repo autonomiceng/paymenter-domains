@@ -144,7 +144,7 @@ final class ObservationProjection
                     'expectation'=>$group==='families'?($r['expected_families'][$kind]??'unknown'):'supported',
                     'state'=>$failed?'unknown':($f['state']??'unknown'),'at'=>$f['at']??$r['at']??null,
                     'last_good_at'=>$f['last_good']['at']??null,
-                    ...array_intersect_key($f,array_flip(['records','facts','last_good']))];
+                    ...array_intersect_key($f,array_flip(['records','facts','last_good','candidates','read_failed']))];
             }
         }
         return $out;

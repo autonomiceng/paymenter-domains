@@ -178,7 +178,7 @@ final class AccountChecklist
         if($binding===null){return [...self::row('TLD prices',null,null,'Restore the API connection first.',null,self::PRICES),'buttons'=>[]];}
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
-            return [...self::row('TLD prices',ucfirst($status['state']),null,null,null,self::PRICES),'buttons'=>self::priceButtons($a)];
+            return [...self::row('TLD prices',ucfirst($status['state']),null,TldFacts::refreshText($status),null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
@@ -205,18 +205,11 @@ final class AccountChecklist
         }
         $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,null,'unpaid_hold',SettingsActions::details('unpaid_hold'));
         $rows[]=self::renewEarly($server);
-        try{$a=Account::where('server_id',$server)->sole();$binding=AccountBindings::binding($a);
-            // Use the same effective sales projection as What you sell; don't fill the preview with unsold catalogue entries.
-            $sold=[];$rest=[];$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
-            \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$server)->where('account_fingerprint',$binding->fingerprint)->orderBy('tld')->chunk(100,function($tlds)use($offers,&$sold,&$rest):void{
-                $states=$offers?->page($tlds)??[];
-                foreach($tlds as $t){$sales=$states[$t->id]['acquisition']??[];if(($sales['register']??false)||($sales['transfer']??false)){$sold[]=$t;}else{$rest[]=$t;}}
-            });
-            foreach(array_slice([...$sold,...$rest],0,10) as $t){
-                $terms=self::termReadiness($binding,$t->tld)[0];$unknown=$terms[1]==='1 year';
-                $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::getUrl(['account'=>$server,'tld'=>$t->tld]))]];
-            }
-        }catch(\Throwable){/* Current setup remains visible when term facts cannot be read. */}
+        $terms=TldTerms::summary($server);$attention=count($terms['attention']);
+        try{$url=TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server],'needs_attention'=>['isActive'=>true]]]);}catch(\Throwable){$url=null;}
+        $rows[]=[...self::row('Selected TLD terms',$terms['read'].' of '.$terms['total'].' read',$attention?'danger':null,
+            $attention.' need attention. Review current registrar terms on the TLD list.'),
+            'buttons'=>[Sheet::link('selected_terms','View TLDs needing attention',$url)]];
         $rows[]=self::row('Scheduled renewals','1 year',null,null,null,'Scheduled renewal invoices remain annual.');
         $rows[]=ReminderFacts::emails($server);
         if(($schedule=ReminderFacts::scheduleRow($server))!==null){$rows[]=$schedule;}
@@ -264,9 +257,12 @@ final class AccountChecklist
     /** Per-account check: the site must supply the registrar runtime. */
     public static function runtime(Account $a): array
     {
-        $help='Checks this site has what it needs to work with this registrar account. If it fails, ask your site admin.';
-        return app(RuntimePorts::class)->registered($a)?self::row('Site setup','OK',null,'Ready for this registrar.',null,$help)
-            :self::row('Site setup',null,'danger','Not set up on this site. Registrations, transfers, renewals and DNS changes stay off. Ask your site admin.',null,$help);
+        $help='Checks this site can compose the authenticated registrar connection.';
+        if(app(RuntimePorts::class)->registered($a)){return self::row('Site setup','OK',null,'Ready for this registrar.',null,$help);}
+        $cause=\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enrolled($a)
+            ?'This account uses the old balance-only TEST connection. Connect an authenticated TEST account.'
+            :'Authenticated registrar runtime missing for this account. Check the registrar environment configuration and connect an authenticated account.';
+        return self::row('Site setup',null,'danger',$cause,null,$help);
     }
     /** Domains on this account with an open alert, linked to the filtered list. */
     public static function alerts(Account $a): array
@@ -312,7 +308,7 @@ final class AccountChecklist
                 ['Redemption','Off','Restoration is separate. Review the restoration options on the domain.'],
             ];
         } catch (\Throwable) {
-            return [['Supported terms','Missing','Sync prices to read current registrar terms. Longer terms stay off.']];
+            return [['Supported terms','Missing','Current registrar terms missing. The background facts check fills them when this account supports a terms read. Longer terms stay off.']];
         }
     }
     public static function termYears(array $years): string
@@ -325,8 +321,8 @@ final class AccountChecklist
             'live_proof_required'=>'Live renewal proof is still required.',
             'not_reviewed','term_unreviewed'=>'Longer terms have not been reviewed for this ending.',
             'annual_unit'=>'An annual estimate cannot prove an exact-term total.',
-            'stale_facts','stale_price'=>'The saved evidence is out of date. Sync prices.',
-            default=>'Current term evidence is missing. Sync prices and review the registrar terms.',
+            'stale_facts','stale_price'=>'The saved term evidence is out of date. The scheduled facts check refreshes it.',
+            default=>'Current term evidence is missing. Review the registrar terms; a supported background facts check can fill it.',
         };
     }
     /** The saved sales choice is independent of whether pricing follows the default rule. */
