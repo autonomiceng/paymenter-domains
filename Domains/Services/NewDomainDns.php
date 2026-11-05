@@ -6,7 +6,6 @@ use Paymenter\Extensions\Servers\Domains\Models\{Operation,WatchProfile};
 /** Site default for registration and public DNS monitoring. Never creates a DNS zone. */
 final class NewDomainDns
 {
-    public const HELP='New registrations get these nameservers. Managed domains use this template for DNS monitoring unless assigned their own. Transfers keep their nameservers, and customer choices take priority. Records are checked only for domains with hosting.';
     public static function profile(int $server): ?WatchProfile
     { return self::selection($server)['profile']; }
     /** The one site choice is independent of the caller's registrar. @return array{chosen:bool,profile:?WatchProfile} */
