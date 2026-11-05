@@ -98,8 +98,10 @@ same('mixed-checkout-placeholder.com is no longer for sale, so we removed it fro
 
 // A theme that includes the notice shows it at the top of the cart, titled, with the old line price struck through.
 $views = getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/cart-notice-harness'; if (!is_dir($views)) { mkdir($views, 0700, true); }
-file_put_contents($views.'/cart.blade.php', '<div>@includeIf(\'domains::cart-notice\')@foreach (\App\Classes\Cart::items() as $item)'
-    .'<div class="line">@includeIf(\'domains::cart-was\', [\'item\' => $item]){{ $item->price->format($item->price->total * $item->quantity) }}</div>@endforeach</div>');
+// Same branching as the Landing cart: the notice shows above the lines and above an empty cart.
+file_put_contents($views.'/cart.blade.php', '<div>@includeIf(\'domains::cart-notice\')@if (\App\Classes\Cart::items()->count() === 0)<p class="empty">Empty</p>@else '
+    .'@foreach (\App\Classes\Cart::items() as $item)<div class="line">@includeIf(\'domains::cart-was\', [\'item\' => $item])'
+    .'{{ $item->price->format($item->price->total * $item->quantity) }}</div>@endforeach @endif</div>');
 Illuminate\Support\Facades\View::getFinder()->prependLocation($views); Illuminate\Support\Facades\View::getFinder()->flush();
 Illuminate\Support\Facades\View::addNamespace('domains', dirname(__DIR__).'/Domains/resources/views');
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
@@ -115,5 +117,26 @@ same('Your cart changed', trim($dom->query('.//strong', $box->item(0))->item(0)?
 same('Review the total, then check out again.', trim($dom->query('.//p', $box->item(0))->item(0)?->textContent ?? ''), 'Notice keeps the sentence');
 same('Was $27.00', trim($dom->query('//*[@class="line"]/s')->item(0)?->textContent ?? ''), 'Changed line strikes the old price');
 expect($total($page) !== '27.00' && str_contains($dom->query('//*[@class="line"]')->item(0)->textContent, '$'.$total($page)), 'Line shows the new price beside it');
+
+// With a coupon, the struck amount is the discounted line the buyer saw, not the list price.
+$coupon = App\Models\Coupon::create(['code' => 'NOTICETEN', 'type' => 'percentage', 'value' => 10, 'applies_to' => 'price', 'recurring' => 0]);
+$cart = commerceCart($user); commerceAdd($cart, $com, 'coupon-notice-placeholder.com', 3); $cart->update(['coupon_id' => $coupon->id]);
+$page = $open($cart); $seen = $total($page);
+expect(str_contains(storefrontDom($page->html())->query('//*[@class="line"]')->item(0)->textContent, '$'.$seen), 'Coupon line shows the discounted amount');
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
+$checkout($page, $cart); $dom = storefrontDom($page->html());
+same('Your cart changed', trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent ?? ''), 'Coupon price change shows the notice');
+same('Was $'.$seen, trim($dom->query('//*[@class="line"]/s')->item(0)?->textContent ?? ''), 'Coupon line strikes the discounted amount it showed');
+
+// Removing the last line leaves an empty cart that still shows the titled notice, not a toast.
+$cart = commerceCart($user); $last = commerceAdd($cart, $com, 'last-line-placeholder.com', 3);
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
+Illuminate\Support\Once::flush();
+$page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class); $dom = storefrontDom($page->html());
+expect(!$cart->items()->whereKey($last->id)->exists() && $dom->query('//*[@class="empty"]')->length === 1, 'The last line goes and the cart is empty');
+same('Domain removed', trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent ?? ''), 'Empty cart shows the removed notice');
+same('last-line-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
+    trim($dom->query('//*[@data-domains-cart-notice]//p')->item(0)?->textContent ?? ''), 'Removed notice keeps the sentence');
+expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'Empty cart with the notice gets no toast too');
 $nativeSuccessful = true;
 echo "Cart price change: ok\n";

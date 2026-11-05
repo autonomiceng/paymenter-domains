@@ -20,7 +20,9 @@ final class CartCheckoutRefresh
             catch (\Throwable $e) { self::unavailable($component, $e); }
         });
         Livewire::listen('hydrate', static function ($component, $memo): void {
-            if ($component::class === Cart::class) { \Livewire\store($component)->set('domains.offers', $memo['domains_offers'] ?? null); }
+            if ($component::class !== Cart::class) { return; }
+            \Livewire\store($component)->set('domains.offers', $memo['domains_offers'] ?? null);
+            \Livewire\store($component)->set('domains.shown', $memo['domains_shown'] ?? null);
         });
         Livewire::listen('call', static function ($component, $method, $params, $context, $returnEarly) use ($admission): void {
             if ($component::class !== Cart::class || $method !== 'checkout') { return; }
@@ -33,14 +35,14 @@ final class CartCheckoutRefresh
                 foreach ($admission->contactTlds() as $tld) { OrderContact::capture(\Illuminate\Support\Facades\Auth::user(), $tld); }
                 $offers = $admission->offers();
                 if (!$offers) { return; }
-                $total = self::cartTotal(); $held = \Livewire\store($component)->get('domains.offers');
-                if ($held !== $offers
+                $total = self::cartTotal();
+                if (\Livewire\store($component)->get('domains.offers') !== $offers
                     || !$component->total || $component->total->total !== $total->total) {
                     // Only the customer can accept a changed retail price; the existing checkout click does that.
                     self::show($component, $total);
-                    // The held memo has each line's shown price, so a changed line can show it struck through.
-                    $now = array_column($offers, 3, 0); $was = [];
-                    foreach ((array) $held as [$id, , , $price]) { if (isset($now[$id]) && $now[$id] !== $price) { $was[$id] = $price; } }
+                    // Strike the amount the buyer last saw on the line (coupon and tax included), never the list price.
+                    $held = (array) \Livewire\store($component)->get('domains.shown'); $was = [];
+                    foreach (self::shown() as $id => $now) { if (isset($held[$id]) && $held[$id] !== $now) { $was[$id] = $held[$id]; } }
                     CartNotice::set($component, 'Your cart changed', 'Review the total, then check out again.',
                         'Your cart changed. Review the total, then check out again.', 'warning', was: $was);
                     OrderContact::clear(); $returnEarly();
@@ -66,6 +68,8 @@ final class CartCheckoutRefresh
             if ($component::class !== Cart::class) { return; }
             try { $offers = $admission->offers(); } catch (\Throwable) { $offers = null; }
             $context->addMemo('domains_offers', $offers);
+            try { $shown = self::shown(); } catch (\Throwable) { $shown = null; }
+            $context->addMemo('domains_shown', $shown);
             OrderContact::clear();
         });
     }
@@ -74,6 +78,12 @@ final class CartCheckoutRefresh
     {
         return NativeCart::items()->isEmpty() ? null
             : new Price(['price' => NativeCart::items()->sum(fn ($item) => $item->price->total * $item->quantity), 'currency' => NativeCart::get()->currency]);
+    }
+
+    /** Each line's amount as the cart shows it, by cart item id. */
+    private static function shown(): array
+    {
+        return NativeCart::items()->mapWithKeys(fn ($item) => [$item->id => number_format($item->price->total * $item->quantity, 2, '.', '')])->all();
     }
 
     /** Native updateTotal() is private; mirror it so the page shows what the next click buys. */
