@@ -111,18 +111,18 @@ same(1,$tester->execute([]),'Validation reports retained dates');expect($s->fres
 same(0,$tester->execute(['--clear'=>true]),'Explicit cleanup succeeds');same(null,$s->fresh()->expires_at,'Cleanup clears routed date');
 same(0,$tester->execute(['--clear'=>true]),'Cleanup idempotent');expect($hosting->fresh()->expires_at!==null,'Cleanup excludes hosting');
 staffPanel();Auth::login(staffUser(['admin.domains.view']));View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
-$html=NativeEditorNotice::render($s->fresh());expect(str_contains(strip_tags($html),'This is a domain; manage it on the Domains page.'),'Scoped notice exact copy');
+$html=NativeEditorNotice::render($s->fresh());expect(str_contains(strip_tags($html),'Renewal, contacts and DNS settings are on this domain’s page.'),'Scoped notice exact copy');
 expect(str_contains($html,'/domains/'.$paid->domain_id),'Notice links owned domain');same('',NativeEditorNotice::render($hosting),'No hosting notice');
 NativeEditorNotice::boot();expect(Filament\Support\Facades\FilamentView::hasRenderHook(Filament\View\PanelsRenderHook::PAGE_START,[App\Admin\Resources\ServiceResource\Pages\EditService::class]),'Public native Edit Service render hook registered');
 $staff=staffUser(['admin.domains.view','admin.services.view','admin.services.viewAny','admin.services.update']);
 $edit=Livewire\Livewire::actingAs($staff)->test(App\Admin\Resources\ServiceResource\Pages\EditService::class,['record'=>$s->id])->assertSuccessful();
-expect(str_contains(strip_tags($edit->html()),'This is a domain; manage it on the Domains page.'),'Actual native editor renders notice text and link');
+expect(str_contains(strip_tags($edit->html()),'Renewal, contacts and DNS settings are on this domain’s page.'),'Actual native editor renders notice text and link');
 $edit->call('save')->assertHasFormErrors(['expires_at']); // Native Active form validation remains unchanged.
 $edit->fillForm(['expires_at'=>'2030-01-01','label'=>'Actual staff save'])->call('save')->assertHasNoFormErrors();
 same(null,$s->fresh()->expires_at,'Actual native staff form clears expiry');
 $edit->fillForm(['status'=>'cancelled'])->call('save')->assertHasFormErrors(['status'])->assertSee(NativeCancellation::MESSAGE);
 same('active',$s->fresh()->status,'Actual staff refusal preserves paid status');
 $hostPage=Livewire\Livewire::actingAs($staff)->test(App\Admin\Resources\ServiceResource\Pages\EditService::class,['record'=>$hosting->id]);
-expect(!str_contains(strip_tags($hostPage->html()),'This is a domain; manage it on the Domains page.'),'Native hosting editor has no domain notice');
+expect(!str_contains(strip_tags($hostPage->html()),'Renewal, contacts and DNS settings are on this domain’s page.'),'Native hosting editor has no domain notice');
 echo "Native lifecycle expiry/cancellation/intent ordering/terminal proof/hosting/console/notice controls passed.\n";
 $nativeSuccessful=true;
