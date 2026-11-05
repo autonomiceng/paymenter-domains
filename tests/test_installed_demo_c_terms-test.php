@@ -32,7 +32,7 @@ expect(str_contains($accountHtml,'Supported terms')&&str_contains($accountHtml,'
 $r10Failures=[];$r10Check=static function(bool $ok,string $message)use(&$r10Failures):void{if(!$ok){$r10Failures[]=$message;}};
 // More than ten unsold alphabetic entries must not hide the sold .com.
 for($i=0;$i<11;$i++){
-    $unsold=$t->replicate();$unsold->tld='aaa'.$i.'.pro';$unsold->catalogue_facts=null;
+    $unsold=$t->replicate();$unsold->tld='aaa'.chr(97+$i).'.pro';$unsold->catalogue_facts=null;
     $unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();
 }
 $accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
