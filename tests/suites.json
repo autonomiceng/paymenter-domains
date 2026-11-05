@@ -487,7 +487,8 @@
     "tests/staff-catalogue-next-step-test.php",
     "tests/native-service-edit-test.php",
     "tests/registrar-account-counts-test.php",
-    "tests/storefront-transfer-reason-test.php"
+    "tests/storefront-transfer-reason-test.php",
+    "tests/cart-reload-price-test.php"
   ],
   "ui": [],
   "runner": [
