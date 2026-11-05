@@ -18,12 +18,12 @@ final class CartCheckoutRefresh
             try {
                 $held = session()->get(self::shownKey(), []);
                 $admission->refresh();
-                $was = array_intersect_key(array_diff_assoc($held, self::shown()), self::shown());
+                $was = self::changedAmounts($held);
                 if ($was) { self::changed($component, self::cartTotal(), $was); }
             }
             catch (CartLinesRemoved $e) {
                 self::removed($component, $e);
-                $was = array_intersect_key(array_diff_assoc($held, self::shown()), self::shown());
+                $was = self::changedAmounts($held);
                 if ($was) { self::changed($component, self::cartTotal(), $was, $e); }
             }
             catch (\Throwable $e) { self::unavailable($component, $e); }
@@ -77,7 +77,7 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             try { $shown = self::shown(); } catch (\Throwable) { $shown = null; }
             $context->addMemo('domains_shown', $shown);
-            if ($shown !== null) { session()->put(self::shownKey(), $shown); }
+            if ($shown !== null) { session()->put(self::shownKey(), self::snapshot($shown)); }
             OrderContact::clear();
         });
     }
@@ -112,6 +112,25 @@ final class CartCheckoutRefresh
     private static function shown(): array
     {
         return NativeCart::items()->mapWithKeys(fn ($item) => [$item->id => number_format($item->price->total * $item->quantity, 2, '.', '')])->all();
+    }
+
+    /** Session reloads may follow the customer's own Edit, which retains the line id. */
+    private static function snapshot(array $shown): array
+    {
+        return NativeCart::items()->mapWithKeys(fn ($item) => [$item->id => [
+            'plan_id' => (int) $item->plan_id, 'quantity' => (int) $item->quantity, 'amount' => $shown[$item->id],
+        ]])->all();
+    }
+
+    private static function changedAmounts(array $held): array
+    {
+        $was = [];
+        foreach (self::snapshot(self::shown()) as $id => $now) {
+            $before = $held[$id] ?? null;
+            if (is_array($before) && $before['plan_id'] === $now['plan_id'] && $before['quantity'] === $now['quantity']
+                && $before['amount'] !== $now['amount']) { $was[$id] = $before['amount']; }
+        }
+        return $was;
     }
 
     /** Native updateTotal() is private; mirror it so the page shows what the next click buys. */
