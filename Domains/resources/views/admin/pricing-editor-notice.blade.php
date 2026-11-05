@@ -5,18 +5,18 @@
         && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('publish'))
         && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('override'));
     $canSyncPrices = $policy && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('import'));
-    $fix = $canEditPrices
+    $fix = $recovery ?? ($canEditPrices
         ? 'To fix it, open this TLD in TLDs & pricing, open Edit prices and save.'
-        : 'Ask a staff member who can edit domain pricing to open this TLD in TLDs & pricing, open Edit prices and save.';
+        : 'Ask a staff member who can edit domain pricing to open this TLD in TLDs & pricing, open Edit prices and save.');
     $help = $native
         ? implode(' ', ['Changing a price here can stop new orders for this TLD until its prices match again.', $fix, 'Existing invoices keep their prices.'])
-        : implode(' ', [
+        : ($recovery !== null ? 'After you save, check that each affected TLD is still for sale. Existing invoices keep their prices.' : implode(' ', [
             'A TLD is only for sale when its saved prices match its published prices. Changing Default pricing affects every TLD that uses it.',
             'After you save, check that each affected TLD is still for sale.',
             $canEditPrices ? 'If one isn’t, open it in TLDs & pricing, open Edit prices and save.' : 'If one isn’t, ask a staff member who can edit domain pricing to open it in TLDs & pricing, open Edit prices and save.',
             $canSyncPrices ? 'If it has no costs, use Sync prices on the TLD list first.' : 'If it has no costs, ask a staff member who can sync TLD prices to use Sync prices on the TLD list first.',
             'Registration and transfer prices below cost are never put on sale. Existing invoices keep their prices.',
-        ]);
+        ]));
 @endphp
 <div role="status">
 <x-filament::section>
