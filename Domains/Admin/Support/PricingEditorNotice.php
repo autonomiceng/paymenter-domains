@@ -59,7 +59,7 @@ final class PricingEditorNotice
             $id=$record->settings()->where('key','domains_tld_id')->value('value');
             $tld=Tld::where('server_id',$record->server_id)->find($id);
         }
-        $status=[];
+        $status=[];$recovery=null;
         if($tld){
             // Never use the 30-second customer display cache after a native price save.
             $read=app(StorefrontCatalogueRead::class);
@@ -71,7 +71,14 @@ final class PricingEditorNotice
                 }
                 $status[$label]=$available;
             }
+            if(!($status['Registration']??true)&&Staff::can(Staff::VIEW)
+                &&($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){
+                $key=$tld->server_id.':'.$tld->tld;
+                $row=$catalogue->page(collect([$tld]))[$tld->id];
+                $step=$catalogue->nextSteps(collect([$tld]),[$key=>$row],'register',1)[$key];
+                $recovery=$step['next']?:null;
+            }
         }
-        return $native||$status?view('domains::admin.pricing-editor-notice',compact('native','status'))->render():'';
+        return $native||$status?view('domains::admin.pricing-editor-notice',compact('native','status','recovery'))->render():'';
     }
 }

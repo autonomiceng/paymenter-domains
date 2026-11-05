@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, EnomTestCallLimit, ReadDeferred, ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CardFee, EnomTestCallLimit, PricingRules, ReadDeferred, ReadFailure};
 
 /** Dormant account worker on the retained queue. No container binding, job or caller switch.
  * $feed supplies bound adapters using existing admitted transports (including daily wire caps).
@@ -89,8 +89,11 @@ final class OfferWork
         $row = DB::table('domains_observation_queues')->where('server_id', $binding->serverId)->where('account_fingerprint', $binding->fingerprint)->first();
         $work = OfferState::decode($row?->offer_work);
         if ($this->generation !== null && ($work['upgrade_generation'] ?? null) !== $this->generation) { return ['state' => 'queued']; }
+        $failure = empty($work['local_failure']) ? [] : ['state' => 'retrying', 'failure' => $work['local_failure'],
+            'local_failure' => true, 'failed_at' => $work['local_failed_at'], 'due_at' => null];
         if ($tld !== null) {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
+            if ($failure) { return $failure; }
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
             return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
                 'due_at' => $state['due_at'] ?? null];
@@ -99,7 +102,7 @@ final class OfferWork
         return ['state' => (int) $row->offer_lease > $this->at() ? 'running' : (!empty($work['pending']) || ($work['feed_due'] ?? PHP_INT_MAX) <= $this->at() ? 'queued' : (!empty($row->offer_feed_failure) ? 'retrying' : 'ready')),
             'tried_at' => $row->offer_feed_tried_at, 'succeeded_at' => $row->offer_feed_succeeded_at,
             'failed_at' => $row->offer_feed_failed_at, 'failure' => $row->offer_feed_failure,
-            'due_at' => $work['feed_due'] ?? null, 'remaining' => count($work['pending'] ?? [])];
+            'due_at' => $work['feed_due'] ?? null, 'remaining' => count($work['pending'] ?? []), ...$failure];
     }
 
     /** Fair bounded rotation, including accounts with only lazy facts/local republication. */
@@ -163,10 +166,12 @@ final class OfferWork
                     $this->drain($writer, $b, $work);
                 }
             }
+            unset($work['local_failure'], $work['local_failed_at']);
             $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_claim' => null, 'offer_lease' => 0]);
             return 'worked';
         } catch (\Throwable $error) {
             // Keep a durable pending buffer on local writer failure; never repeat its provider feed.
+            $work['local_failure'] = ReadFailure::code($error); $work['local_failed_at'] = $this->at();
             try {
                 $this->save($b, $job, ['offer_work' => OfferState::json($work), 'offer_claim' => null, 'offer_lease' => 0]);
             } catch (\Throwable) {
@@ -279,8 +284,14 @@ final class OfferWork
     private function republish(Writer $writer, AccountBinding $b, array &$work): void
     {
         $rows = Tld::where('server_id', $b->serverId)->where('id', '>', $work['local_cursor'] ?? 0)->orderBy('id')->limit(self::BATCH)->get();
+        // Shared pricing failures still stop the account; only an unreadable own rule is skipped.
+        $fee = CardFee::read(); $default = (new PricingRules)->defaultRule(false, $fee);
         foreach ($rows as $t) {
             $this->offerBinding($b, $t);
+            if ($t->catalogue_published_revision === null && Pricing::hasOwn($t)) {
+                try { Pricing::rule($t, $default, $fee); }
+                catch (\DomainException|\InvalidArgumentException) { continue; }
+            }
             $this->requestSoldFacts($b, $t->tld);
             $revision = $this->revision($b, $t->tld);
             if ($t->catalogue_published_revision === null || !OfferState::equivalent(OfferState::decode($t->catalogue_published_revision), get_object_vars($revision))) {
