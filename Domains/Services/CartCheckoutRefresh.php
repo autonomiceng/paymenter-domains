@@ -108,6 +108,7 @@ final class CartCheckoutRefresh
 
     private static function removed(Cart $component, CartLinesRemoved $e): void
     {
+        $component->dispatch('cartUpdated');
         CartNotice::set($component, 'Domain removed', $e->getMessage(), $e->getMessage(), 'warning', $e->names);
     }
 }

@@ -116,7 +116,16 @@ class Storefront
         $started = $this->clock->now();
         // Installed contexts share interactive headroom with background work.
         $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $started->modify('+10 seconds'), new RequestBudget(1), $this->clock, Runtime::limiter());
-        $r = $driver->availability(new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1), $context);
+        $query = new Query($name, Action::Register, $offers ? (int) array_key_first($offers) : 1);
+        try { $r = $driver->availability($query, $context); }
+        catch (ReadDeferred) {
+            // Retry only local admission, once, through the same single-slot guard and absolute deadline.
+            $this->waitForRead();
+            if ($this->clock->now() >= $context->deadline) { return [...$base, 'status' => 'busy']; }
+            $context = new RequestContext($driver->binding(), RequestOrigin::Interactive, $context->deadline, new RequestBudget(1), $this->clock, Runtime::limiter());
+            try { $r = $driver->availability($query, $context); }
+            catch (ReadDeferred) { return [...$base, 'status' => 'busy']; }
+        }
         $driver->binding()->requireMatch($r->binding);
         $this->catalogue()?->validate($selection);
         if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) { return [...$base, 'status' => 'error']; }
@@ -136,6 +145,9 @@ class Storefront
         }
         return $base;
     }
+
+    /** Small grace period for an in-flight background read; no provider call or lock is held. */
+    protected function waitForRead(): void { usleep(100000); }
 
     /** Server-only resolution; links and forms never carry native identities. Cart admission rechecks independently. */
     public function offer(string $ending, string $action, int $term): array

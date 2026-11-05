@@ -139,13 +139,15 @@
             if (states.includes('idle') || list.querySelector('[data-busy]')) return;
             const available = states.filter(state => state === 'available').length;
             const errors = states.filter(state => state === 'error').length;
+            const busy = states.filter(state => state === 'busy').length;
             const inCart = states.filter(state => state === 'in_cart').length;
             if (live) live.textContent = (available ? available + ' of ' + states.length + ' names are available.'
                 + (inCart ? ' ' + inCart + (inCart === 1 ? ' is' : ' are') + ' in your cart.' : '')
-                : errors ? '' : states.includes('in_cart') ? 'Already in your cart. Try a different name, or go to your cart.'
+                : errors || busy ? '' : states.includes('in_cart') ? 'Already in your cart. Try a different name, or go to your cart.'
                 : 'None of these names are available. Try a different name.')
                 + (errors ? (available ? ' ' : '') + 'Couldn’t check ' + errors
-                    + (errors === 1 ? ' name. Retry to check it.' : ' names. Retry to check them.') : '');
+                    + (errors === 1 ? ' name. Retry to check it.' : ' names. Retry to check them.') : '')
+                + (busy ? (available || errors ? ' ' : '') + 'Try again in a moment to check the remaining names.' : '');
         };
         const check = async row => {
             if (row.dataset.busy) return;
