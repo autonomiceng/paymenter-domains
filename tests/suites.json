@@ -174,7 +174,7 @@
     "tests/storefront-scale-test.php",
     "tests/test_client_scripts.py",
     "tests/storefront-cache-test.php",
-    "tests/storefront-cache-key-test.php",
+    "tests/test_installed_storefront_cache_key-test.php",
     "tests/policy-ending-reads-test.php",
     "tests/owned-pages-test.php",
     "tests/owned-list-query-count-test.php",
@@ -473,8 +473,8 @@
     "tests/offer-store-cleanup-test.php",
     "tests/offer-store-prefix-test.php",
     "tests/offer-restore-sales-test.php",
-    "tests/catalogue-history-label-test.php",
-    "tests/staff-catalogue-next-step-test.php"
+    "tests/test_installed_catalogue_history_label-test.php",
+    "tests/test_installed_staff_catalogue_next_step-test.php"
   ],
   "ui": [],
   "runner": [

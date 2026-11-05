@@ -136,6 +136,9 @@ final class SellTable
         if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
         $sold=$this->sold($row,$action);
         $step=$field!=='profit'&&$sold!=='off'&&($saved['prices'][$action][$field]??null)===null?$this->nextStep($row,$action):[];
+        if($field==='cost'&&($saved['prices'][$action]['cost']??null)===null&&$this->retainedRenewal($row,$action)){
+            $step=['state'=>'missing','next'=>'Use Sync prices.','open'=>null];
+        }
         return $this->savedCell($saved['prices'][$action]??null,$field,$sold,$step);
     }
 
@@ -161,15 +164,19 @@ final class SellTable
     {
         $facts=$this->facts()[self::key($row)]??[];$intent=$facts['intent']??[];$defaults=$facts['defaults']??[];
         // Contractual annual holder renewals survive sale stops; their missing cost still needs repair.
-        if($action==='renew'&&$this->years===1){
-            $retained=$this->savedRow($row)['prices']['renew']['price']??null;
-            if($retained!==null&&\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($retained)>0){return 'sold';}
-        }
+        if($this->retainedRenewal($row,$action)){return 'sold';}
         if(!($intent['sell']??$defaults['defaultSell']??true)||in_array($action,$intent['stops']??[],true)
             ||$action==='register'&&$this->years>($intent['longest']??$defaults['defaultLongest']??1)
             ||$action==='transfer'&&!($intent['transfers']??$defaults['defaultTransfers']??false)){return 'off';}
         $reason=$facts['offers'][$action.':'.$this->years]->decision->reason??null;
         return in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)?'off':'sold';
+    }
+
+    private function retainedRenewal(OfferRow $row,string $action): bool
+    {
+        $retained=$this->savedRow($row)['prices']['renew']['price']??null;
+        return $action==='renew'&&$this->years===1&&$retained!==null
+            &&\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($retained)>0;
     }
 
     private static function cellOf(?string $text,?string $tone=null,?string $hint=null): array {return ['text'=>$text,'tone'=>$tone,'hint'=>$hint,'mark'=>false];}
