@@ -51,13 +51,18 @@ final class StaffCatalogue
         $names=['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'];
         $step=static fn(string $state,string $next,?string $open=null)=>compact('state','next','open');
         $missing=static fn(string $next,?string $open='tld')=>$step('missing',$next,$open);
-        $waiting=static fn(array $s)=>$step('checking',isset($s['due_at'])&&empty($s['remaining'])?'Next check '.gmdate('M j, Y H:i',$s['due_at']).' UTC.':'Queued for the next background run.');
+        $waiting=static fn(array $s)=>!empty($s['local_failure'])?$missing('Check the registrar account and read prices again.','account'):
+            $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?'Next check '.gmdate('M j, Y H:i',$s['due_at']).' UTC.':'Queued for the next background run.');
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
-        if(in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)){return $step('off','Stopped in What you sell.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
         try{$rule=Pricing::rule($t);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
+        if(in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)){return $step('off','Stopped in What you sell.');}
         $binding=static fn()=>AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
-        if($reason==='publication_pending'&&$this->work){$this->work->wake($binding());return $waiting([]);}
+        if($reason==='publication_pending'&&$this->work){
+            $this->work->wake($b=$binding());$status=$this->work->status($b);
+            // Local publication is due on the next turn, independently of the feed date.
+            unset($status['due_at']);return $waiting($status);
+        }
         try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){return $missing('Check saved settings on .'.$t->tld.'.');}
         $human=null;
         if(!$facts||!$facts->fresh($now)||$t->registrar_key==='namesilo'

@@ -268,12 +268,15 @@ final class Writer implements Catalogue
                 $d = OfferState::decode($account->catalogue_defaults);
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;
-                if (!$command instanceof Edit || $command->kind !== 'retail') { $this->publishPrices($offer, $now); }
+                $published = true;
+                if (!$command instanceof Edit || $command->kind !== 'retail') { $published = $this->publishPrices($offer, $now); }
+                // Keep unreadable own pricing closed, including when the feed/facts change.
+                if (!$published) { $offer->catalogue_published_revision = null; }
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
                 $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
-                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), true);
+                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), $published);
                 $this->projection->write($offer, $snapshot, $now, $native);
-                $offer->catalogue_published_revision = OfferState::json($snapshot->revision);
+                $offer->catalogue_published_revision = $published ? OfferState::json($snapshot->revision) : null;
                 // Raw update: dormant staging does not invoke active legacy model observers.
                 DB::table('domains_tlds')->where('id', $offer->id)->update([
                     'catalogue_intent' => $offer->catalogue_intent, 'catalogue_facts' => $offer->catalogue_facts,
@@ -344,9 +347,16 @@ final class Writer implements Catalogue
         return $changed;
     }
 
-    private function publishPrices(Tld $tld, \DateTimeImmutable $now): void
+    private function publishPrices(Tld $tld, \DateTimeImmutable $now): bool
     {
-        $rule = Pricing::rule($tld);
+        // Shared settings fail the account. Only an unreadable TLD override is isolated.
+        $fee = \Paymenter\Extensions\Servers\Domains\Services\CardFee::read();
+        $default = (new PricingRules)->defaultRule(false, $fee);
+        try { $rule = Pricing::rule($tld, $default, $fee); }
+        catch (\DomainException|\InvalidArgumentException $error) {
+            if (!Pricing::hasOwn($tld)) { throw $error; }
+            return false;
+        }
         $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int) $tld->server_id);
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
         foreach ($prices as $p) {
@@ -363,6 +373,7 @@ final class Writer implements Catalogue
                 'revision' => (int) $p->revision + 1];
             DB::table('domains_prices')->where('id', $p->id)->update($values);
         }
+        return true;
     }
 
     private function audit(Server $server, Command $command, Revision $before, Revision $after, \DateTimeImmutable $now): void
