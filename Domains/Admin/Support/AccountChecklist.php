@@ -308,7 +308,13 @@ final class AccountChecklist
                 ['Redemption','Off','Restoration is separate. Review the restoration options on the domain.'],
             ];
         } catch (\Throwable) {
-            return [['Supported terms','Missing','Current registrar terms missing. The background facts check fills them when this account supports a terms read. Longer terms stay off.']];
+            $refresh=[];
+            try{if($binding&&Schema::hasTable('domains_observation_queues')){
+                $queue=DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->first();
+                $work=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($queue?->offer_work);
+                $refresh=['succeeded_at'=>$queue?->offer_feed_succeeded_at,'due_at'=>$work['facts'][$ending]['due_at']??$work['feed_due']??null];
+            }}catch(\Throwable){/* Saved refresh metadata is also missing; never invent a next check. */}
+            return [['Supported terms','Missing','Current registrar terms missing. '.TldFacts::refreshText($refresh).' A supported registrar terms read fills this fact. Longer terms stay off.']];
         }
     }
     public static function termYears(array $years): string
