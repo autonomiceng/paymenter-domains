@@ -241,12 +241,12 @@ final class StaffCatalogue
             $queue=$refresh[$t->server_id]??null;
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
-            // A successful account read proves omission only after the saved selection. Unknown chronology stays unknown.
+            // Compare known selection times; legacy undated rows use the latest successful account feed.
             $selectedAt=$policy?->updated_at??$policy?->created_at;
             try{$selectedAt=$selectedAt?max(\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp(),$t->created_at?->getTimestamp()??0,$t->updated_at?->getTimestamp()??0):null;}catch(\Throwable){$selectedAt=null;}
             $refreshed=['succeeded_at'=>$queue->offer_feed_succeeded_at??null,'due_at'=>$work['feed_due']??null,
                 'failure'=>$queue->offer_feed_failure??null,'selected_at'=>$selectedAt];
-            $confirmed=$selectedAt!==null&&($refreshed['succeeded_at']??0)>$selectedAt;
+            $confirmed=($refreshed['succeeded_at']??0)>0&&($selectedAt===null||$refreshed['succeeded_at']>$selectedAt);
             if(!$unreadable&&!collect($prices)->contains(fn($price)=>$price['synced'])&&($selected||isset($sellers[$t->tld]))){
                 if($confirmed){$label="Not in the registrar's price feed; not for sale";}
                 // Keep an account-unavailable status. A first read failure cannot establish a missing feed entry.
