@@ -21,7 +21,7 @@ final class SiteDnsDefault
         $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         return ManagedDnsSetup::usable($p)?$p:null;
     }
-    public static function uses(int $id): bool { return (int)self::profile()?->id===$id; }
+    public static function uses(int $id): bool { return $id>0 && (int)self::profile()?->id===$id; }
     public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
     {
         // An explicit watch choice, including an unusable one, is never silently replaced.
@@ -79,7 +79,7 @@ final class SiteDnsDefault
         if(!Schema::hasTable(PublicDnsQuota::TABLE) || !Schema::hasTable('domains_watch_schedule')){return;}
         PublicDnsQuota::seed(time());
         DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);
-        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>0]);
+        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>0,'data'=>json_encode(['refresh_dns'=>true])]);
         DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults());
     }
 }
