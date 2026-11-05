@@ -526,7 +526,8 @@
     "tests/test_installed_demo_c_selection_feed-test.php",
     "tests/test_installed_demo_c_selection_conversion-test.php",
     "tests/self-heal-records-test.php",
-    "tests/self-heal-retry-test.php"
+    "tests/self-heal-retry-test.php",
+    "tests/site-dns-default-test.php"
   ],
   "ui": [],
   "runner": [

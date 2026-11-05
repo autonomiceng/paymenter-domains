@@ -1,0 +1,83 @@
+<?php
+// MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+namespace Paymenter\Extensions\Servers\Domains\Services;
+use App\Models\{Setting,User};
+use Illuminate\Support\Facades\{Cache,DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Dns\RoutingProfile;
+use Paymenter\Extensions\Servers\Domains\Models\{WatchProfile,WatchName,WatchAudit};
+/** One live site reference. Null domain/watch assignments inherit it without being rewritten. */
+final class SiteDnsDefault
+{
+    public const KEY='domains_site_dns_template';
+    public const MISSING='Beco DNS default Missing: installation has not supplied the expected nameservers';
+    private static function query(): \Illuminate\Database\Eloquent\Builder
+    { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
+    public static function profile(bool $lock=false): ?WatchProfile
+    {
+        $rows=self::query()->when($lock,fn($q)=>$q->lockForUpdate())->get();
+        if($rows->count()!==1 || $rows[0]->type!=='string' || $rows[0]->encrypted){return null;}
+        $id=$rows[0]->value;
+        $p=is_string($id)&&ctype_digit($id)?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
+        return ManagedDnsSetup::usable($p)?$p:null;
+    }
+    public static function uses(int $id): bool { return (int)self::profile()?->id===$id; }
+    public static function watchProfile(WatchName $watch,bool $lock=false): ?WatchProfile
+    {
+        // An explicit watch choice, including an unusable one, is never silently replaced.
+        return $watch->ns_profile_id===null?self::profile($lock):WatchProfile::whereKey($watch->ns_profile_id)->when($lock,fn($q)=>$q->lockForUpdate())->first();
+    }
+    /** Called only after lifecycle initialization has proved and installed the retained schema. */
+    public static function ensure(): void
+    {
+        Cache::lock('domains-site-dns-default',30)->block(5,static function():void {
+            DB::transaction(static function():void {
+                Setting::orderBy('id')->lockForUpdate()->get();
+                if(self::query()->exists()){return;} // Deployment changes never move a saved choice.
+                $names=config('domains.site_dns_default.nameservers');
+                if(!is_array($names) || !$names){return;}
+                try{$routing=new RoutingProfile($names,[],[]);}catch(\InvalidArgumentException|\TypeError){return;}
+                // System installation has no staff actor. Quiet maintenance preserves normal staff validation.
+                $p=new WatchProfile(['name'=>'Beco DNS','nameservers'=>$routing->nameservers,'website_endpoints'=>[],
+                    'email_endpoints'=>[],'enabled'=>true,'edited_by'=>0,'reason'=>'Deployment DNS default']);
+                $p->saveQuietly();
+                self::write($p);
+                WatchAudit::create(['subject_type'=>'dns_profile','subject_id'=>$p->id,'event'=>'deployment_dns_default',
+                    'reason'=>'Deployment DNS default','after_revision'=>'1','data'=>['profile_id'=>$p->id],'created_at'=>now()]);
+            });
+        });
+        self::reconcile();
+    }
+    public static function save(User $actor,int $id): void
+    {
+        StaffWatchWrites::authorize($actor);
+        Cache::lock('domains-site-dns-default',30)->block(5,static function()use($actor,$id):void {
+            DB::transaction(static function()use($actor,$id):void {
+                StaffWatchWrites::authorize($actor);Setting::orderBy('id')->lockForUpdate()->get();
+                $p=WatchProfile::whereKey($id)->lockForUpdate()->first();
+                if(!ManagedDnsSetup::usable($p)){throw new \DomainException('Choose an enabled DNS template.');}
+                $before=self::profile()?->id;self::write($p);
+                WatchAudit::create(['subject_type'=>'site_dns','subject_id'=>0,'actor_id'=>$actor->id,'event'=>'site_dns_default_changed',
+                    'reason'=>'Site DNS default changed','before_revision'=>(string)$before,'after_revision'=>(string)$id,
+                    'data'=>['profile_id'=>$id],'created_at'=>now()]);
+            });
+        });
+        self::reconcile();
+    }
+    private static function write(WatchProfile $p): void
+    {
+        $rows=self::query()->lockForUpdate()->get();
+        if($rows->count()>1){throw new \DomainException('Duplicate site DNS defaults need administrator review.');}
+        $s=$rows->first()??new Setting(['key'=>self::KEY,'settingable_type'=>null,'settingable_id'=>null]);
+        $s->fill(['type'=>'string','encrypted'=>false,'value'=>(string)$p->id])->save();
+    }
+    /** Restart durable bounded cursors, then process one local page through the admitted workers. No DNS I/O. */
+    public static function reconcile(): void
+    {
+        if(!Schema::hasTable(PublicDnsQuota::TABLE) || !Schema::hasTable('domains_watch_schedule')){return;}
+        PublicDnsQuota::seed(time());
+        DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);
+        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>0]);
+        DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults());
+    }
+}
