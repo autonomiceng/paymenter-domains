@@ -92,10 +92,11 @@ final class RegistrarFacts
         $n=static fn(int $count)=>$count.' '.($count===1?'renewal':'renewals');
         if ($b['unreadable']>0) { return ['text'=>DomainFacts::UNREADABLE_RENEWAL,'act'=>true,'at'=>null]; }
         $undated=$b['without_cost']-$b['unpriced'];
-        if ($undated>0) { return ['text'=>$n($undated).' with no known date, so not counted. Check the invoice days and the domain expiry.','act'=>true,'at'=>null]; }
-        if ($b['unpriced']===0) { return null; }
+        $gap=$undated>0?['text'=>$n($undated).' with no known date, so not counted. Check the invoice days and the domain expiry.','act'=>true,'at'=>null]:null;
+        if ($b['unpriced']===0) { return $gap; }
         try { $read=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress((int)$account->server_id)??[]; } catch (\Throwable) { $read=[]; }
-        return self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp());
+        $priced=self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp());
+        return $gap===null?$priced:[...$gap,'text'=>$gap['text'].' '.$priced['text']];
     }
     /** Unpriced renewals by the price read's state. Beco retries a failed read by itself (OfferWork backoff), so only a
      * cause staff must fix (TldFacts::SYNC_STEPS) is amber, with its step. @return array{text:string,act:bool,at:?int} */
