@@ -53,7 +53,11 @@ expect(!str_contains($html,'<li class="domains-row domains-row--pending" id="nam
 expect(!str_contains($html,'id="form-lock"'),'The unfinished setting has no second change control');
 $foreign=Request::create('/');$foreign->setUserResolver(fn()=>commerceUser());
 try{$controller->status($foreign,$d->id);expect(false,'Foreign status must fail');}catch(Illuminate\Database\Eloquent\ModelNotFoundException){}
-$old=$op->created_at;$op->update(['created_at'=>$old->copy()->subSeconds(31)]);
+$old=$op->created_at;
+// 3a196899 gives a change two minutes before slowing progress; test both sides without waiting.
+$op->update(['created_at'=>$old->copy()->subSeconds(119)]);
+expect(!ManagementProgress::for($d)['lock']['slow'],'A change inside two minutes keeps normal progress');
+$op->update(['created_at'=>$old->copy()->subSeconds(121)]);
 expect(ManagementProgress::for($d)['lock']['slow'],'Slow status survives reload');
 $state->fault='';$state->locked=false;same('succeeded',$management->reconcile($op->id,$driver)->state,'Readback completes the original operation');
 expect(!ManagementProgress::for($d)['lock']['pending'],'Completion stops polling');
@@ -73,7 +77,10 @@ Cache::flush();$pending=$submit($d,$driver,'lock',['locked'=>false]);
 staffPanel();$staffPage=Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,['record'=>$d->id]);
 expect(str_contains($staffPage->html(),'wire:poll.2s'),'Staff pending controls poll every two seconds');
 $before=$state->calls;$staffPage->call('pollManagement');same($before,$state->calls,'Staff polling reads stored state only');
-$pending->update(['created_at'=>$pending->created_at->copy()->subSeconds(31)]);
+$pendingAt=$pending->created_at;
+$pending->update(['created_at'=>$pendingAt->copy()->subSeconds(119)]);
+$staffPage->call('pollManagement');expect(str_contains($staffPage->html(),'wire:poll.2s'),'Staff controls keep normal polling inside two minutes');
+$pending->update(['created_at'=>$pendingAt->copy()->subSeconds(121)]);
 $staffPage->call('pollManagement');expect(str_contains($staffPage->html(),'wire:poll.10s'),'Staff slow controls poll every ten seconds');
 same('succeeded',$management->run($pending->id,$driver)->state,'Staff sees the same confirmed result');
 $staffPage->call('pollManagement');expect(!str_contains($staffPage->html(),'wire:poll.'),'Staff completion stops polling');
