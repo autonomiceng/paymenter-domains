@@ -77,6 +77,14 @@ same(array_reverse($expected),$keys,'Same-second actions remain newest first bef
 [$head,$request,$entry,$text,$xpath]=$page($op);
 $latest=$xpath->query('//*['.$class('domains-rail').']//*['.$class('domains-trace-title').']')->item(0);
 same('Put on hold',$text($latest),'The final same-second hold leads the rendered Activity rail');
+// A queued paid renewal needs the same Orders-on instruction in its header and Activity.
+[$renewal,$renewalDomain]=$makeRenewal(placeholderComFixtureName('orders-renewal-placeholder.com'));
+DB::table('domains_operations')->where('id',$renewal->id)->update(['state'=>'queued']);
+foreach([false,true] as $ordersOn){
+    DB::table('domains_accounts')->where('server_id',$renewal->server_id)->update(['processing_enabled'=>$ordersOn]);
+    [$head]=$page($renewal);
+    same(!$ordersOn,str_contains($head,'Turn Orders on in Registrars.'),'Queued renewal header matches the account Orders switch: '.$head);
+}
 if($failures){fwrite(STDERR,implode("\n",$failures)."\n");}
 same([],$failures,'Domain header and Activity reflect the current hold');
 echo "Staff domain Hold/Release: paused and running orders, named release and later hold passed.\n";

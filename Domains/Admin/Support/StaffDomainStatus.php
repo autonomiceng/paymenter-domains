@@ -115,7 +115,7 @@ final class StaffDomainStatus
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op), $op->id, true],
             $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null, false],
-            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.self::check($op->id), $op->id, true],
+            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.(OperationQueries::ordersOff($op)?' Turn Orders on in Registrars.':'').self::check($op->id), $op->id, true],
             default => [self::RENEWING, null, false],
         };
     }
