@@ -1,7 +1,7 @@
 <?php
 // Native light/dark What you sell captures; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
+require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';require __DIR__.'/Support/storefront-catalogue.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade,DB};
 use Illuminate\Support\HtmlString;
@@ -19,8 +19,7 @@ App\Models\Server::whereKey($second->server_id)->update(['name'=>'NameSilo accou
 App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,
     'value'=>['mode'=>'markup_fee_percent','markup'=>'5','round_up'=>'ending_99']]);
 activeFixtureRepublish($prices,$first);
-DB::table('domains_tlds')->where('id',$second->id)->update(['use_default_rule'=>false,'pricing_mode'=>'fixed','round_up'=>'none',
-    'fixed_register'=>'7.80','fixed_renew'=>'8.10','fixed_transfer'=>'9.10']);
+storefrontFixtureEdit($second,rule:storefrontFixtureRule('7.80','8.10','9.10'));
 DB::table('domains_prices')->where(['server_id'=>$second->server_id,'action'=>'renew','term'=>1])->update(['retail'=>'8.10']);
 // Rows the demo has none of: a saved price below cost, a term with no saved price, a TLD left out and one the registrar no longer lists. They show the red loss, Missing, the amber line and the blocked row.
 DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>1])->update(['retail'=>'5.00']);
