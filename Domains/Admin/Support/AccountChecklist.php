@@ -22,7 +22,7 @@ final class AccountChecklist
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
     public const TRANSFER_LABEL='Transfers (Experimental)';
-    private const PRICES='The last successful registrar price refresh and the next due time. Sync prices is an optional retry.';
+    private const PRICES='Prices refresh from the registrar once a day. Sync prices refreshes them now.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
@@ -178,7 +178,7 @@ final class AccountChecklist
         if($binding===null){return [...self::row('TLD prices',null,null,'Restore the API connection first.',null,self::PRICES),'buttons'=>[]];}
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
-            return [...self::row('TLD prices',ucfirst($status['state']),null,TldFacts::refreshText($status),null,self::PRICES),'buttons'=>self::priceButtons($a)];
+            return [...self::row('TLD prices',ucfirst($status['state']),null,isset($status['succeeded_at'])?Sheet::moment((int)$status['succeeded_at'],'Updated'):'Not updated yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
