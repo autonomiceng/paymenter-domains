@@ -266,5 +266,19 @@ $actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())
 same('Set a positive transfer price in Edit prices on .com.',$status['next'],'Stopped registration keeps the active transfer repair step');
 same('tld',$status['open'],'Transfer repair links to Edit prices');
 } catch (Throwable $error) {$failures[]='Transfer status repair: '.$error->getMessage();}
+foreach(['stopped','account'] as $scenario){
+try {
+$reset();
+if($scenario==='stopped'){
+    $intent=OfferState::decode($original['catalogue_intent']);$intent['sell']=false;
+    DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
+}else{\App\Models\Server::whereKey($binding->serverId)->update(['enabled'=>false]);}
+$actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);
+[$table,$row]=nextTable();$status=$table->status($row);
+same($scenario==='stopped'?'Stopped by staff':'Check registrar account',$status['next'],'Restricted viewers retain the specific sale reason');
+same(null,$status['open']??null,'Restricted status avoids the unrelated TLD repair link');
+} catch (Throwable $error) {$failures[]='Restricted status '.$scenario.': '.$error->getMessage();}
+}
+$actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())]);
 expect($failures===[],implode("\n",$failures));
 $nativeSuccessful=true;echo "Staff catalogue next steps: ok\n";
