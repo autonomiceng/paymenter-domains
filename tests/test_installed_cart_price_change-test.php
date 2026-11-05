@@ -64,7 +64,20 @@ $mixedLoadNet = commerceAdd($mixedLoad, $second['product'], 'example.net');
 $mixedCart = commerceCart($user); $mixedCom = commerceAdd($mixedCart, $com, 'mixed-checkout-placeholder.com', 3);
 $mixedNet = commerceAdd($mixedCart, $second['product'], 'example.net');
 $mixedPage = $open($mixedCart);
+// A later local mapping/read failure must not commit an earlier off-sale removal without its notice.
+$scanCart = commerceCart($user); $scanCom = commerceAdd($scanCart, $com, 'scan-placeholder.com', 3);
+$scanNet = commerceAdd($scanCart, $second['product'], 'example.net');
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
+$netRow = Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $secondBinding->serverId)->where('tld', 'net')->sole();
+$savedIntent = $netRow->catalogue_intent;
+Illuminate\Support\Facades\DB::table('domains_tlds')->where('id', $netRow->id)->update(['catalogue_intent' => '{']);
+Illuminate\Support\Once::flush(); app('request')->cookies->set('cart', $scanCart->ulid);
+$scanFailed = false;
+try { $admission->refresh(); } catch (Throwable) { $scanFailed = true; }
+expect($scanFailed, 'A malformed later offer aborts the local scan');
+same([$scanCom->id, $scanNet->id], $scanCart->items()->orderBy('id')->pluck('id')->all(),
+    'A failed local scan preserves every cart line until a removal can be reported');
+Illuminate\Support\Facades\DB::table('domains_tlds')->where('id', $netRow->id)->update(['catalogue_intent' => $savedIntent]);
 $before = $counts(); $checkout($page, $cart);
 same($before, $counts(), 'Removing a line places no order');
 expect(!$cart->items()->whereKey($closed->id)->exists(), 'The TLD off sale loses only its own line');

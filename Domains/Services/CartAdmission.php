@@ -93,11 +93,12 @@ class CartAdmission
             if (!$mapping || !in_array($mapping['action'], ['register', 'transfer'], true)) { continue; }
             if ($this->catalogue()?->offSale((int) $product->server_id, $mapping['tld']->tld, $mapping['action'], $mapping['term'])) {
                 $name = $this->name($item, $mapping);
-                CartItem::whereKey($item->id)->where('cart_id', $cart->id)->delete(); $removed[$item->id] = $name; continue;
+                $removed[$item->id] = $name; continue;
             }
             $lines[] = [$item, $product, $mapping];
         }
         if ($removed) {
+            CartItem::where('cart_id', $cart->id)->whereIn('id', array_keys($removed))->delete();
             // The native page and checkout read this same memoized cart. Checkout stops; the next click refreshes the rest.
             $cart->setRelation('items', $cart->items->reject(static fn ($item) => isset($removed[$item->id]))->values());
             throw new CartLinesRemoved(array_values($removed));
