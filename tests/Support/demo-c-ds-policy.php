@@ -51,3 +51,11 @@ foreach (['add'=>'dnsSecAddRecord', 'delete'=>'dnsSecDeleteRecord'] as $method=>
     try { unserialize(serialize($m)); throw new RuntimeException('Restored descriptor'); } catch (LogicException) {}
 }
 echo "Versioned DS policy passed\n";
+// Enabling a DS ending must not activate the separate dormant DNS editor.
+$clock = new class($now) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {
+    public function __construct(private DateTimeImmutable $at) {}
+    public function now(): DateTimeImmutable { return $this->at; }
+};
+$b=new \Paymenter\Extensions\Servers\Domains\Data\AccountBinding('namesilo',1,\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,'synthetic');
+$driver=new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DsManagement($b,static fn()=>throw new RuntimeException('No wire'),$map,$clock);
+same(\Paymenter\Extensions\Servers\Domains\Data\Support::Unsupported,$driver->capabilities()->get('dns')->support,'DS facts never activate unrelated DNS editing');
