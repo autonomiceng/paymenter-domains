@@ -37,7 +37,7 @@ $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-famili
 expect(str_contains($html,'Registrant returned; some contacts did not.'),'Staff names the returned contact role');
 expect(str_contains($html,'Refresh contacts before editing.'),'Staff gets a contacts-specific next step');
 expect(str_contains($html,'Last complete read:'),'Staff sees the last complete timestamp');
-expect(str_contains($html,'Failed family: dns')&&str_contains($html,'Resume sync'),'Staff sees failed family and resume step');
+expect(str_contains($html,'Failed family: dns')&&str_contains($html,'No read queued.'),'Staff sees failed family and the absence of queued read work');
 expect(str_contains($html,RecordFamilies::EVIDENCE),'Staff sees public versus registrar evidence distinction');
 $s=$d->observation;$s['records']['families']['dns']=['state'=>'unknown','records'=>[],'last_good'=>['at'=>'2026-11-03T09:00:00+00:00','records'=>$record['families']['dns']['records']]];$d->observation=$s;
 $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-families',['recordFamilies'=>$state])->render();
@@ -70,8 +70,8 @@ $unknown=new Domain(['domain'=>'example.com','registrar_key'=>'enom','server_id'
 $unreadManagement=$existing;foreach(['dns','srv','ds'] as $key){$unreadManagement[$key]['records']=null;$unreadManagement[$key]['actions']=[];}
 $unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$unreadManagement]),RecordFamilies::read($unknown,$now));
 $unreadHtml=view('domains::partials.owner-management',['domain'=>$unread,'caps'=>['dns','srv','ds'],'keys'=>array_fill_keys(['dns','srv','ds','ds_delete'],str_repeat('b',64))])->render();
-expect(!str_contains($unreadHtml,'Contact support to sync')&&!str_contains($unreadHtml,'domains-missing'),'Unknown registrar families show checking without a red Missing or support chore');
-expect(str_contains($unreadHtml,'checking'),'Unknown family keeps its checking explanation');
+expect(!str_contains($unreadHtml,'Contact support to sync')&&str_contains($unreadHtml,'domains-missing'),'Unqueued unknown registrar families show Missing without a support chore');
+expect(str_contains($unreadHtml,'No registrar read is queued for this family.'),'Unknown family explains the absence of queued read work');
 // Enom partial glue is a bounded known-host check, not a promise of enumeration.
 $enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];
 $g=array_column(RecordFamilies::read($enom,$now)['rows'],null,'kind')['glue'];
