@@ -267,7 +267,8 @@ expect(str_contains(strip_tags((string)$oneView->instance()->getSubheading()),'C
 same(['Awaiting payment','Customer has not paid the invoice. Not sent yet.'],array_values(array_intersect_key(RequestStatus::for($oneRenewal->state),['label'=>1,'reason'=>1])),'Request page says the same');
 // An early renewal says so: the same words on the heading and the request page, and only until the billing window opens.
 $calendar=static function(int $issue,int $due)use($oneRenewal):void {DB::table('domains_operations')->where('id',$oneRenewal->id)->update(['policy'=>encrypt(json_encode([...$oneRenewal->policy,'calendar'=>['issue'=>today()->addDays($issue)->format('Y-m-d'),'due'=>today()->addDays($due)->format('Y-m-d')]]),false)]);};
-$early='Early renewal not paid. Nothing is due until '.today()->addDays(113)->format('M j, Y').'.';$calendar(99,113);
+// 7801bfad uses the invoice's due date on both the heading and request page.
+$early='Invoice ready. Due '.today()->addDays(113)->format('M j, Y').'.';$calendar(99,113);
 expect(str_contains(strip_tags((string)Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$one->id])->instance()->getSubheading()),$early),'Early renewal, staff heading');same($early,Labels::requestStatus($oneRenewal->fresh())['reason'],'Early renewal, request page');
 $calendar(0,14);same('Customer has not paid the invoice. Not sent yet.',Labels::requestStatus($oneRenewal->fresh())['reason'],'Inside the billing window it is a normal unpaid invoice');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$two->id])->assertSee('Pending registration')->assertDontSee('Registrar request needs a check');
