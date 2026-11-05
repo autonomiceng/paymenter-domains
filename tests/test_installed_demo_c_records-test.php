@@ -21,7 +21,7 @@ expect($state['stale'],'Older than one day is stale');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false);
 $page=RecordFamilies::owner($owned,$state);
 $html=view('domains::partials.owner-management',['domain'=>$page])->render();
-foreach(['Complete','Partial','Unknown','Unsupported','CAA','3600','Read-only','Checked'] as $text){expect(str_contains($html,$text),'Customer sees '.$text);}
+foreach(['Complete','Partial','Missing','Unsupported','CAA','3600','Read-only','Checked'] as $text){expect(str_contains($html,$text),'Customer sees '.$text);}
 expect(str_contains($html,'aria-label="DNS records"')&&str_contains($html,'TTL'),'CAA is in the DNS records table');
 $caaDom=storefrontDom($html);
 same(1,$caaDom->query('//tr[td[normalize-space(.)="CAA"]]')->length,'The real DNS table contains the CAA row');
