@@ -18,6 +18,7 @@ final class CartCheckoutRefresh
             try {
                 $held = session()->get(self::shownKey().'.lines', session()->get(self::shownKey(), []));
                 $admission->refresh();
+                if(ComplimentaryAccounts::authorization((int)\Illuminate\Support\Facades\Auth::id())){self::show($component,self::cartTotal());}
                 $was = self::changedAmounts($held);
                 if ($was) { self::changed($component, self::cartTotal(), $was); }
                 else {
