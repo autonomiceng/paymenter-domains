@@ -169,8 +169,18 @@ final class TldFacts
                     $change='Sales settings changed';$input=$r['input'];
                     $edited=$tldId?array_intersect_key((array)($input['rows']??[]),[$ending=>true]):(array)($input['rows']??[]);
                     foreach(array_slice($edited,0,5,true) as $name=>$row){
-                        $new=$row['new'];$detail[]='.'. $name.': '.match($new['choice']){'sell'=>'Sell','skip'=>"Don't sell",default=>'Use default rule'}.'; '.($new['longest']===null?'default term':'up to '.$new['longest'].' years').'; transfers '.($new['transfer']===null?'follow default':($new['transfer']?'on':'off'));
+                        $parts=[];
+                        foreach($row['new'] as $field=>$value){
+                            if(array_key_exists($field,$row['old']??[])&&$row['old'][$field]===$value){continue;}
+                            $parts[]=match($field){
+                                'choice'=>match($value){'sell'=>'Sell','skip'=>"Don't sell",default=>'Use default rule'},
+                                'longest'=>$value===null?'default term':'up to '.$value.' years',
+                                'transfer'=>'transfers '.($value===null?'follow default':($value?'on':'off')),
+                                default=>null};
+                        }
+                        if(array_filter($parts)!==[]){$detail[]='.'. $name.': '.implode('; ',array_filter($parts));}
                     }
+                    if($edited===[]&&(array)($input['changes']??[])===[]&&!self::unknownSalesScope($input)&&!($input['rule_changed']??false)){$change='No sales settings changed';}
                     if(($input['rule_changed']??false)&&isset($input['rule'])){$rule=$input['rule'];$detail[]='Default: '.($rule['mode']==='only'?"don't sell new TLDs":'sell new TLDs').'; '.($rule['max_cost']===null?'no cost limit':'cost limit USD '.$rule['max_cost']).'; up to '.$rule['years'].' years; transfers '.($rule['transfers']?'on':'off');}
                     if($detail===[]&&is_string($ending)&&array_key_exists($ending,(array)($input['changes']??[]))){$detail[]='.'. $ending.': '.($input['changes'][$ending]===null?'New sales stopped':'Sales terms updated');}
                     if(self::unknownSalesScope($input)&&$edited===[]&&(!is_string($ending)||!array_key_exists($ending,(array)($input['changes']??[])))){

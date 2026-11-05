@@ -80,6 +80,7 @@ final class CartCheckoutRefresh
         catch (\Throwable $error) {
             \Illuminate\Support\Facades\Log::warning('Domains cart recalculation failed after removal.', ['exception_class' => $error::class]);
         }
+        $component->dispatch('cartUpdated');
         CartNotice::set($component, 'Domain removed', $removed->getMessage(), $removed->getMessage(), 'warning', $removed->names);
     }
 
@@ -114,4 +115,5 @@ final class CartCheckoutRefresh
         }
         $component->notify('We couldn’t check this domain. Try checkout again, or edit or remove it from your cart.', 'error');
     }
+
 }
