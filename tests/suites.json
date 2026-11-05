@@ -520,7 +520,10 @@
     "tests/staff-adopted-price-label-test.php",
     "tests/staff-open-renewal-invoice-test.php",
     "tests/staff-nameserver-refusal-label-test.php",
-    "tests/cart-reload-price-test.php"
+    "tests/cart-reload-price-test.php",
+    "tests/customer-nameserver-refusal-test.php",
+    "tests/customer-lock-history-test.php",
+    "tests/customer-deferred-progress-test.php"
   ],
   "ui": [],
   "runner": [

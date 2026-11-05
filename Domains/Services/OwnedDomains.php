@@ -156,9 +156,12 @@ final readonly class OwnedDomains
                 $key=ManagementProgress::statusKey($entry,$d);
                 $label=self::CHANGES[$entry->action]??null;
                 if ($key===null || !$label) { continue; }
+                $locked=$entry->policy['management']['input']['locked']??null;
+                if ($entry->action==='lock' && is_bool($locked)) { $label.=$locked?' On':' Off'; }
                 // The same word staff read on the domain's Activity rail.
                 $state=RequestStatus::SET[$key][0];
                 $progress[]=['label'=>$label,'state'=>$state,'date'=>$entry->updated_at?->toIso8601String(),'note'=>$state==='Failed'?self::failure($entry):null,
+                    'noteComplete'=>$entry->action==='nameservers' && $entry->safe_code==='management_provider_refused',
                     'by'=>(int)$entry->authorized_by!==(int)$d->user_id?'Staff':null,'setting'=>ManagementProgress::setting($entry->action)];
             } catch (\Illuminate\Contracts\Encryption\DecryptException) {
                 if ($label=self::CHANGES[$entry->action]??null) {
