@@ -8,7 +8,9 @@ use Paymenter\Extensions\Servers\Domains\Data\{CanonicalName, ReviewedFacts};
 /** Deployment-only reviewed facts. No customer allowlist or default registry grants. */
 final class DsRegistryPolicy
 {
-    public function __construct(private readonly array $map = [], private readonly ?\DateTimeImmutable $now = null) {}
+    // No saved evidence qualifies a real entry. Changes require reviewed provider AND registry facts.
+    public const DEPLOYMENT_FACTS = [];
+    public function __construct(private readonly array $map = self::DEPLOYMENT_FACTS, private readonly ?\DateTimeImmutable $now = null) {}
 
     public function snapshot(string $domain): ?array
     {

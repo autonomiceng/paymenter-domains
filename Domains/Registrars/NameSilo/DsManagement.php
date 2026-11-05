@@ -8,10 +8,10 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, Cap
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\DsMapping;
 
 /** Dormant sequence adapter. C1 alone selects it and wires physical admission. */
-final class DsManagement extends DnsManagement
+final class DsManagement extends Management
 {
     public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange,
-        private readonly array $facts = [], private readonly Clock $clock = new SystemClock)
+        private readonly array $facts = DsRegistryPolicy::DEPLOYMENT_FACTS, private readonly Clock $clock = new SystemClock)
     { parent::__construct($binding, $exchange, $facts); }
 
     public function capabilities(): Capabilities
