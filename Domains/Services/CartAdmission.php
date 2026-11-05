@@ -131,6 +131,7 @@ class CartAdmission
                     $batch->wait($delay);
                 }
             }
+            if (ComplimentaryAccounts::authorization((int) Auth::id())) { $item->plan->prices->where('currency_code','USD')->sole()->price='0.00'; }
             if ($token === ($config['domains_check'] ?? null)) { continue; }
             $item->checkout_config = [...$config, 'domains_check' => $token];
             $updated = CartItem::whereKey($item->id)->where('cart_id', $cart->id)->where('product_id', $item->product_id)
@@ -197,10 +198,12 @@ class CartAdmission
                 || $selection->tld !== $mapping['tld']->tld || $selection->action !== $mapping['action'] || $selection->term !== $mapping['term']) {
                 throw new \DomainException('Domain check does not match this product.');
             }
-            $retail = RetailLine::native($item->price);
+            $complimentary=ComplimentaryAccounts::authorization((int)$order->user_id);
+            $retail = $complimentary ? ['total'=>'0.00','tax'=>'0.00','discount'=>'0.00','net'=>'0.00'] : RetailLine::native($item->price);
+            if($complimentary && RetailLine::decimal($item->price->total)!=='0.00'){throw new \DomainException('Refresh complimentary checkout.');}
             $selections[] = $selection;
             $lines[] = ['item_id' => $item->id, 'product_id' => $product->id, 'plan_id' => $item->plan_id, 'name' => $name,
-                'mapping' => $mapping, 'retail' => $retail, 'selection' => $selection,
+                'mapping' => $mapping, 'retail' => $retail, 'selection' => $selection, 'complimentary'=>$complimentary,
                 'admitted_user_id' => (int) $order->user_id, 'check' => $item->checkout_config['domains_check'], 'identity' => $this->identity($item)];
         }
         if (!$lines) { return; }
@@ -216,7 +219,7 @@ class CartAdmission
             $cached = $item->plan->prices->where('currency_code', 'USD')->sole();
             $listed = $offers?->listedRetail($line['selection']) ?? $snapshot->retail;
             if (RetailLine::decimal($price->price) !== $listed || RetailLine::decimal($price->setup_fee) !== '0.00'
-                || RetailLine::decimal($cached->price) !== $snapshot->retail || RetailLine::decimal($cached->setup_fee) !== '0.00') {
+                || RetailLine::decimal($cached->price) !== ($line['complimentary']?'0.00':$snapshot->retail) || RetailLine::decimal($cached->setup_fee) !== '0.00') {
                 throw new \DomainException('Native list price changed; refresh checkout.');
             }
             $this->requireCheck((string) $item->checkout_config['domains_check'], $line['name'], $this->identity($item), $line['mapping']['action'], true);

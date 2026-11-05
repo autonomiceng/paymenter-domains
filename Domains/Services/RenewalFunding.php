@@ -42,8 +42,10 @@ final class RenewalFunding
         self::requireAuthority($op,$l,$sent);$d=$l['domain'];$r=$op->policy['renewal']??[];
         if ($op->funding_basis === 'complimentary') {
             $a = $op->policy['complimentary'] ?? []; $current = $d->renewal_policy['complimentary'] ?? [];
-            if ($op->invoice_id !== null || $op->invoice_item_id !== null || PricingRule::minor($op->amount) !== 0
-                || (!$sent && $current !== $a)
+            $account=isset($op->policy['account_complimentary']);
+            if($account){ComplimentaryInvoices::require($op,$l);}
+            if ((!$account&&($op->invoice_id !== null || $op->invoice_item_id !== null)) || PricingRule::minor($op->amount) !== 0
+                || (!$sent && !$account && $current !== $a)
                 || ($a['generation'] ?? null) !== $d->authority_generation || ($a['expiry'] ?? null) !== $op->base_expires_at->format('Y-m-d')
                 || ($a['years'] ?? null) !== (int) $op->term || ($a['actor'] ?? null) !== $op->authorized_by
                 || ($r['cost_cap'] ?? null) !== ($a['cap'] ?? null) || !isset($a['cap'], $a['at'])
