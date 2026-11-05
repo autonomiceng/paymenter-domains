@@ -83,7 +83,7 @@ final class StaffOperationWrites
         }
         if(($op->action==='renew'?RenewalStop::blocksRenewal($l):$l['cancel']->contains('service_id',$op->service_id))||!in_array($l['service']->status,['pending','active'],true)) { throw new \DomainException('Service lifecycle changed.'); }
         if($op->action==='renew'){RenewalFunding::requireCurrent($op,$l);}
-        else { RefundPayment::requireCurrent($op,$l);ContactSetup::validate($op);
+        else { if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}ContactSetup::validate($op);
             if($op->action==='transfer'&&(!TransferInputs::validCode($op->payload['epp']??null)||!($deadline=TransferInputs::deadline($op,$now))||$now>=$deadline)) {
                 throw new \DomainException('Verified transfer payment and saved code required.'); } }
     }
