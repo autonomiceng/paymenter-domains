@@ -137,6 +137,14 @@
         const summary = () => {
             const states = [...list.querySelectorAll('[data-domains-result]')].map(row => row.dataset.state);
             if (states.includes('idle') || list.querySelector('[data-busy]')) return;
+            if (list.dataset.mode === 'transfer') {
+                const row = list.querySelector('[data-domains-result]');
+                if (live) live.textContent = row?.querySelector('.domains-result__note').textContent.trim()
+                    || (states.includes('transferable') ? 'This name can be transferred. Choose Transfer to continue.'
+                    : states.includes('in_cart') ? 'Already in your cart. Go to your cart to continue.'
+                    : 'Couldn’t check this transfer. Retry to check it.');
+                return;
+            }
             const available = states.filter(state => state === 'available').length;
             const errors = states.filter(state => state === 'error').length;
             const busy = states.filter(state => state === 'busy').length;
@@ -162,7 +170,7 @@
                 const response = await fetch(list.dataset.domainsResults, {method: 'POST', credentials: 'same-origin',
                     headers: {'Content-Type': 'application/json', 'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''},
-                    body: JSON.stringify({domain: row.dataset.domain, _request_key: list.dataset.requestKey, ...(list.dataset.replace ? {replace: list.dataset.replace} : {})})});
+                    body: JSON.stringify({domain: row.dataset.domain, ...(list.dataset.mode === 'transfer' ? {mode: 'transfer'} : {}), _request_key: list.dataset.requestKey, ...(list.dataset.replace ? {replace: list.dataset.replace} : {})})});
                 if (response.status === 429) note = 'Too many searches. Wait a minute, then retry.';
                 if (response.status === 419) note = 'This page expired. Reload to try again.';
                 if (!response.ok) throw new Error();
