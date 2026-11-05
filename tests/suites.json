@@ -512,6 +512,7 @@
     "tests/test_installed_demo_c_terms-test.php",
     "tests/test_installed_demo_c_ds-test.php",
     "tests/test_installed_demo_c_records-test.php",
+    "tests/test_installed_demo_c_activation-test.php",
     "tests/test_installed_demo_c_monitoring-test.php"
   ],
   "ui": [],

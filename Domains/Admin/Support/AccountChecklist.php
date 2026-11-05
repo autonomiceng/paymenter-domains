@@ -21,6 +21,7 @@ final class AccountChecklist
 {
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
+    public const TRANSFER_LABEL='Transfers (Experimental)';
     private const PRICES='When this account last read its costs from the registrar. Use Sync prices to read them again.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
@@ -72,27 +73,31 @@ final class AccountChecklist
     /** Live stays off until activation; sent transfers keep reconciling after revocation. */
     private static function transfers(Account $a,?object $binding,?bool $gate,\Closure $off): array
     {
-        if($a->environment==='live'&&$binding===null){return [...self::unavailable('Transfers',self::TRANSFERS),'cause'=>'Restore the API connection first.'];}
+        if($a->environment==='live'&&$binding===null){return [...self::unavailable(self::TRANSFER_LABEL,self::TRANSFERS),'cause'=>'Restore the API connection first.'];}
         if($a->environment==='live'){
-            if(!EnomTestTransfer::enabled($binding)&&!EnomTestTransfer::stored($binding)){return self::unavailable('Transfers',self::siteOff($a));}
-            return self::writeSwitch($a,'Transfers (experimental)','transfer',EnomTestTransfer::stored($binding),'Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too.');
+            if(!EnomTestTransfer::enabled($binding)&&!EnomTestTransfer::stored($binding)){return self::unavailable(self::TRANSFER_LABEL,self::siteOff($a));}
+            return self::writeSwitch($a,self::TRANSFER_LABEL,'transfer',EnomTestTransfer::stored($binding),'Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too.');
         }
-        if($binding!==null&&(EnomTestTransfer::enabled($binding)||EnomTestTransfer::stored($binding))){$on=EnomTestTransfer::stored($binding);return self::row('Transfers (experimental)',$on?'On':'Off',$on?'success':null,null,'test_transfer',self::TRANSFERS);}
+        if($binding!==null&&(EnomTestTransfer::enabled($binding)||EnomTestTransfer::stored($binding))){$on=EnomTestTransfer::stored($binding);return self::row(self::TRANSFER_LABEL,$on?'On':'Off',$on?'success':null,self::transferCause($on),'test_transfer',self::TRANSFERS);}
         $help=match(true){$a->registrar_key!=='enom'=>self::siteOff($a),$binding===null=>'Restore the API connection first.',
             config('domains.enom_identity.environment')!=='test'=>'Set domains.enom_identity.environment to test in the site config, then reload this page.',
             config('domains.enom_catalogue.enabled')!==true=>'Set domains.enom_catalogue.enabled to true in the site config, then reload this page.',
             default=>'Set domains.enom_writes.transfer to true in the site config, then turn on Transfers here.'};
-        return $gate===true?self::row('Transfers','On','success',null,null,self::TRANSFERS):self::unavailable('Transfers',$help);
+        return $gate===true?self::row(self::TRANSFER_LABEL,'On','success',self::transferCause(true),null,self::TRANSFERS):self::unavailable(self::TRANSFER_LABEL,$help);
+    }
+    private static function transferCause(bool $on): string
+    {
+        return $on?'Uses the normal transfer checkout and auth-code flow.':'Turned off by staff. Review transfer readiness, then turn on when ready.';
     }
     /** Live turns on when live sales are activated. Renewals also start invoices, so a bad calendar stops them turning on. */
     private static function writeSwitch(Account $a,string $label,string $key,bool $on,string $help): array
     {
         $live=$a->environment==='live';$action=($live?'live_':'test_').$key;
         if($key==='renewal'){$help=self::billingHelp((int)$a->server_id,$help);}
-        return self::paused($a,match(true){$on=>self::row($label,'On','success',null,$action,$help),
+        return self::paused($a,match(true){$on=>self::row($label,'On','success',$key==='transfer'?self::transferCause(true):null,$action,$help),
             $live&&!EnomLiveActivation::current(AccountBindings::binding($a))=>self::row($label,'Off',null,'Paused until setup is approved. Use Activate to see what is missing.',null,$help),
             $key==='renewal'&&RenewalBillingSettings::read((int)$a->server_id)['issue_days']===null=>self::row($label,'Off',null,'Renewal billing is paused. Fix the invoice days first.',null,$help),
-            default=>self::row($label,'Off',null,match($key){'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
+            default=>self::row($label,'Off',null,match($key){'transfer'=>self::transferCause(false),'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
     }
     private static function billingHelp(int $server,string $help): string
     {
@@ -112,7 +117,7 @@ final class AccountChecklist
     /** An Off feature needs attention when this account already manages domains. No settings change here. */
     private static function paused(Account $a,array $row): array
     {
-        if($row['value']!=='Off'||in_array($row['label'],['Transfers','Transfers (experimental)'],true)){return $row;}
+        if($row['value']!=='Off'||in_array($row['label'],[self::TRANSFER_LABEL],true)){return $row;}
         $domains=Domain::where('server_id',$a->server_id)->where('billing_managed',true);
         if($row['label']==='Late renewal'){
             $now=app(Clock::class)->now();

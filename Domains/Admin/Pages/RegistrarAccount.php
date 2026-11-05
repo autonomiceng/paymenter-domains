@@ -98,7 +98,7 @@ class RegistrarAccount extends Page
             }
             $funds=RegistrarFacts::connected($a,$this->status())?RegistrarFacts::balance($a)['funds']:null;
             $sections[]=Sheet::section('Balance and usage',$this->rows('usage',$this->usageRows($s,$a)),after:$funds?[Sheet::link('add_funds','Add funds',$funds,external:true)]:[]);
-            $sections[]=Sheet::section('Sales',$this->rows('sales',$pick('Orders','Registrations','Transfers','Transfers (experimental)','What you sell','TLD prices','Customer pays','Card fee')));
+            $sections[]=Sheet::section('Sales',$this->rows('sales',$pick('Orders','Registrations',AccountChecklist::TRANSFER_LABEL,'What you sell','TLD prices','Customer pays','Card fee')));
             $sections[]=Sheet::section('Renewals',$this->rows('renewal',$pick('Renewals','Late renewal','Customer can renew early','Invoice issued','Invoice due','Unpaid hold','Scheduled renewals','Reminder emails','Reminder schedule')));
             $termRows=array_values(array_filter($rows,fn($row)=>str_starts_with($row['label'],'.')||str_starts_with($row['label'],'Unknown term range ')));
             if($termRows){$sections[]=Sheet::section('Supported terms',$this->rows('terms',$termRows));}

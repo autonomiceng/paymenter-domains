@@ -1,5 +1,18 @@
 <div>
+    <p>New eligible orders can be sent after activation. Review the selected actions for this account.</p>
     <p>{!! \Paymenter\Extensions\Servers\Domains\Admin\Support\HelpHint::beside(e($summary['text']), $summary['help'])->toHtml() !!}</p>
+    @if (array_key_exists('retained_off', $summary))
+        <dl class="domains-card"><div><dt>TLDs kept Off</dt><dd>
+            @forelse (array_slice($summary['retained_off'], 0, 10) as $tld)
+                <p>{{ $tld }} transfers<span class="domains-sub">Turned off by staff. Activation keeps this choice. Use Edit terms in What you sell to change it.</span></p>
+            @empty
+                None
+            @endforelse
+            @if (count($summary['retained_off']) > 10)
+                <p>{{ count($summary['retained_off']) - 10 }} more TLDs kept Off. Review them in What you sell.</p>
+            @endif
+        </dd></div></dl>
+    @endif
     @if ($summary['missing'])
         <ul class="domains-list domains-space">
             @foreach ($summary['missing'] as $cause)<li>{{ $cause }}</li>@endforeach
