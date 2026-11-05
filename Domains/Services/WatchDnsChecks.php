@@ -120,11 +120,11 @@ final class WatchDnsChecks
         $services = Service::whereIn('id', $sources->pluck('service_id'))->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
         $products = Product::whereIn('id', $services->pluck('product_id'))->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
         $maps = WatchProductMap::whereIn('id', $sources->pluck('map_id'))->orderBy('id')->when($lock, fn($q) => $q->lockForUpdate())->get()->keyBy('id');
-        $profile = WatchProfile::whereKey($candidate->ns_profile_id)->when($lock, fn($q) => $q->lockForUpdate())->first();
+        $profile = SiteDnsDefault::watchProfile($candidate,$lock);
         $watch = WatchName::whereKey($watchId)->where('user_id', $userId)->when($lock, fn($q) => $q->lockForUpdate())->first();
         [$current, $currentOverflow] = $this->sources($watchId, $sourceCursor, $lock);
         if ($watch === null || WatchManagedTarget::exists($userId,$watch->canonical_name) || $watch->state !== 'active' || $watch->managed_domain_id !== null || ($registry && $watch->registration === 'platform') || (!$registry && ($profile === null || !$profile->enabled ||
-            (int) $watch->ns_profile_id !== (int) $profile->id)) || $currentOverflow !== $overflow || $current->pluck('id')->all() !== $sources->pluck('id')->all()) { return null; }
+            (int) $watch->ns_profile_id !== (int) $candidate->ns_profile_id)) || $currentOverflow !== $overflow || $current->pluck('id')->all() !== $sources->pluck('id')->all()) { return null; }
         $hosts = [$watch->canonical_name]; $evidence = [];
         foreach ($current as $source) {
             $service = $services[$source->service_id] ?? null; $map = $maps[$source->map_id] ?? null; $order = $orders[$service?->order_id] ?? null; $product = $products[$service?->product_id] ?? null;

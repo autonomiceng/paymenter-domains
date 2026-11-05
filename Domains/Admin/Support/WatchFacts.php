@@ -22,7 +22,7 @@ final class WatchFacts
         // Paused and stopped names keep their last saved results on this page; the list reads only active names.
         if(!$row){$s=$active?null:((new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->staffWatches([(int)$w->id])['watch:'.$w->id]??null);$row=$s?['keys'=>WatchFindings::keys($s),'summary'=>$s]:WatchFindings::summaries([$w])[$w->id];}
         $s=$row['summary'];$keys=$row['keys'];
-        $c=WatchFindings::customers([$w->user_id])[$w->user_id];$profile=$w->ns_profile_id?WatchProfile::find($w->ns_profile_id):null;
+        $c=WatchFindings::customers([$w->user_id])[$w->user_id];$profile=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w);
         $domain=['Customer'=>self::fact($c['label'],$c['email'],null,$c['url']),
             'Expected nameservers'=>self::fact(WatchFindings::who($w->expected_dns),cause:'Choose it in Change DNS template'),
             'DNS template'=>self::fact($profile?->name,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
@@ -91,7 +91,7 @@ final class WatchFacts
     {
         $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:self::missingCause($w));}
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
-        if(!$w->ns_profile_id || !WatchProfile::whereKey($w->ns_profile_id)->exists() || !$w->expected_dns){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
+        if(!\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w)) || !$w->expected_dns){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
         $same=$o->dns===$w->expected_dns;
         return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':'Changed',$same?null:'warning');
     }
