@@ -136,7 +136,7 @@ $obligations = $frozen();
 $state = static fn () => [DB::table('domains_tlds')->orderBy('id')->get()->toJson(), DB::table('domains_prices')->orderBy('id')->get()->toJson(),
     Product::orderBy('id')->get()->toJson(), Plan::orderBy('id')->get()->toJson(), DB::table('prices')->orderBy('id')->get()->toJson(),
     Server::find($b->serverId)->settings()->where('key', StaffSettingsReview::KEY)->value('value')];
-// Force a late audit failure after price/projection writes; cart side effects must roll back too.
+// Force a late audit failure after price/projection writes; everything must roll back together.
 $before = $state(); $setting = Server::find($b->serverId)->settings()->where('key', StaffSettingsReview::KEY)->sole();
 DB::statement('CREATE TRIGGER refuse_offer_audit BEFORE UPDATE ON settings WHEN NEW.id = '.$setting->id." BEGIN SELECT RAISE(ABORT, 'synthetic audit refusal'); END");
 try { $apply(Edit::override($b, 'com', new Intent(sell: false))); expect(false, 'Audit fault must roll back'); }
@@ -145,7 +145,8 @@ DB::statement('DROP TRIGGER refuse_offer_audit');
 same($before, $state(), 'Offer, current prices, native plans/prices and audit roll back together');
 expect($cart->items()->whereKey($item->id)->exists(), 'Rolled-back offer does not withdraw carts');
 $apply(Edit::override($b, 'com', new Intent(sell: false)));
-same(0, $cart->items()->count(), 'Committed changes withdraw only affected carts after commit');
+// Checkout, not the writer, removes an off-sale line and tells the customer (cart-price-change-test).
+expect($cart->items()->whereKey($item->id)->exists(), 'Committed changes keep cart lines for checkout to review');
 same(1, $unaffectedCart->items()->count(), 'Another ending on the same account stays in its cart');
 $apply(Edit::override($b, 'com', new Intent(sell: true, longest: 3, transfers: true)));
 $oldFact = DB::table('domains_tlds')->where('id', $enom->id)->value('catalogue_facts');
@@ -187,7 +188,7 @@ DB::transaction(static function()use($rule):void{\Paymenter\Extensions\Servers\D
 $apply(Edit::defaults($b, 'com', new Intent(defaultSell: true, defaultLongest: 3)));
 same(false, $read($b)->available, 'Changed account defaults leave old publications pending');
 same(false, $orgRead()->available, 'One defaults revision fences every offer on the account');
-same(0, $unaffectedCart->items()->count(), 'Defaults withdraw carts across the affected account');
+same(1, $unaffectedCart->items()->count(), 'Defaults keep cart lines for checkout to review');
 same('publication_pending', $read($b, Context::Staff)->reason, 'Pending defaults do not authorize new orders');
 commerceReject(static fn () => $writer->apply(Edit::republish($b, 'com'), $oldDefaults));
 $apply(Edit::republish($b, 'com'));
@@ -211,7 +212,7 @@ $apply(Edit::seller($n, 'com', ['register', 'transfer']));
 same(true, $read($b, Context::Holder, 'renew')->available, 'Disabled deselected account still serves retained holder retail');
 same(false, $read($b)->available, 'Old seller becomes unavailable in the same commit');
 same(true, $read($n)->available, 'New selected account has its own verified retail');
-same(0, $otherCart->items()->count(), 'Seller change withdraws old-account carts after commit');
+same(1, $otherCart->items()->count(), 'Seller change keeps old-account cart lines for checkout to review');
 commerceReject(static fn () => $writer->apply(Edit::seller($b, 'com', ['register']), $beforeSwitch));
 same($products, Product::orderBy('id')->pluck('id')->all(), 'Two-account seller switch never reassigns product identities');
 same($plans, Plan::orderBy('id')->pluck('id')->all(), 'Two-account seller switch retains exact native plan identities');

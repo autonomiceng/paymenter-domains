@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
-use App\Models\{CartItem, Product, Server};
+use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
@@ -243,7 +243,7 @@ final class Writer implements Catalogue
                 DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['catalogue_defaults' => OfferState::json($defaults)]);
                 if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, new Revision($revision->offer, $revision->defaults + 1, $revision->selection), $now); }
                 // All old publication revisions are now pending. B5 enumerates local republish commands.
-                $this->afterCommit([$binding->serverId => null]);
+                $this->afterCommit();
                 return new Revision($revision->offer, $revision->defaults + 1, $revision->selection);
             }
             if ($command instanceof Edit && $command->kind === 'sync') { return $revision; }
@@ -261,7 +261,6 @@ final class Writer implements Catalogue
                 else { DB::table('domains_sales_policies')->insert(['tld' => $name, ...$values]); }
                 $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
             }
-            $scopes = [];
             foreach ($seller ? $offers : [$target] as $offer) {
                 $id = (int) $offer->server_id; $account = $accounts[$id]; $b = AccountBindings::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
@@ -281,11 +280,10 @@ final class Writer implements Catalogue
                     'catalogue_intent' => $offer->catalogue_intent, 'catalogue_facts' => $offer->catalogue_facts,
                     'catalogue_revision' => $offer->catalogue_revision, 'catalogue_published_revision' => $offer->catalogue_published_revision,
                     'catalogue_retained_annual_retail' => $offer->catalogue_retained_annual_retail]);
-                $scopes[$id] = $name;
             }
             $result = OfferState::revision($target, $defaults, $policy);
             if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, $result, $now); }
-            $this->afterCommit($scopes, !($command instanceof FeedObserved));
+            $this->afterCommit();
             return $result;
     }
 
@@ -386,20 +384,9 @@ final class Writer implements Catalogue
                     : ['facts' => OfferState::decode(OfferState::encodeFacts($command->facts))])]);
     }
 
-    private function afterCommit(array $scopes, bool $withdraw = true): void
+    private function afterCommit(): void
     {
-        // A cost observation must preserve the line for receipt refresh and visible total review.
+        // Carts keep their lines: checkout re-prices them and drops only a sale staff stopped (CartAdmission::refresh).
         StorefrontCatalogueCache::invalidateAfterCommit();
-        if (!$withdraw) { return; }
-        DB::afterCommit(static function () use ($scopes): void {
-            $tlds = DB::table('domains_tlds')->where(static function ($q) use ($scopes): void {
-                foreach ($scopes as $id => $ending) {
-                    $q->orWhere(static function ($q) use ($id, $ending): void { $q->where('server_id', $id); if ($ending !== null) { $q->where('tld', $ending); } });
-                }
-            })->pluck('id')->map(strval(...));
-            $products = Product::whereIn('server_id', array_keys($scopes))->whereHas('settings', static fn ($q) => $q->where('key', 'domains_catalogue')->where('value', '1'))
-                ->whereHas('settings', static fn ($q) => $q->where('key', 'domains_tld_id')->whereIn('value', $tlds))->pluck('id');
-            CartItem::whereIn('product_id', $products)->delete();
-        });
     }
 }
