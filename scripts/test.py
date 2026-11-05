@@ -637,15 +637,10 @@ def main():
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
-                shared = (
-                    args.jobs == 1
-                    and requested
-                    and all(
-                        Path(path).name.startswith("test_installed_")
-                        for path in requested
-                    )
-                )
-                snapshot = native.prepare(source, fixture, share_vendor=bool(shared))
+                # Focused serial native-only selections share the verified vendor tree instead of
+                # copying 27,000 files. Full runs, parallel workers and mixed selections keep a copy.
+                shared = args.jobs == 1 and bool(requested) and requested <= set(suites['native'])
+                snapshot = native.prepare(source, fixture, share_vendor=shared)
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:

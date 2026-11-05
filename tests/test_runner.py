@@ -648,15 +648,21 @@ class RunnerTests(unittest.TestCase):
 
     def test_only_paths_keep_manifest_cases_and_native_fixture_requirements(self):
         suites = runner.manifest()
-        cases = [(['tests/test_package.py'], ['package']),
-                 (['tests/test_schema_mariadb.py'], ['mariadb']),
+        cases = [(['tests/test_package.py'], ['package'], None),
+                 (['tests/test_schema_mariadb.py'], ['mariadb'], None),
                  (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
-                  ['native', 'package'])]
-        for requested, selected in cases:
+                  ['native', 'package'], False),
+                 (['tests/test_installed_package_previous.py'], ['native'], True),
+                 (['tests/checkout-refresh-test.php'], ['native'], True),
+                 (['tests/offer-reader-batch-test.php', 'tests/native-fixture-test.php'], ['native'], True),
+                 (['tests/offer-commerce-test.php', 'tests/test_runner.py'], ['native', 'runner'], False),
+                 (['tests/checkout-refresh-test.php'], ['native'], False, '2')]
+        for requested, selected, shared, *jobs in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
-                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', *requested]), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', *(jobs or ['1']), '--only', *requested]), \
+                 mock.patch.object(runner, 'bounded_jobs', return_value=1), \
                  mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
                  mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
                  mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):
@@ -673,6 +679,7 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(native_prepare.call_count, int('native' in selected))
                 self.assertEqual(run.call_args.kwargs['only'], requested)
                 if 'native' in selected:
+                    self.assertEqual(native_prepare.call_args.kwargs['share_vendor'], shared)
                     self.assertEqual(run.call_args.args[1]['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
                     self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))
 

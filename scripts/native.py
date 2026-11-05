@@ -115,7 +115,7 @@ def prepare(source, destination, *, share_vendor=False):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(payload)
     if share_vendor:
-        # Focused serial installed tests only read Composer's pinned dependencies.
+        # Focused serial native tests only read Composer's pinned dependencies.
         # Keep verifying the complete source/vendor inventory before and after the
         # run, but avoid another 27,000-file copy (including development tools).
         (destination / "vendor").symlink_to(
