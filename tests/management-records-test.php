@@ -3,7 +3,6 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/management.php';
-(static function (): void { require __DIR__.'/Support/demo-c-ds-inventory.php'; })();
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{ManagementInput as I,ManagementRead};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ReadCommand,ResponseParser};
