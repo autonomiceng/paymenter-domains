@@ -51,6 +51,10 @@ final class DomainHistory
     {
         if (is_array($entry)) { return $entry; }
         $reason=RequestFacts::reason($entry,$ordersOff);
+        if(in_array($entry->action,['ds_add','ds_delete'],true)){
+            $ds=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::event($entry,$domain,true);
+            return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' DNSSEC','sub'=>$ds['text'],'status'=>['label'=>$ds['state'],'tone'=>$ds['tone']],'by'=>self::requester($entry,$domain)];
+        }
         if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).' Turn Orders on in Registrars.'; }
         return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
             'sub'=>$reason,

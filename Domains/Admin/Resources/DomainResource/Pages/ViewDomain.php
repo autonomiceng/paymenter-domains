@@ -136,7 +136,7 @@ class ViewDomain extends ViewRecord
             }
             $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
-        return $schema->components([Sheet::split([...$this->notices($d),...$sections],[$this->activity($d)])]);
+        return $schema->components([Sheet::split([...$this->notices($d),...$sections,Sheet::section('DNSSEC',[$this->row('DS records',\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d),[])])],[$this->activity($d)])]);
     }
     /** @return list<Callout> */
     private function notices(Domain $d): array

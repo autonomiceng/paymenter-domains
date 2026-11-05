@@ -105,5 +105,5 @@ $io=count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts'));same(
 same($io,count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts')),'Stale pure add never writes');
 $server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());
 foreach(['dns','srv','ds']as$kind){same([],$dto->management[$kind]['actions']??[],'Tools off removes each action');}
-same('Saved.',$dto->management['ds']['progress']['text']??null,'DNSSEC keeps its completed status when tools are off');expect(isset($dto->management['glue']),'Glue follows its own engine authority');
+same('The registrar confirmed the last DS record was deleted. DNSSEC is Off.',$dto->management['ds']['progress']['text']??null,'DNSSEC keeps its confirmed final-deletion status when tools are off');expect(isset($dto->management['glue']),'Glue follows its own engine authority');
 $nativeSuccessful=true;echo "Native owner DNS/SRV/DS/glue grants, replay, exact TXT, current preimage, safe real Blade and maximum records passed.\n";

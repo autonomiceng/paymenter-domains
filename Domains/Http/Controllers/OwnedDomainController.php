@@ -42,7 +42,7 @@ final readonly class OwnedDomainController
     public function status(Request $request,int $domain)
     {
         $d=$this->owners->owned($request->user(),$domain);
-        return response()->json(\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d))->header('Cache-Control','no-store, private');
+        return response()->json(\Paymenter\Extensions\Servers\Domains\Presentation\DsState::progress($d))->header('Cache-Control','no-store, private');
     }
     public function show(Request $request,int $domain) { return $this->page($request,$domain,'show'); }
     public function setup(Request $request,int $domain) { return $this->page($request,$domain,'setup'); }

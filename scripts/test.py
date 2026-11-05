@@ -656,6 +656,8 @@ def main():
                             'tests/storefront-busy-test.php',
                             'tests/sales-audit-changes-test.php',
                             'tests/cart-price-change-test.php',
+                            'tests/test_client_scripts.py',
+                            'tests/owner-records-test.php',
                         }
                         for path in requested
                     )

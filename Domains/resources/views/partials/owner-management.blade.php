@@ -27,6 +27,7 @@
 @if (($section['progress'] ?? null) && !$section['progress']['pending'])<span class="domains-sub" role="status">{{ $section['progress']['text'] }}</span>@endif</span>
 @if ($section['progress']['pending'] ?? false)
 <span class="domains-row__v">
+@if ($cap==='ds' && isset($section['progress']['state']))<strong data-ds-state>{{ $section['progress']['state'] }}</strong>@endif
 @if (!$paused && $cap === 'nameservers' && ($section['current'] ?? []))
 @include('domains::partials.nameserver-list', ['servers' => $section['current']])
 @endif
@@ -56,6 +57,9 @@
 </form>
 @endcomponent
 @endif
+@elseif ($section['off'] ?? false)
+<span class="domains-row__v">@include('domains::partials.status-pill', ['pill'=>['label'=>'Off','tone'=>'muted']])<span class="domains-sub">{{ $section['reason'] }}</span></span>
+<span class="domains-row__a"><button class="domains-btn domains-btn--secondary" type="button" aria-disabled="true" disabled>Add DS record</button></span>
 @elseif ($section['unavailable'] ?? false)
 @php $total = $records === null ? null : count($records) + count($section['fixed'] ?? []); @endphp
 <span class="domains-row__v">@if ($total === null)<span class="domains-muted">Not available</span>@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($section['asOf'] ?? null)<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif @endif <span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::DNS_OFF }}</span></span>
