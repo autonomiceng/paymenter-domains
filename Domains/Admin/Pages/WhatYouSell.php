@@ -181,13 +181,13 @@ class WhatYouSell extends Page implements HasTable
         return [
             Action::make('sync_now')->label('Sync prices')->color('gray')->visible(fn()=>$this->canSync()&&($all()||$this->readable()))->disabled($all)->extraAttributes($blocked)->action(fn()=>$this->syncNow()),
             SettingsActions::defaultPricing(),
-            Action::make('rule')->label('Default for new TLDs')->color('gray')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save')->modalFooterActions(self::cancelFirst())
+            Action::make('rule')->label('Default for new TLDs')->color('gray')->visible(fn()=>$this->mayEdit()&&($all()||$this->binding()!==null))->disabled($all)->extraAttributes($blocked)->modalSubmitActionLabel('Save terms')->modalFooterActions(self::cancelFirst())
                 ->fillForm(fn()=>[...$this->rule(),'sell_new'=>$this->rule()['mode']==='only'?'no':'yes'])->schema(fn()=>[
                     Radio::make('sell_new')->label('Sell new TLDs')->required()->inline()->options(['yes'=>'Yes','no'=>'No'])
                         ->hintAction(HelpHint::make("For every TLD you have not set yourself, including ones the registrar adds later. Yes: they sell, unless the row is set to Don't sell. No: only rows set to Sell are sold. To change rows, tick them and use Edit selected.")),
                     TextInput::make('max_cost')->label('Cost limit')->numeric()->minValue(0)->prefix('USD')
                         ->hintAction(HelpHint::make('Skips a TLD when its register or renew cost, whichever is higher, is above this. Premium is per name, not per TLD: those names are checked at checkout.')),
-                    TextInput::make('years')->label('Longest term')->integer()->required()->minValue(1)->maxValue(10)->suffix('years')->visible($this->binding()?->registrarKey!=='namesilo'),
+                    TextInput::make('years')->label('Longest term')->integer()->required()->minValue(1)->maxValue(10)->suffix('years'),
                     Toggle::make('transfers')->label('Transfers'),
                 ])->action(function(array $data):void {
                     $this->write(['rule'=>['mode'=>$data['sell_new']==='yes'?'except':'only','max_cost'=>$data['max_cost']??null,'years'=>(int)($data['years']??1),'transfers'=>(bool)$data['transfers']]]);
@@ -291,13 +291,18 @@ class WhatYouSell extends Page implements HasTable
     private function editFields(OfferRow|null $one): array
     {
         $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=$one?->longest??$rule['years']??null;$transfer=$one?->transfer??$rule['transfers']??null;
+        $tld=$one===null?null:\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$one->server_id)->where('tld',$one->tld)->first();
+        if($tld!==null){$transfer=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::savedTransfers($tld,$rule);}
+        $readiness=$one===null?[]:\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($this->bindingOf((int)$one->server_id),$one->tld);
         $keep=static fn(?string $now)=>[self::KEEP=>$now===null?'Leave as is':'Leave as is ('.$now.')'];
         return [
             Select::make('choice')->label('Sell')->required()->selectablePlaceholder(false)->default(self::KEEP)->options([self::KEEP=>'Leave as is','rule'=>'Use the default rule','sell'=>'Sell','skip'=>"Don't sell"])
                 ->hintAction(HelpHint::make($one===null?'Use the default rule clears Sell or Don’t sell for these TLDs. Cost limits and each row’s terms still apply.':'Use the default rule clears Sell or Don’t sell for this TLD. Cost limits and its terms still apply.')),
-            Select::make('longest')->label('Longest term')->required()->selectablePlaceholder(false)->default(self::KEEP)->visible($this->binding()?->registrarKey!=='namesilo')
+            Select::make('longest')->label('Longest term')->required()->selectablePlaceholder(false)->default(self::KEEP)
                 ->options($keep($longest===null?null:$longest.' '.($longest===1?'year':'years'))+array_combine(range(1,10),array_map(fn(int $y)=>$y.' '.($y===1?'year':'years'),range(1,10)))),
             Select::make('transfer')->label('Transfers')->required()->selectablePlaceholder(false)->default(self::KEEP)->options($keep($transfer===null?null:($transfer?'On':'Off'))+['on'=>'On','off'=>'Off']),
+            ...($tld!==null?[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.term-prices',['prices'=>\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($tld)]))]:[]),
+            ...array_map(fn(array $row)=>\Filament\Schemas\Components\Text::make($row[0].': '.$row[1].($row[2]?' · '.$row[2]:'')),$readiness),
         ];
     }
     public function table(Table $table): Table
@@ -337,7 +342,7 @@ class WhatYouSell extends Page implements HasTable
             ->toolbarActions([
                 // The table counts the selection in the browser, so the button reads it there. Select all works with filters.
                 BulkAction::make('edit')->label(new HtmlString('Edit <span x-text="getSelectedRecordsCount()"></span> selected'))->visible(fn()=>$this->canEdit())->deselectRecordsAfterCompletion()
-                    ->modalHeading(fn($records)=>$records->count()===1?'Edit .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save')->modalFooterActions(self::cancelFirst())->modalWidth('md')
+                    ->modalHeading(fn($records)=>$records->count()===1?'Edit .'.$records->first()->tld:'Edit '.$records->count().' TLDs')->modalSubmitActionLabel('Save terms')->modalFooterActions(self::cancelFirst())->modalWidth('md')
                     ->schema(fn($records)=>$this->editFields($records->count()===1?$records->first():null))
                     ->action(fn(array $data,$records)=>$this->bulkEdit($data,$records->filter(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)->pluck('tld')->all())),
             ]);

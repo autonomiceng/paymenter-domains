@@ -128,7 +128,7 @@ same('13.00',$locked[0]->retail,'Locked seller admission uses the same exact ann
 same($before,count($GLOBALS['nsCatalogueCalls']),'Local readiness and locked sale admission never send');
 $checklist=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Connected','reason'=>null]);
 $rows=array_column($checklist,null,'label');same('On, follows Orders',$rows['Registrations']['value'],'Checklist registrations follow the installed TEST engine');
-same('On',$rows['Transfers (experimental)']['value'],'Checklist accepts installed TEST transfer gate');
+same('On',$rows['Transfers (Experimental)']['value'],'Checklist accepts installed TEST transfer gate');
 $summary=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::summary($account->fresh(),['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>true]);
 same([1,1,1],array_values($summary['counts']),'Shared activation summary reads each retained NS16 action');
 same(1,$summary['tlds'],'Shared activation summary counts the offered TLD once');
@@ -162,7 +162,11 @@ $saleRefuses(fn()=>$storefront->offer('com','transfer',1),'Unusable price row re
 $saleRefuses(fn()=>$offerPorts->feed($binding)->facts('com',$feedContext()),'Unusable price row refuses a cold facts refresh');
 if($capabilities->cost($binding,'com')!==null){$saleFailures[]='Unusable price row removes the holder renewal estimate';}
 same('15.60',$capabilities->holder($binding,'com')->retail,'Unusable price row preserves retained holder retail');
-same($saved,Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts,'Price retraction does not redate protocol facts');
+// FeedObserved retracts annual support with the price; metadata keeps its own age.
+$beforeFacts=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($saved);
+$afterFacts=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts);
+same(['register'=>[1],'renew'=>[],'transfer'=>[]],$afterFacts['terms'],'An unusable annual row retracts renewal and transfer support');
+unset($beforeFacts['terms'],$afterFacts['terms']);same($beforeFacts,$afterFacts,'Price retraction does not redate or change protocol metadata');
 unset($GLOBALS['nsCatalogueRow']);$applyFeed();
 same('$13.00',$storefront->offer('com','register',1)['price'],'A usable row restores registration');
 same('12.0000',$capabilities->cost($binding,'com')->total,'A usable row restores the holder cost estimate');

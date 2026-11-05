@@ -659,6 +659,11 @@ def main():
                             'tests/storefront-busy-test.php',
                             'tests/sales-audit-changes-test.php',
                             'tests/cart-price-change-test.php',
+                            'tests/test_client_scripts.py',
+                            'tests/namesilo-settings-test.php',
+                            'tests/registrars-page-test.php',
+                            'tests/namesilo-test-catalogue-test.php',
+                            'tests/owner-records-test.php',
                         }
                         for path in requested
                     )

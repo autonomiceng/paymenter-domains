@@ -133,6 +133,13 @@
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') helps.forEach(help => help.close()); });
     document.addEventListener('click', event => helps.forEach(help => { if (!help.contains(event.target)) help.close(); }));
+    document.querySelectorAll('[data-renewal-form]').forEach(form => {
+        form.querySelector('select').addEventListener('change', e => {
+            form.querySelector('[data-renewal-expiry]').textContent = e.target.selectedOptions[0].dataset.expiry || 'Confirmed at payment';
+            form.querySelector('[data-renewal-breakdown]').textContent = e.target.selectedOptions[0].dataset.breakdown || '';
+            form.querySelector('[data-renewal-total]').textContent = e.target.selectedOptions[0].dataset.total || 'Confirmed at payment';
+        });
+    });
     document.querySelectorAll('[data-domains-results]').forEach(list => {
         const summary = () => {
             const states = [...list.querySelectorAll('[data-domains-result]')].map(row => row.dataset.state);
@@ -195,7 +202,7 @@
         list.addEventListener('click', e => { if (e.target.closest('[data-domains-retry]')) check(e.target.closest('[data-domains-result]')); });
         list.addEventListener('change', e => {
             if (e.target.matches('select[name="term"]')) {
-                e.target.closest('[data-domains-result]').querySelector('.domains-result__price strong').textContent = e.target.selectedOptions[0].textContent;
+                e.target.closest('[data-domains-result]').querySelector('.domains-result__price strong').textContent = e.target.selectedOptions[0].dataset.total;
             }
         });
         // Serial human-origin requests; no automatic retry and no optional shared account limiter yet.

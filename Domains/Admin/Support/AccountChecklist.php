@@ -21,6 +21,7 @@ final class AccountChecklist
 {
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
+    public const TRANSFER_LABEL='Transfers (Experimental)';
     private const PRICES='When this account last read its costs from the registrar. Use Sync prices to read them again.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
@@ -72,27 +73,31 @@ final class AccountChecklist
     /** Live stays off until activation; sent transfers keep reconciling after revocation. */
     private static function transfers(Account $a,?object $binding,?bool $gate,\Closure $off): array
     {
-        if($a->environment==='live'&&$binding===null){return [...self::unavailable('Transfers',self::TRANSFERS),'cause'=>'Restore the API connection first.'];}
+        if($a->environment==='live'&&$binding===null){return [...self::unavailable(self::TRANSFER_LABEL,self::TRANSFERS),'cause'=>'Restore the API connection first.'];}
         if($a->environment==='live'){
-            if(!EnomTestTransfer::enabled($binding)&&!EnomTestTransfer::stored($binding)){return self::unavailable('Transfers',self::siteOff($a));}
-            return self::writeSwitch($a,'Transfers (experimental)','transfer',EnomTestTransfer::stored($binding),'Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too.');
+            if(!EnomTestTransfer::enabled($binding)&&!EnomTestTransfer::stored($binding)){return self::unavailable(self::TRANSFER_LABEL,self::siteOff($a));}
+            return self::writeSwitch($a,self::TRANSFER_LABEL,'transfer',EnomTestTransfer::stored($binding),'Lets customers move a domain here with an auth code, for TLDs with Transfers on in What you sell. Orders must be on too.');
         }
-        if($binding!==null&&(EnomTestTransfer::enabled($binding)||EnomTestTransfer::stored($binding))){$on=EnomTestTransfer::stored($binding);return self::row('Transfers (experimental)',$on?'On':'Off',$on?'success':null,null,'test_transfer',self::TRANSFERS);}
+        if($binding!==null&&(EnomTestTransfer::enabled($binding)||EnomTestTransfer::stored($binding))){$on=EnomTestTransfer::stored($binding);return self::row(self::TRANSFER_LABEL,$on?'On':'Off',$on?'success':null,self::transferCause($on),'test_transfer',self::TRANSFERS);}
         $help=match(true){$a->registrar_key!=='enom'=>self::siteOff($a),$binding===null=>'Restore the API connection first.',
             config('domains.enom_identity.environment')!=='test'=>'Set domains.enom_identity.environment to test in the site config, then reload this page.',
             config('domains.enom_catalogue.enabled')!==true=>'Set domains.enom_catalogue.enabled to true in the site config, then reload this page.',
             default=>'Set domains.enom_writes.transfer to true in the site config, then turn on Transfers here.'};
-        return $gate===true?self::row('Transfers','On','success',null,null,self::TRANSFERS):self::unavailable('Transfers',$help);
+        return $gate===true?self::row(self::TRANSFER_LABEL,'On','success',self::transferCause(true),null,self::TRANSFERS):self::unavailable(self::TRANSFER_LABEL,$help);
+    }
+    private static function transferCause(bool $on): string
+    {
+        return $on?'Uses the normal transfer checkout and auth-code flow.':'Turned off by staff. Review transfer readiness, then turn on when ready.';
     }
     /** Live turns on when live sales are activated. Renewals also start invoices, so a bad calendar stops them turning on. */
     private static function writeSwitch(Account $a,string $label,string $key,bool $on,string $help): array
     {
         $live=$a->environment==='live';$action=($live?'live_':'test_').$key;
         if($key==='renewal'){$help=self::billingHelp((int)$a->server_id,$help);}
-        return self::paused($a,match(true){$on=>self::row($label,'On','success',null,$action,$help),
+        return self::paused($a,match(true){$on=>self::row($label,'On','success',$key==='transfer'?self::transferCause(true):null,$action,$help),
             $live&&!EnomLiveActivation::current(AccountBindings::binding($a))=>self::row($label,'Off',null,'Paused until setup is approved. Use Activate to see what is missing.',null,$help),
             $key==='renewal'&&RenewalBillingSettings::read((int)$a->server_id)['issue_days']===null=>self::row($label,'Off',null,'Renewal billing is paused. Fix the invoice days first.',null,$help),
-            default=>self::row($label,'Off',null,match($key){'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
+            default=>self::row($label,'Off',null,match($key){'transfer'=>self::transferCause(false),'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
     }
     private static function billingHelp(int $server,string $help): string
     {
@@ -112,7 +117,7 @@ final class AccountChecklist
     /** An Off feature needs attention when this account already manages domains. No settings change here. */
     private static function paused(Account $a,array $row): array
     {
-        if($row['value']!=='Off'||in_array($row['label'],['Transfers','Transfers (experimental)'],true)){return $row;}
+        if($row['value']!=='Off'||in_array($row['label'],[self::TRANSFER_LABEL],true)){return $row;}
         $domains=Domain::where('server_id',$a->server_id)->where('billing_managed',true);
         if($row['label']==='Late renewal'){
             $now=app(Clock::class)->now();
@@ -200,6 +205,13 @@ final class AccountChecklist
         }
         $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,null,'unpaid_hold',SettingsActions::details('unpaid_hold'));
         $rows[]=self::renewEarly($server);
+        try{$a=Account::where('server_id',$server)->sole();$binding=AccountBindings::binding($a);
+            foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$server)->where('account_fingerprint',$binding->fingerprint)->orderBy('tld')->limit(10)->get() as $t){
+                $terms=self::termReadiness($binding,$t->tld)[0];$unknown=$terms[1]==='1 year';
+                $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::getUrl(['account'=>$server,'tld'=>$t->tld]))]];
+            }
+        }catch(\Throwable){/* Current setup remains visible when term facts cannot be read. */}
+        $rows[]=self::row('Scheduled renewals','1 year',null,null,null,'Scheduled renewal invoices remain annual.');
         $rows[]=ReminderFacts::emails($server);
         if(($schedule=ReminderFacts::scheduleRow($server))!==null){$rows[]=$schedule;}
         return $rows;
@@ -275,5 +287,53 @@ final class AccountChecklist
         if (!$last) { return self::row('Background worker','Not running','danger','No run recorded yet. Start the scheduler and the queue worker.',null,self::WORKER); }
         $stale=app(Clock::class)->now()->getTimestamp()-(int)$last>self::WORKER_STALE_SECONDS;
         return $stale?self::row('Background worker','Not running','danger','Last run '.self::date((int)$last).'. Check the scheduler and the queue worker.',null,self::WORKER):self::row('Background worker','OK',null,Sheet::moment((int)$last,'Last run'),null,self::WORKER);
+    }
+    public static function termReadiness(?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding,string $ending): array
+    {
+        try {
+            if($binding===null){throw new \DomainException;}
+            $caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed() ?? throw new \DomainException;
+            $ready=$caps->termReadiness($binding,$ending);
+            $facts=$caps->facts($binding,$ending);
+            $register=$facts->terms['register']??[];
+            $renew=array_keys(array_filter($ready['renew'],fn($t)=>$t['available']));
+            $held=array_values(array_filter($ready['renew'],fn($t)=>!$t['available']));
+            return [
+                ['Registration',self::termYears($register),$register===[1]?'Only the annual term is confirmed. Longer terms stay off.':null],
+                ['Early renewal',self::termYears($renew),$held?self::termReason($held[0]['reason']):null],
+                ['Renewal horizon','10 years from today','The time left on the registration reduces the years that can be added.'],
+                ['Grace renewal','Off',self::termReason($ready['families']['grace']['reason'])],
+                ['Redemption','Off','Restoration is separate. Review the restoration options on the domain.'],
+            ];
+        } catch (\Throwable) {
+            return [['Supported terms','Missing','Sync prices to read current registrar terms. Longer terms stay off.']];
+        }
+    }
+    public static function termYears(array $years): string
+    { sort($years);return $years===[]?'Off':(count($years)>1&&$years===range(min($years),max($years))?min($years).' to '.max($years):implode(', ',$years)).' '.($years===[1]?'year':'years'); }
+    public static function termReason(?string $reason): string
+    {
+        return match($reason) {
+            'no_exact_quote'=>'Longer renewals are held: the registrar does not provide an accepted exact-term quote yet.',
+            'family_unreviewed'=>'Registry renewal-family rules are not reviewed. Review the registry facts before enabling this family.',
+            'live_proof_required'=>'Live renewal proof is still required.',
+            'not_reviewed','term_unreviewed'=>'Longer terms have not been reviewed for this ending.',
+            'annual_unit'=>'An annual estimate cannot prove an exact-term total.',
+            'stale_facts','stale_price'=>'The saved evidence is out of date. Sync prices.',
+            default=>'Current term evidence is missing. Sync prices and review the registrar terms.',
+        };
+    }
+    /** The saved sales choice is independent of whether pricing follows the default rule. */
+    public static function savedTransfers(\Paymenter\Extensions\Servers\Domains\Models\Tld $t,array $rule): bool
+    {
+        $intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);
+        $seller=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->where('server_id',$t->server_id)->where('registrar_key',$t->registrar_key)->where('account_fingerprint',$t->account_fingerprint)->first();
+        return $seller?->transfer_enabled===true&&($intent['transfers']??$rule['transfers']??false)&&!in_array('transfer',$intent['stops']??[],true);
+    }
+    public static function termPrices(\Paymenter\Extensions\Servers\Domains\Models\Tld $t): array
+    {
+        if(!Staff::can(Staff::COSTS)){return [];}
+        try{return array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->preview($t,\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::rule($t))??[],fn($r)=>$r['action']==='register'));}
+        catch(\Throwable){return [];}
     }
 }
