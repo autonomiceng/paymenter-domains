@@ -10,6 +10,8 @@ final class HoldingReadRetry
     public const TRANSIENT=['read_failed','read_deadline'];
     public const RECOVERABLE=[...self::TRANSIENT,'configuration_unverified'];
     public const LIMIT=5;
+    // Discovery admits 25 holdings and the runtime claims one per account each minute. Allow that batch to drain.
+    private const OVERDUE_GRACE_SECONDS=30*60;
     public const STOPPED=['read_unavailable','budget_exhausted','superseded','records_incomplete',...ReadFailure::CODES];
     public static function stoppedQuery(Builder $q): Builder
     {
@@ -37,7 +39,7 @@ final class HoldingReadRetry
         $code=$job&&in_array($job->safe_code,self::STOPPED,true)?$job->safe_code:null;
         $now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
         return ['records_paused'=>$job?->safe_code==='records_disabled',
-            'read_overdue'=>$eligible&&$job&&!$stopped&&$job->due_at<$now->getTimestamp()&&$job->lease_until<=$now->getTimestamp(),
+            'read_overdue'=>$eligible&&$job&&!$stopped&&$job->due_at+self::OVERDUE_GRACE_SECONDS<$now->getTimestamp()&&$job->lease_until<=$now->getTimestamp(),
             'next_read'=>$eligible&&$job&&!$stopped?(int)$job->due_at:null,'read_stopped'=>(bool)$stopped,
             'read_code'=>$code,'read_failed_at'=>$code?($d->observation['read_retry']['at']??$d->observation['record_failure']['at']??null):null,'read_attempts'=>(int)($job->tries??0),
             'read_cause'=>match($code){'read_failed'=>'The registrar read failed.','read_deadline'=>'The registrar read timed out.',

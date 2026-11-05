@@ -3,15 +3,13 @@
 declare(strict_types=1);
 require __DIR__.'/Support/owner-records.php';
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,HoldingObservationWork,ObservationRecords,ObservationSchema};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,HoldingObservationWork,ObservationRecords,ObservationSchema,ReadDeferred};
 ObservationSchema::install();[$d,$driver,$original]=$holding(placeholderComFixtureName('retry-records-placeholder.com'));
 $worker=new HoldingObservationWork(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports),$clock);
 DB::table('domains_observation_queues')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint]);
 $queue=DB::table('domains_observation_queues')->sole();$guard=static fn()=>null;
 // Real Blade + native customer controller are required to witness both visible family presentations.
 storefrontViews();
-DB::table('domains_observation_work')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
- 'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>HoldingObservationWork::phase($d),'due_at'=>$clock->now()->getTimestamp()+60]);
 $familyViews=static function()use(&$d,$clock,$page):array {
  $facts=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now());
  return ['staff'=>view('domains::partials.record-families',['recordFamilies'=>$facts,'staff'=>true])->render(),'customer'=>$page()];
@@ -28,11 +26,20 @@ $assertFamily=static function(string $label,?int $queued=null,?string $cause=nul
   }
  }
 };
-$assertFamily('Checking',$clock->now()->getTimestamp()+60);
+// Discover creates a due-now row. Yield at the existing catalogue seam before claiming any work.
+$queued=$clock->now()->getTimestamp();
+try {
+ $worker->turn($queue,$guard,static function()use($d,$clock,$queued,$assertFamily):void {
+  same($queued,(int)HoldingObservationWork::current($d->fresh())->sole()->due_at,'Discover schedules the first read now');
+  $clock->instant=$clock->now()->modify('+5 seconds');$assertFamily('Checking',$queued);
+  throw new ReadDeferred('Synthetic catalogue capacity yield before claim.');
+ });
+} catch(ReadDeferred) {}
+$clock->instant=$clock->now()->setTimestamp($queued+20*60);$assertFamily('Checking',$queued); // A normal discovery batch queues up to 25 one-minute account turns.
 $current=HoldingObservationWork::current($d->fresh());$current->update(['due_at'=>0,'lease_until'=>$clock->now()->getTimestamp()+300]);
 $assertFamily('Checking',0); // An active worker lease is still an in-progress read, even after its due time.
-$current->update(['due_at'=>$clock->now()->getTimestamp()+60,'lease_until'=>0]);
-$clock->instant=$clock->now()->modify('+61 seconds');$assertFamily('Missing',cause:'The scheduled registrar read is overdue.');
+$current->update(['due_at'=>$queued,'lease_until'=>0]);
+$clock->instant=$clock->now()->setTimestamp($queued+31*60);$assertFamily('Missing',cause:'The scheduled registrar read is overdue.');
 $observation->during=static fn()=>throw new DomainException('Registrar read failed.');
 same('read_failed',$worker->turn($queue,$guard),'Transient primary failure is retained');
 expect(!HoldingObservationWork::stopped($d->fresh()),'First transient failure schedules an automatic retry');
