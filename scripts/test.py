@@ -664,6 +664,9 @@ def main():
                             'tests/registrars-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',
                             'tests/owner-records-test.php',
+                            'tests/self-heal-records-test.php',
+                            'tests/self-heal-retry-test.php',
+                            'tests/storefront-cart-handoff-test.php',
                         }
                         for path in requested
                     )
