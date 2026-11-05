@@ -95,12 +95,21 @@ final class StaffCatalogue
         }
         if($human!==null){return $human;}
         return match($reason){
-            'seller_changed'=>$missing('Choose the registrar in More on .'.$t->tld.'.'),
+            'seller_changed'=>$missing($this->sellerStep($t,$action)),
             'below_cost'=>$missing('Raise the price in Edit prices on .'.$t->tld.'.'),
             'cost_limit'=>$missing('Change the cost limit under Default for new TLDs in What you sell.',null),
             'unpublished_price'=>$missing('Set a positive '.$names[$action].' price in Edit prices on .'.$t->tld.'.'),
             default=>$step('ready',''),
         };
+    }
+    /** This account is already the chosen registrar but its seller row has the action off: name that switch. */
+    private function sellerStep(Tld $t,string $action): string
+    {
+        $p=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->first();
+        $chosen=$p&&(int)$p->server_id===(int)$t->server_id&&$p->account_fingerprint===$t->account_fingerprint&&$p->registrar_key===$t->registrar_key;
+        return $chosen&&in_array($action,['register','transfer'],true)&&!$p->{$action.'_enabled'}
+            ?'Allow '.($action==='register'?'registrations':'transfers').' in More → Change registrar on .'.$t->tld.'.'
+            :'Choose the registrar in More on .'.$t->tld.'.';
     }
     /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
     public function preview(Tld $t,array $rule): array

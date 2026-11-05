@@ -251,6 +251,13 @@ final class Writer implements Catalogue
                 && ($command->rule === (OfferState::decode($target->catalogue_intent)['pricing_rule'] ?? null)));
             $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now) || $created;
             if (!$changed) { return $revision; }
+            if ($command instanceof Edit && $command->sellerTransfers && $policy && !$policy->transfer_enabled
+                && (int) $policy->server_id === $binding->serverId && $policy->account_fingerprint === $binding->fingerprint
+                && $policy->registrar_key === $binding->registrarKey && self::transfersSupported($target, $now)) {
+                // Transfers On: the same chosen registrar now also takes transfers. Registrations stay as they were.
+                DB::table('domains_sales_policies')->where('id', $policy->id)->update(['transfer_enabled' => true, 'revision' => $revision->selection + 1]);
+                $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
+            }
             if ($seller) {
                 $values = ['server_id' => $command->actions ? $binding->serverId : null,
                     'registrar_key' => $command->actions ? $binding->registrarKey : null,
@@ -285,6 +292,13 @@ final class Writer implements Catalogue
             if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, $result, $now); }
             $this->afterCommit();
             return $result;
+    }
+
+    /** Only current registrar terms can say no; unknown terms leave the evaluator to wait for them. */
+    private static function transfersSupported(Tld $t, \DateTimeImmutable $now): bool
+    {
+        $facts = OfferState::facts($t->catalogue_facts);
+        return !$facts?->fresh($now) || in_array(1, $facts->terms['transfer'] ?? [], true);
     }
 
     private function mutate(Command $command, Tld $target, $prices, \DateTimeImmutable $now): bool
