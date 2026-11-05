@@ -33,7 +33,7 @@ function activeFixtureSeller(object $owner,string $tld,int $selection,?int $serv
 function activeFixtureRepublish(object $owner,Tld|int $ending,?DateTimeImmutable $now=null,mixed ...$legacy): void
 {
     if(array_filter($legacy,static fn($value)=>$value!==null)){throw new DomainException('Typed catalogue command required');}
-    if($now!==null){activeFixtureClock($owner)->instant=$now;}
+    if($now!==null&&$now>activeFixtureClock($owner)->now()){activeFixtureClock($owner)->instant=$now;}
     $ports=activeFixturePorts($owner);$t=$ending instanceof Tld?$ending:Tld::findOrFail($ending);
     $b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
     $q=new Query($b,[$t->tld],'register');
@@ -65,6 +65,51 @@ function activeFixtureStops(object $owner,Tld $t,array $stops): void
     $raw=array_intersect_key(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent),get_object_vars(new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent));$raw['stops']=$stops;
     $q=new Query($b,[$t->tld],'register');
     $ports->apply(Edit::override($b,$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(...$raw)),$ports->readOffers($q,Context::Staff)[0]->revision);
+}
+
+/** Arrange provider observations through the real Writer, never a saved acceptance setting. */
+function fixtureOfferFacts($binding): object
+{
+    $rows=[];
+    foreach(Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->get() as $t){
+        $f=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($t->catalogue_facts);
+        if($f===null){continue;}
+        $rows[$t->tld]=[...$f->terms,'registry'=>$f->registryFields===[],'renewal_safe'=>$f->renewalSafe];
+    }
+    return (object)['endings'=>$rows];
+}
+function fixtureObserveOfferFacts($binding,array $endings): void
+{
+    $owner=$GLOBALS['bindings'];$ports=activeFixturePorts($owner);$clock=activeFixtureClock($owner);
+    $clock->instant=$clock->now()->modify('+1 second');
+    $known=Tld::where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->pluck('tld')->all();
+    foreach(array_unique([...$known,...array_keys($endings)]) as $name){
+        $row=$endings[$name]??[];$q=new Query($binding,[$name],'register');
+        $facts=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
+            ['register'=>$row['register']??[],'renew'=>$row['renew']??[],'transfer'=>$row['transfer']??[]],
+            ($row['registry']??false)?[]:null,$row['renewal_safe']??false,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'));
+        $facts=fixtureNameSiloFacts($binding,$name,$facts);
+        $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$name,$facts),$ports->readOffers($q,Context::Staff)[0]->revision);
+    }
+}
+function fixtureObserveOfferEntry(\Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry $entry): void
+{
+    $owner=$GLOBALS['bindings'];$ports=activeFixturePorts($owner);$clock=activeFixtureClock($owner);
+    $clock->instant=$clock->now()->modify('+1 second');$costs=[];
+    foreach($entry->rates as $rate){
+        $costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($rate->action,$rate->term,$rate->perYear!==null,$rate->perYear,
+            \Paymenter\Extensions\Servers\Domains\Data\CostUnit::Annual,$rate->source,$clock->now(),$clock->now()->modify('+1 day'));
+    }
+    $q=new Query($entry->binding,[$entry->tld],'register');
+    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($entry->binding,$entry->tld,$costs),$ports->readOffers($q,Context::Staff)[0]->revision);
+}
+
+function activeFixtureStorefront($sellers,$prices,$native,$bindings,$eligibility,$clock): \Paymenter\Extensions\Servers\Domains\Services\Storefront
+{
+    $port=new class($sellers,$prices,$native,$bindings,$eligibility,$clock) extends \Paymenter\Extensions\Servers\Domains\Services\Storefront {
+        public \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers $fixtureOffers;
+        protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers {return $this->fixtureOffers;}
+    };$port->fixtureOffers=activeFixtureOffers($sellers);return $port;
 }
 
 /** Independently declared synthetic OTE facts mirror the current production configuration contract.

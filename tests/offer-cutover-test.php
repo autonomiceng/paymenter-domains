@@ -66,7 +66,7 @@ commerceReject(fn()=>DB::transaction(fn()=>$sellers->admit([$public['selection']
 same('unavailable',app(PayCheck::class)->stop($invoice)['why'],'Payment refuses a stale saved offer');
 same([],$storefront->endings(),'Withdrawn evidence invalidates the previously warm display');
 $claims=new Paymenter\Extensions\Servers\Domains\Services\OperationClaims($bindings,app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));
-$acceptance=new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25);$held=false;
+$acceptance=new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);$held=false;
 try{$claims->locked($op->id,fn($locked)=>$acceptance->requireCurrent($binding,new Paymenter\Extensions\Servers\Domains\Data\Query($op->domain->domain,Paymenter\Extensions\Servers\Domains\Data\Action::Register,3),$locked,true,false));}
 catch(Paymenter\Extensions\Servers\Domains\Services\WriteHeld $e){$held=$e->reason==='order_not_supported';}
 same(true,$held,'Installed locked spending checks current facts rather than legacy accepted terms');

@@ -95,7 +95,7 @@ commerceReject(fn () => Invoice::findOrFail($original->invoice_id)->items()->cre
 config(['settings.tax_enabled' => true, 'settings.tax_type' => 'exclusive']);
 App\Models\TaxRate::create(['name' => 'Synthetic', 'country' => 'US', 'state' => null, 'rate' => 10]);
 $server = $product->fresh()->server; $server->settings()->create(['key' => 'domains_manual_renewals_enabled', 'value' => true, 'type' => 'boolean']);
-$billing = new DomainBilling($bindings, $guard, $clock); $bill = $billing->invoice($d->id, $user);
+$billing = new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null); $bill = $billing->invoice($d->id, $user);
 same('11.44', RetailLine::decimal($service->fresh()->price), 'Holder projection adds exclusive tax once');
 same('11.44', $bill->items->sole()->price, 'Invoice shares native gross tax basis');
 DB::table('services')->where('id', $service->id)->update(['price' => '9.99']);

@@ -82,7 +82,7 @@ same($d->id,$commit->confirm($a->request_key,$a->request_digest,$staff)->id,'Rep
 // Even an enabled annual catalogue price is insufficient non-premium/domain renewal evidence.
 $server->settings()->create(['key'=>'domains_manual_renewals_enabled','type'=>'boolean','value'=>true]);
 $server->settings()->create(['key'=>'domains_billing_enabled','type'=>'boolean','value'=>true]);
-$billing=new DomainBilling($bindings,new NativeDomainGuard(new HolderPricing($prices),$clock),$clock);
+$billing=new DomainBilling($bindings,new NativeDomainGuard(new HolderPricing($prices),$clock),$clock,catalogue: $GLOBALS['caps']??null);
 foreach([$owner,null] as $actor){
     $clock->time=new \DateTimeImmutable('2027-10-15T12:00:00Z');
     $refused=false;try{$billing->invoice($d->id,$actor);}catch(\DomainException $e){$refused=true;same('Imported renewal eligibility is not proven.',$e->getMessage(),'Explicit imported renewal gate');}

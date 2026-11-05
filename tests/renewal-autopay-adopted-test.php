@@ -24,7 +24,7 @@ expect($a->do_not_renew, 'Preview retains adopted renewal Off');
 $d = $commit->confirm($a->request_key, $a->request_digest, $staff);
 $clock->time = new DateTimeImmutable('2027-09-29T00:00:00Z');
 $before = scenarioMoney();
-same(null, (new DomainBilling($bindings,$guard,$clock))->invoice($d->id), 'Scheduled adopted renewal Off creates no debt');
+same(null, (new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null))->invoice($d->id), 'Scheduled adopted renewal Off creates no debt');
 same($before, scenarioMoney(), 'Adopted renewal Off preserves native money');
 same(0, AdoptedAutoPayGateway::$calls, 'Saved method never charged for adopted renewal Off');
 echo "Committed adopted renewal Off skips saved-method collection.\n";

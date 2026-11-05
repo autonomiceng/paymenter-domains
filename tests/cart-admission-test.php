@@ -9,13 +9,14 @@ use App\Models\{CartItem, Coupon, Invoice, Order, Service};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, Rdap, RetailLine, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+extract(commerceFixture(true)); $clock ??= new FakeClock($now);
 $diverge = false;
 Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$diverge): void {
     if ($diverge) { App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
 });
 $transfers = new TransferPrecheck(new Rdap(static fn () => throw new RuntimeException('Synthetic offline lookup')));
 $adapter = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock, $transfers), $clock); $adapter->boot(); $adapter->boot();
+$invoiceBinding=new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($adapter,$native,$prices,$clock);$invoiceBinding->boot();app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);
 $user = commerceUser(); $cart = commerceCart($user); $product = $native->product($tlds[0], 'register');
 same('domain', $adapter->fields($product)[0]['name'], 'Neutral native domain checkout field');
 $beforeFields=$reads->calls;
@@ -29,7 +30,7 @@ same('first-placeholder.com', $line->checkout_config['domain'], 'Canonical cart 
 commerceReject(static fn () => commerceAdd($cart, $product, placeholderComFixtureName('first-placeholder.com')));
 commerceAdd($cart, $product, placeholderComFixtureName('second-placeholder.com')); $hosting = commerceHosting(); commerceAdd($cart, $hosting, 'hosting');
 $beforeReads = $reads->calls;
-commerceCheckout($user, $cart);
+commerceCheckout($user, $cart)->assertHasNoErrors();
 same(1, Order::count(), 'Real native checkout admitted a mixed order');
 same(1, Invoice::count(), 'Hosting and distinct domains share one invoice');
 same(3, Service::count(), 'Separated domain products preserve hosting semantics');
@@ -99,7 +100,7 @@ $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderCom
 $history = [DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()];
 $services = DB::table('services')->orderBy('id')->get()->toJson();
 $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
-$accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
+$accepted = fixtureOfferFacts($binding);
 Illuminate\Support\Once::flush();
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
 Illuminate\Support\Once::flush();
@@ -109,7 +110,7 @@ foreach (['8.00','5.00'] as $cost) {
     foreach ([['register',1],['register',3],['renew',1],['transfer',1]] as [$action,$term]) {
         $rates[] = new Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$cost,'synthetic',$now,$now->modify('+1 day'));
     }
-    $prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
+    fixtureObserveOfferEntry(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true));
     Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
     same(4,Order::count(),'A retained cart cannot charge an unseen synced price');
     same($history,[DB::table('invoices')->orderBy('id')->get()->toJson(),DB::table('invoice_items')->orderBy('id')->get()->toJson()],'Sync and refused checkout preserve issued invoices');
@@ -121,12 +122,12 @@ foreach (['8.00','5.00'] as $cost) {
     same($checkout->get('total')->total, $otherTab->get('total')->total, 'Each tab shows the changed total');
     same($beforeReads, $reads->calls, 'Other tabs reuse the same fresh price check');
 }
-// An unchanged-price sync advances revisions without requiring another customer check.
+// A new active offer revision refreshes evidence once even when the visible retail is unchanged.
 $beforeReads = $reads->calls;
-$prices->import(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true),$accepted,static fn()=>null,$now,null,true);
+fixtureObserveOfferEntry(new Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($binding,'com',$rates,[1,3],true,true));
 Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(5,Order::count(),'A refreshed cart sells at the synced price');
-same($beforeReads, $reads->calls, 'Unchanged retail reuses the fresh receipt across price revisions');
+same($beforeReads+1, $reads->calls, 'Current active revision receives one refreshed provider check');
 same('6.50',number_format((float)Invoice::latest('id')->first()->items()->sole()->price,2,'.',''),'Customer invoice equals the refreshed native offer after a falling cost');
 // Native mount must also repair an evicted receipt; subsequent clicks reuse it.
 $cart = commerceCart($user); $line = commerceAdd($cart, $product, placeholderComFixtureName('missing-check-placeholder.com'));
@@ -147,8 +148,9 @@ Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSecon
 Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(6, Order::count(), 'Retry after a temporary check failure completes checkout');
 Illuminate\Support\Carbon::setTestNow();
+// Independent transfer/age scenarios start with a known two-day synthetic observation window.
 // Transfer expiry row: retry cannot refresh it, so the notice must lead to a working cart edit.
-$clock->instant = $now;
+$clock->instant = $now;activeCommerceFacts($now,$now->modify('+2 days'),$ports);
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $cart = commerceCart($user); $transfer = $native->product($tlds[0], 'transfer');
 $line = commerceAdd($cart, $transfer, placeholderComFixtureName('expired-transfer-placeholder.com'));
@@ -183,7 +185,7 @@ foreach ([172799=>true,172800=>false] as $age=>$allowed) {
 }
 Livewire\Livewire::withQueryParams([]);$clock->instant=$now;
 // Products\Checkout registered the runtime above; wire its invoice hooks to this partial fixture's adapter and clock.
-$binder=new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($adapter,$native,$prices,$clock);
+$binder=$invoiceBinding;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$binder);$binder->boot();
 // The real stock theme has no order-contact form: its no-argument button needs an account repair path.
 // Native rendering, notifications and invoice rollback cannot be proved with a service-only unit fixture.

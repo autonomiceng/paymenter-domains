@@ -17,7 +17,7 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 $server=$product->server;
 $server->settings()->create(['key'=>EnomTestRenewal::KEY,'type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,...EnomTestRenewal::protocol($b)])]);
 $server->settings()->create(['key'=>EnomLateRenewal::KEY,'type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$b->fingerprint,'contract'=>EnomLateRenewal::CONTRACT])]);
-Cache::flush();$invoice=(new DomainBilling($renewBindings,$guard,$clock))->invoice($d->id,$user,1);
+Cache::flush();$invoice=(new DomainBilling($renewBindings,$guard,$clock,catalogue: $GLOBALS['caps']??null))->invoice($d->id,$user,1);
 $op=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();
 \App\Helpers\ExtensionHelper::addPayment($invoice,null,$op->amount);Cache::flush();[$engine,$writer,$completion]=$compose($b);
 $writes=$state->writes;$state->fail=ReadCommand::Expired;
@@ -39,7 +39,7 @@ same('succeeded',$completed->state,'Captured renewal uses the same provider-loca
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($completed,$d->fresh(),$b),'Renewal local proof remains usable for the next cycle');
 // Hiding a TLD stops new sales only. Names already held keep renewing.
 config(['domains.hidden_endings'=>['com']]);
-same([],\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($b)->endings['com']['register'],'Hidden TLD takes no new registrations');
+same('staff_stopped',$ports->readOffers(new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register'),\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->reason,'Hidden TLD takes no new registrations');
 same($d->domain,$authority->capture(new RenewalRequest($d->id,1,2,'2028-10-18','456'))[1],'Hidden TLD keeps renewing');
 config(['domains.hidden_endings'=>[]]);
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-transient-placeholder.com')); [$engine,$writer,$completion]=$compose($b);
@@ -90,9 +90,10 @@ same('succeeded',$completion->run($op->id)->state,'Supported renewal settles onl
 same($attempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Original sealed renewal evidence remains unchanged');
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$d->fresh(),$b),'Staff-supported renewal proof anchors the next cycle');
 same($writes+1,$state->writes,'Support answer and reconciliation never send another renewal');
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock){
-    $price=Paymenter\Extensions\Servers\Domains\Models\Price::where(['server_id'=>$d->server_id,'action'=>'renew'])->sole();
-    $price->update(['retail'=>'1.00','revision'=>$price->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+1 day')]);
+[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock,$ports){
+    $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());
+    $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$d->tld],'renew');
+    $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($binding,$d->tld,'1.00'),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 });
 same('1.00',$op->amount,'Below-cost renewal billed at exact retail with no floor');
 [$engine,$writer,$completion]=$compose($b); same('pending',$engine->run($op->id,$writer)->state,'Below-cost paid renewal still sends');

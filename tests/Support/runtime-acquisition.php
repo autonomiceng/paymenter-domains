@@ -60,7 +60,7 @@ $transfer=new Transfer($binding,static function($origin,$command,$p,$timeout)use
     expect($timeout>0&&$timeout<=25000,'Bounded transfer deadline');$state->writes[]=['transfer',$p['SLD1'].'.'.$p['TLD1']];
     return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done><transferorder><transferorderid>7001</transferorderid><statusid>5</statusid></transferorder></interface-response>';
 });
-$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25);
+$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);
 $renewAccepted=new RenewalAcceptance($binding,true,true,25);$management=new Management($binding,$offline);
 $factory=static fn(?WriteFeatures $flags=null)=>RuntimeComposition::make($binding,$freshBindings,$clock,$flags??$features,$accepted,$renewAccepted,$precheck,$register,$transfer,$offline,$management);
 $before=[$state->reads,$state->rdap,$state->writes,Account::orderBy('id')->get()->map->getRawOriginal()->all()];
@@ -75,7 +75,7 @@ $registrationPort=AcquisitionPort::registration($binding,$freshBindings,$clock,$
 $transferPort=AcquisitionPort::transfer($binding,$freshBindings,$clock,$features,$accepted,$transfer,$precheck);
 foreach([
     AcquisitionPort::transfer($binding,$freshBindings,$clock,new WriteFeatures(true,true),$accepted,$transfer,$precheck),
-    AcquisitionPort::transfer($binding,$freshBindings,$clock,$features,new WriteAcceptance($binding,true,true,25),$transfer,$precheck),
+    AcquisitionPort::transfer($binding,$freshBindings,$clock,$features,new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null),$transfer,$precheck),
     AcquisitionPort::transfer($binding,$freshBindings,$clock,$features,$accepted,$transfer,$precheck,new RegistrationProfiles($binding,new OperationClaims($bindings,$clock),$clock,$offline)),
 ] as $differentPolicy){$refused(fn()=>new AcquisitionPorts($binding,$registrationPort,$differentPolicy),'Acquisition policy objects differ.');}
 $refused(fn()=>AcquisitionPort::registration($binding,$freshBindings,$clock,$features,$accepted,$transfer),'Registration protocol action mismatch.');
@@ -89,7 +89,7 @@ $refused(fn()=>AcquisitionPort::registration($other,$freshBindings,$clock,$featu
 $refused(fn()=>RuntimeComposition::make($binding,$freshBindings,$clock,$features,$accepted,$renewAccepted,$precheck,$register,$transfer,$offline,new Management($other,$offline)),'Runtime management binding changed.');
 // NameSilo requires one exact profile object across acceptance, both preflights and protocols.
 $profiles=new RegistrationProfiles($other,new OperationClaims($bindings,$clock),$clock,$offline);
-$nsAccept=new WriteAcceptance($other,true,true,25,$profiles);
+$nsAccept=new WriteAcceptance($other,true,true,25,$profiles,catalogue: $GLOBALS['caps']??null);
 $nsRegistration=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Registration($other,$profiles,$offline);
 $nsTransfer=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Transfer($other,$profiles,$offline);
 $nsSelector=new AcquisitionPorts($other,AcquisitionPort::registration($other,$bindings,$clock,$features,$nsAccept,$nsRegistration,$profiles),

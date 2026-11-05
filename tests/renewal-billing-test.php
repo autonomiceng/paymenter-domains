@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, StaffSettingsReview, StaffSettingsWrites};
 
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); $guard->boot();
-$billing = new DomainBilling($bindings, $guard, $clock); Queue::fake();
+$billing = new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null); Queue::fake();
 // Boot guards BEFORE a real checkout: initial same-product annual projection remains admitted.
 [$original] = $prepare(placeholderComFixtureName('billing-held-placeholder.com'));
 Queue::fake();

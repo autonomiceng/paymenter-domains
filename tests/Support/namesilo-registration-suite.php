@@ -79,7 +79,7 @@ foreach (['different', 'missing', 'closure', 'account', 'registrar'] as $mode) {
     if ($mode === 'different') { $protocol = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Registration($binding, $other, $exchange); }
     if ($mode === 'account') { $protocol = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Registration(new \Paymenter\Extensions\Servers\Domains\Data\AccountBinding('namesilo', $binding->serverId, $binding->environment, 'other-account'), $profiles, $exchange); }
     if ($mode === 'registrar') { $protocol = new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Registration($bindingFor(0), $exchange); }
-    if ($mode === 'closure') { $acceptance = new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding, true, true, 25, static fn ($op) => $profiles->hasProof($op)); }
+    if ($mode === 'closure') { $acceptance = new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding, true, true, 25, static fn ($op) => $profiles->hasProof($op),catalogue: $GLOBALS['caps']??null); }
     $fresh = new \Paymenter\Extensions\Servers\Domains\Services\RegistrationPreflight($freshBindings, $features, $acceptance, $mode === 'missing' ? null : $profiles);
     $bridge = new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Writer($binding, $features, $acceptance, static function () use (&$engine) { return $engine; }, $protocol);
     $engine = new \Paymenter\Extensions\Servers\Domains\Services\DomainOperations($claims, $fresh, $bridge, $clock);

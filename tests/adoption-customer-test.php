@@ -18,7 +18,7 @@ DB::table('invoices')->where('id',$old->id)->update(['number'=>'H-100']);
 $collision=App\Models\Invoice::create(['user_id'=>$owner->id,'currency_code'=>'USD','status'=>'paid']);DB::table('invoices')->where('id',$collision->id)->update(['number'=>(string)$old->id]);
 $r=$reader->preview($target,new StaffContext($staff->id,'Verified original customer',true));$a=Adoption::findOrFail($r->previewId);$d=$commit->confirm($a->request_key,$a->request_digest,$staff);
 config(['settings.company_name'=>' <Synthetic & Company> ']);
-$billing=new DomainBilling($bindings,$guard,$clock);$owners=new OwnedDomains($clock,new OwnerPorts(),billing:$billing);$dto=$owners->present($d,false);
+$billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null);$owners=new OwnedDomains($clock,new OwnerPorts(),billing:$billing);$dto=$owners->present($d,false);
 same('Off',$dto->renewal,'DNR badge');same(['label'=>'Imported','state'=>'Completed'],$dto->progress[0],'Adoption activity');same($old->fresh()->number,$dto->history[0]['number'],'Batch native invoice number');same('Paid',$dto->history[0]['status'],'Historical invoice label');same(null,$dto->plannedRenewalDue,'No future due CTA for DNR');
 same(route('invoices.show',$old->fresh()),$dto->history[0]['url'],'Historical URL uses native number route key despite numeric ID collision');
 $issued=DB::table('invoices')->where('id',$old->id)->value('created_at');DB::table('invoices')->where('id',$old->id)->update(['created_at'=>'2026-01-15 09:00:00']);same('2026-01-15',$owners->present($d,false)->history[0]['date'],'History dates an unpaid-by-gateway invoice by its issue date');

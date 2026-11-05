@@ -15,15 +15,16 @@ function storefrontCatalogueFixture(array $fixture, array $endings, array $terms
     $binding = $bindings->configure($server->id, 'enom', Environment::Test, ['token' => 'catalogue-fixture-'.$server->id]);
     $bindings->setProcessing($server->id, true, syntheticActivation());
     $rows = array_fill_keys($endings, ['register' => $terms, 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]);
-    $accepted = CatalogueAcceptances::save($binding, 0, $rows); $catalogueTlds = [];
+    $catalogueTlds = [];
     foreach ($endings as $ending) {
         $tld = Tld::create(['server_id' => $server->id, 'registrar_key' => 'enom', 'account_fingerprint' => $binding->fingerprint,
-            'tld' => $ending, 'enabled' => true, 'min_years' => min($terms), 'max_years' => max($terms),
+            'tld' => $ending, 'enabled' => true,'catalogue_converted'=>true,'catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:max($terms),transfers:true)), 'min_years' => min($terms), 'max_years' => max($terms),
             'use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '20.00', 'fixed_renew' => '21.00', 'fixed_transfer' => '22.00']);
         $rates = [new CatalogueRate('renew', 1, '8.00', 'synthetic', $now, $now->modify('+1 day')),
             new CatalogueRate('transfer', 1, '7.00', 'synthetic', $now, $now->modify('+1 day'))];
         foreach ($terms as $term) { $rates[] = new CatalogueRate('register', $term, '6.00', 'synthetic', $now, $now->modify('+1 day')); }
-        $prices->import(new CatalogueEntry($binding, $ending, $rates, $terms, true, true), $accepted, static fn () => null, $now);
+        fixtureObserveOfferEntry(new CatalogueEntry($binding, $ending, $rates, $terms, true, true));
+        fixtureObserveOfferFacts($binding,fixtureOfferFacts($binding)->endings+[$ending=>$rows[$ending]]);
         activeFixtureRepublish($native,$tld->id, $now); $catalogueTlds[$ending] = $tld->fresh();
         $policy = $sellers->initialize($ending); activeFixtureSeller($sellers,$ending, $policy->revision, $server->id, true, true, $now);
     }
@@ -87,6 +88,6 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
     DB::table('prices')->where('id', $onlyTransfer->id)->update(['price' => $transferPrice]);
     Cache::flush(); $repaired = array_column($store->endings(), null, 'tld');
     same('$22.00', $repaired['test']['transfer'], 'Restored test transfer price is visible');
-    foreach (array_keys($catalogueTlds) as $ending) { activeFixtureSeller($sellers,$ending, 2, null, false, false, $now); }
+    foreach (array_keys($catalogueTlds) as $ending) { activeFixtureSeller($sellers,$ending,(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$ending)->value('revision'), null, false, false, $now); }
     Cache::flush();
 }

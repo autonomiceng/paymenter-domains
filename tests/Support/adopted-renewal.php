@@ -53,9 +53,9 @@ $transport = new class($state) implements Transport {
     $registry->register('enom', ['uid', 'token'], new class implements AccountVerifier {
         public function verify(Environment $e, array $c): string { return $c['uid']; }
     }, fn ($b, $c) => new Driver(new Client($b, $c['uid'], $c['token'], $transport), ['com']));
-    $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock);
+    $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
     $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
-    $billing = new DomainBilling($renewBindings, $guard, $clock);
+    $billing = new DomainBilling($renewBindings, $guard, $clock,catalogue: $GLOBALS['caps']??null);
     $state->name = 'example.com'; $state->price = '8.00';
     $clock->time = new DateTimeImmutable('2027-09-29T12:00:00Z');
     \App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'], ['value'=>true,'type'=>'boolean']);

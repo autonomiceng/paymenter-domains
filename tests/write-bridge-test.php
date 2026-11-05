@@ -26,7 +26,7 @@ commerceReject(fn () => $bridge->register($call['op'], new RequestContext($enomB
 $forged = new AdmittedOperation($enomBinding, new Query('forged-placeholder.com', Action::Register, 1), 'forged', 'claim', 1, 'funding', str_repeat('a', 64), new Money('1.00', 'USD'));
 commerceReject(fn () => $bridge->register($forged, $call['context']));
 // Holding the transport itself is insufficient: its final entry consumes a live engine grant.
-$accepted = new WriteAcceptance($enomBinding, true, true, 25);
+$accepted = new WriteAcceptance($enomBinding, true, true, 25,catalogue: $GLOBALS['caps']??null);
 commerceReject(fn () => $transport->register($forged, $call['context'], $engine, new WriteFeatures(registration: true), $accepted));
 commerceReject(fn () => $transport->register($call['op'], $call['context'], $engine, new WriteFeatures(registration: true), $accepted));
 try { $transport->sendRegistration($forged, $call['context'], [], 'https://invalid.example', 1); expect(false, 'Wire method must be inaccessible'); } catch (Error) {}
@@ -46,7 +46,7 @@ $nsNew = static function ($name) use ($product, $user) {
     Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);
     App\Models\InvoiceTransaction::create(['invoice_id' => $op->invoice_id, 'amount' => $op->amount, 'fee' => '0.00', 'status' => 'succeeded']); return $op;
 };
-$build($nsBinding, acceptance: new WriteAcceptance($nsBinding, true, true, 25));
+$build($nsBinding, acceptance: new WriteAcceptance($nsBinding, true, true, 25,catalogue: $GLOBALS['caps']??null));
 $op = $nsNew(placeholderComFixtureName('ns-proof-missing-placeholder.com')); $result = $engine->execute($op->id); same(2, count($transport->calls), 'Missing fresh contactAdd/readback proof blocks NameSilo');
 same('held', $result->state, 'Missing profile proof refuses before seal even with a synthetic preflight');
 same('absent', $result->attempt['seal'], 'Profile refusal cannot become possibly sent');

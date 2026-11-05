@@ -18,7 +18,7 @@ expect(app()->bound(Installation::class),'Synthetic Enom fixture binds the retai
 expect(\Illuminate\Support\Facades\Schema::hasTable(EnomTestSendLimitSchema::SENDS),'Synthetic Enom fixture installs the TEST send limit');
 $sends=static fn():int=>\Illuminate\Support\Facades\DB::table(EnomTestSendLimitSchema::SENDS)->where('account',EnomTestSendLimit::account('synthetic-uid'))->count();
 $credentials=static function()use(&$count){$count++;return ['uid'=>'synthetic-uid','token'=>'SYNTHETIC-TOKEN'];};
-$make=static fn($b,$get)=>RuntimeFactory::make($b,$bindings,$clock,new WriteFeatures,new WriteAcceptance($b),new RenewalAcceptance($b),new TransferPrecheck(new Rdap(static fn()=>null)),$get);
+$make=static fn($b,$get)=>RuntimeFactory::make($b,$bindings,$clock,new WriteFeatures,new WriteAcceptance($b,catalogue: $GLOBALS['caps']??null),new RenewalAcceptance($b),new TransferPrecheck(new Rdap(static fn()=>null)),$get);
 app()->instance(Runtime::class,new Runtime);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new AccountReadBudget($clock));
 resetWire();$factory=$make($binding,$credentials);$composition=$factory();
 same(array_keys(RuntimePorts::TYPES),array_keys($composition),'Seven pure runtime roles');same(0,$count,'Construction never decrypts');same(0,$GLOBALS['enomWire']['inits'],'Construction never opens cURL');

@@ -9,10 +9,8 @@ use Illuminate\Support\Facades\{DB,Event,Schema};
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Installation,Runtime,RuntimePorts,RuntimeSchema,ReminderSchedules,AccountBindings,NativePresenter,StaffSettingsReview as Review,StaffSettingsWrites,NativeCatalogue,NativeServerGuard};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-$entry=new Domains([]);$entry->installed();
-foreach(Installation::SCHEMAS as $schema){$schema::verify();}
+// Start through the authentic current fresh initializer before exercising retained lifecycle.
+$entry=new Domains([]);$entry->installed(); // The native entry performs fresh initialization and verifies every schema.
 // A preview installation already recorded the index migration before glue was included.
 $legacy=new \Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>999,'service_id'=>999,'server_id'=>999,
     'registrar_key'=>'enom','account_fingerprint'=>str_repeat('a',64),'authority_generation'=>1,'operation_key'=>'retained-glue',
@@ -23,12 +21,8 @@ $entry->upgraded('0.0.1');
 expect((bool)DB::table('domains_operations')->find($legacyId)->management_pending,'Upgrade indexes retained pending glue even when its migration is already recorded');
 same($retained,array_diff_key((array)DB::table('domains_operations')->find($legacyId),['management_pending'=>true]),'Upgrade preserves retained request evidence and dates');
 DB::table('domains_operations')->where('id',$legacyId)->delete();
-// An interrupted two-table install repairs only the missing table and retains the other table's rows.
-$sell=Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class;
-DB::table($sell::ROWS)->insert(['server_id'=>999,'account_fingerprint'=>str_repeat('a',64),'tld'=>'com']);
-Schema::drop($sell::FILLS);$sell::install();
-same(1,DB::table($sell::ROWS)->where('server_id',999)->count(),'Recovering fills retains sell rows');
-Schema::drop($sell::ROWS);$sell::install();$sell::verify();
+// Retired stores stay absent on install, upgrade and repeated verification.
+foreach(['domains_sell_rows','domains_sell_fills'] as $retired){expect(!Schema::hasTable($retired),'Final package never recreates retired stores');}
 $pointerMigration = DB::table('migrations')->where('migration', '2026_10_19_000014_add_holding_adoption')->sole();
 DB::table('migrations')->where('id', $pointerMigration->id)->delete();
 $pointerRefused = false;
@@ -73,7 +67,7 @@ $ports->registerInitialManagedRecordObservations(function()use(&$calls){$calls++
 commerceReject(fn()=>$ports->registerInitialManagedRecordObservations(fn()=>null));
 commerceReject(fn()=>app(RuntimePorts::class)->registerInitialManagedRecordObservations(fn()=>null));
 // Library fixture supplies verified synthetic identities without any transport or account fallback.
-$f=commerceFixture(true,static fn()=>null);extract($f);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);
+$installedRuntime=app(Runtime::class);$installedPorts=app(RuntimePorts::class);$f=commerceFixture(true,static fn()=>null);extract($f);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);
 $t=$tlds[0];app(NativeServerGuard::class)->pause($t->server_id);
 same(false,Account::where('server_id',$t->server_id)->sole()->processing_enabled,'Pause persists');
 ReminderSchedules::enroll($t->server_id);$row=DB::table('domains_reminder_schedules')->where('server_id',$t->server_id)->sole();same(true,(bool)$row->enabled,'New connections default reminder schedules On');
@@ -85,7 +79,11 @@ commerceReject(fn()=>$writer->run($review(),['enabled'=>true,'confirmed'=>true])
 same(false,Account::where('server_id',$t->server_id)->sole()->processing_enabled,'No acceptance or shared workers means no activation');
 $bindings->setProcessing($t->server_id,true,static fn()=>null); // Synthetic existing activation; exercise a real On→Off transition.
 $writer->run($review(),['enabled'=>false,'confirmed'=>true]);
-same('Pause or resume orders',Review::historyRows(Server::findOrFail($t->server_id))[0]['action'],'Processing change audited');
+$history=Review::historyRows(Server::findOrFail($t->server_id));$audit=end($history);
+same('Pause or resume orders',$audit['action'],'Processing change audited');
+same($u->id,$audit['actor_id'],'Actual processing actor is retained');
+same([true,false],[$audit['before']['processing'],$audit['after']['processing']],'Audit records the real On to Off transition');
+app()->instance(Runtime::class,$installedRuntime);app()->instance(RuntimePorts::class,$installedPorts);
 // Generic native lifecycle changes cannot repurpose or remove retained identities.
 commerceReject(fn()=>Server::findOrFail($t->server_id)->update(['extension'=>'Enom']));
 commerceReject(fn()=>Server::findOrFail($t->server_id)->delete());

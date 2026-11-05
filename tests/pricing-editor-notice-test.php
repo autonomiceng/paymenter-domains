@@ -35,7 +35,7 @@ same(1,$x->query('//p[strong[.="Registration: For sale"] and strong[.="Transfer:
 $page->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00','reason'=>'Reviewed retail change'])->callMountedAction()->assertHasNoActionErrors();
 // The approved pricing UX publishes on save. This notice must agree with either writer.
 $clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
-$store=new Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers,$prices,$native,$bindings,new Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock),$clock);
+$store=activeFixtureStorefront($sellers,$prices,$native,$bindings,new Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock),$clock);
 Illuminate\Support\Facades\Cache::flush();
 expect(str_contains($page->html(),'Registration: For sale'),'Successful override publishes registration for sale');
 $ending=collect($store->endings())->firstWhere('tld',$tlds[0]->tld);

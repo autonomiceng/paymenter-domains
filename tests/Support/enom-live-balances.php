@@ -15,8 +15,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
     config(['domains.enom_live.management'=>false]);
     // Other producers have their own schedules; keep this turn focused on balance refreshes.
     DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>$clock->now()->getTimestamp()+86400]);
-    DB::table(SellTableSchema::FILLS)->insertOrIgnore(['server_id'=>$server->id,'account_fingerprint'=>$binding->fingerprint]);
-    DB::table(SellTableSchema::FILLS)->where('server_id',$server->id)->update(['tried_at'=>$clock->now()->getTimestamp()]);
+    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server->id],['account_fingerprint'=>$binding->fingerprint,'offer_feed_tried_at'=>$clock->now()->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$clock->now()->getTimestamp()+86400])]);
     $balance=static fn()=>DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
     $balances=app(RegistrarBalances::class);$worker=app(RuntimeWork::class);
     resetWire(['reply'=>static function(array $p):string {

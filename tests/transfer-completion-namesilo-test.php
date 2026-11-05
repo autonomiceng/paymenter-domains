@@ -21,7 +21,7 @@ same(['ns1.provider.example','ns2.provider.example'],$r->domain->fresh()->observ
 same('requested',$r->domain->fresh()->observation['nameservers']['state']??null,'NameSilo transfer fallback stays unconfirmed');
 $unresolved(['inactive','auto','privacy','short','owner','nocharge','duplicate','late','credited','unknowncharge','paged','nohistory','lag']);
 // Slice25 accepts the no-ID anchor and still requires immutable ordinary acquisition proof.
-$observe->name=$completed->domain->domain; $observe->fault=''; $authority=new RenewalAuthority($readBindings,$clock);
+$observe->name=$completed->domain->domain; $observe->fault=''; $authority=new RenewalAuthority($readBindings,$clock,offers: $GLOBALS['caps']??null);
 $request=new RenewalRequest($completed->domain_id,$completed->authority_generation,$completed->domain->confirmed_revision,'2028-01-01',null);
 $admit=new RenewalAdmission($authority,$readBindings,new RenewalAcceptance($binding,true,true,25),$clock);
 Cache::flush(); same(RenewalCode::Admitted,$admit->check($request)->code,'NameSilo transfer anchor admits ordinary renewal');
@@ -29,7 +29,7 @@ $saved=$completed->fresh()->getRawOriginal('attempt'); $a=$completed->fresh()->a
 Cache::flush(); same(RenewalCode::Cost,$admit->check($request)->code,'No ordinary proof means Cost, never inferred from Active');
 commerceReject(fn()=>$completed->fresh()->update(['attempt'=>$completed->attempt])); DB::table('domains_operations')->where('id',$completed->id)->update(['attempt'=>$saved]);
 App\Models\Server::find($completed->server_id)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-$billing=new DomainBilling($bindings,$guard,$clock); $invoice=$billing->invoice($completed->domain_id,$user);
+$billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null); $invoice=$billing->invoice($completed->domain_id,$user);
 $renew=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();
 same('2028-01-01',$renew->base_expires_at->format('Y-m-d'),'Slice24 bills from NameSilo transfer anchor'); same('2029-01-01',$renew->expected_expires_at->format('Y-m-d'),'Fixed full renewal term');
 same($invoice->id,$billing->invoice($completed->domain_id,$user)->id,'Renewal invoice idempotent'); same(null,$invoice->items->sole()->reference_id,'No native renewal dispatch');

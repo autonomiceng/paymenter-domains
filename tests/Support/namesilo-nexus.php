@@ -5,14 +5,14 @@ use Illuminate\Support\Facades\{Crypt, DB};
 use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionSetup, CatalogueAcceptances, ContactRecovery, ContactSetup, RegistryInputs, SetupValidation, WriteHeld};
 $makeEngine($binding,$exchange);
-$accepted=CatalogueAcceptances::load($binding);
+$accepted=fixtureOfferFacts($binding);
 expect(!RegistryInputs::supported('namesilo','us',[]),'Nexus preparation never publishes .us');
 expect(!RegistryInputs::supported('enom','us',[]),'Enom .us remains unsupported');
 commerceReject(fn()=>RegistryInputs::validate('enom','us',[],['usnc'=>'C11','usap'=>'P1']));
 // Seed a synthetic frozen paid setup without opening catalogue admission for .us.
 // This models a future accepted collection seam, not a customer sale or provider proof.
 $nexusOp=$nsNew(placeholderComFixtureName('nexus-preparation-placeholder.com'));$name='nexus-preparation-placeholder.us';
-CatalogueAcceptances::save($binding,$accepted->revision,$accepted->endings+['us'=>$accepted->endings['com']]);
+fixtureObserveOfferFacts($binding,$accepted->endings+['us'=>$accepted->endings['com']]);
 $policy=$nexusOp->policy;$policy['checkout']['name']=$name;
 $snapshot=$nexusOp->domain->snapshot;$snapshot['checkout']=$policy['checkout'];
 DB::table('domains_domains')->where('id',$nexusOp->domain_id)->update(['domain'=>$name,'reservation_name'=>$name,'tld'=>'us','snapshot'=>Crypt::encryptString(json_encode($snapshot))]);

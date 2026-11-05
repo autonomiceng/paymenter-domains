@@ -75,7 +75,7 @@ commerceReject(fn()=>$ports->operation($op));Queue::assertNothingPushed();
 $features=new WriteFeatures;$exchange=static fn()=>throw new RuntimeException('Default features must precede all wire calls');
 $profiles=new RegistrationProfiles($binding,app(OperationClaims::class),app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class),$exchange);
 $protocol=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Registration($binding,$profiles,$exchange);
-$writer=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Writer($binding,$features,new WriteAcceptance($binding),static fn()=>throw new RuntimeException('Default features must precede engine resolution'),$protocol);
+$writer=new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Writer($binding,$features,new WriteAcceptance($binding,catalogue: $GLOBALS['caps']??null),static fn()=>throw new RuntimeException('Default features must precede engine resolution'),$protocol);
 $admitted=new AdmittedOperation($binding,new Query($queuedName,Action::Register,1),'operation','claim',1,'funding',str_repeat('a',64),new Money('6.00','USD'));
 try{$writer->register($admitted,new RequestContext($binding,RequestOrigin::Background,new DateTimeImmutable('+10 seconds'),new RequestBudget(1)));expect(false,'Default registration must refuse');}
 catch(WriteHeld $held){same('write_disabled',$held->reason,'Default registration feature explicitly disabled');}

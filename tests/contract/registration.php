@@ -91,7 +91,7 @@ if (($mode ?? '') === '--profile-read') {
 $features = new WriteFeatures(registration: true);
 $profiles = new RegistrationProfiles($binding, $claims, $clock, $exchange,
     static fn (string $predicate, bool $passed) => $wire->check('profile_'.$predicate, $passed));
-$acceptance = new WriteAcceptance($binding, true, true, 25, $profiles);
+$acceptance = new WriteAcceptance($binding, true, true, 25, $profiles,catalogue: $GLOBALS['caps']??null);
 $preflight = new RegistrationPreflight($realBindings, $features, $acceptance, $profiles);
 $protocol = new Registration($binding, $profiles, $exchange);
 $bridge = new Writer($binding, $features, $acceptance, static function () use (&$engine) { return $engine; }, $protocol);

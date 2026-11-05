@@ -12,7 +12,7 @@ app()->instance(Clock::class,$clock);config(['domains.enom_test_sends_per_day'=>
 $wait=static function(string $path):void{$until=microtime(true)+20;while(!is_file($path)&&microtime(true)<$until){usleep(25000);}expect(is_file($path),'Competing process reached its barrier');};
 if($phase==='enom-test-renewal-race-issue'){
     file_put_contents($receipt.'.issue-ready-'.$worker,'ready');$wait($receipt.'.issue-ready-'.(3-$worker));
-    $billing=new DomainBilling(app(AccountBindings::class),app(NativeDomainGuard::class),$clock);$invoice=null;
+    $billing=new DomainBilling(app(AccountBindings::class),app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);$invoice=null;
     // SQLite can refuse a competing deferred transaction's write upgrade. Retry only that local contention.
     for($i=0;$i<20;$i++){
         try{$invoice=$billing->invoice($data['issuance_domain']);break;}

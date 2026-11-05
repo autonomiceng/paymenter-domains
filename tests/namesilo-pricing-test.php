@@ -49,49 +49,19 @@ same('synthetic-stable-id', $account->stable_identity, 'Rotation retains verifie
 same($expectedBinding->fingerprint, $account->account_fingerprint, 'Rotation retains verified NameSilo account fingerprint');
 same($expectedBinding->fingerprint, $rotated->fingerprint, 'Rotation retains verified NameSilo binding fingerprint');
 $binding->requireMatch($rotated); same(false, $account->processing_enabled, 'Rotation keeps stable account and processing off');
-Tld::create(['server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $binding->fingerprint, 'tld' => 'com', 'enabled' => false, 'renew_enabled' => true]);
-$catalogue = new PriceCatalogue(new PricingRules);
-$query = new Query('example.com', Action::Register, 1);
-$read = static function (Tld $tld) use ($driver, $binding, $clock): array {
-    $context = new RequestContext($binding, RequestOrigin::Background, $clock->now()->modify('+1 minute'), new RequestBudget(1), $clock);
-    $accepted = new CatalogueAcceptance($binding, 1, [$tld->tld => ['register' => [1], 'renew' => [], 'transfer' => [], 'registry' => false, 'renewal_safe' => false]]);
-    $entry = $driver->catalogueBatch($accepted, new CatalogueFreshness, $context)[$tld->tld] ?? null;
-    return $entry?->rates ?? throw new DomainException('Missing catalogue row.');
-};
-same(['synced' => 1, 'failed' => []], $catalogue->sync(1, $read), 'Accepted annual account quote persists');
-$snapshot = $catalogue->current(1, $binding->fingerprint, 'com', 'register', 1, 'USD', $clock->now());
-same('12.3400', $snapshot->wholesale, 'PriceSnapshot exact cost from pricing lane'); same('namesilo_account_annual', $snapshot->source, 'Source retained');
-$before = Price::firstOrFail()->toJson(); $wire->price = 'bad';
-same(['synced' => 0, 'failed' => ['.com']], $catalogue->sync(1, $read), 'Unknown quote fails whole refresh');
-same($before, Price::firstOrFail()->toJson(), 'Unknown preserves price/revision/freshness');
-$otherTld = Tld::create(['server_id' => 1, 'registrar_key' => 'namesilo', 'account_fingerprint' => $binding->fingerprint, 'tld' => 'net', 'enabled' => false]);
-$wire->price = '12.34';
-same(['synced' => 1, 'failed' => ['.net']], $catalogue->sync(1, $read), 'Wrong-TLD quote cannot populate another catalogue row');
-same(0, Price::where('tld', 'net')->count(), 'No cross-TLD wholesale persisted');
-$otherTld->delete();
-$wire->price = '1.00'; $catalogue->sync(1, $read);
-same('12.3400', $snapshot->wholesale, 'Old snapshot remains frozen');
-same(3, Price::firstOrFail()->revision, 'Fresh observation increments revision');
-$advisory = Prices::rate($driver->quote($query, new RequestContext($binding, RequestOrigin::Background,
-    $clock->now()->modify('+1 minute'), new RequestBudget(1), $clock)), $binding, $query, 'com', $clock);
-same(false, $advisory->persistable, 'Short-lived advisory mapping fenced from persisted sync');
-$beforeFence = DB::table('domains_prices')->get()->toJson();
-same(0, $catalogue->sync(1, static fn () => [$advisory])['synced'], 'Advisory rates cannot persist');
-same($beforeFence, DB::table('domains_prices')->get()->toJson(), 'Fence retains all persisted price bytes');
-// Saving a rule must retain NameSilo's scheduled getPrices fill; Enom's day allowance does not apply.
-Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install();
-Server::findOrFail(1)->settings()->create(['key'=>Paymenter\Extensions\Servers\Domains\Services\SellRule::KEY,'type'=>'array','encrypted'=>false,
-    'value'=>['mode'=>'except','max_cost'=>null,'years'=>1,'transfers'=>false]]);
-(new Paymenter\Extensions\Servers\Domains\Services\PriceFill($bindings,$clock))->daily($account);
-same(1,Paymenter\Extensions\Servers\Domains\Models\SellRow::where('server_id',1)->count(),'A saved NameSilo rule still fills prices on schedule');
-// A broken NameSilo connection records a daily attempt even though the page gets no reader.
-$fill=new Paymenter\Extensions\Servers\Domains\Services\PriceFill($bindings,$clock);
-Server::findOrFail(1)->settings()->where('key','domains_credentials')->delete();
-DB::table('domains_sell_fills')->where('server_id',1)->delete();
-same(null,$fill->reader($binding),'A broken NameSilo reader stays absent from the page');
-$fill->daily($account);
-$failed=Paymenter\Extensions\Servers\Domains\Services\PriceFill::last($binding);
-same([$clock->now()->getTimestamp(),$clock->now()->getTimestamp()],[$failed->tried_at,$failed->failed_at],'A broken NameSilo connection ages into the stale alert');
-expect($failed->failure!==null,'The safe failure code is saved');
-$nativeSuccessful = true;
-echo "NameSilo pricing: accepted binding, stable key rotation, quote-to-rate-to-snapshot and failed-refresh retention passed.\n";
+$query=new Query('example.com',Action::Register,1);
+$context=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+1 minute'),new RequestBudget(1),$clock);
+$feed=new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\OfferFeed($driver);
+$commands=iterator_to_array((static function()use($feed,$context){yield from $feed->prices($context());})());
+same(1,count($commands),'One account price row becomes one normalized command');$first=$commands[0];
+same(['register:1','renew:1','transfer:1'],array_keys($first->costs),'Account listing establishes annual prices only');
+same('12.3400',$first->costs['register:1']->total,'Annual account quote preserves exact precision');
+same('namesilo_account_annual',$first->costs['register:1']->source,'Account source retained');
+$wire->price='bad';try{$feed->prices($context());throw new LogicException('Malformed whole-account prices accepted');}catch(DomainException){}
+same('12.3400',$first->costs['register:1']->total,'Malformed account reply retains prior observation without disabled evidence');
+$wire->price='1.00';$fresh=$feed->prices($context());same('1.0000',$fresh[0]->costs['register:1']->total,'Later independent observation has its own cost');
+same('12.3400',$first->costs['register:1']->total,'Earlier observation remains immutable');
+$advisory=Prices::rate($driver->quote($query,$context()),$binding,$query,'com',$clock);
+same(false,$advisory->persistable,'Short-lived advisory mapping remains fenced from persisted feeds');
+// Active Writer/failed-run retention is covered by offer-feed/work/writer, not the retired importer/fill.
+$nativeSuccessful=true;echo "NameSilo verified identity, stable rotation and standalone annual feed passed.\n";

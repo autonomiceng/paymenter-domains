@@ -19,9 +19,9 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
 expect(!Route::has('domains.domains.search'), 'Storefront remains dormant before explicit test registration');
 require dirname(__DIR__).'/Domains/routes/web.php';
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+extract(commerceFixture(true)); $clock ??= new FakeClock($now);
 $eligibility = activeFixtureEligibility($bindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
-$store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 storefrontCorruptionChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);
 storefrontQueryChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);
 $controller = new StorefrontController($store); app()->instance(Storefront::class, $store);
@@ -129,7 +129,7 @@ $transferState = (object) ['calls' => 0, 'fail' => false]; $transferBindings = s
 // The transfer reader swaps only the provider driver; offers stay on the shared active fixture.
 activeFixtureOffers($transferBindings, activeFixtureOffers($bindings));
 $transferEligibility = activeFixtureEligibility($transferBindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
-$transferController = new StorefrontController(new Storefront($sellers, $prices, $native, $transferBindings, $transferEligibility, $clock));
+$transferController = new StorefrontController(activeFixtureStorefront($sellers, $prices, $native, $transferBindings, $transferEligibility, $clock));
 App\Models\Server::findOrFail($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $transfer = $transferController->check($req(['domain' => 'transfer-placeholder.com', '_request_key' => $key]))->getData(true);
 same('transferable', $transfer['status'], 'Controller requires independent ordinary transfer proof');

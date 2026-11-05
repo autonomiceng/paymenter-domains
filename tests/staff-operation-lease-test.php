@@ -37,7 +37,7 @@ foreach(['before_seal','before_send'] as $phase){
             if($sealed){
                 $admitted=new AdmittedOperation($binding,$ready->query,$sealed->operation_key,$sealed->attempt['claim_key'],
                     $sealed->authority_generation,'operation:'.$sealed->id.':seal',OperationClaims::payloadDigest($sealed),$ready->cost);
-                $claims->verifySend($sealed,$admitted,$context,$ready,null,new WriteAcceptance($binding,true,true,25,static fn()=>true));
+                $claims->verifySend($sealed,$admitted,$context,$ready,null,new WriteAcceptance($binding,true,true,25,static fn()=>true,catalogue: $GLOBALS['caps']??null));
             }
         }catch(DomainException $e){$workerError=$e->getMessage();}
         echo $phase.' '.$action.': refused='.($caught?'yes':'no').' state='.$op->fresh()->state.' send='.$op->fresh()->attempt['send_state'].' worker_error='.($workerError??'none')."\n";

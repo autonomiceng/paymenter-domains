@@ -70,7 +70,7 @@ $clock->at=new DateTimeImmutable('2027-09-27T12:00:00Z');Carbon\Carbon::setTestN
 config(['domains.enom_writes.renewal'=>true]);
 App\Models\Server::find($binding->serverId)->settings()->updateOrCreate(['key'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY],['value'=>json_encode(['fingerprint'=>$binding->fingerprint,...\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($binding)],JSON_THROW_ON_ERROR),'type'=>'string','encrypted'=>true]);
 App\Models\Server::find($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-config(['settings.credits_auto_use'=>false]);$billing=new DomainBilling($heldBindings,app(NativeDomainGuard::class),$clock);$invoice=$billing->invoice($d->id,$user);
+config(['settings.credits_auto_use'=>false]);$billing=new DomainBilling($heldBindings,app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);$invoice=$billing->invoice($d->id,$user);
 $renew=Operation::where('invoice_id',$invoice->id)->sole();DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);
 App\Models\InvoiceTransaction::create(['invoice_id'=>$invoice->id,'amount'=>$renew->amount,'fee'=>'0.00','status'=>'succeeded']);
 $clock->at=new DateTimeImmutable('2027-10-18T11:59:00Z');Cache::flush();resetWire(['timeout'=>true]);

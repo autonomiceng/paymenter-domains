@@ -59,7 +59,7 @@ $reader=static function(AccountBinding $b,array $c)use(&$query,$clock,&$funds,&$
 $lowRegistry=new RegistrarRegistry;
 $lowRegistry->register('enom',['token'],new class implements AccountVerifier {public function verify(Environment $e,#[SensitiveParameter] array $c):string{return $c['token'];}},$reader);
 $lowBindings=new AccountBindings($lowRegistry);
-$lowEngine=new DomainOperations($claims,new RegistrationPreflight($lowBindings,new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25)),$writer,$clock);$writer->engine=$lowEngine;
+$lowEngine=new DomainOperations($claims,new RegistrationPreflight($lowBindings,new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null)),$writer,$clock);$writer->engine=$lowEngine;
 $before=$writer->calls;$result=$lowEngine->execute($low->id);
 same(['held','registrar_balance_insufficient','absent'],[$result->state,$result->safe_code,$result->attempt['seal']],'Low funds holds before the seal');
 same($before,$writer->calls,'Low funds cannot send');
@@ -131,7 +131,7 @@ foreach(['payment','missing_claim','authority','legacy_authority','configuration
     $changeRegistry->register('enom',['token'],new class implements AccountVerifier {public function verify(Environment $e,#[SensitiveParameter] array $c):string{return $c['token'];}},
         static fn($b,$c)=>new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
             new Evidence(quote:new QuoteEvidence($query,new Money('6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds')),balance:new Money('1.00','USD'),available:true,premium:false))));
-    $changeEngine=new DomainOperations($claims,new RegistrationPreflight(new AccountBindings($changeRegistry),new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25)),$writer,$clock);
+    $changeEngine=new DomainOperations($claims,new RegistrationPreflight(new AccountBindings($changeRegistry),new WriteFeatures(registration:true),new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null)),$writer,$clock);
     if($fault==='legacy_authority'){[$claimed]=$claims->claim((int)$changed->id);$changed=$claims->finish($claimed);$changed->update(['safe_code'=>'usd_balance_required']);}
     else{$changed=$changeEngine->execute($changed->id);}
     $saved=$changed->funding;$savedPayload=$changed->payload;$before=$writer->calls;

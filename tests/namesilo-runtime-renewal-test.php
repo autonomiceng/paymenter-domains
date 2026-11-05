@@ -13,9 +13,9 @@ expect(method_exists(RenewalWriter::class,'useReservation'),'Renewal writer need
 require __DIR__.'/reconciliation-namesilo-test.php';$nativeSuccessful=false;
 require __DIR__.'/Support/namesilo-write-wire.php';require_once __DIR__.'/Support/namesilo-account-guard.php';
 nameSiloGuardExpected($binding,'expected@example.com');
-$rb=new AccountBindings($registry);$authority=new RenewalAuthority($rb,$clock);
+$rb=new AccountBindings($registry);$authority=new RenewalAuthority($rb,$clock,offers: $GLOBALS['caps']??null);
 $guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();Queue::fake();
-$billing=new DomainBilling($bindings,$guard,$clock);$holding=$result->domain->fresh();
+$billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null);$holding=$result->domain->fresh();
 $accepted=new RenewalAcceptance($binding,true,true,25);$features=new WriteFeatures(renewal:true);
 $engine=new RenewalExecution($rb,$authority,new RenewalAdmission($authority,$rb,$accepted,$clock),$accepted,$features,$clock);
 $transport=nsWriteTransport($binding,$clock);

@@ -37,14 +37,14 @@ $saved=App\Models\Server::find($server->id)->settings()->where('key',EnomTestRen
 expect(!EnomTestRenewal::accepted(new Paymenter\Extensions\Servers\Domains\Data\AccountBinding('enom',$binding->serverId,Paymenter\Extensions\Servers\Domains\Data\Environment::Test,'foreign-uid')),'Accepted fingerprint cannot cross accounts');
 $make=static function($domain)use($clock,$bindings,$user,$server):Operation {
     $clock->at=new DateTimeImmutable('2027-09-27T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
-    $billing=new DomainBilling($bindings,app(NativeDomainGuard::class),$clock);
+    $billing=new DomainBilling($bindings,app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);
     $invoice=$billing->invoice($domain->id,$user);same($invoice->id,$billing->invoice($domain->id,$user)->id,'One obligation per cycle');
     $op=Operation::where('invoice_id',$invoice->id)->sole();App\Helpers\ExtensionHelper::addProcessingPayment($invoice->id,null,$op->amount,'0.00','annual-'.$op->id);
     App\Helpers\ExtensionHelper::addPayment($invoice->id,null,$op->amount,'0.00','annual-'.$op->id);App\Helpers\ExtensionHelper::addPayment($invoice->id,null,$op->amount,'0.00','annual-'.$op->id);same(1,$invoice->transactions()->count(),'Duplicate native callback creates one successful payment');
     same('paid',App\Models\Invoice::find($invoice->id)->status,'Native paid renewal invoice');return $op->fresh();
 };
 App\Models\Setting::updateOrCreate(['key'=>'credits_auto_use','settingable_type'=>null],['value'=>false,'type'=>'boolean']);config(['settings.credits_auto_use'=>false]); // Stored too: a page save reloads settings from the database.
-$billing=new DomainBilling($bindings,app(NativeDomainGuard::class),$clock);
+$billing=new DomainBilling($bindings,app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>false,'type'=>'boolean']);
 try{$billing->invoice($holders['success']->id,$user);throw new LogicException('Manual gate stays off');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible){}
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);

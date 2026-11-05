@@ -11,6 +11,7 @@ foreach (['funding', 'owner', 'generation', 'reservation', 'pause', 'peer', 'acc
 $rate = $new(placeholderComFixtureName('rate-held-placeholder.com')); $preseal = [];
 foreach (['charge', 'order_candidates', 'refund'] as $key) { $preseal[$key] = $new(placeholderComFixtureName('preseal-'.str_replace('_', '-', $key).'-placeholder.com')); }
 foreach ($ops as $change => $op) {
+    $beforeClock=$clock->instant;
     $build($enomBinding);
     $proxy->before = static function ($admitted, $context) use ($change, $op, $bindings, $enomBinding, $clock) {
         $domain = $op->domain;
@@ -22,8 +23,8 @@ foreach ($ops as $change => $op) {
             'pause' => $bindings->setProcessing($op->server_id, false),
             'peer' => DB::table('domains_operations')->insert(['operation_key' => 'peer-'.$op->id, 'domain_id' => $domain->id, 'service_id' => $op->service_id,
                 'server_id' => $op->server_id, 'registrar_key' => 'enom', 'account_fingerprint' => $op->account_fingerprint, 'authority_generation' => 1, 'action' => 'contacts', 'state' => 'uncertain']),
-            'acceptance' => CatalogueAcceptances::save($enomBinding, 1, []),
-            'lease' => $clock->instant = $clock->now()->modify('+26 seconds'),
+            'acceptance' => fixtureObserveOfferFacts($enomBinding,[]),
+            'lease' => $clock->instant = $op->fresh()->lease_expires_at->toDateTimeImmutable(),
             'reference', 'charge', 'candidates' => (static function () use ($change, $op) {
                 $current = $op->fresh(); $key = ['reference' => 'provider_reference', 'charge' => 'charge', 'candidates' => 'order_candidates'][$change];
                 $current->update(['attempt' => [...$current->attempt, $key => null]]);
@@ -36,15 +37,15 @@ foreach ($ops as $change => $op) {
         };
     };
     if ($change === 'context') { $proxy->before = static function ($admitted, $context) use (&$engine) {
-        commerceReject(fn () => $engine->consume($admitted, clone $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($admitted->binding)));
+        commerceReject(fn () => $engine->consume($admitted, clone $context, new \Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($admitted->binding,catalogue: $GLOBALS['caps']??null)));
         throw new RuntimeException('Refuse wrong scope');
     }; }
     $before = count($transport->calls); $result = $engine->execute($op->id);
     same($before, count($transport->calls), 'Post-seal '.$change.' refuses transport'); same('uncertain', $result->state, 'Sealed refusal preserves uncertainty');
     expect(array_key_exists('execution', $result->attempt), 'Sealed refusal records execution null');
     if ($change === 'pause') { $bindings->setProcessing($op->server_id, true, syntheticActivation()); }
-    if ($change === 'acceptance') { CatalogueAcceptances::save($enomBinding, 2, ['com' => ['register' => [1, 3], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]); }
-    if ($change === 'lease') { $clock->instant = $clock->now()->modify('-26 seconds'); }
+    if ($change === 'acceptance') { fixtureObserveOfferFacts($enomBinding,['com' => ['register' => [1, 3], 'renew' => [1], 'transfer' => [1], 'registry' => true, 'renewal_safe' => true]]); }
+    if ($change === 'lease') { $clock->instant = $beforeClock; }
 }
 foreach ($preseal as $key => $op) {
     $build($enomBinding); $preflight->during = static function ($claimed) use ($key) {

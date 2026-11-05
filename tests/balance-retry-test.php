@@ -59,7 +59,7 @@ $transfer=new Transfer($binding,static function($origin,$command,$p,$timeout)use
     return '<interface-response><Command>TP_CreateOrder</Command><ErrCount>0</ErrCount><Done>true</Done><transferorder><transferorderid>7001</transferorderid><statusid>5</statusid></transferorder></interface-response>';
 });
 App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::KEY],['encrypted'=>true,'type'=>'string','value'=>json_encode(['fingerprint'=>$binding->fingerprint,...Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::protocol()],JSON_THROW_ON_ERROR)]);
-$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25);
+$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);
 $ports=new RuntimePorts;
 $ports->register($binding->fingerprint,static fn()=>RuntimeComposition::make($binding,$freshBindings,$clock,$features,$accepted,
     new RenewalAcceptance($binding,true,true,25),$precheck,$registration,$transfer,$offline,new Management($binding,$offline)));

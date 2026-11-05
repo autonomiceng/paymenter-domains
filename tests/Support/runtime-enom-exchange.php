@@ -40,7 +40,7 @@ app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$pri
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 App\Models\Server::find($binding->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
-$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25);$renewalAccepted=new RenewalAcceptance($binding);
+$features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);$renewalAccepted=new RenewalAcceptance($binding);
 $factory=$auth->enomRuntimeFactory($binding,$clock,$features,$accepted,$renewalAccepted,$precheck);
 $before=Account::find($account->id)->getRawOriginal();DB::enableQueryLog();DB::flushQueryLog();$composition=$factory();same([],DB::getQueryLog(),'Factory performs no database reads');DB::disableQueryLog();
 same($before,$account->fresh()->getRawOriginal(),'Pure factory changes no account bytes');expect(!$account->fresh()->processing_enabled,'Factory leaves rotated processing off');

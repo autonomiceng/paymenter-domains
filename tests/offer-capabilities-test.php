@@ -13,7 +13,7 @@ require __DIR__.'/Support/offer-commerce.php';
 extract(offerCommerceFixture());
 $allowed = true;
 $caps = new Capabilities($ports, $clock, static function () use (&$allowed): void { if (!$allowed) { throw new DomainException('Revoked'); } });
-same(null, Capabilities::routed(), 'Production remains legacy before complete checked composition');
+expect(Capabilities::routed() instanceof Capabilities, 'Active fixture routes its checked capability composition');
 same(['com'], $caps->endings($binding, 'transfer'), 'Capability endings come from current independent facts');
 DB::table('domains_sales_policies')->where('tld', 'com')->update(['register_enabled'=>false, 'transfer_enabled'=>false]);
 DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_intent'=>OfferState::json(['sell'=>false]), 'catalogue_published_revision'=>null]);
@@ -35,7 +35,7 @@ DB::transaction(function () use ($caps, $binding, $t): void {
 });
 $op = new Paymenter\Extensions\Servers\Domains\Models\Operation;
 $op->setRelation('domain', new Paymenter\Extensions\Servers\Domains\Models\Domain(['tld'=>'com']));
-$accept = new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,null,null,$caps);
+$accept = new Paymenter\Extensions\Servers\Domains\Services\WriteAcceptance($binding,true,true,25,null,null,catalogue: $caps);
 $order = new Paymenter\Extensions\Servers\Domains\Data\Query('capability-placeholder.com',Paymenter\Extensions\Servers\Domains\Data\Action::Register,1);
 same([1,3],$accept->requireCurrent($binding,$order,$op)->terms,'Execution uses independent provider terms while unsold');
 $op->catalogueTld=Tld::findOrFail($t->id);

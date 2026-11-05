@@ -77,7 +77,7 @@ $clock->time = $clock->time->modify('+1 day'); same($d->id, $confirm()->id, 'Dup
 same(1, ServiceCancellation::count(), 'Duplicate reuses original cancellation'); same($links, HistoryLink::all()->map(fn ($l) => $l->getRawOriginal())->all(), 'Duplicate preserves exact links'); same($authority, scenarioAuthority($d), 'Duplicate preserves authority bytes');
 $l = DB::transaction(fn () => HoldingLocks::take($d)); same('adoption', $l['identity_source']['kind'], 'DNR has structural adoption identity');
 same('adoption', HoldingAnchor::resolve($l)->kind, 'DNR read-only anchor available'); expect(RenewalStop::blocksRenewal($l), 'Original DNR blocks issued as well as future authority');
-$clock->time = new DateTimeImmutable('2027-09-29T00:00:00Z'); $billing = new DomainBilling($bindings, $guard, $clock);
+$clock->time = new DateTimeImmutable('2027-09-29T00:00:00Z'); $billing = new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null);
 same(null, $billing->invoice($d->id), 'Scheduled adoption renewal-off creates no invoice');
 $refuse = static function (callable $call, string $label): void { $yes = false; try { $call(); } catch (DomainException|LogicException $e) { $yes = true; } expect($yes, $label); };
 $refuse(fn () => $billing->invoice($d->id, $owner), 'Manual renewal-off refused');
@@ -109,12 +109,12 @@ $counterfactual = $l; $counterfactual['adoption'] = clone $a; $counterfactual['a
 expect(RenewalFunding::requireCurrent($op, $counterfactual)['basis'] === 'paid_invoice', 'Funded fixture has no independent funding refusal masking DNR');
 $refuse(fn () => RenewalFunding::requireCurrent($op, $l), 'Funded issued execution respects DNR');
 $refuse(fn () => RenewalFunding::requireAuthority($op, $l), 'Issued funding authority respects original DNR');
-$refuse(fn () => (new RenewalAuthority($bindings, $clock))->capture(new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision, $d->provider_expires_at->format('Y-m-d'), $d->provider_domain_id, 1, $op->operation_key)), 'Issued admission respects original DNR');
+$refuse(fn () => (new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null))->capture(new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision, $d->provider_expires_at->format('Y-m-d'), $d->provider_domain_id, 1, $op->operation_key)), 'Issued admission respects original DNR');
 $dispatch = new RuntimeDispatch($clock); same(false, $dispatch->current($op), 'Installed renewal dispatch entry suppresses DNR');
 $queued = count(Queue::pushedJobs()); $dispatch->enqueue($op->id, true); same($queued, count(Queue::pushedJobs()), 'DNR enqueue emits no job hint');
 $accepted = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAcceptance($binding, true, true, 25);
 $features = new \Paymenter\Extensions\Servers\Domains\Services\WriteFeatures(renewal: true);
-$authorityPort = new RenewalAuthority($bindings, $clock);
+$authorityPort = new RenewalAuthority($bindings, $clock,offers: $GLOBALS['caps']??null);
 $admission = new \Paymenter\Extensions\Servers\Domains\Services\RenewalAdmission($authorityPort, $bindings, $accepted, $clock);
 $engine = new \Paymenter\Extensions\Servers\Domains\Services\RenewalExecution($bindings, $authorityPort, $admission, $accepted, $features, $clock);
 $writes = 0; $writer = new \Paymenter\Extensions\Servers\Domains\Services\RenewalWriter($binding, $features, $accepted, fn () => $engine, static function () use (&$writes): never { $writes++; throw new LogicException('Forbidden renewal send'); });

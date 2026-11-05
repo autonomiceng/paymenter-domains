@@ -21,7 +21,7 @@ config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enab
 $setting=$product->server->settings()->firstOrNew(['key'=>EnomTestManagement::KEY]);$setting->encrypted=true;$setting->type='string';
 $setting->value=json_encode(['fingerprint'=>$binding->fingerprint,...EnomTestManagement::protocol()]);$setting->save();
 app()->instance(Runtime::class,new Runtime);app()->instance(ReadLimiter::class,new WireLimit(1000));
-$factory=RuntimeFactory::make($binding,$bindings,$clock,new WriteFeatures(management:true),new WriteAcceptance($binding),new RenewalAcceptance($binding),
+$factory=RuntimeFactory::make($binding,$bindings,$clock,new WriteFeatures(management:true),new WriteAcceptance($binding,catalogue: $GLOBALS['caps']??null),new RenewalAcceptance($binding),
     new TransferPrecheck(new Rdap(static fn()=>null)),static fn()=>['uid'=>'account-enom','token'=>'synthetic-offline-token'],managementAccepted:true,testManagement:true);
 ['management'=>$engine,'management_protocol'=>$driver]=$factory();
 $reset=static function()use($exchange):void {

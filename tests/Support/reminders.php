@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\{Mail,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling,HolderPricing,NativeDomainGuard,ObservationSchema,ReminderSchema,ReminderSchedules,ReminderTemplates,Reminders};
 require __DIR__.'/reminder-mail.php';
-$guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();$billing=new DomainBilling($bindings,$guard,$clock);
+$guard=new NativeDomainGuard(new HolderPricing($prices),$clock);$guard->boot();$billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??null);
 $reminders=new Reminders($clock,$bindings);$staff=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::POLICY]);
 // These delivery scenarios explicitly start with reminders paused; new-account defaults are covered by the account upgrade test.
 foreach($tlds as $t){ReminderSchedules::enroll((int)$t->server_id);Illuminate\Support\Facades\DB::table('domains_reminder_schedules')->where('server_id',$t->server_id)->update(['enabled'=>false]);}

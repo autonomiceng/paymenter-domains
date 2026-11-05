@@ -242,7 +242,7 @@ $before=count($GLOBALS['enomWire']['forms']);$worker->operation($change->id);sam
 // A paid renewal uses the same native invoice, two assessments and captured-order reconciliation.
 $clock->at=new DateTimeImmutable('2027-09-30T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-$billing=new Paymenter\Extensions\Servers\Domains\Services\DomainBilling($bindings,app(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class),$clock);
+$billing=new Paymenter\Extensions\Servers\Domains\Services\DomainBilling($bindings,app(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);
 config(['domains.enom_live.renewal'=>false]);try{$billing->invoice($op->domain_id,$user);throw new LogicException('Site off refuses a new Live invoice');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff,$e->reason,'Live with the site flag off gets no new invoice');}config(['domains.enom_live.renewal'=>true]);
 // A Live holding on a TEST site never sends either.
 config(['domains.enom_identity.environment'=>'test']);try{$billing->invoice($op->domain_id,$user);throw new LogicException('Other environment refuses a new Live invoice');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff,$e->reason,'Live holding on a TEST site gets no new invoice');}config(['domains.enom_identity.environment'=>'live']);
