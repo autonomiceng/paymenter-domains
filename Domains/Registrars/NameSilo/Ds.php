@@ -80,11 +80,36 @@ final class Ds
     {
         if (!in_array($mapping->command, ['dnsSecAddRecord', 'dnsSecDeleteRecord'], true)) { return false; }
         $before = self::inventory($beforeBody); $after = self::inventory($afterBody);
-        if ($before['state'] !== 'complete' || $after['state'] !== 'complete') { return false; }
+        return self::confirm($mapping, $before, $after);
+    }
+
+    /** Decoded encrypted preimages require the same completeness and tuple validation as wire inventories. */
+    public static function records(array $inventory): array
+    {
+        if (($inventory['state'] ?? null) !== 'complete' || !is_array($inventory['records'] ?? null)
+            || !array_is_list($inventory['records']) || count($inventory['records']) > 50) {
+            throw new \DomainException('Complete DS inventory required.');
+        }
+        $records = [];
+        foreach ($inventory['records'] as $row) {
+            if (!is_array($row)) { throw new \DomainException('Invalid DS inventory.'); }
+            $tuple = self::tuple($row);
+            $key = json_encode($tuple, JSON_THROW_ON_ERROR);
+            if (isset($records[$key])) { throw new \DomainException('Unique DS tuples required.'); }
+            $records[$key] = $tuple;
+        }
+        ksort($records);
+        return array_values($records);
+    }
+
+    public static function confirm(DsMapping $mapping, array $before, array $after): bool
+    {
+        if (!in_array($mapping->command, ['dnsSecAddRecord', 'dnsSecDeleteRecord'], true)) { return false; }
+        try { $records = self::records($before); $observed = self::records($after); }
+        catch (\DomainException|\TypeError) { return false; }
         $parameters = $mapping->parameters();
         $target = ['key_tag' => $parameters['keyTag'], 'algorithm' => $parameters['alg'],
             'digest_type' => $parameters['digestType'], 'digest' => $parameters['digest']];
-        $records = $before['records'];
         $index = array_search($target, $records, true);
         if ($mapping->command === 'dnsSecDeleteRecord') {
             if ($index === false) { return false; }
@@ -94,7 +119,7 @@ final class Ds
             $records[] = $target;
         }
         $expected = array_map(static fn (array $row): string => json_encode($row, JSON_THROW_ON_ERROR), array_values($records));
-        $observed = array_map(static fn (array $row): string => json_encode($row, JSON_THROW_ON_ERROR), $after['records']);
+        $observed = array_map(static fn (array $row): string => json_encode($row, JSON_THROW_ON_ERROR), $observed);
         sort($expected); sort($observed);
         return $expected === $observed;
     }
