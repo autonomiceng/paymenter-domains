@@ -79,7 +79,7 @@ class MonitoringSettings extends Page
             ...(!$default?[Callout::make(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::MISSING)->status('danger')->columnSpanFull()]:[]),
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
             Sheet::split([Sheet::section('Monitoring',[
-                Sheet::row(TextEntry::make('site_dns')->label('Site DNS default')->state($default?->name??Missing::LABEL)->belowContent($default?implode(', ',$default->nameservers):'Installation has not supplied the expected nameservers.')),
+                Sheet::row(TextEntry::make('site_dns')->label('Site DNS default')->state($default?->name??Missing::LABEL)->belowContent($default?implode(', ',$default->nameservers):'Choose a set with Change site DNS default.')),
                 Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Supported registrar families are read independently. Unsupported families remain unsupported.')),
                 Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Daily')->belowContent('Record comparisons run daily. Nameserver delegation is checked more often; failed checks retry automatically.')),
                 Sheet::row(TextEntry::make('read_failures')->label('Registrar read failures')->state('No separate alert switch')->belowContent('Read failures appear on the domain, with the failed family and resume action. Separate registrar-failure email alerts are not available.')),

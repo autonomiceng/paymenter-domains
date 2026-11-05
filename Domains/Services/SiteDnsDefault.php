@@ -11,7 +11,7 @@ final class SiteDnsDefault
 {
     public const KEY='domains_site_dns_template';
     public const MANAGE='admin.domains.settings.new_domain_dns';
-    public const MISSING='Beco DNS default Missing: installation has not supplied the expected nameservers';
+    public const MISSING='Site DNS default is Missing. New domains have no nameservers to use. Choose a set with Change site DNS default.';
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
     public static function profile(bool $lock=false): ?WatchProfile

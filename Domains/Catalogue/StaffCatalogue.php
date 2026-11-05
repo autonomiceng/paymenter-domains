@@ -54,7 +54,7 @@ final class StaffCatalogue
         $step=static fn(string $state,string $next,?string $open=null)=>compact('state','next','open');
         $missing=static fn(string $next,?string $open='tld')=>$step('missing',$next,$open);
         $waiting=static fn(array $s)=>!empty($s['local_failure'])?$missing('Check the registrar account and read prices again.','account'):
-            $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?'Next check '.gmdate('M j, Y H:i',$s['due_at']).' UTC.':'Queued for the next background run.');
+            $step('checking',isset($s['due_at'])&&$s['due_at']>=$now->getTimestamp()&&empty($s['remaining'])?'Next check '.gmdate('M j, Y, g:i A',$s['due_at']).' UTC.':'Queued for the next background run.');
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
         try{$rule=self::ruleOnce($t,$once);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}

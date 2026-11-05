@@ -147,7 +147,12 @@ class ViewDomain extends ViewRecord
             }
             $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
-        return $schema->components([Sheet::split([...$this->notices($d),...$sections,Sheet::section('Monitoring',[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d)]))]),$this->recordFamilies($d),Sheet::section('DNSSEC',[$this->row('DS records',\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d),[])])],[$this->activity($d)])]);
+        // Like the approved mock, an active domain leads with its registrar records. Other states lead with registration and billing.
+        $records=[$this->recordFamilies($d),Sheet::section('DNSSEC',[$this->row('DS records',\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d),[])])];
+        // The registrar records section above already shows each family's state and the last read, so Monitoring keeps only the public DNS evidence.
+        $monitoring=Sheet::section('Monitoring',[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true]))]);
+        $sheet=$d->status==='active'?[...$records,...$sections]:[...$sections,...$records];
+        return $schema->components([Sheet::split([...$this->notices($d),...$sheet,$monitoring],[$this->activity($d)])]);
     }
     /** @return list<Callout> */
     private function notices(Domain $d): array
@@ -179,7 +184,7 @@ class ViewDomain extends ViewRecord
     {
         $state=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
         $resume=$this->getAction('resume_observation',false);
-        return Sheet::section('Record families',[Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true]))],after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+        return Sheet::section('Registrar records',[Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true]))],after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
     }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section

@@ -335,7 +335,9 @@ class WhatYouSell extends Page implements HasTable
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(OfferRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(OfferRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(OfferRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
-                    ->description(fn(OfferRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(OfferRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
+                    // Staff rows stay one line (table standard). A gray state keeps its reason on hover; a state that needs action shows its next step.
+                    ->description(fn(OfferRow $record)=>($s=$this->reads()->status($record))['tone']==='gray'?null:($s['next']??null))
+                    ->tooltip(fn(OfferRow $record)=>implode(' ',array_filter([($s=$this->reads()->status($record))['tone']==='gray'?($s['next']??null):null,$this->canEdit()?$this->reads()->blocked($record):null]))?:null)
                     ->url(fn(OfferRow $record)=>match($this->reads()->status($record)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null}),
             ])
             ->checkIfRecordIsSelectableUsing(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)

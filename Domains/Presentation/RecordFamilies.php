@@ -53,9 +53,9 @@ final class RecordFamilies
                 $index=array_key_last($rows);
                 if($cancelled){$rows[$index]['value']='Not applicable';$rows[$index]['staff']=$rows[$index]['customer']='Registration cancelled; no registrar records to check';}
                 elseif($kind==='glue'&&$d->registrar_key==='enom'&&$state==='partial'){
-                    $coverage=count($f['candidates']??[]).' known child hosts; '.$count.' records returned.';
-                    $explanation=($f['read_failed']??false)?'Known glue check failed; saved records are retained.':"Known glue checked; this registrar can't list every child host";
-                    $rows[$index]['staff']=$explanation.'. '.$coverage.' Individual changes use a fresh check; whole-list replacement stays blocked.';
+                    $coverage=count($f['candidates']??[]).' known child hosts, '.$count.' records returned.';
+                    $explanation=($f['read_failed']??false)?'Known glue check failed. Saved records are retained':"Known glue checked. This registrar can't list every child host";
+                    $rows[$index]['staff']=$explanation.'. '.$coverage.' You can change one glue record at a time. Replacing the whole list stays blocked.';
                     $rows[$index]['customer']=$explanation.'. '.$coverage.' You can change one glue record at a time.';
                 }
                 if($kind==='dns'){

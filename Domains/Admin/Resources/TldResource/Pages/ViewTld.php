@@ -129,7 +129,7 @@ class ViewTld extends ViewRecord
         $sync=[self::entry('Last successful refresh',isset($refresh['succeeded_at'])?gmdate('M j, Y H:i',(int)$refresh['succeeded_at']).' UTC':'None recorded',
             TldFacts::refreshText($refresh),side:[$this->syncPricesAction()->label('Sync prices')]),
             self::entry('Next due',isset($refresh['due_at'])?gmdate('M j, Y H:i',(int)$refresh['due_at']).' UTC':'Not scheduled',
-                isset($refresh['due_at'])?'Background refresh is scheduled.':'Check the registrar account runtime and background worker.')];
+                isset($refresh['due_at'])?'Background refresh is scheduled.':'Check Site setup on the Registrar account page, and the background worker.')];
         if($failure=TldFacts::syncFailure((int)$t->server_id)){$sync[]=self::entry('Last refresh failure','Refresh failed',$failure['cause'],'danger');}
         return $schema->components([
             Sheet::split([Sheet::section('Sales',$sales),Sheet::section('Price sync',$sync)],[$this->activity()]),

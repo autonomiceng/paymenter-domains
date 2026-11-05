@@ -29,7 +29,7 @@ $case('D01 complete selected terms count',function()use($t,$actor,$tlds){
     for($i=1;$i<600;$i++){$copy=$t->replicate();$copy->tld='state'.strtr(sprintf('%03d',$i),'0123456789','abcdefghij');$copy->catalogue_facts=$i===599?null:($i===1?$tlds[1]->catalogue_facts:$t->catalogue_facts);$copy->catalogue_retained_annual_retail=null;$copy->save();DB::table('domains_sales_policies')->insert([...$policy,'tld'=>$copy->tld]);}
     $rows=AccountChecklist::renewals((int)$t->server_id);$summary=collect($rows)->firstWhere('label','Selected TLD terms');
     same('599 of 600 read',$summary['value']??null,'Counts the full selected set including annual-only facts');
-    expect(str_contains((string)$summary['cause'],'1 need attention'),'Missing facts count is explicit');
+    expect(str_contains((string)$summary['cause'],'1 needs attention'),'Missing facts count is explicit');
     $link=$summary['buttons'][0]->getUrl();expect(str_contains($link,'needs_attention')&&str_contains($link,'server_id'),'Attention link is account scoped');
     Livewire::actingAs($actor)->test(ListTlds::class)->filterTable('server_id',(string)$t->server_id)->filterTable('needs_attention')->assertCountTableRecords(1);
     Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Selected TLD terms')->assertDontSee('Supported terms');

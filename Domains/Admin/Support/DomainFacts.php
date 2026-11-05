@@ -389,7 +389,7 @@ final class DomainFacts
         catch(\Illuminate\Contracts\Encryption\DecryptException){return self::UNREADABLE;}
         if(!$read['read_code']){return null;}
         return $read['read_cause'].' '.($read['read_stopped']?self::restart($d):($read['next_read']!==null
-            ?'Next automatic retry: '.gmdate('M j, Y H:i',$read['next_read']).' UTC.'
+            ?'Next automatic retry: '.gmdate('M j, Y, g:i A',$read['next_read']).' UTC.'
             :'No registrar read is queued. Check the background worker.'));
     }
     private const ASK_RESUME='Ask staff who can resume sync.';
