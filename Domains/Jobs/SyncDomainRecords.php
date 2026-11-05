@@ -25,6 +25,12 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public bool $failOnTimeout=true;
     public function __construct(public int $actor,public int $domain,public int $generation,public string $fingerprint) {}
     public function uniqueId(): string { return 'domains-record-sync:'.$this->domain.':'.$this->generation.':'.$this->fingerprint; }
+    /** The same unique job lock covers queued and running reads. This check never starts a read. */
+    public static function pending(Domain $d): bool
+    {
+        $job=new self(0,(int)$d->id,$d->authority_generation,$d->account_fingerprint);
+        return \Illuminate\Support\Facades\Cache::has(app(UniqueLock::class)->getKey($job));
+    }
     public static function enqueue(int $actor,Domain $d): bool
     {
         $connection=config('queue.connections.'.config('queue.default'),[]);
