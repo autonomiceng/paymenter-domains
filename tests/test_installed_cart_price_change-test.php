@@ -67,6 +67,8 @@ $mixedPage = $open($mixedCart);
 // A later local mapping/read failure must not commit an earlier off-sale removal without its notice.
 $scanCart = commerceCart($user); $scanCom = commerceAdd($scanCart, $com, 'scan-placeholder.com', 3);
 $scanNet = commerceAdd($scanCart, $second['product'], 'example.net');
+$raceCart = commerceCart($user); $raceLine = commerceAdd($raceCart, $com, 'race-placeholder.com', 3);
+$replacement = commerceHosting();
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
 $netRow = Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $secondBinding->serverId)->where('tld', 'net')->sole();
 $savedIntent = $netRow->catalogue_intent;
@@ -78,6 +80,26 @@ expect($scanFailed, 'A malformed later offer aborts the local scan');
 same([$scanCom->id, $scanNet->id], $scanCart->items()->orderBy('id')->pluck('id')->all(),
     'A failed local scan preserves every cart line until a removal can be reported');
 Illuminate\Support\Facades\DB::table('domains_tlds')->where('id', $netRow->id)->update(['catalogue_intent' => $savedIntent]);
+// Simulate another tab replacing the observed line between mapping and the removal write.
+$raceNative = new class($prices) extends Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue {
+    public Closure $replace;
+    public function mapping(App\Models\Product $product, ?App\Models\Plan $plan = null): ?array {
+        $mapping = parent::mapping($product, $plan); ($this->replace)(); return $mapping;
+    }
+};
+$raceNative->replace = static function () use ($raceLine, $replacement): void {
+    Illuminate\Support\Facades\DB::table('cart_items')->where('id', $raceLine->id)->update([
+        'product_id' => $replacement->id, 'plan_id' => $replacement->plans()->sole()->id, 'checkout_config' => '{}']);
+};
+$raceAdmission = new class($raceNative, $sellers, $eligibility, $clock) extends Paymenter\Extensions\Servers\Domains\Services\CartAdmission {
+    use OfferCommerceRoute;
+};
+$raceAdmission->fixtureOffers = $offers;
+Illuminate\Support\Once::flush(); app('request')->cookies->set('cart', $raceCart->ulid);
+try { $raceAdmission->refresh(); } catch (Paymenter\Extensions\Servers\Domains\Services\CartLinesRemoved) {}
+$replacementLine = $raceCart->items()->find($raceLine->id);
+expect($replacementLine !== null && (int) $replacementLine->product_id === (int) $replacement->id,
+    'Off-sale removal preserves a concurrently replaced purchasable cart line');
 $before = $counts(); $checkout($page, $cart);
 same($before, $counts(), 'Removing a line places no order');
 expect(!$cart->items()->whereKey($closed->id)->exists(), 'The TLD off sale loses only its own line');

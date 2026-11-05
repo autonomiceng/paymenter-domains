@@ -93,12 +93,24 @@ class CartAdmission
             if (!$mapping || !in_array($mapping['action'], ['register', 'transfer'], true)) { continue; }
             if ($this->catalogue()?->offSale((int) $product->server_id, $mapping['tld']->tld, $mapping['action'], $mapping['term'])) {
                 $name = $this->name($item, $mapping);
-                $removed[$item->id] = $name; continue;
+                $removed[$item->id] = [$name, $item->product_id, $item->plan_id]; continue;
             }
             $lines[] = [$item, $product, $mapping];
         }
         if ($removed) {
-            CartItem::where('cart_id', $cart->id)->whereIn('id', array_keys($removed))->delete();
+            $removed = DB::transaction(function () use ($cart, $removed): array {
+                $query = CartItem::where('cart_id', $cart->id)->where(function ($q) use ($removed): void {
+                    foreach ($removed as $id => [$name, $product, $plan]) {
+                        $q->orWhere(fn ($q) => $q->whereKey($id)->where('product_id', $product)->where('plan_id', $plan));
+                    }
+                });
+                // Lock the matched identities so the single delete and its notice cover exactly those rows.
+                $ids = (clone $query)->lockForUpdate()->pluck('id')->all();
+                if ($ids) { $query->whereIn('id', $ids)->delete(); }
+                return array_map(static fn ($row) => $row[0], array_intersect_key($removed, array_flip($ids)));
+            });
+        }
+        if ($removed) {
             // The native page and checkout read this same memoized cart. Checkout stops; the next click refreshes the rest.
             $cart->setRelation('items', $cart->items->reject(static fn ($item) => isset($removed[$item->id]))->values());
             throw new CartLinesRemoved(array_values($removed));
