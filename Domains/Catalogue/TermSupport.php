@@ -82,11 +82,13 @@ final class TermSupport
         return $term['cost'] === null ? null : ['amount' => $term['cost'], 'currency' => 'USD'];
     }
 
-    /** Admission accepts a longer term only when its debt froze an NS17 rule for exactly that term,
-     * with a cap covering the frozen exact cost (a staff complimentary cap may be higher). */
-    public static function admits(int $years, ?array $renewal): bool
+    /** Admission accepts a longer term only for a registrar whose pre-send read quotes the exact multi-year total
+     * (none yet), and only when its debt froze an NS17 rule for exactly that term, with a cap covering the frozen
+     * exact cost (a staff complimentary cap may be higher). A frozen multi-year debt is otherwise held: `no_exact_quote`. */
+    public static function admits(string $registrar, int $years, ?array $renewal, array $exactQuotes = self::EXACT_QUOTES): bool
     {
         if ($years === 1) { return true; }
+        if (!in_array($registrar, $exactQuotes, true)) { return false; }
         $rule = $renewal['term_rule'] ?? null;
         if (!is_array($rule) || ($rule['years'] ?? null) !== $years || ($renewal['term'] ?? null) !== $years) { return false; }
         try { return PricingRule::units($renewal['cost_cap']['amount'] ?? '') >= PricingRule::units($rule['cost']['amount'] ?? ''); }

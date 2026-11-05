@@ -111,10 +111,14 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $withdrawn = $renew($registrar, 'com', TermSupport::attach('com', $facts($evidence()), null), $costs, $expiry, $now);
     same([true, $exact ? 'family_unreviewed' : 'no_exact_quote'], [$withdrawn[1]['available'], $withdrawn[2]['reason']], $registrar.': refresh without evidence holds new longer terms');
     $issued = ['term' => 2, 'cost_cap' => ['amount' => '24.0000', 'currency' => 'USD'], 'term_rule' => $terms[2]['rule'] ?? ['years' => 2, 'cost' => ['amount' => '24.0000']]];
-    same([true, true, false, false, false, false], [TermSupport::admits(1, null), TermSupport::admits(2, $issued), TermSupport::admits(3, $issued),
-        TermSupport::admits(2, array_diff_key($issued, ['term_rule' => 1])), TermSupport::admits(2, ['cost_cap' => ['amount' => '20.0000', 'currency' => 'USD']] + $issued),
-        TermSupport::admits(2, ['term' => 3] + $issued)], $registrar.': admission follows only the frozen rule');
-    same(true, TermSupport::admits(2, ['cost_cap' => ['amount' => '30.0000', 'currency' => 'USD']] + $issued), $registrar.': a higher staff cap still covers the exact cost');
+    // A queued debt that froze a multi-year rule is still held when no registrar quotes exact multi-year totals.
+    same([true, false], [TermSupport::admits($registrar, 1, null), TermSupport::admits($registrar, 2, $issued)], $registrar.': frozen multi-year debt held without an exact quote');
+    // The rule matrix lists the registrar under test as a stand-in exact quoter.
+    $admits = static fn (int $y, ?array $r) => TermSupport::admits($registrar, $y, $r, [$registrar]);
+    same([true, true, false, false, false, false], [$admits(1, null), $admits(2, $issued), $admits(3, $issued),
+        $admits(2, array_diff_key($issued, ['term_rule' => 1])), $admits(2, ['cost_cap' => ['amount' => '20.0000', 'currency' => 'USD']] + $issued),
+        $admits(2, ['term' => 3] + $issued)], $registrar.': admission follows only the frozen rule');
+    same(true, $admits(2, ['cost_cap' => ['amount' => '30.0000', 'currency' => 'USD']] + $issued), $registrar.': a higher staff cap still covers the exact cost');
 }
 
 // Families: ordinary/grace/redemption stay distinct; grace stays held without live proof.

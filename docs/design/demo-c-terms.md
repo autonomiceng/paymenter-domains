@@ -41,7 +41,8 @@ Exact `renew:N` observations go through the existing writer; only `renew:1` feed
   version, rule, validity, safe boundary, horizon, exact cost and new expiry. Retail stays retained annual retail
   times years. Annual debt and holdings without a catalogue offer keep their old shape. Issued debt is never retrofitted.
 - `RenewalAdmission` admits a longer term on a renewal-enabled account only on a **TEST** binding, for a named debt
-  whose frozen rule matches the term and whose cap covers the frozen cost (`TermSupport::admits`). Live
+  whose frozen rule matches the term and whose cap covers the frozen cost (`TermSupport::admits`), and only for a
+  registrar in `EXACT_QUOTES`. With the list empty, an already-issued multi-year debt is refused (`renewal_term_refused`). Live
   multi-year renewal stays refused until NS18. Provider reads still decide state,
   quote and boundary (NameSilo: Active, date at least two UTC days ahead).
 - `RenewalCycles::complimentary` applies the same eligibility; the staff cap must cover the exact cost.
