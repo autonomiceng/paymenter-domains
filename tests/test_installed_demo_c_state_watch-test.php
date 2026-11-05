@@ -29,7 +29,7 @@ foreach(['paused'=>'Paused','retired'=>'Monitoring stopped; no further checks']a
  $record=$w->fresh();
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
   // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.
-  if($column->getState()!==''){$failures[]=$state.' '.$name.' still has Missing or repeats the row state';}
+  if(filled($column->getState())){$failures[]=$state.' '.$name.' still has Missing or repeats the row state';}
   if(str_contains((string)$column->getDescriptionBelow(),'Fills in by itself')){$failures[]=$state.' '.$name.' promises checks';}
  }
  $html=\Illuminate\Support\Facades\Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$list->instance(),'body'=>$list->html()]);
