@@ -106,6 +106,9 @@ function fixtureObserveOfferEntry(\Paymenter\Extensions\Servers\Domains\Data\Cat
 
 function activeFixtureStorefront($sellers,$prices,$native,$bindings,$eligibility,$clock): \Paymenter\Extensions\Servers\Domains\Services\Storefront
 {
+    // Validate and construct installed routing before replacing its Storefront with this synthetic adapter.
+    // A real native holding checkout otherwise inspects the fixed fixture override as an installed route.
+    \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers::class);
     $port=new class($sellers,$prices,$native,$bindings,$eligibility,$clock) extends \Paymenter\Extensions\Servers\Domains\Services\Storefront {
         public \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers $fixtureOffers;
         protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers {return $this->fixtureOffers;}
