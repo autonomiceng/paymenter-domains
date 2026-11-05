@@ -273,7 +273,7 @@
     .domains .domains-result__price:empty { display: none; }
     .domains .domains-result__action { width: 7.5rem; grid-column: 2; grid-row: 2 / span 2; align-self: center; min-width: 7.5rem; }
     /* Without a price the note moves up into row 3, so no empty track is left. */
-    .domains .domains-result:has(> .domains-result__price:empty) .domains-result__action { grid-row: 2; }
+    .domains .domains-result:has(> .domains-result__price:empty):not(:has(.domains-term-rows)) .domains-result__action { grid-row: 2; }
 }
 
 /* Price list */
