@@ -29,11 +29,12 @@ final class RecordFamilies
     }
     public static function read(Domain $d,\DateTimeImmutable $now): array
     {
+        $readable=true;
         try{$status=ObservationProjection::recordStatus($d,$now);$hold=$d->observation['record_hold']['reason']??null;
             $currentRead=$status['at']!==null&&($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d);}
-        catch(\Illuminate\Contracts\Encryption\DecryptException){$empty=clone $d;$empty->observation=[];$status=ObservationProjection::recordStatus($empty,$now);$hold=null;$currentRead=false;}
+        catch(\Illuminate\Contracts\Encryption\DecryptException){$readable=false;$empty=clone $d;$empty->observation=[];$status=ObservationProjection::recordStatus($empty,$now);$hold=null;$currentRead=false;}
         $cancelled=false;
-        if($d->status==='cancelled'&&$status['at']===null&&$d->provider_domain_id===null&&$d->provider_order_id===null&&$d->provider_expires_at===null){
+        if($readable&&$d->status==='cancelled'&&empty($d->observation['records'])&&$status['at']===null&&$d->provider_domain_id===null&&$d->provider_order_id===null&&$d->provider_expires_at===null){
             $ops=$d->operations;
             $cancelled=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::terminal($ops->first(),$d);
         }

@@ -96,7 +96,18 @@ final class SettingsActions
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)))];
             if(in_array($name,['default_pricing','override'],true)){
                 // Saving writes rule and fee together. The form shows only the rule's own fields, so no fee may swap them for the built-in rule.
-                $rule=self::cached(static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(StaffCatalogue::routed()?->pricing($server,Tld::findOrFail($tld))??(new PricingRules)->rule(Tld::findOrFail($tld))):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
+                $savedRule=self::cached(static function()use($tld,$name,$server):array{
+                    $fixed=false;
+                    try{
+                        $t=$tld&&$name==='override'?Tld::findOrFail($tld):null;
+                        if($t){$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);$fixed=($intent['pricing_rule']['mode']??$t->pricing_mode)==='fixed';}
+                        $rule=$t?(StaffCatalogue::routed()?->pricing($server,$t)??(new PricingRules)->rule($t)):(new PricingRules)->defaultRule(fee:CardFee::NONE);
+                        return ['rule'=>$rule,'error'=>null];
+                    }catch(\Throwable){return ['rule'=>PricingRule::DEFAULT,'error'=>$fixed?'Invalid fixed price rule':'Invalid pricing rule'];}
+                });
+                $rule=static fn()=>$savedRule()['rule'];
+                $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Missing: '.$savedRule()['error'].'. Enter valid prices below or choose Default pricing.')
+                    ->key('invalid_saved_rule')->visible(fn()=>$savedRule()['error']!==null);
                 $default=self::cached(static function(){try{return (new PricingRules)->defaultRule();}catch(\Throwable){return null;}});
                 $own=static fn($get)=>$name!=='override'||$get('pricing')!=='default';
                 if($name==='override'){

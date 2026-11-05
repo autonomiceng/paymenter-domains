@@ -85,9 +85,9 @@ final class TldFacts
         $cause=match(true){
             $invalid=>'Invalid fixed price rule. Use Edit prices to enter all three positive prices.',
             $notOffered=>$name.' not offered by this registrar',
-            $value!==null=>self::costNote($row),
             !$selected&&($fact['seller']??null)===null=>'No registrar selected; not for sale',
             !collect($fact['prices'])->contains(fn($p)=>$p['synced'])=>"Not in the registrar's price feed; not for sale",
+            $value!==null=>self::costNote($row),
             default=>$name.($field==='cost'?' cost':' price').' missing. '.($field==='cost'?'The registrar feed must supply this exact term.':'Edit prices must supply a valid price.'),
         };
         $missing=$invalid||($value===null&&!$notOffered&&$selected);
