@@ -89,7 +89,8 @@ $namesilo=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Present
 $reviewFailures=[];if($namesilo->management['glue']['actions']!==[]){$reviewFailures[]='NameSilo partial glue gained individual controls';}
 $customer=view('domains::partials.record-families',['recordFamilies'=>RecordFamilies::read($enom,$now)])->render();
 $dom=storefrontDom($customer);
-if($dom->query('//dd[span[@data-record-family="glue"]]//time[@data-domains-time and @datetime="2026-11-04T09:00:00+00:00"]')->length!==1){$reviewFailures[]='Customer glue lacks one local formatted date';}
+// slop-sweep: a family checked at the page's read time no longer repeats it; the head says it once.
+if($dom->query('//time[@data-domains-time and @datetime="2026-11-04T09:00:00+00:00"]')->length!==1||$dom->query('//dd[span[@data-record-family="glue"]]//time[@datetime="2026-11-04T09:00:00+00:00"]')->length!==0){$reviewFailures[]='Customer glue read time is not said once, in the head';}
 if(str_contains($customer,'Replacing the whole list')||str_contains($customer,'preflight')){$reviewFailures[]='Customer glue contains staff-only words';}
 expect($reviewFailures===[],implode('; ',$reviewFailures));
 // Cancellation alone never proves no send. Reuse the engine's terminal no-send proof.
@@ -104,7 +105,8 @@ $fact=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($cancell
 $nativePage=new \Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 $row=(new ReflectionMethod($nativePage,'row'))->invoke($nativePage,'DS records',$fact,[]);
 $dnssec=\Filament\Schemas\Schema::make($nativePage)->components([$row])->toHtml();
-expect(str_contains($dnssec,'Registration cancelled; no registrar records to check')&&!str_contains($dnssec,'Sync this domain'),'Native staff DNSSEC agrees with proven no-send cancellation');
+// slop-sweep: the Registrar records head says the cancellation once (asserted above), so the DS row shows only Not applicable.
+expect(str_contains($dnssec,'Not applicable')&&!str_contains($dnssec,'Registration cancelled; no registrar records to check')&&!str_contains($dnssec,'Sync this domain'),'Native staff DNSSEC agrees with proven no-send cancellation');
 $op->attempt=['seal'=>'sealed','send_state'=>'possibly_sent'];
 expect(!str_contains(json_encode(\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($cancelled)),'Registration cancelled; no registrar records to check'),'Possible send cannot hide DS uncertainty');
 expect(!str_contains(json_encode(RecordFamilies::read($cancelled,$now)),'Registration cancelled; no registrar records to check'),'Possible send cannot use cancellation explanation');
