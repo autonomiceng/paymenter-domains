@@ -9,8 +9,11 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceSchema, IdentityRefused, NameSiloSandbox, ObservationSchema, RegistrarBalances, RegistrarFactories, RegistrarRegistry, RuntimePorts, StaffSettingsReview as Review, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceSchema, IdentityRefused, NameSiloSandbox, ObservationSchema, RegistrarBalances, RegistrarFactories, RegistrarRegistry, RuntimePorts, StaffSettingsReview as Review, StaffSettingsWrites};
 require_once __DIR__.'/staff-tlds.php';
+// Bind before boot resolves singleton readers/limiters; all reads advance one fixture clock.
+$balanceClock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:00',new DateTimeZone('UTC')));
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$balanceClock);
 ini_set('zend.exception_ignore_args','0');$GLOBALS['enrollmentCalls']=0;
 $empty=new RegistrarRegistry;config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);
 same(false,NameSiloSandbox::bootstrap($empty),'Enrollment defaults off');foreach(['true',1] as $truthy){config(['domains.namesilo_sandbox_enrollment.enabled'=>$truthy]);same(false,NameSiloSandbox::enabled(),'Only explicit boolean opt-in');}config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);same([],$empty->keys(),'No default reader');
@@ -99,8 +102,6 @@ unset($configurePage);gc_collect_cycles();
 // A separate read works without processing or acceptance. It is not ownership proof.
 BalanceSchema::install();ObservationSchema::install();Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 $GLOBALS['enrollmentExpectedTimeout']=10000;
-app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,
-    new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:00',new DateTimeZone('UTC'))));
 $n=$GLOBALS['enrollmentCalls'];$probePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('probe',$s));
 $probePage->assertActionEnabled($action('probe',$s))->setActionData(['reason'=>'Check sandbox balance'])->callMountedAction()
     ->assertHasNoActionErrors()->assertNotified('Balance updated')->assertSet('mountedActions',[]);
@@ -112,11 +113,10 @@ same(Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Succe
     (new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ResponseParser)->parse($GLOBALS['enrollmentLastRead']['body']??'',Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RegistrarRequest::balance(),'synthetic-ote-key')->outcome,
     'Separate balance reply shape');
 unset($probePage);gc_collect_cycles();
-$balanceClock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:05',new DateTimeZone('UTC')));
-app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$balanceClock);
+$balanceClock->instant=$balanceClock->now()->modify('+5 seconds');
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,
     new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function():never {throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');}));
-$balanceService=new RegistrarBalances($bindings,$balanceClock,new AccountReadBudget($balanceClock));
+$balanceService=new RegistrarBalances($bindings,$balanceClock,app(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class));
 $GLOBALS['enrollmentExpectedContext']='apibatch';
 $GLOBALS['enrollmentExpectedTimeout']=25000;
 Log::shouldNotHaveReceived('warning');Log::shouldNotHaveReceived('error');
