@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, array $identities = []): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
@@ -40,7 +40,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
             return new FakeRegistrar($b, new Capabilities($b, []), $eligible
                 ? new DriverResult($b, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, new Evidence(premium: $reads->premium, available: $reads->available))
                 : new DriverResult($b, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unverified));
-        },authenticator:$key==='namesilo'?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+        },authenticator:$key==='namesilo'&&!isset($identities[$key])?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
             public function authenticate(Environment $environment,array $credentials):void { /* Synthetic connectivity only. */ }
         }:null);
     }
@@ -66,7 +66,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
             $class=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;
             $review=new $class($actor->id,$server->id,null,'configure',$class::ticket($actor->id,$server->id,null,'configure',$class::stamp($server->id,null)),'Synthetic fixture account enrollment');
         }
-        $binding = $bindings->configure($server->id, $key, $environment, ['token' => 'account-'.$key],$review);
+        $binding = $bindings->configure($server->id, $key, $environment, ['token' => $identities[$key] ?? 'account-'.$key],$review);
         // This shared fixture keeps its explicit historical arithmetic; new-account defaults have an upgrade regression.
         App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
             ['type' => 'array', 'encrypted' => false, 'value' => \Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT]);
@@ -83,7 +83,10 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
                 $costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($a,$n,true,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(\Paymenter\Extensions\Servers\Domains\Services\PricingRule::units($cost)*$n,4),\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));
             }
             $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,$ending,$costs),$rev());
-            $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$ending,fixtureNameSiloFacts($binding,$ending,new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day')))),$rev());
+            $facts=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register'=>$terms,'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'));
+            // Exact legacy demo identities are display seeds, never authenticated local lineages.
+            if(!isset($identities[$key])){$facts=fixtureNameSiloFacts($binding,$ending,$facts);}
+            $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$ending,$facts),$rev());
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,$ending,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:max($terms),transfers:true)),$rev());
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,$ending,['register','transfer']),$rev());
             $tlds[]=$tld->fresh();continue;
