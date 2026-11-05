@@ -280,22 +280,22 @@ final class SettingsActions
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         $now=now()->toDateTimeImmutable();
         try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
-        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No costs yet. Use Sync prices on the TLD list first. Saving now changes nothing.</p>');}
+        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No saved costs to preview. Use Sync prices on the TLD list first.</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
         $html='<div class="domains-preview"><table cellpadding="6"><thead><tr>';
         foreach(['Price',...($costs?['Cost']:[]),'Now','After saving'] as $label){$html.='<th scope="col">'.e($label).'</th>';}
-        $html.='</tr></thead><tbody>';$missing=false;
+        $html.='</tr></thead><tbody>';$outdated=false;
         foreach($rows as $row){
-            $missing=$missing||!$row['synced'];
-            $note=match(true){!$row['synced']=>'Cost missing',$row['cost']===null=>TldFacts::NOT_OFFERED,$row['hold']==='below_cost'=>'Below cost: not sold',
+            $outdated=$outdated||(!$row['synced']&&$row['cost']!==null);
+            $note=match(true){$row['cost']===null=>TldFacts::NOT_OFFERED,!$row['synced']=>'Cost out of date',$row['hold']==='below_cost'=>'Below cost: not sold',
                 $row['alert']==='below_cost'=>'Below cost: still billed',$row['hold']!==null=>'Not sold',default=>null};
             $html.='<tr>'.$cell(e(ucfirst($row['action']).', '.$row['term'].' '.($row['term']===1?'year':'years')))
                 .($costs?$cell(e($money($row['cost']))):'').$cell(e($money($row['current'])))
                 .$cell(e(in_array($row['hold'],[null,'below_cost'],true)?$money($row['new']):'Not sold').($note===null?'':'<div class="domains-warn">'.e($note).'</div>')).'</tr>';
         }
         $html.='</tbody></table></div>';
-        if($missing){$html.='<p class="domains-err">Some costs are missing. Use Sync prices on the TLD list first. Saving now changes nothing.</p>';}
+        if($outdated){$html.='<p class="domains-warn">Saving publishes prices using saved costs. New sales with out-of-date costs stay off sale until Sync prices completes.</p>';}
         return new \Illuminate\Support\HtmlString($html);
     }
     /** What saving Default pricing publishes: TLDs on enabled accounts, and who waits for a price sync. */

@@ -487,7 +487,12 @@
     "tests/staff-catalogue-next-step-test.php",
     "tests/native-service-edit-test.php",
     "tests/registrar-account-counts-test.php",
-    "tests/storefront-transfer-reason-test.php"
+    "tests/storefront-transfer-reason-test.php",
+    "tests/staff-history-sync-test.php",
+    "tests/staff-price-cost-alert-test.php",
+    "tests/staff-purchase-price-label-test.php",
+    "tests/staff-pricing-preview-cost-test.php",
+    "tests/staff-transfer-keep-off-test.php"
   ],
   "ui": [],
   "runner": [
