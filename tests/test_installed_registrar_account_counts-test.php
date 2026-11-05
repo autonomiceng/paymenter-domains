@@ -145,4 +145,24 @@ foreach(['queued','held'] as $state){
     expect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::alerts($account)['value']!==null,
         'Account alert counting survives the unreadable request');
 }
+// A retained active service is read-only forecast input; no acquisition/creation admission is under test.
+$serviceId=DB::table('services')->insertGetId(['user_id'=>$staff->id,'currency_code'=>'USD','price'=>'10.00','status'=>'active']);
+Domain::create([...$bind,'domain'=>'forecast-placeholder.com','sld'=>'forecast-placeholder','tld'=>'com',
+    'user_id'=>$staff->id,'service_id'=>$serviceId,'status'=>'active','billing_managed'=>true,'provider_expires_at'=>$now->modify('+5 days'),'renewal_policy'=>[]]);
+$renewPrice=DB::table('domains_prices')->where('server_id',$server)->where('tld','com')->where('action','renew')->where('term',1);
+$observation=$renewPrice->value('catalogue_observation');
+foreach(['unobserved','stale','disabled'] as $case){
+    $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($observation);
+    if($case==='stale'){$cost['observed_at']=$now->modify('-10 days')->format(DATE_ATOM);$cost['fresh_until']=$now->modify('-8 days')->format(DATE_ATOM);}
+    if($case==='disabled'){$cost['enabled']=false;$cost['total']=null;}
+    $renewPrice->update(['catalogue_observation'=>$case==='unobserved'?null:json_encode($cost)]);
+    $forecast=\Paymenter\Extensions\Servers\Domains\Services\BalanceForecast::for($account,$now,$caps);
+    same(1,$forecast['unpriced'],'Each observation case leaves one dated renewal unpriced');
+    $missing=$case==='unobserved'?['com'=>1]:[];
+    same($missing,$forecast['unobserved']??[],'Forecast distinguishes '.$case.' annual renewal observations');
+    $gap=RegistrarFacts::readGap('1 renewal',['state'=>'ready','succeeded_at'=>$now->getTimestamp(),'remaining'=>0],$now->getTimestamp(),$missing);
+    same($case==='unobserved',$gap['act'],'Only an unobserved cost after a successful read needs the registrar');
+    if($case==='unobserved'){expect(str_contains($gap['text'],'Ask the registrar for a 1-year renewal cost for .com.'),'The gap uses the existing specific registrar request');}
+}
+$renewPrice->update(['catalogue_observation'=>$observation]);
 echo "Registrar account counts and links agree.\n";$nativeSuccessful=true;

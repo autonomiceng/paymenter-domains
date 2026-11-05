@@ -81,7 +81,7 @@ final class RegistrarFacts
     public static function balance(Account $account): array
     {
         $f=RegistrarBalances::facts($account,app(Clock::class)->now());
-        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],'unpriced'=>$f['unpriced'],
+        return ['value'=>$f['balance'],'checked'=>$f['checked'],'low'=>$f['low'],'cause'=>$f['cause'],'due'=>$f['total'],'without_cost'=>$f['unknown'],'unreadable'=>$f['unreadable'],'unpriced'=>$f['unpriced'],'unobserved'=>$f['unobserved'],
             'funds'=>RegistrarBalances::fundsUrl($account->registrar_key,$account->environment)];
     }
     /** Why Due in 30 days leaves renewals out, and who fills them. Only a gap staff must fix acts (amber).
@@ -95,12 +95,12 @@ final class RegistrarFacts
         $gap=$undated>0?['text'=>$n($undated).' with no known date, so not counted. Check the invoice days and the domain expiry.','act'=>true,'at'=>null]:null;
         if ($b['unpriced']===0) { return $gap; }
         try { $read=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()?->progress((int)$account->server_id)??[]; } catch (\Throwable) { $read=[]; }
-        $priced=self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp());
+        $priced=self::readGap($n($b['unpriced']),$read,app(Clock::class)->now()->getTimestamp(),$b['unobserved']??[]);
         return $gap===null?$priced:[...$gap,'text'=>$gap['text'].' '.$priced['text']];
     }
     /** Unpriced renewals by the price read's state. Beco retries a failed read by itself (OfferWork backoff), so only a
      * cause staff must fix (TldFacts::SYNC_STEPS) is amber, with its step. @return array{text:string,act:bool,at:?int} */
-    public static function readGap(string $count,array $read,int $now): array
+    public static function readGap(string $count,array $read,int $now,array $unobserved=[]): array
     {
         $at=isset($read['due_at'])&&(int)$read['due_at']>$now?(int)$read['due_at']:null;
         if (!empty($read['failure'])) {
@@ -110,6 +110,10 @@ final class RegistrarFacts
             }
             return ['text'=>$count.' not priced yet. The price read failed: '.$cause.'. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills('after Beco retries the read'),
                 'act'=>false,'at'=>($read['state']??null)==='retrying'?$at:null];
+        }
+        if($unobserved&&($read['succeeded_at']??0)>$now-86400&&empty($read['remaining'])){
+            $steps=array_map(static fn(string $tld)=>'Ask the registrar for a 1-year renewal cost for .'.$tld.'.',array_keys($unobserved));
+            return ['text'=>$count.' not priced yet. '.implode(' ',$steps),'act'=>true,'at'=>null];
         }
         $at=($read['state']??null)==='ready'?$at:null;
         return ['text'=>$count.' not priced yet. '.\Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills($at===null?'after the price read now queued':'after the next price read'),'act'=>false,'at'=>$at];

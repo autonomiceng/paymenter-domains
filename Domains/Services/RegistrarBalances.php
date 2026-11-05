@@ -91,7 +91,7 @@ final readonly class RegistrarBalances
             $code!==null=>'Last check failed. Use Check balance.',!$row?->read_at||$row->amount===null=>'Not checked yet. Use Check balance.',$unknown=>'Balance is not in USD. Ask the registrar to switch this account to USD.',default=>null};
         return ['status'=>$unknown?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($low?'Low balance':'OK'),'low'=>$low,
             'balance'=>$unknown?null:self::money($row->amount,$row->currency),'checked'=>$unknown?null:gmdate('M j, Y H:i \\U\\T\\C',(int)$row->read_at),
-            'cause'=>$cause,'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown'],'unreadable'=>$forecast['unreadable'],'unpriced'=>$forecast['unpriced']];
+            'cause'=>$cause,'total'=>self::money($forecast['total'],$forecast['currency']),'unknown'=>$forecast['unknown'],'unreadable'=>$forecast['unreadable'],'unpriced'=>$forecast['unpriced'],'unobserved'=>$forecast['unobserved']];
     }
     /** Staff money: "USD 49,642.19". */
     private static function money(string $amount,string $currency): string
