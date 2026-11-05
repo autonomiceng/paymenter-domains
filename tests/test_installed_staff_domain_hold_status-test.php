@@ -62,6 +62,21 @@ foreach([false,true] as $ordersOn){
     $check(str_contains($text($entry('Put on hold')->item(0)),'Request #'.$op->id.' Transfer'),'The new hold names the same request');
     same($money,$nativeMoney(),'Hold and release preserve money and queue rows');
 }
+// Same-second staff actions use their append order, including the Activity rail's seven-entry cutoff.
+$clock->instant=$clock->now()->modify('+1 minute');
+foreach(['release','hold','release','hold','release','hold','release','hold'] as $action){$run($op->fresh(),$action);}
+$history=$op->fresh()->policy['staff_actions'];$expected=[];
+foreach($history as $i=>$action){
+    if(($action['phase']??null)==='completed'&&in_array($action['action']??null,['hold','release'],true)){
+        $expected[]=$action['action'].'-'.$op->id.'-'.$i;
+    }
+}
+$entries=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($op->domain->fresh());
+$keys=array_values(array_map(static fn($row)=>$row['__key'],array_filter($entries,static fn($row)=>is_array($row)&&str_starts_with($row['__key']??'','hold-')||is_array($row)&&str_starts_with($row['__key']??'','release-'))));
+same(array_reverse($expected),$keys,'Same-second actions remain newest first before the rail cutoff');
+[$head,$request,$entry,$text,$xpath]=$page($op);
+$latest=$xpath->query('//*['.$class('domains-rail').']//*['.$class('domains-trace-title').']')->item(0);
+same('Put on hold',$text($latest),'The final same-second hold leads the rendered Activity rail');
 if($failures){fwrite(STDERR,implode("\n",$failures)."\n");}
 same([],$failures,'Domain header and Activity reflect the current hold');
 echo "Staff domain Hold/Release: paused and running orders, named release and later hold passed.\n";

@@ -20,7 +20,7 @@ final class DomainHistory
             if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
             foreach ($history as $i=>$action) {
                 if (!is_array($action)||!in_array($action['action']??null,['hold','release'],true)||($action['phase']??null)!=='completed') { continue; }
-                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>$action['action']==='hold'?'Put on hold':'Hold released',
+                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>$action['action']==='hold'?'Put on hold':'Hold released',
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
             }
         }
@@ -41,7 +41,8 @@ final class DomainHistory
                 'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
         }
         $at=fn(Operation|array $r)=>($r instanceof Operation?$r->created_at:$r['time'])?->getTimestamp()??PHP_INT_MIN;
-        usort($rows,fn($a,$b)=>$at($b)<=>$at($a));
+        $order=static fn(Operation|array $r)=>$r instanceof Operation?[$r->id,0]:[$r['__request']??0,$r['__order']??0];
+        usort($rows,fn($a,$b)=>($at($b)<=>$at($a))?:($order($b)<=>$order($a)));
         return $rows;
     }
     public static function ordersOff(Domain $domain): bool
