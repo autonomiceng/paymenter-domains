@@ -63,7 +63,9 @@ final class ManagementProgress
     }
     private static function row(Operation $op, Domain $d): array
     {
-        $pending=self::pending($op,$d);$slow=$pending && $op->safe_code!=='management_deferred' && $op->created_at->getTimestamp()<=now()->getTimestamp()-120;
+        $deferrals=$op->attempt['management_deferrals']??[];
+        $since=$deferrals?new \DateTimeImmutable(end($deferrals)):$op->created_at;
+        $pending=self::pending($op,$d);$slow=$pending && $since->getTimestamp()<=now()->getTimestamp()-120;
         $sent=($op->attempt['seal']??null)==='sealed';
         $text=match(true){
             $slow=>"This is taking longer than usual. We'll keep trying.",
