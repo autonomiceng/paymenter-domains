@@ -39,7 +39,10 @@ final class ComplimentaryInvoices
         $cost=$op->cost['actual']??null;if(!$cost||$cost['currency']!=='USD'){throw new \DomainException('Actual registrar charge required.');}
         $invoice=Invoice::findOrFail($op->invoice_id);$item=InvoiceItem::findOrFail($op->invoice_item_id);
         $description=InvoiceDescription::complimentary($op->domain->domain,$op->action,(int)$op->term);
-        $amount=PricingRule::decimal(PricingRule::minor($cost['amount']));
+        // Native invoices store cents; retain the exact provider amount in the operation.
+        [$whole,$fraction]=explode('.',$cost['amount']);
+        if(strlen($whole)>10){throw new \DomainException('Registrar charge exceeds native invoice precision.');}
+        $amount=PricingRule::decimal((int)$whole*100+(int)str_pad(substr($fraction,0,2),2,'0')+((int)($fraction[2]??0)>=5?1:0));
         if($invoice->items()->count()===2){return;}
         if($invoice->status!=='paid'||(float)$invoice->total!==0.0||$invoice->items()->count()!==1||$invoice->transactions()->exists()){throw new \DomainException('Complimentary receipt changed.');}
         // Exact owned receipt only. Suppressing observers prevents Paid/InvoiceItem hooks from launching a second path.

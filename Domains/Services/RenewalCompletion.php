@@ -66,6 +66,7 @@ final readonly class RenewalCompletion
                     : ($autoRenewConfirmed && $op->safe_code === 'provider_auto_renew_unconfirmed' ? null : $op->safe_code), 'policy' => $policy]); return $op;
             }
             $cost = $proof['charge']; $cap = $op->policy['renewal']['cost_cap'];
+            if(isset($op->policy['account_complimentary'])){$cap['amount']=ComplimentaryCosts::cap($op,$cap['amount']);}
             $over = WriteMoney::compare($cost['amount'], $cap['amount']) > 0;
             $changed = WriteMoney::compare($cost['amount'], $attempt->expectedCharge->amount) !== 0;
             $below = $op->funding_basis!=='complimentary' && WriteMoney::compare($cost['amount'], $op->amount) > 0; $corrections = $proof['observed_corrections'] !== [];

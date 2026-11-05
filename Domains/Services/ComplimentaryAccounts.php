@@ -22,7 +22,7 @@ final class ComplimentaryAccounts
         if($reason===''||strlen($reason)>500){throw new \DomainException('A reason is required.');}
         DB::transaction(static function()use($user,$actor,$enabled,$reason,$clock):void {
             $users=User::whereIn('id',[$user,$actor->id])->orderBy('id')->lockForUpdate()->get();
-            $staff=$users->firstWhere('id',$actor->id);$staff?->load('role');
+            $staff=$users->firstWhere('id',$actor->id);$staff?->setRelation('role',$staff->role()->lockForUpdate()->first());
             if(!$users->contains('id',$user)||!$staff?->hasPermission('admin.domains.fund')){throw new \DomainException('Domain funding permission required.');}
             if((self::current($user)['enabled']??false)===$enabled){return;}
             DB::table('domains_complimentary_accounts')->insert(['user_id'=>$user,'actor_id'=>$staff->id,'enabled'=>$enabled,'reason'=>$reason,'created_at'=>$clock->now()]);
