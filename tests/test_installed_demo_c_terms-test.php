@@ -55,7 +55,7 @@ $service=App\Models\Service::create(['user_id'=>$actor->id,'order_id'=>App\Model
 $holding=new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed','domain'=>'example.com','service_id'=>$service->id]);
 $gift=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal'))->invoke(null,$holding);
 $schema=$gift->getSchema(Filament\Schemas\Schema::make($page)->statePath('data'))->getComponents();$text=(string)$schema[array_key_last($schema)]->getContent();
-$r10Check(str_contains(preg_replace('/\s+/',' ',strip_tags($text)),'Next annual renewal $10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
+$r10Check(str_contains(storefrontDom($text)->query('//div[dt="Next annual renewal"]/dd')->item(0)?->textContent??'','$10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
 $probe->setValue(null,null);
 storefrontViews();require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 $domain=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'orbit-example.com',status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,renewNow:['url'=>'/domains/1/renew','terms'=>[1,2]]);
