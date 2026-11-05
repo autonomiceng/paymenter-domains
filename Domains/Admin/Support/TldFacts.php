@@ -125,7 +125,10 @@ final class TldFacts
     /** Stored history labels, which are the action names staff saw, mapped to what changed. */
     private const CHANGES=['Edit card fee'=>'Card fee changed','Edit default rule'=>'Default pricing changed','Edit default pricing'=>'Default pricing changed','Save TLD override'=>'Prices changed','Use default rule'=>'Switched to Default pricing',
         'Select seller'=>'Registrar for new orders changed','Change registrar for new orders'=>'Registrar for new orders changed','Publish prices'=>'Prices published','Review TLD availability'=>'Terms changed',
-        'Review lifecycle facts'=>'Grace and redemption changed','Sync TLD prices'=>'Prices synced'];
+        'Review lifecycle facts'=>'Grace and redemption changed','Sync TLD prices'=>'Prices synced',
+        'catalogue_republish'=>'Prices published','catalogue_feed'=>'Prices synced','catalogue_facts'=>'Terms checked',
+        'catalogue_defaults'=>'Default sales settings changed','catalogue_override'=>'Sales settings changed',
+        'catalogue_seller'=>'Registrar for new orders changed','catalogue_retail'=>'Renewal price changed','catalogue_sync'=>'Price sync queued'];
     /** Large edits omit detail maps; older entries also omit whether the default changed. Neither proves a TLD was unaffected. */
     private static function unknownSalesScope(array $input): bool
     {return !isset($input['rows'],$input['changes'])||!array_key_exists('rule_changed',$input);}
@@ -153,6 +156,9 @@ final class TldFacts
                 $change=self::CHANGES[$r['action']]??$r['action'];
                 if($r['action']==='Sync TLD prices'&&is_string($r['input']['ending']??null)){$change.=' for .'.$r['input']['ending'];}
                 $detail=[];
+                if($r['action']==='catalogue_republish'){$detail[]='.'. $r['tld'].': Prices recalculated using the current pricing and sales settings.';}
+                if($r['action']==='catalogue_feed'){$detail[]='.'. $r['tld'].': Registrar costs checked.';}
+                if($r['action']==='catalogue_facts'){$detail[]='.'. $r['tld'].': Registrar terms and requirements checked.';}
                 if($r['action']==='Edit call limits'){
                     foreach(['day'=>'Daily calls','minute'=>'Calls per minute'] as $key=>$label){
                         $old=$r['before']['call_limits'][$key]??null;$new=$r['after']['call_limits'][$key]??null;

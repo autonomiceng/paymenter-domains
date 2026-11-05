@@ -157,6 +157,8 @@
     "tests/management-namesilo-test.php",
     "tests/management-namesilo-contacts-test.php",
     "tests/namesilo-management-facts-test.php",
+    "tests/test_installed_namesilo_contact_facts-test.php",
+    "tests/test_installed_namesilo_contact_seal-test.php",
     "tests/namesilo-management-sequence-test.php",
     "tests/management-durable-sequence-test.php",
     "tests/namesilo-dns-durable-test.php",
@@ -172,6 +174,7 @@
     "tests/storefront-scale-test.php",
     "tests/test_client_scripts.py",
     "tests/storefront-cache-test.php",
+    "tests/test_installed_storefront_cache_key-test.php",
     "tests/policy-ending-reads-test.php",
     "tests/owned-pages-test.php",
     "tests/owned-list-query-count-test.php",
@@ -217,6 +220,8 @@
     "tests/offer-pricing-unreadable-test.php",
     "tests/matrix-intent-unreadable-test.php",
     "tests/sell-intent-unreadable-test.php",
+    "tests/test_installed_sell_filter-test.php",
+    "tests/test_installed_sell_retained_renewal_cost-test.php",
     "tests/price-list-unreadable-test.php",
     "tests/renewal-billing-settings-test.php",
     "tests/reminders-test.php",
@@ -467,7 +472,9 @@
     "tests/offer-contract-admission-test.php",
     "tests/offer-store-cleanup-test.php",
     "tests/offer-store-prefix-test.php",
-    "tests/offer-restore-sales-test.php"
+    "tests/offer-restore-sales-test.php",
+    "tests/test_installed_catalogue_history_label-test.php",
+    "tests/test_installed_staff_catalogue_next_step-test.php"
   ],
   "ui": [],
   "runner": [

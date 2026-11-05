@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices,PriceList};
 final class SellTable
 {
     private array $rules=[];
+    private array $steps=[];
     private ?array $saleFacts=null;
     private array $rowTlds=[];
     private ?array $savedRead=null;
@@ -38,13 +39,15 @@ final class SellTable
     public function rule(int $server): array { return $this->rules[$server]??=$this->source()->rule($server); }
     /** Why this row can't be saved, or null when it can. */
     public function blocked(OfferRow $row): ?string { return EndingChoices::hidden($row->tld)?'This TLD is hidden.':null; }
-    /** @return array{label:string,tone:string,next?:string,open?:bool} */
+    /** @return array{label:string,tone:string,next?:string,open?:?string} */
     public function status(OfferRow $row): array
     {
         $facts=$this->facts()[self::key($row)]??[];
         if(!($facts['acquisition']['register']??false)&&($facts['acquisition']['transfer']??false)){return ['label'=>'Renewals and transfers only','tone'=>'gray'];}
         $s=$facts['sales']??['label'=>'Not for sale','tone'=>'gray','reason'=>TldFacts::NEEDS_SYNC];
-        return ['label'=>$s['label'],'tone'=>$s['tone'],...($s['reason']===null?[]:['next'=>$s['reason'].'. Open .'.$row->tld,'open'=>true])];
+        if($s['reason']===null){return ['label'=>$s['label'],'tone'=>$s['tone']];}
+        $step=$this->nextStep($row,'register');
+        return ['label'=>$step['state']==='checking'?'Checking':$s['label'],'tone'=>$s['tone'],'next'=>$step['next']?:$s['reason'],'open'=>$step['open']];
     }
     /** Sale state for the rows on screen, read once. Null when no prices are saved for it yet. */
 
@@ -131,28 +134,49 @@ final class SellTable
         if(!Staff::requireView()->costs){return self::cellOf(null);}
         $saved=$this->savedRow($row);
         if(isset($saved['cause'])){return self::cellOf('Left out','gray',"Its pricing can't be read. See the alert above.");}
-        return $this->savedCell($saved['prices'][$action]??null,$field,$this->sold($row,$action));
+        $sold=$this->sold($row,$action);
+        $step=$field!=='profit'&&$sold!=='off'&&($saved['prices'][$action][$field]??null)===null?$this->nextStep($row,$action):[];
+        if($field==='cost'&&($saved['prices'][$action]['cost']??null)===null&&$this->retainedRenewal($row,$action)){
+            $step=['state'=>'missing','next'=>'Use Sync prices.','open'=>null];
+        }
+        return $this->savedCell($saved['prices'][$action]??null,$field,$sold,$step);
     }
 
     /** Saved prices win: a price stays on screen even if its term has stopped selling. */
-    private function savedCell(?array $saved,string $field,string $sold): array
+    private function savedCell(?array $saved,string $field,string $sold,array $step): array
     {
         $value=$saved[$field]??null;$loss=self::loss($saved['below_cost']??false,$saved['loses_money']??false);
         if($value!==null){return $field==='profit'?self::cellOf(PriceList::profit($value),$loss===null?null:'danger',$loss):self::cellOf($field==='cost'?PriceList::cost($value):$value);}
         if($sold==='off'||($saved['status']??null)===PriceList::TRANSFERS_OFF){return self::cellOf('Off','gray');}
         if($field==='profit'){return self::cellOf(null);}
-        if($sold==='filling'){return self::cellOf('Missing','gray','The next price sync adds it.');}
-        return self::missing($field==='cost'?'Use Sync prices.':'To add one, open the TLD page and use Edit prices.');
+        if(($step['state']??null)==='off'){return [...self::cellOf('Off','gray'),...$step];}
+        if(($step['state']??null)==='checking'){return [...self::cellOf('Checking','gray'),...$step];}
+        return [...self::missing($step['next']?:'Open Edit prices on the TLD page.'),...$step];
+    }
+    private function nextStep(OfferRow $row,string $action): array
+    {
+        $key=self::key($row);$this->facts();
+        $this->steps[$action]??=$this->source()->nextSteps(collect($this->rowTlds),$this->facts(),$action,$this->years);
+        return $this->steps[$action][$key];
     }
     /** Sale intent controls absent cells; saved values still win in savedCell(). */
     private function sold(OfferRow $row,string $action): string
     {
         $facts=$this->facts()[self::key($row)]??[];$intent=$facts['intent']??[];$defaults=$facts['defaults']??[];
+        // Contractual annual holder renewals survive sale stops; their missing cost still needs repair.
+        if($this->retainedRenewal($row,$action)){return 'sold';}
         if(!($intent['sell']??$defaults['defaultSell']??true)||in_array($action,$intent['stops']??[],true)
             ||$action==='register'&&$this->years>($intent['longest']??$defaults['defaultLongest']??1)
             ||$action==='transfer'&&!($intent['transfers']??$defaults['defaultTransfers']??false)){return 'off';}
         $reason=$facts['offers'][$action.':'.$this->years]->decision->reason??null;
-        return in_array($reason,['staff_stopped','staff_term_stopped','unsupported_term','provider_disabled','renewal_stopped'],true)?'off':'sold';
+        return in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)?'off':'sold';
+    }
+
+    private function retainedRenewal(OfferRow $row,string $action): bool
+    {
+        $retained=$this->savedRow($row)['prices']['renew']['price']??null;
+        return $action==='renew'&&$this->years===1&&$retained!==null
+            &&\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($retained)>0;
     }
 
     private static function cellOf(?string $text,?string $tone=null,?string $hint=null): array {return ['text'=>$text,'tone'=>$tone,'hint'=>$hint,'mark'=>false];}

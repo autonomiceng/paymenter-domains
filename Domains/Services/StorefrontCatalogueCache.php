@@ -22,7 +22,7 @@ final class StorefrontCatalogueCache
         // Never publish an uncommitted projection, or reuse display rows inside a writer.
         if (DB::transactionLevel() !== 0) { return $render(); }
         $scope = self::scope(); $revision = self::revision($scope); $stamp = $this->fence ? ($this->fence)() : null;
-        $key = self::key($scope, $revision).($stamp === null ? '' : ':'.$stamp);
+        $key = self::key($scope, $revision, $stamp);
         $now = $this->clock->now(); $until = $now->modify('+'.self::TTL.' seconds');
         $cached = $this->readRows($key, $now);
         if ($cached !== null) { return $cached; }
@@ -38,7 +38,7 @@ final class StorefrontCatalogueCache
     {
         if (DB::transactionLevel() !== 0) { return null; }
         $scope = self::scope();
-        return $this->readRows(self::key($scope, self::revision($scope)).($this->fence ? ':'.($this->fence)() : ''), $this->clock->now());
+        return $this->readRows(self::key($scope, self::revision($scope), $this->fence ? ($this->fence)() : null), $this->clock->now());
     }
 
     private function readRows(string $key, \DateTimeImmutable $now): ?array
@@ -71,9 +71,10 @@ final class StorefrontCatalogueCache
         return Cache::rememberForever($scope.':revision', static fn () => bin2hex(random_bytes(16)));
     }
 
-    private static function key(string $scope, string $revision): string
+    private static function key(string $scope, string $revision, ?string $fence = null): string
     {
-        return $scope.':'.$revision.':'.hash('sha256', json_encode([config('domains.enom_catalogue.enabled'), config('domains.enom_identity.environment'),config('domains.enom_live')], JSON_THROW_ON_ERROR));
+        // Hash the complete variant/fence tuple so the database key stays bounded after its store prefix.
+        return $scope.':'.$revision.':'.hash('sha256', json_encode([config('domains.enom_catalogue.enabled'), config('domains.enom_identity.environment'),config('domains.enom_live'), $fence], JSON_THROW_ON_ERROR));
     }
 
     private static function scope(): string

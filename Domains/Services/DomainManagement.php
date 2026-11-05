@@ -238,10 +238,11 @@ final class DomainManagement
     {
         $g = $this->grant; $this->grant = null;
         if (!$g || $g[0] !== $r || $g[1] !== $ctx || $g[2] !== $driver) { throw new \DomainException('No live management grant.'); }
-        $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx, $r): void {
+        $this->locked($g[4], $g[5], $driver, function ($l, $op) use ($g, $ctx, $r, $driver): void {
             $this->features->requireManagement(); $this->peers($l, $op->id, $op->policy['management']['correction'] ?? null, $op->action);
             if (!$this->accepted || $l['stamp'] !== $g[3] || $ctx->deadline < $this->clock->now()->setTimezone(new \DateTimeZone('UTC'))->modify('+25 seconds')
                 || $op->state !== 'running' || ($op->attempt['seal'] ?? null) !== 'absent') { throw new \DomainException('Management authority changed.'); }
+            $driver->requireAtSeal($r);
             $ctx->requireReservedCapacity();EnomTestWriteReservation::prepare($r->binding,'management');
             if($op->action==='auth_code_email'){foreach($l['operations'] as $peer){$at=$peer->attempt['dispatch_attempted_at']??null;if($peer->id!==$op->id&&$peer->action===$op->action&&is_string($at)&&new \DateTimeImmutable($at)>$this->clock->now()->modify('-10 minutes')){throw new \DomainException('Transfer code cooldown active.');}}}
             $this->noInflight($op); $funding=$op->funding_basis==='paid_invoice'?RefundPayment::requireCurrent($op,$l):[];
