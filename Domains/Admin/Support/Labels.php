@@ -153,7 +153,7 @@ final class Labels
             'no_hosting'=>'No hosting service. DNS record checks do not apply.',
             'rotation'=>'Check not finished. It continues on the next run.',
             'resolver_failed'=>'DNS resolver failed','invalid_answer'=>'DNS answer invalid','ambiguous_empty'=>'DNS answer incomplete',
-            'registrar_price_increased'=>'Not sent: registrar price exceeds the frozen order limit. Cancel'.($complimentary?'':' and add credit').', or use Release hold after the price falls.',
+            'registrar_price_increased'=>'Not sent: the registrar price is above the limit saved with the order. Cancel'.($complimentary?'':' and add credit').', or use Release hold after the price falls.',
             'actual_cost_overrun'=>'Registrar cost is above the spending limit.','below_cost'=>'Registrar cost exceeds retail price',
             'confirmed'=>'Confirmed','correction_required'=>'Corrections needed','original_attempt_unresolved'=>'First try has no result yet.',
             'resumed'=>'Status checks resumed','transfer_rejection_contradiction'=>'Registrar says rejected, our records disagree.',

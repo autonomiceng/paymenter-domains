@@ -23,8 +23,8 @@ $before=null;
 $op->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>[...$op->policy,'complimentary_cost_review'=>['amount'=>'8.01','usual'=>'8.00']]]);
 $managed=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);
 $managed->assertSee('Use Approve registrar cost to continue. Nothing is charged until approval.')->assertActionVisible('approveComplimentaryCost');
-$compReason='Not sent: registrar price exceeds the frozen order limit. Cancel, or use Release hold after the price falls.';
-$paidReason='Not sent: registrar price exceeds the frozen order limit. Cancel and add credit, or use Release hold after the price falls.';
+$compReason='Not sent: the registrar price is above the limit saved with the order. Cancel, or use Release hold after the price falls.';
+$paidReason='Not sent: the registrar price is above the limit saved with the order. Cancel and add credit, or use Release hold after the price falls.';
 $managed->assertSee($compReason)->assertDontSee('Cancel and add credit');
 // Both saved first holds and subsequent engine holds use the term's retained funding basis.
 $story=clone $op;$story->policy=[...$op->policy,'first_hold'=>['at'=>$clock->now()->format(DATE_ATOM),'reason'=>'registrar_price_increased'],

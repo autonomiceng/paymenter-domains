@@ -39,7 +39,7 @@ class ListTlds extends ListRecords
         $open=RegistrarSetup::canAccess()?view('filament::components.button.index',['tag'=>'a','href'=>RegistrarSetup::getUrl(),'color'=>'gray','size'=>'sm','slot'=>'Open Registrars'])->render():'';
         $count=count($failures);
         return $schema->components([...CatalogueSalesNotice::components(),Callout::make('Price sync failed for '.$count.' registrar '.($count===1?'account':'accounts').'.')->status('danger')
-            ->description(new HtmlString(implode('',$lines).'<div>New sales stop when registrar costs are out of date. Check the saved failure cause in Registrars. Each TLD shows the last successful refresh and next due. Sync prices is an optional retry.</div>'))->footer($open!==''?new HtmlString($open):null)->columnSpanFull(),
+            ->description(new HtmlString(implode('',$lines).'<div>New sales stop when registrar costs are out of date. See why on the Registrar account page. Each TLD shows the last successful refresh and next due. Sync prices is an optional retry.</div>'))->footer($open!==''?new HtmlString($open):null)->columnSpanFull(),
             $this->getTabsContentComponent(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_BEFORE),
             EmbeddedTable::make(),RenderHook::make(PanelsRenderHook::RESOURCE_PAGES_LIST_RECORDS_TABLE_AFTER)]);
     }

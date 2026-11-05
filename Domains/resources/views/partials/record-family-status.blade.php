@@ -19,7 +19,7 @@
         @if ($staff)Check Processing and record-read setup.@endif
     @else
         {{ $family['read_cause'] ?? 'No registrar read is queued for this family.' }}
-        {{ $staff ? 'The next successful complete registrar read fills this family.' : 'These records will appear after a successful registrar read.' }}
+        These records will appear after a successful registrar read.
     @endif
 @else
     {{ $family[$staff ? 'staff' : 'customer'] }} @if ($family['at'])Checked @include('domains::partials.moment',['at'=>$family['at']]).@endif

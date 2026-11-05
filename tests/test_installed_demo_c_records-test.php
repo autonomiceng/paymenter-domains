@@ -37,7 +37,7 @@ $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-famili
 expect(str_contains($html,'Registrant returned; some contacts did not.'),'Staff names the returned contact role');
 expect(str_contains($html,'Refresh contacts before editing.'),'Staff gets a contacts-specific next step');
 expect(str_contains($html,'Last complete read:'),'Staff sees the last complete timestamp');
-expect(str_contains($html,'Failed family: dns')&&str_contains($html,'No read queued.'),'Staff sees failed family and the absence of queued read work');
+expect(str_contains($html,'Last read failed for DNS records')&&str_contains($html,'No read queued.'),'Staff sees failed family and the absence of queued read work');
 expect(str_contains($html,RecordFamilies::EVIDENCE),'Staff sees public versus registrar evidence distinction');
 $s=$d->observation;$s['records']['families']['dns']=['state'=>'unknown','records'=>[],'last_good'=>['at'=>'2026-11-03T09:00:00+00:00','records'=>$record['families']['dns']['records']]];$d->observation=$s;
 $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-families',['recordFamilies'=>$state])->render();
@@ -75,7 +75,7 @@ expect(str_contains($unreadHtml,'No registrar read is queued for this family.'),
 // Enom partial glue is a bounded known-host check, not a promise of enumeration.
 $enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];
 $g=array_column(RecordFamilies::read($enom,$now)['rows'],null,'kind')['glue'];
-expect(str_contains($g['staff'],"Known glue checked; this registrar can't list every child host"),'Enom known glue explains bounded coverage');
+expect(str_contains($g['staff'],"Known glue checked. This registrar can't list every child host"),'Enom known glue explains bounded coverage');
 expect(str_contains($g['staff'],'2 known child hosts')&&$g['at']==='2026-11-04T09:00:00+00:00','Coverage and checked time shown');
 expect(!str_contains($g['staff'],'some did not')&&!str_contains($g['staff'],'Sync this domain before editing'),'Impossible glue prerequisite removed');
 $safe=$existing;$safe['glue']['actions']=['glue_add'=>'/add','glue_update'=>'/update','glue_delete'=>'/delete','glue'=>'/replace'];
@@ -88,7 +88,7 @@ $reviewFailures=[];if($namesilo->management['glue']['actions']!==[]){$reviewFail
 $customer=view('domains::partials.record-families',['recordFamilies'=>RecordFamilies::read($enom,$now)])->render();
 $dom=storefrontDom($customer);
 if($dom->query('//dd[span[@data-record-family="glue"]]//time[@data-domains-time and @datetime="2026-11-04T09:00:00+00:00"]')->length!==1){$reviewFailures[]='Customer glue lacks one local formatted date';}
-if(str_contains($customer,'whole-list replacement')||str_contains($customer,'preflight')){$reviewFailures[]='Customer glue contains staff-only words';}
+if(str_contains($customer,'Replacing the whole list')||str_contains($customer,'preflight')){$reviewFailures[]='Customer glue contains staff-only words';}
 expect($reviewFailures===[],implode('; ',$reviewFailures));
 // Cancellation alone never proves no send. Reuse the engine's terminal no-send proof.
 $cancelled=clone $enom;$cancelled->status='cancelled';$cancelled->observation=[];$cancelled->service_id=1;
