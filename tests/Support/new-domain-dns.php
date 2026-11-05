@@ -1,5 +1,5 @@
 <?php
-// Synthetic account DNS defaults through real checkout and owner capture; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Synthetic site DNS defaults through real checkout and owner capture; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/site-dns-default.php';
 
@@ -35,7 +35,7 @@ foreach(['disable','delete'] as $change){
     try{
         DB::transaction(function()use($template,$change){$row=$template->fresh();if($change==='delete'){$row->delete();}else{$row->update(['enabled'=>false,'revision'=>$row->revision+1]);}});
         throw new RuntimeException('Expected in-use template refusal');
-    }catch(DomainException $e){expect(str_contains($e->getMessage(),'registrar site default')&&str_contains($e->getMessage(),'another template'),'In-use refusal explains the account dependency');}
+    }catch(DomainException $e){expect(str_contains($e->getMessage(),'site DNS default')&&str_contains($e->getMessage(),'another'),'In-use refusal explains the site dependency');}
 }
 $registration->mode=$binding->registrarKey==='enom'?'clean':'300';$registration->calls=[];
 $purchaseWire=[];$captureExchange=static function($origin,$command,$parameters,$timeout)use($exchange,&$purchaseWire){
