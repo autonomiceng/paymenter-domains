@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\LiveActivationEvidence;
 use Paymenter\Extensions\Servers\Domains\Data\AccountBinding;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Services\EnomLive;
-/** Preserve Enom deployment, evidence and pilot policy without changing stored receipts. */
+/** Preserve Enom deployment and dated history evidence without changing stored receipts. */
 final class ActivationEvidence implements LiveActivationEvidence
 {
     public function deployment(AccountBinding $binding): bool {return EnomLive::deployment($binding);}
@@ -16,6 +16,6 @@ final class ActivationEvidence implements LiveActivationEvidence
     public function label(): string {return 'Enom';}
     public function configuration(Account $account): array {return [config('domains.enom_live'),config('domains.enom_identity.environment')];}
     public function requireControls(array $evidence): void {}
-    public function transferProofRequired(): bool {return true;}
+    public function transferProofRequired(): bool {return false;}
     public function receiptContext(AccountBinding $binding): array {return [];}
 }

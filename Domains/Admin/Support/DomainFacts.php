@@ -342,9 +342,17 @@ final class DomainFacts
             return ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
                 'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
-                'records_unavailable'=>"Sync stopped: couldn't read DNS records.",
+                'records_unavailable'=>self::unreadFamily($d->observation['record_hold']['family']??null),
+                'caa_unsupported'=>"Sync stopped: this domain has CAA records, which can't be read from Enom here. Other domain facts were saved. Manage this domain's DNS at Enom.",
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }
+    }
+    /** Staff copy for a record hold that names the family whose read failed; DNS (or an unnamed legacy hold) keeps its wording. */
+    private static function unreadFamily(mixed $family): string
+    {
+        $name=match($family) { 'srv'=>'SRV records','ds'=>'DNSSEC records','glue'=>'glue records','nameservers'=>'nameservers',
+            'contacts'=>'contacts','flags'=>'lock, auto-renew and privacy settings',default=>null };
+        return $name===null?"Sync stopped: couldn't read DNS records.":"Sync stopped: couldn't read ".$name.'. Other domain facts were saved. Use Sync now to try again.';
     }
     /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list. Nothing syncs on an ended domain, so it has neither.
      * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account. */

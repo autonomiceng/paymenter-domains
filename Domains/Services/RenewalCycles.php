@@ -183,6 +183,12 @@ final readonly class RenewalCycles
                 return $existing;
             }
             if(RenewalStop::stopped($l)){throw new \DomainException('Future renewals are stopped for this domain.');}
+            // NS17: the owner's eligibility, after the idempotent return. A longer term needs its reviewed exact cost, and the cap must cover it.
+            $term = null;
+            if ($years !== 1 && ($terms = DomainBilling::renewalTerms($l)) !== null) {
+                \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::cap($terms, $years); $term = $terms[$years]['rule'];
+                if (WriteMoney::compare($cap->amount, $term['cost']['amount']) < 0) { throw new \DomainException('Complimentary cap is below the registrar cost.'); }
+            }
             $key = self::next($l);
             if ($l['operations']->contains(fn ($op) => !HoldingAnchor::resolved($op, $l))) { throw new \DomainException('Prior renewal outcome unavailable.'); }
             $authorization = ['actor' => (int) $staff->id, 'reason' => $reason, 'generation' => $d->authority_generation,
@@ -195,7 +201,29 @@ final readonly class RenewalCycles
                 'expected_expires_at' => $d->provider_expires_at->addYearsNoOverflow($years), 'payload' => [],
                 'policy' => ['complimentary' => $authorization, 'renewal' => ['confirmed_revision' => $d->confirmed_revision,
                     'provider_domain_id' => $d->provider_domain_id, 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
-                    'user_id' => (int) $s->user_id, 'order_id' => (int) $s->order_id, 'cost_cap' => $authorization['cap']]]]);
+                    'user_id' => (int) $s->user_id, 'order_id' => (int) $s->order_id, 'cost_cap' => $authorization['cap'],
+                    ...($term !== null ? ['term_rule' => $term] : [])]]]);
+        });
+    }
+    /** Staff complimentary form: the owner's renewal years, each with its new expiry and the exact registrar cost Beco covers. */
+    public function complimentaryOptions(int $domainId, User $actor): array
+    {
+        $seed = Domain::findOrFail($domainId);
+        return DB::transaction(function () use ($seed, $actor): array {
+            $l = HoldingLocks::take($seed, (int) $actor->id, advisory: true); $staff = $l['staff']; $d = $l['domain'];
+            if (!$staff || !$staff->hasPermission('admin.domains.manage') || !$staff->hasPermission('admin.domains.fund')) { throw new \DomainException('Audited complimentary funding required.'); }
+            if (!$d->provider_expires_at) { throw new \DomainException('Complimentary lifecycle unavailable.'); }
+            if (($terms = DomainBilling::renewalTerms($l)) === null) {
+                // A holding without a catalogue offer keeps today's horizon-bounded years, without a known cost.
+                $terms = [];
+                foreach (DomainBilling::terms($d->provider_expires_at->toDateTimeImmutable(), $this->clock->now()) as $y) {
+                    $terms[$y] = ['years' => $y, 'available' => true, 'expiry' => $d->provider_expires_at->addYearsNoOverflow($y)->format('Y-m-d'), 'cost' => null];
+                }
+            }
+            $offered = array_map(static fn (array $t) => array_intersect_key($t, ['years' => 1, 'expiry' => 1, 'cost' => 1]),
+                array_filter($terms, static fn (array $t) => $t['available']));
+            return ['terms' => $offered, 'max_years' => $offered === [] ? 0 : max(array_keys($offered)),
+                'horizon' => $this->clock->now()->modify('+'.\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::HORIZON_YEARS.' years')->format('Y-m-d')];
         });
     }
     public static function virgin(Operation $op): bool

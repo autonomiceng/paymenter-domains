@@ -64,11 +64,29 @@ final class OfferState
     {
         if ($json === null) { return null; }
         $v = self::decode($json);
+        // Unreadable optional evidence is dropped, never a reason to lose the ordinary facts.
+        $expansion = array_filter(array_intersect_key($v, ['term_evidence' => 1, 'renewal_families' => 1]), 'is_array');
         return new Facts($v['terms'], $v['registryFields'], $v['renewalSafe'], $v['requiresNameservers'],
-            $v['autoRenewOnly'], $v['source'], new \DateTimeImmutable($v['observedAt']), new \DateTimeImmutable($v['freshUntil']));
+            $v['autoRenewOnly'], $v['source'], new \DateTimeImmutable($v['observedAt']), new \DateTimeImmutable($v['freshUntil']), $expansion);
     }
+
+    /** Optional expansion evidence is read separately; this does not change current supported terms. */
+    public static function termEvidence(?string $json, string $action, int $year, \DateTimeImmutable $now): ?array
+    {
+        try { return ExpansionFacts::term(self::decode($json), $action, $year, $now); }
+        catch (\Throwable) { return null; }
+    }
+    public static function familyEvidence(?string $json, string $family, \DateTimeImmutable $now): ?array
+    {
+        try { return ExpansionFacts::family(self::decode($json), $family, $now); }
+        catch (\Throwable) { return null; }
+    }
+    /** Evidence is stored as top-level siblings; facts without it keep the old shape byte for byte. */
     public static function encodeFacts(Facts $f): string
-    { return self::json([...get_object_vars($f), 'observedAt' => $f->observedAt->format(DATE_ATOM), 'freshUntil' => $f->freshUntil->format(DATE_ATOM)]); }
+    {
+        $v = array_diff_key(get_object_vars($f), ['expansion' => true]);
+        return self::json([...$v, 'observedAt' => $f->observedAt->format(DATE_ATOM), 'freshUntil' => $f->freshUntil->format(DATE_ATOM), ...$f->expansion]);
+    }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
     { return new Revision((int) $tld->catalogue_revision, $defaults['_revision'] ?? 0, (int) ($policy?->revision ?? 0)); }
     public static function snapshot(AccountBinding $binding, object $tld, array $defaults, ?object $policy,

@@ -33,7 +33,7 @@ foreach (['malformed','transport'] as $failure) {
     if ($failure==='malformed') { $observation->fault='info_missing'; }
     else { $observation->during=static function():void { throw new RuntimeException('Synthetic primary transport failure'); }; }
     $failureCode=$failure==='malformed'?'read_no_evidence':'read_failed';
-    same($failureCode,$failedWork->tick(1)[$d->server_id],'All-failed '.$failure.' observation reports failure');
+    same($failureCode,$failedWork->tick(1)[$d->server_id]['holding'],'All-failed '.$failure.' observation reports failure');
     $fresh=$d->fresh();$current=$fresh->observation;
     same($prior['records'],$current['records'],'All-failed '.$failure.' preserves exact inventory/time/watermark');
     same($prior['facts'],$current['facts'],'All-failed '.$failure.' preserves successful facts and timestamp');
@@ -56,7 +56,7 @@ foreach (['malformed','transport'] as $failure) {
     }
     same([],$state->calls,'Stale form attempts never write provider records');
     $clock->instant=$clock->now()->modify('+1 day');
-    same([$d->server_id=>'idle'],$failedWork->tick(1),'Stopped work never retries automatically');
+    same([$d->server_id=>'idle'],array_map(static fn($r)=>$r['holding'],$failedWork->tick(1)),'Stopped work never retries automatically');
     same([ReadCommand::Info],$observation->calls,'No later successful primary calls');
     $observation->fault='';$failedWork->resume($failedJob->id,'staff_primary_resume');
     expect(!ObservationRecords::held($d->fresh()),'Resume releases hold for one new record attempt');
@@ -67,7 +67,7 @@ foreach (['malformed','transport'] as $failure) {
         $controller->manage($post($kind,['records'=>$rows,'preimage_digest'=>ManagementPayload::digest($rows,$kind)]),$d->id,$kind);
         same($count,Operation::count(),'Stale '.$kind.' POST remains blocked before resumed check');
     }
-    same('refreshed',$failedWork->tick(1)[$d->server_id],'Resumed daily primary read succeeds');
+    same('refreshed',$failedWork->tick(1)[$d->server_id]['holding'],'Resumed daily primary read succeeds');
     expect(isset($d->fresh()->observation['record_failure']),'Daily read does not claim to have refreshed records');
     same('refreshed',$observer->run($d->id,readRecords:true),'Sync now confirms current inventory again');
     expect(!isset($d->fresh()->observation['record_failure']),'Successful inventory replaces failure marker');

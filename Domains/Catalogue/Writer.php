@@ -375,7 +375,8 @@ final class Writer implements Catalogue
             $cost = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
             try { $retail = Retail::quote($cost, $rule); }
             catch (\InvalidArgumentException) { $retail = null; }
-            if ($cost->action === 'renew') {
+            // Only the annual renewal feeds retained holder retail; an exact longer renewal keeps its own price.
+            if ($cost->action === 'renew' && $cost->term === 1) {
                 if ($retail !== null && PricingRule::units($retail, 2) > 0 && $cost->fresh($now)) { $tld->catalogue_retained_annual_retail = $retail; }
                 else { $retail = OfferState::money($tld->catalogue_retained_annual_retail, 2); }
             }

@@ -5,6 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use App\Models\{Invoice, User};
 use Illuminate\Support\Facades\{Cache,DB};
+use Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 
@@ -45,7 +46,13 @@ final class DomainBilling
                 return self::existingInvoice($existing, $l, $years);
             }
             $key = RenewalCycles::next($l);
-            $years ??= 1; $calendar = $this->requireRequest($l, $actor !== null, $years, $late !== null);
+            $years ??= 1;
+            // Scheduled renewals stay annual; longer terms are owner requests only.
+            if ($actor === null && $years !== 1) { throw new \DomainException('Scheduled renewals are annual.'); }
+            $calendar = $this->requireRequest($l, $actor !== null, $years, $late !== null);
+            // NS17: a longer term needs reviewed evidence and an exact-term cost, frozen below as its cap.
+            $term = null; $terms = $years === 1 ? null : self::renewalTerms($l, $this->catalogue);
+            if ($terms !== null) { $cap = TermSupport::cap($terms, $years); $term = $terms[$years]['rule']; }
             if ($late !== null && ($l['stamp'] !== $late['stamp'] || $late['valid_until'] <= $this->clock->now()->modify('+25 seconds') || !EnomLateRenewal::accepted(AccountBindings::binding($l['account'])))) { throw new \DomainException('Renewal quote changed. Try again.'); }
             // Holding retail is independent of current seller, sales/renew flags and provider cost.
             $price = $this->native->project($l);
@@ -56,7 +63,7 @@ final class DomainBilling
             $item = $invoice->items()->create(['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => $amount,
                 'description' => InvoiceDescription::renewal($d->domain, $d->provider_expires_at, $years)]);
             $cost = $l['offer']['cost']?->total ?? null;
-            $cap = $cost !== null ? ['amount' => PricingRule::decimal(PricingRule::units($cost) * $years, 4), 'currency' => 'USD'] : null;
+            if ($term === null) { $cap = $cost !== null && $years === 1 ? ['amount' => PricingRule::decimal(PricingRule::units($cost), 4), 'currency' => 'USD'] : null; }
             if ($late !== null) { $cap = $late['cost']; }
             $operation = Operation::create(['domain_id' => $d->id, 'service_id' => $s->id, 'server_id' => $d->server_id,
                 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint, 'authority_generation' => $d->authority_generation,
@@ -64,7 +71,7 @@ final class DomainBilling
                 'funding_basis' => 'paid_invoice', 'state' => 'awaiting_payment', 'amount' => $amount, 'currency' => 'USD',
                 'base_expires_at' => $calendar['expiry'], 'expected_expires_at' => $d->provider_expires_at->addYearsNoOverflow($years)->format('Y-m-d'),
                 'policy' => ['calendar' => $calendar, 'price' => $price, 'renewal' => ['confirmed_revision' => $d->confirmed_revision,
-                    'provider_domain_id' => $d->provider_domain_id, 'cost_cap' => $cap, ...($late !== null ? ['late' => ['expiry' => $late['expiry'], 'deadline' => $late['deadline']]] : []), 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
+                    'provider_domain_id' => $d->provider_domain_id, 'cost_cap' => $cap, ...($term !== null ? ['term_rule' => $term] : []), ...($late !== null ? ['late' => ['expiry' => $late['expiry'], 'deadline' => $late['deadline']]] : []), 'term' => $years, 'product_id' => (int) $s->product_id, 'annual_plan_id' => (int) $s->plan_id,
                     'user_id' => (int) $s->user_id, 'order_id' => (int) $s->order_id]], 'payload' => []]);
             if ($price['staff_alert'] !== null || $price['retained']) {
                 $d->update(['observation' => [...($d->observation ?? []), 'renewal_price_alert' => ['operation_key' => $key,
@@ -162,6 +169,24 @@ final class DomainBilling
 
     /** Read-only owner request preview. The writer repeats every check under HoldingLocks. */
     public function requestOptions(Domain $d): array
+    { return array_intersect_key($this->options($d), ['terms' => 1, 'order_by' => 1, 'late' => 1]); }
+
+    /** Owner renewal form lines: each offered year with its total, first-year and later-year price, and new expiry.
+     * Totals equal the invoice amount (annual price times years); renewal invoices after it stay annual. */
+    public function renewalChoices(Domain $d): array { return $this->options($d); }
+
+    /** NS17 renewal years for the locked holding; null for a holding without a catalogue offer (legacy, no cap).
+     * Shared by owner requests and staff complimentary renewals, so both use the same eligibility. */
+    public static function renewalTerms(array $l, ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $catalogue = null): ?array
+    {
+        if (!isset($l['offer'])) { return null; }
+        $caps = $catalogue ?? (($l['advisory'] ?? false) ? \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed()
+            : \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::afterPrefix(\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::class));
+        if (!$caps) { throw new \DomainException('Renewal term unavailable.'); }
+        return $caps->renewalTerms(AccountBindings::binding($l['account']), $l['tld'], $l['prices'], $l['domain']->provider_expires_at->toDateTimeImmutable());
+    }
+
+    private function options(Domain $d): array
     {
         return DB::transaction(function () use ($d): array {
             $l = HoldingLocks::take($d, advisory: true, catalogue: $this->catalogue);
@@ -172,9 +197,14 @@ final class DomainBilling
             $late = self::expired($l['domain'], $this->clock->now()) && EnomLateRenewal::accepted(AccountBindings::binding($l['account']));
             $calendar = $this->requireRequest($l, true, $late ? 1 : null, $late);
             if ($late) { return ['terms' => [1], 'order_by' => null, 'late' => true]; }
-            $this->native->quote($l);
-            return ['terms' => self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now()),
-                'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d')];
+            $annual = $this->native->quote($l)['annual_gross'];
+            $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
+            if (($support = self::renewalTerms($l, $this->catalogue)) !== null) {
+                $terms = array_values(array_filter($terms, static fn (int $y) => $support[$y]['available'] ?? false));
+            }
+            return ['terms' => $terms, 'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d'),
+                'lines' => array_combine($terms, array_map(static fn (int $y) => TermSupport::lines($annual, $annual, $y)
+                    + ['expiry' => $l['domain']->provider_expires_at->addYearsNoOverflow($y)->format('Y-m-d')], $terms)), 'next_annual' => $annual];
         });
     }
 

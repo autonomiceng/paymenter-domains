@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Ca
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand as M, ProtocolResult, ReadCommand as R, ResponseParser};
 final class Management extends ManagementProtocol
 {
+    public function observationCapabilities(): array
+    { return ['revision'=>'enom-records-1','families'=>array_fill_keys(['dns','srv','ds','glue'],'supported')]; }
     public function capabilities(): Capabilities
     { return new Capabilities($this->binding, array_fill_keys(['nameservers','contacts','lock','privacy','dns','ds','glue','auto_renew_off','auth_code_email'],new Capability(Support::Supported))+['auth_code_display'=>new Capability(Support::Unsupported)],PrivacyMode::Paid); }
     public function validate(string $action, #[\SensitiveParameter] array $payload, string $name): array { return ManagementInput::validate($action,$payload,$name); }
@@ -56,7 +58,7 @@ final class Management extends ManagementProtocol
                 $v=$this->get($r,$c,$command); $c->requireReadSuccess($v->status==='success');
                 $out[$kind]=['state'=>'complete','records'=>ManagementRead::records($v,$kind)];
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
-            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); return $out; } // Stop at first failure; never retry a failed wire.
+            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); if ($error instanceof CaaRecords) { $out[$kind]['caa']=true; } return $out; } // Stop at first failure; never retry a failed wire.
         }
         foreach (array_slice($knownGlue,0,13,true) as $host=>$prior) {
             try {

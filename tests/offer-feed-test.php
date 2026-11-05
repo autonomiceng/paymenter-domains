@@ -76,6 +76,22 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     same(false, $rows['com']->costs['transfer:1']->enabled, 'Explicit disabled differs from absent');
     same(null, $rows['com']->costs['transfer:1']->total, 'Disabled is not zero-priced');
     same([], $rows['org']->costs, 'Listed but unpriced ending is discovery only');
+    // Integration: bulk annual support and independently reviewed term evidence must survive together.
+    $evidence = ['term_evidence' => ['format' => 1, 'entries' => []],
+        'renewal_families' => ['format' => 1, 'entries' => []]];
+    $reviewed = new EnomFeed($driver, new CatalogueFreshness(72), expansion: ['com' => $evidence, 'co.uk' => $evidence]);
+    $cold = $reviewed->facts('com', $context($binding, 2))->facts;
+    same([[], [], $evidence], [$cold->terms['renew'], $cold->terms['transfer'], $cold->expansion],
+        'Reviewed metadata alone cannot invent annual renewal or transfer support');
+    $reviewedRows = $indexed($reviewed->prices($context($binding)));
+    $combined = $reviewed->facts('com', $context($binding, 2))->facts;
+    same([[1], [], $evidence], [$combined->terms['renew'], $combined->terms['transfer'], $combined->expansion],
+        'Bulk annual renewal and disabled transfer coexist with reviewed expansion after price reads');
+    same(259200, $reviewedRows['com']->costs['renew:1']->freshUntil->getTimestamp() - $clock->now()->getTimestamp(),
+        'Explicit reviewed freshness survives the expanded feed constructor');
+    same([], $reviewed->facts('co.uk', $context($binding, 2))->facts->expansion,
+        'An unreviewed suffix cannot gain expansion from an annual bulk observation');
+    same([], $feed->facts('com', $context($binding, 2))->facts->expansion, 'No supplied evidence leaves expansion empty');
     $oldAt = $rows['com']->costs['register:1']->observedAt;
     $clock->at = $clock->at->modify('+1 hour');
     $before = count($enomWire->calls); $facts = $feed->facts('co.uk', $context($binding, 2));

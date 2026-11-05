@@ -19,5 +19,22 @@ guard. The native socket-free Live regression checks default-off and strict flag
 settings-based activation, separation from TEST acceptance, What you sell fallback only after
 acceptance and a saved list narrowing it, native funding/code, missing configuration/acceptance,
 call/spend refusals before seal, one live-route TP_CreateOrder, original history/status/expiry
-completion after opt-out and no replay on unknown status or duplicate completion. No public Live
-activation or pilot switch is added. Activate remains unbuilt.
+completion after opt-out and no replay on unknown status or duplicate completion.
+Reviewed Live activation includes transfers for a new account without requiring a
+paid pilot packet; saved account/TLD Off remains Off. No upgrade-time activation
+is added.
+
+## B9 paired offline guards
+
+`enom-live-transfer-test.php` activates without a pilot packet and checks saved
+account/TLD Off. Its runtime companion proves one send and completion after
+revocation. `live-activation-namesilo-test.php` checks proposed defaults, retained
+Off and dated history; `namesilo-test-activation-test.php` uses reviewed TEST
+switches and Orders. Missing Live runtime still refuses NameSilo activation.
+
+Both transfer-dispatch files share native account, Orders, selected-seller,
+funding, reservation, exact-term cost, balance and deployment refusal cases.
+Existing completion tests require accepted history, unique charges and full added
+years. NameSilo completion also revokes the account switch after send, then
+reconciles. These synthetic tests use no sockets or real charges; their execution
+results and resource limits belong in the lane report, not a production claim.

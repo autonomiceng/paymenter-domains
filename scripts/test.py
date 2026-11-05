@@ -637,11 +637,23 @@ def main():
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
+                # These focused fixtures only read Composer dependencies; retain the
+                # complete source/vendor guards without copying their page cache.
                 shared = (
                     args.jobs == 1
                     and requested
                     and all(
                         Path(path).name.startswith("test_installed_")
+                        or path in {
+                            'tests/management-namesilo-test.php',
+                            'tests/renewal-cycles-test.php',
+                            'tests/renewal-billing-test.php',
+                            'tests/observation-records-test.php',
+                            'tests/observation-namesilo-test.php',
+                            'tests/demo-c-c1-observation-test.php',
+                            'tests/demo-c-terms-native-test.php',
+                            'tests/staff-domain-page-test.php',
+                        }
                         for path in requested
                     )
                 )
