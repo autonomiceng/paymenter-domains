@@ -156,14 +156,35 @@ final class Writer implements Catalogue
                 if ($reason !== null) { $refused[$command->tld()] = $reason; } else { $accepted[$i] = true; }
             }
             if (!$accepted) { throw new \DomainException(reset($refused)); }
-            $results = [];
+            $results = []; $sales = [];
             foreach ($entries as $i => [$command, $expected]) {
                 if (!isset($accepted[$i])) { continue; }
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
                 $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
-                $current = OfferState::revision($t, $d, DB::table('domains_sales_policies')->where('tld', $t->tld)->first());
+                $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
+                $current = OfferState::revision($t, $d, $policy);
+                $salesEdit = $review->action === 'acceptance' && $command->kind === 'override';
+                if ($salesEdit) {
+                    $old = OfferState::decode($t->catalogue_intent); $before = $after = [];
+                    foreach (['choice' => 'sell', 'longest' => 'longest', 'transfer' => 'transfers'] as $label => $field) {
+                        $was = $old[$field] ?? null; $now = $command->intent->$field;
+                        if ($was === $now) { continue; }
+                        $choice = static fn ($value) => $value === null ? null : ($value ? 'sell' : 'skip');
+                        $before[$label] = $field === 'sell' ? $choice($was) : $was;
+                        $after[$label] = $field === 'sell' ? $choice($now) : $now;
+                    }
+                }
                 $results[$command->tld()] = $this->write($command, $current, $groups[$i], $native, true);
+                if ($salesEdit) {
+                    $transferBefore = (bool) ($policy->transfer_enabled ?? false);
+                    $transferAfter = (bool) DB::table('domains_sales_policies')->where('tld', $t->tld)->value('transfer_enabled');
+                    if ($transferBefore !== $transferAfter) {
+                        $before['transfer'] = $transferBefore; $after['transfer'] = $transferAfter;
+                    }
+                    if ($after !== []) { $sales[$command->tld()] = ['old' => $before, 'new' => $after]; }
+                }
             }
+            if ($review->action === 'acceptance') { $review->salesRows($sales); }
             $review->record('completed', ['rows' => array_keys($results), 'failures' => $refused]);
             return ['rows' => $results, 'failures' => $refused];
         });

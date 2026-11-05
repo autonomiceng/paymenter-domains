@@ -4,6 +4,7 @@
     [$label, $tone] = match ($state) {
         'available' => ['Available', 'ok'], 'transferable', 'taken' => ['Taken', 'muted'],
         'premium' => ['Premium name', 'muted'], 'held' => ['Not available', 'muted'],
+        'busy' => ['Try again in a moment', 'warn'],
         'idle' => ['Checking', 'muted'], 'in_cart' => ['In your cart', 'ok'], default => ['Couldn’t check', 'warn'],
     };
     // Replace mode (Change on the cart): the chosen name takes over that cart line.
@@ -31,7 +32,7 @@
                 <button type="submit" class="domains-btn domains-btn--{{ $state === 'available' ? 'primary' : 'secondary' }}" aria-label="{{ $replace ? 'Use '.$result['domain'].($replace['name'] ? ' instead of '.$replace['name'] : '') : ($state === 'available' ? 'Register '.$result['domain'] : 'Transfer '.$result['domain'].' to us') }}">{{ $replace ? 'Use this name' : ($state === 'available' ? 'Register' : 'Transfer') }}</button>
             </form>
         @elseif ($state === 'in_cart')<a class="domains-btn domains-btn--secondary" href="{{ route('cart') }}">Go to cart</a>
-        @elseif ($state === 'error')<button type="button" class="domains-btn domains-btn--secondary" data-domains-retry>Retry</button>@endif
+        @elseif (in_array($state, ['error', 'busy'], true))<button type="button" class="domains-btn domains-btn--secondary" data-domains-retry>Retry</button>@endif
     </div>
     <p class="domains-result__note domains-small domains-muted">{{ $result['message'] ?? '' }}</p>
 </li>

@@ -653,6 +653,9 @@ def main():
                             'tests/demo-c-c1-observation-test.php',
                             'tests/demo-c-terms-native-test.php',
                             'tests/staff-domain-page-test.php',
+                            'tests/storefront-busy-test.php',
+                            'tests/sales-audit-changes-test.php',
+                            'tests/cart-price-change-test.php',
                         }
                         for path in requested
                     )

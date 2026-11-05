@@ -130,11 +130,15 @@ same('Was $'.$seen, trim($dom->query('//*[@class="line"]/s')->item(0)?->textCont
 
 // Removing the last line leaves an empty cart that still shows the titled notice, not a toast.
 $cart = commerceCart($user); $last = commerceAdd($cart, $com, 'last-line-placeholder.com', 3);
+$page = $open($cart);
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
-Illuminate\Support\Once::flush();
-$page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class); $dom = storefrontDom($page->html());
+$checkout($page, $cart); $dom = storefrontDom($page->html());
 expect(!$cart->items()->whereKey($last->id)->exists() && $dom->query('//*[@class="empty"]')->length === 1, 'The last line goes and the cart is empty');
 same('Domain removed', trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent ?? ''), 'Empty cart shows the removed notice');
+expect(collect($page->effects['dispatches'] ?? [])->contains('name', 'cartUpdated'), 'Removing the last domain refreshes the header cart badge');
+Illuminate\Support\Once::flush();
+$badge = new App\Livewire\Components\Cart; $badge->cartCount = 1;
+$badge->onCartUpdated(); same(0, $badge->cartCount, 'The native header listener reads the empty cart');
 same('last-line-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
     trim($dom->query('//*[@data-domains-cart-notice]//p')->item(0)?->textContent ?? ''), 'Removed notice keeps the sentence');
 expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'Empty cart with the notice gets no toast too');
