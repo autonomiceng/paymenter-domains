@@ -192,7 +192,7 @@ class ViewDomain extends ViewRecord
         $rows=[$view('head')];$shown=[];
         foreach (($state['cancelled_without_records']??false)?[]:$state['rows'] as $family) {
             $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;
-            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[]);
+            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[],$state['at']??null);
         }
         foreach (array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); }
         $rows[]=$view('tail');
@@ -204,9 +204,9 @@ class ViewDomain extends ViewRecord
     { return $this->families??=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($this->getRecord(),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()); }
     /** The family's read state above the row's own value, which keeps its red Missing, Failed or Under review tone and demo tag.
      * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state alone. */
-    private function familyRow(array $family, ?array $fact, array|Html $side): Flex
+    private function familyRow(array $family, ?array $fact, array|Html $side, mixed $readAt = null): Flex
     {
-        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true,'readAt'=>$this->familyState()['at']??null])->render().'</div>');
+        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true,'readAt'=>$readAt])->render().'</div>');
         if ($fact===null) {
             return Sheet::row(TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status),$side,key:'fact_'.md5($family['label']));
         }
