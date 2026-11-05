@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost, Facts, FactsObserved, FeedObserved, PricedFeed};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost, Facts, FactsObserved, FeedObserved, PricedFeed, TermSupport};
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueFreshness, CostUnit, RequestContext};
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
@@ -13,7 +13,9 @@ final class OfferFeed implements PricedFeed
     public const BUCKETS = [1, 2, 5, 10];
     public function __construct(private readonly Driver $reader,
         private readonly CatalogueFreshness $freshness = new CatalogueFreshness,
-        private readonly array $terms = [1 => [1], 2 => [2], 5 => [5], 10 => [10]])
+        private readonly array $terms = [1 => [1], 2 => [2], 5 => [5], 10 => [10]],
+        /** Reviewed NS17 term/family evidence keyed by suffix; first-pass suffixes only, default none. */
+        private readonly array $expansion = [])
     {
         foreach ($terms as $bucket => $years) {
             if (!in_array($bucket, self::BUCKETS, true) || !is_array($years)) { throw new \InvalidArgumentException('Invalid bucket evidence.'); }
@@ -78,10 +80,10 @@ final class OfferFeed implements PricedFeed
         $details = $this->read($this->reader->tldCapabilities($tld, $context), $context);
         $schema = $this->read($this->reader->registrySchema($tld, $context), $context);
         $auto = $details['auto_renew_only'];
-        return new FactsObserved($context->binding, $tld, new Facts(
+        return new FactsObserved($context->binding, $tld, TermSupport::attach($tld, new Facts(
             ['register' => $details['capabilities']->get('register')->terms],
             $schema['supported'] === true && $details['registry_attributes'] !== null ? $schema['fields'] : null,
             $auto === null ? null : !$auto, $details['requires_nameservers'], $auto,
-            'enom_tld_facts', $at, $at->modify('+2592000 seconds')));
+            'enom_tld_facts', $at, $at->modify('+2592000 seconds')), $this->expansion[$tld] ?? null));
     }
 }

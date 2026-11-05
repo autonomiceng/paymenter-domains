@@ -111,6 +111,38 @@ final class Capabilities
             ? new RenewalPrice($row?->id, $row?->revision, $value, 'USD', true, 'retained_renewal') : null;
         return compact('retail', 'cost');
     }
+    /** NS17 renewal years for an already locked holding, keyed by years. Pure over the retained rows:
+     * no query here. Year 1 keeps today's annual path; longer years need TermSupport's reviewed evidence. */
+    public function renewalTerms(AccountBinding $b, Tld $t, iterable $prices, \DateTimeImmutable $expiry): array
+    {
+        ($this->authorize)(new Query($b, [$t->tld], 'renew'), Context::Holder);
+        $this->identity($b, $t->tld, $t); $costs = [];
+        foreach ($prices as $p) {
+            if ((int)$p->server_id !== $b->serverId || $p->account_fingerprint !== $b->fingerprint
+                || $p->registrar_key !== $b->registrarKey || $p->tld !== $t->tld) { throw new \DomainException('Holding cost binding changed.'); }
+            if ($p->action !== 'renew' || $p->currency !== 'USD' || $p->catalogue_observation === null) { continue; }
+            $c = OfferState::cost(OfferState::decode($p->catalogue_observation));
+            if ($c->action === 'renew' && $c->term === (int)$p->term) { $costs[$c->key()] = $c; }
+        }
+        try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
+        // NameSilo stays annual before any TEST protocol check: its price read has no years parameter.
+        return TermSupport::renewal($b->registrarKey, $t->tld, $f, $costs, $expiry, $this->clock->now());
+    }
+    /** Staff Edit terms/account setup: supported renewal years and why each longer year or family is held. */
+    public function termReadiness(AccountBinding $b, string $name): array
+    {
+        ($this->authorize)(new Query($b, [$name], 'renew'), Context::Staff);
+        $t = Tld::where('server_id', $b->serverId)->where('tld', $name)->sole(); $this->identity($b, $name, $t);
+        $prices = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', $name)->where('action', 'renew')->orderBy('id')->get();
+        try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
+        $costs = [];
+        foreach ($prices as $p) {
+            if ($p->account_fingerprint !== $b->fingerprint || $p->currency !== 'USD' || $p->catalogue_observation === null) { continue; }
+            try { $c = OfferState::cost(OfferState::decode($p->catalogue_observation)); } catch (\Throwable) { continue; }
+            if ($c->term === (int)$p->term) { $costs[$c->key()] = $c; }
+        }
+        return TermSupport::readiness($b->registrarKey, $name, $f, $costs, $this->clock->now());
+    }
     private function current(?Cost $cost): ?Cost
     { return $cost && $cost->action === 'renew' && $cost->term === 1 && $cost->enabled && $cost->fresh($this->clock->now()) ? $cost : null; }
     private function identity(AccountBinding $b, string $name, Tld $t): void

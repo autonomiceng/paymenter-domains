@@ -27,8 +27,8 @@ final readonly class RenewalAdmission
     {
         OperationClaims::outside(); $status = RenewalStatus::Unknown; $renewalUntil = null;
         try {
-            [$binding, $name, $stamp, $retail, $nonpremium, $capabilityUntil] = $this->authority->capture($request);
-            if(EnomTestRenewal::enabled($binding)&&$request->years!==1){throw new RenewalRefused(RenewalCode::Term);}
+            [$binding, $name, $stamp, $retail, $nonpremium, $capabilityUntil, $termRule] = $this->authority->capture($request);
+            if(EnomTestRenewal::enabled($binding)&&$request->years!==1&&!$termRule){throw new RenewalRefused(RenewalCode::Term);}
             if ($reserve) { $this->accepted->reserve($binding); } else { $this->accepted->requireCurrent($binding); }
             $reader = $this->bindings->reader($binding->serverId); $binding->requireMatch($reader->binding());
             $started = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));

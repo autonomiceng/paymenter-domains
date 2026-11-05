@@ -27,6 +27,7 @@
   "contracts": [
     "tests/demo-c-record-readers-test.php",
     "tests/demo-c-contracts-test.php",
+    "tests/demo-c-terms-test.php",
     "tests/ote-reconciliation-test.php",
     "tests/ote-transport-cache-test.php",
     "tests/ote-normal-completion-test.php",
@@ -444,6 +445,7 @@
     "tests/offer-readiness-test.php",
     "tests/offer-installed-readiness-test.php",
     "tests/offer-frozen-renewal-test.php",
+    "tests/demo-c-terms-native-test.php",
     "tests/offer-frozen-transfer-test.php",
     "tests/namesilo-installed-quote-test.php",
     "tests/live-activation-namesilo-test.php",

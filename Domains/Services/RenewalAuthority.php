@@ -72,7 +72,10 @@ final readonly class RenewalAuthority
                         && WriteMoney::compare((new Money($prior->cost['actual']['amount'] ?? '', 'USD'))->amount,
                             (new Money($admission['cost']['amount'] ?? '', 'USD'))->amount) === 0;
                 } catch (\InvalidArgumentException | \TypeError) {}
-                return [$binding, $domain->domain, $current, $retail, $nonpremium, $capabilityUntil];
+                // NS17: a longer term is admissible only through its named debt's frozen exact-term rule.
+                $termRule = \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::admits($request->years,
+                    $all->first(fn ($op) => self::expected($op, $request))?->policy['renewal'] ?? null);
+                return [$binding, $domain->domain, $current, $retail, $nonpremium, $capabilityUntil, $termRule];
             });
         } catch (RenewalRefused $error) { throw $error; }
         catch (\Throwable) { throw new RenewalRefused(RenewalCode::Authority); }
