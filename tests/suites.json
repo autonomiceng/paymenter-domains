@@ -95,6 +95,7 @@
     "tests/offer-staff-reads-test.php",
     "tests/offer-installed-staff-test.php",
     "tests/offer-staff-policy-test.php",
+    "tests/offer-transfer-switch-test.php",
     "tests/offer-pay-check-test.php",
     "tests/offer-pay-staff-save-test.php",
     "tests/offer-cache-test.php",
