@@ -508,7 +508,8 @@
     "tests/customer-lock-history-test.php",
     "tests/customer-deferred-progress-test.php",
     "tests/customer-registration-history-test.php",
-    "tests/cart-removal-checkout-test.php"
+    "tests/cart-removal-checkout-test.php",
+    "tests/staff-invalid-tld-detail-test.php"
   ],
   "ui": [],
   "runner": [
