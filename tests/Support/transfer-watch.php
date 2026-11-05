@@ -46,8 +46,11 @@ function assertTransferWatch(array $f,$op,int $now): void
     foreach(['RuntimeSchema','ObservationSchema','BalanceSchema','StaffWatchSchema']as$type){('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$type)::install();}
     app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     foreach(['AccountBindings'=>$bindings,'PriceCatalogue'=>$prices,'NativeCatalogue'=>$native,'SellerPolicies'=>$sellers] as $type=>$value){app()->instance('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$type,$value);}
+    // Commerce already attached the managed-record producer to its isolated ports.
+    // Rebuild the whole runtime composition with fresh ports, as installed-entry fixtures do.
+    app()->offsetUnset(Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
     Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
-    (new Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,new Paymenter\Extensions\Servers\Domains\Services\RuntimePorts))->tick();
+    (new Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock,app(Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class)))->tick();
     same(0,DB::table('domains_obligation_alerts')->where('code','transfer_watch_relink')->whereNull('resolved_at')->count(),'Runtime repair clears staff finding');
     same('linked',$watch->fresh()->state,'Confirmed predecessor linked');same('retired',$source->fresh()->state,'Source history retained');same(1,WatchSource::where('managed_domain_id',$op->domain_id)->where('state','managed_link')->count(),'Hosting source points at acquired registration');
     same('suppressed',DB::table('domains_watch_notices')->where('id',$notice)->value('state'),'External notice stopped atomically');same(['suppressed','suppressed','accepted','uncertain'],DB::table('domains_watch_deliveries')->where('notice_id',$notice)->orderBy('id')->pluck('state')->all(),'Only unsent deliveries suppressed');same('registration_managed',DB::table('domains_watch_work')->where('watch_id',$watch->id)->value('safe_code'),'Claim cannot restart');
