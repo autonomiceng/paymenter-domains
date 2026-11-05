@@ -176,10 +176,11 @@ expect($result['published']>0,'Installed global command returns main publication
 
 // Discovered .org has metadata but no annual renewal price. It stays closed with the existing staff next step.
 $orgQuery=new Query($binding,['org'],'register');$orgRevision=fn()=>$ports->readOffers($orgQuery,Context::Staff)[0]->revision;
-$ports->apply(new FactsObserved($binding,'org',new Facts(['register'=>[1]],[],true,false,false,'enom_tld_facts',$now,$now->modify('+30 days'))),$orgRevision());
+$ports->apply(new FactsObserved($binding,'org',new Facts(['register'=>[1],'renew'=>[1]],[],true,false,false,'enom_tld_facts',$now,$now->modify('+30 days'))),$orgRevision());
 $ports->apply(Edit::override($binding,'org',new Intent(sell:true)),$orgRevision());
 $ports->apply(Edit::seller($binding,'org',['register']),$orgRevision());
 same(false,$ports->readOffers($orgQuery,Context::Public)[0]->available,'Missing renewal price never enables an offer');
 $org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();
-same('Needs a price sync',StaffCatalogue::routed()->page(collect([$org]))[$org->id]['sales']['reason'],'Closed unknown renewal retains the staff next step');
+same('unknown_price',$ports->readOffers($orgQuery,Context::Staff)[0]->reason,'Supported annual renewal without its cost stays a missing-price hold');
+same('Cost missing',StaffCatalogue::routed()->page(collect([$org]))[$org->id]['sales']['reason'],'Closed unknown renewal names the missing registrar cost');
 $nativeSuccessful=true;echo "Installed checked cutover caller matrix passed.\n";
