@@ -22,7 +22,8 @@ $binder=new InvoiceBinding($admission,$native,$prices,$clock);$binder->boot();ap
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $product=$native->product($tlds[0],'register');$hosting=commerceHosting();
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('comp-account-placeholder.com'));commerceAdd($cart,$hosting,'hosting');
-commerceCheckout($user,$cart)->assertHasNoErrors();
+$checkout=commerceCheckout($user,$cart);$checkout->assertHasNoErrors();
+expect(Domain::where('domain','comp-account-placeholder.com')->exists(),'Complimentary checkout must commit: '.json_encode($checkout->effects['dispatches']??[]));
 $d=Domain::where('domain','comp-account-placeholder.com')->sole();$op=$d->operations()->sole();
 same(['complimentary','0.00','complimentary'],[$op->funding_basis,$op->amount,$d->price_mode],'Only this account receives complimentary domain authority');
 $gift=Invoice::findOrFail($op->invoice_id);same(['paid',0.0,0],[$gift->status,(float)$gift->total,$gift->transactions()->count()],'Gift invoice is paid with no payment transaction');
