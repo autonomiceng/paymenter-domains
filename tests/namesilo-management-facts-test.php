@@ -16,8 +16,8 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 extract(commerceFixture());
 $binding = AccountBindings::binding(Account::where('server_id', $tlds[1]->server_id)->sole());
 $writer = new Writer(new Projection($native), $clock, static fn () => null, static fn () => true);
-$facts = new Facts(['register'=>[1], 'renew'=>[1], 'transfer'=>[1]], [], true, false, false,
-    'synthetic', $now, $now->modify('+1 day'));
+$facts = fixtureNameSiloFacts($binding, 'net', new Facts(['register'=>[1], 'renew'=>[1], 'transfer'=>[1]], [], true, false, false,
+    'synthetic', $now, $now->modify('+1 day')));
 $writer->apply(new FactsObserved($binding, 'net', $facts), new Revision(0, 0, 0));
 $tld = Tld::where('server_id', $binding->serverId)->where('tld', 'net')->sole();
 same(null, $tld->registry_fields, 'Writer discovery leaves the retired registry column empty');

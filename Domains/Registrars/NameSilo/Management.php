@@ -50,6 +50,8 @@ class Management extends ManagementProtocol
         $d = Domain::whereKey($domainId)->where('account_fingerprint', $this->binding->fingerprint)->where('domain', $name)->sole();
         $tld = Tld::where('server_id', $this->binding->serverId)->where('tld', $d->tld)->sole();
         $facts = OfferState::facts($tld->catalogue_facts);
+        if ($this->binding->environment === \Paymenter\Extensions\Servers\Domains\Data\Environment::Test
+            && !TestCatalogueFacts::current($this->binding, $d->tld, $facts, app(Clock::class))) { $facts = null; }
         if (!$tld->catalogue_converted || $tld->registrar_key !== $this->binding->registrarKey
             || $tld->account_fingerprint !== $this->binding->fingerprint || !$facts
             || !$facts->fresh(app(Clock::class)->now())

@@ -157,6 +157,7 @@
     "tests/management-namesilo-test.php",
     "tests/management-namesilo-contacts-test.php",
     "tests/namesilo-management-facts-test.php",
+    "tests/test_installed_namesilo_contact_facts-test.php",
     "tests/namesilo-management-sequence-test.php",
     "tests/management-durable-sequence-test.php",
     "tests/namesilo-dns-durable-test.php",
