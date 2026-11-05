@@ -16,6 +16,7 @@ final class DomainHistory
     {
         $rows=DomainQueries::operations($domain)->orderByDesc('id')->get()->all();
         foreach ($rows as $op) {
+            if(is_array($op)){continue;}
             try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }
             if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
             foreach ($history as $i=>$action) {

@@ -17,7 +17,7 @@ foreach(['custom','unconfirmed'] as $delegation){
 $server=App\Models\Server::findOrFail($d->server_id);$server->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $dto=$owners->present($d->fresh());same(null,$dto->management['dns']['records'],'Unknown DNS is held, never an empty authoritative list');
 expect(!$dto->changesUnavailable,'Available DS/child-host additions suppress the settings-unavailable notice');
-$html=$page();same(['Missing',($dto->management['dns']['recordCheckHeld']??false)?'Our team needs to check this domain. No action needed.':'Contact support to sync these records.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]/span[contains(concat(@class," "),"domains-missing ") or @class="domains-sub"]'))),'Held DNS shows Missing with its cause');
+$html=$page();same(1,storefrontDom($html)->query('//form[contains(@action,"/manage/nameservers")]')->length,'A no-read active domain retains its existing nameserver editor');same(['Missing',($dto->management['dns']['recordCheckHeld']??false)?'Our team needs to check this domain. No action needed.':'Contact support to sync these records.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]/span[contains(concat(@class," "),"domains-missing ") or @class="domains-sub"]'))),'Held DNS shows Missing with its cause');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/dns")]')->length,'Held DNS has no replacement form');
 $dom=storefrontDom($html);same(0,$dom->query('//form[contains(@action,"/manage/srv")]')->length,'Held SRV has no replacement form');
 same(1,$dom->query('//li[@id="ds"]/span[@class="domains-row__v"]/span[contains(concat(@class," "),"domains-missing ")]')->length,'Unknown DS list is Missing');same('Add DS record',trim((string)$dom->query('//li[@id="ds"]/span[@class="domains-row__a"]/a')->item(0)?->textContent),'Unknown DS still offers an addition');same(1,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS permits fresh-preflight addition');same(0,$dom->query('//form[contains(@action,"/manage/ds_delete")]')->length,'Unknown DS cannot imply deletable records');
@@ -44,7 +44,8 @@ foreach($cases as$action=>$payload){
         same(0,$pending->query('//li[@id="glue"]//form')->length,'Pending glue has no second change control');
     }
     same('succeeded',$management->run($op->id,$driver)->state,$action.' uses existing grant and typed readback');
-    if($action==='dns'){same(' exact + % é雪  text ',$op->payload['records'][0]['address'],'TXT bytes preserved');expect(str_contains($page(),' exact + % é雪  text '),'Confirmed records reach real Blade');}
+    if($action==='dns'){same(' exact + % é雪  text ',$op->payload['records'][0]['address'],'TXT bytes preserved');expect(str_contains($page(),' exact + % é雪  text '),'Confirmed records reach real Blade');
+    }
     if($action==='ds_add'){same(1,count($owners->present($d->fresh())->management['ds']['records']),'Single DS tuple renders');}
     if($action==='glue_update'){$writes=array_values(array_filter($state->calls,fn($c)=>$c[0]==='UpdateNameServer'));same('2606:4700:4700::1111',end($writes)[1]['OldIP'],'Old IP comes from fresh preflight');}
 }

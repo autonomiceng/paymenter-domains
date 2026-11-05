@@ -136,7 +136,7 @@ class ViewDomain extends ViewRecord
             }
             $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
-        return $schema->components([Sheet::split([...$this->notices($d),...$sections,Sheet::section('DNSSEC',[$this->row('DS records',\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d),[])])],[$this->activity($d)])]);
+        return $schema->components([Sheet::split([...$this->notices($d),...$sections,Sheet::section('Monitoring',[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d)]))]),$this->recordFamilies($d),Sheet::section('DNSSEC',[$this->row('DS records',\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d),[])])],[$this->activity($d)])]);
     }
     /** @return list<Callout> */
     private function notices(Domain $d): array
@@ -156,6 +156,12 @@ class ViewDomain extends ViewRecord
         $facts[$row]['sub']=trim(($facts[$row]['sub']??'').' DNS comparison not set up.');
         $facts[$row]['setup']=true;
         return $facts;
+    }
+    private function recordFamilies(Domain $d): Section
+    {
+        $state=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
+        $resume=$this->getAction('resume_observation',false);
+        return Sheet::section('Record families',[Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true]))],after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
     }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section

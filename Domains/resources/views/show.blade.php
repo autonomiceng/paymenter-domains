@@ -5,7 +5,7 @@
     $support = ($summary ?? null)?->urls['support'] ?? \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl();
     $notice = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($domain, $support, $summary ?? null);
     $pill = \Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::owned($domain, $summary ?? null);
-    $settings = array_values(array_filter(['lock', 'privacy', 'auth_code_email', 'contacts', 'nameservers', 'dns', 'srv', 'glue', 'ds'], fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))));
+    $settings = array_values(array_filter(['flags', 'lock', 'privacy', 'auth_code_email', 'contacts', 'nameservers', 'dns', 'srv', 'glue', 'ds'], fn ($cap) => ($cap !== 'privacy' || \Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) && (isset($domain->management[$cap]) || ($cap === 'nameservers' && $domain->syncPaused))));
 @endphp
 <nav class="domains-crumb" aria-label="Breadcrumb"><a href="{{ route('domains.domains.index') }}">Domains</a> / {{ $domain->name }}</nav>
 <div class="domains-ph"><h1 class="domains-mono">{{ $domain->name }}{{ \Paymenter\Extensions\Servers\Domains\Support\DemoData::label($domain->demo, $domain->testEnvironment) }}</h1>@if ($pill)<span class="domains-pill">@include('domains::partials.status-pill', ['pill' => $pill])</span>@endif</div>
@@ -19,7 +19,8 @@
 <div class="domains-cols"><div class="domains-sheet">
 @include('domains::partials.owner-renew')
 @if ($settings)
-<section class="domains-panel" aria-labelledby="heading-settings"><div class="domains-panel__h"><h2 id="heading-settings" class="domains-h2">Settings</h2></div>
+<section class="domains-panel" aria-labelledby="heading-settings"><div class="domains-panel__h"><h2 id="heading-settings" class="domains-h2">{{ ($recordFamilies ?? null) ? 'Registrar records' : 'Settings' }}</h2></div>
+@if (($recordFamilies ?? null) && $recordFamilies['stale'])<p class="domains-hint">These records are waiting for an update. We’re checking them.</p>@endif
 <ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul></section>
 @endif
 </div>

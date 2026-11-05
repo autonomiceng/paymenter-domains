@@ -23,9 +23,11 @@
 @endphp
 @continue($section === null && !($cap === 'nameservers' && $domain->syncPaused))
 <li @class(['domains-row', 'domains-row--pending' => $section['progress']['pending'] ?? false]) id="{{ $cap }}">
-<span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif
+<span class="domains-row__l">{{ $label }}@if (isset($section['family']) && !($section['family_only']??false))@include('domains::partials.record-family-status',['family'=>$section['family']])@endif@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif
 @if (($section['progress'] ?? null) && !$section['progress']['pending'])<span class="domains-sub" role="status">{{ $section['progress']['text'] }}</span>@endif</span>
-@if ($section['progress']['pending'] ?? false)
+@if (($section['family_only'] ?? false) && !($section['off'] ?? false) && !($section['progress']['pending'] ?? false))
+<span class="domains-row__v">@include('domains::partials.record-family-status',['family'=>$section['family']])@if ($cap==='dns')@include('domains::partials.dns-inventory')@endif</span>
+@elseif ($section['progress']['pending'] ?? false)
 <span class="domains-row__v">
 @if ($cap==='ds' && isset($section['progress']['state']))<strong data-ds-state>{{ $section['progress']['state'] }}</strong>@endif
 @if (!$paused && $cap === 'nameservers' && ($section['current'] ?? []))
@@ -58,7 +60,7 @@
 @endcomponent
 @endif
 @elseif ($section['off'] ?? false)
-<span class="domains-row__v">@include('domains::partials.status-pill', ['pill'=>['label'=>'Off','tone'=>'muted']])<span class="domains-sub">{{ $section['reason'] }}</span></span>
+<span class="domains-row__v">@include('domains::partials.status-pill', ['pill'=>['label'=>'Off','tone'=>'muted']])<span class="domains-sub">{{ $section['reason'] }}</span>@if (isset($section['family']))@include('domains::partials.record-family-status',['family'=>$section['family']])@endif</span>
 <span class="domains-row__a"><button class="domains-btn domains-btn--secondary" type="button" aria-disabled="true" disabled>Add DS record</button></span>
 @elseif ($section['unavailable'] ?? false)
 @php $total = $records === null ? null : count($records) + count($section['fixed'] ?? []); @endphp
@@ -146,5 +148,6 @@
 @endif
 @endif
 @endif
+@if ($cap==='dns' && !($section['family_only']??false) && isset($section['inventory']))<span class="domains-row__v">@include('domains::partials.dns-inventory')</span>@endif
 </li>
 @endforeach

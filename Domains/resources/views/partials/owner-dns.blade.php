@@ -18,7 +18,7 @@
 @endforeach
 <div class="domains-tablewrap" tabindex="0" role="region" aria-label="{{ $section['label'] }}">
 <table class="domains-tbl domains-records"><caption class="domains-sr">{{ $section['label'] }}. Blank rows add records.</caption>
-<thead><tr>@foreach ($fields as $fieldLabel)<th scope="col">{{ $fieldLabel }}</th>@endforeach<th scope="col"><span class="domains-sr">Delete</span></th></tr></thead>
+<thead><tr>@foreach ($fields as $fieldLabel)<th scope="col">{{ $fieldLabel }}</th>@endforeach@if ($isDns)<th scope="col">TTL</th>@endif<th scope="col"><span class="domains-sr">Delete</span></th></tr></thead>
 <tbody>
 @foreach ($draft['records'] ?? array_slice([...$section['records'], [], []], 0, 50) as $index => $record)
 <tr @isset($section['records'][$index]) data-record="{{ $describe($section['records'][$index]) }}" @endisset>
@@ -27,25 +27,15 @@
 @include('domains::partials.record-field', ['key'=>$cap.'.records.'.$index.'.'.$field, 'id'=>$cap.'-'.$index.'-'.$field, 'name'=>'records['.$index.']['.$field.']', 'label'=>'Record '.($index+1).' '.($field==='mx_pref'?'MX priority':strtolower($fieldLabel)), 'current'=>$record[$field] ?? '', 'required'=>false, 'type'=>in_array($field,['mx_pref','priority','weight','port'])?'number':'text', 'limit'=>match($field){'address'=>2048,'service'=>14,'target'=>254,default=>253}, 'options'=>$field==='type'?$types:($field==='protocol'?[''=>'Protocol','tcp'=>'TCP','udp'=>'UDP']:null)])
 </td>
 @endforeach
+@if ($isDns)<td>{{ $record['ttl']??'Registrar default' }}</td>@endif
 <td>
 @if ((!$isDns || ($section['sources'] ?? false)) && (($draft !== null && ($record['_source'] ?? '') !== '') || ($draft === null && $index < count($section['records']))))<input type="hidden" name="records[{{ $index }}][_source]" value="{{ $draft !== null ? $record['_source'] : $index }}">@endif
 @if (($record['_delete'] ?? '') === '1' && isset($section['records'][$index]))<input type="hidden" name="records[{{ $index }}][_delete]" value="1">@elseif (isset($section['records'][$index]))<button type="submit" name="records[{{ $index }}][_delete]" value="1" formnovalidate class="domains-a domains-linkbtn" data-delete-record>Delete<span class="domains-sr"> record {{ $index + 1 }}</span></button>@endif</td>
 </tr>
 @endforeach
+@if ($isDns)@foreach ($section['fixed']??[] as $record)<tr data-fixed-records><td class="domains-mono">{{ $record['name'] }}</td><td>{{ $record['type'] }}</td><td>{{ $record['address'] }}</td><td>—</td><td>{{ $record['ttl']??'Unknown' }}</td><td>Read-only</td></tr>@endforeach@endif
 </tbody></table></div>
-@if ($section['fixed'] ?? [])
-<div data-fixed-records>
-@foreach (\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm::notes($section['fixed']) as $note)<p class="domains-hint">{{ $note }}</p>@endforeach
-<div class="domains-tablewrap" tabindex="0" role="region" aria-label="Records you can’t change here">
-<table class="domains-tbl domains-records"><caption class="domains-sr">Records you can’t change here</caption>
-<thead><tr><th scope="col">Host</th><th scope="col">Type</th><th scope="col">Value</th></tr></thead>
-<tbody>@foreach ($section['fixed'] as $record)
-<tr><td class="domains-mono">{{ $record['name'] }}</td>
-<td>{{ $record['type'] }}</td>
-<td class="domains-mono">{{ $record['address'] }}</td></tr>
-@endforeach</tbody></table></div>
-</div>
-@endif
+@if ($section['fixed']??[])@foreach (\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm::notes($section['fixed']) as $note)<p class="domains-hint">{{ $note }}</p>@endforeach@endif
 <p class="domains-hint">{{ count($draft['records'] ?? $section['records']) === 50 ? 'Up to 50 records. Saving replaces the list. To add one, edit or delete a record first.' : 'Up to 50 records. Saving replaces the list. Fill a blank row to add one.' }}</p>
 <button type="submit" class="domains-btn domains-btn--primary">Save</button>
 @php($confirmOpen = ($section['retry']['confirm'] ?? false) && $section['retry']['action'] === $cap)
