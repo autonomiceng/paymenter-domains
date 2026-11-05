@@ -87,9 +87,9 @@ final class TldFacts
     private static function feedGap(array $fact): string
     {
         $r=$fact['refresh']??[];$selected=$r['selected_at']??null;
-        if($selected!==null&&($r['succeeded_at']??0)>$selected){return "Not in the registrar's price feed; not for sale";}
+        if(($r['succeeded_at']??0)>0&&($selected===null||$r['succeeded_at']>$selected)){return "Not in the registrar's price feed; not for sale";}
         $cause=isset($r['failure'])?self::syncCause($r['failure']):(($fact['sales']['reason']??null)==='Check registrar account'?'Check registrar account.':
-            (($r['succeeded_at']??null)?($selected===null?'Selection time is not recorded; check registrar account.':'No successful refresh after this TLD was selected is recorded.'):'No successful refresh recorded for this account.'));
+            (($r['succeeded_at']??null)?'No successful refresh after this TLD was selected is recorded.':'No successful refresh recorded for this account.'));
         return 'Price feed not read yet: '.$cause;
     }
     /** One display decision for list and account-table money cells. No new read or enqueue on a GET. */
