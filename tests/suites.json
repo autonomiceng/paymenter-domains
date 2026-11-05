@@ -178,6 +178,8 @@
     "tests/observation-records-test.php",
     "tests/observation-namesilo-test.php",
     "tests/storefront-test.php",
+    "tests/storefront-busy-test.php",
+    "tests/sales-audit-changes-test.php",
     "tests/storefront-scale-test.php",
     "tests/test_client_scripts.py",
     "tests/storefront-cache-test.php",
