@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/management-namesilo.php';
+// Real native DB facade is required by the public management port's outside-lock guard.
+(static function (): void { require __DIR__.'/Support/demo-c-ds-management.php'; })();
 require __DIR__.'/Support/owner-pages.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\Invoice;

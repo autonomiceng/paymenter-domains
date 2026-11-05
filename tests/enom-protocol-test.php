@@ -127,4 +127,3 @@ foreach (['host','record'] as $container) {
 (static function (): void { require __DIR__.'/Support/demo-c-ds-inventory.php'; })();
 (static function (): void { require __DIR__.'/Support/demo-c-ds-policy.php'; })();
 (static function (): void { require __DIR__.'/Support/demo-c-ds-readback.php'; })();
-(static function (): void { require __DIR__.'/Support/demo-c-ds-management.php'; })();
