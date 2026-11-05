@@ -219,6 +219,7 @@
     "tests/matrix-intent-unreadable-test.php",
     "tests/sell-intent-unreadable-test.php",
     "tests/test_installed_sell_filter-test.php",
+    "tests/test_installed_sell_retained_renewal_cost-test.php",
     "tests/price-list-unreadable-test.php",
     "tests/renewal-billing-settings-test.php",
     "tests/reminders-test.php",

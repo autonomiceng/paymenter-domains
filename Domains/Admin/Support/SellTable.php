@@ -160,6 +160,11 @@ final class SellTable
     private function sold(OfferRow $row,string $action): string
     {
         $facts=$this->facts()[self::key($row)]??[];$intent=$facts['intent']??[];$defaults=$facts['defaults']??[];
+        // Contractual annual holder renewals survive sale stops; their missing cost still needs repair.
+        if($action==='renew'&&$this->years===1){
+            $retained=$this->savedRow($row)['prices']['renew']['price']??null;
+            if($retained!==null&&\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($retained)>0){return 'sold';}
+        }
         if(!($intent['sell']??$defaults['defaultSell']??true)||in_array($action,$intent['stops']??[],true)
             ||$action==='register'&&$this->years>($intent['longest']??$defaults['defaultLongest']??1)
             ||$action==='transfer'&&!($intent['transfers']??$defaults['defaultTransfers']??false)){return 'off';}
