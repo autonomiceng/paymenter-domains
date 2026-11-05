@@ -528,7 +528,8 @@
     "tests/self-heal-records-test.php",
     "tests/self-heal-retry-test.php",
     "tests/site-dns-default-test.php",
-    "tests/site-dns-managed-test.php"
+    "tests/site-dns-managed-test.php",
+    "tests/site-dns-mismatch-test.php"
   ],
   "ui": [],
   "runner": [

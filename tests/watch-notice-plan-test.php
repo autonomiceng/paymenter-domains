@@ -72,4 +72,16 @@ $outage=Plan::expiry([],expiry($base,1),$base);$outage=Plan::expiry($outage['sta
 same(['registry_expiry_reached'],$outage['portal'],'Outage crossing retained across reversal without evaluating reversed freshness');same('clock_reversal',$outage['health'],'Outage evaluation has high-water mark');
 $dnsOutage=Plan::dns($p['state'],null,$base+86400,true);$dnsOutage=Plan::dns($dnsOutage['state'],ns($base+900,'external',2,['ns_confirmed'=>true]),$base+900,true);
 same([],$dnsOutage['notices'],'DNS outage reversal cannot consume episode');same('clock_reversal',$dnsOutage['health'],'DNS evaluation high-water mark detects reversal');
+// Mismatch wording is historical, scoped to the current expected nameserver lineage.
+$never=Plan::dns([],ns($base,'external',1,['ns_confirmed'=>true]),$base,true);
+same(false,$never['notices'][0]['previously_matched']??null,'An initial mismatch cannot claim a change');
+$prior=Plan::dns([],ns($base,'platform'),$base,true);
+$after=Plan::dns($prior['state'],ns($base+900,'external',2,['ns_confirmed'=>true]),$base+900,true);
+same(true,$after['notices'][0]['previously_matched']??null,'An earlier complete match permits change wording');
+$other=Plan::dns($prior['state'],ns($base+900,'external',2,['lineage'=>'profile:2','ns_confirmed'=>true]),$base+900,true);
+same(false,$other['notices'][0]['previously_matched']??null,'Another expectation cannot borrow an earlier match');
+$invalid=Plan::dns([],ns($base,'platform',1,['current'=>false]),$base,true);
+$invalid=Plan::dns($invalid['state'],ns($base+900,'external',2,['ns_confirmed'=>true]),$base+900,true);
+same(false,$invalid['notices'][0]['previously_matched']??null,'Stale evidence cannot prove earlier use');
+$relink=Plan::relinked($after['state']);same(true,$relink['previously_matched']??null,'Relink retains the episode wording, without confirmation evidence');
 echo "Watch UTC windows, bounded catch-up, correction keys, clock reversal and DNS episodes passed.\n";
