@@ -45,6 +45,6 @@ final class Staff
         return self::allows($user instanceof User ? $user : null, $permission);
     }
     public static function canEditDefaultDns(): bool
-    { return self::can(self::POLICY) && self::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('new_domain_dns')); }
+    { return self::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW) && self::can(\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::MANAGE); }
     public static function requireView(): StaffGrants { return StaffGrants::current(); }
 }

@@ -18,10 +18,8 @@ final class WatchProfile extends WatchRecord
             throw new \DomainException('A profile name, actor and reason are required.');
         }
         $profile = $this->profile();
-        $accounts=\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts((int)$this->id,true);
-        if($accounts){
-            if(!$this->enabled){throw new \DomainException('This template is a registrar account default. Choose another template on those registrar accounts before turning it off.');}
-            foreach(Account::whereIn('server_id',$accounts)->pluck('registrar_key')->unique() as $registrar){\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::validate($registrar,$profile->nameservers);}
+        if(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$this->id) && !$this->enabled){
+            throw new \DomainException('Choose another site DNS default before turning this template off.');
         }
         $this->nameservers = $profile->nameservers; $this->website_endpoints = $profile->website; $this->email_endpoints = $profile->email;
     }
@@ -34,10 +32,11 @@ final class WatchProfile extends WatchRecord
     protected static function booted(): void
     {
         static::deleting(static function(self $row):void {
-            if(\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::accounts((int)$row->id)){throw new \DomainException('This template is a registrar account default. Choose another template on those registrar accounts before deleting it.');}
+            if(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$row->id)){throw new \DomainException('Choose another site DNS default before deleting this template.');}
         });
         parent::booted();
         static::saved(static function (self $row): void {
+            \Illuminate\Support\Facades\DB::afterCommit(static fn()=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::reconcile());
             WatchAudit::create(['subject_type' => 'dns_profile', 'subject_id' => $row->id, 'actor_id' => $row->edited_by,
                 'event' => 'dns_profile_saved', 'reason' => $row->reason, 'before_revision' => (string) ($row->revision - 1),
                 'after_revision' => (string) $row->revision, 'data' => ['nameservers' => $row->nameservers, 'website' => $row->website_endpoints,

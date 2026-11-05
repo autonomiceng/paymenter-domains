@@ -93,7 +93,7 @@ final class ManagedPublicEnrollment
                 $changed=$changed || $inserted>0;
                 $w=$q->lockForUpdate()->first();
                 if ((int)$w->user_id!==$owner || $w->account_fingerprint!==$d->account_fingerprint) { throw new ManagedPublicIdentityChanged(); }
-                if (in_array($w->safe_code,['awaiting_acceptance','dns_not_configured','profile_unavailable'],true) || $w->retired_at!==null) {
+                if (in_array($w->safe_code,['awaiting_acceptance','dns_not_configured','profile_unavailable'],true) || $w->retired_at!==null || (int)$w->profile_id!==(int)$profile->id || (int)$w->profile_revision!==(int)$profile->revision) {
                     $changed=true;$q->update(['safe_code'=>'ready','retired_at'=>null,'due_at'=>$now,'domain_revision'=>$d->confirmed_revision,'config_revision'=>$config->revision,
                         'profile_id'=>$profile?->id,'profile_revision'=>$profile?->revision,'claim'=>null,'lease_until'=>null]);
                 }
