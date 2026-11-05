@@ -8,6 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CanonicalName, Ca
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{ManagementCommand as M, ProtocolResult, ReadCommand as R, ResponseParser};
 final class Management extends ManagementProtocol
 {
+    public function observationCapabilities(): array
+    { return ['revision'=>'enom-records-1','families'=>array_fill_keys(['dns','srv','ds','glue'],'supported')]; }
     public function capabilities(): Capabilities
     { return new Capabilities($this->binding, array_fill_keys(['nameservers','contacts','lock','privacy','dns','ds','glue','auto_renew_off','auth_code_email'],new Capability(Support::Supported))+['auth_code_display'=>new Capability(Support::Unsupported)],PrivacyMode::Paid); }
     public function validate(string $action, #[\SensitiveParameter] array $payload, string $name): array { return ManagementInput::validate($action,$payload,$name); }

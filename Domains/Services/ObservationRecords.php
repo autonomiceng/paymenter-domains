@@ -69,6 +69,6 @@ final class ObservationRecords
     public static function current(Domain $d): ?array
     {
         $r=$d->observation['records']??null;
-        return is_array($r)&&($r['identity']??null)===self::identity($d)?$r:null;
+        return is_array($r)&&($r['identity']??null)===self::identity($d)?RecordFormat::read($r,$d->registrar_key):null;
     }
 }

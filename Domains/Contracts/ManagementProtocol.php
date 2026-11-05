@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, Man
 use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, OperationClaims, WriteHeld};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 /** Named capability port. No default exchange, public command execution, purchase or retry path. */
-abstract class ManagementProtocol
+abstract class ManagementProtocol implements ObservationReader
 {
     private readonly \SensitiveParameterValue $exchange;
     private ?WriteReservation $reservation=null;
@@ -31,6 +31,13 @@ abstract class ManagementProtocol
     public function __construct(protected readonly AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange)
     { $this->exchange = new \SensitiveParameterValue($exchange); }
     final public function bindsTo(AccountBinding $binding): bool { return $this->binding->matches($binding); }
+    /** Fail-closed read expectations; providers opt in independently of mutation capabilities. */
+    public function observationCapabilities(): array
+    { return ['revision'=>null,'families'=>array_fill_keys(['dns','srv','ds','glue'],'unsupported')]; }
+    /** Optional reviewed policy for NEW DS requests only; absent policy adds no mutation grant.
+     * @return null|array{format:1,suffix:string,input:string,source:string,version:string,reviewed_at:string,valid_until:string,algorithms:array,digest_types:array,combinations:array,expiry_policy:string}
+     */
+    public function dsMutationPolicy(string $name): ?array { return null; }
     /** Read-only discovery; unsupported families remain unknown, never empty. No write grant. */
     public function discover(ManagementRequest $request, RequestContext $context, array $knownGlue = []): array
     {

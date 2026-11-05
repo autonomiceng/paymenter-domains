@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,Capability,ManagementRequest,ManagementResult,RequestContext,Support};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome;
 /** Dormant opt-in adapter: no runtime factory or UI selects this class. */
-final class DnsManagement extends Management
+class DnsManagement extends Management
 {
     public function capabilities(): Capabilities
     {
