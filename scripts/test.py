@@ -642,7 +642,12 @@ def main():
                     and requested
                     and all(
                         Path(path).name.startswith("test_installed_")
-                        or path in {"tests/checkout-refresh-test.php", "tests/offer-reader-batch-test.php"}
+                        or path in {
+                            "tests/checkout-refresh-test.php", "tests/offer-reader-batch-test.php",
+                            # These focused catalogue checks only write their private app/SQLite fixture.
+                            "tests/offer-cutover-test.php", "tests/offer-writer-test.php",
+                            "tests/offer-work-test.php", "tests/offer-frozen-renewal-test.php",
+                        }
                         for path in requested
                     )
                 )

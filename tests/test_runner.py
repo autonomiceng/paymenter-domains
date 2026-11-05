@@ -656,7 +656,12 @@ class RunnerTests(unittest.TestCase):
                  (['tests/checkout-refresh-test.php'], ['native'], True),
                  (['tests/offer-reader-batch-test.php'], ['native'], True),
                  (['tests/checkout-refresh-test.php', 'tests/offer-reader-batch-test.php'], ['native'], True),
-                 (['tests/offer-reader-batch-test.php', 'tests/native-fixture-test.php'], ['native'], False)]
+                 (['tests/offer-reader-batch-test.php', 'tests/native-fixture-test.php'], ['native'], False),
+                 (['tests/offer-cutover-test.php'], ['native'], True),
+                 (['tests/offer-writer-test.php'], ['native'], True),
+                 (['tests/offer-work-test.php'], ['native'], True),
+                 (['tests/offer-frozen-renewal-test.php'], ['native'], True),
+                 (['tests/offer-work-test.php', 'tests/native-fixture-test.php'], ['native'], False)]
         for requested, selected, shared in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
