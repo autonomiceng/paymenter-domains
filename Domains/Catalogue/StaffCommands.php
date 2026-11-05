@@ -112,7 +112,7 @@ final class StaffCommands
         }
         $terms=$sell['terms'][$name]??[];
         foreach(['longest'=>'longest','transfer'=>'transfers'] as $key=>$field){if(array_key_exists($key,$terms)){$raw[$field]=$terms[$key];}}
-        return Edit::override($binding,$name,$this->intent($raw),$rule);
+        return Edit::override($binding,$name,$this->intent($raw),$rule,($terms['transfer']??null)===true);
     }
     private function settings($binding,Tld $t,array $raw,array $data,?array $rule): Edit
     {
@@ -126,7 +126,7 @@ final class StaffCommands
         if(in_array('renew',$raw['stops'],true)&&Domain::where(['server_id'=>$binding->serverId,'tld'=>$t->tld,'account_fingerprint'=>$binding->fingerprint])->whereNotNull('reservation_name')->exists()){
             throw new \DomainException('Retained holders require annual renewal support.');}
         // A verified checkbox is administrative intent only; this command never creates or ages Facts.
-        return Edit::override($binding,$t->tld,$this->intent($raw),$rule);
+        return Edit::override($binding,$t->tld,$this->intent($raw),$rule,$raw['transfers']&&!in_array('transfer',$raw['stops'],true));
     }
     private function seller(Tld $t,array $data): Edit
     {

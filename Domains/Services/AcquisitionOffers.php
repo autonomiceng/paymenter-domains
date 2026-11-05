@@ -93,23 +93,49 @@ final class AcquisitionOffers
         Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
             'native_retail' => $acquire->listedRetail()], 300);
         $seed = new SaleSelection(...[...get_object_vars($seed), 'catalogue' => ['order_quote' => $token]]);
-        return $this->load([$seed], false, false)[0]['selection'];
+        try { return $this->load([$seed], false, false)[0]['selection']; }
+        catch (\DomainException $e) {
+            $quoted = $costs[$acquire->observation()->key()] ?? null;
+            throw $quoted === null ? $e : new OrderQuoteRefused($e, OfferState::cost($quoted));
+        }
     }
 
-    /** Pending invoices may outlive their cart quote. Recheck the same sale without enlarging
-     * frozen retail or spending authority, then use that current selection for the pay guard. */
+    /** Pending invoices outlive cart quotes and staff saves. Recheck the same sale against the current offer:
+     * same seller, account, action, term and currency, still sold now, and the current cost within both the
+     * issued total and the frozen spending ceiling. Revisions and retail may move; the issued amount stands. */
     public function paymentSelection(SaleSelection $frozen, string $name, string $ceiling, string $total): SaleSelection
     {
-        $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
-            new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
-        $old = get_object_vars($frozen); $new = get_object_vars($current);
-        unset($old['catalogue']['order_quote'], $new['catalogue']['order_quote']);
-        $price = $this->load([$current], false, true)[0]['snapshot'];
-        if ($old !== $new || !PricingRule::covers($total, $price->wholesale)
-            || PricingRule::units($price->wholesale) > PricingRule::units($ceiling)) {
-            throw new \DomainException('Frozen order price or spending ceiling changed.');
+        try {
+            $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
+                new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
+        } catch (\DomainException $e) {
+            $this->costRefusal($frozen, $name, $ceiling, $total, $e instanceof OrderQuoteRefused ? $e->cost : null); throw $e;
         }
+        $sale = static fn (SaleSelection $s) => [$s->tld, $s->serverId, $s->registrar, $s->fingerprint, $s->action, $s->term,
+            $s->currency, $s->catalogue['generation'] ?? null, $s->catalogue['credential'] ?? null];
+        if ($sale($frozen) !== $sale($current)) { throw new \DomainException('Seller or account changed.'); }
+        $price = $this->load([$current], false, true)[0]['snapshot'];
+        if (!self::fits($price->wholesale, $ceiling, $total)) { throw new PaymentPriceChanged($name); }
         return $current;
+    }
+
+    private static function fits(string $cost, string $ceiling, string $total): bool
+    { return PricingRule::covers($total, $cost) && PricingRule::units($cost) <= PricingRule::units($ceiling); }
+
+    /** A refused current offer whose fresh cost (daily table, or this request's refreshed quote) no longer fits
+     * the invoice is a price change (a fixed retail below the new cost, for example), not a temporary stop.
+     * Staff or seller stops keep their own refusal. */
+    private function costRefusal(SaleSelection $s, string $name, string $ceiling, string $total, ?Cost $quoted = null): void
+    {
+        try {
+            $b = AccountBindings::binding(Account::where('server_id', $s->serverId)->sole());
+            if ($b->fingerprint !== $s->fingerprint || $b->registrarKey !== $s->registrar) { return; }
+            $row = $this->ports->loadBatch([new Query($b, [$s->tld], $s->action, $s->term)], Context::Public)[0][0];
+            $cost = $row->closed() ? null : ($quoted ?? $row->observation());
+        } catch (\Throwable) { return; }
+        if ($cost?->enabled && $cost->total !== null && $cost->fresh(app(Clock::class)->now()) && !self::fits($cost->total, $ceiling, $total)) {
+            throw new PaymentPriceChanged($name);
+        }
     }
 
     /** Native list row still has to match its original publication, even for a cart-only quote. */
