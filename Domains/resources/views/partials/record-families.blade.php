@@ -5,11 +5,11 @@
 @if ($part !== 'tail')
 @if ($recordFamilies['stale'])<p class="domains-hint">Registrar records are waiting for an update. Last confirmed data is retained.</p>@endif
 @if ($recordFamilies['at'])<p class="domains-hint">Last registrar read: @include('domains::partials.moment', ['at'=>$recordFamilies['at']])</p>@endif
-{{-- What to do next is on the Next registrar read line below. --}}
+{{-- What to do next is on the Next registrar read line below. When the read stopped, the page notice names the cause and Resume sync, so this line keeps only the count, code and time. --}}
 @if ($staff && $recordFamilies['failed_family'])<p class="domains-hint">Last read failed for {{ collect($recordFamilies['rows'])->firstWhere('kind', $recordFamilies['failed_family'])['label'] ?? $recordFamilies['failed_family'] }}. {{ $recordFamilies['staff_hold'] }}</p>@endif
 @if ($staff)
-<p class="domains-hint">Next registrar read: @if ($recordFamilies['next_read'] !== null)@include('domains::partials.moment', ['at'=>gmdate(DATE_ATOM, $recordFamilies['next_read'])])@elseif ($recordFamilies['read_stopped'])Stopped. Fix the cause, then use Resume sync.@else No read queued. The domain must be active and its registrar read setup enabled.@endif</p>
-@if ($recordFamilies['read_code'])<p class="domains-hint">{{ $recordFamilies['read_cause'] }} Cause: {{ $recordFamilies['read_code'] }}. {{ $recordFamilies['read_attempts'] }} attempts.@if ($recordFamilies['read_failed_at']) Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif</p>@endif
+<p class="domains-hint">Next registrar read: @if ($recordFamilies['next_read'] !== null)@include('domains::partials.moment', ['at'=>gmdate(DATE_ATOM, $recordFamilies['next_read'])])@elseif ($recordFamilies['read_stopped'])Stopped after {{ $recordFamilies['read_attempts'] }} attempts.@if ($recordFamilies['read_code']) Cause: {{ $recordFamilies['read_code'] }}.@endif @if ($recordFamilies['read_failed_at'])Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif @else No read queued. The domain must be active and its registrar read setup enabled.@endif</p>
+@if ($recordFamilies['read_code'] && !$recordFamilies['read_stopped'])<p class="domains-hint">{{ $recordFamilies['read_cause'] }} Cause: {{ $recordFamilies['read_code'] }}. {{ $recordFamilies['read_attempts'] }} attempts.@if ($recordFamilies['read_failed_at']) Last failure: @include('domains::partials.moment', ['at'=>$recordFamilies['read_failed_at']])@endif</p>@endif
 @endif
 @include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies, 'staff' => $staff])
 @if ($staff)<p class="domains-hint">Last complete read: @if ($recordFamilies['last_complete_at'])@include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])@else Unknown @endif</p>@endif

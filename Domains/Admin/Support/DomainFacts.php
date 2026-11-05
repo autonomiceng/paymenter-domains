@@ -131,7 +131,7 @@ final class DomainFacts
         // An ended domain won't sync again, so it keeps its last read and shows no row without one.
         if (($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
             $paused=>self::fact('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
-            $sync==='failed'=>self::fact('Read stopped',sub:self::readCause($d),tone:'danger'),
+            $sync==='failed'=>self::fact('Read stopped',tone:'danger'),
             default=>['at'=>$d->last_synced_at?->getTimestamp(),...self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
                 sub:$job&&$job->claim!==null&&$job->lease_until>time()?($d->last_synced_at?'Syncing now':Missing::fills('when this sync finishes')):($d->last_synced_at?null:Missing::fills('within a day')))],
         }; }
@@ -157,12 +157,12 @@ final class DomainFacts
             elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
         }
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
-        // The older top rows must describe the same failed read as the family inventory.
-        if($registered && ($problem=self::readProblem($d))!==null){
+        // A failed read leaves the unread rows red Missing. Why, and what to do, is said once: the page notice and the records head.
+        if($registered && self::readProblem($d)!==null){
             foreach(['Expires','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
-                if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=$problem;}
+                if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=null;}
             }
-            if(isset($f['Last sync'])){$f['Last sync']['sub']=$problem;}
+            if(isset($f['Last sync'])){$f['Last sync']['sub']=null;}
         }
         return self::alerts($d,$f);
     }
@@ -317,7 +317,7 @@ final class DomainFacts
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
         }
-        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { return ['title'=>$hold,'body'=>self::restart($d),'tone'=>'warning','resume'=>true]; }
+        if (!self::ended($d)&&($hold=self::recordHold($d))!==null) { $step=self::restart($d); return ['title'=>$hold,'body'=>str_contains($hold,lcfirst($step))?null:$step,'tone'=>'warning','resume'=>true]; }
         if (AcquisitionPaymentReview::count($d)>0) {
             $invoice=DB::table('domains_obligation_alerts as a')->join('domains_operations as o','o.id','=','a.operation_id')->where('a.domain_id',$d->id)
                 ->where('a.code','acquisition_late_money')->whereNull('a.resolved_at')->orderByDesc('a.id')->value('o.invoice_id');
@@ -345,7 +345,8 @@ final class DomainFacts
     private static function readCause(Domain $d): string
     {
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
-        return trim(($read['read_cause']??'Registrar read stopped.').' '.($read['read_code']?'Cause: '.$read['read_code'].'. ':'').'Fix the cause, then use Resume sync.');
+        // The records head shows the error code, so the notice keeps only the cause and the one step.
+        return trim(($read['read_cause']??'Registrar read stopped.').' Fix the cause, then '.lcfirst(self::restart($d)));
     }
     public static function recordHold(Domain $d): ?string
     {

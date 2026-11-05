@@ -198,25 +198,18 @@ class ViewDomain extends ViewRecord
         $rows[]=$view('tail');
         return Sheet::section('Registrar records',$rows,$note,after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
     }
-    /** The family's read state, then the saved value staff edit with the row's button. */
+    /** The family's read state above the row's own value, which keeps its red Missing, Failed or Under review tone and demo tag.
+     * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state alone. */
     private function familyRow(array $family, ?array $fact, array|Html $side): Flex
     {
-        $html=view('domains::partials.record-family-status',['family'=>$family,'staff'=>true])->render();
-        if ($fact!==null&&($line=self::factLine($family['label'],$fact))!==null) { $html.='<span class="domains-sub">'.$line.'</span>'; }
-        $entry=TextEntry::make('family_'.$family['kind'])->label($family['label'])->state(new HtmlString('<div class="domains">'.$html.'</div>'));
-        if ($fact['help']??null) { $entry->hintAction(HelpHint::make($fact['help'])); }
-        return Sheet::row($entry,$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($family['label']));
-    }
-    /** The saved value and its words, as one line under the family state. */
-    private static function factLine(string $label, array $fact): ?string
-    {
-        $value=$fact['value'];$below=self::below($fact);$parts=[];
-        if ($value!==null) {
-            $text=implode(', ',array_map('e',(array)$value));
-            $parts[]=match ($label) { 'Nameservers'=>'<span class="font-mono domains-mono">'.$text.'</span>', 'DS records'=>'DNSSEC: '.$text, default=>$text };
+        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true])->render().'</div>');
+        if ($fact===null) {
+            return Sheet::row(TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status),$side,key:'fact_'.md5($family['label']));
         }
-        if ($below!==null) { $parts[]=$below instanceof HtmlString?$below->toHtml():e($below); }
-        return $parts===[]?null:implode('<br>',$parts);
+        $entry=$this->entry($family['label'],$fact);
+        if ($family['label']==='DS records'&&$fact['value']!==null) { $entry->prefix('DNSSEC: '); }
+        if (!($family['state']==='unknown'&&$fact['value']===null)) { $entry->aboveContent($status); }
+        return Sheet::row($entry,$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($family['label']));
     }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section
@@ -271,6 +264,11 @@ class ViewDomain extends ViewRecord
     }
     private function row(string $label, array $fact, array|Html $side): Flex
     {
+        return Sheet::row($this->entry($label,$fact),$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($label));
+    }
+    /** A fact's value with its words, tone, red Missing and demo tag. */
+    private function entry(string $label, array $fact): TextEntry
+    {
         $waiting=$fact['progress']['waiting']??false;
         if ($label==='Transfer lock'&&in_array($fact['value'],['On','Off'],true)) { $fact=self::lockMark($fact,$waiting); }
         $entry=TextEntry::make('value_'.md5($label))->label($label)->state($fact['value'])
@@ -283,7 +281,7 @@ class ViewDomain extends ViewRecord
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
         $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']);
         if (isset($fact['mark'])) { $entry=Sheet::state($entry,$fact['mark'],'lock-'.$this->getRecord()->id); }
-        return Sheet::row($entry,$side,pending:$waiting,key:'fact_'.md5($label));
+        return $entry;
     }
     /** The lock reads as a mark: On, a hollow Off, or the change on its way with what it was. */
     public static function lockMark(array $fact, bool $waiting): array
