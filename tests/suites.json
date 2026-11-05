@@ -427,6 +427,8 @@
     "tests/enom-test-send-limit-test.php",
     "tests/api-call-limit-form-test.php",
     "tests/live-reservations-test.php",
+    "tests/live-catalogue-share-test.php",
+    "tests/live-catalogue-upgrade-test.php",
     "tests/namesilo-admitted-transport-test.php",
     "tests/offer-feed-budget-test.php",
     "tests/namesilo-runtime-read-test.php",

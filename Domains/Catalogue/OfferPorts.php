@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomLive, EnomTestSendLimit, LiveReservations, OperationClaims, TestCatalogue};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, CatalogueShare, EnomLive, EnomTestSendLimit, LiveReservations, OperationClaims, TestCatalogue};
 
 /** Production composition, deliberately unregistered until the complete caller cutover. No I/O at construction. */
 final class OfferPorts
@@ -54,12 +54,14 @@ final class OfferPorts
         }
         $scope = $binding->environment === Environment::Test && $binding->registrarKey === 'enom'
             ? static fn (\Closure $read) => EnomTestSendLimit::withCatalogueShare($identity, $read)
-            : static fn (\Closure $read) => LiveReservations::withCheckoutHeadroom($binding->registrarKey, $identity, $read, 30, $binding->environment);
+            : ($binding->environment === Environment::Live
+                ? static fn (\Closure $read) => LiveReservations::withCatalogueShare($binding->registrarKey, $identity, $read, $binding->environment)
+                : static fn (\Closure $read) => LiveReservations::withCheckoutHeadroom($binding->registrarKey, $identity, $read, CatalogueShare::PERCENT, $binding->environment));
         return new CredentialFeed($feed, $current, $scope);
     }
 
-    /** Our catalogue share is 30% of our daily cap, enforced again atomically by each transport send. On Enom TEST
-     * it counts catalogue sends only, and every send still stops at our cap; Live counts all calls toward the share.
+    /** Our catalogue share is 30% of our daily cap, enforced again atomically by each transport send. Live and Enom TEST
+     * count catalogue sends only, and every send still stops at our cap. NameSilo TEST keeps its existing headroom rule.
      * The minute lease reserves the whole group once. These are our runaway guards, not registrar limits. */
     public function allowance(AccountBinding $binding, RequestOrigin $origin): int
     {
@@ -76,9 +78,13 @@ final class OfferPorts
             $policy = $binding->registrarKey === 'enom' ? new Enom\EnomLiveReservationPolicy : ($binding->environment === Environment::Test ? new NameSilo\TestReservationPolicy : new NameSilo\NameSiloLiveReservationPolicy);
             if ($binding->registrarKey === 'enom' && !EnomLive::enabled($binding, 'catalogue')) { return 0; }
             if ($binding->registrarKey === 'namesilo') { $policy->requireFeature($binding, 'catalogue'); }
-            $cap = $policy->limits($binding)['daily_call_cap'] ?? null;
-            if (!is_int($cap) || $cap < 1 || $cap > 100000) { return 0; }
-            return max(0, min(25, intdiv($cap * 3, 10) - (new LiveReservations($policy,$binding->environment))->usage($binding)['used']));
+            $reservations = new LiveReservations($policy,$binding->environment);
+            if ($binding->environment === Environment::Test) {
+                $cap = $policy->limits($binding)['daily_call_cap'] ?? null;
+                if (!is_int($cap) || $cap < 1 || $cap > 100000) { return 0; }
+                return max(0, min(25, CatalogueShare::limit($cap) - $reservations->usage($binding)['used']));
+            }
+            return min(25, $reservations->catalogueAllowance($binding));
         } catch (\Throwable) { return 0; }
     }
 }

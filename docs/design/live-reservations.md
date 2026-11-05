@@ -27,6 +27,13 @@ refuses the send. Nested background scopes preserve half of the account's call
 allowance for checkout and restore the scope on exceptions. Unreadable storage,
 invalid limits, stale bindings and non-USD costs refuse without transport details.
 
+Live catalogue scopes count price and TLD-fact reads separately in `catalogue_used`.
+The atomic update requires both `used < daily cap` and `catalogue_used < floor(30% of cap)`;
+ordinary customer work consumes only `used`. `CatalogueShare` supplies the same share arithmetic
+and purpose marker used by Enom TEST. The additive migration defaults old rows to zero catalogue
+calls, retaining all total calls and spend. Reinstall preserves both counters and refuses missing
+recorded or unrecorded counter storage. Existing minute leases and non-catalogue headroom stay in force.
+
 Reservation is not a dispatch grant, credential check, funding proof or provider
 price cap. The caller must keep its one-send and UTC-day guard at the physical
 boundary. NameSilo policy, admitted transport and actual-charge reconciliation are
