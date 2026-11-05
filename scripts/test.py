@@ -662,6 +662,7 @@ def main():
                             'tests/cart-price-change-test.php',
                             'tests/test_client_scripts.py',
                             'tests/namesilo-settings-test.php',
+                            'tests/namesilo-rebind-test.php',
                             'tests/registrars-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',
                             'tests/owner-records-test.php',
