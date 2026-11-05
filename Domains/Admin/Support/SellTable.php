@@ -29,7 +29,7 @@ final class SellTable
     public function rows(?string $focus): Builder { return $this->source()->rows($this->bindings,$focus); }
     /** @return array<int,list<string>> accepted TLDs with no sales row yet, by server. Only a projected read shows them; one account's view saves them first. */
 
-    /** A row as SellRule::ensure would save it: before any rule is saved, a TLD the account sells reads as Sell with its accepted terms. */
+    /** Derived active offer row; never persisted as a second catalogue. */
 
     /** @return array<string,array> what the account sells now */
 

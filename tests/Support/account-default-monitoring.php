@@ -44,7 +44,7 @@ foreach(['register','transfer']as$action){
 DB::table('domains_operations')->where('id',$op->id)->delete();
 // Confirm both external samples before checking portal and delivery policy for current customer intent.
 $refreshNameservers=static function($domain,array $actual,array $chosen,int $at)use($account,$clock):void{
-    $binding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);$calls=[];
+    $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);$calls=[];
     $port=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($binding,static function($origin,$command,$parameters,$timeout)use(&$calls,$actual,$domain):string{
         $calls[]=$command;
         $body=match($command){

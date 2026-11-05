@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CatalogueAcceptances, EnomTestCallLimit, ReadDeferred, ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, EnomTestCallLimit, ReadDeferred, ReadFailure};
 
 /** Dormant account worker on the retained queue. No container binding, job or caller switch.
  * $feed supplies bound adapters using existing admitted transports (including daily wire caps).

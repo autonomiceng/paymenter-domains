@@ -2,10 +2,9 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
-use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,CatalogueAcceptance,CatalogueFreshness,Capabilities,DriverResult,Environment,Query,ReconciliationResult,RequestContext};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Action,AttemptEvidence,CatalogueFreshness,Capabilities,DriverResult,Environment,Query,ReconciliationResult,RequestContext};
 /** Built-in reader permits sealed-attempt reconciliation while ordinary domain polling stays closed. */
-final readonly class EnomTestReconciliationReader implements CatalogueReader
+final readonly class EnomTestReconciliationReader implements \Paymenter\Extensions\Servers\Domains\Contracts\RegistrarDriver
 {
     public function __construct(private CataloguePreview $preview,private Driver $reconciler) {}
     public function binding():AccountBinding{return $this->preview->binding();}
@@ -31,5 +30,5 @@ final readonly class EnomTestReconciliationReader implements CatalogueReader
     }
     public function catalogue(RequestContext $c):ReadResult{return $this->preview->catalogue($c);}
     public function bulkPricing(bool $domainPricing, int $years, RequestContext $context): ReadResult { return $this->preview->bulkPricing($domainPricing, $years, $context); }
-    public function catalogueBatch(CatalogueAcceptance $a,CatalogueFreshness $f,RequestContext $c):array{return $this->preview->catalogueBatch($a,$f,$c);}
+
 }

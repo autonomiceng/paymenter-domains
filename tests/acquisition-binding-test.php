@@ -7,7 +7,7 @@ require_once __DIR__.'/Support/reserved-fixtures.php';
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionPort,CatalogueAcceptances,OperationClaims,Rdap,TransferPrecheck,WriteAcceptance,WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{Registration,Transfer};
-$binding=CatalogueAcceptances::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
 $writes=0;$exchange=static function()use(&$writes):string{$writes++;return 'malformed';};
 $features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25);
 $ports=[

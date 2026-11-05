@@ -70,7 +70,7 @@ echo "Enom TEST send limit: rolling 24 hours, per minute, accounts, settings, LI
 require_once __DIR__.'/Support/staff-tlds.php';
 $staff=staffUser(['admin.domains.view','admin.domains.manage-policy',Review::permission('configure')]);
 $server=Server::findOrFail(1);$account=Account::where('server_id',1)->sole();
-$binding=CatalogueAcceptances::binding($account);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $review=static function(?string $stamp=null)use($staff): Review {
     return new Review($staff->id,1,null,'call_limits',Review::ticket($staff->id,1,null,'call_limits',$stamp??Review::stamp(1,null)),'Adjust our runaway guard');
 };
@@ -129,7 +129,7 @@ config(['app.url'=>'https://billing.example.test','domains.enom_live.site'=>'htt
 $liveServer=Server::create(['name'=>'Synthetic live cap','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $live=Account::withVerifiedBindingWrite(static fn()=>Account::create(['server_id'=>$liveServer->id,'registrar_key'=>'enom','environment'=>'live','stable_identity'=>'live-cap-uid']));
 Account::withVerifiedBindingWrite(fn()=>$live->update(['live_site'=>'https://billing.example.test']));
-$liveBinding=CatalogueAcceptances::binding($live);
+$liveBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($live);
 config(['domains.enom_live.accounts'=>['live-cap-uid'=>['fingerprint'=>$liveBinding->fingerprint,'daily_call_cap'=>6,'daily_spend_limit_usd'=>'25.00']]]);
 EnomLiveCalls::reserve($liveBinding);
 EnomLiveCalls::reserve($liveBinding);

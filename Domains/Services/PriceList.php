@@ -22,56 +22,9 @@ class PriceList
             $tlds=TldFacts::bound(Tld::query())->where('catalogue_converted',true)->when($serverId!==null,fn($q)=>$q->where('server_id',$serverId))->orderBy('tld')->orderBy('server_id')->get();
             return $catalogue->matrix($tlds,$years,$filter);
         }
-        $query=TldFacts::bound(Tld::query())->with('server:id,name')->orderBy('tld')->orderBy('server_id');
-        $all=$query->get();$accounts=$all->pluck('server.name','server_id')->all();
-        $tlds=$serverId===null?$all:$all->where('server_id',$serverId);
-        $saved=Price::whereIn('server_id',$tlds->pluck('server_id')->unique())->whereIn('tld',$tlds->pluck('tld')->unique())
-            ->where('term',$years)->where('currency','USD')->get()->keyBy(fn(Price $p)=>$p->server_id.':'.$p->tld.':'.$p->action);
-        $rules=new PricingRules;$fee=null;$default=null;$feeRead=false;$defaultRead=false;$rows=[];$skipped=[];
-        foreach($tlds as $tld){
-            // Rule-source filters are known without reading settings; value filters cannot classify omissions.
-            if(($filter==='default'&&!$tld->use_default_rule)||($filter==='own'&&$tld->use_default_rule)){continue;}
-            $id=(int)$tld->server_id;
-            $identity=['id'=>(int)$tld->id,'tld'=>'.'.$tld->tld,'server_id'=>$id,'account'=>(string)$tld->server->name,'years'=>$years,
-                'pricing'=>$tld->use_default_rule?'Default':'Custom','currency'=>'USD'];
-            if(!$feeRead){$fee=self::readSetting(fn()=>CardFee::read());$feeRead=true;}
-            if($fee===null){$skipped[]=[...$identity,'cause'=>'card_fee'];continue;}
-            if($tld->use_default_rule){
-                if(!$defaultRead){$default=self::readSetting(fn()=>$rules->defaultRule(false,$fee));$defaultRead=true;}
-                $rule=$default;
-            }else{$rule=self::readSetting(fn()=>$rules->rule($tld,false,$fee));}
-            if($rule===null){$skipped[]=[...$identity,'cause'=>$tld->use_default_rule?'default_rule':'custom_rule'];continue;}
-            $row=[...$identity,'prices'=>[],
-                'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];
-            $below=$loss=false;
-            foreach(self::ACTIONS as $action=>$label){
-                $p=$saved[$id.':'.$tld->tld.':'.$action]??null;
-                if($p&&($p->account_fingerprint!==$tld->account_fingerprint||$p->registrar_key!==$tld->registrar_key)){$p=null;}
-                // Annual holder billing retains positive saved retail when costs are quarantined, without a rule hash.
-                // Acquisition still needs publication proof; legacy cost-only rows never become an offered price.
-                $retainedRenewal=$p&&$action==='renew'&&$years===1&&$p->unit==='term_total'
-                    &&$p->retail!==null&&PricingRule::minor(PriceCatalogue::retail($p->retail))>0;
-                $published=$p&&($retainedRenewal||(isset($p->eligibility['rule_hash'])&&!($p->eligibility['price_unavailable']??false)));
-                $price=$published&&$p->retail!==null?PriceCatalogue::retail($p->retail):null;
-                $cost=$p?->wholesale===null||($p->eligibility['price_unavailable']??false)?null:PriceCatalogue::cost($p->wholesale);
-                $profit=$price!==null&&$cost!==null?CardFee::profit($price,$cost,$fee):null;
-                $under=$price!==null&&$cost!==null&&!PricingRule::covers($price,$cost);
-                $loses=$profit!==null&&str_starts_with($profit,'-');$below=$below||$under;$loss=$loss||$loses;
-                $row['prices'][$action]=['price'=>$price,'cost'=>$cost,'profit'=>$profit,'revision'=>$published?$p->revision:null,
-                    'below_cost'=>$under,'loses_money'=>$loses,'status'=>$price===null?($action==='transfer'&&!$tld->transfer_enabled?self::TRANSFERS_OFF:'Missing'):($cost===null?'Cost missing':($under?'Below cost':($loses?'Loses money after card fee':'')))];
-            }
-            if(match($filter){'below_cost'=>!$below,'loses_money'=>!$loss,'default'=>!$tld->use_default_rule,'own'=>$tld->use_default_rule,default=>false}){continue;}
-            $rows[]=$row;
-        }
-        $warnings=[];
-        foreach($skipped as $row){
-            // Default pricing and the card fee are one setting, so one warning; custom pricing belongs to its TLD.
-            $custom=$row['cause']==='custom_rule';$key=$custom?$row['server_id'].':'.$row['id']:$row['cause'];
-            $warnings[$key]??=['server_id'=>$custom?$row['server_id']:null,'account'=>$custom?$row['account']:null,'cause'=>$row['cause'],'tlds'=>[]];
-            $warnings[$key]['tlds'][]=$row['tld'];
-        }
-        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_map(static fn($w)=>[...$w,'tlds'=>array_values(array_unique($w['tlds']))],array_values($warnings)),'accounts'=>$accounts,'years'=>$years,'explanations'=>self::explain($rows)];
+        throw new \DomainException(OfferUpgrade::MESSAGE);
     }
+
     /** One formula per account and pricing type, with the TLDs it prices. Grouped by account id, since two accounts can share a name. */
     public static function explain(array $rows): array
     {
@@ -85,10 +38,7 @@ class PriceList
 
     }
     /** Only saved-setting validation failures are recoverable here; database and programmer errors propagate. */
-    private static function readSetting(\Closure $read): ?array
-    {
-        try{return $read();}catch(\DomainException|\InvalidArgumentException){return null;}
-    }
+
     public function headings(): array
     {
         $out=['TLD','Registrar account','Years','Pricing','Currency'];

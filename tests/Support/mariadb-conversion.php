@@ -80,7 +80,7 @@ if($phase==='seed'){
         same(0,(int)DB::table('notification_preferences')->value('mail_enabled'),'Reminder opt-out preserved');
         $account=Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$before['server_id'])->sole();
         $op=Paymenter\Extensions\Servers\Domains\Models\Operation::where('domain_id',21)->where('action','renew')->sole();
-        $binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);
+        $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
         expect(Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op,$d,$binding),'Converted proof usable for retained renewal');
         same('9.0000',$op->attempt['authorized_cost']['amount'],'Exact cost cap');
         foreach(DB::select('SELECT ENGINE AS engine FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()')as$table){same('InnoDB',$table->engine,'All actual tables use InnoDB');}

@@ -18,7 +18,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,MissingEntry,RegistrarFacts,Sheet,Staff,StatusMark,TldFacts,SettingsActions};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewTld extends ViewRecord
 {
@@ -62,9 +62,7 @@ class ViewTld extends ViewRecord
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
         $acceptedSales=static function()use($server,$t):array {
             if(($catalogue=StaffCatalogue::routed())!==null){return $catalogue->restorable($t);}
-            $a=Account::where('server_id',$server)->sole();
-            $accepted=CatalogueAcceptances::load(AccountBindings::binding($a))->endings[$t->tld]??[];
-            return ['register'=>!empty($accepted['register']),'transfer'=>!empty($accepted['transfer'])];
+            throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
         };
         return Action::make('restore_sales')->label('Restore sales')->requiresConfirmation()->modalHeading('Restore sales?')->modalSubmitActionLabel('Restore sales')
             ->modalDescription('Restores this account’s accepted registrations and transfers, and turns renewals on using saved prices. Existing term limits stay the same.')

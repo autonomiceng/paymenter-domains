@@ -6,7 +6,7 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\LiveActivationEvidence;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CatalogueAcceptances,LocalAccountEnrollment};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,LocalAccountEnrollment};
 /** Dormant local evidence adapter. Not registered with staff actions, factories or RuntimePorts. */
 final class ActivationEvidence implements LiveActivationEvidence
 {

@@ -50,7 +50,7 @@ foreach(['privacy_purchase','privacy_renew'] as $action){
             if($deferred){throw new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred('Synthetic local deferral');}
             throw new RuntimeException('Synthetic preparation failure');
         };
-        $enteredDriver=new class(CatalogueAcceptances::binding(Account::where('server_id',$op->server_id)->sole()),$driver,$prepare) extends ManagementProtocol {
+        $enteredDriver=new class(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$op->server_id)->sole()),$driver,$prepare) extends ManagementProtocol {
             public function __construct(AccountBinding $b,private ManagementProtocol $real,private Closure $prepare){parent::__construct($b,static fn()=>throw new LogicException('Unused exchange'));}
             public function capabilities():Capabilities{return $this->real->capabilities();}
             public function validate(string $a,array $p,string $n):array{return $this->real->validate($a,$p,$n);}

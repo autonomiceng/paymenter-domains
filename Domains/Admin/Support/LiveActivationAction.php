@@ -11,7 +11,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,EnomLiveActivation,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{EnomLiveActivation,StaffSettingsReview as Review,StaffSettingsWrites};
 /** A person must approve the spending summary; stored API keys are not spending approval. */
 final class LiveActivationAction
 {

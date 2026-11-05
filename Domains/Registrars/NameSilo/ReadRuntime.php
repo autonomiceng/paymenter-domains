@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Services\{OperationClaims};
 /** Dormant installed reader assembly; no registration, feature acceptance or write authority by construction. */
 final class ReadRuntime
 {
@@ -31,11 +31,7 @@ final class ReadRuntime
                     $actions=array_values(array_filter(['register','renew','transfer'],static fn($action)=>$caps->endings($binding,$action)!==[]));
                     return new Driver(new Client($binding,$key,new AdmittedTransport($binding,$current)),$actions,$clock);
                 }
-                $acceptedCatalogue=CatalogueAcceptances::load($binding);$actions=[];
-                foreach($acceptedCatalogue->endings as $row){
-                    foreach(['register','renew','transfer'] as $action){if($row[$action]===[1]){$actions[$action]=$action;}}
-                }
-                return new Driver(new Client($binding,$key,new AdmittedTransport($binding,$current)),array_values($actions),$clock,acceptedCatalogue:$acceptedCatalogue);
+                throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
             }catch(\Throwable){throw new \DomainException('NameSilo runtime reader unavailable.');}
         };
     }

@@ -6,7 +6,7 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CardFee,CatalogueAcceptances,PricingRule,StaffSettingsReview as Review};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,CardFee,PricingRule,StaffSettingsReview as Review};
 
 /** Dormant translator. Writer owns the reviewed transaction; wake only enqueues bounded local work. */
 final class StaffCommands

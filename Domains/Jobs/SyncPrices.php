@@ -12,7 +12,7 @@ use Illuminate\Queue\{InteractsWithQueue,SerializesModels};
 use Illuminate\Support\Facades\{Log,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,PriceFill,PriceSync,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 /** Manual price reads use the worker, just like scheduled reads, so the staff page stays usable. */
 final class SyncPrices implements ShouldQueue,ShouldBeUnique
 {
@@ -21,8 +21,8 @@ final class SyncPrices implements ShouldQueue,ShouldBeUnique
     public int $upgradeGeneration=0;
     // The bulk read has a 60-second deadline. Leave time to save before Paymenter's 90-second reservation expires.
     public const TIMEOUT=75;
-    // Accepted prices allow a 25-second list read, a full batch deadline, and 30 seconds to save.
-    public const ACCEPTED_TIMEOUT=25+20+5*PriceSync::BATCH_CALLS+30;
+    // Both forms enqueue module work; neither performs an inline price batch.
+    public const ACCEPTED_TIMEOUT=self::TIMEOUT;
     public int $timeout=self::TIMEOUT;
     public int $tries=1;
     public bool $failOnTimeout=true;

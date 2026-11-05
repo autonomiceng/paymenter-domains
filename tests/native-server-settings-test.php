@@ -68,7 +68,7 @@ $configure=static function(Server $s,string $registrar,string $secret)use($staff
 };
 $configure($first,'enom','PRIVATE-ORIGINAL-ENOM');$configure($second,'namesilo','PRIVATE-ORIGINAL-NAMESILO');
 foreach([$first,$second] as $server){
-    $a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
+    $a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
     same(false,$a->processing_enabled,'Owned verified configuration starts paused');
     Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
     $bindings->setProcessing($server->id,true,static fn()=>null);

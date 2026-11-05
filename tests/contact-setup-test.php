@@ -282,7 +282,7 @@ same($beforeMoney, serialize([DB::table('invoices')->get(), DB::table('invoice_i
 contactReject(static fn () => ContactRecovery::replace($staff, $held->id, 'Repeated recovery refused'));
 // Provider profiles: shared across one owner's roles, never across owners/accounts; no in-place mutation.
 $account = Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[1]->server_id)->sole();
-$binding = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account);
+$binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $p = ContactProfiles::recordCreated($binding, $user->id, '123', $ns['registrant'], false);
 same($p->id, ContactProfiles::recordCreated($binding, $user->id, '123', $ns['registrant'], false)->id, 'Idempotent profile evidence');
 contactReject(static fn () => ContactProfiles::recordCreated($binding, $other->id, '123', $ns['registrant'], false));

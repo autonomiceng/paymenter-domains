@@ -8,8 +8,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,CatalogueAc
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture()); ObservationSchema::install(); ObservationSchema::verify();
 $clock=new FakeClock($now); $budget=new AccountReadBudget($clock); $other=new AccountReadBudget($clock);
-$b=CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[1]->server_id)->sole());
-$e=CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[1]->server_id)->sole());
+$e=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
 $held=static function(callable $fn):void {try{$fn();expect(false,'Expected durable budget refusal');}catch(ReadDeferred){}};
 $t=$budget->acquire($b,RequestOrigin::Interactive); $held(fn()=>$other->acquire($b,RequestOrigin::Interactive));
 $budget->release($b,RequestOrigin::Interactive,$t); $held(fn()=>$other->acquire($b,RequestOrigin::Interactive));

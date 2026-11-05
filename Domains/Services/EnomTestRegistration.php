@@ -54,10 +54,7 @@ final class EnomTestRegistration
             $caps=\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
             $domain=\Paymenter\Extensions\Servers\Domains\Models\Domain::findOrFail($op->domain_id);
             if ($caps) { $caps->requireOrder($binding,$domain->tld,$op->action,(int)$op->term); return null; }
-            $accepted=CatalogueAcceptances::load($binding);
-            $parts=\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::parse($domain->domain,array_keys($accepted->endings));
-            $row=$accepted->endings[$parts['tld']]??null;
-            if(!$row||!in_array((int)$op->term,$row[$op->action],true)||$row['renew']!==[1]||!$row['renewal_safe']||!$row['registry']){return 'order_not_supported';}
+            return 'write_acceptance_required';
         } catch(\Throwable){return 'write_acceptance_required';}
         return null;
     }
@@ -93,9 +90,7 @@ final class EnomTestRegistration
             if (\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed() !== null) {
                 return EnomProtocol::accepts($binding, $protocol);
             }
-            $accepted=CatalogueAcceptances::load($binding,$lock);
-            return $protocol['batch_route']===true&&$accepted->registrationRoute===$protocol['route']
-                &&$accepted->registrationIntervalSeconds===$protocol['interval_seconds'];
+            return false;
         } catch(\Throwable){return false;}
     }
 }

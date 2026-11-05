@@ -58,5 +58,5 @@ $write=static function(string $action,array $data=[],?int $tld=null)use($setting
     $r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST registration');$settings->run($r,$data);
 };
 $write('configure',['registrar'=>'enom','environment'=>'test','uid'=>'test-uid','token'=>'TEST-SECRET-TOKEN']);
-$a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
+$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 same(false,$a->processing_enabled,'Identity leaves processing off');$write('probe');

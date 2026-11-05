@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,HistoryAcceptance};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,ReconciliationEvidence,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{ReconciliationEvidence,StaffSettingsReview as Review,StaffSettingsWrites};
 /** One click on a TEST Enom renewal held by a lost reply: the system can't prove from a lost reply whether Enom finished, so a person
  * lets it read Enom's order history. The saved values then cover this account's later renewals too. Enom registrations can't use it:
  * registration history needs its own accepted contract. */

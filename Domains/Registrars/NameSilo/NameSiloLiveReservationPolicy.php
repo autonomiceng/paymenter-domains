@@ -7,7 +7,6 @@ use App\Models\Server;
 use Paymenter\Extensions\Servers\Domains\Contracts\LiveReservationPolicy;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances;
 /** Explicit deployment authority only. Feature acceptance and financial admission remain in the shared engines. */
 final class NameSiloLiveReservationPolicy implements LiveReservationPolicy
 {

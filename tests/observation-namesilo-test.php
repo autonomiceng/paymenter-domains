@@ -31,7 +31,7 @@ same(1,$active->fresh()->observation['followup']['reads'],'Follow-up advances fa
 // Explicit verifier enrollment predates the local offer-enrollment marker.
 same(false,App\Models\Server::findOrFail($ns)->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::KEY)->exists(),'Legacy NameSilo fixture has no local offer marker');
 $offerRefused=false;
-try{$readBindings->offerCredentialRevision(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns)->sole()));}catch(DomainException){$offerRefused=true;}
+try{$readBindings->offerCredentialRevision(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns)->sole()));}catch(DomainException){$offerRefused=true;}
 same(true,$offerRefused,'Offer feeds still require local NameSilo enrollment');
 $scheduled=new ObservationWork($observer,$clock,$budget);
 DB::table('domains_observation_work')->where('server_id',$ns)->delete();

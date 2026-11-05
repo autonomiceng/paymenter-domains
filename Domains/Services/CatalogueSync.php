@@ -5,7 +5,6 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferScheduler,UpgradeGate};
 
 use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader;
 use Paymenter\Extensions\Servers\Domains\Data\{CatalogueEntry, CatalogueFailure, CatalogueFreshness, CatalogueUnavailable, RequestContext};
 
 final class CatalogueSync

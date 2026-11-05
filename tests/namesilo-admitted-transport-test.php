@@ -38,7 +38,7 @@ $server=Server::create(['name'=>'Synthetic NameSilo','type'=>'server','extension
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','environment'=>'live',
     'stable_identity'=>'local-account-1']));
 Account::withVerifiedBindingWrite(fn()=>$account->update(['live_site'=>'https://billing.example.com','processing_enabled'=>true]));
-$binding=CatalogueAcceptances::binding($account);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $settings=['fingerprint'=>$binding->fingerprint,'daily_call_cap'=>100,'daily_spend_limit_usd'=>'20.00','currency'=>'USD','balance_funding'=>true];
 config(['app.url'=>'https://billing.example.com','domains.namesilo_live.site'=>'https://billing.example.com',
     'domains.namesilo_live.accounts'=>['local-account-1'=>$settings]]);

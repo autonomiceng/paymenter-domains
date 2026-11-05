@@ -36,5 +36,5 @@ $build = static function ($binding, ?WriteFeatures $features = null, ?WriteAccep
     Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$binding->fingerprint);
     return $bridge;
 };
-$enomBinding = CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[0]->server_id)->sole());
-$nsBinding = CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[1]->server_id)->sole());
+$enomBinding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[0]->server_id)->sole());
+$nsBinding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[1]->server_id)->sole());

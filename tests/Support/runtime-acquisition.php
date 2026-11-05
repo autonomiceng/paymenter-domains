@@ -32,8 +32,8 @@ Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
-$account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=CatalogueAcceptances::binding($account);
-$other=CatalogueAcceptances::binding(Account::where('server_id',$tlds[1]->server_id)->sole());
+$account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
+$other=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[1]->server_id)->sole());
 $state=(object)['query'=>null,'reads'=>0,'premium'=>false,'writes'=>[],'rdap'=>0];
 $registry=new RegistrarRegistry;
 $verifier=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};

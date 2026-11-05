@@ -6,7 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{ PricingRule};
 
 /** One local readiness projection for the checklist and reviewed Activate. The reader's readiness
  * callback checks deployment/runtime/credentials, independently of a saved Live activation receipt. */

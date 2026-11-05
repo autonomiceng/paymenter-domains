@@ -39,7 +39,7 @@ $server=Server::create(['name'=>'Synthetic runtime','type'=>'server','extension'
 $identity=LocalAccountEnrollment::PREFIX.'runtime-account';
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo','environment'=>'live','stable_identity'=>$identity]));
 Account::withVerifiedBindingWrite(fn()=>$account->update(['live_site'=>'https://billing.example.com']));
-$binding=CatalogueAcceptances::binding($account);$credentials=['api_key'=>'placeholder-runtime-key'];
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);$credentials=['api_key'=>'placeholder-runtime-key'];
 $facts=LocalAccountEnrollment::facts($binding,$identity,$credentials);
 $save=static function(string $key,string $value)use($server):void {
     $setting=$server->settings()->firstOrNew(['key'=>$key]);$setting->encrypted=true;$setting->type='string';$setting->value=$value;$setting->save();

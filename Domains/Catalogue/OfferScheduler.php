@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances, HoldingObservationWork, OperationClaims, ReadFailure, StaffOperationReview};
+use Paymenter\Extensions\Servers\Domains\Services\{ HoldingObservationWork, OperationClaims, ReadFailure, StaffOperationReview};
 
 /** One shared account rotation. No job or timer registration; composition owns its generation. */
 final class OfferScheduler

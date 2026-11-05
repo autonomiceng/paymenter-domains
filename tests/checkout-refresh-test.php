@@ -94,7 +94,7 @@ same($line->id, $cart->items()->sole()->id, 'Wait budget exhaustion keeps the ca
 $page->assertDispatched('notify', static fn($event, $params) => str_contains(strtolower($params[0]['message']), 'taking too long'));
 // Pacing must never make a minute-cap refusal retryable or charge a refused wire.
 DB::table('domains_read_budgets')->update(['window_at' => $micros, 'used' => 60]);
-$binding = CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[1]->server_id)->sole());
+$binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[1]->server_id)->sole());
 try { $limiter->acquire($binding, RequestOrigin::Interactive); expect(false, 'Minute cap must refuse'); }
 catch (ReadDeferred $e) { same(null, $e->retryAfterMicros, 'Minute cap retains a hard refusal even while pacing is active'); }
 same(60, (int)DB::table('domains_read_budgets')->value('used'), 'Refused wire never changes the minute reservation');

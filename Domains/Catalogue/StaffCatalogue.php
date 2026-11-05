@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,StaffGrants,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,OfferRow,Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{CardFee,CatalogueAcceptances,PriceList,PricingRule};
+use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceList,PricingRule};
 
 /** Bounded Staff snapshots over converted identities; no shadow rows, legacy costs or render writes. */
 final class StaffCatalogue

@@ -23,7 +23,7 @@ expect($account->fresh()->processing_enabled,'Activate enables the authenticated
 same(1,$GLOBALS['enrollmentCalls'],'Activate is local and makes no provider request');
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
 // An unsaved TEST renewal choice must agree with the native billing switches.
-$binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account->fresh());
+$binding=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh());
 $rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
 same('Off',$rows['Renewals']['value'],'A fresh TEST account with billing Off displays Renewals Off');
 foreach([[false,false],[true,false],[false,true],[true,true]] as [$scheduled,$manual]){
@@ -45,10 +45,10 @@ foreach(['transfer','renewal','management'] as $feature){
         $label=['transfer'=>'Transfers (experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'][$feature];
         same('Off',$rows[$label]['value'],$label.' can be turned off');
         $class='Paymenter\\Extensions\\Servers\\Domains\\Services\\EnomTest'.ucfirst($feature);
-        expect(!$class::accepted(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account->fresh())),$label.' Off closes the sending gate');
+        expect(!$class::accepted(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh())),$label.' Off closes the sending gate');
         $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
         $page->callAction($action)->assertNotified('Saved');
-        expect($class::accepted(Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account->fresh())),$label.' On opens its admitted TEST gate');
+        expect($class::accepted(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh())),$label.' On opens its admitted TEST gate');
         $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
     }catch(Throwable $e){$failures[]=$feature.': '.$e->getMessage();}
 }
@@ -60,7 +60,7 @@ foreach([false,true] as $on){
         $writes->run($review('test_'.$feature),['accept'=>$on,'verified'=>true]);
     }
     $bindings=app(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class);
-    $binding=Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($account->fresh());
+    $binding=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh());
     $revision=$bindings->credentialRevision($binding);
     $writes->run($review('configure'),['registrar'=>'namesilo','environment'=>'test',
         'credentials'=>['api_key'=>$on?'synthetic-rotation-on-key':'synthetic-rotation-off-key']]);

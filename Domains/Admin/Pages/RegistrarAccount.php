@@ -19,7 +19,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,Operati
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\{CatalogueAcceptances,StaffSettingsReview};
+use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One registrar account (a Domains server): status, balance and setup. Reached from the Registrars list. */
 class RegistrarAccount extends Page

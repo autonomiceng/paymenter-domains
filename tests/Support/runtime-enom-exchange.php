@@ -14,7 +14,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 // direct fixture below supplies its own audited writer and acceptance.
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
     'domains.enom_writes.registration'=>true,'domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
-$account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=CatalogueAcceptances::binding($account);
+$account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $identityBytes=$account->getRawOriginal('stable_identity');$changed=clone $account;$changed->stable_identity='other-account';$otherIdentityBytes=$changed->getAttributes()['stable_identity'];
 $state=(object)['query'=>null,'reads'=>0];
 $precheck=new TransferPrecheck(new Rdap(static fn($url)=>['status'=>200,'body'=>json_encode(str_contains($url,'dns.json')?

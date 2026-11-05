@@ -34,7 +34,7 @@ $clock=new FakeClock(new \DateTimeImmutable('2026-11-03T12:00:00Z'));
 $server=Server::create(['name'=>'Synthetic installed quote','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $account=Account::withVerifiedBindingWrite(fn()=>Account::create(['server_id'=>$server->id,'registrar_key'=>'namesilo',
     'environment'=>'live','stable_identity'=>'synthetic-installed-quote-account']));
-$binding=CatalogueAcceptances::binding($account);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 CatalogueAcceptances::save($binding,0,[
     'com'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true],
     'net'=>['register'=>[],'renew'=>[],'transfer'=>[],'registry'=>true,'renewal_safe'=>true],

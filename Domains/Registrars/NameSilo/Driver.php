@@ -4,22 +4,20 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock, RegistrarDriver};
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CatalogueAcceptance, CostUnit, DateEvidence, Disposition,
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Action, AttemptEvidence, Capabilities, CostUnit, DateEvidence, Disposition,
     DomainSnapshot, DriverResult, Evidence, ExpiryPrecision, Money, NameserverEvidence, PrivacyMode, Query, QuoteEvidence, ReconciliationResult,
     RejectionBasis, RenewalStatus, RequestContext, ResultReason, SendState, SystemClock};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{DomainName, Outcome, RegistrarRequest as Request, RegistrarResult};
 
 /** Named reads only. Construction/quotes do not prove provider identity, sale eligibility or renewal safety. */
-final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\CatalogueReader, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
+final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Domains\Contracts\TransferPoller
 {
     public const ORDINARY_EXPIRY_MARGIN_DAYS = 2;
     private readonly array $annualActions;
     /** Annual catalogue units/currency require independent account acceptance, default none. */
     public function __construct(private readonly Client $client, array $acceptedAnnualActions = [],
-        private readonly Clock $clock = new SystemClock, private readonly int $freshSeconds = 300,
-        private readonly ?CatalogueAcceptance $acceptedCatalogue = null)
+        private readonly Clock $clock = new SystemClock, private readonly int $freshSeconds = 300)
     {
-        if ($acceptedCatalogue !== null) { $this->binding()->requireMatch($acceptedCatalogue->binding); }
         foreach ($acceptedAnnualActions as $action) {
             if (!in_array($action, ['register', 'renew', 'transfer'], true)) { throw new \InvalidArgumentException('Invalid annual price acceptance.'); }
         }
@@ -41,40 +39,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         if($reply->outcome!==Outcome::Success){throw new \DomainException('Could not read NameSilo prices.');}
         return $reply->catalogueRows();
     }
-    public function catalogueBatch(\Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance $accepted,
-        \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness $freshness, RequestContext $context): array
-    {
-        $this->binding()->requireMatch($accepted->binding); $this->binding()->requireMatch($context->binding);
-        $entries = [];
-        $started = $context->now(); $reply = $this->read(Request::prices(), $context);
-        if ($reply->outcome !== Outcome::Success) { throw new \DomainException('Catalogue batch read failed.'); }
-        $rows = $reply->catalogueRows();
-        foreach ($accepted->endings as $tld => $row) {
-            if (!array_key_exists($tld,$rows)) { $entries[$tld]=null; continue; }
-            if (array_key_exists($tld, $rows) && $rows[$tld] === null) {
-                $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueUnavailable($this->binding(), $tld, $started);
-                continue;
-            }
-            try {
-                $rates = [];
-                // Dotted suffix keys are literal provider keys, never dot-path traversal.
-                $prices = $rows[$tld] ?? null;
-                foreach (['register' => 'registration', 'renew' => 'renew', 'transfer' => 'transfer'] as $action => $key) {
-                    foreach ($row[$action] as $term) {
-                        $amount = $prices[$key] ?? null;
-                        if (!is_string($amount)) { throw new \DomainException('No explicit account price.'); }
-                        $rates[] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action, $term, $amount,
-                            'namesilo_account_annual', $started, $started->modify('+'.$freshness->maxAge().' seconds'));
-                    }
-                }
-                $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($this->binding(), $tld, $rates,
-                    $row['register'], $row['registry'], $row['renewal_safe']);
-            } catch (\Throwable $error) {
-                $entries[$tld] = new \Paymenter\Extensions\Servers\Domains\Data\CatalogueFailure(\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error,'catalogue_evidence_invalid'));
-            }
-        }
-        return $entries;
-    }
+
     public function binding(): AccountBinding { return $this->client->binding; }
     public function accountCapabilities(#[\SensitiveParameter] RequestContext $context): Capabilities
     {
@@ -129,13 +94,6 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         $this->binding()->requireMatch($context->binding);
         if ($query->years !== 1) { return $this->unsent(ResultReason::Unsupported); }
         if (!in_array($query->action->value, $this->annualActions, true)) { return $this->unsent(ResultReason::Unverified); }
-        if ($this->acceptedCatalogue !== null) {
-            try { $parts = DomainName::parse($query->name, array_keys($this->acceptedCatalogue->endings)); }
-            catch (\InvalidArgumentException) { return $this->unsent(ResultReason::Unverified); }
-            if (!in_array($query->years, $this->acceptedCatalogue->endings[$parts['tld']][$query->action->value], true)) {
-                return $this->unsent(ResultReason::Unverified);
-            }
-        }
         $reply = $this->read(Request::prices(), $context);
         if ($reply->outcome !== Outcome::Success) { return $this->neutral($reply); }
         $rows = $reply->catalogueRows();

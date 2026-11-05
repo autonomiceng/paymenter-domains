@@ -57,7 +57,7 @@ $write=static function(string $action,array $data=[],?int $tld=null)use($setting
     $r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic live registration');$settings->run($r,$data);
 };
 $write('configure',['registrar'=>'enom','environment'=>'live','uid'=>'live-uid','token'=>'LIVE-SECRET-TOKEN']);
-$a=Account::where('server_id',$server->id)->sole();$binding=CatalogueAcceptances::binding($a);
+$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $bindings->confirmLiveSite($server->id,'https://billing.example.com');
 $deny=static function(callable $work):void {try{$work();throw new LogicException('Expected refusal');}catch(DomainException){}};
 $actions=['catalogue','registration','renewal','management'];

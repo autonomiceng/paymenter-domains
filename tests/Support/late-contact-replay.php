@@ -14,7 +14,7 @@ require_once __DIR__.'/offline-acquisition.php';
 $exchangeCalls=0;
 $unusedExchange=static function()use(&$exchangeCalls):never {$exchangeCalls++;throw new LogicException('Unexpected provider command.');};
 $claims=new OperationClaims($bindings,$clock);
-$account=Account::where('server_id',$early->server_id)->sole();$binding=CatalogueAcceptances::binding($account);
+$account=Account::where('server_id',$early->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $features=new WriteFeatures(true,true,true,true);$acceptance=new RenewalAcceptance($binding,true,true,25);
 $authority=new RenewalAuthority($bindings,$clock);
 $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$acceptance,$clock),$acceptance,$features,$clock);
