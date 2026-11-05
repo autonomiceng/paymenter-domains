@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Http\FormKeys;
 use Paymenter\Extensions\Servers\Domains\Services\{Rdap, TransferPrecheck};
 extract(commerceFixture(true));
 require dirname(__DIR__).'/Domains/routes/web.php';
+require dirname(__DIR__).'/Domains/routes/owned.php';
 storefrontViews();
 $session = app('request')->session();
 $state = (object) ['calls' => 0, 'fail' => false];
