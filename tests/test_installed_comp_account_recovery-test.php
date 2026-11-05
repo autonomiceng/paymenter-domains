@@ -3,7 +3,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
-use App\Models\{Credit,Invoice,InvoiceTransaction,Role};
+use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain};
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,FundsWaits,HoldingLocks,OwnerPorts,OwnerSetup,StaffOperationReview,StaffOperations,TransferNotifications};
@@ -64,6 +64,31 @@ $check('elapsed complimentary funds wait closes without payment or refund',funct
     same(0,DB::table('domains_obligation_alerts')->where('operation_id',$wait->id)->whereNull('resolved_at')->whereIn('code',['funds_wait_review','refund_repair'])->count(),'Complimentary closure never asks for nonexistent payment/refund repair');
     FundsWaits::sweep($account,$clock->now());same($before,$money(),'Repeated sweep changes no invoice, transaction or credit');
     same('paid',Invoice::findOrFail($wait->invoice_id)->status,'The zero receipt stays Paid');
+});
+ $check('complimentary missing-code transfer closes exactly at its cutoff without credit',function()use($transfer,$transfers,$clock,$money):void {
+    $deadline=Paymenter\Extensions\Servers\Domains\Services\TransferInputs::deadline($transfer->fresh(),$clock->now());
+    expect($deadline!==null,'Issued complimentary transfer has a verified cutoff');
+    $before=$money();$open=$transfer->fresh()->getRawOriginal();
+    $clock->instant=$deadline->modify('-1 second');
+    same(null,$transfers->expireMissingCode($transfer->id),'No early complimentary timeout');
+    same($open,$transfer->fresh()->getRawOriginal(),'Early check preserves the open transfer');
+    $clock->instant=$deadline;
+    same(null,$transfers->expireMissingCode($transfer->id),'Complimentary timeout has no customer credit');
+    $closed=$transfer->fresh();
+    same('rejected',$closed->state,'Transfer closes at the exact cutoff');
+    same('transfer_code_timeout',$closed->safe_code,'Closure retains the timeout reason');
+    same('transfer_rejected',$closed->domain->status,'Domain shows the rejected transfer');
+    same('cancelled',Service::findOrFail($closed->service_id)->status,'Native service is cancelled');
+    expect(Paymenter\Extensions\Servers\Domains\Services\RefundProof::transferTimeout($closed,$closed->domain),'Closure retains definitely-unsent timeout proof');
+    same($closed->domain->domain,$closed->domain->reservation_name,'Closure retains the name reservation');
+    same($before,$money(),'Timeout changes no invoice, transaction or credit');
+    same('paid',Invoice::findOrFail($closed->invoice_id)->status,'Zero receipt stays Paid');
+    expect(!isset($closed->funding['refund']),'No invented refund audit');
+    same(0,DB::table('domains_obligation_alerts')->where('operation_id',$closed->id)->whereNull('resolved_at')->where('code','refund_repair')->count(),'No nonexistent payment repair');
+    $terminal=$closed->getRawOriginal();
+    same(null,$transfers->expireMissingCode($closed->id),'Repeated timeout adds no credit');
+    same($terminal,$closed->fresh()->getRawOriginal(),'Repeated timeout preserves terminal evidence');
+    same($before,$money(),'Repeated timeout preserves native money history');
 });
 same(0,InvoiceTransaction::count(),'All recovery paths leave complimentary receipts without payments');same(0,Credit::count(),'No refund credit is invented');
 same(0,$writer->calls,'No recovery action sends to the registrar');
