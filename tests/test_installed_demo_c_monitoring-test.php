@@ -40,8 +40,9 @@ expect(str_contains($missingFacts['Checks']['Nameservers']['sub']??'','template'
 // No template means no comparison, not no public evidence. Keep the same saved A/AAAA answers and observation time.
 $recordFact=$missingFacts['Checks']['DNS records']??['value'=>null,'sub'=>null];
 same('A @ → 192.0.2.10',$recordFact['value'],'DNS records shows stored public answers without a template');
-expect(str_contains($recordFact['sub']??'','template'),'Unconfigured comparison explains the next step');
-expect(str_contains($recordFact['sub']??'',WatchFacts::date($at->getTimestamp()-60)),'DNS records retains the actual observation time');
+// ui-r15 R2: the check time is a <time> in the viewer's zone, so compare its datetime.
+expect(str_contains((string)($recordFact['sub']??''),'template'),'Unconfigured comparison explains the next step');
+expect(str_contains((string)($recordFact['sub']??''),'datetime="'.gmdate('c',$at->getTimestamp()-60).'"'),'DNS records retains the actual observation time');
 $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();
 $x=storefrontDom($html);$row=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="DNS records"]]')->item(0);
 expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!str_contains($row->textContent,'Missing'),'Real monitoring row renders the saved public record');
