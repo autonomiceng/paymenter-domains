@@ -14,8 +14,17 @@ $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS,'admin.products.viewAny','a
 foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions); Auth::setUser($u);
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings,true));
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class,$sellers);
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class,$native);
+// The page reads and saves through the installed composition: enable its synthetic Enom TEST sale gates
+// and the reviewed renewal and transfer protocols, then rebuild that composition with this fixture's account bindings.
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,
+    'domains.enom_writes.renewal'=>true,'domains.enom_writes.transfer'=>true]);
+$enom=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+App\Models\Server::findOrFail($enom->serverId)->settings()->updateOrCreate(['key'=>Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY],
+    ['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$enom->fingerprint,...Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($enom)])]);
+App\Models\Server::findOrFail($enom->serverId)->settings()->updateOrCreate(['key'=>Paymenter\Extensions\Servers\Domains\Services\EnomLive::key($enom,Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::KEY)],
+    ['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$enom->fingerprint,...Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::protocol($enom)])]);
+Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 same(null,PricingEditorNotice::missing(),'Pinned pricing notice hooks are available');
 PricingEditorNotice::boot();
@@ -42,11 +51,13 @@ $ending=collect($store->endings())->firstWhere('tld',$tlds[0]->tld);
 expect($ending!==null,'The edited fixture TLD remains in the storefront');
 expect($ending['terms']!==[],'The edited fixture TLD has registration terms');
 // Retained pre-publication edits must also be clear when reopening the page.
-$tlds[0]->fresh()->update(['fixed_register'=>'23.00']);
+// A saved catalogue change waits for publication (the same withdrawal a processing resume makes).
+Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$tlds[0]->id)->increment('catalogue_revision');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
 expect(str_contains($page->html(),'Registration: Not for sale'),'Reopening a saved unpublished rule shows paused registration');
 // The sweep puts a saved rule on sale by itself and says so in the history.
-$native->keepCurrent($tlds[0]->fresh(),$now,false);
+// Bounded local work republishes it through the real writer, with no staff actor.
+activeFixtureRepublish($sellers,$tlds[0]);
 expect(str_contains(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id])->html(),'Registration: For sale'),'The sweep restores sale when saved and published prices differ');
 same(['Prices published','System'],(static fn($row)=>[$row['change'],$row['by']])(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id)[0]),'The audit log shows the system did it');
 $product=$native->product($tlds[0],'register');
