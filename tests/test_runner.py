@@ -662,11 +662,20 @@ class RunnerTests(unittest.TestCase):
                  (['tests/offer-work-test.php'], ['native'], True),
                  (['tests/offer-frozen-renewal-test.php'], ['native'], True),
                  (['tests/offer-work-test.php', 'tests/native-fixture-test.php'], ['native'], False)]
-        for requested, selected, shared in cases:
+        b2_checks = ['tests/enom-test-send-limit-test.php', 'tests/glossary-sweep-test.php',
+                     'tests/native-lifecycle-test.php', 'tests/offer-installed-staff-test.php',
+                     'tests/offer-ports-test.php', 'tests/registrar-balances-test.php',
+                     'tests/registrars-page-test.php', 'tests/storefront-test.php']
+        cases = [(*case, 1) for case in cases]
+        cases += [([path], ['native'], jobs == 1, jobs) for path in b2_checks for jobs in (1, 2)]
+        cases += [([path, 'tests/native-fixture-test.php'], ['native'], False, 1) for path in b2_checks]
+        for requested, selected, shared, jobs in cases:
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temp, \
                  mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': 'pristine'}), \
                  mock.patch.object(runner.tempfile, 'mkdtemp', return_value=temp), \
-                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', '1', '--only', *requested]), \
+                 mock.patch.object(runner.sys, 'argv', ['test.py', '--jobs', str(jobs), '--only', *requested]), \
+                 mock.patch.object(runner, 'available_memory_mib', return_value=4096), \
+                 mock.patch.object(runner.test_workers, 'environments', return_value=([], {}, {})), \
                  mock.patch.object(runner.native, 'prepare', return_value={'source': 'digest'}) as native_prepare, \
                  mock.patch.object(runner, 'prepare', return_value=(Path(temp)/'runtime', Path(temp)/'runtime/php', Path(temp)/'runtime/curl.so')) as php_prepare, \
                  mock.patch.object(runner, 'run', return_value=0) as run, contextlib.redirect_stdout(io.StringIO()):

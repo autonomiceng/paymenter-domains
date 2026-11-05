@@ -4,7 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-/** One lock row per Enom TEST login and one permanent row per send attempt. */
+/** One lock row per Enom TEST login and one permanent row per send attempt. A catalogue send's command starts with
+ * EnomTestSendLimit::CATALOGUE_MARK; older rows have no mark and count as other work. */
 final class EnomTestSendLimitSchema
 {
     public const ACCOUNTS='domains_enom_test_send_accounts';

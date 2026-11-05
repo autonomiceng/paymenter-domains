@@ -92,7 +92,7 @@ class DomainResource extends Resource
                 }),
             // The account page's Domain alerts row links here with this filter and the account.
             Filter::make('alerts')->label('Open alerts')->toggle()
-                ->query(fn(Builder $query)=>DomainQueries::openAlerts($query)),
+                ->query(fn(Builder $query)=>DomainQueries::alerting($query)),
         ])->recordUrl(fn(Domain $record)=>static::getUrl('view',['record'=>$record]))
             ->defaultSort('domain')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search domain or customer');
     }

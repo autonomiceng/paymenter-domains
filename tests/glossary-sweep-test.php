@@ -97,6 +97,34 @@ $transfer=view('domains::transfer',[...$data,'results'=>[]])->render();$dom=stor
 expect(str_contains($plain($transfer),'Turn off the transfer lock. Get the auth code (also called EPP code). You’ll enter it after checkout.'),'Transfer steps');
 same(['TLD','Transfer (adds 1 year)'],array_map(fn($n)=>trim($n->textContent),iterator_to_array($dom->query('//thead/tr/th'))),'Transfer price columns');
 $none($plain($transfer),['ending','Ending','transfer code','auth or EPP','registrar lock','includes 1 year'],'Transfer page');
+// Exercise the real controller and Blade with only the public display rows it consumes.
+// Catalogue policy/price writers are outside this copy regression and need no commerce fixture.
+$transferStore = new class extends \Paymenter\Extensions\Servers\Domains\Services\Storefront {
+    public function __construct() {}
+    public function endings(): array
+    {
+        $rows = storefrontData()['endings'];
+        foreach ($rows as &$row) { if ($row['tld'] !== 'org') { $row['transfer'] = null; } }
+        return array_map(static fn ($row) => [...$row, 'testEnvironment' => false], $rows);
+    }
+};
+$transferController = new \Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController($transferStore);
+$transferPage = static function (string $name) use ($transferController) {
+    $request = \Illuminate\Http\Request::create('/domains/transfer', 'GET', ['name' => $name]);
+    $request->setLaravelSession(app('request')->session());
+    return $transferController->show($request);
+};
+foreach (['com', 'net', 'co.uk'] as $tld) {
+    $page = $transferPage('example.'.$tld); $refused = $page->getData();
+    same(['org'], array_column($refused['endings'], 'tld'), 'Only the supported transfer TLD is offered');
+    same([], $refused['results'], 'An unsupported transfer never becomes another domain');
+    $alert = storefrontDom($page->render())->query('//*[@id="domains-transfer-error" and @role="alert"]')->item(0);
+    same('We don’t offer transfers for .'.$tld.' domains. Contact support for help transferring this domain.', $alert?->textContent, 'Rendered refusal names the TLD and gives a next step');
+}
+$supported = $transferPage('example.org')->getData();
+same(null, $supported['error'], 'Supported transfer has no refusal');
+same('example.org', $supported['results'][0]['domain'], 'Supported transfer keeps the requested domain');
+same('Domain names can’t contain spaces.', $transferPage('bad name.com')->getData()['error'], 'Malformed names retain their validation message');
 $line=static fn(?string $price)=>$plain(view('domains::checkout-line',['domain'=>['name'=>'example.com','action'=>'Registration','years'=>1,'renewalPrice'=>$price,'editUrl'=>'/cart/1']])->render());
 expect(str_contains($line('$14.00'),'Renews at $14.00/yr'),'Cart line renewal price');
 expect(str_contains($line(null),'Renewal price: Missing Contact support before you buy'),'Cart line: Missing with its cause');
@@ -141,7 +169,7 @@ $cart=$source(\Paymenter\Extensions\Servers\Domains\Services\CartAdmission::clas
 foreach(["'Enter the auth code after checkout.'","'Registrar changed. Search again.'","'Test domains can’t be ordered. Remove them to check out.'","'Test transfers can’t be ordered yet. Remove them to check out.'","'Domains can’t be ordered right now. Remove them to check out.'"] as $s){expect(str_contains($cart,$s),'Cart message '.$s);}
 $none($cart,['Seller changed','TEST domains','TEST transfer','unavailable','transfer code after'],'Cart admission');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\NativeCancellation::class),"'Can’t cancel this domain right now. Contact support.'"),'Native cancellation refusal');
-expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController::class),"'Choose a TLD from the list.'"),'Transfer TLD error');
+expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController::class),'Contact support for help transferring this domain.'),'Transfer refusal gives a next step');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController::class),"'Check the TLD after the dot, for example '"),'Search TLD error');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\NativeActivationInformation::class),'We may ask for the auth code from your current registrar.'),'Activation information');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class),"['name'=>'Domain prices',"),'Client nav names the prices page by its title');

@@ -72,7 +72,12 @@ final class StaffDomainStatus
     {
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
-            if (($ready=RequestFacts::readyMessage($op))!==null) { return [$ready.self::check($op->id),true,$op->id]; }
+            try { $ready=RequestFacts::readyMessage($op); }
+            catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
+            if ($ready!==null) {
+                if ($op->state==='queued'&&OperationQueries::ordersOff($op)) { $ready.=' Turn Orders on in Registrars.'; }
+                return [$ready.self::check($op->id),true,$op->id];
+            }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op), true, $op->id]; }
             if ($state === 'awaiting_payment') { return [self::UNPAID, false, null]; }
             if ($state === 'awaiting_code') { return [self::NO_CODE, false, null]; }
@@ -110,7 +115,7 @@ final class StaffDomainStatus
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op), $op->id, true],
             $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null, false],
-            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.self::check($op->id), $op->id, true],
+            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.(OperationQueries::ordersOff($op)?' Turn Orders on in Registrars.':'').self::check($op->id), $op->id, true],
             default => [self::RENEWING, null, false],
         };
     }

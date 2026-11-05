@@ -406,6 +406,7 @@
     "tests/provider-send-guard-test.php",
     "tests/provider-send-guard-operation-test.php",
     "tests/staff-hold-release-audit-test.php",
+    "tests/test_installed_staff_domain_hold_status-test.php",
     "tests/staff-hold-unpaid-test.php",
     "tests/staff-stale-click-test.php",
     "tests/staff-completed-story-test.php",
@@ -481,7 +482,12 @@
     "tests/test_installed_catalogue_history_label-test.php",
     "tests/test_installed_staff_catalogue_next_step-test.php",
     "tests/test_installed_default_freshness-test.php",
-    "tests/test_installed_catalogue_freshness-test.php"
+    "tests/test_installed_catalogue_freshness-test.php",
+    "tests/test_installed_offer_rule_isolation-test.php",
+    "tests/test_installed_offer_rule_repair-test.php",
+    "tests/test_installed_native_service_edit-test.php",
+    "tests/test_installed_registrar_account_counts-test.php",
+    "tests/test_installed_cart_price_change-test.php"
   ],
   "ui": [],
   "runner": [

@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 
-use App\Models\{CartItem, Product, Server};
+use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
@@ -244,7 +244,7 @@ final class Writer implements Catalogue
                 DB::table('domains_accounts')->where('server_id', $binding->serverId)->update(['catalogue_defaults' => OfferState::json($defaults)]);
                 if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, new Revision($revision->offer, $revision->defaults + 1, $revision->selection), $now); }
                 // All old publication revisions are now pending. B5 enumerates local republish commands.
-                $this->afterCommit([$binding->serverId => null]);
+                $this->afterCommit();
                 return new Revision($revision->offer, $revision->defaults + 1, $revision->selection);
             }
             if ($command instanceof Edit && $command->kind === 'sync') { return $revision; }
@@ -262,28 +262,29 @@ final class Writer implements Catalogue
                 else { DB::table('domains_sales_policies')->insert(['tld' => $name, ...$values]); }
                 $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
             }
-            $scopes = [];
             foreach ($seller ? $offers : [$target] as $offer) {
                 $id = (int) $offer->server_id; $account = $accounts[$id]; $b = AccountBindings::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;
-                if (!$command instanceof Edit || $command->kind !== 'retail') { $this->publishPrices($offer, $now); }
+                $published = $command instanceof Edit && $command->kind === 'retail'
+                    ? $this->pricingRule($offer) !== null : $this->publishPrices($offer, $now);
+                // Keep unreadable own pricing closed, including when the feed/facts change.
+                if (!$published) { $offer->catalogue_published_revision = null; }
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
                 $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
-                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), true);
+                $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), $published);
                 $this->projection->write($offer, $snapshot, $now, $native);
-                $offer->catalogue_published_revision = OfferState::json($snapshot->revision);
+                $offer->catalogue_published_revision = $published ? OfferState::json($snapshot->revision) : null;
                 // Raw update: dormant staging does not invoke active legacy model observers.
                 DB::table('domains_tlds')->where('id', $offer->id)->update([
                     'catalogue_intent' => $offer->catalogue_intent, 'catalogue_facts' => $offer->catalogue_facts,
                     'catalogue_revision' => $offer->catalogue_revision, 'catalogue_published_revision' => $offer->catalogue_published_revision,
                     'catalogue_retained_annual_retail' => $offer->catalogue_retained_annual_retail]);
-                $scopes[$id] = $name;
             }
             $result = OfferState::revision($target, $defaults, $policy);
             if (!$reviewed) { $this->audit($servers[$binding->serverId], $command, $revision, $result, $now); }
-            $this->afterCommit($scopes, !($command instanceof FeedObserved));
+            $this->afterCommit();
             return $result;
     }
 
@@ -344,9 +345,23 @@ final class Writer implements Catalogue
         return $changed;
     }
 
-    private function publishPrices(Tld $tld, \DateTimeImmutable $now): void
+    private function pricingRule(Tld $tld): ?array
     {
-        $rule = Pricing::rule($tld);
+        // Shared settings fail the account. Only an unreadable TLD override is isolated.
+        $fee = \Paymenter\Extensions\Servers\Domains\Services\CardFee::read();
+        $default = (new PricingRules)->defaultRule(false, $fee);
+        try { $rule = Pricing::rule($tld, $default, $fee); }
+        catch (\DomainException|\InvalidArgumentException $error) {
+            if (!Pricing::hasOwn($tld)) { throw $error; }
+            return null;
+        }
+        return $rule;
+    }
+
+    private function publishPrices(Tld $tld, \DateTimeImmutable $now): bool
+    {
+        $rule = $this->pricingRule($tld);
+        if ($rule === null) { return false; }
         $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int) $tld->server_id);
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
         foreach ($prices as $p) {
@@ -363,6 +378,7 @@ final class Writer implements Catalogue
                 'revision' => (int) $p->revision + 1];
             DB::table('domains_prices')->where('id', $p->id)->update($values);
         }
+        return true;
     }
 
     private function audit(Server $server, Command $command, Revision $before, Revision $after, \DateTimeImmutable $now): void
@@ -376,20 +392,9 @@ final class Writer implements Catalogue
                     : ['facts' => OfferState::decode(OfferState::encodeFacts($command->facts))])]);
     }
 
-    private function afterCommit(array $scopes, bool $withdraw = true): void
+    private function afterCommit(): void
     {
-        // A cost observation must preserve the line for receipt refresh and visible total review.
+        // Carts keep their lines: checkout re-prices them and drops only a sale staff stopped (CartAdmission::refresh).
         StorefrontCatalogueCache::invalidateAfterCommit();
-        if (!$withdraw) { return; }
-        DB::afterCommit(static function () use ($scopes): void {
-            $tlds = DB::table('domains_tlds')->where(static function ($q) use ($scopes): void {
-                foreach ($scopes as $id => $ending) {
-                    $q->orWhere(static function ($q) use ($id, $ending): void { $q->where('server_id', $id); if ($ending !== null) { $q->where('tld', $ending); } });
-                }
-            })->pluck('id')->map(strval(...));
-            $products = Product::whereIn('server_id', array_keys($scopes))->whereHas('settings', static fn ($q) => $q->where('key', 'domains_catalogue')->where('value', '1'))
-                ->whereHas('settings', static fn ($q) => $q->where('key', 'domains_tld_id')->whereIn('value', $tlds))->pluck('id');
-            CartItem::whereIn('product_id', $products)->delete();
-        });
     }
 }

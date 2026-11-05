@@ -7,7 +7,7 @@ use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, WatchAudit};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
-/** One domain's history: registrar requests, staff releases and renewal changes, and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
+/** One domain's history: registrar requests, staff holds, releases and renewal changes, and customer auto-renew changes, newest first. Read by the History tab and the Activity rail. */
 final class DomainHistory
 {
     private const HOLDINGS = ['stop' => 'Renewal stopped', 'resume' => 'Renewal resumed', 'reprice' => 'Renewal price updated', 'resume_observation' => 'Sync resumed'];
@@ -19,9 +19,9 @@ final class DomainHistory
             try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }
             if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
             foreach ($history as $i=>$action) {
-                if (!is_array($action)||($action['action']??null)!=='release'||($action['phase']??null)!=='completed') { continue; }
-                $rows[]=['__key'=>'release-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>'Hold released',
-                    'sub'=>null,'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
+                if (!is_array($action)||!in_array($action['action']??null,['hold','release'],true)||($action['phase']??null)!=='completed') { continue; }
+                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'__request'=>$op->id,'__order'=>$i+1,'time'=>self::at($action['at']??null),'event'=>$action['action']==='hold'?'Put on hold':'Hold released',
+                    'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
             }
         }
         $holdings=[]; $audits=[];
@@ -41,7 +41,8 @@ final class DomainHistory
                 'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
         }
         $at=fn(Operation|array $r)=>($r instanceof Operation?$r->created_at:$r['time'])?->getTimestamp()??PHP_INT_MIN;
-        usort($rows,fn($a,$b)=>$at($b)<=>$at($a));
+        $order=static fn(Operation|array $r)=>$r instanceof Operation?[$r->id,0]:[$r['__request']??0,$r['__order']??0];
+        usort($rows,fn($a,$b)=>($at($b)<=>$at($a))?:($order($b)<=>$order($a)));
         return $rows;
     }
     public static function ordersOff(Domain $domain): bool
@@ -50,8 +51,10 @@ final class DomainHistory
     public static function row(Operation|array $entry, Domain $domain, bool $ordersOff): array
     {
         if (is_array($entry)) { return $entry; }
+        $reason=RequestFacts::reason($entry,$ordersOff);
+        if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).' Turn Orders on in Registrars.'; }
         return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
-            'sub'=>RequestFacts::reason($entry,$ordersOff),
+            'sub'=>$reason,
             'status'=>RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];
     }
     /** The newest entries as Sheet::trace steps: the reason, then when and who. */

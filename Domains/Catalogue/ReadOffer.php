@@ -31,6 +31,10 @@ final readonly class ReadOffer implements \JsonSerializable
             $this->row, $this->context, $this->freshness, orderCost: $costs[$q->action.':'.$q->term] ?? null);
     }
 
+    /** Staff stopped this sale or deselected this seller; unknown or stale data never counts. */
+    public function closed(): bool
+    { return $this->snapshot !== null && $this->query !== null && (new Evaluator)->closed($this->snapshot, $this->query); }
+
     /** Server-only native list fence; saved retail alone never grants a purchase. */
     public function listedRetail(): ?string
     { return OfferState::money($this->row?->retail, 2); }

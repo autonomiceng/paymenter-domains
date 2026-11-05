@@ -129,7 +129,8 @@ final class OfferReader
                             && ($this->ready)($b, $servers[$id], $accounts[$id], $seed, $context);
                         $snapshot = OfferState::snapshot($b, $tld, $defaults[$id], $policies[$name] ?? null, $rows, $ready[$key], freshness: $freshness[$id]);
                         foreach ($action === 'register' ? range(1, 10) : [1] as $term) {
-                            $q = new Query($b, [$name], $action, $term); ($this->authorize)($q, $context);
+                            // load() authorized this query's binding and context once; per-term reads add no new grant.
+                            $q = new Query($b, [$name], $action, $term);
                             $d = $evaluator->evaluate($snapshot, $q, $context, $now);
                             $row = $rows->first(static fn ($p) => $p->action === $action && (int)$p->term === $term && $p->currency === 'USD');
                             $batch[$name][$action.':'.$term] = new ReadOffer($d, $b, $row, $context, $freshness[$id]);

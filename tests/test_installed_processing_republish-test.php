@@ -65,7 +65,7 @@ same([(int) $line->id], $cartIds(), 'Paused checkout preserves the existing cart
 same($readsBefore, $reads->calls, 'Paused cart admission never resolves a provider');
 echo "Paused customer add and native checkout refused.\n";
 
-// Publication invalidates old cart lines; it may preserve or withdraw native holder prices.
+// Publication keeps cart lines for checkout to re-check; it may preserve or withdraw native holder prices.
 $ports->apply(Edit::republish($binding, 'com'), $read()->revision);
 commerceReject(static fn () => $offers->offer('com', 'register', 1));
 $bindings->setProcessing($binding->serverId, true, syntheticActivation());
@@ -77,7 +77,7 @@ same(null, $worker->status($binding)['due_at'], 'Resume does not schedule a prov
 same($readsBefore, $reads->calls, 'Resume and republication are local only');
 echo "Resume retains the native USD row and original product/price.\n";
 
-commerceAdd($cart, $product->fresh(), 'resumed-placeholder.com');
+same([(int) $line->id], $cartIds(), 'Publication keeps the existing cart line');
 commerceCheckout($user, $cart)->assertHasNoErrors();
 same(array_map(static fn ($count) => $count + 1, $counts), [Order::count(), Invoice::count(), Operation::count()], 'Resumed native checkout admits one obligation');
 

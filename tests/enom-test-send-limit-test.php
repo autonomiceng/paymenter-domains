@@ -29,7 +29,7 @@ same(3,sends(),'Refusals record no attempt');
 same(['Purchase'],DB::table(Tables::SENDS)->where('command','Purchase')->pluck('command')->all(),'Attempts record their command');
 $clock->instant=$t0->modify('+61 seconds');
 same([true,true,false],[admits($uid),admits($uid),admits($uid)],'UTC midnight frees nothing; the rolling ceiling holds');
-same(['day'=>5,'day_limit'=>5,'minute'=>2,'minute_limit'=>3],Limit::usage($uid),'Usage reports both windows');
+same(['day'=>5,'day_limit'=>5,'minute'=>2,'minute_limit'=>3,'catalogue'=>0,'catalogue_limit'=>1],Limit::usage($uid),'Usage reports both windows and our catalogue share');
 expect(str_contains(Limit::facts($uid),'5 of 5'),'Facts show the rolling count');
 // The existing native fixture covers saved bindings and shared counters; a unit test cannot.
 fixtureAccount(1,'enom',$uid);
@@ -38,7 +38,7 @@ foreach([0=>$uid,1=>'other-uid'] as $server=>$submittedUid){
     expect(str_contains($notice,'5 of 5')&&str_contains($notice,'2 of 3')&&str_contains($notice,'Limit reached'),
         'Connect refusal uses submitted login usage for a new account and the saved login for an existing account');
 }
-same(['day'=>0,'day_limit'=>5,'minute'=>0,'minute_limit'=>3],Limit::usage('other-uid'),'Accounts are counted apart');
+same(['day'=>0,'day_limit'=>5,'minute'=>0,'minute_limit'=>3,'catalogue'=>0,'catalogue_limit'=>1],Limit::usage('other-uid'),'Accounts are counted apart');
 same([true,true],[admits('OTHER-UID'),admits('other-uid')],'Another login has its own limit');
 same(2,Limit::usage('Other-Uid')['day'],'UID case aliases share one limit');
 $clock->instant=$t0->modify('+86399 seconds');same(false,admits($uid),'Sends from 24 hours ago still count one second early');
@@ -84,6 +84,8 @@ $allowanceRegistry->register('enom',['uid','token'],new class implements \Paymen
 },static fn()=>throw new LogicException('Allowance never resolves a provider'));
 $allowanceBindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($allowanceRegistry);
 $allowanceBindings->configure(1,'enom',Environment::Test,['uid'=>$uid,'token'=>'synthetic-allowance-token']);
+// Feed allowance needs the TEST catalogue on; without it every allowance reads 0.
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
 $offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts($allowanceBindings,$clock);
 $allowance=fn()=>$offerPorts->allowance($binding,\Paymenter\Extensions\Servers\Domains\Data\RequestOrigin::Background);
 $stale=$review();$changed=$review();$write($changed,2,2);
@@ -111,10 +113,10 @@ same(2,Limit::usage($uid)['day_limit'],'Revoked settings permission refuses the 
 $staff->role->update(['permissions'=>['admin.domains.view','admin.domains.manage-policy',Review::permission('configure')]]);
 $write($review(),100,3);
 same(1,$allowance(),'Minute ceiling still limits the raised daily allowance');
-// Active offer feeds reserve 70% of the day for checkout, independently of selling intent.
-DB::table(Tables::SENDS)->insert(array_fill(0,28,['account'=>Limit::account($uid),'command'=>'GetBalance','sent_at'=>$clock->now()->getTimestamp()]));
-same(70,ApiCallLimits::usage($binding)['limit']-ApiCallLimits::usage($binding)['used'],'Daily cap still has room at the automatic allowance threshold');
-same(0,$allowance(),'Active feed has no room at thirty percent used');
+// Our catalogue share counts catalogue sends only: other work at thirty percent leaves it open.
+DB::table(Tables::SENDS)->insert(array_fill(0,28,['account'=>Limit::account($uid),'command'=>'GetBalance','sent_at'=>$clock->now()->getTimestamp()-120]));
+same(70,ApiCallLimits::usage($binding)['limit']-ApiCallLimits::usage($binding)['used'],'Daily cap still has room at thirty percent used');
+same(1,$allowance(),'Active feed keeps its minute-bound room at thirty percent used by other work');
 // Unknown usage still closes the execution guard, but it must not be presented as a measured zero.
 Schema::rename(Tables::SENDS,'domains_test_sends_unreadable');
 same(null,\Paymenter\Extensions\Servers\Domains\Services\ApiCallLimits::usage($binding),'Unreadable send storage makes usage unknown');

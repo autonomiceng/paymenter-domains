@@ -15,8 +15,8 @@ use Filament\Support\Enums\{FontFamily,FontWeight,Width};
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PslActions,RegistrarFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview};
@@ -194,14 +194,15 @@ class RegistrarAccount extends Page
             // The fix for a Missing balance is the Check balance button on this row.
             $checked=$b['value']===null?$b['cause']:new HtmlString(implode('. ',array_filter([Sheet::moment((string)$b['checked'],'Checked')->toHtml(),$b['low']?RegistrarFacts::warn('Low balance')->toHtml():null])));
             $rows[]=[...self::fact('Balance',$b['value'],$checked),'money'=>true,'buttons'=>[$this->checkBalanceAction()]];
-            $rows[]=self::fact('Due in 30 days',$b['due'],$b['unreadable']>0?RegistrarFacts::warn(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::UNREADABLE_RENEWAL):($b['without_cost']>0?RegistrarFacts::warn($b['without_cost'].' without a cost'):null),RegistrarFacts::DUE_HELP);
+            $rows[]=self::fact('Due in 30 days',$b['due'],RegistrarFacts::dueLine(RegistrarFacts::dueGap($a,$b)),RegistrarFacts::DUE_HELP);
         }
         $filter=['filters'=>['server_id'=>['value'=>(string)$s->id]]];
         try { $domains=DomainResource::getUrl('index',$filter); } catch (\Throwable) { $domains=null; }
         $rows[]=[...self::fact('Domains',(string)Domain::where('server_id',$s->id)->count()),'buttons'=>[Sheet::link('view_domains','View domains',$domains)]];
-        $requests=RegistrarFacts::requests((int)$s->id);
-        try { $url=OperationResource::getUrl('index',['filters'=>['server_id'=>['values'=>[(string)$s->id]]]]); } catch (\Throwable) { $url=null; }
-        $rows[]=[...self::fact('Registrar requests',(string)$requests['open'],$requests['review']>0?$requests['review'].' '.($requests['review']===1?'needs':'need').' review':null),'buttons'=>[Sheet::link('view_requests','View requests',$url)]];
+        // Each count links to the list filtered to exactly its rows. On hold and Under review wait on staff, so they are amber.
+        $requests=RegistrarFacts::requests((int)$s->id);$staff=array_filter($requests['staff']);
+        $waiting=$staff===[]?null:RegistrarFacts::tone(implode(', ',array_map(fn(string $key,int $n)=>$n.' '.strtolower(RequestFacts::STATUSES[$key][0]),array_keys($staff),$staff)),'warning',RegistrarFacts::requestsUrl((int)$s->id,array_keys($staff)));
+        $rows[]=[...self::fact('Registrar requests',$requests['open'].' open',$waiting),'buttons'=>[Sheet::link('view_requests','View requests',RegistrarFacts::requestsUrl((int)$s->id,RegistrarFacts::OPEN_REQUESTS))]];
         if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact($a->environment==='live'?'API calls, today (UTC)':'API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
         $rows[]=[...self::fact('Prices stay current for',\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$s->id)->hours.' hours',null,'Prices sync daily. Older prices stop new orders until checked again.'),'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\PriceFreshnessAction::make($a,$this->reviewStamp)]];
         return $rows;

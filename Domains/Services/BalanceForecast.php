@@ -8,15 +8,19 @@ final class BalanceForecast
 {
     public static function for(Account $account, \DateTimeImmutable $now, ?\Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities $catalogue=null): array
     {
-        $total='0.000000';$unknown=0;$count=0;$unreadable=0;
+        $total='0.000000';$unknown=0;$count=0;$unreadable=0;$unpriced=0;$unobserved=[];
         $settings=Server::find($account->server_id)?->settings()->whereIn('key',['domains_issue_days','domains_due_days'])->get();
         try{$timing=$settings?BillingCalendar::timing($settings):null;}catch(\Throwable){$timing=null;}
         $catalogue ??= \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
         try{$binding=$catalogue?AccountBindings::binding($account):null;}catch(\Throwable){$binding=null;}
         $rates=$catalogue ? ($binding?$catalogue->costs($binding):[]) : Price::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
             ->where('action','renew')->where('currency','USD')->get();
+        // Current costs omit stale/disabled observations. Preserve their existence separately from a missing read.
+        $observed=$catalogue&&$binding?Price::where('server_id',$account->server_id)->where('registrar_key',$account->registrar_key)
+            ->where('account_fingerprint',$account->account_fingerprint)->where('action','renew')->where('term',1)->where('currency','USD')
+            ->whereNotNull('catalogue_observation')->pluck('tld')->flip()->all():[];
         Domain::where('server_id',$account->server_id)->where('account_fingerprint',$account->account_fingerprint)
-            ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->chunkById(100,function($domains)use($rates,$now,$timing,&$total,&$unknown,&$count,&$unreadable):void {
+            ->whereIn('status',['active','expired','grace'])->with(['service','operations'])->chunkById(100,function($domains)use($rates,$now,$timing,$catalogue,$observed,&$total,&$unknown,&$count,&$unreadable,&$unpriced,&$unobserved):void {
             $serviceIds=$domains->pluck('service_id')->all();
             $cancel=NativeCancellation::withIntents(ServiceCancellation::whereIn('service_id',$serviceIds)->get(),$serviceIds,true)->groupBy('service_id');
             $adoptionIds=$domains->pluck('adoption_id')->filter();
@@ -40,7 +44,7 @@ final class BalanceForecast
                     foreach($open as $op){
                         $count++;$due=$invoices->get($op->invoice_id)?->due_at?->format('Y-m-d')??($op->policy['calendar']['due']??null);
                         $cost=self::cost($rates,$d->tld,(int)$op->term,$now);
-                        if(self::withinWindow($due,$d->provider_expires_at?->format('Y-m-d'),$now)===null||$cost===null){$unknown++;}else{$total=self::add($total,$cost);}
+                        if(self::withinWindow($due,$d->provider_expires_at?->format('Y-m-d'),$now)===null){$unknown++;}elseif($cost===null){$unknown++;$unpriced++;if($catalogue&&!isset($observed[$d->tld])){$unobserved[$d->tld]=($unobserved[$d->tld]??0)+1;}}else{$total=self::add($total,$cost);}
                     }
                     continue;
                 }
@@ -56,10 +60,11 @@ final class BalanceForecast
                 if($within===null){$unknown++;$count++;continue;}
                 if(!$within){continue;}
                 $count++;$cost=self::cost($rates,$d->tld,1,$now);
-                if($cost===null){$unknown++;}else{$total=self::add($total,$cost);}
+                if($cost===null){$unknown++;$unpriced++;if($catalogue&&!isset($observed[$d->tld])){$unobserved[$d->tld]=($unobserved[$d->tld]??0)+1;}}else{$total=self::add($total,$cost);}
             }
         });
-        return ['total'=>$total,'currency'=>'USD','unknown'=>$unknown,'count'=>$count,'unreadable'=>$unreadable];
+        // Unpriced renewals have a known date but no current registrar cost; the price read fills them.
+        return ['total'=>$total,'currency'=>'USD','unknown'=>$unknown,'count'=>$count,'unreadable'=>$unreadable,'unpriced'=>$unpriced,'unobserved'=>$unobserved];
     }
     /** Earlier of the Paymenter renewal due date and confirmed expiry; a missing pair stays unknown. */
     public static function withinWindow(?string $due,?string $expiry,\DateTimeImmutable $now): ?bool

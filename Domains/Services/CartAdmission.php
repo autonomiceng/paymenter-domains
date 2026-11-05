@@ -78,18 +78,45 @@ class CartAdmission
         $item->checkout_config = ['domain' => $name, 'domains_check' => $token];
     }
 
-    /** Before native mount/checkout only. Quiet CAS avoids update hooks and stale-tab overwrites. */
+    /** Before native mount/checkout only. Quiet CAS avoids update hooks and stale-tab overwrites.
+     * Lines staff took off sale are removed and reported with CartLinesRemoved before any other line refreshes. */
     public function refresh(): void
     {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Refresh requires an unlocked cart.'); }
         $cart = NativeCart::get();
         if (!$cart->exists || ($cart->user_id !== null && (int) $cart->user_id !== (int) Auth::id())) { return; }
-        $batch = new CheckoutRefreshBudget;
+        $batch = new CheckoutRefreshBudget; $removed = []; $lines = [];
+        // Local removal pass first, so a later refresh failure cannot swallow its one-time notice.
         foreach ($cart->items as $item) {
-            $batch->remainingMilliseconds();
             $product = Product::findOrFail($item->product_id);
             $mapping = $this->native->mapping($product, $item->plan);
             if (!$mapping || !in_array($mapping['action'], ['register', 'transfer'], true)) { continue; }
+            if ($this->catalogue()?->offSale((int) $product->server_id, $mapping['tld']->tld, $mapping['action'], $mapping['term'])) {
+                $name = $this->name($item, $mapping);
+                $removed[$item->id] = [$name, $item->product_id, $item->plan_id]; continue;
+            }
+            $lines[] = [$item, $product, $mapping];
+        }
+        if ($removed) {
+            $removed = DB::transaction(function () use ($cart, $removed): array {
+                $query = CartItem::where('cart_id', $cart->id)->where(function ($q) use ($removed): void {
+                    foreach ($removed as $id => [$name, $product, $plan]) {
+                        $q->orWhere(fn ($q) => $q->whereKey($id)->where('product_id', $product)->where('plan_id', $plan));
+                    }
+                });
+                // Lock the matched identities so the single delete and its notice cover exactly those rows.
+                $ids = (clone $query)->lockForUpdate()->pluck('id')->all();
+                if ($ids) { $query->whereIn('id', $ids)->delete(); }
+                return array_map(static fn ($row) => $row[0], array_intersect_key($removed, array_flip($ids)));
+            });
+        }
+        if ($removed) {
+            // The native page and checkout read this same memoized cart. Checkout stops; the next click refreshes the rest.
+            $cart->setRelation('items', $cart->items->reject(static fn ($item) => isset($removed[$item->id]))->values());
+            throw new CartLinesRemoved(array_values($removed));
+        }
+        foreach ($lines as [$item, $product, $mapping]) {
+            $batch->remainingMilliseconds();
             $this->validate($item, $product); $name = $this->name($item, $mapping);
             $config = $item->checkout_config;
             while (true) {
