@@ -20,6 +20,8 @@ final class SellTable
     private ?int $hiddenWarnings=null;
     private array $filtered=[];
     private ?StaffGrants $grants=null;
+    /** Account and settings reads the next-step hints share across Register, Renew and Transfer in this build. */
+    private array $hintReads=[];
     /** @param array<int,AccountBinding> $bindings by server
      * @param \Closure():array<OfferRow> $page the rows on screen
      * @param ?\Closure():array<OfferRow> $filteredRows all rows kept by search and filters */
@@ -162,7 +164,7 @@ final class SellTable
     private function nextStep(OfferRow $row,string $action): array
     {
         $key=self::key($row);$this->facts();
-        $this->steps[$action]??=$this->source()->nextSteps(collect($this->rowTlds),$this->facts(),$action,$this->years);
+        $this->steps[$action]??=$this->source()->nextSteps(collect($this->rowTlds),$this->facts(),$action,$this->years,$this->hintReads);
         return $this->steps[$action][$key];
     }
     /** Sale intent controls absent cells; saved values still win in savedCell(). */
