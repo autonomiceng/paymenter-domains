@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/management-namesilo.php';
+// Real native DB facade is required by the public management port's outside-lock guard.
+(static function (): void { require __DIR__.'/Support/demo-c-ds-management.php'; })();
 require __DIR__.'/Support/owner-pages.php';
 require __DIR__.'/Support/staff-panel.php';
 use App\Models\Invoice;
@@ -74,4 +76,6 @@ foreach ([new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->
     $count=count($ms->calls); try { $driver->prepare($r,$ctx); throw new LogicException('Unbounded read'); } catch (RuntimeException) {}
     same($count,count($ms->calls),'Expired or exhausted context performs no I/O');
 }
+// A real encrypted ledger and engine grant are required to prove unknown DS sends never replay.
+require __DIR__.'/Support/demo-c-ds-durable.php';
 $nativeSuccessful=true; echo "NameSilo management baseline passed\n";
