@@ -3,8 +3,6 @@
 @if ($family['state'] === 'unknown')
     @if ($family['read_checking'] ?? false)
         @include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'muted']])
-    @elseif ($family['records_paused'] ?? false)
-        @include('domains::partials.status-pill', ['pill'=>['label'=>'Paused','tone'=>'muted']])
     @else
         @include('domains::partials.missing', ['cause'=>null])
     @endif
@@ -17,7 +15,8 @@
     @if ($family['read_checking'] ?? false)
         Registrar read queued for @include('domains::partials.moment',['at'=>gmdate(DATE_ATOM,$family['next_read'])]).
     @elseif ($family['records_paused'] ?? false)
-        Record reads were paused or not configured at the last read.
+        Record checks are paused or not set up for this registrar account.
+        @if ($staff)Check Processing and record-read setup.@endif
     @else
         {{ $family['read_cause'] ?? 'No registrar read is queued for this family.' }}
         {{ $staff ? 'The next successful complete registrar read fills this family.' : 'These records will appear after a successful registrar read.' }}

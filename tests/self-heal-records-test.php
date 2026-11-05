@@ -25,11 +25,26 @@ $worker=new HoldingObservationWork($observer,$clock);
 DB::table('domains_observation_queues')->insert(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint]);
 $queue=DB::table('domains_observation_queues')->sole();$guard=static fn()=>null;
 $before=$original->fresh()->getAttributes();$money=$nativeMoney();$state->calls=[];
+$findings=[];$check=static function(bool $ok,string $message)use(&$findings):void {if(!$ok){$findings[]=$message;}};
 same('records_disabled',$worker->turn($queue,$guard),'Production gate skips families while Processing is off');
 expect(!HoldingObservationWork::stopped($d->fresh()),'A closed record gate never stops daily core reads');
 $q=HoldingObservationWork::current($d->fresh());
 $assertDaily=static function()use($q,$clock):void {$job=(clone $q)->sole();same(0,(int)$job->tries,'Gated core success uses no retry budget');same(86400,$job->due_at-$clock->now()->getTimestamp(),'Core read keeps daily cadence');};
 $assertDaily();same([], $state->calls,'Closed processing gate makes no family calls');
+// Collect both independent gate failures so the red run witnesses drift as well as the visible missing records.
+storefrontViews();
+$gatedFacts=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now());
+foreach(['staff'=>view('domains::partials.record-families',['recordFamilies'=>$gatedFacts,'staff'=>true])->render(),'customer'=>$page()] as $surface=>$html){
+ $dom=new DOMDocument;@$dom->loadHTML($html);$xp=new DOMXPath($dom);$nodes=$xp->query('//span[@data-record-family="dns"]');
+ expect($nodes->length>0,$surface.' renders gated family');
+ foreach($nodes as $node){
+  $check(trim($node->textContent)==='Missing',$surface.' gated never-read family must stay Missing');
+  $check($xp->query('.//svg',$node)->length===1,$surface.' gated Missing needs its warning icon');
+  $text=$node->parentNode->textContent;
+  $check(str_contains($text,'Record checks are paused or not set up for this registrar account.'),$surface.' gated Missing needs its cause');
+  $check($surface==='staff'?str_contains($text,'Check Processing and record-read setup.'):!str_contains($text,'Processing'),$surface.' gated Missing has the correct audience next step');
+ }
+}
 expect(count($observation->calls)>0,'Core ownership and expiry reads still run');
 expect(ObservationRecords::current($d->fresh(),$clock->now())===null,'A core read does not invent family evidence');
 $at=$d->fresh()->last_synced_at->format(DATE_ATOM);$coreCalls=count($observation->calls);
@@ -53,8 +68,24 @@ foreach($state->calls as [$command]){expect(str_starts_with($command,'Get')||$co
 storefrontViews();
 $recordPage=view('domains::partials.record-families',['recordFamilies'=>\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now()),'staff'=>true])->render();
 expect(str_contains($recordPage,'Last registrar read:')&&str_contains($recordPage,'Next registrar read:'),'Existing record rows show last and next reads');
+// The real closed gate must not replace an ownership-drift result with a healthy daily receipt.
+$readBindings->setProcessing($d->server_id,false);$observation->fault='owner';$q->update(['due_at'=>0]);$state->calls=[];
+for($try=1;$try<=5;$try++){
+ $result=$worker->turn($queue,$guard);$job=(clone $q)->sole();
+ $check($result===($try===5?'budget_exhausted':'unresolved'),'Closed-gate drift preserves unresolved retry/exhaustion at attempt '.$try);
+ $check((int)$job->tries===$try,'Closed-gate drift keeps its failure count at attempt '.$try);
+ $clock->instant=$clock->now()->setTimestamp((int)$job->due_at);
+}
+$check(($d->fresh()->observation['drift']??false)===true,'Drift facts remain visible');
+$check(HoldingObservationWork::stopped($d->fresh()),'Closed-gate drift stops after bounded retries');
+\Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
+\Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::retained(['domain'=>$d->fresh(),'operations'=>$d->operations()->get()],$clock->now()->getTimestamp());
+$check(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','observation_review')->whereNull('resolved_at')->exists(),'Closed-gate drift raises the staff Sync stopped alert');
+same([],$state->calls,'Drifted closed gate still sends no family calls');
+same($before,$original->fresh()->getAttributes(),'Drift retries preserve the original registration evidence');same($money,$nativeMoney(),'Drift retries create no financial writes');
 DB::table('services')->where('id',$d->service_id)->update(['status'=>'cancelled']);
 $dto=(new \Paymenter\Extensions\Servers\Domains\Services\NativePresenter($owners,$native,new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices)))->service($user,(int)$d->service_id);
 same('Cancelled',$dto->serviceStatus,'Presenter carries the native cancellation separately');
 expect($dto->status!=='Cancelled','Retained domain keeps its own state');
+expect($findings===[],implode('; ',$findings));
 $nativeSuccessful=true;echo "Automatic record-family reads passed\n";
