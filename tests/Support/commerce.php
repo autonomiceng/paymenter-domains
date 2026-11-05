@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
@@ -49,7 +49,8 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
     $now = new DateTimeImmutable('2026-10-18T12:00:00Z'); $tlds = [];
     if($active){
         $clock=new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
-        $ports=new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,$bindings,static fn()=>null,static fn()=>true);
+        // Callers that test permissions pass the installed staff rule; staff arranging below then needs a staff actor.
+        $ports=new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,$bindings,$authorize??static fn()=>null,static fn()=>true);
         $caps=new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($ports,$clock,static fn()=>null);
         $prices=new PriceCatalogue(new PricingRules,$caps,$ports);$native=new NativeCatalogue($prices);
         $offers=new \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers($ports,$bindings,$native);
