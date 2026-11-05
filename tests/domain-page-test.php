@@ -169,7 +169,7 @@ expect(str_starts_with($card($dom,'Renewal invoices'),'On Turn off'),'Renewal in
 same(['On',['Turn off']],$split($dom,'Renewal invoices'),'Renewal invoices action sits on its own line');
 same('$14.99/yr',$card($dom,'Renewal price'),'Renewal price');
 same(1,$dom->query('//section[@id="renewal"]//a[@data-dialog-open][.="Renew now"]')->length,'Renew now button');
-foreach(['Renew '.$name,'>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Create invoice','Turn off renewal invoices?','This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$name.'.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
+foreach(['>Renew domain</h3>','<strong>'.$name.'</strong>','>Years<','You can renew online until <time datetime="2027-02-28">Feb 28, 2027</time>.','Continue to payment','Turn off renewal invoices?','This stops scheduled renewal invoices. You can still use Renew now when your domain is eligible. An invoice already issued stays payable. Paying it can still renew '.$name.'.']as$t){expect(str_contains($html,$t),'Renewal card: '.$t);}
 same(0,$dom->query('//div[contains(@class,"domains-notice")]')->length,'An active domain has no notice');
 same('No changes yet.',$norm($dom->query('//section[@id="history"]//p')->item(0)),'Empty history');
 
