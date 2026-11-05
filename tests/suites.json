@@ -520,7 +520,8 @@
     "tests/test_installed_demo_c_r10_layout-test.php",
     "tests/cart-session-price-test.php",
     "tests/test_installed_demo_c_state_reasons-test.php",
-    "tests/test_installed_demo_c_state_watch-test.php"
+    "tests/test_installed_demo_c_state_watch-test.php",
+    "tests/test_installed_demo_c_state_review-test.php"
   ],
   "ui": [],
   "runner": [

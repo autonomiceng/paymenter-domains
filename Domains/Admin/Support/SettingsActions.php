@@ -97,13 +97,13 @@ final class SettingsActions
             if(in_array($name,['default_pricing','override'],true)){
                 // Saving writes rule and fee together. The form shows only the rule's own fields, so no fee may swap them for the built-in rule.
                 $savedRule=self::cached(static function()use($tld,$name,$server):array{
-                    $fixed=false;
+                    $kind='default';
                     try{
                         $t=$tld&&$name==='override'?Tld::findOrFail($tld):null;
-                        if($t){$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);$fixed=($intent['pricing_rule']['mode']??$t->pricing_mode)==='fixed';}
+                        if($t){$kind='pricing';$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);$kind=!\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::hasOwn($t)?'default':match($intent['pricing_rule']['mode']??$t->pricing_mode){'fixed'=>'fixed','markup_percent','markup_amount','markup_fee_percent'=>'markup',default=>'pricing'};}
                         $rule=$t?(StaffCatalogue::routed()?->pricing($server,$t)??(new PricingRules)->rule($t)):(new PricingRules)->defaultRule(fee:CardFee::NONE);
                         return ['rule'=>$rule,'error'=>null];
-                    }catch(\Throwable){return ['rule'=>PricingRule::DEFAULT,'error'=>$fixed?'Invalid fixed price rule':'Invalid pricing rule'];}
+                    }catch(\Throwable){return ['rule'=>PricingRule::DEFAULT,'error'=>match($kind){'fixed'=>'Invalid fixed price rule','markup'=>'Invalid markup rule','default'=>'Invalid default pricing rule',default=>'Invalid pricing rule'}];}
                 });
                 $rule=static fn()=>$savedRule()['rule'];
                 $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Missing: '.$savedRule()['error'].'. Enter valid prices below or choose Default pricing.')

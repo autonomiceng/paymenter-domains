@@ -18,7 +18,7 @@ final class RecordFamilies
             if(!$facts['current_read']){$management[$key]=$section;continue;}
             if($family['state']!=='complete'){
                 // Existing native controls already carry per-host preflight authority; a partial list grants no replacement.
-                $section['actions']=$key==='glue'&&$family['state']==='partial'?array_intersect_key($section['actions'],array_flip(['glue_add','glue_update','glue_delete'])):[];
+                $section['actions']=$key==='glue'&&($facts['registrar_key']??null)==='enom'&&$family['state']==='partial'?array_intersect_key($section['actions'],array_flip(['glue_add','glue_update','glue_delete'])):[];
                 $section['family_only']=$section['actions']===[];
             }
             if($key==='dns'){$section['inventory']=$facts['families']['dns']['records']??[];$section['caa']=$facts['caa'];$section['caa_at']=$facts['caa_at'];
@@ -54,9 +54,9 @@ final class RecordFamilies
                 if($cancelled){$rows[$index]['value']='Not applicable';$rows[$index]['staff']=$rows[$index]['customer']='Registration cancelled; no registrar records to check';}
                 elseif($kind==='glue'&&$d->registrar_key==='enom'&&$state==='partial'){
                     $coverage=count($f['candidates']??[]).' known child hosts; '.$count.' records returned.';
-                    $checked=$f['at']?' Checked '.$f['at'].'.':'';
                     $explanation=($f['read_failed']??false)?'Known glue check failed; saved records are retained.':"Known glue checked; this registrar can't list every child host";
-                    $rows[$index]['staff']=$rows[$index]['customer']=$explanation.'. '.$coverage.$checked.' Individual changes use a fresh check; whole-list replacement stays blocked.';
+                    $rows[$index]['staff']=$explanation.'. '.$coverage.' Individual changes use a fresh check; whole-list replacement stays blocked.';
+                    $rows[$index]['customer']=$explanation.'. '.$coverage.' You can change one glue record at a time.';
                 }
                 if($kind==='dns'){
                     $records=$f['records']??[];
@@ -69,6 +69,6 @@ final class RecordFamilies
             }
         }
         if($cancelled){$status['stale']=false;}
-        return [...$status,'cancelled_without_records'=>$cancelled,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
+        return [...$status,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
     }
 }

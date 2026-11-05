@@ -74,6 +74,24 @@ final class TldFacts
         return 'Last successful refresh: '.($date($status['succeeded_at']??null)??'none recorded').'. Next due: '
             .($date($status['due_at']??null)??'not scheduled').'. Sync prices is an optional retry.';
     }
+    public static function ruleProblem(array $fact): string
+    {
+        return match($fact['invalid_rule_kind']??'pricing'){
+            'fixed'=>'Invalid fixed price rule. Use Edit prices to enter all three positive prices.',
+            'markup'=>'Invalid markup rule. Use Edit prices to enter a valid markup and rounding rule.',
+            'default'=>'Invalid default pricing rule. Open Default pricing in What you sell to repair it.',
+            'unreadable'=>'Saved TLD settings unreadable. Use Edit prices to repair them.',
+            default=>'Invalid pricing rule. Use Edit prices to repair it.',
+        };
+    }
+    private static function feedGap(array $fact): string
+    {
+        $r=$fact['refresh']??[];$selected=$r['selected_at']??null;
+        if($selected!==null&&($r['succeeded_at']??0)>$selected){return "Not in the registrar's price feed; not for sale";}
+        $cause=isset($r['failure'])?self::syncCause($r['failure']):(($fact['sales']['reason']??null)==='Check registrar account'?'Check registrar account.':
+            (($r['succeeded_at']??null)?($selected===null?'Selection time is not recorded; check registrar account.':'No successful refresh after this TLD was selected is recorded.'):'No successful refresh recorded for this account.'));
+        return 'Price feed not read yet: '.$cause;
+    }
     /** One display decision for list and account-table money cells. No new read or enqueue on a GET. */
     public static function priceState(array $fact,string $action='renew',string $field='retail'): array
     {
@@ -83,15 +101,15 @@ final class TldFacts
         $selected=$fact['selected']??false;$invalid=$fact['invalid_rule']??false;
         $value=$row[$field]??null;
         $cause=match(true){
-            $invalid=>'Invalid fixed price rule. Use Edit prices to enter all three positive prices.',
+            $invalid=>self::ruleProblem($fact),
             $notOffered=>$name.' not offered by this registrar',
             !$selected&&($fact['seller']??null)===null=>'No registrar selected; not for sale',
-            !collect($fact['prices'])->contains(fn($p)=>$p['synced'])=>"Not in the registrar's price feed; not for sale",
+            !collect($fact['prices'])->contains(fn($p)=>$p['synced'])=>self::feedGap($fact),
             $value!==null=>self::costNote($row),
             default=>$name.($field==='cost'?' cost':' price').' missing. '.($field==='cost'?'The registrar feed must supply this exact term.':'Edit prices must supply a valid price.'),
         };
         $missing=$invalid||($value===null&&!$notOffered&&$selected);
-        if($value===null&&!$notOffered){$cause.='. '.self::refreshText($fact['refresh']??[]);}
+        if($value===null&&!$notOffered){$cause=rtrim($cause,'.').'. '.self::refreshText($fact['refresh']??[]);}
         return ['value'=>$invalid?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($notOffered?$cause:($value??($missing?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:'Not for sale'))),
             'cause'=>$notOffered?null:$cause,'tone'=>$missing||($value!==null&&self::costNote($row))?'danger':null,'missing'=>$missing];
     }
@@ -123,11 +141,11 @@ final class TldFacts
                 $value=$state['tone']==='danger'?'<span class="'.self::DANGER.'">'.e($state['value']).'</span>':e($state['value']);
                 $html=$state['missing']?self::missing($state['cause']):$value.($state['cause']?'<div class="domains-small">'.e($state['cause']).'</div>':'');
                 if($fact['invalid_rule']??false){
-                    try{$url=\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row]);$html.=' <a class="domains-link" href="'.e($url).'">Edit prices</a>';}catch(\Throwable){}
+                    try{$default=($fact['invalid_rule_kind']??null)==='default';$url=$default?\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl():\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$row]);$html.=' <a class="domains-link" href="'.e($url).'">'.($default?'Edit default pricing':'Edit prices').'</a>';}catch(\Throwable){}
                 }
                 return $html;
             };
-            $transfer=$first('transfer');$catalogue=self::catalogue();$transfer=!$catalogue->setting($row,'transfer')&&($transfer['retail']??null)===null?'Off':$price('transfer');
+            $transfer=$first('transfer');$catalogue=self::catalogue();$transfer=!($fact['unreadable']??false)&&!$catalogue->setting($row,'transfer')&&($transfer['retail']??null)===null?'Off':$price('transfer');
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
