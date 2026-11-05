@@ -171,9 +171,9 @@ final class DomainSummaries
                 try { $episode=$episode?json_decode(Crypt::decryptString($episode->data),true,64,JSON_THROW_ON_ERROR):[]; if (!is_array($episode) || !is_array($episode['portal']??[]) || array_filter($episode['portal']??[],fn($v)=>!is_array($v) || array_filter($v,fn($key)=>!is_string($key)))) { $episode=[]; } } catch (\Throwable) { $episode=[]; }
                 $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];$dnsPreviouslyMatched=in_array('ns_changed',$noticeKeys,true) && ($episode['dns']['previously_matched']??false)===true;
                 if ($expected==='platform' && !$signals['dns']['stale'] && $signals['dns']['value']==='external') {
-                    // A confirmed current observation is enough to describe the mismatch.
-                    // Portal facts must not wait for the separately admitted notice planner.
-                    $changed=in_array('ns_changed',$noticeKeys,true)||($delegation?->facts['ns_confirmed']??false)===true;$states[]=$changed?'watch.ns_changed':'watch.ns_pending';
+                    // Describe the current observed mismatch on both portals. Two-sample
+                    // confirmation still belongs to the separate notification planner.
+                    $states[]='watch.ns_changed';
                     $noticeDates['dns']=(int)($episode['dns']['episode']??$delegation?->started_at);
                 }
                 if (array_filter($fresh,fn($f)=>$f['stale'])) { $states[]=array_filter($fresh,fn($f)=>$f['checkedAt']!==null)?'watch.stale':'watch.not_checked'; }
