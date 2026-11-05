@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Services\RefundProof;
 $assertTransferDispatch = static function (int $i) use ($state,$newTransfer,$makeTransfer,&$engine,$refunds,$user,&$bridge,&$binding,$clock): void {
     foreach (['ok','301','302','lost','malformed'] as $mode) {
         $state->mode=$mode; $state->calls=[]; $state->reads=0; $before=$state->rdap; $op=$newTransfer(placeholderComFixtureName('send-'.$i.'-'.$mode.'-placeholder.com'),$i); $makeTransfer($i);
-        $r=$engine->execute($op->id); same('uncertain',$r->state,'Ack remains financially unresolved');
+        $r=$engine->execute($op->id); same('uncertain',$r->state,'Ack remains financially unresolved: '.$r->safe_code);
         same(2,$state->reads,'Fresh admission repeated immediately before send'); expect($state->rdap-$before>=2,'Two fresh RDAP observations');
         $writes=array_values(array_intersect($state->calls,['TP_CreateOrder','transferDomain'])); same([$i===0?'TP_CreateOrder':'transferDomain'],$writes,'Exactly one transfer write');
         same(false,$r->attempt['transfer_admission']['premium'],'Independent ordinary evidence sealed');

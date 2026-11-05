@@ -16,7 +16,7 @@ foreach (['enom', 'namesilo'] as $i => $registrar) {
             $state->quote = $refuseAt === null || $read >= $refuseAt ? $quote : '7.00';
         };
         same(['7.0000', '9.10'], [$op->cost['estimated'], $op->amount], 'Paid transfer has frozen cost and issued total');
-        $frozen = [$op->amount, $op->currency, $op->cost, $op->policy];
+        $frozen = [$op->amount, $op->currency, $op->cost, $op->policy['checkout'], $op->policy['price']];
         $finance = nativeFinancialSnapshot($op); unset($finance['domain']);
         $r = $engine->execute($op->id);
         $writes = array_values(array_intersect($state->calls, ['TP_CreateOrder', 'transferDomain']));
@@ -25,11 +25,11 @@ foreach (['enom', 'namesilo'] as $i => $registrar) {
             same(['held', 'registrar_price_increased', 'absent'], [$r->state, $r->safe_code, $r->attempt['seal']], 'Same unsent price hold as registration');
             same($refuseAt, $state->reads, 'Each fresh observation enforces the ceiling');
         } else {
-            same([$i === 0 ? 'TP_CreateOrder' : 'transferDomain'], $writes, 'In-ceiling transfer sends once');
+            same([$i === 0 ? 'TP_CreateOrder' : 'transferDomain'], $writes, 'In-ceiling transfer sends once: '.$r->state.' / '.$r->safe_code);
             same('uncertain', $r->state, 'Acknowledgement keeps the existing unresolved disposition');
             same(2, $state->reads, 'In-ceiling transfer passes both observations');
         }
-        same($frozen, [$r->amount, $r->currency, $r->cost, $r->policy], 'Dispatch preserves frozen operation evidence');
+        same($frozen, [$r->amount, $r->currency, $r->cost, $r->policy['checkout'], $r->policy['price']], 'Dispatch preserves frozen operation evidence');
         $after = nativeFinancialSnapshot($r); unset($after['domain']);
         same($finance, $after, 'Dispatch preserves invoice, item, payment, service and credit rows');
         $calls = $state->calls; $engine->execute($op->id); same($calls, $state->calls, 'Held or sent transfer is never replayed');
