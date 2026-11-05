@@ -6,6 +6,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/offer-commerce.php';
+require_once __DIR__.'/Support/storefront.php';
 use App\Models\{Invoice, Order};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Intent, Query};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -94,5 +95,25 @@ expect(!$mixedCart->items()->whereKey($mixedCom->id)->exists() && $mixedCart->it
     'Mixed checkout removes only the off-sale line');
 same('mixed-checkout-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
     $notice($mixedPage), 'A paused line cannot swallow the checkout removal notice');
+
+// A theme that includes the notice shows it at the top of the cart, titled, with the old line price struck through.
+$views = getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/cart-notice-harness'; if (!is_dir($views)) { mkdir($views, 0700, true); }
+file_put_contents($views.'/cart.blade.php', '<div>@includeIf(\'domains::cart-notice\')@foreach (\App\Classes\Cart::items() as $item)'
+    .'<div class="line">@includeIf(\'domains::cart-was\', [\'item\' => $item]){{ $item->price->format($item->price->total * $item->quantity) }}</div>@endforeach</div>');
+Illuminate\Support\Facades\View::getFinder()->prependLocation($views); Illuminate\Support\Facades\View::getFinder()->flush();
+Illuminate\Support\Facades\View::addNamespace('domains', dirname(__DIR__).'/Domains/resources/views');
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
+$cart = commerceCart($user); commerceAdd($cart, $com, 'themed-notice-placeholder.com', 3);
+$page = $open($cart); same('27.00', $total($page), 'Themed page shows the held total');
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '70.00']), $rev());
+$before = $counts(); $checkout($page, $cart); $html = $page->html();
+same($before, $counts(), 'Themed price change places no order');
+expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'A theme that shows the notice gets no toast too');
+$dom = storefrontDom($html); $box = $dom->query('//*[@data-domains-cart-notice]//*[@role="status"]');
+same(1, $box->length, 'One cart notice');
+same('Your cart changed', trim($dom->query('.//strong', $box->item(0))->item(0)?->textContent ?? ''), 'Notice has its title');
+same('Review the total, then check out again.', trim($dom->query('.//p', $box->item(0))->item(0)?->textContent ?? ''), 'Notice keeps the sentence');
+same('Was $27.00', trim($dom->query('//*[@class="line"]/s')->item(0)?->textContent ?? ''), 'Changed line strikes the old price');
+expect($total($page) !== '27.00' && str_contains($dom->query('//*[@class="line"]')->item(0)->textContent, '$'.$total($page)), 'Line shows the new price beside it');
 $nativeSuccessful = true;
 echo "Cart price change: ok\n";
