@@ -694,6 +694,12 @@ def main():
                             'tests/managed-public-relink-test.php',
                             'tests/owner-actions-test.php',
                             'tests/registration-enom-test.php',
+                            'tests/registration-namesilo-test.php',
+                            'tests/registration-namesilo-authority-test.php',
+                            'tests/registration-namesilo-nexus-test.php',
+                            'tests/registration-namesilo-profile-test.php',
+                            'tests/transfer-inputs-test.php',
+                            'tests/storefront-test.php',
                         }
                         for path in requested
                     )
