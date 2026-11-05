@@ -14,6 +14,12 @@ DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null])
 $notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($t->fresh());
 expect(!str_contains($notice,'open Edit prices and save.'),'Unknown registrar facts must not tell staff to re-save a sold TLD');
 expect(str_contains($notice,'Check account setup on Registrar account.'),'Unknown facts on an unavailable account point to account setup');
+$actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);
+$restrictedNotice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($t->fresh());
+expect(str_contains($restrictedNotice,'Check account setup on Registrar account.'),'Staff without cost access retain account recovery guidance');
+$page=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()->page(collect([$t->fresh()]));
+same([],$page[$t->id]['offers'],'Restricted recovery never exposes raw cost-bearing offers');
+$actor->role()->first()->update(['permissions'=>array_keys(Staff::permissions())]);
 $product=$native->product($t->fresh(),'register');
 expect($product!==null,'The retained sold TLD has its native registration product');
 $nativeNotice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($product);

@@ -74,8 +74,7 @@ final class PricingEditorNotice
             if(!($status['Registration']??true)&&Staff::can(Staff::VIEW)
                 &&($catalogue=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed())!==null){
                 $key=$tld->server_id.':'.$tld->tld;
-                $row=$catalogue->page(collect([$tld]))[$tld->id];
-                $step=$catalogue->nextSteps(collect([$tld]),[$key=>$row],'register',1)[$key];
+                $step=$catalogue->recovery(collect([$tld]),'register',1)[$key];
                 $recovery=$step['next']?:null;
             }
         }

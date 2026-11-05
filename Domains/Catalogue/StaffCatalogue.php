@@ -45,6 +45,13 @@ final class StaffCatalogue
         foreach($tlds as $t){$key=$t->server_id.':'.$t->tld;$out[$key]=$this->nextStep($t,$rows[$key]['offers']??[],$action,$term);}
         return $out;
     }
+    /** Derive safe recovery text before cost-bearing offers are removed from the public staff page DTO. */
+    public function recovery(Collection $tlds,string $action,int $term): array
+    {
+        $page=$this->snapshots($tlds);$rows=[];
+        foreach($tlds as $t){$rows[$t->server_id.':'.$t->tld]=$page[$t->id];}
+        return $this->nextSteps($tlds,$rows,$action,$term);
+    }
     private function nextStep(Tld $t,array $offers,string $action,int $term): array
     {
         $offer=$offers[$action.':'.$term]??null;$reason=$offer?->decision->reason;$now=$this->clock->now();
