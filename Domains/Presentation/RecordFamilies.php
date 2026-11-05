@@ -46,7 +46,8 @@ final class RecordFamilies
                 $roles=$kind==='contacts'?array_values(array_intersect(['registrant','admin','tech','billing'],array_keys($f['facts']['contacts']??$f['facts']??[]))):[];
                 $returned=$roles?implode(', ',array_map('ucfirst',$roles)).' returned; some contacts did not. ':$count.' '.$unit.' returned; some did not. ';
                 $checked=$count.' '.$unit.' checked.';
-                $next=$kind==='contacts'?'Refresh contacts before editing.':($kind==='nameservers'?'Refresh nameservers before editing.':'Sync this domain before editing.');
+                // A stopped read won't refresh anything; the page notice names Resume sync.
+                $next=($status['read_stopped']??false)?'':($kind==='contacts'?'Refresh contacts before editing.':($kind==='nameservers'?'Refresh nameservers before editing.':'Sync this domain before editing.'));
                 $rows[]=[...array_intersect_key($status,array_flip(['next_read','read_checking','read_cause','records_paused'])),'count'=>$count,'kind'=>$kind,'label'=>$label,'state'=>$state,'value'=>ucfirst($state),'at'=>$f['at'],'last_good_at'=>$f['last_good_at'],
                     'customer'=>match($state){'complete'=>$checked,'partial'=>$count.' '.$unit.' read. We’re checking the rest. Editing will return when the check finishes.','unsupported'=>'These records cannot be read here.',default=>'We’re checking these records.'},
                     'staff'=>match($state){'complete'=>$checked,'partial'=>$returned.$next.' Valid siblings are retained; whole-list editing stays blocked.','unsupported'=>'No supported read contract. This is not an empty record list.',default=>'No current complete read. Sync this domain.'}];
