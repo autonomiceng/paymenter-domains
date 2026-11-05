@@ -60,9 +60,9 @@ $page = $open($cart);
 $loaded = commerceCart($user); $loadedLine = commerceAdd($loaded, $com, 'closed-load-placeholder.com', 3);
 // Mixed carts: .com goes off sale and the .net account is paused later; the removal notice must still arrive.
 $mixedLoad = commerceCart($user); $mixedLoadCom = commerceAdd($mixedLoad, $com, 'mixed-load-placeholder.com', 3);
-$mixedLoadNet = commerceAdd($mixedLoad, $second['product'], 'mixed-load-placeholder.net');
+$mixedLoadNet = commerceAdd($mixedLoad, $second['product'], 'example.net');
 $mixedCart = commerceCart($user); $mixedCom = commerceAdd($mixedCart, $com, 'mixed-checkout-placeholder.com', 3);
-$mixedNet = commerceAdd($mixedCart, $second['product'], 'mixed-checkout-placeholder.net');
+$mixedNet = commerceAdd($mixedCart, $second['product'], 'example.net');
 $mixedPage = $open($mixedCart);
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
 $before = $counts(); $checkout($page, $cart);
