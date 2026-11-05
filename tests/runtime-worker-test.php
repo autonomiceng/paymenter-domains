@@ -16,7 +16,7 @@ $preflight=new class($clock) implements OperationPreflight {
 };
 $sent=[];$mailPairs=[];$expiryDebts=[];
 foreach(Domain::orderBy('id')->get() as $i=>$d){
-    $clock->instant=$now;$a=Account::where('server_id',$d->server_id)->sole();$b=CatalogueAcceptances::binding($a);$op=$d->operations()->sole();$op->update(['state'=>'awaiting_payment']);
+    $clock->instant=$now;$a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);$op=$d->operations()->sole();$op->update(['state'=>'awaiting_payment']);
     $registry=new RegistrarRegistry;$verify=new class implements AccountVerifier {public function verify($e,array $c):string{return $c['token'];}};
     $query=OperationClaims::query($op,$d);$expiry=new DateEvidence('2027-10-18',ExpiryPrecision::Date,'synthetic');
     $facts=new Evidence(domain:new DomainSnapshot($b,$d->domain,true,$expiry,false,false,true,'456',true),candidates:[new OrderEvidence($b,$query,new Money('6.00','USD'),'9001',new DateEvidence('2026-10-18T12:00:01+00:00',ExpiryPrecision::Instant,'synthetic','UTC'),$expiry)]);
@@ -113,7 +113,7 @@ $orphan=Domain::create(['user_id'=>$user->id,'service_id'=>987654,'domain'=>'swe
     'server_id'=>$tlds[0]->server_id,'registrar_key'=>'enom','account_fingerprint'=>$tlds[0]->account_fingerprint,'status'=>'registration_pending']);
 $clock->instant=$now->modify('+122 seconds');app(RuntimeWork::class)->tick();
 expect(DB::table('domains_obligation_alerts')->where('domain_id',$orphan->id)->where('code','native_identity_missing')->whereNull('resolved_at')->exists(),'Durable turn records missed deletion discrepancy');
-$clock->instant=$now->modify('+2 hours');$b=CatalogueAcceptances::binding(Account::where('server_id',$tlds[0]->server_id)->sole());$limiter=app(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
+$clock->instant=$now->modify('+2 hours');$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());$limiter=app(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 for($n=0;$n<48;$n++){$token=$limiter->acquire($b,RequestOrigin::Background);$limiter->release($b,RequestOrigin::Background,$token);}
 try{$limiter->acquire($b,RequestOrigin::Background);expect(false,'Background headroom enforced');}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}
 for($n=0;$n<12;$n++){$token=$limiter->acquire($b,RequestOrigin::Interactive);$limiter->release($b,RequestOrigin::Interactive,$token);}

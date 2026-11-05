@@ -21,7 +21,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 extract(commerceFixture(true));$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
 app()->instance(AccountBindings::class,$bindings);BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceAlertSchema::install();ObservationSchema::install();
 $a=Account::where('server_id',$tlds[0]->server_id)->sole();$b=Account::where('server_id',$tlds[1]->server_id)->sole();
-$binding=CatalogueAcceptances::binding($a);$other=CatalogueAcceptances::binding($b);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);$other=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($b);
 $row=static fn($a)=>DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->first();
 $forecast=static fn()=>BalanceForecast::for($a,$clock->now());
 $user=commerceUser();$product=$native->product($tlds[0],'register');

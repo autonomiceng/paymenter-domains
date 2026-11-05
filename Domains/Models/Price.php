@@ -13,8 +13,8 @@ class Price extends Model
 
     protected $table = 'domains_prices';
     protected $guarded = [];
-    protected $hidden = ['catalogue_observation', 'account_fingerprint', 'wholesale', 'source', 'eligibility', 'catalogue_created'];
-    protected $casts = ['wholesale' => 'decimal:8', 'retail' => 'decimal:8', 'revision' => 'integer', 'term' => 'integer', 'eligibility' => 'array', 'observed_at' => 'immutable_datetime', 'fresh_until' => 'immutable_datetime'];
+    protected $hidden = ['catalogue_observation', 'account_fingerprint', 'wholesale', 'source', 'catalogue_created'];
+    protected $casts = ['wholesale' => 'decimal:8', 'retail' => 'decimal:8', 'revision' => 'integer', 'term' => 'integer', 'observed_at' => 'immutable_datetime', 'fresh_until' => 'immutable_datetime'];
     protected static function booted(): void
     {
         static::updating(static function (self $price): void {

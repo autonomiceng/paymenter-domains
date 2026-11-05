@@ -56,7 +56,7 @@ final class Writer implements Catalogue
         if(DB::transactionLevel()!==0||$review->action!=='default_pricing'||$review->serverId!==StaffSettingsReview::ALL_ACCOUNTS||$review->tldId!==null){throw new \DomainException('Business-wide pricing review required.');}
         $targets=DB::transaction(function()use($review,$rule,$fee):array {
             $review->lockActor();$review->lockAccounts();
-            if($this->current){($this->current)();}else{UpgradeGate::legacy();}
+            if($this->current){($this->current)();}else{UpgradeGate::active(UpgradeGate::generation());}
             $review->check(false,static fn()=>StaffCommands::stamp(StaffSettingsReview::ALL_ACCOUNTS));
             \Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(PricingRules::KEY,$rule);
             \Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\CardFee::KEY,$fee);
@@ -132,7 +132,7 @@ final class Writer implements Catalogue
             $native = $all ? $this->projection->lock(array_values($all)) : null;
             // Legacy reviewed publication takes this same native -> all servers/accounts prefix.
             $review->lockAccounts();
-            if ($this->current) { ($this->current)(); } else { UpgradeGate::legacy(); }
+            if ($this->current) { ($this->current)(); } else { UpgradeGate::active(UpgradeGate::generation()); }
             $names = Tld::where('server_id', $review->serverId)->when($review->tldId !== null, fn ($q) => $q->whereKey($review->tldId))->pluck('tld')->all();
             $names = array_values(array_unique([...$names, ...array_map(static fn ($e) => $e[0]->tld(), $entries)])); sort($names, SORT_STRING);
             DB::table('domains_sales_policies')->whereIn('tld', $names)->orderBy('tld')->lockForUpdate()->get();
@@ -346,7 +346,7 @@ final class Writer implements Catalogue
             }
             $values = ['wholesale' => $cost->total, 'retail' => $retail, 'unit' => 'term_total', 'source' => $cost->source,
                 'observed_at' => $cost->observedAt->format('Y-m-d H:i:s'), 'fresh_until' => $cost->freshUntil->format('Y-m-d H:i:s'),
-                'eligibility' => null, 'hold_reason' => null, 'revision' => (int) $p->revision + 1];
+                'revision' => (int) $p->revision + 1];
             DB::table('domains_prices')->where('id', $p->id)->update($values);
         }
     }

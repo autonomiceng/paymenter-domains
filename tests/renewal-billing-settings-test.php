@@ -44,7 +44,7 @@ Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])
 Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Needs Renewals on.')->assertActionDoesNotExist(setupAction('renew_early',$t->server_id));
 // A half left on reads On, so the first click stops everything.
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.renewal'=>true]);
-$switcher=staffUser([...$permissions,Review::permission('test_renewal')]);$renewals=setupAction('test_renewal',$t->server_id);$binding=CatalogueAcceptances::binding(Account::where('server_id',$t->server_id)->sole());
+$switcher=staffUser([...$permissions,Review::permission('test_renewal')]);$renewals=setupAction('test_renewal',$t->server_id);$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
 Livewire::actingAs($switcher)->test(RegistrarAccount::class,['account'=>$t->server_id])->mountAction($renewals)->callMountedAction();
 same([true,true,true],[EnomTestRenewal::accepted($binding),Billing::read($t->server_id)['scheduled'],Billing::read($t->server_id)['manual']],'Enom On sets both halves');
 $writer->run($review('Leave the send permission and early renewal on'),['scheduled'=>false,'manual'=>true,'issue_days'=>30,'due_days'=>10,'confirmed'=>true]);

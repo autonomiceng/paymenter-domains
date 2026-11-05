@@ -19,7 +19,7 @@ $registry=new RegistrarRegistry;
 $registry->register('enom',['token'],new class implements AccountVerifier { public function verify(Environment $env,#[SensitiveParameter] array $credentials): string {return $credentials['token'];} },
     static fn(AccountBinding $b,array $c)=>new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(balance:new Money('100.00','USD')))));
 app()->instance(AccountBindings::class,new AccountBindings($registry));
-$account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=CatalogueAcceptances::binding($account);
+$account=Account::where('server_id',$tlds[0]->server_id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
 $catalogue=CatalogueAcceptances::load($binding);
 DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new CatalogueAcceptance($binding,$catalogue->revision,$catalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.transfer'=>true]);

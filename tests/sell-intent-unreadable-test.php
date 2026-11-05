@@ -18,7 +18,7 @@ class UnreadableIntentSellPage extends WhatYouSell
 {
     protected function catalogue():?StaffCatalogue{return $GLOBALS['intentSource'];}
     // As in offer-staff-reads-test, Blade needs this private base helper on the concrete fixture component.
-    public function binding():?AccountBinding{return $this->account?CatalogueAcceptances::binding(Account::where('server_id',$this->account)->sole()):null;}
+    public function binding():?AccountBinding{return $this->account?\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$this->account)->sole()):null;}
 }
 Livewire::component('unreadable-intent-sell-page',UnreadableIntentSellPage::class);
 $commands=new StaffCommands(new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null);

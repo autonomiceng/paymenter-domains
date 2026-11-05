@@ -28,7 +28,7 @@ final class OfferSchema
     public static function retained(Blueprint $table, string $name): void
     {
         foreach (self::COLUMNS[$name] as $column => $type) {
-            if (Schema::hasColumn($name, $column)) { self::column($table, $column, $type); }
+            if (!OfferRetirement::omitted($name, $column) && Schema::hasColumn($name, $column)) { self::column($table, $column, $type); }
         }
         OfferWorkSchema::retained($table, $name);
     }
@@ -51,7 +51,7 @@ final class OfferSchema
         // Per-column DDL is resumable even if a MySQL upgrade stops between ALTERs.
         foreach (self::COLUMNS as $table => $columns) {
             foreach ($columns as $column => $type) {
-                if (!Schema::hasColumn($table, $column)) {
+                if (!OfferRetirement::omitted($table, $column) && !Schema::hasColumn($table, $column)) {
                     Schema::table($table, static fn (Blueprint $t) => self::column($t, $column, $type));
                 }
             }
@@ -63,7 +63,7 @@ final class OfferSchema
     {
         foreach (self::COLUMNS as $table => $columns) {
             foreach ($columns as $column => $_) {
-                if (!Schema::hasColumn($table, $column)) { throw new \RuntimeException('Missing retained offer storage.'); }
+                if (!OfferRetirement::omitted($table, $column) && !Schema::hasColumn($table, $column)) { throw new \RuntimeException('Missing retained offer storage.'); }
             }
         }
         FoundationSchema::verify();

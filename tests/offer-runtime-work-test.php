@@ -10,9 +10,9 @@ use Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget;
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
 
 // A paused generation is an explicit offline composition fixture, never an active parser shortcut.
-$generation = (new UpgradeGate)->pause();
+$generation = UpgradeGate::generation();
 $guard = static function () use ($generation): void {
-    if (DB::transactionLevel() > 0) { UpgradeGate::paused($generation); }
+    if (DB::transactionLevel() > 0) { UpgradeGate::active($generation); }
     elseif (UpgradeGate::generation() !== $generation) { throw new DomainException('Synthetic generation changed.'); }
 };
 $writer = new Writer(new Projection($native), $clock, static function (): void {}, static fn () => false, current: $guard);
@@ -34,7 +34,7 @@ $restarted->accountTurn($b->serverId);
 $clock->time = $clock->time->modify('+61 seconds'); $worker->sync($b);
 $lastGood = $worker->status($b)['succeeded_at'];
 $physical = count($wire->calls);
-$wire->during = static function ($command): void { if ($command === ReadCommand::RetailPricing) { (new UpgradeGate)->resume(); } };
+$wire->during = static function ($command): void { if ($command === ReadCommand::RetailPricing) { advanceOfferGeneration(); } };
 commerceReject(static fn () => $worker->accountTurn($b->serverId)); $wire->during = null;
 same($physical + 1, count($wire->calls), 'Generation change stops the remaining physical feed group reads');
 $row = DB::table('domains_observation_queues')->where('server_id', $b->serverId)->first();

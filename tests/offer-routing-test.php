@@ -19,9 +19,9 @@ $before = DB::table('domains_tlds')->orderBy('id')->get()->toJson(); $calls = $r
 $contract = CallerRouting::contract();
 same(15, count($contract['routes']), 'Contract covers every installed caller family and initial-record producer');
 expect(preg_match('/^[a-f0-9]{64}$/D', $contract['id']) === 1, 'Contract identifier is digest-only');
-same(null, Capabilities::routed(), 'Construction probe cannot leak future capability routing');
-same(null, OfferScheduler::routed(), 'Fresh installation keeps legacy scheduling');
-try{Runtime::observations();throw new LogicException('Legacy scheduler remained available');}catch(DomainException $e){same(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,$e->getMessage(),'Unconverted runtime names the bridge');}
+expect(Capabilities::routed() instanceof Capabilities,'Actual fresh lifecycle retains active capabilities outside construction probe');
+expect(OfferScheduler::routed() instanceof OfferScheduler,'Fresh lifecycle selects shared scheduler');
+same(OfferScheduler::routed(),Runtime::observations(),'Installed runtime shares the active scheduler');
 same($before, DB::table('domains_tlds')->orderBy('id')->get()->toJson(), 'Inspection writes no catalogue rows');
 same($calls, $reads->calls, 'Inspection does not resolve a provider');
 $admission = app(CartAdmission::class);
@@ -29,13 +29,13 @@ app()->instance(CartAdmission::class, new class($native, $sellers, app(Paymenter
     protected function catalogue(): ?Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers { return null; }
 });
 commerceReject(fn () => CallerRouting::contract());
-same(null, Capabilities::routed(), 'Failed inspection resets the future composition in finally');
+expect(Capabilities::routed() instanceof Capabilities,'Failed inspection cannot erase actual lifecycle authority');
 app()->instance(CartAdmission::class, $admission);
 same($contract, CallerRouting::contract(), 'Restored installed adapters reproduce the compiled contract');
-$gate = new UpgradeGate; $gate->pause();
+commerceReject(fn()=>(new UpgradeGate)->pause(),'Active final package cannot reopen bridge conversion');
 same($contract, CallerRouting::contract(), 'Paused inspection remains construction-only');
 commerceReject(fn () => app(RuntimePorts::class)->registerInitialManagedRecordObservations(static fn () => null));
 same($calls, $reads->calls, 'Paused inspection and duplicate callback refusal send nothing');
-same(null, Capabilities::routed(), 'Checked activation remains the only route to the active composition');
+expect(Capabilities::routed() instanceof Capabilities,'Refused legacy transition preserves actual active composition');
 $nativeSuccessful = true;
 echo "Installed dormant routing contract and probe isolation passed.\n";

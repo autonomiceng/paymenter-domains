@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\{Cache,DB,Schema};
 /** No destructive rollback or automatic adoption of retained history. */
 final class Installation
 {
-    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,SellTableSchema::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class];
+    public const SCHEMAS=[FoundationSchema::class,SalesPolicySchema::class,ContactProfileSchema::class,ObservationSchema::class,ReminderSchema::class,RuntimeSchema::class,HoldingProvenanceSchema::class,PslSchema::class,PslReviewSchema::class,WatchSchema::class,AdoptionSchema::class,HistoryLinkSchema::class,WatchDnsSchema::class,NativeIntentSchema::class,HoldingAdoptionSchema::class,BalanceSchema::class,ManagedPublicWorkSchema::class,ManagedPublicSchema::class,WatchScheduleSchema::class,WatchNoticeSchema::class,StaffWatchSchema::class,StaffAuditSchema::class,EnomTestSendLimitSchema::class,UserDeletionSchema::class,EnomLiveCallSchema::class,StaffAlertSchema::class,BalanceAlertSchema::class,OfferRetirement::class,RenewalRetrySchema::class,ManagementProgressIndex::class,ProfileContactSchema::class,OfferSchema::class,OfferWorkSchema::class];
     public static function legacy(): void
     {
         foreach(Server::where('extension','Enom')->get() as $server){
@@ -21,12 +21,14 @@ final class Installation
     public function install(): void
     {
         OperationClaims::outside(); self::legacy();
+        if (FreshInstallation::uninstalled()) { Runtime::register(); FreshInstallation::install(); return; }
+        OfferUpgrade::requireCompatible();
         Cache::lock('domains-installation',60)->block(5,function():void {
             $present=Schema::hasTable('domains_accounts');
             foreach(['domains_audit_archives','domains_staff_review_keys','domains_domains','domains_operations','domains_tlds','domains_prices','domains_contact_profiles','domains_sales_policies','domains_read_budgets','domains_observation_queues','domains_observation_work','domains_reminder_schedules','domains_reminder_deliveries','domains_obligation_alerts','domains_runtime_turns','domains_runtime_operations','domains_psl_snapshots','domains_psl_status','domains_psl_candidates','domains_watch_audit','domains_watch_product_maps','domains_watch_names','domains_watch_sources'] as $table){
                 if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
             }
-            foreach(['domains_adoptions','domains_history_links','domains_watch_profiles','domains_watch_observations','domains_watch_work','domains_native_intents','domains_registrar_balances','domains_managed_public_work',...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables(),...WatchNoticeSchema::tables(),'domains_watch_staff_claims',...EnomTestSendLimitSchema::RETIRED,...EnomTestSendLimitSchema::tables(),...SellTableSchema::tables(),UserDeletionSchema::TABLE,EnomLiveCallSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,ProfileContactSchema::TABLE] as $table){
+            foreach(['domains_adoptions','domains_history_links','domains_watch_profiles','domains_watch_observations','domains_watch_work','domains_native_intents','domains_registrar_balances','domains_managed_public_work',...ManagedPublicSchema::tables(),...WatchScheduleSchema::tables(),...WatchNoticeSchema::tables(),'domains_watch_staff_claims',...EnomTestSendLimitSchema::RETIRED,...EnomTestSendLimitSchema::tables(),...OfferRetirement::TABLES,UserDeletionSchema::TABLE,EnomLiveCallSchema::TABLE,StaffAlertSchema::TABLE,BalanceAlertSchema::TABLE,ProfileContactSchema::TABLE] as $table){
                 if(!$present&&Schema::hasTable($table)){throw new \DomainException('Partial retained Domains schema. Restore its installation history before reinstalling.');}
             }
             $ran=app(Migrator::class)->getRepository()->getRan();$recorded=in_array('2026_10_18_000001_create_domains_foundation',$ran,true);
@@ -80,10 +82,10 @@ final class Installation
             $sendsPresent=array_filter(array_map(Schema::hasTable(...),EnomTestSendLimitSchema::tables()));
             if($sendsPresent&&!$sendsRecorded){throw new \DomainException('Retained TEST send history has no installation record.');}
             if($sendsRecorded){EnomTestSendLimitSchema::verify();}
-            $sellRecorded=in_array(SellTableSchema::MIGRATION,$ran,true);
-            $sellPresent=array_filter(array_map(Schema::hasTable(...),SellTableSchema::tables()));
+            $sellRecorded=in_array('2026_10_30_000045_create_sell_table',$ran,true);
+            $sellPresent=array_filter(array_map(Schema::hasTable(...),OfferRetirement::TABLES));
             if($sellPresent&&!$sellRecorded){throw new \DomainException('Retained sell table has no installation record.');}
-            if($sellRecorded){SellTableSchema::verify();}
+            if($sellRecorded && !OfferRetirement::finished()){OfferRetirement::verifyLegacyStores();}
             $auditRecorded=in_array(StaffAuditSchema::MIGRATION,$ran,true);
             $auditPresent=array_filter(array_map(Schema::hasTable(...),StaffAuditSchema::tables()));
             if($auditPresent&&!$auditRecorded){throw new \DomainException('Retained staff audit storage has no installation record.');}

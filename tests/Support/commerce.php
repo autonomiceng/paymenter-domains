@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require_once __DIR__.'/FakeRegistrar.php';
+require_once __DIR__.'/offer-generation.php';
 use App\Models\{Category, Currency, Server};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Capabilities, CatalogueEntry, CatalogueRate, Disposition, DriverResult, Environment, Evidence, ResultReason, SendState};
@@ -16,7 +17,6 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
     // Active fixtures already ran every schema and verification through the native installer.
     if (!$active) {
         FoundationSchema::install(); SalesPolicySchema::install();
-        if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\SellTableSchema::install(); }
         if (class_exists(\Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::class)) { \Paymenter\Extensions\Servers\Domains\Services\UserDeletionSchema::install(); }
         // Historical installed ZIPs predate this schema; current partial fixtures need it explicitly.
         if (class_exists(StaffAuditSchema::class)) { StaffAuditSchema::install(); }

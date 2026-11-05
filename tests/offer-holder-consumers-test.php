@@ -21,7 +21,7 @@ $before = serialize([$frozen($paid),$frozen($uncertain)]);
 DB::table('domains_tlds')->update(['catalogue_facts'=>null]);
 $ports = new CallerPorts(new Projection($native), $clock, $bindings, static fn()=>null, static fn()=>true);
 $caps = new Capabilities($ports, $clock, static fn()=>null);
-foreach (Account::all() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(CatalogueAcceptances::binding($a)); }
+foreach (Account::all() as $a) { (new \Paymenter\Extensions\Servers\Domains\Tests\OfferFixture)->batch(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a)); }
 same('10.40', $caps->holder($binding,'com')->retail, 'Converted holder keeps contractual annual retail');
 same($before, serialize([$frozen($paid),$frozen($uncertain)]), 'Conversion and capability reads preserve frozen money, funding and attempts byte for byte');
 same(null, $claims->claim($uncertain->id), 'Uncertain operation cannot be retried when facts are unknown');
@@ -57,7 +57,7 @@ DB::transaction(function () use ($caps,$d,$clock,$prices): void {
     same('10.40',$guard->quote($l)['annual_net'],'Native quote uses retained locked evidence');
     $quote=['cost'=>['amount'=>'12.0000','currency'=>'USD']];
     same('14.40',LateRenewalQuote::price($l,$quote,['annual_net'=>'10.40'])['annual_net'],'Late quote preserves normalized dollar margin');
-    commerceReject(fn()=>$caps->requireRenewal(CatalogueAcceptances::binding($l['account']),'com',$l['tld']));
+    commerceReject(fn()=>$caps->requireRenewal(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($l['account']),'com',$l['tld']));
 });
 DB::table('domains_tlds')->where('server_id',$binding->serverId)->update(['catalogue_facts'=>null,'catalogue_intent'=>OfferState::json(['sell'=>false]),'catalogue_published_revision'=>null]);
 DB::table('domains_prices')->where('server_id',$binding->serverId)->update(['catalogue_observation'=>null,'wholesale'=>'999.0000']);

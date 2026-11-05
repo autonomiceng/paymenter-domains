@@ -126,7 +126,7 @@ $fixtureBindings->configure($t->server_id,'enom',\Paymenter\Extensions\Servers\D
 $fixtureBindings->setProcessing($t->server_id, true, syntheticActivation());
 // Earlier acceptance actions deliberately invalidate publication proof; import fresh synthetic evidence.
 $enomAccount=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole();
-$enomBinding=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding($enomAccount);
+$enomBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($enomAccount);
 $acceptance=\Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($enomBinding);
 $rates=[];foreach([['register',1,'6.00'],['register',3,'6.00'],['renew',1,'8.00'],['transfer',1,'7.00']] as [$action,$term,$perYear]){$rates[]=new \Paymenter\Extensions\Servers\Domains\Data\CatalogueRate($action,$term,$perYear,'synthetic',$now,$now->modify('+1 day'));}
 $prices->import(new \Paymenter\Extensions\Servers\Domains\Data\CatalogueEntry($enomBinding,'com',$rates,[1,3],true,true),$acceptance,static fn()=>null,$now);

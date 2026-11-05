@@ -107,15 +107,15 @@ $holding=Domain::create(['server_id'=>$t->server_id,'registrar_key'=>$t->registr
     'user_id'=>900,'service_id'=>900,'domain'=>'holder-placeholder.com','sld'=>'holder-placeholder','tld'=>'com','status'=>'active']);$generation=$holding->authority_generation;
 $writer->run($review('seller',$t->id),['seller'=>$tlds[1]->server_id,'register'=>true,'transfer'=>true],$now);
 same($tlds[1]->server_id,SalesPolicy::where('tld','com')->sole()->server_id,'New seller selected');same($t->server_id,$holding->fresh()->server_id,'Holder retains account');same($generation,$holding->fresh()->authority_generation,'Holder generation immutable');
-$writer->run($review('acceptance',null),['changes'=>['com'=>null]],$now);$a=Account::where('server_id',$t->server_id)->sole();$accepted=CatalogueAcceptances::load(CatalogueAcceptances::binding($a));
+$writer->run($review('acceptance',null),['changes'=>['com'=>null]],$now);$a=Account::where('server_id',$t->server_id)->sole();$accepted=CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a));
 same([],$accepted->endings['com']['register'],'New sales revoked');same([1],$accepted->endings['com']['renew'],'Holder annual renewal retained');
 commerceReject(fn()=>$writer->run($review('acceptance',null,$tlds[1]->server_id),['changes'=>['com'=>['terms'=>[1,3],'transfer'=>false]]],$now));
 $writer->run($review('acceptance',null),['changes'=>['com'=>['terms'=>[1,3],'transfer'=>false]]],$now);
 expect(!$t->fresh()->register_enabled,'Widening cannot restore disabled sales');
 $writer->run($review('history'),['history_action'=>'register','accept'=>true,'verified'=>true,'timezone'=>'America/Los_Angeles','lag'=>60,'retention'=>86400],$now);
-expect(\Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::load(CatalogueAcceptances::binding($a))!==null,'History accepted');
+expect(\Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a))!==null,'History accepted');
 $writer->run($review('history'),['history_action'=>'register','accept'=>false],$now);
-same(null,\Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::load(CatalogueAcceptances::binding($a)),'History revoked');
+same(null,\Paymenter\Extensions\Servers\Domains\Services\HistoryAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a)),'History revoked');
 $writer->run($review('tld_settings',$t->id),['min_years'=>1,'max_years'=>1,'enabled'=>true,'renew'=>true],$now);
 commerceReject(fn()=>$writer->run($review('tld_settings',$t->id),['min_years'=>1,'max_years'=>3,'enabled'=>true,'renew'=>true],$now));
 commerceReject(fn()=>$writer->run($review('tld_settings',$t->id),['min_years'=>1,'max_years'=>1,'enabled'=>false,'renew'=>false],$now));
@@ -164,7 +164,7 @@ foreach([[...$settings,'max_years'=>3,'enabled'=>false,'verified'=>true],[...$se
     tldRefusal(fn()=>$writer->run($review('tld_settings',$tlds[1]->id,$other->id),$attempt,$now),'Catalogue acceptance is unavailable.');
 }
 $writer->run($review('acceptance',null,$other->id),['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]],$now);
-same(2,CatalogueAcceptances::load(CatalogueAcceptances::binding(Account::where('server_id',$other->id)->sole()))->revision,'Repair advances beyond retained import proof');
+same(2,CatalogueAcceptances::load(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$other->id)->sole()))->revision,'Repair advances beyond retained import proof');
 commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\PublicationEligibility::require($tlds[1]->fresh(),'register',1),'Repair cannot reuse earlier import proof');
 $audit->value='invalid';$audit->save();$before=Price::pluck('revision','id')->all();
 commerceReject(fn()=>$writer->run($review('publish',$t->id),[],$now));same($before,Price::pluck('revision','id')->all(),'Corrupt audit rolls back writes');

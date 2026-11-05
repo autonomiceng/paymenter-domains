@@ -102,12 +102,12 @@ final class FoundationSchema
             $table->string('pricing_mode', 32)->default('markup_percent');
             $table->decimal('markup', 12, 2)->nullable();
             foreach (['register', 'renew', 'transfer'] as $action) { $table->decimal('fixed_'.$action, 12, 2)->nullable(); }
-            $table->json('cost_register_terms')->nullable();
-            $table->json('sale_holds')->nullable();
-            $table->decimal('renew_price', 12, 2)->nullable();
-            $table->decimal('cost_renew', 12, 4)->nullable();
-            $table->decimal('cost_transfer', 12, 4)->nullable();
-            $table->timestamp('costs_synced_at')->nullable();
+            if (!OfferRetirement::omitted('domains_tlds', 'cost_register_terms')) { $table->json('cost_register_terms')->nullable(); }
+            if (!OfferRetirement::omitted('domains_tlds', 'sale_holds')) { $table->json('sale_holds')->nullable(); }
+            if (!OfferRetirement::omitted('domains_tlds', 'renew_price')) { $table->decimal('renew_price', 12, 2)->nullable(); }
+            if (!OfferRetirement::omitted('domains_tlds', 'cost_renew')) { $table->decimal('cost_renew', 12, 4)->nullable(); }
+            if (!OfferRetirement::omitted('domains_tlds', 'cost_transfer')) { $table->decimal('cost_transfer', 12, 4)->nullable(); }
+            if (!OfferRetirement::omitted('domains_tlds', 'costs_synced_at')) { $table->timestamp('costs_synced_at')->nullable(); }
             $table->unsignedInteger('sort_order')->default(100);
             $table->unsignedTinyInteger('min_years')->default(1);
             $table->unsignedTinyInteger('max_years')->default(10);
@@ -136,7 +136,7 @@ final class FoundationSchema
             $table->decimal('retail', 20, 8)->nullable();
             $table->string('unit', 32); $table->string('source', 128);
             $table->dateTime('observed_at'); $table->timestamp('fresh_until')->nullable();
-            $table->json('eligibility')->nullable(); $table->string('hold_reason', 64)->nullable();
+            if (!OfferRetirement::omitted('domains_prices', 'eligibility')) { $table->json('eligibility')->nullable(); } if (!OfferRetirement::omitted('domains_prices', 'hold_reason')) { $table->string('hold_reason', 64)->nullable(); }
             $table->timestamps();
             $table->unique(['server_id', 'tld', 'action', 'term', 'currency'], $table->getTable().'_price_unique');
             OfferSchema::retained($table, 'domains_prices');

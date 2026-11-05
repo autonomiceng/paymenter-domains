@@ -167,3 +167,12 @@ storage remains empty. Unexpected data or schema drift refuses; preserve the evi
 Verification, empty-state recheck and the installed caller contract precede one atomic active receipt.
 Repeated lifecycle calls preserve it. Initialization does not create accounts, enable processing or contact a registrar.
 The schema-maintenance service alone never grants new-install activation authority.
+
+
+Final-package test ownership: the retired CatalogueSync/PriceSync/PriceFill/SellRule algorithm,
+legacy mutex and bridge conversion-generation tests remain reproducible at the pinned bridge above.
+The final package tests the persisted checked bridge output with retained-offer-package and
+store-cleanup/prefix tests. Active offer-work/runtime-work/scheduler, queued-trigger, cache,
+staff-policy/global-pricing and cutover tests retain bounded reads, generation races, admission,
+publication and staff review checks against the new implementation. No financial completion or
+provider protocol test is retired with the old catalogue algorithms.

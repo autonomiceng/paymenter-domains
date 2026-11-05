@@ -47,7 +47,7 @@ $service=App\Models\Service::where('user_id',$user->id)->sole();$service->update
 // One renewal due within 30 days at registrar cost 8.00; the balance is one cent short.
 $domain=Domain::where('service_id',$service->id)->sole();
 DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>'active','provider_expires_at'=>'2026-11-10']);
-BalanceReads::record(CatalogueAcceptances::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
+BalanceReads::record(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($enom),new Money('7.99','USD'),$clock->now(),'manual');
 $facts=RegistrarBalances::facts($enom,$clock->now());
 same('USD 7.99',$facts['balance'],'Staff money puts the currency first');same('Low balance',$facts['status'],'Balance below Due in 30 days is Low balance');
 same('USD 8.00',$facts['total'],'Due in 30 days');same('Oct 18, 2026 12:00 UTC',$facts['checked'],'Checked date in staff format');same(null,$facts['cause'],'A read balance has no cause');
@@ -375,8 +375,8 @@ foreach(['test','live'] as $mode){
 // A live fingerprint must match the restored identity and live environment.
 DB::table('domains_accounts')->where('id',$enom->id)->update(['stable_identity'=>$savedIdentity,'account_fingerprint'=>$liveBinding->fingerprint,
     'identity_fingerprint'=>hash('sha256',json_encode(['enom','live',$enom->stable_identity],JSON_THROW_ON_ERROR))]);
-same(Environment::Live,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->environment,'Healthy inverse uses a valid live binding');
-same($liveBinding->fingerprint,CatalogueAcceptances::binding(Account::findOrFail($enom->id))->fingerprint,'Healthy inverse fingerprint matches live identity');
+same(Environment::Live,\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::findOrFail($enom->id))->environment,'Healthy inverse uses a valid live binding');
+same($liveBinding->fingerprint,\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::findOrFail($enom->id))->fingerprint,'Healthy inverse fingerprint matches live identity');
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>$liveBinding->fingerprint]);
 Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertSuccessful()->assertDontSee('Restore the API connection first.');
 // Unavailable features explain themselves; Transfers names the deployment setting needed to enable its switch.
@@ -444,7 +444,7 @@ same('matched',$bindings->configurationStatus((int)$siloLive->id),'Live NameSilo
 $siloLiveRows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::where('server_id',$siloLive->id)->sole(),['label'=>'Active','reason'=>null]),null,'label');
 same('Orders are paused. Use Activate to check setup and turn on Orders.',$siloLiveRows['Orders']['cause'],'Live NameSilo uses the shared Activate review');
 foreach(['invoices','customer credit','Auto Pay','paid renewals'] as $effect){expect(str_contains($offRows['Renewals']['help'],$effect),'Renewals explains '.$effect);}
-$testBinding=CatalogueAcceptances::binding(Account::findOrFail($enom->id));
+$testBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::findOrFail($enom->id));
 $review=new StaffSettingsReview($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::ticket($admin->id,(int)$enom->server_id,null,'test_renewal',StaffSettingsReview::stamp((int)$enom->server_id,null)),'Approve test renewal setup');
 Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::review($review,['accept'=>true,'verified'=>true]);
 $late=$checklist()['Late renewal'];

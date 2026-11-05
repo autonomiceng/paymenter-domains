@@ -123,7 +123,7 @@ same([1], $display->remember($render), 'Transaction-local projection was never c
 $rules = new Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 DB::transaction(fn () => $rules->saveDefaultRuleLocked($rules->defaultRule()));
 same([3], $display->remember($render), 'Standalone default-rule save forgets warm display');
-$binding = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tld->server_id)->sole());
+$binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tld->server_id)->sole());
 $accepted = Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::load($binding);
 Paymenter\Extensions\Servers\Domains\Services\CatalogueAcceptances::save($binding, $accepted->revision, $accepted->endings);
 same([4], $display->remember($render), 'Standalone acceptance save forgets warm display');

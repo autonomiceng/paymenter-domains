@@ -97,5 +97,5 @@ commerceReject(fn()=>$writer->reviewed($r,$entries,static fn()=>StaffCommands::s
 // A non-catalogue setting can compose a trusted current-mode guard without being forced through legacy().
 $r=new Review($actor->id,$binding->serverId,null,'unpaid_hold',Review::ticket($actor->id,$binding->serverId,null,'unpaid_hold',Review::stamp($binding->serverId,null)),'Synthetic non-catalogue review',static function(){same(1,DB::transactionLevel(),'Non-catalogue guard under review locks');});
 $writes->run($r,['confirmed'=>true,'minutes'=>90],$now);same(90,\Paymenter\Extensions\Servers\Domains\Services\UnpaidHoldSetting::minutes($binding->serverId),'Normal settings retain reviewed flow');
-$gate=new UpgradeGate;$gate->pause();$before=StaffCommands::stamp($binding->serverId);commerceReject(fn()=>$run('publish',[],$id));same($before,StaffCommands::stamp($binding->serverId),'Paused reviewed publication writes nothing');$gate->resume();
+$staleReview=$review('publish',$id);advanceOfferGeneration();$before=StaffCommands::stamp($binding->serverId);commerceReject(fn()=>$commands->run($staleReview,[]));same($before,StaffCommands::stamp($binding->serverId),'Superseded reviewed publication writes nothing');
 $nativeSuccessful=true;echo "Offer staff reverse policy: ok\n";
