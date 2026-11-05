@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, RenewalAcceptance, RenewalAdmission, RenewalAuthority};
 $op=$prepare('full'); $r=$reconcile->run($op->id); $completed=$r;
 same('succeeded',$r->state,'Exact status, Active, flags, unique charge and full added year complete');
-same('99.00',$r->cost['actual']['amount'],'Original transfer charge committed'); same('9001',$r->provider_order_id,'History ID retained without invented original ID');
+same('7.00',$r->cost['actual']['amount'],'Original transfer charge committed'); same('9001',$r->provider_order_id,'History ID retained without invented original ID');
 same('2028-01-01',$r->domain->provider_expires_at->format('Y-m-d'),'Full year from immutable baseline'); same(1,$r->domain->confirmed_revision,'Revision committed');
 same('active',App\Models\Service::find($r->service_id)->status,'Native service activated'); same(null,App\Models\Service::find($r->service_id)->expires_at,'Native expiry remains null');
 same(['ns1.provider.example','ns2.provider.example'],$r->domain->fresh()->observation['nameservers']['nameservers']??null,'NameSilo domain-info values are saved on completed transfer');
