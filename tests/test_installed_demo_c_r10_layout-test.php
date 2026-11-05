@@ -11,11 +11,11 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 storefrontViews();staffPanel();[$held,$active]=staffData();
 $actor=staffUser([Staff::VIEW]);Illuminate\Support\Facades\Auth::setUser($actor);
 $history=Livewire\Livewire::actingAs($actor)->test(RequestsRelationManager::class,['ownerRecord'=>$active,'pageClass'=>ViewDomain::class])->html();
-$families=['stale'=>false,'at'=>null,'failed_family'=>null,'last_complete_at'=>null,'caa'=>[], 'rows'=>[
-    ['label'=>'DNS records','kind'=>'dns','state'=>'unknown','value'=>'Unknown','staff'=>'No current complete read. Sync this domain.','customer'=>'We’re checking these records.','last_good_at'=>null],
-    ['label'=>'Contacts','kind'=>'contacts','state'=>'partial','value'=>'Partial','staff'=>'Registrant returned; some contacts did not. Refresh contacts before editing.','customer'=>'We’re checking the rest.','last_good_at'=>null],
-    ['label'=>'Nameservers','kind'=>'nameservers','state'=>'complete','value'=>'Complete','staff'=>'2 nameservers checked.','customer'=>'2 nameservers checked.','last_good_at'=>null],
-    ['label'=>'Glue records','kind'=>'glue','state'=>'unsupported','value'=>'Unsupported','staff'=>'No supported read contract.','customer'=>'These records cannot be read here.','last_good_at'=>null]]];
+$families=['next_read'=>null,'read_stopped'=>false,'read_code'=>null,'stale'=>false,'at'=>null,'failed_family'=>null,'last_complete_at'=>null,'caa'=>[], 'rows'=>[
+    ['label'=>'DNS records','kind'=>'dns','state'=>'unknown','value'=>'Unknown','staff'=>'No current complete read. Sync this domain.','customer'=>'We’re checking these records.','at'=>null,'last_good_at'=>null],
+    ['label'=>'Contacts','kind'=>'contacts','state'=>'partial','value'=>'Partial','staff'=>'Registrant returned; some contacts did not. Refresh contacts before editing.','customer'=>'We’re checking the rest.','at'=>null,'last_good_at'=>null],
+    ['label'=>'Nameservers','kind'=>'nameservers','state'=>'complete','value'=>'Complete','staff'=>'2 nameservers checked.','customer'=>'2 nameservers checked.','at'=>null,'last_good_at'=>null],
+    ['label'=>'Glue records','kind'=>'glue','state'=>'unsupported','value'=>'Unsupported','staff'=>'No supported read contract.','customer'=>'These records cannot be read here.','at'=>null,'last_good_at'=>null]]];
 $staff=view('domains::partials.staff-styles')->render().'<section class="domains-sec">'.view('domains::partials.record-families',['recordFamilies'=>$families,'staff'=>true])->render().view('domains::admin.term-prices',['prices'=>[['term'=>1,'current'=>'10.99','cost'=>'8.9500','synced'=>true],['term'=>2,'current'=>null,'cost'=>null,'synced'=>false]]])->render().view('domains::admin.monitoring-evidence',['evidence'=>['state'=>'Unknown','separation'=>'Public DNS cannot confirm a registrar change.','public'=>['A: 192.0.2.10'],'registrar'=>[],'public_at'=>null,'registrar_at'=>null,'at'=>null]])->render().'</section><section class="domains-history-fixture">'.$history.'</section>';
 $section=['inventory'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.10','ttl'=>3600],['name'=>'www','type'=>'CNAME','address'=>'hosting.example.com','ttl'=>300]],'caa'=>[['name'=>'@','value'=>'0 issue "ca.example"','ttl'=>3600]],'actions'=>[]];
 $customer='<div class="domains">'.view('domains::partials.styles')->render().view('domains::partials.dns-inventory',compact('section'))->render().'</div>';
@@ -39,7 +39,7 @@ $dom=storefrontDom($staff);
 $check($dom->query('//*[@data-record-family="contacts"]/span[contains(@class,"domains-tone-warn")]')->length===1,'Staff Partial uses the attention mark');
 $check($dom->query('//*[@data-record-family="nameservers"]/span[contains(@class,"domains-tone-ok")]')->length===1,'Staff Complete uses the healthy mark');
 $check($dom->query('//*[@data-record-family="glue"]/span[contains(@class,"domains-tone-muted")]')->length===1,'Unsupported retains the quiet state');
-$check($dom->query('//*[@data-record-family="dns"]/span')->length===0,'Unknown remains unmarked');
+$check($dom->query('//*[@data-record-family="dns"]/*[contains(@class,"domains-missing")]')->length===1,'Unknown uses the current Missing value');
 // Browser QA checks the rendered pseudo-elements and resolved native/skin tokens.
 $check(str_contains($style,'.domains-status::before')&&str_contains($style,'mask:'),'Staff family statuses render a shaped mark');
 foreach(['ok','info','warn','bad','muted'] as $tone){$check(str_contains($style,'.domains-status.domains-tone-'.$tone),'Staff supports the '.$tone.' status tone');}
