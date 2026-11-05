@@ -90,7 +90,7 @@ $refuse(fn()=>DB::transaction(fn()=>$thirteen->fresh()->update(['nameservers'=>$
 SiteDnsDefault::save($manager,$default->id);$connect('enom');
 $refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'Enom requires 2 to 12');
 $refuse(fn()=>SiteDnsDefault::save($manager,$thirteen->id),'Enom requires 2 to 12');
-foreach([1,13]as$count){$refuse(fn()=>DB::transaction(fn()=>$default->fresh()->update(['nameservers'=>$servers($count),'revision'=>$default->revision+1])),'Enom requires 2 to 12');}
+foreach([1,13]as$count){$refuse(fn()=>DB::transaction(fn()=>$default->fresh()->update(['nameservers'=>$servers($count),'revision'=>$default->revision+1,'edited_by'=>$manager->id,'reason'=>'Synthetic staff limit edit'])),'Enom requires 2 to 12');}
 $twelve=$make(12);SiteDnsDefault::save($manager,$twelve->id);same(12,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept twelve');
 DB::transaction(fn()=>$twelve->fresh()->update(['nameservers'=>$servers(2),'revision'=>$twelve->revision+1]));
 same(2,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept editing to two');
