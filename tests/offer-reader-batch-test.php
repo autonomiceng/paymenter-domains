@@ -86,7 +86,7 @@ try {
         same([$b->serverId, $n->serverId], $checked, 'Local readiness follows sorted account prefix, not cart order');
     });
 } finally { $connection->setQueryGrammar($original); }
-$tables = [(new Server)->getTable(), 'domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices'];
+$tables = [(new Server)->getTable(), 'domains_accounts', 'domains_sales_policies', 'domains_tlds', 'domains_prices', 'settings'];
 $locked = array_values(array_filter($grammar->selects, static fn ($q) => $q['lock'] !== null));
 same($tables, array_column($locked, 'table'), 'Every shared lock group is acquired once, before any later account lock');
 foreach ($locked as $q) { same(true, $q['lock'], 'Every lock group requests an exclusive lock'); }

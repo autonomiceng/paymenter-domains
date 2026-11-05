@@ -19,10 +19,11 @@ final readonly class CatalogueFreshness
         return self::forAccounts([$server])[$server];
     }
     /** One settings query for a complete display/admission batch. */
-    public static function forAccounts(array $servers): array
+    public static function forAccounts(array $servers, bool $lock = false): array
     {
         $rows = \App\Models\Setting::where('settingable_type', (new Server)->getMorphClass())
-            ->whereIn('settingable_id', $servers)->where('key', self::KEY)->get()->groupBy('settingable_id');
+            ->whereIn('settingable_id', $servers)->where('key', self::KEY)
+            ->when($lock, static fn ($q) => $q->orderBy('id')->lockForUpdate())->get()->groupBy('settingable_id');
         $out = [];
         foreach ($servers as $server) {
             $saved = $rows[$server] ?? collect();

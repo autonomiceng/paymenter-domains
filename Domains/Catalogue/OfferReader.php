@@ -79,7 +79,7 @@ final class OfferReader
         };
         $tlds = $fetch(OfferState::query('domains_tlds')->where($scope)->orderBy('id'))->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
         $prices = $fetch(OfferState::query('domains_prices')->where($scope)->orderBy('id'))->get()->groupBy(static fn ($p) => $p->server_id.':'.$p->tld);
-        $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccounts($ids);
+        $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccounts($ids, $lock);
         if ($display) { return $this->displayRows($queries, $servers, $accounts, $defaults, $policies, $tlds, $prices, $context, $freshness); }
         $result = []; $evaluator = new Evaluator; $now = $this->clock->now();
         foreach ($queries as $i => $query) {
