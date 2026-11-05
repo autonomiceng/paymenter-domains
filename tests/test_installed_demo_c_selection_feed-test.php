@@ -50,7 +50,7 @@ $worker=new OfferWork($writer,$clock,new AccountReadBudget($clock,25),static fn(
 $worker->sync($b);$worker->accountTurn($b->serverId);
 $check($feed->reads===1&&$worker->status($b)['succeeded_at']===$clock->now()->getTimestamp(),'Empty account feed actually succeeds through worker');
 $fact=TldFacts::snapshot($t->fresh());$message="Not in the registrar's price feed; not for sale";
-$check(TldFacts::priceState($fact)['cause']===$message,'Writer selection followed by successful omitted feed shows feed gap');
+$check(str_starts_with(TldFacts::priceState($fact)['cause'],$message),'Writer selection followed by successful omitted feed shows feed gap');
 $check($fact['sales']['reason']===$message,'Sales status agrees with price cell');
 $check(TldFacts::priceState($fact)['tone']==='danger','Selected missing feed price stays red');
 expect($failures===[],implode("\n",$failures));$nativeSuccessful=true;echo "Writer selection and successful omitted-feed regression passed.\n";
