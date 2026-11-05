@@ -96,18 +96,19 @@ final class AcquisitionOffers
         return $this->load([$seed], false, false)[0]['selection'];
     }
 
-    /** Pending invoices may outlive their cart quote. Recheck the same sale without enlarging
-     * frozen retail or spending authority, then use that current selection for the pay guard. */
+    /** Pending invoices outlive cart quotes and staff saves. Recheck the same sale against the current offer:
+     * same seller, account, action, term and currency, still sold now, and the current cost within both the
+     * issued total and the frozen spending ceiling. Revisions and retail may move; the issued amount stands. */
     public function paymentSelection(SaleSelection $frozen, string $name, string $ceiling, string $total): SaleSelection
     {
         $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
             new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
+        $sale = static fn (SaleSelection $s) => [$s->tld, $s->serverId, $s->registrar, $s->fingerprint, $s->action, $s->term,
+            $s->currency, $s->catalogue['generation'] ?? null, $s->catalogue['credential'] ?? null];
+        if ($sale($frozen) !== $sale($current)) { throw new \DomainException('Seller or account changed.'); }
         $price = $this->load([$current], false, true)[0]['snapshot'];
-        if (($frozen->catalogue['retail'] ?? null) !== $price->retail
-            || ($frozen->catalogue['renewal'] ?? null) !== $current->catalogue['renewal']
-            || !PricingRule::covers($total, $price->wholesale)
-            || PricingRule::units($price->wholesale) !== PricingRule::units($ceiling)) {
-            throw new \DomainException('Frozen order price or spending ceiling changed.');
+        if (!PricingRule::covers($total, $price->wholesale) || PricingRule::units($price->wholesale) > PricingRule::units($ceiling)) {
+            throw new PaymentPriceChanged($name);
         }
         return $current;
     }
