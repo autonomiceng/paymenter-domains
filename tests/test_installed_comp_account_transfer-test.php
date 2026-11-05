@@ -12,7 +12,7 @@ ComplimentaryAccounts::set($user->id,$staff,true,'Complimentary transfers',$cloc
 foreach([0,1] as $i){
     $state->calls=[];$op=$newTransfer(placeholderComFixtureName('comp-transfer-'.$i.'-placeholder.com'),$i,false);
     same('complimentary',$op->funding_basis,'Transfer admitted as complimentary for registrar '.$i);same('0.00',$op->amount,'Transfer customer pays zero');
-    same('paid',$op->invoice->status,'Transfer has its own paid receipt');same(0,$op->invoice->transactions()->count(),'Transfer creates no native payment');
+    same('paid',App\Models\Invoice::findOrFail($op->invoice_id)->status,'Transfer has its own paid receipt');same(0,App\Models\Invoice::findOrFail($op->invoice_id)->transactions()->count(),'Transfer creates no native payment');
     $state->quote=$op->cost['estimated'];$makeTransfer($i);$sent=$engine->execute($op->id);
     expect(in_array($sent->state,['pending','uncertain'],true),'Complimentary transfer sends through the guarded engine: '.$sent->safe_code);
     same(1,count(array_intersect($state->calls,['TP_CreateOrder','transferDomain'])),'Exactly one transfer send');
