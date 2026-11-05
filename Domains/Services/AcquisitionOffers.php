@@ -22,6 +22,14 @@ final class AcquisitionOffers
     public function offer(string $ending, string $action, int $term): array
     { return $this->offers([[$ending, $action, $term]])[0]; }
 
+    /** Local reads only: true when staff took this account's sale of the ending off sale. */
+    public function offSale(int $serverId, string $ending, string $action, int $term): bool
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Sale checks require unlocked reads.'); }
+        $b = AccountBindings::binding(Account::where('server_id', $serverId)->sole());
+        return $this->ports->loadBatch([new Query($b, [$ending], $action, $term)], Context::Public)[0][0]->closed();
+    }
+
     /** Checkout alone may repair stale prices. Public/search offers remain daily-table only. */
     public function checkoutSelection(string $name, string $ending, string $action, int $term, ?SaleSelection $previous, CheckoutRefreshBudget $batch, int $serverId, string $fingerprint): SaleSelection
     {

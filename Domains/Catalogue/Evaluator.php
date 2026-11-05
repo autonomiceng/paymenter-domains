@@ -34,16 +34,27 @@ final class Evaluator
             $scope && $context === Context::Staff ? $cost?->total : null);
     }
 
-    private function reason(Snapshot $offer, Query $query, \DateTimeImmutable $now): ?string
+    /** Staff or seller decisions only. Missing, stale or unready data is never "off sale". */
+    public function closed(Snapshot $offer, Query $query): bool
+    { return $this->staffReason($offer, $query) !== null; }
+
+    private function staffReason(Snapshot $offer, Query $query): ?string
     {
         $intent = $offer->intent; $action = $query->action; $term = $query->term;
-        if (!$offer->accountReady) { return 'account_unavailable'; }
         if ($offer->hidden || !($intent->sell ?? $intent->defaultSell) || in_array($action, $intent->stops, true)) { return 'staff_stopped'; }
         if ($action !== 'renew' && in_array('renew', $intent->stops, true)) { return 'renewal_stopped'; }
         if ($action === 'register' && $term > ($intent->longest ?? $intent->defaultLongest)
             || $action === 'transfer' && !($intent->transfers ?? $intent->defaultTransfers)) { return 'staff_term_stopped'; }
         if ($offer->seller === null || !$offer->feed->binding()->matches($offer->seller)
             || $action !== 'renew' && !in_array($action, $offer->sellerActions, true)) { return 'seller_changed'; }
+        return null;
+    }
+
+    private function reason(Snapshot $offer, Query $query, \DateTimeImmutable $now): ?string
+    {
+        $intent = $offer->intent; $action = $query->action; $term = $query->term;
+        if (!$offer->accountReady) { return 'account_unavailable'; }
+        if (($staff = $this->staffReason($offer, $query)) !== null) { return $staff; }
         if ($offer->publishedRevision === null || !$offer->revision->matches($offer->publishedRevision)) { return 'publication_pending'; }
         $facts = $offer->facts;
         if ($facts === null) { return 'unknown_facts'; }
