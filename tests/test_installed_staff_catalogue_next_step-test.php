@@ -317,5 +317,13 @@ $work->requestFacts($ns,$nt->tld);same($future,$work->status($ns,$nt->tld)['due_
 same(0,$calls,'Rejected TEST evidence only queues local recovery');
 config(['domains.namesilo_test.accounts'=>$originalAccounts]);
 } catch (Throwable $error) {$failures[]='NameSilo TEST facts recovery: '.$error->getMessage();}
+try {
+$reset();$clearPrice();
+$cost=OfferState::decode($priceRows->first(fn($p)=>$p->action==='register'&&(int)$p->term===1)->catalogue_observation);
+$cost['enabled']=false;$cost['total']=null;$cost['fresh_until']=$now->modify('-1 second')->format(DATE_ATOM);$cost['observed_at']=$now->modify('-2 days')->format(DATE_ATOM);
+DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->where('term',1)->update(['catalogue_observation'=>OfferState::json($cost)]);
+[$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'An expired disabled cost queues a new price read');
+same($now->getTimestamp(),$work->status($binding)['due_at'],'Expired refusal schedules the existing price worker');
+} catch (Throwable $error) {$failures[]='Expired disabled cost: '.$error->getMessage();}
 expect($failures===[],implode("\n",$failures));
 $nativeSuccessful=true;echo "Staff catalogue next steps: ok\n";

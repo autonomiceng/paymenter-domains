@@ -72,7 +72,7 @@ final class StaffCatalogue
         if($reason==='unsupported_facts'){$human=$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null);}
         foreach(array_unique(['renew:1',$action.':'.$term]) as $key){
             $cost=$offers[$key]??null;$observation=$cost?->observation();
-            if($observation&&!$observation->enabled){return $step('off','Not offered by this registrar for this term.');}
+            if($observation&&$observation->fresh($now)&&!$observation->enabled){return $step('off','Not offered by this registrar for this term.');}
             if(!$observation||!$observation->fresh($now)||$cost->staffRetail()===null
                 ||$key==='renew:1'&&OfferState::money($t->catalogue_retained_annual_retail,2)===null){
                 if($observation?->fresh($now)){
