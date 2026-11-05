@@ -156,6 +156,28 @@ $grant->run('management',48,function()use($grant,$glue,$sendGlue,$deny):void {
 });
 same(['used'=>$before['used']+1,'spend_micros'=>$before['spend_micros']],$used(),'Glue mutation counts its reservation once without spend');
 same(1,$GLOBALS['wire']['sends'],'Glue mutation sends once and refuses replay');
+// C1: DS list is a read; add/delete need the exact five keys and a canonical tuple before any reservation or send.
+same(['catalogue','management','management'],array_map([AdmittedTransport::class,'feature'],['dnsSecListRecords','dnsSecAddRecord','dnsSecDeleteRecord']),'DS list reads and DS writes manage');
+$ds=['domain'=>'example.com','digest'=>str_repeat('AB',32),'keyTag'=>123,'digestType'=>2,'alg'=>13];
+resetWire();$before=$used();$id=60;
+foreach(['extra key'=>$ds+['ttl'=>3600],'case alias'=>array_diff_key($ds,['keyTag'=>1])+['keytag'=>123],'credential key'=>$ds+['key'=>'override'],
+    'lowercase digest'=>['digest'=>strtolower($ds['digest'])]+$ds,'short digest'=>['digest'=>'AB']+$ds,'string key tag'=>['keyTag'=>'123']+$ds,
+    'non-canonical domain'=>['domain'=>'Example.com']+$ds] as $label=>$p) {
+    $grant->run('management',$id++,function()use($grant,$p,$label):void {
+        $refused=false;try{$grant->reserve('dnsSecAddRecord',$p);}catch(LiveReservationLimit|\DomainException){$refused=true;}
+        expect($refused,'DS '.$label.' refused before the grant');
+    });
+}
+same([0,$before],[$GLOBALS['wire']['sends'],$used()],'Refused DS shapes reserve and send nothing');
+$sendDs=fn(string $command)=>$exchange($origin,$command,$ds,20000);
+$deny(fn()=>$sendDs('dnsSecAddRecord'));
+$grant->run('management',$id++,function()use($grant,$ds,$sendDs,$deny):void {
+    $grant->reserve('dnsSecAddRecord',$ds);$deny(fn()=>$sendDs('dnsSecDeleteRecord'));$sendDs('dnsSecAddRecord');$deny(fn()=>$sendDs('dnsSecAddRecord'));
+});
+same([1,$before['used']+1],[$GLOBALS['wire']['sends'],$used()['used']],'Exact DS add sends once on its own grant and never replays');
+same(['version','type','key','domain','digest','keyTag','digestType','alg'],array_keys(array_slice($GLOBALS['wire']['parameters'],-1)[0]),'DS add keeps its camel-case wire keys');
+resetWire();$deny(fn()=>$exchange($origin,'dnsSecListRecords',['domain'=>'example.com','page'=>'2'],20000));
+$exchange($origin,'dnsSecListRecords',['domain'=>'example.com'],20000);same(1,$GLOBALS['wire']['sends'],'DS list reads once without a mutation grant');
 // UTC reservation days also bound physical timeouts, including fractional milliseconds and shorter caller deadlines.
 $clock->instant=new \DateTimeImmutable('2026-11-02T15:59:59.123456-08:00');resetWire();
 $read();same(876,$GLOBALS['wire']['options'][CURLOPT_TIMEOUT_MS],'Read timeout stops before the reserved UTC day ends');
