@@ -173,11 +173,12 @@ expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controlle
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController::class),"'Check the TLD after the dot, for example '"),'Search TLD error');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\NativeActivationInformation::class),'We may ask for the auth code from your current registrar.'),'Activation information');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class),"['name'=>'Domain prices',"),'Client nav names the prices page by its title');
-// Previous defaults upgrade twice; custom text is retained.
+// Previous shipped defaults upgrade twice; custom text is retained.
+$shipped=priorWatchDefaults();
 foreach ($w as $key=>$fields) {
     $t=NotificationTemplate::where('key',$key)->sole();
     foreach (array_intersect(['name','subject','in_app_title','in_app_body','body'],\Illuminate\Support\Facades\Schema::getColumnListing('notification_templates')) as $field) {
-        $old=str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]);
+        $old=$key==='domains_watch_ns_changed'?end($shipped[$key][$field]):str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]);
         if ($key==='domains_watch_ns_restored' && $field==='name') { $old=hex2bin('4d6f6e69746f72696e6720616c6572743a206e616d6573657276657273206261636b20746f204265636f'); }
         $t->setAttribute($field,$old)->save();
         WatchNoticeTemplates::ensure();WatchNoticeTemplates::ensure();

@@ -90,6 +90,8 @@ same(['Nameservers changed Jan 15, 2027','Nameservers back to Example Hosting Ja
 same(null,storefrontDom($page([],[],[],['urls'=>[]]))->query('//aside//a[contains(@class,"domains-btn")]')->item(0),'No transfer offer, no button');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain($data['name'],'Active','ok','2027-01-15','On','$14.00',['show'=>'/domains/1'],[],['contacts'=>false,'required'=>false],[],[],true);
 same(1,substr_count($text(view('domains::show',['domain'=>$owned,'summary'=>$state(['domain.active','watch.ns_changed'],'managed'),'keys'=>[]])->render()),'stopped using Example Hosting nameservers'),'Domain detail page states a nameserver change once');
+$initial=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($owned,null,$state(['watch.ns_changed'],'managed',['dnsPreviouslyMatched'=>false]));
+expect(str_contains($initial['text'],'does not use Example Hosting nameservers') && !str_contains($initial['text'],'stopped using'),'Managed page without a prior match explains the current mismatch');
 require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 foreach(['show','save']as$action){$route=app('router')->getRoutes()->getByName('domains.checks.'.$action);expect(in_array('web',$route->gatherMiddleware(),true)&&in_array('auth',$route->gatherMiddleware(),true),'Native web auth guards preferences');}
 // Page notices, transfer controls and history share configured and absent-name behavior.
