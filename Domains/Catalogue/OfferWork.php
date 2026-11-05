@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, EnomTestCallLimit, ReadDeferred, ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CardFee, EnomTestCallLimit, PricingRules, ReadDeferred, ReadFailure};
 
 /** Dormant account worker on the retained queue. No container binding, job or caller switch.
  * $feed supplies bound adapters using existing admitted transports (including daily wire caps).
@@ -292,8 +292,14 @@ final class OfferWork
     private function republish(Writer $writer, AccountBinding $b, array &$work): void
     {
         $rows = Tld::where('server_id', $b->serverId)->where('id', '>', $work['local_cursor'] ?? 0)->orderBy('id')->limit(self::BATCH)->get();
+        // Shared pricing failures still stop the account; only an unreadable own rule is skipped.
+        $fee = CardFee::read(); $default = (new PricingRules)->defaultRule(false, $fee);
         foreach ($rows as $t) {
             $this->offerBinding($b, $t);
+            if ($t->catalogue_published_revision === null && Pricing::hasOwn($t)) {
+                try { Pricing::rule($t, $default, $fee); }
+                catch (\DomainException|\InvalidArgumentException) { continue; }
+            }
             $this->requestSoldFacts($b, $t->tld);
             $revision = $this->revision($b, $t->tld);
             if ($t->catalogue_published_revision === null || !OfferState::equivalent(OfferState::decode($t->catalogue_published_revision), get_object_vars($revision))) {

@@ -483,7 +483,8 @@
     "tests/test_installed_staff_catalogue_next_step-test.php",
     "tests/test_installed_default_freshness-test.php",
     "tests/test_installed_catalogue_freshness-test.php",
-    "tests/offer-rule-isolation-test.php"
+    "tests/offer-rule-isolation-test.php",
+    "tests/offer-rule-repair-test.php"
   ],
   "ui": [],
   "runner": [

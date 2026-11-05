@@ -8,10 +8,10 @@ require __DIR__.'/Support/staff-tlds.php';
 require __DIR__.'/Support/offer-commerce.php';
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SellTable,Staff};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,Facts,FactsObserved,FeedObserved,OfferState,OfferWork,PricedFeed,Query,StaffCatalogue};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,Facts,FactsObserved,FeedObserved,OfferState,OfferWork,PricedFeed,Query,StaffCatalogue,StaffCommands};
 use Paymenter\Extensions\Servers\Domains\Data\{CostUnit,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
-use Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget;
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,StaffSettingsReview as Review};
 
 extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
@@ -55,9 +55,22 @@ $work->sync($binding);
 same('worked',$work->accountTurn($binding->serverId),'Unreadable unsold rule must not abort account work');
 same(1,$feed->priceCalls,'The account feed runs despite the unreadable rule');
 same(0,$work->status($binding)['remaining'],'The invalid feed row cannot block the durable buffer');
+$isolatedState=static fn()=>[
+    $broken->fresh()->catalogue_revision,
+    count(array_filter(Review::historyRows(\App\Models\Server::findOrFail($binding->serverId)),static fn($row)=>($row['tld']??null)==='invalid')),
+    StaffCommands::stamp($binding->serverId,$broken->id),
+];
+$isolatedBefore=$isolatedState();
 same('worked',$work->accountTurn($binding->serverId),'Sold facts run on the following bounded turn');
+[$revision,$audits,$stamp]=$isolatedState();
+same($isolatedBefore[0],$revision,'Second worker turn must not bump the isolated offer revision');
+same($isolatedBefore[1],$audits,'Second worker turn must not audit the isolated offer again');
+same($isolatedBefore[2],$stamp,'Second worker turn must not invalidate the isolated offer review stamp');
 same(['com'],$feed->factCalls,'Only the sold TLD receives automatic facts');
 same('ready',$work->status($binding,'com')['state'],'Sold facts finish instead of staying Checking');
+$accountStamp=StaffCommands::stamp($binding->serverId);
+$work->accountTurn($binding->serverId);
+same($accountStamp,StaffCommands::stamp($binding->serverId),'An idle pass leaves the account-wide staff review stamp stable too');
 same($savedPrice,$storefront->offer('com','register',1)['price'],'Sold .com resumes at its saved price without a staff save');
 [$sales,$row]=$table('com');same('For sale',$sales->status($row)['label'],'Healthy .com never remains stuck Checking');
 same(false,$ports->readOffers(new Query($binding,['invalid'],'register'),Context::Public)[0]->available,'Unreadable .invalid stays closed');

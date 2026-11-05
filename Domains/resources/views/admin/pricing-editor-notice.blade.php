@@ -5,9 +5,9 @@
         && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('publish'))
         && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('override'));
     $canSyncPrices = $policy && \Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::can(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::permission('import'));
-    $fix = $recovery ?? ($canEditPrices
+    $fix = $canEditPrices
         ? 'To fix it, open this TLD in TLDs & pricing, open Edit prices and save.'
-        : 'Ask a staff member who can edit domain pricing to open this TLD in TLDs & pricing, open Edit prices and save.');
+        : 'Ask a staff member who can edit domain pricing to open this TLD in TLDs & pricing, open Edit prices and save.';
     $help = $native
         ? implode(' ', ['Changing a price here can stop new orders for this TLD until its prices match again.', $fix, 'Existing invoices keep their prices.'])
         : ($recovery !== null ? 'After you save, check that each affected TLD is still for sale. Existing invoices keep their prices.' : implode(' ', [
@@ -28,7 +28,7 @@
         @if ($status)
             <p>@foreach ($status as $action => $available)@unless ($loop->first)<br>@endunless<strong>{{ $action }}: {{ $available ? 'For sale' : 'Not for sale' }}</strong>@endforeach</p>
             @if (! ($status['Registration'] ?? true))
-                <p>{{ $fix }}</p>
+                <p>{{ $recovery ?? $fix }}</p>
             @endif
         @endif
     </div>
