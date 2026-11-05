@@ -35,7 +35,7 @@ $wire=new class($observe) implements DeadlineTransport {
         return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>$reply]));
     }
 };
-$registry=new RegistrarRegistry; $registry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock));
+$registry=new RegistrarRegistry; $registry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock),authenticator:$verifier);
 $readBindings=new AccountBindings($registry); $reconcile=new OperationReconciliation($claims,$readBindings,$clock);
 $prepare=static function($label)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
     DB::table('domains_read_budgets')->delete(); // Each synthetic transfer starts an independent account-minute scenario.

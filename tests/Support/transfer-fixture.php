@@ -82,7 +82,10 @@ $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=tru
     $state->query = OperationClaims::query($op,$op->domain); return $op->fresh();
 };
 $registry = new RegistrarRegistry;
-$verifier = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
+$verifier = new class implements AccountVerifier, \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+    public function verify(Environment $e, array $c): string { return $c['token']; }
+    public function authenticate(Environment $e, array $c): void { /* Synthetic connectivity only, as in commerceFixture. */ }
+};
 foreach (['enom','namesilo'] as $key) {
     $registry->register($key,['token'],$verifier,static function ($b,$c) use ($state,$clock) {
         same(0,DB::transactionLevel(),'Fresh reads outside locks'); $state->reads++;
@@ -91,7 +94,7 @@ foreach (['enom','namesilo'] as $key) {
         $reader = new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
             new Evidence(quote:$q,balance:new Money($state->funds,'USD'),available:$state->available,premium:$state->premium)));
         $state->readers[]=$reader;return $reader;
-    });
+    },authenticator:$key==='namesilo'?$verifier:null);
 }
 $freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock,$caps??null);
 $exchange = static function ($origin,$command,$p,$timeout) use ($state): string {
