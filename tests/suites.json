@@ -488,7 +488,10 @@
     "tests/native-service-edit-test.php",
     "tests/registrar-account-counts-test.php",
     "tests/storefront-transfer-reason-test.php",
-    "tests/cart-reload-price-test.php"
+    "tests/cart-reload-price-test.php",
+    "tests/customer-nameserver-refusal-test.php",
+    "tests/customer-lock-history-test.php",
+    "tests/customer-deferred-progress-test.php"
   ],
   "ui": [],
   "runner": [
