@@ -51,6 +51,8 @@ final readonly class CatalogueFreshness
             $server = Server::whereKey($review->serverId)->lockForUpdate()->firstOrFail();
             $row = $server->settings()->where('key', self::KEY)->lockForUpdate()->first() ?? $server->settings()->make(['key' => self::KEY]);
             $row->value = (string) $hours; $row->type = 'integer'; $row->encrypted = false; $row->save();
+            \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $review->serverId)
+                ->where('catalogue_converted', true)->increment('catalogue_revision');
             StorefrontCatalogueCache::invalidateAfterCommit();
         });
     }

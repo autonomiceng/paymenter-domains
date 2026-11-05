@@ -73,6 +73,8 @@ $accountPage->assertSee('Prices stay current for')->assertSee('48 hours');
 $bulkClock->instant = $now->modify('+49 hours');
 same('stale_price',$ports->readOffers($q,Context::Staff)[0]->reason,'Default 48-hour bulk observation expires');
 $accountPage->mountAction(Filament\Actions\Testing\TestAction::make('price_freshness_'.$binding->serverId)->schemaComponent(true,'content'))->setActionData(['hours'=>72,'reason'=>'Allow a missed daily catalogue read'])->callMountedAction()->assertHasNoActionErrors();
+// The saved policy invalidates publication; finish the local republish before checking offers.
+$ports->apply(Edit::republish($binding,'com'),$revision());
 same(true,$ports->readOffers($q,Context::Public)[0]->available,'Saving 72 hours changes freshness of the same original observation');
 same(72,Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($binding->serverId)->hours,'Account setting is saved');
 $bulkClock->instant = $now;
