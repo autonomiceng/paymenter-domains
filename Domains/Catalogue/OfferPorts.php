@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 use Paymenter\Extensions\Servers\Domains\Registrars\{Enom, NameSilo};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomLive, EnomTestSendLimit, LiveReservations, OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, EnomLive, EnomTestSendLimit, LiveReservations, OperationClaims, TestCatalogue};
 
 /** Production composition, deliberately unregistered until the complete caller cutover. No I/O at construction. */
 final class OfferPorts
@@ -32,6 +32,7 @@ final class OfferPorts
         $account = Account::where('server_id', $binding->serverId)->sole();
         $identity = $account->stable_identity;
         if ($binding->registrarKey === 'enom') {
+            if (!TestCatalogue::enabled($binding)) { throw new \DomainException('Offer reads are unavailable for this deployment.'); }
             if ($binding->environment === Environment::Live && !EnomLive::enabled($binding, 'catalogue')) {
                 throw new \DomainException('Live offer reads unavailable.');
             }
@@ -63,6 +64,7 @@ final class OfferPorts
     {
         OperationClaims::outside();
         try {
+            if ($binding->registrarKey === 'enom' && !TestCatalogue::enabled($binding)) { return 0; }
             $this->revision($binding);
             if ($binding->environment === Environment::Test && $binding->registrarKey === 'enom') {
                 $account = Account::where('server_id', $binding->serverId)->sole();

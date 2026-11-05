@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue, StaffSettingsReview as Review, StaffSettingsWrites};
 $clock=new class implements Clock {public DateTimeImmutable $at;public function __construct(){$this->at=new DateTimeImmutable('2026-10-22T00:10:00Z');}public function now():DateTimeImmutable{return $this->at;}};
-app()->instance(Clock::class,$clock);Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+app()->instance(Clock::class,$clock);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $session=app('session')->driver();$session->start();app('request')->setLaravelSession($session);app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
 $hot=storage_path('framework/domains-assets-hot');file_put_contents($hot,'http://assets.example.test');app(Illuminate\Foundation\Vite::class)->useHotFile($hot);require_once app_path('Classes/helpers.php');tldPanel();
 $rdapMode=(object)['mode'=>'ok','calls'=>0];$rdap=new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static function(string $url,int $timeout)use($rdapMode):array {
@@ -18,7 +18,9 @@ $rdapMode=(object)['mode'=>'ok','calls'=>0];$rdap=new \Paymenter\Extensions\Serv
     if($rdapMode->mode==='404'){return ['status'=>404,'body'=>'{"errorCode":404}'];}
     return ['status'=>200,'body'=>json_encode(['objectClassName'=>'domain','ldhName'=>basename(parse_url($url,PHP_URL_PATH)),'status'=>[$rdapMode->mode==='locked'?'client transfer prohibited':'active'],'events'=>[['eventAction'=>'registration','eventDate'=>$rdapMode->mode==='young'?'2026-10-21T00:00:00Z':'2020-01-01T00:00:00Z'],['eventAction'=>'transfer','eventDate'=>in_array($rdapMode->mode,['young','recent'],true)?'2026-10-21T00:00:00Z':'2020-01-01T00:00:00Z'],['eventAction'=>'expiration','eventDate'=>'2027-10-21T00:00:00Z']]])];
 });app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Rdap::class,$rdap);
-if($transferEnvironment??false){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));}
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck::class,new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck($rdap));
+// Fresh install's contract inspected these adapters before this fixture supplied its offline RDAP.
+foreach(['CheckoutEligibility','CartAdmission','InvoiceBinding','Storefront'] as $adapter){app()->forgetInstance('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$adapter);}
 $staff=staffUser([...array_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions()),'admin.invoices.update']);Auth::setUser($staff);
 Currency::firstOrCreate(['code'=>'USD'],['name'=>'US Dollar','format'=>'1,000.00','prefix'=>'$','suffix'=>'']);
 $server=Server::create(['name'=>'Synthetic TEST transfer','type'=>'server','extension'=>'Domains','enabled'=>true]);(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
@@ -32,16 +34,21 @@ $setupReply=static function(array $p)use($transferReply):string {
     };return $body===null?$transferReply($p):'<interface-response><Command>'.$p['Command'].'</Command><ErrCount>0</ErrCount><Done>true</Done>'.$body.'</interface-response>';
 };
 Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$setupReply]);config(['domains.enom_test_sends_per_day'=>1000,'domains.enom_test_sends_per_minute'=>100000]);
-$settings=app(StaffSettingsWrites::class);$write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void{$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST transfer');$settings->run($r,$data);};
+$settings=app(StaffSettingsWrites::class);$write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void{Auth::setUser($staff);$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic TEST transfer');$settings->run($r,$data);};
 $write('configure',['registrar'=>'enom','environment'=>$transferEnvironment,'uid'=>$transferUid,'token'=>'TEST-SECRET-TOKEN']);$a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 if(isset($transferConfigured)){$transferConfigured();}
 $write('probe');
-$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>true]]]);
+require_once __DIR__.'/installed-offer-evidence.php';
+// Independent synthetic annual prices/support cover this fixture's seven-day transfer watch.
+$tld=installedOfferEvidence($binding,$clock,true,7);
+if($transferEnvironment==='test'){config(['domains.enom_writes.renewal'=>true]);$write('test_renewal',['accept'=>true,'verified'=>true]);}
+$write('acceptance',['sell'=>['terms'=>['com'=>['longest'=>1,'transfer'=>true]]]]);
 // Default pricing is a business-wide setting, so Paymenter reloads its settings after the next request; keep the shop currency in the table as a real install does.
 App\Models\Setting::create(['key'=>'default_currency','value'=>'USD']);
-saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);$write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
+saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
+$write('tld_settings',['retained_annual_retail'=>'13.00'],$tld->id);
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>true,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);$write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>true],$tld->id);
-if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);}$transferProduct=app(NativeCatalogue::class)->product($tld,'transfer');
+if($transferEnvironment==='test'){$server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);}$transferProduct=null;
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void{$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void{$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
 config(['cache.default'=>'database','session.driver'=>'database','queue.default'=>'database','queue.connections.database.retry_after'=>900]);Queue::fake();if($transferEnvironment==='test'){$write('processing',['enabled'=>true,'confirmed'=>true]);}
 $user=commerceUser();$user->update(['email'=>'transfer-owner@example.com']);foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}

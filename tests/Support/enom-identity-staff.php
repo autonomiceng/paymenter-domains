@@ -52,7 +52,7 @@ $configure(['uid'=>'wrong-uid'],false,'Enom refused the user ID or API token. Ch
 $configure(['token'=>'wrong-token'],false,'Enom refused the user ID or API token. Check both for this account type.');
 $calls=count($GLOBALS['identityCalls']);$configure(['environment'=>'live'],false,'Enom reads for this account type are off on this site. Nothing was sent to the registrar.');
 same($calls,count($GLOBALS['identityCalls']),'Staff environment refusal makes no call');
-$configure(['registrar'=>'namesilo','api_key'=>'synthetic-key'],false,'NameSilo accounts can’t be connected here.');
+$configure(['registrar'=>'namesilo','api_key'=>'synthetic-key'],false,'Connection checks are off on this site. Nothing was sent to the registrar.');
 same(false,$a->fresh()->processing_enabled,'All attempts leave processing off');expect(!app(RuntimePorts::class)->accepted($a->fresh()),'Identity installs no write ports');
 try{app(AccountBindings::class)->requireProcessing(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh()));expect(false,'Processing guard required');}catch(DomainException){}
 try{app(AccountBindings::class)->reader($server->id);expect(false,'Catalogue acceptance still required');}catch(RuntimeException){}
@@ -62,6 +62,8 @@ foreach(Review::historyRows($server->fresh()) as $row){$json=json_encode($row);f
 $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a->fresh());
 $catalogue=Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed();
 $query=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+$catalogue->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[]),
+    $catalogue->readOffers($query,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $catalogue->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1)),
     $catalogue->readOffers($query,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $calls=count($GLOBALS['identityCalls']);app(Paymenter\Extensions\Servers\Domains\Services\RegistrarBalances::class)->daily($a->fresh());

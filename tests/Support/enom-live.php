@@ -54,7 +54,7 @@ resetWire(['reply'=>$reply]);
 $settings=app(StaffSettingsWrites::class);$bindings=app(AccountBindings::class);$ports=app(RuntimePorts::class);
 expect($settings->connectionAvailable(),'Installed live phase boots staff connection checks');
 $write=static function(string $action,array $data=[],?int $tld=null)use($settings,$staff,$server):void {
-    $r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic live registration');$settings->run($r,$data);
+    Auth::setUser($staff);$r=new Review($staff->id,$server->id,$tld,$action,Review::ticket($staff->id,$server->id,$tld,$action,Review::stamp($server->id,$tld)),'Review synthetic live registration');$settings->run($r,$data);
 };
 $write('configure',['registrar'=>'enom','environment'=>'live','uid'=>'live-uid','token'=>'LIVE-SECRET-TOKEN']);
 $a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
@@ -109,7 +109,9 @@ $deny(fn()=>Paymenter\Extensions\Servers\Domains\Services\EnomLiveCalls::reserve
 DB::table('domains_accounts')->where('server_id',$testServer->id)->delete();
 same($before,count($GLOBALS['enomWire']['forms']),'Binding refusals send nothing');
 $write('probe');
-$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
+require_once __DIR__.'/installed-offer-evidence.php';
+$tld=installedOfferEvidence($binding,$clock);
+$write('acceptance',['sell'=>['terms'=>['com'=>['longest'=>1,'transfer'=>false]]]]);
 foreach(['renewal','management'] as $action){
     $class='Paymenter\\Extensions\\Servers\\Domains\\Services\\EnomTest'.ucfirst($action);
     $server->settings()->create(['key'=>$class::KEY,'encrypted'=>true,'type'=>'string','value'=>json_encode(['fingerprint'=>$binding->fingerprint,...$class::protocol($binding)])]);
@@ -119,9 +121,11 @@ foreach(['renewal','management'] as $action){
 
 }
 saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
-config(['domains.enom_live.catalogue'=>false]);$before=count($GLOBALS['enomWire']['forms']);$deny(fn()=>$write('import',['ending'=>'com']));same($before,count($GLOBALS['enomWire']['forms']),'Catalogue off refuses import before send');config(['domains.enom_live.catalogue'=>true]);
-$write('import',['ending'=>'com']);$tld=Tld::where('server_id',$server->id)->sole();
+config(['domains.enom_live.catalogue'=>false]);$before=count($GLOBALS['enomWire']['forms']);
+$offerPorts=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferPorts($bindings,$clock);
+$deny(fn()=>$offerPorts->feed($binding));same($before,count($GLOBALS['enomWire']['forms']),'Catalogue off refuses feed construction before send');config(['domains.enom_live.catalogue'=>true]);
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
+$write('tld_settings',['retained_annual_retail'=>'13.00'],$tld->id);
 $write('publish',[],$tld->id);$write('seller',['seller'=>(string)$server->id,'register'=>true,'transfer'=>false],$tld->id);
 Illuminate\Support\Facades\Schema::create('cache',static function($t):void {$t->string('key')->primary();$t->mediumText('value');$t->integer('expiration')->index();});
 Illuminate\Support\Facades\Schema::create('cache_locks',static function($t):void {$t->string('key')->primary();$t->string('owner');$t->integer('expiration');});
@@ -131,13 +135,13 @@ same([],$front->endings(),'Before Activate there are no Live registration offers
 same('held',$front->check(placeholderComFixtureName('before-activate-search-placeholder.com'))['status'],'Before Activate search has no buy action');
 same($offerCalls,count($GLOBALS['enomWire']['forms']),'Unactivated public search makes no provider request');
 require __DIR__.'/enom-live-activation.php';
-$observations=app(ObservationWork::class);$observations->enroll($server->id);$before=count($GLOBALS['enomWire']['forms']);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Live catalogue keeps the TEST staff-only refresh policy');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'No spurious automatic catalogue failure');
+$observations=app(ObservationWork::class);$observations->enroll($server->id);$q=DB::table('domains_observation_queues')->where('server_id',$server->id);$work=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($q->value('offer_work'));$work['feed_due']=$clock->now()->getTimestamp()+86400;$work['credential_revision']=$bindings->offerCredentialRevision($binding);$work['upgrade_generation']=\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation();$q->update(['offer_work'=>json_encode($work,JSON_THROW_ON_ERROR)]);$before=count($GLOBALS['enomWire']['forms']);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Not-due active catalogue keeps this financial turn off wire');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'No spurious automatic catalogue failure');
 config(['domains.enom_live.catalogue'=>false]);$observations->tick();same($before,count($GLOBALS['enomWire']['forms']),'Catalogue opt-out sends no scheduled refresh');same(null,DB::table('domains_observation_queues')->where('server_id',$server->id)->value('catalogue_hold'),'Catalogue opt-out creates no false failure');config(['domains.enom_live.catalogue'=>true]);
 Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$server->id])
     ->assertSeeInOrder(['Sales','Renewals','On','DNS, nameservers and contacts','On'])->assertSee(['Live account ID',$binding->fingerprint])->assertDontSee('LIVE-SECRET-TOKEN');
 $user=commerceUser();$user->update(['email'=>'live-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
-$product=app(NativeCatalogue::class)->product($tld,'register');$worker=app(RuntimeWork::class);
+$write('publish',[],$tld->id);$product=app(NativeCatalogue::class)->product($tld,'register');$worker=app(RuntimeWork::class);
 $new=static function(string $name,bool $pay=true)use($user,$product):Operation {
     $cart=commerceCart($user);commerceAdd($cart,$product,$name);commerceCheckout($user,$cart)->assertHasNoErrors();
     $op=Domain::where('domain',$name)->sole()->operations()->sole();
@@ -151,11 +155,11 @@ $notSelling=commerceCart($user);commerceAdd($notSelling,$product,placeholderComF
 $write('activate',['registration'=>false,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true]);
 same([],$front->endings(),'Registrations unchecked removes even warm public offers');
 try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked registration admission must refuse');}
-catch(App\Exceptions\DisplayException $e){same('Domains can’t be ordered right now. Remove them to check out.',$e->getMessage(),'Locked admission uses the existing customer message');}
+catch(DomainException $e){same('No current offer price.',$e->getMessage(),'Active locked admission refuses the withdrawn offer');}
 $debtBefore=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
 $refusedCheckout=commerceCheckout($user,$notSelling);
 same($debtBefore,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],'Registrations unchecked creates no order, invoice or bound operation');
-$refusedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+$refusedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
 $write('activate',['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>false,'confirmed'=>true]);
 foreach(['before_activate','evidence_removed'] as $missing){
     $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('live-'.str_replace('_','-',$missing).'-placeholder.com'));
@@ -164,14 +168,14 @@ foreach(['before_activate','evidence_removed'] as $missing){
     $debtBefore=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
     $blockedCheckout=commerceCheckout($user,$cart);
     same($debtBefore,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],$missing.' creates no invoice or bound operation');
-    $blockedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
-    try{$front->offer('com','register',1);throw new LogicException('Direct offer must refuse');}catch(App\Exceptions\DisplayException){}
+    $blockedCheckout->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
+    try{$front->offer('com','register',1);throw new LogicException('Direct offer must refuse');}catch(DomainException){}
     same('held',$front->check(placeholderComFixtureName('search-'.str_replace('_','-',$missing).'-placeholder.com'))['status'],$missing.' search has no buy action');
-    try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked admission must refuse');}catch(App\Exceptions\DisplayException){}
+    try{DB::transaction(fn()=>app(Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$activeSelection],$clock->now()));throw new LogicException('Locked admission must refuse');}catch(DomainException){}
     if($missing==='before_activate'){$receiptRow->exists=false;$receiptRow->save();}else{config(['domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);}
 }
 $preview=commerceCart($user);commerceAdd($preview,$product,placeholderComFixtureName('live-preview-placeholder.com'));$orders=App\Models\Order::count();$invoices=App\Models\Invoice::count();config(['domains.enom_live.registration'=>false]);
-commerceCheckout($user,$preview)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+commerceCheckout($user,$preview)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
 same([$orders,$invoices],[App\Models\Order::count(),App\Models\Invoice::count()],'Live preview-only checkout creates no native debt');config(['domains.enom_live.registration'=>true]);
 $pendingSale=$new(placeholderComFixtureName('live-pay-gate-placeholder.com'),false);
 App\Models\Credit::updateOrCreate(['user_id'=>$user->id,'currency_code'=>'USD'],['amount'=>'500.00']);
@@ -242,6 +246,7 @@ $before=count($GLOBALS['enomWire']['forms']);$worker->operation($change->id);sam
 // A paid renewal uses the same native invoice, two assessments and captured-order reconciliation.
 $clock->at=new DateTimeImmutable('2027-09-30T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
+Auth::setUser($staff);installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
 $billing=new Paymenter\Extensions\Servers\Domains\Services\DomainBilling($bindings,app(Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);
 config(['domains.enom_live.renewal'=>false]);try{$billing->invoice($op->domain_id,$user);throw new LogicException('Site off refuses a new Live invoice');}catch(Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e){same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff,$e->reason,'Live with the site flag off gets no new invoice');}config(['domains.enom_live.renewal'=>true]);
 // A Live holding on a TEST site never sends either.

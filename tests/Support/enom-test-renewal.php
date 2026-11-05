@@ -13,9 +13,12 @@ $nativeSuccessful=false;config(['domains.enom_test_sends_per_day'=>1000,'domains
 // The limit counts this login's sends in the rolling 24 hours before the scenario clock.
 $recentSends=static fn():int=>EnomTestSendLimit::usage('test-uid')['day'];
 $clock->at=new DateTimeImmutable('2026-10-22T00:10:00Z');Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();resetWire(['reply'=>$reply]);
-// Discard only the preceding scenario's synthetic transfer acceptance before this independent annual import.
-$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
-$write('probe');$write('import',['ending'=>'com']);$write('publish',[],$tld->id);
+// Independent current annual evidence replaces the preceding transfer fixture's support.
+Auth::setUser($staff);config(['domains.enom_writes.renewal'=>true]);
+$write('test_renewal',['accept'=>true,'verified'=>true]);$write('test_transfer',['accept'=>false]);
+$tld=installedOfferEvidence($binding,$clock);
+$write('acceptance',['sell'=>['terms'=>['com'=>['longest'=>1,'transfer'=>false]]]]);
+$write('probe');$write('publish',[],$tld->id);
 $holders=[];
 foreach(['success','cap','overrun','uncertain','auto','grace','partial','anchor','replacement','calendar','race','issuance'] as $case){
     $clock->at=$clock->at->modify('+61 seconds');Cache::flush();$original=$new(placeholderComFixtureName('renewal-'.$case.'-placeholder.com'));$GLOBALS['testRegisteredName']=$original->domain->domain;
@@ -23,6 +26,7 @@ foreach(['success','cap','overrun','uncertain','auto','grace','partial','anchor'
     same('succeeded',$original->fresh()->state,'Renewal starts with proven original holding');$holders[$case]=$original->domain()->firstOrFail();unset($GLOBALS['testRegisteredName']);
 }
 $money=static fn()=>array_map(static fn($table)=>DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all(),['invoices','invoice_items','invoice_transactions','credits']);
+Auth::setUser($staff);$write('test_renewal',['accept'=>false]);
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.renewal'=>$off]);expect(!EnomTestRenewal::enabled($binding),'Only strict true opts in');}
 try{$write('test_renewal',['accept'=>true,'verified'=>true]);throw new LogicException('Off cannot record acceptance');}catch(DomainException $e){same('TEST renewal deployment is unavailable.',$e->getMessage(),'Off review refuses safely');}
 config(['domains.enom_writes.renewal'=>true]);
@@ -35,8 +39,9 @@ try{$write('test_renewal',['accept'=>true]);throw new LogicException('Independen
 $write('test_renewal',['accept'=>true,'verified'=>true]);expect(EnomTestRenewal::accepted($binding),'Audited account-bound TEST renewal review accepted');
 $saved=App\Models\Server::find($server->id)->settings()->where('key',EnomTestRenewal::KEY)->sole();expect($saved->encrypted,'Renewal review stored encrypted');
 expect(!EnomTestRenewal::accepted(new Paymenter\Extensions\Servers\Domains\Data\AccountBinding('enom',$binding->serverId,Paymenter\Extensions\Servers\Domains\Data\Environment::Test,'foreign-uid')),'Accepted fingerprint cannot cross accounts');
-$make=static function($domain)use($clock,$bindings,$user,$server):Operation {
+$make=static function($domain)use($clock,$bindings,$user,$server,$staff,$binding):Operation {
     $clock->at=new DateTimeImmutable('2027-09-27T12:00:00Z');Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());Cache::flush();
+    Auth::setUser($staff);installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
     $billing=new DomainBilling($bindings,app(NativeDomainGuard::class),$clock,catalogue: $GLOBALS['caps']??null);
     $invoice=$billing->invoice($domain->id,$user);same($invoice->id,$billing->invoice($domain->id,$user)->id,'One obligation per cycle');
     $op=Operation::where('invoice_id',$invoice->id)->sole();App\Helpers\ExtensionHelper::addProcessingPayment($invoice->id,null,$op->amount,'0.00','annual-'.$op->id);
@@ -74,7 +79,7 @@ $write('test_renewal',['accept'=>true,'verified'=>true]);$server->settings()->up
 $GLOBALS['enomWire']['during']=static function(array $p)use($op,$clock):void {if($p['Command']==='Extend'){(new RuntimeWork($clock,new RuntimePorts))->operation($op->id);}};
 Cache::flush();$used=DB::table(EnomTestSendLimitSchema::SENDS)->count();
 (new RuntimeWork($clock,new RuntimePorts))->operation($op->id);$commands=array_column($GLOBALS['enomWire']['forms'],'Command');
-same(['GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','Extend'],$commands,'Two bounded six-read assessments and one Extend');
+same(['GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','GetDomainInfo','GetExtendInfo','Check','GetDomainInfo','GetRenew','GetBalance','Extend'],$commands,'Two bounded six-read assessments and one Extend: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code,$commands]));
 same('pending',$op->fresh()->state,'Paid renewal acknowledged once');same($used+13,DB::table(EnomTestSendLimitSchema::SENDS)->count(),'Extend counted once among the 13 sends');same($before,$money(),'Renewal dispatch changes no native financial bytes');
 $extend=end($GLOBALS['enomWire']['forms']);same(['1','no'],[$extend['NumYears'],$extend['UseCreditCard']],'One annual renewal without card');
 $s->after=true;$s->bill=(new DateTimeImmutable($op->fresh()->attempt['dispatch_attempted_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('n/j/Y g:i:s A');

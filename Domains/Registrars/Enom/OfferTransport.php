@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Registrars\Enom;
 
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{CurlTransport, ReadCommand, Transport};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationClaims};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, OperationClaims, TestCatalogue};
 
 /** Revalidate each physical read; CurlTransport retains daily admission and the deployment send guard. */
 final class OfferTransport implements Transport
@@ -20,6 +20,7 @@ final class OfferTransport implements Transport
         OperationClaims::outside();
         if ($this->current) { ($this->current)(); }
         if ($environment !== $this->binding->environment) { throw new \DomainException('Offer environment changed.'); }
+        if (!TestCatalogue::enabled($this->binding)) { throw new \DomainException('Offer reads are unavailable for this deployment.'); }
         $credentials = $this->bindings->offerCredentials($this->binding, $this->revision);
         if (!hash_equals($credentials['uid'], $uid) || !hash_equals($credentials['token'], $token)) {
             throw new \DomainException('Offer credentials changed.');

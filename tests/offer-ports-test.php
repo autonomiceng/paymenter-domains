@@ -27,6 +27,10 @@ $clock = new class implements Clock {
 app()->instance(Clock::class, $clock);
 $ports = new OfferPorts($bindings, $clock);
 config([EnomTestSendLimit::PER_DAY => 100, EnomTestSendLimit::PER_MINUTE => 60]);
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>false]);
+same(0, $ports->allowance($binding, RequestOrigin::Background), 'Identity-only deployment cannot admit automatic offer reads');
+try { $ports->feed($binding); throw new LogicException('Catalogue-off feed constructed'); } catch (DomainException) {}
+config(['domains.enom_catalogue.enabled'=>true]);
 same(25, $ports->allowance($binding, RequestOrigin::Background), 'Our catalogue allowance also reserves minute headroom');
 DB::table(EnomTestSendLimitSchema::ACCOUNTS)->insertOrIgnore(['account' => EnomTestSendLimit::account('offer-fixture')]);
 DB::table(EnomTestSendLimitSchema::SENDS)->insert(['account' => EnomTestSendLimit::account('offer-fixture'), 'command' => 'Check', 'sent_at' => $clock->now()->getTimestamp() - 120]);
@@ -39,6 +43,11 @@ $wire = new class implements Transport {
     { $this->calls++; return 'synthetic response'; }
 };
 $transport = new OfferTransport($bindings, $binding, $revision, $wire);
+foreach (['domains.enom_catalogue.enabled'=>false,'domains.enom_identity.environment'=>'live'] as $key=>$disabled) {
+    $saved=config($key);config([$key=>$disabled]);
+    try { $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000); throw new LogicException('Disabled deployment sent'); } catch (DomainException) {}
+    same(0,$wire->calls,'Physical offer sends recheck catalogue and identity deployment opt-ins');config([$key=>$saved]);
+}
 same('synthetic response', $transport->send(Environment::Test, ReadCommand::Tlds, [], 'offer-fixture', 'synthetic-first', 1000), 'A current offer transport reaches only the explicit fake wire');
 $bindings->configure($server->id, 'enom', Environment::Test, ['uid' => 'offer-fixture', 'token' => 'synthetic-second']);
 expect($revision !== $ports->revision($binding), 'Verified rotation changes the offer credential revision without changing account identity');

@@ -32,6 +32,14 @@ $registry->register('enom', ['uid', 'token'], $verifier, fn (AccountBinding $acc
 [$verified] = $registry->verify('enom', 1, Environment::Test, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 $driver = $registry->reader($verified, ['uid' => 'synthetic-uid', 'token' => 'synthetic-secret']);
 expect($driver instanceof Driver && $binding->matches($driver->binding()), 'Neutral registry returns bound read-only driver');
+// The installed preview and reconciliation wrappers must retain the surviving reader contract.
+$preview=new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\CataloguePreview($driver);
+foreach([$preview,new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomTestReconciliationReader($preview,$driver)] as $wrapper){
+    $wrappedRegistry=new RegistrarRegistry;$wrappedRegistry->register('enom',['uid','token'],$verifier,static fn()=>$wrapper);
+    $calls=count($wire->calls);same($wrapper,$wrappedRegistry->reader($binding,['uid'=>'synthetic-uid','token'=>'synthetic-secret']),'Installed wrapper survives normal reader validation');
+    same($calls,count($wire->calls),'Wrapper admission itself makes no provider request');
+}
+
 foreach (['0' => '0.00', '1,234.50' => '1234.50', '12.3' => '12.3', '999,999,999,999,999,999.99'=>'999999999999999999.99'] as $input => $amount) {
     $wire->payloads['Balance'] = '<AvailableBalance>'.$input.'</AvailableBalance>';
     $result = $driver->balance($context()); same($amount, $result->evidence()->balance?->amount, 'Source grouped USD balance exact');

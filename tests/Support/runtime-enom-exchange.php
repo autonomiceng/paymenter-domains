@@ -28,15 +28,11 @@ $reader=static function($b)use($clock,$state){
 };
 $registry->register('enom',['uid','token'],$verify,$reader,null,false,$reader);
 $auth=new AccountBindings($registry);$auth->configure($binding->serverId,'enom',Environment::Test,['uid'=>'account-enom','token'=>'SYNTHETIC-WIRE-TOKEN']);
-$sellers=new SellerPolicies($prices,$auth);
-foreach([AccountBindings::class=>$auth,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
-$acceptedCatalogue=CatalogueAcceptances::load($binding);
-DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
-    $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
+require_once __DIR__.'/installed-module-routing.php';
+[$prices,$native,$sellers]=installedModuleRouting($auth,$clock,$ports,activeFixtureClock($sellers),$precheck);
+expect(\Paymenter\Extensions\Servers\Domains\Services\EnomProtocol::accepts($binding,\Paymenter\Extensions\Servers\Domains\Registrars\Enom\RuntimeFactory::registrationAcceptance($binding)),'Exchange uses the compiled environment route');
 Paymenter\Extensions\Servers\Domains\Services\BalanceReads::record($binding,new Money('100.00','USD'),$clock->now(),'manual');
-$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($auth,$clock,$precheck),$clock);app()->instance(CartAdmission::class,$admission);
-app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
-(new Paymenter\Extensions\Servers\Domains\Domains)->boot();Illuminate\Support\Facades\Queue::fake();
+Illuminate\Support\Facades\Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
 App\Models\Server::find($binding->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
@@ -48,7 +44,7 @@ foreach(['acquisition','renewal_writer','management_protocol'] as $role){expect(
 // A corrupt encrypted setting must not be read while constructing ports or staff readiness.
 $setting=App\Models\Server::find($binding->serverId)->settings()->where('key','domains_credentials')->sole();$raw=$setting->getRawOriginal('value');
 DB::table('settings')->where('id',$setting->id)->update(['value'=>'invalid-ciphertext']);$factory();
-$ports=new RuntimePorts;$ports->register($binding->fingerprint,$factory);expect($ports->accepted($account),'Pure readiness needs no plaintext');
+$ports=installedRuntimePorts();$ports->register($binding->fingerprint,$factory);expect($ports->accepted($account),'Pure readiness needs no plaintext');
 DB::table('settings')->where('id',$setting->id)->update(['value'=>$raw]);
 $auth->setProcessing($binding->serverId,true,static fn()=>null);
 app()->instance(RuntimePorts::class,$ports);$limiter=new AccountReadBudget($clock,48);app()->instance(ReadLimiter::class,$limiter);
@@ -75,16 +71,7 @@ $reply=static function($p):string {
 echo "Installed exchange composition ready.\n";
 foreach(['register','transfer','register'] as $i=>$action){
     $clock->at=$clock->at->modify('+61 seconds');Cache::flush();
-    if($action==='transfer'){
-        DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
-            $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings)));
-        config(['domains.enom_identity.environment'=>'live','domains.enom_catalogue.enabled'=>false]);
-    }
     $op=$new(placeholderComFixtureName('authenticated-'.$i.'-placeholder.com'),$action);
-    if($action==='transfer'){
-        DB::transaction(static fn()=>CatalogueAcceptances::saveLocked(new Paymenter\Extensions\Servers\Domains\Data\CatalogueAcceptance(
-            $binding,$acceptedCatalogue->revision,$acceptedCatalogue->endings,'https://resellertest.enom.com/interface.asp',25)));
-    }
     config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);resetWire(['reply'=>$reply]);
     $seen=false;$GLOBALS['enomWire']['during']=static function()use(&$seen,$op,$worker,$auth,$binding,$clock,$limiter){
         if($seen){return;}$seen=true;
@@ -106,7 +93,7 @@ foreach(['register','transfer','register'] as $i=>$action){
     ]));
     $formsAfterDispatch = count($GLOBALS['enomWire']['forms']);
     same($action==='register'?'pending':'uncertain',$op->fresh()->state,'Acknowledgement never completes acquisition');same('sealed',$op->fresh()->attempt['seal'],'Actual paid operation sealed');if($action==='register'){$registered=$op->fresh();}
-    $freshPorts=new RuntimePorts;$freshPorts->register($binding->fingerprint,$auth->enomRuntimeFactory($binding,$clock,$features,$accepted,$renewalAccepted,$precheck));
+    $freshPorts=installedRuntimePorts();$freshPorts->register($binding->fingerprint,$auth->enomRuntimeFactory($binding,$clock,$features,$accepted,$renewalAccepted,$precheck));
     Cache::flush();(new RuntimeWork($clock,$freshPorts))->operation($op->id);same($formsAfterDispatch,count($GLOBALS['enomWire']['forms']),'Reconstructed worker never replays');
     expect(DB::table('domains_read_budgets')->where('server_id',$binding->serverId)->value('used')>=1,'Physical send counted');
 }

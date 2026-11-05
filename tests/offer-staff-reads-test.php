@@ -61,17 +61,28 @@ class OfferStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Pages\W
 // Blade calls binding() on the concrete component; expose the inherited private helper in this fixture only.
 public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding{return $this->account?\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$this->account)->sole()):null;}}
 \Livewire\Livewire::component('offer-staff-page',OfferStaffPage::class);
+// Off-page warnings are counted cheaply; formula explanations cover only the current page.
+$last=Tld::where('server_id',$binding->serverId)->where('tld','like','scale%')->orderByDesc('tld')->take(2)->get();
+DB::table('domains_tlds')->where('id',$last[0]->id)->update(['catalogue_intent'=>'{"sell":']);
+DB::table('domains_tlds')->where('id',$last[1]->id)->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(['sell'=>true,'pricing_rule'=>['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'42.00','renew'=>'43.00','transfer'=>'44.00']]])]);
 $component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('12.00');
 same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');
+$component->assertSee('Prices left out on other pages')->assertSee('1 more TLD has prices left out.');
+same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Saved prices remain limited to the current page');
+expect(!collect($component->instance()->explanations())->contains(fn($e)=>in_array('.'.$last[1]->tld,$e['tlds'],true)),'Off-page formulas wait for their own page');
 $component->searchTable('com')->assertSee('12.00');same(1,$component->instance()->getTableRecords()->total(),'Real rendered search narrows converted identities');
-$component->searchTable('')->filterTable('no_cost');same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');
-$component->removeTableFilter('no_cost')->filterTable('country');same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
+$component->assertDontSee('Prices left out');same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Search excludes the unrelated warning');
+expect(collect($component->instance()->explanations())->every(fn($e)=>$e['tlds']===['.com']),'Formula explanations follow the filtered list');
+// Apply each destination filter state in one real request; intermediate states have no assertions.
+$component->set(['tableSearch'=>'','tableFilters.no_cost'=>['isActive'=>true]]);same(598,$component->instance()->getTableRecords()->total(),'No-cost filter uses normalized observation');
+$component->set(['tableFilters.no_cost'=>['isActive'=>false],'tableFilters.country'=>['isActive'=>true]]);same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
 // Installed TLD-page failures are covered by offer-installed-staff-test on persisted bridge state.
 // Mixed valid/missing batch results must reach the existing page failure notification.
 $staffWrites=new class($native,$sellers,$bindings) extends \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$staffWrites->commands=$commands;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,$staffWrites);
 session()->forget('filament.notifications');
 $m=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class,'write');
-$editable=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->instance();$m->invoke($editable,['choices'=>['com'=>'skip','missing'=>'skip']]);
+// Reuse the mounted page: the guarded write is independent of the table's active filters.
+$editable=$component->instance();$m->invoke($editable,['choices'=>['com'=>'skip','missing'=>'skip']]);
 expect(collect(session('filament.notifications',[]))->contains(fn($n)=>$n['title']==="Couldn't save"&&str_contains($n['body'],'.missing')),'Page must report the missing row as well as saving its valid sibling');
 same(false,\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent)['sell'],'Valid sibling remains saved when reporting missing row');
 $actor->role()->first()->update(['permissions'=>[Staff::VIEW]]);$redacted=$source->page(collect([$t->fresh()]));

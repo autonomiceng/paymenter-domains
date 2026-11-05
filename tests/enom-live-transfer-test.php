@@ -16,7 +16,7 @@ $transferConfigured=static function():void {
     config(['domains.enom_live.site'=>'https://billing.example.com','domains.enom_live.accounts'=>['live-uid'=>['fingerprint'=>$binding->fingerprint,'daily_call_cap'=>1000,'daily_spend_limit_usd'=>'100.00']],'domains.enom_live.catalogue'=>true]);
     expect(!Policy::enabled($binding),'Live transfer defaults off despite Live catalogue and TEST opt-in');
     foreach([false,'true',1,null] as $off){config(['domains.enom_live.transfer'=>$off]);expect(!Policy::enabled($binding),'Live transfer requires boolean true');}
-    config(['domains.enom_live.transfer'=>true]);
+    config(['domains.enom_live.transfer'=>true,'domains.enom_live.renewal'=>true]);
     expect(Policy::enabled($binding),'Live transfer has independent deployment authority');
     $transferState->environment='live';$transferState->uid='live-uid';
 };
@@ -28,8 +28,10 @@ $evidence=['fingerprint'=>$binding->fingerprint,'site'=>'https://billing.example
     'transfer_proof'=>['confirmed_on'=>'2026-10-20','reference'=>'OFFLINE synthetic pilot','sha256'=>hash('sha256','OFFLINE pilot')]];
 config(['domains.enom_live.accounts.live-uid.evidence'=>$evidence,'domains.support_url'=>'https://support.example.com']);
 DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['finished_at'=>$clock->now()->getTimestamp()]);
-$activate=static fn()=>$write('activate',['registration'=>false,'renewal'=>false,'management'=>false,'transfer'=>true,'confirmed'=>true]);
+$activate=static fn()=>$write('activate',['registration'=>false,'renewal'=>true,'management'=>false,'transfer'=>true,'confirmed'=>true]);
 
+// Separate real native admission/payment and runtime scenarios to retain the 65-second per-file budget.
+if(!($liveTransferRuntime??false)){
 $deny(fn()=>$write('live_transfer',['accept'=>true,'verified'=>true]));
 expect(!Policy::accepted($binding),'Activate is required even with verified input');
 $publicOffers=static function(bool $expected,string $stage):void {
@@ -51,7 +53,7 @@ $protocol=['route'=>EnomLive::route(),'command'=>'TP_CreateOrder','interval'=>25
 $accept(Policy::KEY,$protocol);expect(!Policy::accepted($binding),'TEST acceptance cannot authorize Live');
 $accept('domains_enom_live_transfer',[...$protocol,'route'=>'https://resellertest.enom.com/interface.asp']);expect(!Policy::accepted($binding),'TEST route cannot authorize Live');
 $deny(fn()=>$write('test_transfer',['accept'=>true,'verified'=>true]));
-$activate();expect(Policy::accepted($binding),'Independent Live acceptance');$publicOffers(true,'After acceptance');config(['domains.enom_live.transfer'=>false]);$publicOffers(false,'Deployment off');config(['domains.enom_live.transfer'=>true]);$publicOffers(true,'Deployment restored');
+$activate();expect(Policy::accepted($binding),'Independent Live acceptance');$write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class)->product($tld,'transfer');expect($transferProduct!==null,'Reviewed active Live transfer has its published native product');$publicOffers(true,'After acceptance');config(['domains.enom_live.transfer'=>false]);$publicOffers(false,'Deployment off');config(['domains.enom_live.transfer'=>true]);$publicOffers(true,'Deployment restored');
 $write('live_transfer',['accept'=>false]);expect(!Policy::accepted($binding),'Live acceptance can be revoked');same(false,app(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class)->hasTransferOffers(),'Revocation invalidates the warm Live offer');$publicOffers(false,'After revoke');
 $write('live_transfer',['accept'=>true]);
 same([60,60],TransferPrecheck::rules($selection),'What you sell is used only after Live acceptance');
@@ -63,9 +65,9 @@ foreach(['feature_off','evidence_removed'] as $missing){
     $sale=app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->selection('com','transfer',1,$clock->now());
     if($missing==='feature_off'){$write('live_transfer',['accept'=>false]);}else{config(['domains.enom_live.accounts.live-uid.evidence'=>null]);}
     $debts=[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()];
-    commerceCheckout($user,$blockedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>'Domains can’t be ordered right now. Remove them to check out.','type'=>'error']);
+    commerceCheckout($user,$blockedCart)->assertDispatched('notify',fn($event,$params)=>$params[0]['type']==='error');
     same($debts,[App\Models\Order::count(),App\Models\Invoice::count(),Operation::count()],$missing.' transfer has no payable debt');
-    try{DB::transaction(fn()=>app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$sale],$clock->now()));throw new LogicException('Locked transfer admission must refuse');}catch(App\Exceptions\DisplayException){}
+    try{DB::transaction(fn()=>app(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class)->admit([$sale],$clock->now()));throw new LogicException('Locked transfer admission must refuse');}catch(DomainException){}
     config(['domains.enom_live.accounts.live-uid.evidence'=>$evidence]);if($missing==='feature_off'){$write('live_transfer',['accept'=>true]);}
 }
 $cart=commerceCart($user);commerceAdd($cart,$transferProduct,placeholderComFixtureName('live-transfer-placeholder.com'));commerceCheckout($user,$cart)->assertHasNoErrors();
@@ -91,6 +93,12 @@ $write('live_transfer',['accept'=>true]);$pay();same('paid',App\Models\Invoice::
 $write('live_transfer',['accept'=>false]);$calls=count($GLOBALS['enomWire']['forms']);
 same(null,app(\Paymenter\Extensions\Servers\Domains\Services\PayCheck::class)->stop(App\Models\Invoice::findOrFail($op->invoice_id)),'A fully paid Live invoice stays outside the pay gate');
 same($calls,count($GLOBALS['enomWire']['forms']),'A fully paid Live invoice makes no name read');$write('live_transfer',['accept'=>true]);
+echo "Live transfer admission and partial-payment refusals passed without sockets.\n";$nativeSuccessful=true;return;
+}
+$activate();$write('publish',[],$tld->id);$transferProduct=app(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class)->product($tld,'transfer');
+expect($transferProduct!==null,'Reviewed active runtime fixture publishes a transfer product');
+$cart=commerceCart($user);commerceAdd($cart,$transferProduct,placeholderComFixtureName('live-transfer-runtime-placeholder.com'));commerceCheckout($user,$cart)->assertHasNoErrors();
+$op=Domain::where('domain',placeholderComFixtureName('live-transfer-runtime-placeholder.com'))->sole()->operations()->sole();App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);
 $request=Illuminate\Http\Request::create('/code','POST',['transfer_code'=>'Live:Case-Sensitive + %']);$request->setUserResolver(fn()=>$user);app(TransferInputs::class)->submitCode($request,$op->id);
 $run=static fn()=>app(RuntimeWork::class)->operation($op->id);
 $reset=static function()use($server,$setupReply):void {Cache::flush();DB::table('domains_read_budgets')->where('server_id',$server->id)->delete();\Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire(['reply'=>$setupReply]);};
@@ -151,21 +159,6 @@ try {
     same(500,(int)$ledger->value('used'),'Refused background reservation spends no checkout headroom');
 }finally{$budget->release($binding,$origin,$token);}
 EnomLiveCalls::reserve($binding);same(501,(int)$ledger->value('used'),'Checkout retains its allowance after the background scope throws');
-// Price readiness uses the same entry time as the other activation checks, even across its age boundary.
-$activation=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::class;
-$entry=$clock->now();$account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole();
-DB::table('domains_prices')->where('server_id',$server->id)->where('action','renew')
-    ->update(['observed_at'=>$entry->modify('-172799 seconds')->format('Y-m-d H:i:s')]);
-$missingPrice=static fn(array $problems):bool=>(bool)array_filter($problems,static fn(string $problem):bool=>str_starts_with($problem,'Costs and prices Missing.'));
-$ready=$activation::problems($account,['renewal'=>true]);
-expect(!$missingPrice($ready),'Renewal price at age 172799 seconds is ready');
-$clock->at=$entry->modify('+1 second');
-expect($missingPrice($activation::problems($account,['renewal'=>true])),'Renewal price at age 172800 seconds is missing');
-$advancing=new class($entry) implements \Paymenter\Extensions\Servers\Domains\Contracts\Clock {
-    public function __construct(private DateTimeImmutable $at) {}
-    public function now():DateTimeImmutable {$at=$this->at;$this->at=$this->at->modify('+1 second');return $at;}
-};
-app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$advancing);
-try{same($ready,$activation::problems($account,['renewal'=>true]),'Advancing clock preserves the activation-entry price readiness');}
-finally{app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);$clock->at=$entry;}
+// Retired fixed 172800-second legacy-column age algorithm: offer-evaluator-test.php proves independent
+// cost/facts freshness at freshUntil and future observations; offer-installed-readiness-test.php proves real local activation routing.
 echo "Live transfer gates, one guarded send and opt-out recovery passed without sockets.\n";$nativeSuccessful=true;

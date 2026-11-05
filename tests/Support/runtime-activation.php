@@ -92,9 +92,9 @@ expect(in_array(RegistrarAccount::class,$panel->getPages(),true),'Native discove
 Livewire\Livewire::actingAs($staff)->test(ActivationStatus::class)->assertRedirect(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl());
 $account=['account'=>$server->id];
 $test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();
-expect(!str_contains($test->html(),'Choose the TLDs you sell.'),'Accepted catalogue is not falsely reported missing');
-DB::table('settings')->where('settingable_id',$server->id)->where('key','domains_catalogue_acceptance')->update(['value'=>'invalid-synthetic-acceptance']);
-$test=Livewire\Livewire::actingAs($staff)->test(RegistrarAccount::class,$account)->assertSuccessful();$html=$test->html();
+// Administrative term intent cannot replace unknown independent provider facts.
+$html=$test->html();
+expect(str_contains($html,'Choose the TLDs you sell.'),'Unknown active facts remain visible as missing setup');
 foreach(['What you sell','Choose the TLDs you sell.','Registrations','Transfers','System checks','Site setup'] as $word){expect(str_contains($html,$word),'Account page shows go-live fact '.$word);}
 expect(Domain::where('domain','queued-held.test')->exists(),'The excluded queued-held.test fixture exists');
 foreach(['synthetic-held-account','synthetic-password','PRIVATE-','queued-held.test','held-package-operation','domains_credentials','account_fingerprint'] as $secret){expect(!str_contains($html,$secret),'Account page excludes secrets and ledger payloads');}

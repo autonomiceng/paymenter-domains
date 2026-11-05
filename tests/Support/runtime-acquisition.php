@@ -21,13 +21,10 @@ $clock=new class($now) implements Clock {
 };
 app()->instance(Clock::class,$clock);
 if(getenv('PACKAGE_PHASE')==='enom-exchange'){require __DIR__.'/runtime-enom-exchange.php';return;}
-foreach([AccountBindings::class=>$bindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$instance){app()->instance($type,$instance);}
+require_once __DIR__.'/installed-module-routing.php';
 $offline=static fn()=>throw new LogicException('No exchange supplied to this fixture');
 $checkoutCheck=new TransferPrecheck(new Rdap($offline));
-$admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bindings,$clock,$checkoutCheck),$clock);
-app()->instance(CartAdmission::class,$admission);
-app()->instance(InvoiceBinding::class,new InvoiceBinding($admission,$native,$prices,$clock));
-(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
+[$prices,$native,$sellers]=installedModuleRouting($bindings,$clock,$ports,activeFixtureClock($sellers),$checkoutCheck);
 Queue::fake();
 $user=commerceUser();$user->update(['email'=>'acquisition-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
@@ -37,12 +34,13 @@ $other=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(A
 $state=(object)['query'=>null,'reads'=>0,'premium'=>false,'writes'=>[],'rdap'=>0];
 $registry=new RegistrarRegistry;
 $verifier=new class implements AccountVerifier {public function verify(Environment $e,array $c):string{return $c['token'];}};
-$registry->register('enom',['token'],$verifier,static function($b)use($clock,$state){
+$reader=static function($b)use($clock,$state){
     same(0,DB::transactionLevel(),'Composition reader runs outside financial locks');$state->reads++;
     $quote=new QuoteEvidence($state->query,new Money($state->query->action===Action::Transfer?'7.00':'6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
     return new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
         new Evidence(quote:$quote,balance:new Money('100.00','USD'),available:true,premium:$state->premium)));
-});
+};
+$registry->register('enom',['token'],$verifier,$reader,null,false,$reader);
 $freshBindings=new AccountBindings($registry);
 $precheck=new TransferPrecheck(new Rdap(static function($url)use($state){
     same(0,DB::transactionLevel(),'Transfer RDAP runs outside financial locks');$state->rdap++;
@@ -97,21 +95,22 @@ $nsSelector=new AcquisitionPorts($other,AcquisitionPort::registration($other,$bi
 $wrongProfiles=new RegistrationProfiles($other,new OperationClaims($bindings,$clock),$clock,$offline);
 $refused(fn()=>AcquisitionPort::registration($other,$bindings,$clock,$features,$nsAccept,$nsRegistration,$wrongProfiles),'Registration policy composition is unavailable.');
 $refused(fn()=>AcquisitionPort::transfer($other,$bindings,$clock,$features,$nsAccept,$nsTransfer,$precheck,$wrongProfiles),'Registration policy composition is unavailable.');
-$ports=new RuntimePorts;$ports->register($binding->fingerprint,fn()=>$composition);app()->instance(RuntimePorts::class,$ports);
+$ports=installedRuntimePorts();$ports->register($binding->fingerprint,fn()=>$composition);app()->instance(RuntimePorts::class,$ports);
 expect($ports->accepted($account),'Checked factory is locally complete');
 same(['register'=>true,'transfer'=>true],$ports->acquisitionGates($account),'Separate action features visible');
-$closed=new RuntimePorts;$closed->register($binding->fingerprint,fn()=>$factory(new WriteFeatures(transfer:true)));
+$closed=installedRuntimePorts();$closed->register($binding->fingerprint,fn()=>$factory(new WriteFeatures(transfer:true)));
 same(['register'=>false,'transfer'=>true],$closed->acquisitionGates($account),'Registration can be off while transfer is on');
-$closedReverse=new RuntimePorts;$closedReverse->register($binding->fingerprint,fn()=>$factory(new WriteFeatures(registration:true)));
+$closedReverse=installedRuntimePorts();$closedReverse->register($binding->fingerprint,fn()=>$factory(new WriteFeatures(registration:true)));
 same(['register'=>true,'transfer'=>false],$closedReverse->acquisitionGates($account),'Transfer can be off while registration is on');
-$wrong=new RuntimePorts;$bad=$composition;$bad['acquisition']=$nsSelector;$wrong->register($binding->fingerprint,fn()=>$bad);
+$wrong=installedRuntimePorts();$bad=$composition;$bad['acquisition']=$nsSelector;$wrong->register($binding->fingerprint,fn()=>$bad);
 expect(!$wrong->accepted($account),'Wrong acquisition binding is incomplete even with matching management');
 same(['register'=>null,'transfer'=>null],$wrong->acquisitionGates($account),'Wrong binding has no action readiness');
-$old=new RuntimePorts;$legacy=$composition;$legacy['acquisition']=(new ReflectionProperty($registrationPort,'engine'))->getValue($registrationPort);
+$old=installedRuntimePorts();$legacy=$composition;$legacy['acquisition']=(new ReflectionProperty($registrationPort,'engine'))->getValue($registrationPort);
 $old->register($binding->fingerprint,fn()=>$legacy);expect(!$old->accepted($account),'Legacy single-engine acquisition is refused');
+Illuminate\Support\Facades\Auth::setUser(App\Models\User::where('email','fixture-enrollment@example.test')->sole());
 app()->instance(RuntimePorts::class,$closed);$rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account,['label'=>'Active','reason'=>null]),null,'label');
 same(['Not available yet',null,'This site does not offer this yet. Your site admin can turn it on.'],[$rows['Registrations']['value'],$rows['Registrations']['cause'],$rows['Registrations']['help']],'System checks names a feature that is off in server config');
-same('On',$rows['Transfers']['value'],'System checks describes the exact per-action gates');
+same('On',$rows['Transfers (experimental)']['value'],'System checks describes the exact per-action gates');
 app()->instance(RuntimePorts::class,$ports);
 $inputs=new TransferInputs($clock,new Refunds($clock));
 $new=static function(string $name,string $action)use($user,$native,$tlds,$clock,$state,$inputs):Operation{
@@ -157,7 +156,7 @@ foreach(['register','transfer','register','transfer'] as $i=>$action){
     $beforeReads=$state->reads;$beforeRdap=$state->rdap;
     $worker->invoice($op->invoice_id);Queue::assertPushed(Paymenter\Extensions\Servers\Domains\Jobs\RunOperation::class,fn($job)=>$job->operationId===$op->id);
     $worker->operation($op->id);$expected[]=[$action,$op->domain->domain];
-    same($expected,$state->writes,'Correct action protocol exchanges exactly once in order');
+    same($expected,$state->writes,'Correct action protocol exchanges exactly once in order: '.json_encode([$op->fresh()->state,$op->fresh()->safe_code,$state->writes]));
     same($action==='register'?'pending':'uncertain',$op->fresh()->state,'Real acquisition engine records its action outcome');
     same('sealed',$op->fresh()->attempt['seal'],'Actual funding and dispatch checks completed');
     same($action==='register'?1:2,$state->reads-$beforeReads,'Real action-specific fresh preflight count');

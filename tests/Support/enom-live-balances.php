@@ -12,10 +12,11 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
     $clock->at=new DateTimeImmutable('2028-10-01T12:00:00Z');
     Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
     $bindings->setProcessing($server->id,false);Queue::fake();
+    installedRenewalFacts($binding,$clock->now(),$clock->now()->modify('+30 days'));
     config(['domains.enom_live.management'=>false]);
     // Other producers have their own schedules; keep this turn focused on balance refreshes.
     DB::table('domains_observation_queues')->where('server_id',$server->id)->update(['catalogue_due'=>$clock->now()->getTimestamp()+86400]);
-    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server->id],['account_fingerprint'=>$binding->fingerprint,'offer_feed_tried_at'=>$clock->now()->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$clock->now()->getTimestamp()+86400])]);
+    DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$server->id],['account_fingerprint'=>$binding->fingerprint,'offer_feed_tried_at'=>$clock->now()->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$clock->now()->getTimestamp()+86400,'credential_revision'=>$bindings->offerCredentialRevision($binding),'upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation()])]);
     $balance=static fn()=>DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
     $balances=app(RegistrarBalances::class);$worker=app(RuntimeWork::class);
     resetWire(['reply'=>static function(array $p):string {
@@ -27,7 +28,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
     $worker->tickOperations();same([],$GLOBALS['enomWire']['forms'],'Operations-only ticks never read balances');
     DB::table('domains_runtime_turns')->where('server_id',$server->id)->update(['due_at'=>0,'domain_cursor'=>(int)DB::table('domains_domains')->max('id')]);
     $worker->tick();
-    same(['GetBalance'],array_column($GLOBALS['enomWire']['forms'],'Command'),'Enabled Live accounts receive their daily balance read');
+    same(['GetBalance'],array_column($GLOBALS['enomWire']['forms'],'Command'),'Enabled Live accounts receive their daily balance read: '.json_encode([array_column($GLOBALS['enomWire']['forms'],'Command'),$balance()->last_error_code]));
     config(['domains.enom_live.registration'=>false,'domains.enom_live.renewal'=>false]);
     same('daily',$balance()->source,'Scheduled read records daily source');
     same('0.01',$balance()->amount,'Daily Live balance is persisted');

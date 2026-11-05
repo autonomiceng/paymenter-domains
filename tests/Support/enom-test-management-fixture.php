@@ -6,9 +6,15 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue,RuntimeWork};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require __DIR__.'/enom-test-registration-fixture.php';
-$write('acceptance',['changes'=>['com'=>['terms'=>[1],'transfer'=>false]]]);
+// Paid native orders and all invoice events remain real; this fixture does not inspect PDF layout.
+Illuminate\Support\Facades\Event::listen(App\Events\Invoice\GeneratePdf::class,static function(App\Events\Invoice\GeneratePdf $event):void {
+    $event->setPdfFromContent("%PDF-1.4\n% Synthetic management-fixture invoice attachment.\n%%EOF\n");
+});
+require_once __DIR__.'/installed-offer-evidence.php';
+config(['domains.enom_writes.renewal'=>true]);
+$write('test_renewal',['accept'=>true,'verified'=>true]);
 saveDefaultRule(['mode'=>'markup_percent','markup'=>'30.00','round_up'=>'none']);
-$write('import',['ending'=>'com']);
+installedOfferEvidence($binding,$clock);
 $tld=Tld::where('server_id',$server->id)->sole();
 $write('tld_settings',['enabled'=>true,'register'=>true,'transfer'=>false,'renew'=>true,'min_years'=>1,'max_years'=>1,'verified'=>true],$tld->id);
 $write('publish',[],$tld->id);
@@ -19,10 +25,17 @@ config(['cache.default'=>'database','session.driver'=>'database','queue.default'
 Queue::fake();
 $user=commerceUser();$user->update(['email'=>'registration-owner@example.com']);
 foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}
-$write('processing',['enabled'=>true,'confirmed'=>true]);
+$write('processing',['enabled'=>true,'confirmed'=>true]);$write('publish',[],$tld->id);
 $product=app(NativeCatalogue::class)->product($tld,'register');
+// The native account contact is complete; submit the credit choice and checkout in one request.
+same(5,$user->properties()->whereIn('key',['address','city','zip','country','phone'])->distinct()->count('key'),'Management checkout uses the complete native account contact');
+$managementCheckout=static function(App\Models\Cart $cart)use($user){
+    Illuminate\Support\Once::flush();
+    return Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class)
+        ->update(calls:[['method'=>'checkout','params'=>[],'path'=>'']],updates:['use_credits'=>false]);
+};
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('paid-test-placeholder.com'));
-commerceCheckout($user,$cart)->assertHasNoErrors();
+$managementCheckout($cart)->assertHasNoErrors();unset($cart);gc_collect_cycles();gc_mem_caches();
 $op=Domain::where('domain','paid-test-placeholder.com')->sole()->operations()->sole();
 App\Helpers\ExtensionHelper::addPayment($op->invoice_id,null,$op->amount);
 $worker=app(RuntimeWork::class);Cache::flush();$worker->operation($op->id);
@@ -33,7 +46,7 @@ Cache::flush();$worker->operation($op->id);unset($GLOBALS['testRegisteredName'])
 $d=$op->domain->fresh();
 same('active',$d->status,'Management fixture registers and reconciles one paid TEST domain');
 $recoveryCart=commerceCart($user);commerceAdd($recoveryCart,$product,placeholderComFixtureName('sealed-recovery-placeholder.com'));
-commerceCheckout($user,$recoveryCart)->assertHasNoErrors();
+$managementCheckout($recoveryCart)->assertHasNoErrors();unset($recoveryCart);gc_collect_cycles();gc_mem_caches();
 $recoveryOp=Domain::where('domain','sealed-recovery-placeholder.com')->sole()->operations()->sole();
 App\Helpers\ExtensionHelper::addPayment($recoveryOp->invoice_id,null,$recoveryOp->amount);
 resetWire(['reply'=>$reply,'during'=>static function(array $p):void {if($p['Command']==='Purchase'){$GLOBALS['enomWire']['timeout']=true;}}]);

@@ -19,8 +19,14 @@ final readonly class TransferPrecheck
         // A saved list narrows transfers. NameSilo otherwise uses the validated seller offer.
         $open = is_string($endings) ? array_map('trim', explode(',', $endings))
             : ($s->registrar === 'namesilo' ? [$s->tld] : EnomTestTransfer::endings($s->serverId));
-        $schema = $s->catalogue === null ? $tld->registry_fields
-            : \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tld->catalogue_facts)?->registryFields;
+        // Worker selections carry no cart receipt; both paths use the same current provider facts.
+        $facts = \Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts($tld->catalogue_facts);
+        if (!$tld->catalogue_converted || $tld->registrar_key !== $s->registrar
+            || $tld->account_fingerprint !== $s->fingerprint || !$facts
+            || !$facts->fresh(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())) {
+            throw new \DomainException('Current transfer facts unavailable.');
+        }
+        $schema = $facts->registryFields;
         if (!in_array($s->registrar, ['enom', 'namesilo'], true) || $s->action !== 'transfer' || $s->term !== 1
             || !in_array($s->tld, $open, true)
             || in_array(substr($s->tld, (int) strrpos('.'.$s->tld, '.')), ['uk', 'ca', 'eu', 'ai', 'de'], true)

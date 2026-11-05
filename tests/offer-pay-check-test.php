@@ -16,17 +16,18 @@ extract(offerCommerceFixture());
 $pay = new class($bindings, $clock) extends PayCheck { use OfferCommerceRoute; };
 $pay->fixtureOffers = $offers;
 $user = commerceUser(); $public = $storefront->offer('com', 'register', 1);
-$cart = commerceCart($user); commerceAdd($cart, $public['product'], 'payment-fence-placeholder.com'); commerceCheckout($user, $cart);
+$cart = commerceCart($user); commerceAdd($cart, $public['product'], 'payment-fence-placeholder.com'); $initialCheckout=commerceCheckout($user, $cart);
+expect(Operation::count()===1,'Initial payment fixture checkout: '.json_encode($initialCheckout->effects['dispatches']??[]));
 $op = Operation::sole(); $invoice = Invoice::findOrFail($op->invoice_id); $before = $reads->calls;
 Cache::put('domains.pay-check.'.$op->id, 'clear', 60);
 $revision = $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false)), $revision);
 same('unavailable', $pay->stop($invoice)['why'] ?? null, 'Stale local evidence refuses payment instead of trusting the old clear cache');
 same(['pending', 'awaiting_payment', $before], [$invoice->fresh()->status, $op->fresh()->state, $reads->calls], 'Local staleness neither retires nor reads the provider');
+$op->update(['state'=>'held']);same('unavailable',$pay->stop($invoice)['why']??null,'An unsent held invoice still checks the current local offer before payment');same($before,$reads->calls,'Held payment refusal is local only');$op->update(['state'=>'awaiting_payment']);
 // Restore public selling, then use the same native fixture for unsent/frozen payment behavior.
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true)),
     $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision);
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $invoiceBinding);
 NativeIntentSchema::install(); ReminderSchema::install(); NativeIdentity::boot(); NativeCancellation::boot();
 app()->instance(AcquisitionRetirement::class, new AcquisitionRetirement($clock));
 $live = (object)['available' => true, 'reads' => 0, 'duringRead' => null];
@@ -53,6 +54,8 @@ $new = static function ($name) use ($user, $public): Operation {
     $cart = commerceCart($user); commerceAdd($cart, $public['product'], $name); commerceCheckout($user, $cart);
     return Operation::latest('id')->firstOrFail();
 };
+$held = $new('held-current-placeholder.com');$held->update(['state'=>'held']);$heldInvoice=Invoice::findOrFail($held->invoice_id);$heldReads=$live->reads;
+same(null,$pay->stop($heldInvoice),'Current unsent held invoice does not trigger provider payment reads');same($heldReads,$live->reads,'Held current check is local only');
 $op = $new('cache-minute-placeholder.com'); $invoice = Invoice::findOrFail($op->invoice_id);
 Cache::put('domains.pay-check.'.$op->id, 'taken', 60); $live->available = true;
 same(null, $pay->stop($invoice), 'Old minute cache cannot manufacture a taken answer in the new namespace');

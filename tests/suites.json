@@ -128,6 +128,7 @@
     "tests/enom-test-management-guards-test.php",
     "tests/enom-test-transfer-guards-test.php",
     "tests/enom-live-transfer-test.php",
+    "tests/enom-live-transfer-runtime-test.php",
     "tests/renewal-safety-test.php",
     "tests/renewal-cycles-test.php",
     "tests/closed-renewal-summary-test.php",
@@ -155,6 +156,7 @@
     "tests/management-refusal-test.php",
     "tests/management-namesilo-test.php",
     "tests/management-namesilo-contacts-test.php",
+    "tests/namesilo-management-facts-test.php",
     "tests/namesilo-management-sequence-test.php",
     "tests/management-durable-sequence-test.php",
     "tests/namesilo-dns-durable-test.php",
@@ -439,6 +441,7 @@
     "tests/offer-capabilities-test.php",
     "tests/offer-holder-consumers-test.php",
     "tests/offer-readiness-test.php",
+    "tests/offer-installed-readiness-test.php",
     "tests/offer-frozen-renewal-test.php",
     "tests/offer-frozen-transfer-test.php",
     "tests/namesilo-installed-quote-test.php",
@@ -477,7 +480,8 @@
     "tests/test_native.py",
     "tests/test_conversion_inventory.py",
     "tests/test_conversion_mariadb_guards.py",
-    "tests/test_runner_speed.py"
+    "tests/test_runner_speed.py",
+    "tests/test_retired_catalogue_references.py"
   ],
   "package": [
     "tests/test_package.py"
