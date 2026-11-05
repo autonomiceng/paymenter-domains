@@ -16,9 +16,9 @@ final class EnomTestSendLimit
     private static array $checkoutHeadroom=[];
     private static array $catalogue=[];
     /** Catalogue reads (prices and TLD facts) may use this share of our daily cap, counted on catalogue sends only. */
-    public const CATALOGUE_PERCENT=30;
+    public const CATALOGUE_PERCENT=CatalogueShare::PERCENT;
     /** Prefixes a catalogue send's command. Rows without it, including every row written before it, are other work. */
-    public const CATALOGUE_MARK='catalogue:';
+    public const CATALOGUE_MARK=CatalogueShare::MARK;
     /** A synchronous read scope narrows only this login's atomic allowance; checkout keeps the original guard. */
     public static function withCheckoutHeadroom(string $uid,\Closure $read,int $dailyPercent=50): mixed
     {
@@ -33,8 +33,6 @@ final class EnomTestSendLimit
         $account=self::account($uid);$outer=isset(self::$catalogue[$account]);self::$catalogue[$account]=true;
         try{return $read();}finally{if(!$outer){unset(self::$catalogue[$account]);}}
     }
-    private static function share(int $limit,int $percent): int
-    { return intdiv($limit,100)*$percent+intdiv(($limit%100)*$percent,100); }
     public const PER_DAY='domains.enom_test_sends_per_day';
     public const PER_MINUTE='domains.enom_test_sends_per_minute';
     /** @return array{day:?int,minute:?int} null when the setting is invalid */
@@ -55,9 +53,9 @@ final class EnomTestSendLimit
             if($perDay===null||$perMinute===null){throw new EnomTestCallLimit('bad_setting');}
             if(!$perDay||!$perMinute||$uid===''||!preg_match('/^[A-Za-z_]{1,32}$/D',$command)){throw new EnomTestCallLimit;}
             $account=self::account($uid);
-            $catalogue=isset(self::$catalogue[$account])?self::share($perDay,self::CATALOGUE_PERCENT):null;
+            $catalogue=isset(self::$catalogue[$account])?CatalogueShare::limit($perDay,self::CATALOGUE_PERCENT):null;
             if($catalogue!==null){$command=self::CATALOGUE_MARK.$command;if(strlen($command)>32){throw new EnomTestCallLimit;}}
-            if(isset(self::$checkoutHeadroom[$account])){$perDay=self::share($perDay,self::$checkoutHeadroom[$account]);}
+            if(isset(self::$checkoutHeadroom[$account])){$perDay=CatalogueShare::limit($perDay,self::$checkoutHeadroom[$account]);}
             // A deadlock rolls back with nothing written, so the whole check is retried.
             DB::transaction(static function()use($account,$command,$perDay,$perMinute,$catalogue):void {
                 $row=DB::table(EnomTestSendLimitSchema::ACCOUNTS)->where('account',$account);
@@ -86,7 +84,7 @@ final class EnomTestSendLimit
             [$day,$minute,$catalogue]=[$sends(86400),$sends(60),self::catalogueSends(self::account($uid),$now)];
         } catch(\Throwable) { [$day,$minute,$catalogue]=[null,null,null]; }
         return ['day'=>$day,'day_limit'=>$perDay,'minute'=>$minute,'minute_limit'=>$perMinute,
-            'catalogue'=>$catalogue,'catalogue_limit'=>$perDay===null?null:self::share($perDay,self::CATALOGUE_PERCENT)];
+            'catalogue'=>$catalogue,'catalogue_limit'=>$perDay===null?null:CatalogueShare::limit($perDay,self::CATALOGUE_PERCENT)];
     }
     /** Plain staff facts for one login, or only the limits when the login is not known yet. */
     public static function facts(?string $uid): string
