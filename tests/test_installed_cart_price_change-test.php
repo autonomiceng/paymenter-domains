@@ -16,7 +16,7 @@ $fixture = offerCommerceFixture(); extract($fixture);
 [$secondBinding, $second] = offerCommerceSecond($fixture);
 $user = commerceUser(); $com = $storefront->offer('com', 'register', 3)['product'];
 $q = new Query($binding, ['com'], 'register', 3);
-$rev = static fn () => $ports->readOffers($q, Context::Staff)[0]->revision;
+$rev = static fn () => offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision);
 $counts = static fn (): array => [Order::count(), Invoice::count(), Operation::count()];
 $notice = static fn ($page): string => collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
 $total = static fn ($page): ?string => $page->get('total') === null ? null : number_format((float) $page->get('total')->total, 2, '.', '');
