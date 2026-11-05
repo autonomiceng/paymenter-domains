@@ -45,4 +45,13 @@ $contactsDom=new DOMDocument;@$contactsDom->loadHTML($contactsHtml);$contactsXp=
 same(1,$contactsXp->query('//span[@data-record-family="contacts"]//*[normalize-space(.)="Complete"]')->length,'The read state stays above the row');
 same(1,$contactsXp->query('//div[contains(@class,"fi-color-danger")][normalize-space(.)="Missing"]')->length,'No saved contacts stays red Missing under the read state');
 expect(str_contains($contactsHtml,DomainFacts::ADD_CONTACTS),'Missing contacts keep their own step during a failed read');
+// ui-r15 R5: once the read stopped, a sync won't help. DS is a plain red Missing, and partial families ask for no refresh.
+DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>'read_unavailable','tries'=>5,'due_at'=>0]);
+$s=$d->fresh()->observation;$s['records']['families']['ds']=['state'=>'unknown','records'=>[]];$s['records']['families']['glue']=['state'=>'partial','records'=>[]];$d->update(['observation'=>$s]);
+same('Read stopped',DomainFacts::for($d->fresh())['Last sync']['value'],'Fixture: the read stopped');
+$ds=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d->fresh());same([null,null],[$ds['value'],$ds['sub']],'Stopped read: DS is plain Missing');
+$dsHtml=\Filament\Schemas\Schema::make($nativePage)->components([$familyRow->invoke($nativePage,array_column(RecordFamilies::read($d->fresh(),$now)['rows'],null,'kind')['ds'],$ds,[])])->toHtml();
+expect(!str_contains($dsHtml,'Sync this domain')&&str_contains($dsHtml,'fi-color-danger'),'Stopped read: the DS row is red and asks for no sync');
+$glue=array_column(RecordFamilies::read($d->fresh(),$now)['rows'],null,'kind')['glue'];
+expect($glue['state']==='partial'&&!str_contains($glue['staff'],'before editing'),'Stopped read: a partial family asks for no refresh');
 $nativeSuccessful=true;echo "Compact native staff Missing and consistent failed-read guidance passed.\n";
