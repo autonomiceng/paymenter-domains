@@ -26,7 +26,12 @@ class WatchResource extends WatchReadResource
     /** Missing in danger with its cause after it; present values show $sub after them, on the same line. */
     private static function fact(TextColumn $column,\Closure $fact): TextColumn
     {
-        $value=fn($record,$livewire)=>$fact($record,$livewire);
+        $value=static function($record,$livewire)use($fact):array{
+            $value=$fact($record,$livewire);
+            // No expected check while monitoring is deliberately paused or stopped.
+            if($record->state!=='active' && Missing::is($value['value']??null)){return ['value'=>WatchFacts::missingCause($record),'tone'=>'gray'];}
+            return $value;
+        };
         return OneLine::apply($column->state(fn($record,$livewire)=>$value($record,$livewire)['value']??Missing::LABEL)
             ->color(fn($state,$record,$livewire)=>$state===Missing::LABEL?Missing::color($value($record,$livewire)['cause']??null):($value($record,$livewire)['tone']??null))->icon(fn($state,$record,$livewire)=>$state===Missing::LABEL?Missing::icon($value($record,$livewire)['cause']??null):null)
             ->description(fn($state,$record,$livewire)=>$state===Missing::LABEL?($value($record,$livewire)['cause']??null):($value($record,$livewire)['sub']??null)));
@@ -50,8 +55,8 @@ class WatchResource extends WatchReadResource
             OneLine::apply(TextColumn::make('customer')->label('Customer')->state(fn($record,$livewire)=>$livewire->watchRow($record)['customer']['label']),OneLine::SHORT),
             TextColumn::make('status')->label('Status')->badge()->state(fn($record,$livewire)=>$livewire->watchRow($record)['status']['label'])->color(fn($record,$livewire)=>$livewire->watchRow($record)['status']['tone'])->extraAttributes(fn($record,$livewire)=>StatusMark::attributes($livewire->watchRow($record)['status']['tone'],'watch-'.$record->id)),
             OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record,$livewire)=>self::note($record,$livewire))),
-            self::fact(TextColumn::make('registration')->label('Registrar')->visibleFrom('xl'),fn($record)=>['value'=>WatchFindings::who($record->registration),'cause'=>Missing::fills('after the next check')]),
-            self::fact(TextColumn::make('delegation.dns')->label('Nameservers')->visibleFrom('lg'),fn($record)=>['value'=>WatchFindings::who($record->delegation?->dns),'cause'=>Missing::fills('after the next check')]),
+            self::fact(TextColumn::make('registration')->label('Registrar')->visibleFrom('xl'),fn($record)=>['value'=>WatchFindings::who($record->registration),'cause'=>WatchFacts::missingCause($record)]),
+            self::fact(TextColumn::make('delegation.dns')->label('Nameservers')->visibleFrom('lg'),fn($record)=>['value'=>WatchFindings::who($record->delegation?->dns),'cause'=>WatchFacts::missingCause($record)]),
             self::fact(TextColumn::make('last_check')->label('Last check')->visibleFrom('md')->formatStateUsing(fn($state,$record,$livewire)=>($at=self::lastCheck($record,$livewire)['at']??0)?Sheet::moment($at):$state),
                 fn($record,$livewire)=>[...self::lastCheck($record,$livewire),'sub'=>null]),
             self::fact(TextColumn::make('expiry')->label('Expires')->visibleFrom('lg'),fn($record,$livewire)=>[...self::expires($record,$livewire),'sub'=>null]),

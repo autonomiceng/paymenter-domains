@@ -29,10 +29,8 @@ final class ManagedDnsSetup
         $profiles=$profile===null?$usable:array_values(array_intersect($usable,[$profile]));
         $comparison=fn($c)=>$c->selectRaw('1')->from('domains_domains as configured_domain')
             ->leftJoin('domains_managed_public_config as c',fn($j)=>$j->on('c.domain_id','=','configured_domain.id')->on('c.user_id','=','configured_domain.user_id'))
-            ->leftJoin('settings as dns_default',fn($j)=>$j->on('dns_default.settingable_id','=','configured_domain.server_id')
-                ->where('dns_default.settingable_type',(new \App\Models\Server)->getMorphClass())->where('dns_default.key',NewDomainDns::KEY))
             ->whereColumn('configured_domain.id',$domainColumn)->whereColumn('configured_domain.user_id',$ownerColumn)
-            ->where(fn($p)=>$p->whereIn('c.profile_id',$profiles)->orWhere(fn($d)=>$d->where(fn($c)=>$c->whereNull('c.profile_id')->orWhereNotIn('c.profile_id',$usable))->whereIn('dns_default.value',array_map('strval',$profiles))));
+            ->where(fn($p)=>$p->whereIn('c.profile_id',$profiles)->orWhere(fn($d)=>$d->where(fn($c)=>$c->whereNull('c.profile_id')->orWhereNotIn('c.profile_id',$usable))->whereRaw(in_array(SiteDnsDefault::profile()?->id,$profiles,true)?'1=1':'1=0')));
         return $missing?$q->whereNotExists($comparison):$q->whereExists($comparison);
     }
     public static function affected(int $now): Builder
@@ -40,14 +38,12 @@ final class ManagedDnsSetup
         if(!Schema::hasTable('domains_managed_public_config') || !Schema::hasTable('domains_watch_profiles')){return self::eligible($now)->whereRaw('1=0');}
         return self::configured(self::eligible($now),'domains_domains.id','domains_domains.user_id',true);
     }
-    /** A usable per-domain assignment wins. Defaults remain live account choices. */
+    /** A usable per-domain assignment wins. Defaults remain live site choices. */
     public static function profile(Domain $domain,?ManagedPublicConfig $config,bool $lock=false): ?WatchProfile
     {
         $profile=$config?->profile_id?WatchProfile::whereKey($config->profile_id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
         if(self::usable($profile)){return $profile;}
-        $id=\App\Models\Server::find($domain->server_id)?->settings()->where('key',NewDomainDns::KEY)->first()?->value;
-        $profile=$id?WatchProfile::whereKey($id)->when($lock,fn($q)=>$q->lockForUpdate())->first():null;
-        return self::usable($profile)?$profile:null;
+        return SiteDnsDefault::profile($lock);
     }
     /** Caller holds the current holding lock. Reads establish missing import history once; choices always win. */
     public static function retainBaseline(Domain $domain,?ManagedPublicConfig $config,?NameserverEvidence $read=null,?iterable $operations=null): bool
@@ -114,7 +110,7 @@ final class ManagedDnsSetup
                     if(!ManagementEvidence::resolved($op,$domain)){continue;}
                 }
                 if($op->action==='transfer'){$offer('external',2,$at);}
-                elseif($op->action==='register' && ($op->payload['nameservers_origin']['source']??null)==='account_default'){$offer('platform',2,$at);}
+                elseif($op->action==='register' && in_array($op->payload['nameservers_origin']['source']??null,['account_default','site_default'],true)){$offer('platform',2,$at);}
                 else{$nameservers($op->payload['nameservers']??null,2,$at,$management);}
             }
             catch(\Illuminate\Contracts\Encryption\DecryptException){$offer(null,2,$at,$management);}

@@ -35,6 +35,8 @@ class TldResource extends Resource
     {Staff::requireView();return TldFacts::bound(parent::getEloquentQuery())->with('server:id,name');}
     public static function table(Table $table): Table
     {
+        $attention=fn($livewire)=>(bool)($livewire->getTableFilterState('needs_attention')['isActive']??false)&&blank($livewire->getTableSearch());
+        $narrowed=fn($livewire)=>filled($livewire->getTableSearch())||$livewire->getTable()->isFiltered();
         $grants=Staff::requireView();$pages=new \WeakMap();$demo=[];
         // Facts for the whole rendered page in one batch of reads, so extra rows add no queries.
         $row=static function(Tld $t,mixed $livewire)use($pages,$grants):array {
@@ -72,8 +74,9 @@ class TldResource extends Resource
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all()),
             Filter::make('needs_attention')->label('Terms need attention')->query(fn(Builder $query)=>$query->whereIn('domains_tlds.id',\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::summary()['attention']))])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search TLD')
-            ->emptyStateHeading('No TLDs yet')->emptyStateDescription('Choose what you sell on a registrar account.')
-            ->emptyStateActions([\Filament\Actions\Action::make('choose_what_you_sell')->label('Choose what you sell')->url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl())]);
+            ->emptyStateHeading(fn($livewire)=>$attention($livewire)?'No TLD terms need attention':($narrowed($livewire)?'No TLDs match':'No TLDs yet'))
+            ->emptyStateDescription(fn($livewire)=>$narrowed($livewire)?\Paymenter\Extensions\Servers\Domains\Admin\Support\EmptyTable::CLEAR:'Choose what you sell on a registrar account.')
+            ->emptyStateActions([\Filament\Actions\Action::make('choose_what_you_sell')->label('Choose what you sell')->visible(fn($livewire)=>!$narrowed($livewire))->url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl())]);
     }
     /** Accounts whose last price sync failed, with the stored cause in words. */
     public static function syncFailures(): array
