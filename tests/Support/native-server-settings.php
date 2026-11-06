@@ -121,17 +121,19 @@ $pause=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$ser
 DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
 $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionDoesNotExist($processingAction($server))->assertSee('Fix the API connection first.');
 DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
-unset($pause,$disabled);gc_collect_cycles();gc_mem_caches();
+unset($disabled);gc_collect_cycles();gc_mem_caches();
 same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Could not load account settings'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Hold covers credential and digest settings');
-// The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Could not load account settings')->assertSee('Missing')
+// Processing is restored to the same state used by $pause; its connection facts are unchanged.
+// Keep the real failed-connection render for both its display and balance-action assertions.
+$pause->assertSee('Connection failed')->assertSee('Could not load account settings')->assertSee('Missing')
     ->assertSee('Add funds')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
 gc_collect_cycles();gc_mem_caches();
 $balanceState=(array)DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
-try{Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->call('checkBalance')
+try{$pause->call('checkBalance')
     ->assertNotified(\Filament\Notifications\Notification::make()->title("Couldn't check balance")
         ->body('Check the account settings in the System checks.')->danger());}
 finally{DB::table(BalanceSchema::TABLE)->where('id',$balanceState['id'])->update($balanceState);}
+unset($pause);
 gc_collect_cycles();gc_mem_caches();
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Connection failed')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
 gc_collect_cycles();gc_mem_caches();
