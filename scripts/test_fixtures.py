@@ -108,6 +108,8 @@ def shared_vendor(jobs, requested):
                 'tests/staff-sync-worker-test.php',
                 'tests/storefront-busy-test.php',
                 'tests/sales-audit-changes-test.php',
+                # Checkout uses isolated app/SQLite state and only reads the guarded vendor tree.
+                'tests/checkout-refresh-test.php',
                 'tests/cart-price-change-test.php',
                 'tests/cart-removal-checkout-test.php',
                 'tests/cart-reload-price-test.php',

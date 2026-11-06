@@ -43,8 +43,21 @@ $wire = new class($clock) implements DeadlineTransport {
 $registry = new RegistrarRegistry;
 $registry->register('namesilo', ['token'], new class implements AccountVerifier {
     public function verify(Environment $environment, array $credentials): string { return $credentials['token']; }
-}, fn($b, $credentials) => new Driver(new Client($b, $credentials['token'], $wire), [], $clock));
-$bindings = new AccountBindings($registry); $sellers = new SellerPolicies($prices, $bindings);
+}, fn($b, $credentials) => new Driver(new Client($b, $credentials['token'], $wire), [], $clock),
+    authenticator: new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+        public function authenticate(Environment $environment, array $credentials): void { /* Synthetic local enrollment. */ }
+    });
+$bindings = new AccountBindings($registry);
+// Replacing the fixture driver and clock also requires their explicit active catalogue composition.
+$ports = new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(
+    new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native), $clock, $bindings,
+    static fn () => null, static fn () => true);
+$offers = new \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers($ports, $bindings, $native);
+$sellers = new SellerPolicies($prices, $bindings, $offers);
+foreach ([$sellers, $bindings] as $owner) {
+    activeFixturePorts($owner, $ports);
+    activeFixtureOffers($owner, $offers);
+}
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
 $limiter = new AccountReadBudget($clock);
 app()->instance(Runtime::class, new Runtime); app()->instance(ReadLimiter::class, $limiter);
@@ -53,6 +66,9 @@ Event::listen(App\Events\Order\Creating::class, static function () use (&$expire
     if ($expireDuringAdmission) { $clock->advance(301); }
 });
 $adapter = activeFixtureAdmission($native, $sellers, activeFixtureEligibility($bindings, $clock), $clock); $adapter->boot();
+// Native service identity and invoice hooks must consume the same admitted checkout lines.
+$invoiceBinding = new \Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($adapter, $native, $prices, $clock);
+$invoiceBinding->boot(); app()->instance(\Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $invoiceBinding);
 $user = commerceUser(); $product = $native->product($tlds[1], 'register');
 $mount = static function ($cart) use ($user) {
     Illuminate\Support\Once::flush();
