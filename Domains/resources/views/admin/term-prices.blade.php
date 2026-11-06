@@ -1,6 +1,7 @@
 @if ($prices)
 @php
     // Compact only consecutive missing terms. Each evidenced total keeps its own row.
+    // The first missing row says why and when prices update; later missing rows say only Missing.
     $groups=[];
     foreach($prices as $price){
         $missing=($price['current']===null&&$price['cost']===null)||!$price['synced'];
@@ -13,7 +14,7 @@
 @foreach ($groups as $group)
 @php $price=$group['price']; @endphp
 <div><dt>{{ $group['start'] }}{{ $group['end']!==$group['start'] ? ' to '.$group['end'] : '' }} {{ $group['end']===1 ? 'year' : 'years' }}</dt><dd>
-@if ($group['missing']){{ \Paymenter\Extensions\Servers\Domains\Presentation\Missing::html('No saved registrar total for these terms.') }}@if ($loop->index === collect($groups)->search(fn ($g) => $g['missing']))<span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::refreshText($refresh ?? []) }}</span>@endif
+@if ($group['missing'])@php $first = $loop->index === collect($groups)->search(fn ($g) => $g['missing']); @endphp{{ \Paymenter\Extensions\Servers\Domains\Presentation\Missing::html($first ? 'No saved registrar total for these terms.' : null) }}@if ($first)<span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::refreshText($refresh ?? []) }}</span>@endif
 @else<strong>Customer total {{ $price['current']===null ? 'Missing' : '$'.$price['current'] }}</strong><span class="domains-sub">Registrar cost {{ $price['cost']===null ? 'Missing' : '$'.number_format((float)$price['cost'],2,'.','') }}.</span>@endif
 </dd></div>
 @endforeach
