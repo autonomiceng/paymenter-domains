@@ -84,7 +84,7 @@ class ViewWatch extends ViewRecord
         // Each Missing check time gets its own Check now hint.
         $fix=$check?->isVisible()?fn()=>WatchActions::check($this->getRecord(),$this->revision):null;
         if($notice){$sheet[]=Callout::make($notice)->status('warning')->columnSpanFull()->footer($check?->isVisible()?Sheet::buttons([$check->toHtml()]):null);}
-        foreach(['Domain','Checks'] as $title){$sheet[]=Sheet::section($title,array_map(fn(string $label)=>self::entry($label,$facts[$title][$label],$fix),array_keys($facts[$title])));}
+        foreach(array_keys($facts) as $title){$sheet[]=Sheet::section($title==='Checks'?'Latest checks':$title,array_map(fn(string $label)=>self::entry($label,$facts[$title][$label],$fix),array_keys($facts[$title])));}
         return $schema->components([Sheet::split($sheet,[$this->activity()])]);
     }
     private static function entry(string $label,array $fact,?\Closure $fix): Flex

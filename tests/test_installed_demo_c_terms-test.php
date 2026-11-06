@@ -1,0 +1,80 @@
+<?php
+// Native panel boundary; read-only Composer dependencies. MIT, Copyright (c) 2026 Autonomic Engineering.
+declare(strict_types=1);
+require __DIR__.'/native-app.php';
+require __DIR__.'/Support/staff-tlds.php';
+require __DIR__.'/Support/native-commerce.php';
+require __DIR__.'/Support/offer-commerce.php';
+require __DIR__.'/Support/storefront.php';
+use Illuminate\Support\Facades\{Auth,DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
+use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,StaffCatalogue,Capabilities,OfferState};
+use Paymenter\Extensions\Servers\Domains\Models\OfferRow;
+extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
+$actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
+$defaults=OfferState::decode(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
+DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$defaults,'defaultTransfers'=>true])]);
+$t=$tlds[0]->fresh();$intent=OfferState::decode($t->catalogue_intent);unset($intent['transfers']);
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
+DB::table('domains_sales_policies')->where('tld',$t->tld)->update(['transfer_enabled'=>false]);
+$probe=new ReflectionProperty(CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>new StaffCatalogue($ports,$clock),Capabilities::class=>new Capabilities($ports,$clock,static fn()=>null)]);
+$page=new WhatYouSell;$edit=new ReflectionMethod($page,'editFields');
+// Real R8 path: default transfers On, no intent override, native seller policy Off.
+$row=(new StaffCatalogue($ports,$clock))->rows([$binding],$t->tld)->sole();
+same(null,$row->transfer,'The real query has no transfer intent override');
+$fields=$edit->invoke($page,$row);$transfer=collect($fields)->first(fn($f)=>method_exists($f,'getName')&&$f->getName()==='transfer');
+same('Leave as is (Off)',$transfer->getOptions()['keep'],'Default pricing does not replace saved transfer Off');
+$rows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($binding,'com');
+same('Early renewal',$rows[1][0],'Staff renewal family is shown');expect(str_contains($rows[1][2],'exact-term'),'Staff sees why longer renewals are held');
+$accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
+expect(str_contains($accountHtml,'Supported terms')&&str_contains($accountHtml,'Scheduled renewals'),'Account sheet renders family readiness, not only the source rows');
+$r10Failures=[];$r10Check=static function(bool $ok,string $message)use(&$r10Failures):void{if(!$ok){$r10Failures[]=$message;}};
+// More than ten unsold alphabetic entries must not hide the sold .com.
+for($i=0;$i<11;$i++){
+    $unsold=$t->replicate();$unsold->tld='aaa'.$i.'.pro';$unsold->catalogue_facts=null;
+    $unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();
+}
+$accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
+$r10Check($accountRows[4]['label']==='.com','Sold TLD readiness precedes the alphabetic unsold catalogue');
+$r10Check(count(array_filter($accountRows,fn($r)=>$r['label']==='.com'))===1,'One compact row per TLD');
+same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
+$prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
+$priceHtml=view('domains::admin.term-prices',compact('prices'))->render();
+$r10Check(!preg_match('/\$[0-9]+\.[0-9]{3}/',$priceHtml),'Displayed registrar costs have two decimal places');
+expect(str_contains($priceHtml,'Customer total')&&str_contains($priceHtml,'Registrar cost')&&str_contains($priceHtml,'3 years'),'Real offer terms include customer total and registrar cost');
+$gift=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal');
+$gift=$gift->invoke(null,new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed']));
+same('Confirm complimentary renewal',$gift->getModalSubmitActionLabel(),'Complimentary confirmation matches the mock');
+expect(!$gift->isVisible(),'An ineligible holding has no empty complimentary action');
+$service=App\Models\Service::create(['user_id'=>$actor->id,'order_id'=>App\Models\Order::create(['user_id'=>$actor->id,'currency_code'=>'USD'])->id,'product_id'=>App\Models\Product::firstOrFail()->id,'plan_id'=>App\Models\Product::firstOrFail()->plans()->firstOrFail()->id,'status'=>'active','quantity'=>1,'price'=>'10.99','currency_code'=>'USD']);
+$holding=new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed','domain'=>'example.com','service_id'=>$service->id]);
+$gift=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal'))->invoke(null,$holding);
+$schema=$gift->getSchema();$text=(string)$schema[array_key_last($schema)]->getContent();
+$r10Check(str_contains($text,'Next annual renewal: $10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
+$probe->setValue(null,null);
+storefrontViews();require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
+$domain=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'orbit-example.com',status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,renewNow:['url'=>'/domains/1/renew','terms'=>[1,2]]);
+$choices=['lines'=>[1=>['years'=>1,'first_year'=>'14.00','renewal'=>'14.00','total'=>'14.00','expiry'=>'2028-11-20'],2=>['years'=>2,'first_year'=>'14.00','renewal'=>'14.00','total'=>'28.00','expiry'=>'2029-11-20']],'next_annual'=>'14.00'];
+$html=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'support'=>null,'keys'=>['renew'=>str_repeat('a',64)],'renewalChoices'=>$choices])->render();
+foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Continue to payment','Nov 20, 2028','data-total="$28.00"','for the first year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
+expect(strpos($html,'>Cancel</a>')<strpos($html,'>Continue to payment</button>'),'Cancel precedes payment');
+expect(!str_contains($html,'exact-term')&&!str_contains($html,'registry'),'No staff eligibility reason in customer form');
+$result=storefrontData()['results'][0];$result['term']=1;$result['price']='$12.00';
+$html=view('domains::partials.result',['result'=>$result])->render();
+$x=storefrontDom($html);same('1 year',$x->query('//select/option')->item(0)->textContent,'Years select labels years, not prices');
+expect(str_contains($html,'data-total="$30.00 for 3 years"'),'Search retains each exact total for selection');
+$result['terms']=[1=>'$12.00'];$html=view('domains::partials.result',['result'=>$result])->render();
+expect(!str_contains($html,'<select'),'Annual-only result has no unsupported years');
+$cart=new App\Livewire\Cart;
+$unavailable=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::class,'unavailable');
+$unavailable->invoke(null,$cart,new Paymenter\Extensions\Servers\Domains\Services\CheckoutRefreshTimeout);
+$notice=Paymenter\Extensions\Servers\Domains\Services\CartNotice::get($cart);
+same('We could not get your price',$notice['title'],'Quote notice title matches the mock');
+same('Try again shortly.',$notice['text'],'Unreadable quote uses the short retry state');
+expect(!str_contains($notice['text'],'internal'),'Quote failure does not expose internal detail');
+$generic=new App\Livewire\Cart;
+$unavailable->invoke(null,$generic,new RuntimeException('synthetic unexpected checkout error'));
+same(null,Paymenter\Extensions\Servers\Domains\Services\CartNotice::get($generic),'Unexpected checkout failure is not classified as a quote failure');
+expect($r10Failures===[],implode('; ',$r10Failures));
+$nativeSuccessful=true;echo "Demo C NS17 forms passed.\n";

@@ -31,7 +31,7 @@ final class HistoryTable
                     ->formatStateUsing(fn(string $state)=>$state===Missing::LABEL?$state:Sheet::moment($state))
                     ->color(fn($state)=>$state===Missing::LABEL?Missing::color(RequestFacts::NO_TIME):'gray')->icon(fn($state)=>$state===Missing::LABEL?Missing::icon(RequestFacts::NO_TIME):null)
                     ->description(fn($state)=>$state===Missing::LABEL?RequestFacts::NO_TIME:null)),
-                OneLine::apply(TextColumn::make('change')->label('Change'),OneLine::SHORT),
+                TextColumn::make('change')->label('Change')->wrap()->lineClamp(2)->tooltip(fn($state)=>OneLine::tip($state,40)),
                 // Long text: Detail wraps to 2 lines (table standard). Longer text is on hover, so a next step stays reachable.
                 TextColumn::make('reason')->label('Detail')->wrap()->lineClamp(2)->placeholder('None')->tooltip(fn($state)=>OneLine::tip($state,88)),
                 TextColumn::make('by')->label('By'),

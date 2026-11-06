@@ -146,7 +146,7 @@ same('13.00',$locked[0]->retail,'Locked seller admission uses the same exact ann
 same($before,count($GLOBALS['nsCatalogueCalls']),'Local readiness and locked sale admission never send');
 $checklist=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Connected','reason'=>null]);
 $rows=array_column($checklist,null,'label');same('On, follows Orders',$rows['Registrations']['value'],'Checklist registrations follow the installed TEST engine');
-same('On',$rows['Transfers (experimental)']['value'],'Checklist accepts installed TEST transfer gate');
+same('On',$rows['Transfers (Experimental)']['value'],'Checklist accepts installed TEST transfer gate');
 $summary=\Paymenter\Extensions\Servers\Domains\Services\EnomLiveActivation::summary($account->fresh(),['registration'=>true,'renewal'=>true,'management'=>true,'transfer'=>true]);
 same([1,1,1],array_values($summary['counts']),'Shared activation summary reads each retained NS16 action');
 same(1,$summary['tlds'],'Shared activation summary counts the offered TLD once');

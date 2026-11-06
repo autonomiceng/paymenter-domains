@@ -46,7 +46,7 @@ foreach(['transfer','renewal','management'] as $feature){
         $action=setupAction('test_'.$feature,(int)$server->id);
         $page->assertActionVisible($action)->callAction($action)->assertNotified('Saved');
         $rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
-        $label=['transfer'=>'Transfers (experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'][$feature];
+        $label=['transfer'=>'Transfers (Experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'][$feature];
         same('Off',$rows[$label]['value'],$label.' can be turned off');
         $class='Paymenter\\Extensions\\Servers\\Domains\\Services\\EnomTest'.ucfirst($feature);
         expect(!$class::accepted(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account->fresh())),$label.' Off closes the sending gate');
@@ -76,7 +76,7 @@ foreach([false,true] as $on){
     $page->assertActionVisible('activate_test')->callAction('activate_test')->assertNotified('Orders resumed');
     expect($account->fresh()->processing_enabled,'Activate resumes Orders after key rotation');
     $rows=array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup($account->fresh(),['label'=>'Active','reason'=>null]),null,'label');
-    foreach(['transfer'=>'Transfers (experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'] as $feature=>$label){
+    foreach(['transfer'=>'Transfers (Experimental)','renewal'=>'Renewals','management'=>'DNS, nameservers and contacts'] as $feature=>$label){
         $class='Paymenter\\Extensions\\Servers\\Domains\\Services\\EnomTest'.ucfirst($feature);
         foreach([
             'retains its displayed value'=>$rows[$label]['value']===($on?'On':'Off'),
