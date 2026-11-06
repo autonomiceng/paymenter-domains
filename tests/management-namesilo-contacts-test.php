@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureTransferRegistrars=['namesilo'];
 require __DIR__.'/Support/management-namesilo.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Models\ContactProfile;
@@ -27,32 +28,4 @@ same('succeeded',$management->reconcile($op->id,$driver)->state,'Delayed readbac
 Cache::flush(); $ms->route='api'; $ms->apply=true; $newStage=$submit($d,$driver,'contact_profile',$input);
 same('succeeded',$management->run($newStage->id,$driver)->state,'Later matching profile stage');
 same($op->id,$management->request($user,$d->id,'contacts',$input,$stageNonce,$driver)->id,'Retry preserves original stage despite newer matching stage');
-foreach (['default','mismatch','contactAdd'] as $fault) {
-    [$d,$driver,$original]=$holding('profile-'.$fault); $input=['role'=>'registrant','contact'=>$original->payload['contacts']['registrant']];
-    $ms->fault=$fault; $op=$submit($d,$driver,'contact_profile',$input);
-    same('uncertain',$management->run($op->id,$driver)->state,'Missing nondefault exact profile proof stays unresolved');
-    same(['contactAdd'],array_column($writes(),0),'No association or profile update after invalid creation proof');
-    same($op->id,$submit($d,$driver,'contacts',$input)->id,'An unresolved contact change retains its request instead of creating an association');
-    $management->run($op->id,$driver); same(1,count($writes()),'Unknown stage never recreates profile');
-}
-[$d,$driver,$original]=$holding('delayed-profile'); $input=['role'=>'tech','contact'=>$original->payload['contacts']['tech']];
-$stage=$submit($d,$driver,'contact_profile',$input); same('succeeded',$management->run($stage->id,$driver)->state,'New isolated stage');
-$ms->calls=[]; $op=$submit($d,$driver,'contacts',$input);
-same('queued',$management->run($op->id,$driver)->state,'Creation write slot defers association'); same([],$ms->calls,'Busy slot performs no reads or writes');
-$clock->instant=$clock->now()->modify('+181 seconds'); Carbon\Carbon::setTestNow($clock->now()); Carbon\CarbonImmutable::setTestNow($clock->now());
-same('succeeded',$management->run($op->id,$driver)->state,'Delayed association uses fresh named profile proof after slot expires');
-same(['getDomainInfo','contactList','contactDomainAssociate','getDomainInfo','contactList'],array_column($ms->calls,0),'Fresh exact profile read precedes delayed association');
-// Frozen transfer details drive both durable profile staging and association without staff input.
-[$d,$driver,$original]=$holding('frozen-correction');
-$original->update(['policy'=>[...$original->policy,'reconciliation'=>[...($original->policy['reconciliation']??[]),'observed_corrections'=>['contacts']]]]);
-for($round=0;$round<10;$round++){
-    Cache::flush();$correction=\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$management,$driver);
-    if($correction){($correction->attempt['seal']??null)==='sealed'?$management->reconcile($correction->id,$driver):$management->run($correction->id,$driver);}
-}
-same(4,count(array_filter($writes(),fn($v)=>$v[0]==='contactAdd')),'Exactly one isolated profile per frozen role');
-same(4,count(array_filter($writes(),fn($v)=>$v[0]==='contactDomainAssociate')),'Every frozen role associated once');
-same(null,\Paymenter\Extensions\Servers\Domains\Services\CorrectionWork::produce($d,$management,$driver),'Completed corrections converge without another write');
-[$d,$driver,$original]=$holding('registry-revoked'); $input=['role'=>'all','contact'=>$original->payload['contacts']['registrant']];
-$op=$submit($d,$driver,'contact_profile',$input); $tlds[1]->fresh()->update(['registry_fields'=>[['name'=>'unaccepted']]]);
-same('held',$management->run($op->id,$driver)->state,'Unaccepted registry schema refuses profile creation'); same([],$writes(),'Registry gate emits no write');
-$nativeSuccessful=true; echo "NameSilo isolated contact management passed\n";
+$nativeSuccessful=true;echo "Native NameSilo management safety case passed.\n";

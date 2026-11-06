@@ -16,10 +16,17 @@ $counter=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::V
 \Illuminate\Support\Facades\Auth::setUser($counter);
 same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($profile->id),'Pre-enrollment holding and its existing watch count once');
 $old=WatchDnsObservation::sole();$watchCount=WatchName::count();
-Schema::create('domains_watch_notices',function(Blueprint $t){$t->id();$t->unsignedBigInteger('watch_id');$t->string('state');$t->unsignedBigInteger('resolved_at')->nullable();});
-Schema::create('domains_watch_deliveries',function(Blueprint $t){$t->id();$t->unsignedBigInteger('notice_id');$t->string('state');$t->string('safe_code')->nullable();});
-$n=DB::table('domains_watch_notices')->insertGetId(['watch_id'=>$watch->id,'state'=>'open']);
-foreach(['reserved','render_failed','accepted','uncertain']as$state){DB::table('domains_watch_deliveries')->insert(['notice_id'=>$n,'state'=>$state]);}
+// Use the real installed notice schema and encrypted notice payload, retaining the four delivery outcomes.
+Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::verify();
+$n=Paymenter\Extensions\Servers\Domains\Models\WatchNotice::create([
+    'notice_key'=>str_repeat('c',64),'scope'=>Paymenter\Extensions\Servers\Domains\Services\WatchNoticePreferences::scope($uid,'example.com'),
+    'target_kind'=>'watch','watch_id'=>$watch->id,'user_id'=>$uid,'kind'=>'dns_changed','episode_key'=>str_repeat('d',64),
+    'family'=>'dns','observation_id'=>$old->id,'state'=>'open','first_seen_at'=>$now,'last_seen_at'=>$now,
+    'data'=>['domain'=>'example.com','channels'=>['mail']]])->id;
+foreach(['reserved','render_failed','accepted','uncertain']as$state){
+    DB::table('domains_watch_deliveries')->insert(['notice_id'=>$n,'user_id'=>$uid,'channel'=>'mail',
+        'delivery_key'=>hash('sha256','synthetic-relink-'.$state),'template_key'=>'synthetic-relink','state'=>$state,'reserved_at'=>$now]);
+}
 $fail=true;WatchAudit::creating(static function($audit)use(&$fail){if($fail && $audit->event==='registration_managed'){throw new DomainException('Synthetic relink rollback');}});
 expect(!$signals->enqueue($id,$uid,$now),'Audit failure rolls relink transaction back');same('active',$watch->fresh()->state,'Watch not partly relinked');same('watch',$source->fresh()->state,'Source not partly relinked');
 same(0,ManagedPublicConfig::count(),'No partial configuration');same('reserved',DB::table('domains_watch_deliveries')->orderBy('id')->value('state'),'No partial suppression');
