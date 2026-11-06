@@ -25,7 +25,7 @@ function curl_exec($h): bool {
     same('/apibatch/getDomainInfo',$url['path'],'Upgraded connection reads the domain through its admitted runtime');
     same(0,DB::transactionLevel(),'Domain reads stay outside locks');
     $GLOBALS['rebindReads']=($GLOBALS['rebindReads']??0)+1;
-    $body=json_encode(['request'=>['operation'=>'getDomainInfo'],'reply'=>['code'=>300,'detail'=>'success',
+    $body=json_encode(['request'=>['operation'=>'getDomainInfo'],'reply'=>['code'=>($GLOBALS['rebindDomainMissing']??false)?200:300,'detail'=>'success',
         'created'=>'2026-01-01','expires'=>'2027-01-01','status'=>'Active','locked'=>'Yes','private'=>'No','auto_renew'=>'No',
         'nameservers'=>[['nameserver'=>'ns1.example.net','position'=>1],['nameserver'=>'ns2.example.net','position'=>2]],
         'contact_ids'=>['registrant'=>'123','administrative'=>'123','technical'=>'123','billing'=>'123']]]);
@@ -88,16 +88,22 @@ expect(!array_filter(Review::historyRows($server),fn($entry)=>str_contains(json_
 expect(!$account->fresh()->processing_enabled,'Authentication never enables sends');
 expect(app(RuntimePorts::class)->registered($account->fresh()),'Upgraded TEST account composes the installed domain runtime');
 $clock=app(Clock::class);$context=static fn()=>new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+60 seconds'),new RequestBudget(4),$clock,stopOnReadFailure:true);
+$registry->requireDomainReads('namesilo'); // Normal verification must recognize the composed TEST holding reader.
 $reader=$bindings->reader($server->id);$result=$reader->readDomain('example.com',$context())->evidence()->domain;
 same(['example.com',true],[$result?->name,$result?->owned],'Same account reads its domain after authentication');
 NameSiloAccountGuard::check($binding,$context(),static fn()=>throw new \RuntimeException('Authenticated local lineage must not need a default-contact read'));
 $usage=static fn()=>(new LiveReservations(new TestReservationPolicy,Environment::Test))->usage($binding);
 same(['used'=>1,'spend_micros'=>0],$usage(),'Domain read consumes the same TEST budget and no spend');
+// The demo's retained transfer fixture returns provider code 200: composition cannot claim ownership.
+$GLOBALS['rebindDomainMissing']=true;
+$failed=false;try{$reader->readDomain('example.com',$context());}catch(\DomainException $e){$failed=true;}
+expect($failed,'A provider domain-read failure stays a failure after composition is fixed');
+$GLOBALS['rebindDomainMissing']=false;
 $revision=$bindings->credentialRevision($binding);
 $writes->run($review($server->id),['registrar'=>'namesilo','environment'=>'test','credentials'=>$credentials]);
 expect($revision!==$bindings->credentialRevision($binding),'Reviewed same-key reauthentication replaces the credential fence');
 $refuse(fn()=>$reader->readDomain('example.com',$context()));
-same(['used'=>1,'spend_micros'=>0],$usage(),'Reauthentication preserves accumulated budget');
+same(['used'=>2,'spend_micros'=>0],$usage(),'Reauthentication preserves accumulated budget');
 $other=Server::create(['name'=>'Duplicate TEST key','type'=>'server','extension'=>'Domains','enabled'=>true]);
 $refuse(fn()=>$writes->run($review($other->id),['registrar'=>'namesilo','environment'=>'test','credentials'=>$credentials]));
 expect(!Account::where('server_id',$other->id)->exists(),'Same key cannot create another budget lineage');
