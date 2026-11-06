@@ -22,6 +22,7 @@ try {
 } finally {if($runtime!==null){app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class,$runtime);}}
 $new=static function(string $name)use(&$registrations){$op=$registrations[$name];unset($registrations[$name]);return $op->fresh();};
 require __DIR__.'/reconciliation-fixture.php';
+if ($ownerCalendarTerms ?? false) { require __DIR__.'/owner-renewal-terms.php'; }
 require __DIR__.'/owner-pages.php';
 // Preserve the installed routing contract while exercising the real owner renewal path.
 app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class);
