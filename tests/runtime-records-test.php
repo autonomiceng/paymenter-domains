@@ -9,7 +9,7 @@ Queue::fake();$finance=[$original->fresh()->getAttributes(),$d->fresh()->provide
 $state->dns=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>' exact TXT '.$i.' ','mx_pref'=>10],range(12,1));
 $state->srv=array_map(fn($i)=>['service'=>'sip'.$i,'protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.'],range(12,1));
 $bindings->setProcessing($d->server_id,false);
-app(RuntimeWork::class)->tick();same(1,DB::table('domains_observation_queues')->where('turn','>',0)->count(),'Exactly one bounded observation account turn per native tick');same([],$state->calls,'Default paused account makes no record reads');same(null,ObservationRecords::current($d->fresh()),'Paused account publishes no inventory');
+app(RuntimeWork::class)->tick();same(1,DB::table('domains_observation_queues')->where('turn','>',0)->count(),'Exactly one bounded observation account turn per native tick: '.json_encode(DB::table('domains_observation_queues')->get(['server_id','turn'])->all()));same([],$state->calls,'Default paused account makes no record reads');same(null,ObservationRecords::current($d->fresh()),'Paused account publishes no inventory');
 $registerRecords();expect($runtimePorts->accepted($a),'Synthetic accepted composition');
 $dueRecords();$runtimePorts->initialManagedRecordObservations();same([],$state->calls,'Acceptance alone cannot bypass processing pause');
 $bindings->setProcessing($d->server_id,true,static fn()=>null);$compositionReady=false;$dueRecords();$runtimePorts->initialManagedRecordObservations();
