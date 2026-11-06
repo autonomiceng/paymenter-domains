@@ -130,16 +130,17 @@ DB::table('domains_operations')->where('id',$heldOp->id)->update(['action'=>'tra
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'pending','safe_code'=>null,'started_at'=>'2026-10-20 15:06:00']);
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('In progress')->assertSee('Sent to registrar')->assertSeeHtml('2026-10-20T15:06:00+00:00');
 
-// Paid and unconfirmed: the notice names the registrar and how long new orders have been paused.
+// Paid and unconfirmed: History says so, so the notice gives the next step and how long new orders have been paused (ui-r20).
 DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'uncertain','funding_basis'=>'paid_invoice','started_at'=>now()->subHours(73)]);
-Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('NameSilo has not confirmed this transfer.')
+Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('Use Check status to ask the registrar for the result.')->assertDontSee('has not confirmed this transfer')
     ->assertSee('Paid domain changes on this NameSilo account wait until the result is known (73 hours so far).')->assertSee('Check status')
     ->assertDontSee('Release hold')->assertDontSee('Account spending holds')->assertDontSee('Paid outcome review');
 // ui-r19: a send that may have gone out is said once, in History; Details has no second dated row for it.
 $keptRow=(array)DB::table('domains_operations')->where('id',$heldOp->id)->first(['attempt','updated_at']);
 Operation::find($heldOp->id)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']])->saveQuietly();
 $unsure=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('Request created')->html();
-same(1,substr_count($unsure,'Registrar has not confirmed the result'),'The unconfirmed result is said once on the request page');unset($unsure);
+same(1,substr_count($unsure,'Registrar has not confirmed the result'),'The unconfirmed result is said once on the request page');
+same(1,substr_count($unsure,'has not confirmed'),'The notice title does not say it again');unset($unsure);
 DB::table('domains_operations')->where('id',$heldOp->id)->update($keptRow);unset($keptRow);
 
 // Completed: Completed pill, no notice and no More menu.
