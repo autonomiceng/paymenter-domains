@@ -66,6 +66,15 @@ foreach(['never_read','wrong_identity','failed_read'] as $case){
     same(1,$ownerDom->query('//form[@action="/domains/1/dns"]')->length,$case.' keeps the supplied DNS editor on the owner page');
 }
 $partial=RecordFamilies::owner($editable,RecordFamilies::read($d,$now));same([],$partial->management['contacts']['actions'],'A current partial contact read still holds whole-list editing');
+// r16: a complete family says its count beside the label; the value doesn't say it again.
+$countDom=storefrontDom(view('domains::partials.owner-management',['domain'=>$partial,'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render());
+$countSub=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@class="domains-sub"]')->item(0)?->textContent??'');
+$countValue=trim($countDom->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)?->textContent??'');
+same([1,''],[preg_match('/^\d+ records? checked\./',$countSub),$countValue],'DNS says its record count once: '.json_encode([$countSub,$countValue]));
+// r16: a domain that ended without a registration has no expiry to show, so Renewal says nothing rather than Expires None.
+$ended=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'example.com',status:'Cancelled',tone:'muted',expiry:null,renewal:'',renewalPrice:null,actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,order:['state'=>'cancelled','credit'=>'10.99']);
+$endedHtml=view('domains::partials.owner-renew',['domain'=>$ended,'summary'=>null,'support'=>null])->render();
+same([false,false],[str_contains($endedHtml,'Expires'),str_contains($endedHtml,'None')],'An ended domain shows no Expires None');
 $unknown=new Domain(['domain'=>'example.com','registrar_key'=>'enom','server_id'=>1,'authority_generation'=>1,'account_fingerprint'=>str_repeat('a',64),'observation'=>[]]);
 $unreadManagement=$existing;foreach(['dns','srv','ds'] as $key){$unreadManagement[$key]['records']=null;$unreadManagement[$key]['actions']=[];}
 $unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$unreadManagement]),RecordFamilies::read($unknown,$now));
