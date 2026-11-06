@@ -73,7 +73,7 @@ def shared_vendor(jobs, requested):
                 'tests/cart-removal-checkout-test.php',
                 'tests/cart-reload-price-test.php',
                 'tests/namesilo-management-facts-test.php',
-                'tests/test_client_scripts.py',
+                'tests/test_client_scripts.py', 'tests/lost-reply-status-test.php',
                 'tests/namesilo-settings-test.php',
                 # These serial witnesses only read the verified vendor tree.
                 'tests/namesilo-runtime-read-test.php',
