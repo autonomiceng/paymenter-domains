@@ -25,7 +25,9 @@ final class LocalAccountEnrollment
             static function (AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): NameSilo\Driver {
                 if ($binding->environment !== $environment) { throw new \DomainException('Credential environment changed.'); }
                 return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), []);
-            }, true,
+            // Local TEST enrollment already installs the admitted holding reader above.
+            // Live remains account-only until its separate account-bound composition is installed.
+            }, $environment !== Environment::Test,
             authenticator: new NameSilo\CredentialAuthenticator($environment, $transport));
         return true;
     }
