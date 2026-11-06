@@ -54,7 +54,7 @@ $service=App\Models\Service::where('user_id',$buyer->id)->sole();
 DB::table('services')->where('id',$service->id)->update(['price'=>'10.99']);$service->refresh();Auth::setUser($actor);
 $holding=new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed','domain'=>'example.com','service_id'=>$service->id]);
 $gift=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal'))->invoke(null,$holding);
-$schema=$gift->getSchema();$text=(string)$schema[array_key_last($schema)]->getContent();
+$schema=$gift->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true);$text=(string)$schema[array_key_last($schema)]->getContent();
 $r10Check(str_contains($text,'Next annual renewal: $10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
 $probe->setValue(null,null);
 storefrontViews();require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
