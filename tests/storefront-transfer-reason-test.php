@@ -71,6 +71,10 @@ $deferred = $check();
 same(2,$limiter->calls,'The transfer precheck reaches the second read admission');
 same('busy',$deferred['status'],'Deferred transfer read is retryable');
 expect(str_contains($deferred['html'],'data-domains-retry'),'Deferred transfer keeps the Retry control');
+$limiter->calls=0;
+$deferredRegister=$check(false);
+same(2,$limiter->calls,'Registration search confirms availability before the transfer read defers');
+same('taken',$deferredRegister['status'],'A deferred transfer read preserves confirmed registration unavailability');
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
 app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 $public->states = ['pending transfer'];
@@ -96,5 +100,12 @@ foreach ([true,false] as $transferMode) {
     same('transferable',$onlyTransfer['status'],'Transfer-only sales bypass registration minimum terms');
     expect(str_contains($onlyTransfer['html'],'value="transfer"'),'Transfer-only sales retain the Transfer action');
 }
+// Without registration offers, the initial Taken placeholder is not confirmed availability.
+$limiter->calls=1;
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class,new Paymenter\Extensions\Servers\Domains\Services\Runtime);
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,$limiter);
+same('busy',$check(false)['status'],'A transfer-only seller keeps Retry when no registration read confirmed Taken');
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 $nativeSuccessful = true;
 echo "Customer transfer reasons, next steps and registration isolation passed.\n";

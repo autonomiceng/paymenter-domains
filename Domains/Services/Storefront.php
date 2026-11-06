@@ -141,17 +141,17 @@ class Storefront
             return [...$base, 'status' => 'available', 'price' => $first['price'], 'renew' => $first['renew'],
                 'term' => (int) array_key_first($offers), 'terms' => array_map(static fn ($offer) => $offer['price'], $offers)];
         }
-        return $transfer ? $this->transferResult($name, $transfer, $base, $transferOnly) : $base;
+        return $transfer ? $this->transferResult($name, $transfer, $base, $transferOnly, registrationTaken: !$transferOnly) : $base;
     }
 
     /** Transfer eligibility has its own registrar/RDAP checks; registration term gates grant no authority here. */
-    private function transferResult(string $name, array $transfer, array $base, bool $transferOnly): array
+    private function transferResult(string $name, array $transfer, array $base, bool $transferOnly, bool $registrationTaken = false): array
     {
         try {
             $this->eligibility->observe($name, $transfer['selection'], ['storefront']);
             return [...$base, 'status' => 'transferable', 'price' => $transfer['price'], 'term' => 1];
         } catch (ReadDeferred) {
-            return [...$base, 'status' => 'busy'];
+            return $registrationTaken ? $base : [...$base, 'status' => 'busy'];
         } catch (\Throwable $error) {
             if ($transferOnly) {
                 // Only known local reason codes can reach customers, never exception/provider text.
