@@ -3,33 +3,23 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 $pricingNoticeScopes=require __DIR__.'/Support/pricing-editor-notice-scopes.php';
-require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/installed.php';require_once __DIR__.'/Support/staff-panel.php';
+require __DIR__.'/Support/runtime-native.php';
 use App\Models\{Invoice,Service};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Domains;
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimePorts,AccountBindings,CartAdmission,CheckoutEligibility,InvoiceBinding,NativeCatalogue,PriceCatalogue,OwnedDomains,NativePresenter,OwnerPorts,HolderPricing};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-// Real fresh installed routing; synthetic registry evidence stays independent of native ownership/finances.
-(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
-$entry=new Domains;$entry->installed();extract(commerceFixture(true,static fn()=>null));$clock=new FakeClock($now);
-app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogue::class,$native);app()->instance(PriceCatalogue::class,$prices);
-app()->instance(\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class,$sellers);
-// Use the normal installed adapters rather than binding module-only private ports into the container.
-$prices=new PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules);$native=new NativeCatalogue($prices);$sellers=new \Paymenter\Extensions\Servers\Domains\Services\SellerPolicies($prices,$bindings);activeFixturePorts($sellers,$ports,$clock);
-foreach([PriceCatalogue::class=>$prices,NativeCatalogue::class=>$native,\Paymenter\Extensions\Servers\Domains\Services\SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
-config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true]);
-$enom=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
-\App\Models\Server::find($enom->serverId)->settings()->updateOrCreate(['key'=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::KEY],['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$enom->fingerprint,...\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::protocol($enom)])]);
-app()->offsetUnset(RuntimePorts::class);\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
-// FreshInstallation inspects these adapters before the module fixture replaces its bindings.
-foreach([\Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class,CheckoutEligibility::class,CartAdmission::class,InvoiceBinding::class,HolderPricing::class,OwnedDomains::class,NativePresenter::class] as $type){app()->forgetInstance($type);}
-$entry->boot();installedPanel();
 $owners=app(OwnedDomains::class);$presenter=app(NativePresenter::class);$user=commerceUser();$user->update(['email'=>'native-owner@example.com']);$foreign=commerceUser();foreach(['address'=>'1 Synthetic Street','city'=>'Seattle','state'=>'WA','zip'=>'98101','country'=>'US','phone'=>'(206) 555-0100'] as $key=>$value){$user->properties()->create(['key'=>$key,'name'=>$key,'value'=>$value]);}$pairs=[];$checkoutLines=[];$cartEdits=[];
 foreach($tlds as $i=>$t){
     if($i){$p=DB::table('domains_sales_policies')->where('tld','com')->sole();activeFixtureSeller($sellers,'com',$p->revision,$t->server_id,true,true,$now);}
     $created=placeholderComFixtureName(str_repeat('a',47).'-placeholder-'.$i.'.com');$edited=placeholderComFixtureName(str_repeat('a',46).'x-placeholder-'.$i.'.com');
     same(61,strlen(explode('.',$created)[0]),'Created cart fixture retains its label length');same(61,strlen(explode('.',$edited)[0]),'Edited cart fixture retains its label length');expect($created!==$edited,'Create and edit retain distinct names');
+    $offerBinding=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
+    foreach(['register','renew'] as $fixtureAction){
+        $ready=\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::class)->readOffers(new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($offerBinding,[$t->tld],$fixtureAction),\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Public)[0];
+        expect($ready->available,'Installed native '.$offerBinding->registrarKey.' '.$fixtureAction.' fixture must be available: '.$ready->reason);
+    }
     $cart=commerceCart($user);$item=commerceAdd($cart,$native->product($t,'register'),$created);
     $clock->instant=$now->modify('+6 minutes');$beforeReads=$reads->calls;
     \Illuminate\Support\Once::flush();\Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(\App\Livewire\Cart::class);
