@@ -42,11 +42,15 @@ final class CartCheckoutRefresh
             \Livewire\store($component)->set('domains.shown', $memo['domains_shown'] ?? null);
             CartNotice::restore($component, $memo['domains_notice'] ?? null);
         });
-        Livewire::listen('call', static function ($component, $method, $params, $context, $returnEarly) use ($admission): void {
+        Livewire::listen('call', static function ($component, $method, $params, $context, $returnEarly) use ($admission) {
             if ($component::class !== Cart::class) { return; }
             if (in_array($method, ['applyCoupon', 'removeCoupon', 'updateQuantity', 'removeProduct'], true)) {
                 \Livewire\store($component)->set('domains.customer_edit', true);
                 CartNotice::clear($component);
+            }
+            if ($method === 'removeProduct') {
+                // Notify the separate native header component after removal updates the cart.
+                return static function () use ($component): void { $component->dispatch('cartUpdated'); };
             }
             if ($method !== 'checkout') { return; }
             OrderContact::clear();
