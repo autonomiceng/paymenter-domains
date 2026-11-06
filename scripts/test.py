@@ -673,7 +673,7 @@ def main():
                             'tests/cart-removal-checkout-test.php',
                             'tests/cart-reload-price-test.php',
                             'tests/namesilo-management-facts-test.php',
-                            'tests/test_client_scripts.py',
+                            'tests/test_client_scripts.py', 'tests/lost-reply-status-test.php',
                             'tests/namesilo-settings-test.php', 'tests/namesilo-settings-wording-test.php',
                             'tests/namesilo-rebind-test.php', 'tests/namesilo-runtime-read-test.php',
                             'tests/namesilo-enrollment-test.php', 'tests/native-server-settings-test.php',

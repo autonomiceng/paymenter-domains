@@ -681,7 +681,7 @@ class RunnerTests(unittest.TestCase):
                    'tests/namesilo-runtime-read-test.php',
                    'tests/namesilo-settings-wording-test.php',
                    'tests/native-server-settings-test.php',
-                   'tests/transfer-polling-test.php',
+                   'tests/transfer-polling-test.php', 'tests/lost-reply-status-test.php',
                    'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php',
                    'tests/watch-scheduler-test.php',
                    'tests/runtime-records-test.php', 'tests/runtime-records-order-test.php', 'tests/runtime-records-gates-test.php', 'tests/runtime-records-fencing-test.php', 'tests/owner-management-test.php',
