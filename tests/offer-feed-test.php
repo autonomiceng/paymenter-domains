@@ -63,7 +63,7 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     $c = $context($binding); $rows = $indexed($feed->prices($c));
     same('10.0010', $rows['com']->costs['register:1']->total ?? null, 'Enom feed returns exact reseller cost observations');
     $savedTime = $clock->at; $clock->at = new DateTimeImmutable('2026-11-05T12:00:00Z');
-    $approved = new EnomFeed($driver, expansion: \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::REVIEWED_EVIDENCE['enom']);
+    $approved = new EnomFeed($driver, new CatalogueFreshness, expansion: \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::REVIEWED_EVIDENCE['enom']);
     $approvedRows = $indexed($approved->prices($context($binding)));
     same($environment === Environment::Test ? '22.0000' : null, $approvedRows['com']->costs['renew:2']->total ?? null,
         'Reviewed TEST two-year total is twice bucket-one renewal cost; Live has no derived quote');

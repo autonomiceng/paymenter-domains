@@ -648,7 +648,7 @@ def main():
                             'tests/management-namesilo-test.php', 'tests/renewal-cycles-test.php',
                             'tests/renewal-billing-test.php', 'tests/observation-records-test.php',
                             'tests/observation-namesilo-test.php', 'tests/demo-c-c1-observation-test.php',
-                            'tests/demo-c-terms-native-test.php',
+                            'tests/demo-c-terms-native-test.php', 'tests/enom-multiyear-native-test.php',
                             'tests/staff-domain-page-test.php',
                             'tests/staff-domain-status-test.php',
                             'tests/staff-operation-reads-test.php',
