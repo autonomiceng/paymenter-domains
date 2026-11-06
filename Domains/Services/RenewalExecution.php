@@ -18,7 +18,7 @@ final class RenewalExecution
         $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
         $op=Operation::findOrFail($id);$a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->first();
         try{$b=$a?AccountBindings::binding($a):null;}catch(\Throwable){$b=null;}
-        return $b&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
+        return $b&&$b->registrarKey==='enom'&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
     }
     private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
     {
