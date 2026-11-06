@@ -19,6 +19,14 @@ $billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??
 $controller=new OwnerRenewalController($owners,$billing);$session=app('request')->session();$other=commerceUser();
 [$source]=$prepare(placeholderComFixtureName('owner-renew-placeholder.com'));same('succeeded',$reconcile->run($source->id)->state,'Owner registration confirmed');
 [$lateSource]=$prepare(placeholderComFixtureName('owner-renew-late-placeholder.com'));same('succeeded',$reconcile->run($lateSource->id)->state,'Late registration confirmed');
+// Complete the independent native registrations before renewal cases advance the fake clock.
+$lastDays=[];
+foreach ([true,false] as $autoRenew) {
+    [$registration]=$prepare(placeholderComFixtureName('owner-last-day-'.($autoRenew?'on':'off').'-placeholder.com'));
+    same('succeeded',$reconcile->run($registration->id)->state,'Late owner registration confirmed');
+    $lastDays[(int)$autoRenew]=$registration->domain()->firstOrFail();
+}
+[$creditedSource]=$prepare(placeholderComFixtureName('owner-late-credited-placeholder.com'));same('succeeded',$reconcile->run($creditedSource->id)->state,'Domain ready');
 $d=$source->domain()->firstOrFail();$late=$lateSource->domain()->firstOrFail();$server=$product->server;Queue::fake();storefrontViews();
 $setting=static fn(string $key,bool $value)=>$server->settings()->updateOrCreate(['key'=>$key],['value'=>$value,'type'=>'boolean']);
 $req=static function($domain,array $data,$actor=null,?string $intent=null)use($user,$session):Request {
@@ -45,13 +53,20 @@ $page=static function($domain)use($user,$session,$owners,$bounded):string {
     $r=Request::create('/domains/'.$domain->id,'GET');$r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
     return $bounded(fn()=>(new OwnedDomainController($owners))->show($r,$domain->id)->render());
 };
+// The auto-renew confirmation explains Renew now even when manual requests are off.
+// Check actual links, dialogs and submit controls, including hidden ones, rather than prose.
+$noRenewalForm=static function(string $html,$domain,string $message):void {
+    $dom=storefrontDom($html);$url=route('domains.domains.renew',$domain->id);
+    $open=route('domains.domains.show',$domain->id).'?edit=renew#edit-renew';
+    same(0,$dom->query('//form[@action="'.$url.'"]|//*[@formaction="'.$url.'"]|//a[@href="'.$url.'" or @href="'.$open.'"]|//dialog[@id="edit-renew"]|//select[@id="renew-years"]')->length,$message);
+};
 $ledger=static fn()=>serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('invoice_transactions')->get(),Operation::where('action','renew')->get()->map->getRawOriginal()->all()]);
 $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');
 
 // Off: no form, no key in use, and a direct POST refuses with plain copy and no debt.
 $setting('domains_manual_renewals_enabled',false);$setting('domains_billing_enabled',true);
 same([],$owners->present($d->fresh())->renewNow,'Manual renewals off hide the request');
-$html=$page($d);expect(!str_contains($html,'Renew now')&&!str_contains($html,route('domains.domains.renew',$d->id)),'Off page shows no renewal form');
+$html=$page($d);$noRenewalForm($html,$d,'Off page shows no renewal form');
 $before=$ledger();$refused($d,['years'=>'1'],'You can’t renew online right now. Contact support to renew this domain.');
 same($before,$ledger(),'Off request creates no invoice');
 
@@ -228,7 +243,7 @@ same([],$bounded(fn()=>$owners->present($late->fresh())->renewNow),'Missing expi
 // Auto-renew off: billing refuses manual requests for a stopped renewal, so the page offers none; turning it on restores the form.
 $policy=$late->fresh()->renewal_policy??[];$late->update(['renewal_policy'=>[...$policy,'renewals_stopped'=>true]]);$dto=$owners->present($late->fresh());
 same(['Off',[]],[$dto->renewal,$dto->renewNow],'Auto-renew off hides the request billing refuses');
-$html=$page($late);expect(!str_contains($html,'Renew now')&&!str_contains($html,route('domains.domains.renew',$late->id)),'Auto-renew off page shows no renewal form');
+$html=$page($late);$noRenewalForm($html,$late,'Auto-renew off page shows no renewal form');
 $refused($late,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($issued,$ledger(),'Auto-renew off request creates no invoice');
 $late->update(['renewal_policy'=>$policy]);$dto=$owners->present($late->fresh());
 same(['On',range(1,9)],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
@@ -320,9 +335,7 @@ DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoic
 
 // Late requests keep horizon-bounded terms and share the preview's expiry limit with the writer.
 foreach ([true,false] as $autoRenew) {
-    [$lateRegistration]=$prepare(placeholderComFixtureName('owner-last-day-'.($autoRenew?'on':'off').'-placeholder.com'));
-    same('succeeded',$reconcile->run($lateRegistration->id)->state,'Late owner registration confirmed');
-    $lastDay=$lateRegistration->domain()->firstOrFail();
+    $lastDay=$lastDays[(int)$autoRenew];
     $lastDay->update(['renewal_policy'=>[...($lastDay->renewal_policy??[]),'owner_auto_renew'=>$autoRenew]]);
     $clock->instant=new DateTimeImmutable('2027-10-17T23:59:59Z');
     same(['terms'=>range(1,9),'order_by'=>'2027-10-17'],$billing->requestOptions($lastDay),'Last-day preview: '.($autoRenew?'On':'Off'));
@@ -353,7 +366,7 @@ foreach([[null,'This domain already has a renewal invoice for a different term. 
 foreach([Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::class,App\Jobs\Server\CreateJob::class] as $job){Queue::assertNotPushed($job);}
 // Money that lands on a closed early invoice: the customer page says where it went.
 $setting('domains_manual_renewals_enabled',true);$retire=new RenewalCycles($bindings,$clock);$refunds=new Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
-$clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');[$source]=$prepare(placeholderComFixtureName('owner-late-credited-placeholder.com'));same('succeeded',$reconcile->run($source->id)->state,'Domain ready');$domain=$source->domain()->firstOrFail();
+$domain=$creditedSource->domain()->firstOrFail();
 $clock->instant=new DateTimeImmutable('2027-08-01T12:00:00Z');$closed=$billing->invoice($domain->id,$user,1);$op=Operation::where('invoice_id',$closed->id)->sole();DB::table('domains_operations')->where('id',$op->id)->update(['created_at'=>'2027-08-01 12:00:00']);
 $clock->instant=new DateTimeImmutable('2027-08-09T12:00:00Z');$retire->closeEarlyUnpaid($domain->id);same('cancelled',$closed->fresh()->status,'The week closes the invoice');
 App\Helpers\ExtensionHelper::addPayment($closed->id,null,'1.00');$refunds->creditRejected($op->id);
