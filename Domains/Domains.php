@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission,FreshInstallati
 class Domains extends Server
 {
     public function boot(): void { Runtime::register(); app(Runtime::class)->boot(); }
-    public function installed(): void { OfferUpgrade::requireCompatible(); Runtime::register(); FreshInstallation::install(); }
+    public function installed(): void { OfferUpgrade::requireCompatible(); Runtime::register(); FreshInstallation::install(); \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::ensure(); }
     public function upgraded($oldVersion = null): void { $this->installed(); }
     public function uninstalled(): void {} // Retain all ownership, billing and operation evidence.
     /** Optional gateway seam. Domains alone decides current renewal authority. */

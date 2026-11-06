@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/site-dns-default.php';
+
 require __DIR__.'/Support/managed-public.php';
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
@@ -8,8 +10,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicConfig,ManagedPubl
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,ManagedPublicWorkSchema,WatchDnsChecks};
 extract(managedFixture(skipA3:true,beforeConfirm:static function(array $f):void{
     DB::table('domains_watch_profiles')->where('id',$f['profile']->id)->update(['nameservers'=>json_encode(['ns1.platform.example','ns2.platform.example'])]);
-    DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked(
-        \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$f['binding']->serverId)->sole(),$f['profile']->id));
+    siteDnsFixture($f['profile']->id);
 }));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
 same('active',$watch->fresh()->state,'A3 failed postcommit relink fixture');same(0,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'No A3 work after atomic failure');
 $counter=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW]);

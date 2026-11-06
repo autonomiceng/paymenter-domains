@@ -1,6 +1,8 @@
 <?php
-// Synthetic account DNS defaults through real checkout and owner capture; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Synthetic site DNS defaults through real checkout and owner capture; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/site-dns-default.php';
+
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\{AcquisitionSetup,NewDomainDns,OwnerSetup};
@@ -11,8 +13,8 @@ same([],NewDomainDns::nameservers($binding->serverId,'register'),'An unconfigure
 $template=DB::transaction(fn()=>WatchProfile::create(['name'=>'Registration nameservers','enabled'=>true,
     'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
     'edited_by'=>$user->id,'reason'=>'Synthetic registration default']));
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,$template->id));
-same([(int)$account->server_id],NewDomainDns::accounts($template->id),'Selected template identifies the registrar account');
+siteDnsFixture($template->id);
+same($template->id,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()->id,'Selected template is the site default');
 if($binding->registrarKey==='namesilo'){
     $invalidName=placeholderComFixtureName('template-in-zone-placeholder.com');$outside=$template->nameservers;
     foreach([$invalidName,'ns1.'.$invalidName]as$inZone){
@@ -33,7 +35,7 @@ foreach(['disable','delete'] as $change){
     try{
         DB::transaction(function()use($template,$change){$row=$template->fresh();if($change==='delete'){$row->delete();}else{$row->update(['enabled'=>false,'revision'=>$row->revision+1]);}});
         throw new RuntimeException('Expected in-use template refusal');
-    }catch(DomainException $e){expect(str_contains($e->getMessage(),'registrar account default')&&str_contains($e->getMessage(),'another template'),'In-use refusal explains the account dependency');}
+    }catch(DomainException $e){expect(str_contains($e->getMessage(),'site DNS default')&&str_contains($e->getMessage(),'another'),'In-use refusal explains the site dependency');}
 }
 $registration->mode=$binding->registrarKey==='enom'?'clean':'300';$registration->calls=[];
 $purchaseWire=[];$captureExchange=static function($origin,$command,$parameters,$timeout)use($exchange,&$purchaseWire){
@@ -45,8 +47,8 @@ $purchaseWire=[];$captureExchange=static function($origin,$command,$parameters,$
 $makeEngine($binding,$captureExchange);
 $name=$binding->registrarKey==='enom'?'template-default.example.com':placeholderComFixtureName('template-default-placeholder.com');
 $op=$binding->registrarKey==='enom'?$new($name):$nsNew($name);
-same($template->nameservers,$op->payload['nameservers'],'Checkout freezes the account template without customer input');
-$origin=['source'=>'account_default','profile_id'=>(int)$template->id,'profile_revision'=>(int)$template->fresh()->revision];
+same($template->nameservers,$op->payload['nameservers'],'Checkout freezes the site template without customer input');
+$origin=['source'=>'site_default','profile_id'=>(int)$template->id,'profile_revision'=>(int)$template->fresh()->revision];
 same($origin,$op->payload['nameservers_origin']??null,'Checkout retains inherited nameserver provenance for both registrars');
 $registration->query=\Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op,$op->domain);
 $result=$engine->execute($op->id);same('pending',$result->state,'Default registration reaches financial observation: '.$result->safe_code);$assertRetained($result,[]);
@@ -65,7 +67,7 @@ $registration->query=\Paymenter\Extensions\Servers\Domains\Services\OperationCla
 $result=$engine->execute($op->id);same('pending',$result->state,'Customer choice reaches financial observation: '.$result->safe_code);$assertRetained($result,[]);
 $wire=$purchaseWire[$binding->registrarKey==='enom'?'ModifyNS':'registerDomain'];
 same($chosen,$binding->registrarKey==='enom'?[$wire['NS1'],$wire['NS2']]:[$wire['ns1'],$wire['ns2']],'Customer choice reaches the provider instead of the template');
-same([] ,NewDomainDns::nameservers($binding->serverId,'transfer'),'Account defaults never supply transfer nameservers');
+same([] ,NewDomainDns::nameservers($binding->serverId,'transfer'),'Site defaults never supply transfer nameservers');
 if($binding->registrarKey==='enom'){
     $transfer=$new('template-transfer.example.com',action:'transfer');
     expect(!array_key_exists('nameservers',$transfer->payload),'Transfer checkout has no default nameserver payload');
@@ -77,14 +79,14 @@ $equal=$binding->registrarKey==='enom'?$new('template-equal.example.com'):$nsNew
 same(['source'=>'customer'],$equal->fresh()->payload['nameservers_origin']??null,'An explicit choice equal to the old default is still a customer choice');
 commerceReject(fn()=>$equal->fresh()->update(['payload'=>[...$equal->fresh()->payload,'nameservers_origin'=>$origin]]));
 $op=$binding->registrarKey==='enom'?$new('template-blank.example.com'):$nsNew(placeholderComFixtureName('template-blank-placeholder.com'));
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,null));
-same(true,$owners->present($op->domain)->setup['defaults'],'Clearing the account template preserves the captured Finish setup default');
+siteDnsFixture(null);
+same(true,$owners->present($op->domain)->setup['defaults'],'Clearing the site template preserves the captured Finish setup default');
 (new OwnerSetup($clock,$ports))->save($user,$op->domain_id,['nameservers'=>[],'privacy'=>false]);
 same($template->nameservers,$op->fresh()->payload['nameservers'],'Blank Finish setup retains the frozen default');
 same($origin,$op->fresh()->payload['nameservers_origin']??null,'Blank Finish setup retains inherited provenance');
-DB::transaction(fn()=>NewDomainDns::saveLocked($account,null));
+siteDnsFixture(null);
 $op=$binding->registrarKey==='enom'?$new('template-none.example.com'):$nsNew(placeholderComFixtureName('template-none-placeholder.com'));
 expect(!array_key_exists('nameservers',$op->payload),'Clearing the template preserves the original unconfigured payload');
 same($binding->registrarKey==='enom',AcquisitionSetup::ready($op),'No template preserves registrar-specific setup requirements');
 // Leave only Enom configured for its refused-change scenario; NameSilo's existing tail tests missing setup.
-if($binding->registrarKey==='enom'){DB::transaction(fn()=>NewDomainDns::saveLocked($account,$template->id));}
+if($binding->registrarKey==='enom'){siteDnsFixture($template->id);}

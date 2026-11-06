@@ -36,6 +36,10 @@ final class DsState
     }
     public static function staff(Domain $d): array
     {
+        if($d->status==='cancelled' && RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())['cancelled_without_records']){
+            return ['value'=>'Not applicable','tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,
+                'sub'=>'Registration cancelled; no registrar records to check'];
+        }
         try{$records=ObservationProjection::sections($d)['ds']['facts']['records']??null;}catch(\Illuminate\Contracts\Encryption\DecryptException){$records=null;}
         $fact=['value'=>$records===null?'Unknown':($records===[]?'Off':'On'),'tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,
             'sub'=>(self::off($d)?($d->tld?str_replace('this TLD','.'. $d->tld,self::STAFF):self::STAFF).' ':'').($records===null?'Current DS records have not been confirmed. Sync this domain.':($records===[]?'The registrar confirmed there are no DS records.':implode('; ',array_map(fn($ds)=>'Key tag '.$ds['key_tag'].', algorithm '.$ds['algorithm'].', digest type '.$ds['digest_type'].': '.$ds['digest'],$records))))];

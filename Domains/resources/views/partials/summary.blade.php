@@ -7,7 +7,7 @@
 @if(in_array('adopt.pending',$summary->stateKeys,true))@unless($summaryOnManaged??false)<p class="domains-notice">{{ $summary->labels['adopt.pending_notice'] }}</p>@endunless@if($summary->urls['invoiceHistory']??null)<p><a class="domains-a" href="{{ $summary->urls['invoiceHistory'] }}">View invoice history</a></p>@endif@endif
 {{-- summaryNoticesBelow: notice kinds the page already states below (domain checks page). Say each fact once. --}}
 @if(in_array('watch.ns_changed',$summary->stateKeys,true) && !in_array('ns_changed',$summaryNoticesBelow??[],true))
-<p class="domains-notice"><span>{{ strtr($summary->labels['watch.ns_changed_notice'],['{domain}'=>$summary->name,'{date}'=>isset($summary->noticeDates['dns'])?\Carbon\CarbonImmutable::createFromTimestampUTC((int)$summary->noticeDates['dns'])->format('M j, Y, H:i').' UTC':'recently']) }} @if($summary->urls['support']??null)<a class="domains-a" href="{{ $summary->urls['support'] }}">contact support</a>@else{{ 'contact support' }}@endif.</span></p>
+<p class="domains-notice"><span>{{ strtr(($summary->dnsPreviouslyMatched?$summary->labels['watch.ns_changed_notice']:'{domain} does not use '.\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::nameservers().' (observed {date}). If you did not expect this,'),['{domain}'=>$summary->name,'{date}'=>isset($summary->noticeDates['dns'])?\Carbon\CarbonImmutable::createFromTimestampUTC((int)$summary->noticeDates['dns'])->format('M j, Y, H:i').' UTC':'recently']) }} @if($summary->urls['support']??null)<a class="domains-a" href="{{ $summary->urls['support'] }}">contact support</a>@else{{ 'contact support' }}@endif.</span></p>
 @endif
 @php($nameservers=$summary->nameservers['nameservers']??[])
 @php($dnsCheck=$summary->freshness['delegation']??null)
