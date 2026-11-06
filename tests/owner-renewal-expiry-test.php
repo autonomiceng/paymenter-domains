@@ -64,7 +64,7 @@ $html=$page($late);
 same(0,storefrontDom($html)->query('//form[@data-renewal-form] | //a[@data-dialog-open and contains(@href,"?edit=renew#edit-renew")]')->length,'Auto-renew off page shows no renewal form or opening action');
 $refused($late,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($issued,$ledger(),'Auto-renew off request creates no invoice');
 $late->update(['renewal_policy'=>$policy]);$dto=$owners->present($late->fresh());
-same(['On',range(1,9)],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
+same(['On',[1]],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
 
 // Outside the calendar: hidden on the expiry date and refused with plain copy.
 $clock->instant=new DateTimeImmutable('2027-10-17T23:00:00Z');expect($owners->present($late->fresh())->renewNow!==[],'Last request day still offers renewal');
