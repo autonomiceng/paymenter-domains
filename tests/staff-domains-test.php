@@ -117,16 +117,18 @@ $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->se
     'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Sync failed')->assertSee('0 attempts. Stopped until resumed.')->assertSee('Sync stopped after a failed check.');
+    // 875ef5d4/842d70e4 retain the exact stopped cause and attempt count beside the read state.
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Read stopped')->assertSee('0 attempts.')->assertSee('The registrar read stopped.')->assertSee('Cause: '.$code.'.');
     foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
         expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
     }
 }
 $sync=static function()use($held): array { $f=DomainFacts::for($held->fresh()); return array_key_exists('Last sync',$f)?[$f['Last sync']['value'],$f['Last sync']['sub']]:['absent',null]; };
-foreach ([['read_unavailable',1,'1 attempt. Stopped until resumed.'],['budget_exhausted',5,'5 attempts. Stopped until resumed.']] as [$code,$tries,$sub]) {
+foreach ([['read_unavailable',1],['budget_exhausted',5]] as [$code,$tries]) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries]);
-    same(['Sync failed',$sub],$sync(),'Stopped sync shows Sync failed with its attempts');
+    same(['Read stopped','The registrar read stopped. Cause: '.$code.'. Fix the cause, then use Resume sync.'],$sync(),'Stopped read retains its exact safe cause');
+    same($tries,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($held->fresh())['read_attempts'],'Stopped read retains its attempt count');
 }
 foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>2]);
