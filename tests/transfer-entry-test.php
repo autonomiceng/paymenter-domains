@@ -5,13 +5,23 @@ require __DIR__.'/Support/owned.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,StorefrontController};
 use Paymenter\Extensions\Servers\Domains\Services\{Storefront,CheckoutEligibility};
+// Exercise the installed customer adapter with independent local TEST deployment and transfer review premises.
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,
+    'domains.enom_writes.registration'=>true,'domains.enom_writes.renewal'=>true,'domains.enom_writes.transfer'=>true]);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+foreach([\Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::class,\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::class] as $type){
+App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>$type::KEY],
+    ['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$binding->fingerprint,...$type::protocol($binding)])]);
+}
 $store=new Storefront($sellers,$prices,$native,$bindings,activeFixtureEligibility($bindings,$clock),$clock);
 app()->instance(Storefront::class,$store);
 $controller=new OwnedDomainController($owners);$search=new StorefrontController($store);
 $request=Request::create('/domains','GET');$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());
 $newTransfer('entry-placeholder.com',0,false,false);storefrontViews();
 foreach([false,true,false] as $enabled){
-    $tlds[0]->update(['transfer_enabled'=>$enabled]);activeFixtureRepublish($native,$tlds[0]->id,$clock->now());
+    $ports=activeFixturePorts($native);$query=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+    $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:3,transfers:$enabled)),
+        $ports->readOffers($query,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
     $rows=$store->endings();same($enabled,$rows[0]['transfer']!==null,'Displayed transfer offer follows publication');
     $pricing=storefrontDom(view('domains::pricing',['rows'=>$rows,'guest'=>false,'testEnvironment'=>false])->render());
     same($enabled?$rows[0]['transfer']:'Transfers off',trim($pricing->query('//td[@data-label="Transfer"]')->item(0)->textContent),'Price list is the offer source');
