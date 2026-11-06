@@ -56,6 +56,23 @@ $setting->update(['value' => 'com']);
 $result = $check();
 same('transferable', $result['status'], 'Eligible name offers a transfer');
 expect(str_contains($result['html'], 'value="transfer"'), 'Eligible name has the Transfer action');
+// The first registrar read succeeds; admission defers the second, transfer-specific read.
+$limiter = new class implements Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
+    public int $calls = 0;
+    public function acquire($binding, $origin): string {
+        if (++$this->calls === 2) { throw new Paymenter\Extensions\Servers\Domains\Services\ReadDeferred; }
+        return 'synthetic-read';
+    }
+    public function release($binding, $origin, string $token): void {}
+};
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class, new Paymenter\Extensions\Servers\Domains\Services\Runtime);
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class, $limiter);
+$deferred = $check();
+same(2,$limiter->calls,'The transfer precheck reaches the second read admission');
+same('busy',$deferred['status'],'Deferred transfer read is retryable');
+expect(str_contains($deferred['html'],'data-domains-retry'),'Deferred transfer keeps the Retry control');
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 $public->states = ['pending transfer'];
 $assertRefusal($check(), 'already in progress');
 $page = (new OwnedTransferController($store))->show($req(['name' => 'transfer-placeholder.com'], 'GET'))->render();

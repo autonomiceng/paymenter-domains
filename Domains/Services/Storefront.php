@@ -144,6 +144,8 @@ class Storefront
             try {
                 $this->eligibility->observe($name, $transfer['selection'], ['storefront']);
                 return [...$base, 'status' => 'transferable', 'price' => $transfer['price'], 'term' => 1];
+            } catch (ReadDeferred) {
+                return [...$base, 'status' => 'busy'];
             } catch (\Throwable $error) {
                 if ($transferOnly) {
                     // Only known local reason codes can reach customers, never exception/provider text.
