@@ -30,4 +30,10 @@ same($line,DomainFacts::for($d->fresh())['Next invoice']['value'],'Turning off f
 // Closing this synthetic invoice restores the ordinary future schedule after renewals resume.
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);$d->update(['renewal_policy'=>$policy]);
 same($planned,DomainFacts::for($d->fresh())['Next invoice']['value'],'A closed invoice no longer replaces the schedule');
+// Reopening native debt does not restore the closed operation's renewal authority.
+$renewal->update(['state'=>'rejected','safe_code'=>'renewal_cancelled_unpaid']);
+$invoice->update(['status'=>'cancelled']);$invoice->update(['status'=>'pending']);
+$facts=DomainFacts::for($d->fresh());
+same($planned,$facts['Next invoice']['value'],'Reopened debt for a closed renewal cannot replace the future schedule');
+same('Invoice #'.$privacy->id,$facts['Open invoice']['value'],'Closed renewal debt cannot displace another open invoice');
 $nativeSuccessful=true;echo "Staff Next invoice reflects the open renewal invoice.\n";
