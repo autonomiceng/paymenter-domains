@@ -87,6 +87,10 @@ foreach (array_keys($rows) as $i=>$name) {
     same($renewal,$cell($dom,$row,'Renewal invoices'),'Renewal cell: '.$name);
 }
 // The row says what the domain page says while we check a renewal, in the same blue.
+// Review F1: Expired asks the customer to contact support, so a renewal under review there adds no reassurance, as on the domain page.
+$expiredReview=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($dto('expired-review.example','managed',['expiry'=>'2026-10-01','daysLeft'=>-30,'renewalPrice'=>'$10.99',
+    'statusState'=>'expired','statusReason'=>Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE,'renewalInvoiceReview'=>true]));
+same(['Next invoice: Under review',['label'=>'Under review','tone'=>'info','note'=>null]],[$expiredReview['note'],$expiredReview['noteState']],'Expired: Under review without the reassurance');
 same(['Under review'],array_map($norm,iterator_to_array($dom->query('//tbody/tr[6]/td[@data-label="Renewal invoices"]//*[contains(@class,"domains-tone-info")]'))),'Renewal under review is blue on the list');
 same('Hosting: Starter hosting and 2 more',$norm($dom->query('//tbody/tr[4]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line counts every other service');
 same('Hosting: Starter hosting',$norm($dom->query('//tbody/tr[5]/td[1]/*[contains(@class,"domains-cell-sub")]')->item(0)),'Hosting sub line names one service');
