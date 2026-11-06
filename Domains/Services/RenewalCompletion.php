@@ -20,7 +20,7 @@ final readonly class RenewalCompletion
     private function runEntered(int $id, \DateTimeImmutable $deadline, RegistrarCheck $check): Operation
     {
         OperationClaims::outside(); $seed = Operation::findOrFail($id)->domain()->firstOrFail();
-        $capture = DB::transaction(function () use ($seed, $id) {
+        $capture = DB::transaction(function () use ($seed, $id, $check) {
             $l = HoldingLocks::take($seed); $op = $l['operations']->firstWhere('id', $id);
             if (!$op || !$this->eligible($op)) { return null; }
             $policy = $op->policy; $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT ? 'poll_limit_reached' : 'original_attempt_unresolved', 'refundable_later' => false];
@@ -28,7 +28,11 @@ final readonly class RenewalCompletion
             try {
                 $this->bindings->requireReadableLocked($l['server'], $l['account']); RenewalFunding::requireCurrent($op, $l, true);
                 $attempt = ReconciliationEvidence::attempt($op, $l['domain'], AccountBindings::binding($l['account']));
-                if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) { return null; }
+                if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
+                    $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
+                    $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
+                    return null;
+                }
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp']];
             } catch (\Throwable) { return null; }

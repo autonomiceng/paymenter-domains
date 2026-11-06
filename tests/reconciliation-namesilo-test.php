@@ -45,7 +45,12 @@ $wire = new class implements DeadlineTransport {
 };
 $registry = new RegistrarRegistry;
 $verify = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
-$registry->register('namesilo', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, $c['token'], $wire), ['renew'], $clock, 120));
+// Keep the local enrollment composition that created this account in commerceFixture.
+// Reconciliation validates the retained credentials; it must not authenticate or enroll again.
+$registry->register('namesilo', ['token'], $verify, fn ($b, $c) => new Driver(new Client($b, $c['token'], $wire), ['renew'], $clock, 120),
+    authenticator: new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+        public function authenticate(Environment $environment, array $credentials): void { throw new LogicException('Readback must reuse enrolled credentials'); }
+    });
 $reconcile = new OperationReconciliation($claims, new AccountBindings($registry), $clock);
 $clock->instant = $clock->now()->modify('+600 seconds');
 for ($i = 0; $i < 6; $i++) { $result = $reconcile->run($op->id); }
