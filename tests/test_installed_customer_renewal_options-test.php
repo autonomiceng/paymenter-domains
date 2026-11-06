@@ -55,9 +55,9 @@ same('Paid',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextIn
 // An informational receipt cannot hide a changed/nonzero line or a foreign owner.
 $item=$invoice->items()->sole();$item->forceFill(['price'=>'1.00'])->saveQuietly();
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
-expect($summary->renewalInvoiceMissing,'Changed complimentary receipt remains under review');
+expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Changed complimentary receipt remains under review');
 $item->forceFill(['price'=>'0.00'])->saveQuietly();$invoice->forceFill(['user_id'=>$staff->id])->saveQuietly();
 $summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
-expect($summary->renewalInvoiceMissing,'Foreign receipt cannot supply list payment state');
+expect($summary->renewalInvoiceReview && !$summary->renewalInvoicePaid,'Foreign receipt cannot supply list payment state');
 $invoice->forceFill(['user_id'=>$user->id])->saveQuietly();
 $nativeSuccessful=true;echo "Native paid and complimentary customer renewal options passed.\n";
