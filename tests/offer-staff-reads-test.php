@@ -78,6 +78,8 @@ $component->set(['tableSearch'=>'','tableFilters.no_cost'=>['isActive'=>true]]);
 $component->set(['tableFilters.no_cost'=>['isActive'=>false],'tableFilters.country'=>['isActive'=>true]]);same(0,$component->instance()->getTableRecords()->total(),'Country filter stays a query filter');
 // Installed TLD-page failures are covered by offer-installed-staff-test on persisted bridge state.
 // Mixed valid/missing batch results must reach the existing page failure notification.
+// Freeze the installed route before this test-only StaffSettingsWrites adapter is bound.
+\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class);
 $staffWrites=new class($native,$sellers,$bindings) extends \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$staffWrites->commands=$commands;app()->instance(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::class,$staffWrites);
 session()->forget('filament.notifications');
 $m=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class,'write');
