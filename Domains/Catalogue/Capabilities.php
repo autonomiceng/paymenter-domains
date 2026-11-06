@@ -8,7 +8,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RenewalPrice};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
-use Paymenter\Extensions\Servers\Domains\Services\RegistryInputs;
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, RegistryInputs};
 
 /** Authorized provider facts and holder evidence. Public intent never grants execution support.
  * Locked consumers pass their retained rows; this view acquires no locks after operation locks. */
@@ -107,8 +107,10 @@ final class Capabilities
             if ($p->catalogue_observation !== null) { $cost = $this->current(\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($b->serverId)->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)))); }
         }
         $value = OfferState::money($t->catalogue_retained_annual_retail, 2);
-        $retail = $value !== null && \Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($value) > 0
-            ? new RenewalPrice($row?->id, $row?->revision, $value, 'USD', true, 'retained_renewal') : null;
+        $warning = $value !== null && $cost !== null && PricingRule::minor($value) * 100 < PricingRule::units($cost->total)
+            ? 'below_cost' : 'retained_renewal';
+        $retail = $value !== null && PricingRule::minor($value) > 0
+            ? new RenewalPrice($row?->id, $row?->revision, $value, 'USD', true, $warning) : null;
         return compact('retail', 'cost');
     }
     /** NS17 renewal years for an already locked holding, keyed by years. Pure over the retained rows:
