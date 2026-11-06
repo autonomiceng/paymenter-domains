@@ -18,10 +18,11 @@ $customer=DomainListRow::expires($summary('managed',['expiryWaits'=>'registratio
 same(false,array_key_exists('waiting',$customer),'No customer-only waiting state');
 $customerLine=$norm((string)Missing::html($customer['cause'],$customer['fix']));
 same('Missing Fills in by itself when the registration finishes',$customerLine,'Customer sees Missing and when it fills in');
-$staffHtml=(string)(new ReflectionMethod(TldFacts::class,'missing'))->invoke(null,'Use Sync prices on the TLD list.');
+// slop-sweep: the account-table cell shows the word alone; its next step is said once in the row note.
+$staff=TldFacts::priceState(['prices'=>[['action'=>'renew','term'=>1,'retail'=>null,'synced'=>true,'flags'=>[]]],'selected'=>true,'refresh'=>[]],'renew','retail',false);
 same(Missing::LABEL,strtok($customerLine,' '),'Customer word');
-expect(str_contains($staffHtml,'>'.Missing::LABEL.'<'),'Staff word');
-expect(str_contains($staffHtml,'Use Sync prices on the TLD list.'),'Staff next step');
+same(Missing::LABEL,$staff['value'],'Staff word');
+expect(str_contains((string)$staff['cause'],'Edit prices must supply a valid price.'),'Staff next step');
 foreach(['resources/views/index.blade.php','Presentation/DomainListRow.php','Presentation/StatusPill.php'] as $file){
     same(false,str_contains((string)file_get_contents($root.'/'.$file),'Not yet'),$file.' has no customer-only word');
 }

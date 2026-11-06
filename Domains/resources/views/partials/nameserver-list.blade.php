@@ -1,2 +1,2 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. A nameserver value as in the approved mock: the count, then the names in one grey line that wraps to 2 lines at most. --}}
-{{ count($servers) }} {{ count($servers) === 1 ? 'nameserver' : 'nameservers' }} <span class="domains-sub domains-ns-list" title="{{ implode(', ', $servers) }}">{{ implode(', ', $servers) }}</span>
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. A nameserver value: one name per line, all shown. The record row above already gives the count. --}}
+<span class="domains-ns-list">@foreach ($servers as $server)<span class="domains-mono">{{ $server }}</span> @endforeach</span>

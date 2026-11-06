@@ -7,7 +7,8 @@ use Paymenter\Extensions\Servers\Domains\Services\{ObservationProjection,Observa
 /** No inferred completeness or edit grants. Last-good evidence remains historical after a failed read. */
 final class RecordFamilies
 {
-    public const EVIDENCE='Public DNS checks and registrar records are separate observations. Public DNS cannot confirm a registrar change or a renewal.';
+    /** What separate public and registrar checks mean for staff. The value beside it already says "Separate checks". */
+    public const EVIDENCE='Public DNS can’t confirm a registrar change or renewal.';
     public static function owner(OwnedDomain $page,array $facts): OwnedDomain
     {
         $management=$page->management;
@@ -42,7 +43,7 @@ final class RecordFamilies
         foreach(['settings'=>['nameservers'=>'Nameservers','contacts'=>'Contacts','flags'=>'Domain settings'],'families'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DS records','glue'=>'Glue records']] as $group=>$labels){
             foreach($labels as $kind=>$label){$f=$status[$group][$kind];$state=$f['expectation']==='unsupported'?'unsupported':$f['state'];
                 $count=count($f['records']??($f['facts']['nameservers']??$f['facts']['contacts']??$f['facts']??[]));
-                $unit=match($kind){'nameservers'=>'nameservers','contacts'=>'contacts','flags'=>'settings',default=>'records'};
+                $unit=match($kind){'nameservers'=>'nameservers','contacts'=>'contacts','flags'=>'settings',default=>'records'};if($count===1){$unit=rtrim($unit,'s');}
                 $roles=$kind==='contacts'?array_values(array_intersect(['registrant','admin','tech','billing'],array_keys($f['facts']['contacts']??$f['facts']??[]))):[];
                 $returned=$roles?implode(', ',array_map('ucfirst',$roles)).' returned; some contacts did not. ':$count.' '.$unit.' returned; some did not. ';
                 $checked=$count.' '.$unit.' checked.';

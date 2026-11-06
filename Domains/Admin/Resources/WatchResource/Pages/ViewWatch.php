@@ -7,7 +7,7 @@ use Filament\Navigation\NavigationItem;
 use Filament\Notifications\Notification;
 use Filament\Pages\Enums\SubNavigationPosition;
 use Filament\Resources\Pages\ViewRecord;
-use Filament\Schemas\{Schema,Components\Callout,Components\Flex,Components\Section,Components\Text};
+use Filament\Schemas\{Schema,Components\Flex,Components\Section,Components\Text};
 use Filament\Infolists\Components\TextEntry;
 use Filament\Support\Enums\Width;
 use Illuminate\Contracts\Support\Htmlable;
@@ -58,7 +58,7 @@ class ViewWatch extends ViewRecord
     {
         if(!$this->resolved){$w=$this->getRecord();$row=$w->state==='active'?WatchFindings::summaries([$w])[$w->id]:null;$facts=WatchFacts::for($w,$row);
             $status=WatchFindings::status($w,$row['keys']??[],($row['summary']??null)?->expiry);
-            $this->resolved=['facts'=>$facts,'status'=>$status,'notice'=>WatchFacts::notice($w,$status,$facts)];}
+            $this->resolved=['facts'=>$facts,'status'=>$status];}
         return $this->resolved;
     }
     public function getTitle(): string{return $this->getRecord()->canonical_name;}
@@ -76,14 +76,14 @@ class ViewWatch extends ViewRecord
     public function getBreadcrumbs(): array{return [WatchResource::getUrl()=>'Domain monitoring',$this->getTitle()];}
     public function getHeader(): ?\Illuminate\Contracts\View\View{return view('domains::staff.watch-header');}
     protected function getHeaderActions(): array{return WatchActions::watch($this->getRecord(),$this->revision);}
-    /** Check now in the notice and next to a missing check time; mounted as a page action. */
+    /** Check now next to a missing check time; mounted as a page action. */
     public function checkAction(): Action{return WatchActions::check($this->getRecord(),$this->revision);}
     public function infolist(Schema $schema): Schema
     {
-        ['facts'=>$facts,'notice'=>$notice]=$this->facts();$sheet=[];$check=$this->getAction('check',false);
+        // The head says the problem and Latest checks shows what was found, so the page has no notice repeating them.
+        ['facts'=>$facts]=$this->facts();$sheet=[];$check=$this->getAction('check',false);
         // Each Missing check time gets its own Check now hint.
         $fix=$check?->isVisible()?fn()=>WatchActions::check($this->getRecord(),$this->revision):null;
-        if($notice){$sheet[]=Callout::make($notice)->status('warning')->columnSpanFull()->footer($check?->isVisible()?Sheet::buttons([$check->toHtml()]):null);}
         foreach(array_keys($facts) as $title){$sheet[]=Sheet::section($title==='Checks'?'Latest checks':$title,array_map(fn(string $label)=>self::entry($label,$facts[$title][$label],$fix),array_keys($facts[$title])));}
         return $schema->components([Sheet::split($sheet,[$this->activity()])]);
     }

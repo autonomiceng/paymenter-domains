@@ -25,7 +25,7 @@ final class MonitoringEvidence
             foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];}
         return ['state'=>$state,'public'=>$answers,'public_at'=>$public?->started_at,'registrar'=>$registrar,'registrar_at'=>$families['families']['dns']['at']??null,'at'=>$families['at']??null,'families'=>$families,
-            'separation'=>'Billing and ownership use separate checks. Public DNS cannot confirm a registrar change or renewal.'];
+            'separation'=>RecordFamilies::EVIDENCE];
     }
     /** Only timestamps actually retained by the registrar inventory are represented as read events. */
     public static function history(WatchName $w): array

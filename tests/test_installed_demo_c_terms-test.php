@@ -26,7 +26,11 @@ same(null,$row->transfer,'The real query has no transfer intent override');
 $fields=$edit->invoke($page,$row);$transfer=collect($fields)->first(fn($f)=>method_exists($f,'getName')&&$f->getName()==='transfer');
 same('Leave as is (Off)',$transfer->getOptions()['keep'],'Default pricing does not replace saved transfer Off');
 $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($binding,'com');
-same('Early renewal',$rows[1][0],'Staff renewal family is shown');expect(str_contains($rows[1][2],'exact-term'),'Staff sees why longer renewals are held');
+// ui-r17: the grace review line shows once, under Grace; Ordinary says why its longer terms are off.
+same(['Early renewal','1 year','Longer terms are not reviewed yet.'],$rows[1],
+    'Unreviewed family retains annual renewal and its own review explanation');
+same(['Grace renewal','Off','Review registry rules and safe deadlines before enabling grace renewal.'],$rows[3],'Grace keeps its review explanation');
+same(1,substr_count(view('domains::admin.term-readiness',['readiness'=>$rows])->render(),'safe deadlines'),'The Terms dialog says the grace review once');
 $accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
 expect(str_contains($accountHtml,'Supported terms')&&str_contains($accountHtml,'Scheduled renewals'),'Account sheet renders family readiness, not only the source rows');
 $r10Failures=[];$r10Check=static function(bool $ok,string $message)use(&$r10Failures):void{if(!$ok){$r10Failures[]=$message;}};

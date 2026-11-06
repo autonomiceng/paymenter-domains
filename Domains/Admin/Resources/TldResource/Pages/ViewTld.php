@@ -29,6 +29,7 @@ class ViewTld extends ViewRecord
     /** Page names for the shared settings actions. Edit prices is the main button, in the page head.
      * Default pricing is edited on the registrar account page, and saving prices publishes them. */
     private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices','tld_settings'=>'Open in What you sell'];
+    public const CHOOSE_SELLER='Use More → Change registrar.';
     public function mount(int|string $record): void
     {parent::mount($record);$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$this->getRecord()->server_id,(int)$this->getRecord()->id);}
     protected function afterActionCalled(Action $action): void
@@ -123,7 +124,8 @@ class ViewTld extends ViewRecord
     {
         $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
         $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
-        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):'None',$seller?'Existing domains stay with their registrar':null,color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
+        // The head says why the TLD is not for sale; a missing registrar row says only what to do.
+        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':self::CHOOSE_SELLER,color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
             self::entry('Terms',$snapshot['unreadable']?null:TldFacts::terms($t),$snapshot['unreadable']?'Saved TLD terms unreadable. Use Edit prices to repair them.':null)];
         $refresh=$snapshot['refresh']??[];
         // One row: when prices last updated, and when they update next. Sync prices sits beside it.
