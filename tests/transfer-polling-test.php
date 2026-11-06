@@ -45,6 +45,8 @@ expect(Queue::pushed(RunOperation::class)->contains(fn($job)=>$job->operationId=
 $observe->status='Transfer Completed';$observe->fault='';$runtime->operation($op->id);
 same('succeeded',$op->fresh()->state,'Runtime completes held transfer while writes remain paused');
 $bindings->setProcessing($binding->serverId,true,syntheticActivation());
+// Subsequent independent checkout scenarios restart at the fixture instant. Resume invalidates the offer revision; restore publication through the real local writer before arranging their debt.
+$clock->instant=$now;activeFixtureRepublish($bindings,$tlds[1]);
 // No customer or staff event extends the original window, and a deadline is never negative proof.
 DB::table('domains_read_budgets')->delete();
 $op=$prepare('deadline');HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
@@ -103,7 +105,7 @@ $outage=new class implements Paymenter\Extensions\Servers\Domains\Registrars\Nam
     public function sendWithin($e,$c,$r,string $k,int $t):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{$this->calls++;throw new RuntimeException('Synthetic registrar outage');}
 };
 $failureRegistry=new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
-$failureRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,$c['token'],$outage),['renew'],$clock));
+$failureRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,$c['token'],$outage),['renew'],$clock),authenticator:$verifier);
 $failureReconcile=new OperationReconciliation($claims,new Paymenter\Extensions\Servers\Domains\Services\AccountBindings($failureRegistry),$clock);
 $writes=$state->calls;$r=$failureReconcile->run($op->id);
 expect($outage->calls>0,'Outage attempted registrar requests');same($writes,$state->calls,'Outage never resends transfer');

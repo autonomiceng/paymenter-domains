@@ -121,7 +121,11 @@ $net=Tld::create(['server_id'=>$other->server_id,'registrar_key'=>$other->regist
 $accepted=fixtureObserveOfferFacts($binding,$kept->endings+['net'=>['register'=>[1],'renew'=>[1],'transfer'=>[1],'registry'=>true,'renewal_safe'=>true]]);
 $rates=array_map(fn($a)=>new CatalogueRate($a,1,'6.00','synthetic',$clock->now(),$clock->now()->modify('+1 day')),['register','renew','transfer']);
 fixtureObserveOfferEntry(new CatalogueEntry($binding,'net',$rates,[1],true,true));
-activeFixtureRepublish($native,$net->id,$clock->now());$sellers->initialize('net');activeFixtureSeller($sellers,'net',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','net')->value('revision'),$other->server_id,true,true,$clock->now());
+activeFixtureRepublish($native,$net->id,$clock->now());
+// A newly added ending has no previous seller row: select it through the current writer.
+$netPorts=activeFixturePorts($sellers);$netQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['net'],'register');
+$netPorts->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($binding,'net',['register','transfer']),
+    $netPorts->readOffers($netQuery,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('late-accounts-placeholder.com'));commerceAdd($cart,$native->product($net->fresh(),'register'),reservedFixtureName('example.net'));commerceCheckout($user,$cart);
 $pair=Paymenter\Extensions\Servers\Domains\Models\Operation::whereIn('domain_id',Paymenter\Extensions\Servers\Domains\Models\Domain::whereIn('domain',['late-accounts-placeholder.com','example.net'])->pluck('id'))->orderBy('id')->get();
 same(2,$pair->pluck('server_id')->unique()->count(),'One invoice, two accounts');$bill=Invoice::findOrFail($pair[0]->invoice_id);$total=(string)$bill->total;$before=$cash();$sent=$mails();
