@@ -19,6 +19,7 @@ import time
 from bootstrap import prepare
 import native
 import test_workers
+import test_fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR = Path(__file__).with_name('process_supervisor.py')
@@ -637,100 +638,7 @@ def main():
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
-                # These focused fixtures only read Composer dependencies; retain the
-                # complete source/vendor guards without copying their page cache.
-                shared = (
-                    args.jobs == 1
-                    and requested
-                    and all(
-                        Path(path).name.startswith("test_installed_")
-                        or path in {
-                            'tests/management-namesilo-test.php', 'tests/renewal-cycles-test.php',
-                            'tests/renewal-billing-test.php', 'tests/observation-records-test.php',
-                            'tests/observation-namesilo-test.php', 'tests/demo-c-c1-observation-test.php',
-                            'tests/demo-c-terms-native-test.php', 'tests/enom-multiyear-native-test.php',
-                            'tests/staff-domain-page-test.php',
-                            'tests/staff-domain-status-test.php',
-                            'tests/staff-operation-reads-test.php',
-                            'tests/staff-domains-test.php',
-                            'tests/missing-next-step-test.php',
-                            'tests/management-progress-test.php',
-                            'tests/offer-staff-reads-test.php',
-                            'tests/default-pricing-unreadable-test.php',
-                            'tests/pricing-editor-notice-test.php',
-                            'tests/staff-tld-page-test.php',
-                            'tests/offer-installed-staff-test.php',
-                            'tests/what-you-sell-render-test.php',
-                            'tests/staff-tld-render-test.php',
-                            'tests/offer-activation-test.php',
-                            'tests/staff-invalid-tld-detail-test.php',
-                            'tests/staff-hidden-tld-link-test.php',
-                            'tests/management-runtime-recovery-test.php',
-                            'tests/staff-sync-worker-test.php',
-                            'tests/storefront-busy-test.php',
-                            'tests/sales-audit-changes-test.php',
-                            'tests/cart-price-change-test.php',
-                            'tests/cart-removal-checkout-test.php',
-                            'tests/cart-reload-price-test.php',
-                            'tests/namesilo-management-facts-test.php',
-                            'tests/test_client_scripts.py',
-                            'tests/namesilo-settings-test.php',
-                            'tests/namesilo-rebind-test.php',
-                            'tests/namesilo-enrollment-test.php',
-                            'tests/staff-domain-edits-namesilo-test.php',
-                            'tests/binding-test.php',
-                            'tests/transfer-ceiling-test.php',
-                            'tests/transfer-dispatch-test.php',
-                            'tests/transfer-dispatch-namesilo-test.php',
-                            'tests/transfer-dispatch-refusals-test.php',
-                            'tests/transfer-completion-test.php',
-                            'tests/transfer-completion-namesilo-test.php',
-                            'tests/transfer-completion-namesilo-refusals-test.php',
-                            'tests/transfer-completion-namesilo-finance-test.php',
-                            'tests/watch-scheduler-test.php',
-                            'tests/runtime-records-test.php', 'tests/runtime-records-order-test.php', 'tests/runtime-records-gates-test.php', 'tests/runtime-records-fencing-test.php', 'tests/owner-management-test.php',
-                            'tests/owner-management-namesilo-test.php', 'tests/staff-monitoring-test.php',
-                            'tests/namesilo-dns-form-test.php', 'tests/managed-public-observer-test.php',
-                            'tests/namesilo-dns-delete-form-test.php', 'tests/namesilo-dns-capability-form-test.php',
-                            'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php',
-                            'tests/staff-monitoring-actions-test.php', 'tests/staff-monitoring-poll-test.php',
-                            'tests/staff-monitoring-filters-test.php', 'tests/staff-monitoring-templates-test.php',
-                            'tests/staff-monitoring-expiry-test.php', 'tests/order-payment-test.php', 'tests/staff-domain-hold-status-test.php',
-                            'tests/registrars-page-test.php', 'tests/registrar-account-page-test.php', 'tests/registrar-limits-page-test.php', 'tests/registrar-activation-page-test.php',
-                            'tests/namesilo-test-catalogue-test.php',
-                            'tests/owner-records-test.php',
-                            'tests/self-heal-records-test.php',
-                            'tests/self-heal-retry-test.php', 'tests/self-heal-queue-test.php', 'tests/self-heal-recovery-test.php',
-                            'tests/observation-test.php',
-                            'tests/offer-scheduler-test.php',
-                            'tests/storefront-cart-handoff-test.php',
-                            'tests/site-dns-default-test.php',
-                            'tests/site-dns-mismatch-test.php',
-                            'tests/watch-notice-pages-test.php',
-                            'tests/domain-page-test.php',
-                            'tests/glossary-sweep-test.php',
-                            'tests/site-dns-managed-test.php',
-                            'tests/managed-dns-setup-test.php',
-                            'tests/managed-public-relink-test.php',
-                            'tests/owner-actions-test.php',
-                            # Focused views read verified dependencies; isolate app state, not another vendor copy.
-                            'tests/owned-pages-test.php', 'tests/owner-renewal-test.php', 'tests/staff-watch-findings-test.php', 'tests/owner-renewal-retained-test.php', 'tests/owner-renewal-integrity-test.php', 'tests/owner-renewal-expiry-test.php', 'tests/owner-renewal-history-test.php', 'tests/owner-renewal-calendar-test.php',
-                            'tests/registration-enom-test.php',
-                            'tests/registration-enom-outcomes-test.php',
-                            'tests/registration-enom-recovery-test.php',
-                            'tests/registration-enom-dns-test.php',
-                            'tests/registration-namesilo-test.php',
-                            'tests/registration-namesilo-authority-test.php',
-                            'tests/registration-namesilo-nexus-test.php',
-                            'tests/registration-namesilo-profile-test.php',
-                            'tests/transfer-inputs-test.php',
-                            'tests/storefront-test.php',
-                            'tests/storefront-corruption-test.php',
-                            'tests/storefront-queries-test.php',
-                        }
-                        for path in requested
-                    )
-                )
+                shared = test_fixtures.shared_vendor(args.jobs, requested)
                 snapshot = native.prepare(source, fixture, share_vendor=bool(shared))
             dependency = (source, snapshot)
         binary = extension = None

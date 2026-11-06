@@ -677,7 +677,11 @@ class RunnerTests(unittest.TestCase):
                     self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))
 
     def test_focused_regressions_share_vendor_only_for_serial_reads(self):
-        focused = ['tests/namesilo-enrollment-test.php',
+        focused = ['tests/renewal-completion-test.php',
+                   'tests/renewal-completion-claims-test.php',
+                   'tests/registrar-renewal-answer-test.php',
+                   'tests/reconciliation-namesilo-test.php',
+                   'tests/namesilo-enrollment-test.php',
                    'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php',
                    'tests/watch-scheduler-test.php',
                    'tests/runtime-records-test.php', 'tests/runtime-records-order-test.php', 'tests/runtime-records-gates-test.php', 'tests/runtime-records-fencing-test.php', 'tests/owner-management-test.php',
