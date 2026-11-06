@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native owner renewal preference scenarios.
 declare(strict_types=1);
+// Every hard-stop and rollback scenario uses Enom; avoid enrolling an unused second registrar.
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/owner-auto-renew.php';
 use App\Helpers\ExtensionHelper;
 use App\Models\{Invoice,ServiceCancellation};
