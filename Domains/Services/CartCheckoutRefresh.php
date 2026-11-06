@@ -60,7 +60,7 @@ final class CartCheckoutRefresh
             if ($component::class !== Cart::class) { return null; }
             return static function ($html) use ($component) {
                 $notice = CartNotice::get($component);
-                if ($notice && !str_contains($html, CartNotice::MARKER)) { $component->notify($notice['toast'], $notice['type']); }
+                if ($notice && !preg_match('/<[a-z][^>]*\s'.CartNotice::MARKER.'(?=[\s=>])/i', $html)) { $component->notify($notice['toast'], $notice['type']); }
                 return $html;
             };
         });

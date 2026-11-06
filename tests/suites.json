@@ -497,7 +497,8 @@
     "tests/test_installed_cart_price_change-test.php",
     "tests/storefront-transfer-reason-test.php",
     "tests/payment-live-ceiling-test.php",
-    "tests/native-autoload-path-test.php"
+    "tests/native-autoload-path-test.php",
+    "tests/cart-notice-render-test.php"
   ],
   "ui": [],
   "runner": [
