@@ -73,6 +73,18 @@ final class OfferState
         return $binding->registrarKey !== 'namesilo' || $binding->environment !== Environment::Test
             || TestCatalogueFacts::current($binding, $tld, $facts, $clock);
     }
+
+    /** Optional expansion evidence is read separately; this does not change current supported terms. */
+    public static function termEvidence(?string $json, string $action, int $year, \DateTimeImmutable $now): ?array
+    {
+        try { return ExpansionFacts::term(self::decode($json), $action, $year, $now); }
+        catch (\Throwable) { return null; }
+    }
+    public static function familyEvidence(?string $json, string $family, \DateTimeImmutable $now): ?array
+    {
+        try { return ExpansionFacts::family(self::decode($json), $family, $now); }
+        catch (\Throwable) { return null; }
+    }
     public static function encodeFacts(Facts $f): string
     { return self::json([...get_object_vars($f), 'observedAt' => $f->observedAt->format(DATE_ATOM), 'freshUntil' => $f->freshUntil->format(DATE_ATOM)]); }
     public static function revision(object $tld, array $defaults, ?object $policy): Revision
