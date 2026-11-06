@@ -483,6 +483,7 @@
     "tests/offer-installed-readiness-test.php",
     "tests/offer-frozen-renewal-test.php",
     "tests/demo-c-terms-native-test.php",
+    "tests/enom-multiyear-native-test.php",
     "tests/offer-frozen-transfer-test.php",
     "tests/namesilo-installed-quote-test.php",
     "tests/live-activation-namesilo-test.php",
