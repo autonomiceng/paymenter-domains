@@ -87,7 +87,7 @@ function fixtureObserveOfferFacts($binding,array $endings): void
         $row=$endings[$name]??[];$q=new Query($binding,[$name],'register');
         $facts=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
             ['register'=>$row['register']??[],'renew'=>$row['renew']??[],'transfer'=>$row['transfer']??[]],
-            ($row['registry']??false)?[]:null,$row['renewal_safe']??false,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'));
+            $row['registry_fields']??(($row['registry']??false)?[]:null),$row['renewal_safe']??false,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'));
         $facts=fixtureNameSiloFacts($binding,$name,$facts);
         $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$name,$facts),$ports->readOffers($q,Context::Staff)[0]->revision);
     }
