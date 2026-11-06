@@ -45,7 +45,7 @@ def git(source, *args):
     return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.PIPE)
 
 
-def verify(source, *, fixture_snapshot=None):
+def verify(source, *, fixture_snapshot=None, release_vendor_cache=True):
     source = Path(source)
     if not source.is_absolute() or source.is_symlink() or source.resolve() != source or str(source).startswith('/var/www/'):
         raise ValueError('Use a canonical pristine development dependency.')
@@ -65,7 +65,7 @@ def verify(source, *, fixture_snapshot=None):
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        vendor = {'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=True).items()}
+        vendor = {'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=release_vendor_cache).items()}
         if vendor != {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}:
             raise ValueError('Fixture vendor inventory changed.')
         return {}, fixture_snapshot
@@ -110,12 +110,15 @@ def verify(source, *, fixture_snapshot=None):
     ):
         raise ValueError('Installed dependencies do not match the pinned lock.')
     snapshot = {name: hashlib.sha256((source/name).read_bytes()).hexdigest() for name in members}
-    snapshot.update({'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=True).items()})
+    snapshot.update({'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=release_vendor_cache).items()})
     return members, snapshot
 
 
 def prepare(source, destination, *, share_vendor=False):
-    members, before = verify(source)
+    # The two full setup checks bracket fixture creation. Shared vendor has no copy;
+    # keep its pages between those checks, then release them in the second check
+    # before PHP starts. Hash every byte both times, including intervening changes.
+    members, before = verify(source, release_vendor_cache=not share_vendor)
     destination.mkdir(mode=0o700)
     for name, payload in members.items():
         path = destination / name
