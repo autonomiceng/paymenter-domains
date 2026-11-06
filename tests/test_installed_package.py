@@ -1,6 +1,6 @@
 # MIT, Copyright (c) 2026 Autonomic Engineering.
 """Installed lifecycle scenarios use active installs; retained upgrades start at the pinned checked bridge."""
-import io
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -27,17 +27,28 @@ RETAINED = 'eab53f0e98c8c2274adc7b4d5e806aa612e0d325'
 
 def previous_build(root, revision=PREVIOUS, *, legacy=True, name='previous'):
     previous_source = root/(name+'-source'); previous_source.mkdir()
-    archive = subprocess.check_output(['git', 'archive', revision, 'Domains'], cwd=ROOT)
-    with tarfile.open(fileobj=io.BytesIO(archive)) as source:
-        for member in source:
-            path = previous_source/member.name
-            if member.isdir():
-                path.mkdir(parents=True, exist_ok=True)
-            elif member.isfile() and not Path(member.name).is_absolute() and '..' not in Path(member.name).parts:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(source.extractfile(member).read())
-            else:
-                raise ValueError('Unsafe previous source member')
+    # A historical runtime is packaged and verified by the builder from its exact revision.
+    # Stream the trusted archive so its bytes are not retained twice in the budgeted process.
+    command = ['git', 'archive', revision, 'Domains', 'scripts/build.py', 'LICENSE']
+    with subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE) as archive:
+        with tarfile.open(fileobj=archive.stdout, mode='r|') as source:
+            for member in source:
+                path = previous_source/member.name
+                if Path(member.name).is_absolute() or '..' in Path(member.name).parts:
+                    raise ValueError('Unsafe previous source member')
+                if member.isdir():
+                    path.mkdir(parents=True, exist_ok=True)
+                elif member.isfile():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    with source.extractfile(member) as incoming, path.open('wb') as output:
+                        shutil.copyfileobj(incoming, output)
+                else:
+                    raise ValueError('Unsafe previous source member')
+        if archive.wait():
+            raise subprocess.CalledProcessError(archive.returncode, command)
+    spec = importlib.util.spec_from_file_location('pinned_package_builder', previous_source/'scripts/build.py')
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
     if legacy:
         # The unreleased observation creation baseline now includes this index.
         # Keep the historical runtime/additive migrations, without claiming an
@@ -47,7 +58,7 @@ def previous_build(root, revision=PREVIOUS, *, legacy=True, name='previous'):
         anchor = "                $t->unsignedBigInteger('due_at')->index(); $t->unsignedInteger('tries')->default(0);\n"
         assert old.count(anchor) == 1, 'Pinned observation fixture changed'
         observation.write_text(old.replace(anchor, anchor + "                $t->index(['server_id','account_fingerprint','due_at'], $t->getTable().'_account_due_index');\n"))
-    return installed_fixture.package(previous_source/'Domains', root/name)
+    return installed_fixture.package(previous_source/'Domains', root/name, builder=builder), builder
 
 
 def refuse_unsafe_archives(root, current):
@@ -118,13 +129,13 @@ def main(scenario):
             "zip_sha256": current["archive_sha256"],
             "real_provider_calls": 0,
         }
-        previous = None
+        previous = previous_builder = None
         baseline_migrations = None
         if scenario == "held":
             refuse_unsafe_archives(root, current)
             evidence['unsafe_archives_refused'] = 3
         elif scenario == 'upgrade':
-            previous = previous_build(root, legacy=False)
+            previous, previous_builder = previous_build(root, legacy=False)
             assert previous['archive_sha256'] != current['archive_sha256'], 'Upgrade must replace different runtime bytes'
             evidence.update(previous_revision=PREVIOUS,
                             previous_fixture_adjustments=[],
@@ -133,7 +144,7 @@ def main(scenario):
             requested = os.environ.get('DOMAINS_UPGRADE_FROM', 'HEAD~1')
             revision = subprocess.check_output(['git', 'rev-parse', '--verify', '--end-of-options',
                                                 requested+'^{commit}'], cwd=ROOT, timeout=10).decode().strip()
-            previous = previous_build(root, revision, legacy=False)
+            previous, previous_builder = previous_build(root, revision, legacy=False)
             baseline_migrations = len(list((root/'previous-source/Domains/database/migrations').glob('*.php')))
             unchanged = previous['archive_sha256'] == current['archive_sha256']
             print('Runtime-selected baseline: '+revision+('; no Domains diff; still running' if unchanged else '; Domains differ'), flush=True)
@@ -168,10 +179,11 @@ def main(scenario):
                 package_started = time.monotonic()
                 receipt = {'current': current, 'previous': previous, 'retained': retained_package}[package]
                 original = root/package/receipt['archive']
-                build.verify(original, receipt)
+                verifier = previous_builder if package == 'previous' else build
+                verifier.verify(original, receipt)
                 upload = root/'upload'/receipt['archive']; upload.parent.mkdir(exist_ok=True)
                 shutil.copyfile(original, upload)
-                build.verify(upload, receipt)
+                verifier.verify(upload, receipt)
                 run_env['PACKAGE_ZIP'] = str(upload)
                 package_seconds = time.monotonic() - package_started
             phase_limit = 120 if name in ['enom-test-renewal', 'enom-live'] else 45

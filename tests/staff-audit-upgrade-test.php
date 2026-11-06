@@ -8,9 +8,13 @@ use Paymenter\Extensions\Servers\Domains\Services\Installation;
 
 $newMigration='2026_10_21_000034_create_staff_audit_storage';
 $tables=['domains_staff_review_keys','domains_audit_archives'];
-// Reproduce the pre-review-storage stack: all migrations through 000033,
-// with the original five-table foundation. Remove the leaked declarations
-// when running against the broken implementation so the regression goes red.
+// Obtain actual current lifecycle authority, then arrange the retained audit-storage gap.
+// All other installed schema/history stays authentic; no bridge receipt is manufactured.
+(new Installation)->install();
+foreach($tables as $table){Schema::drop($table);}
+DB::table('migrations')->where('migration',$newMigration)->delete();
+// Replay the installed migration inventory without review storage. The additive
+// upgrade must preserve its existing foundation/history and refuse every partial audit state.
 $paths=array_values(array_filter(glob(dirname(__DIR__).'/Domains/database/migrations/*.php'),
     static fn($path)=>basename($path,'.php')!==$newMigration));
 app(Migrator::class)->run($paths,['force'=>true]);

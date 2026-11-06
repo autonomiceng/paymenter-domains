@@ -78,7 +78,7 @@ foreach ([175, 244, 245] as $elapsed) {
     $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+'.$elapsed.' seconds');
     same('uncertain', $engine->execute($op->id)->state, 'Bounded slow preflight retains dispatch lease');
     same($before + 1, $writer->calls, 'Full request boundary permits one send: '.$elapsed);
-    same($now->modify('+'.($elapsed + 25).' seconds')->format(DATE_ATOM), $writer->context->deadline->format(DATE_ATOM), 'Dispatch deadline leaves the finish margin');
+    same($now->modify('+'.(ExecuteOperation::EXECUTION_SECONDS-ExecuteOperation::FINISH_SECONDS).' seconds')->format(DATE_ATOM), $writer->context->deadline->format(DATE_ATOM), 'Dispatch deadline leaves the finish margin');
     $clock->instant = $clock->instant->modify('-'.$elapsed.' seconds'); $preflight->during = null;
 }
 // Refusing the last request leaves an unsealed, recoverable operation with its funding intact.
@@ -86,7 +86,7 @@ foreach ([246, 275] as $elapsed) {
     $op = $recover(); $money = $nativeMoney();
     $preflight->during = static fn () => $clock->instant = $clock->instant->modify('+'.$elapsed.' seconds');
     $result = $assertNoSend($op);
-    same('seal_authority_invalid', $result->safe_code, 'Finish headroom refusal uses the safe seal hold');
+    same('pre_send_interrupted', $result->safe_code, 'Finish headroom refusal uses the current pre-send hold');
     same('absent', $result->attempt['seal'], 'Deadline refusal cannot seal');
     same('definitely_unsent', $result->attempt['send_state'], 'Deadline refusal is recoverable without send evidence');
     expect(!array_key_exists('execution', $result->attempt), 'Unsent deadline refusal records no execution');

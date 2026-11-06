@@ -31,7 +31,7 @@ $wire=new class($wireState) implements DeadlineTransport {
     }
 };
 $readRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
-$readRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock));
+$readRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock),authenticator:new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {public function authenticate(Environment $environment,array $credentials):void { /* Synthetic local authentication. */ }});
 $reads=new AccountBindings($readRegistry);$reconcile=new OperationReconciliation($claims,$reads,$clock);
 foreach(['accepted','not_processed'] as $outcome){
     $clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');$makeEngine($binding,$exchange);

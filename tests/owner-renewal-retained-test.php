@@ -9,7 +9,8 @@ $registrationNames=['owner-renew-placeholder.com','owner-renew-late-placeholder.
 require __DIR__.'/Support/owner-renewal-fixture.php';
 $setting('domains_manual_renewals_enabled',true);$setting('domains_billing_enabled',true);
 $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');
-$response=$controller->renew($req($d,['years'=>'2']),$d->id);
+// Signed C2 offers annual renewal until an exact longer-term quote is reviewed.
+$response=$controller->renew($req($d,['years'=>'1']),$d->id);
 $op=Operation::where('domain_id',$d->id)->where('action','renew')->sole();$invoice=Invoice::findOrFail($op->invoice_id);
 same(route('invoices.show',$invoice),$response->getTargetUrl(),'Retained-cycle fixture starts with an issued owner invoice');
 // Retained cycles remain visible under every gate that prevents creating a new invoice.

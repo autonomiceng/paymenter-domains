@@ -1,5 +1,6 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Offline native management boundary.
 declare(strict_types=1);
+$fixtureTransferRegistrars=['namesilo'];
 require __DIR__.'/Support/management-namesilo.php';
 require __DIR__.'/Support/owner-management.php';

@@ -9,23 +9,28 @@ use App\Models\{Order,Service,Property,Product,ServiceConfig,Setting};
 use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\NativeIdentity;
-Queue::fake();extract(commerceFixture());$owner=commerceUser();$other=commerceUser();
+// Preserve upstream events while installing schema; this test controls guard/listener ordering explicitly.
+$identityEvents=clone Service::getEventDispatcher();
+Queue::fake();extract(commerceFixture());Service::setEventDispatcher($identityEvents);$owner=commerceUser();$other=commerceUser();
 $p=$native->product($tlds[0],'register');$hosting=commerceHosting();
 $make=function(Product $product,string $name,?int $planId=null)use($owner):Service {
     $o=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
-    $s=Service::create(['order_id'=>$o->id,'user_id'=>$owner->id,'product_id'=>$product->id,
-        'plan_id'=>$planId??$product->plans()->where('billing_period',1)->firstOrFail()->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']);
+    // Historical pre-ledger services are deliberately outside new checkout admission.
+    $s=Service::withoutEvents(fn()=>Service::create(['order_id'=>$o->id,'user_id'=>$owner->id,'product_id'=>$product->id,
+        'plan_id'=>$planId??$product->plans()->where('billing_period',1)->firstOrFail()->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']));
     $s->properties()->create(['key'=>'domain','name'=>'Domain','value'=>$name]);return $s;
 };
 $s=$make($p,'before-ledger-placeholder.com');$host=$make($hosting,'hosting.example');
 $property=$s->properties()->where('key','domain')->sole();$order=$s->order;
-$coupon=App\Models\Coupon::create(['code'=>'identity','type'=>'fixed','value'=>1]);$s->coupon_id=$coupon->id;$s->save();
+$coupon=App\Models\Coupon::create(['code'=>'identity','type'=>'fixed','value'=>1]);
+// Privileged historical setup precedes the event-enabled refusal matrix below.
+DB::table('services')->where('id',$s->id)->update(['coupon_id'=>$coupon->id]);$s->refresh();
 $parent=DB::table('config_options')->insertGetId(['name'=>'parent']);
 $option=DB::table('config_options')->insertGetId(['name'=>'option']);
 $value=DB::table('config_options')->insertGetId(['name'=>'value','parent_id'=>$parent]);
 $config=DB::table('service_configs')->insertGetId(['configurable_type'=>$s->getMorphClass(),'configurable_id'=>$s->id,'config_option_id'=>$option,'config_value_id'=>$value]);
 $definition=App\Models\CustomProperty::create(['name'=>'Domain','key'=>'domain','model'=>Service::class,'type'=>'text','non_editable'=>false,'required'=>false,'show_on_invoice'=>false]);
-$property->custom_property_id=$definition->id;$property->save();
+DB::table('properties')->where('id',$property->id)->update(['custom_property_id'=>$definition->id]);$property->refresh();
 // The competitor listener is before the guard; the SQL sentinel is registered after it.
 $armed=null;$after=false;$numericArmed=false;
 foreach([Order::class,Service::class,Property::class] as $class){$class::saving(static function($row)use(&$armed):void {

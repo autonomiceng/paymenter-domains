@@ -7,7 +7,8 @@ use App\Models\Server;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, PricingRule, PricingRules};
-FoundationSchema::install();
+// Default-rule writes require an active catalogue generation, even in this arithmetic fixture.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $a = fixtureAccount(1, 'enom', 'account-a'); $b = fixtureAccount(2, 'namesilo', 'account-b');
 foreach (['com', 'net', 'org'] as $ending) { Tld::create([...$a, 'tld' => $ending]); }
 $override = Tld::create([...$a, 'tld' => 'io', 'use_default_rule' => false, 'pricing_mode' => 'markup_amount', 'markup' => '2.00']);
