@@ -152,7 +152,7 @@ class Storefront
     {
         try {
             $this->eligibility->observe($name, $transfer['selection'], ['storefront']);
-            return [...$base, 'status' => 'transferable', 'price' => $transfer['price'], 'term' => 1];
+            return [...$base, 'status' => 'transferable', 'price' => $transfer['price'], 'renew' => $transfer['renew'], 'term' => 1];
         } catch (ReadDeferred) {
             return $registrationTaken ? $base : [...$base, 'status' => 'busy'];
         } catch (\Throwable $error) {
