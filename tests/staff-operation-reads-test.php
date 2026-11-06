@@ -31,9 +31,12 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$deferred->id])
     ->assertNotified('Check delayed')->assertSee('Check delayed')->assertSee('Our sending settings paused this check.')->assertSee('The next check is at')->assertSee('UTC')->assertDontSee('Status checked');
 same('deferred',$deferred->fresh()->policy['status_check']['outcome'],'Guard refusal is saved as deferred, never checked');
 expect($deferred->fresh()->policy['status_check']['next_at']>$clock->now()->getTimestamp(),'Deferred read has an automatic next due time');
+// d879bad2 retains a lost reply and the 24-hour staff answer boundary instead of claiming an unavailable read.
 [$uncheckable]=$prepare(placeholderComFixtureName('staff-no-reply-placeholder.com'),'null');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->id])->callAction('recheck')
-    ->assertNotified('Cannot check registrar')->assertSee('Support can check the original order.')->assertDontSee('Status checked');
+    ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom')->assertDontSee('Status checked');
+same('awaiting_answer',$uncheckable->fresh()->policy['status_check']['outcome'],'Lost reply retains the registrar answer state');
+same((new \DateTimeImmutable($uncheckable->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),$uncheckable->fresh()->policy['status_check']['answer_after'],'Staff answer waits 24 hours from this dispatch');
 same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
 [$transportFailure]=$prepare(placeholderComFixtureName('staff-failed-read-placeholder.com'),'captured');
 $observation->fault='transport';
