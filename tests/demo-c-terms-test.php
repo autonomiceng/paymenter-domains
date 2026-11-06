@@ -3,7 +3,7 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Cost, ExpansionFacts, Facts, OfferState, TermSupport};
-use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
+use Paymenter\Extensions\Servers\Domains\Data\{CostUnit, Environment};
 $at = static fn (string $v) => new DateTimeImmutable($v);
 $throws = static function (callable $f, string $message): void { try { $f(); } catch (InvalidArgumentException|DomainException) { return; } expect(false, $message); };
 $now = $at('2026-11-04T12:00:00+00:00');
@@ -19,9 +19,9 @@ $cost = static fn (int $y, ?string $amount, string $until = '2026-11-04T13:00:00
     => new Cost('renew', $y, $amount !== null, $amount, $unit, 'synthetic_quote', $at('2026-11-04T11:00:00+00:00'), $at($until));
 $costs = ['renew:1' => $cost(1, '14.0000'), 'renew:2' => $cost(2, '24.0000'), 'renew:3' => $cost(3, '36.0000')];
 $expiry = $at('2027-11-20T00:00:00+00:00');
-// No registrar quotes exact multi-year totals before the send yet; the stand-in list proves the remaining rules for NS18.
+// Explicit TEST scope proves the remaining evidence rules; NameSilo stays closed.
 $quotes = ['enom'];
-$renew = static fn (...$a) => TermSupport::renewal(...$a, exactQuotes: $quotes);
+$renew = static fn (...$a) => TermSupport::renewal(...$a, exactQuotes: $quotes, environment: Environment::Test);
 $reasons = static fn (array $terms) => array_map(static fn (array $t) => $t['reason'], $terms);
 
 // Codec: facts without evidence keep the old stored shape; evidence rides as top-level siblings.
@@ -44,9 +44,9 @@ $throws(fn () => OfferState::cost(['action' => 'renew', 'term' => 2, 'enabled' =
 $throws(fn () => new Cost('transfer', 2, true, '9.0000', CostUnit::TermTotal, 'x', $now, $now->modify('+1 hour')), 'Transfer stays annual');
 same('24.0000', $cost(2, '24.0000')->total, 'Exact two-year renewal total is kept as observed');
 
-same([], TermSupport::EXACT_QUOTES, 'No registrar is listed for exact multi-year quotes');
+same(['enom'], TermSupport::EXACT_QUOTES, 'Only reviewed Enom quotes qualify');
 foreach (['enom', 'namesilo'] as $registrar) {
-    same([null] + array_fill(1, 7, 'no_exact_quote'), array_values($reasons(TermSupport::renewal($registrar, 'com', $facts($evidence()), $costs, $expiry, $now))),
+    same([null] + array_fill(1, 7, 'no_exact_quote'), array_values($reasons(TermSupport::renewal($registrar, 'com', $facts($evidence()), $costs, $expiry, $now, exactQuotes: []))),
         $registrar.': with real admission quotes, reviewed longer terms stay annual');
     $exact = $registrar === 'enom';
     // Old rows: annual renewal stays; no longer term without reviewed evidence.
@@ -111,10 +111,10 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $withdrawn = $renew($registrar, 'com', TermSupport::attach('com', $facts($evidence()), null), $costs, $expiry, $now);
     same([true, $exact ? 'family_unreviewed' : 'no_exact_quote'], [$withdrawn[1]['available'], $withdrawn[2]['reason']], $registrar.': refresh without evidence holds new longer terms');
     $issued = ['term' => 2, 'cost_cap' => ['amount' => '24.0000', 'currency' => 'USD'], 'term_rule' => $terms[2]['rule'] ?? ['years' => 2, 'cost' => ['amount' => '24.0000']]];
-    // A queued debt that froze a multi-year rule is still held when no registrar quotes exact multi-year totals.
-    same([true, false], [TermSupport::admits($registrar, 1, null), TermSupport::admits($registrar, 2, $issued)], $registrar.': frozen multi-year debt held without an exact quote');
+    // A frozen multi-year debt has no authority without an explicit TEST environment.
+    same([true, false], [TermSupport::admits($registrar, 1, null), TermSupport::admits($registrar, 2, $issued)], $registrar.': frozen multi-year debt held without TEST authority');
     // The rule matrix lists the registrar under test as a stand-in exact quoter.
-    $admits = static fn (int $y, ?array $r) => TermSupport::admits($registrar, $y, $r, [$registrar]);
+    $admits = static fn (int $y, ?array $r) => TermSupport::admits($registrar, $y, $r, [$registrar], Environment::Test);
     same([true, true, false, false, false, false], [$admits(1, null), $admits(2, $issued), $admits(3, $issued),
         $admits(2, array_diff_key($issued, ['term_rule' => 1])), $admits(2, ['cost_cap' => ['amount' => '20.0000', 'currency' => 'USD']] + $issued),
         $admits(2, ['term' => 3] + $issued)], $registrar.': admission follows only the frozen rule');
@@ -128,7 +128,7 @@ $f = TermSupport::families($facts($grace), $now);
 same([['reviewed', [1, 2, 3, 5], 10, 'rule-1'], ['held', 'live_proof_required'], ['separate', 'restoration_request']],
     [[$f['ordinary']['state'], $f['ordinary']['terms'], $f['ordinary']['horizon_years'], $f['ordinary']['version']], array_values($f['grace']), array_values($f['redemption'])], 'Family readiness');
 same('family_unreviewed', TermSupport::families($facts($evidence()), $now)['grace']['reason'], 'Grace without evidence is unreviewed');
-$ready = TermSupport::readiness('enom', 'com', $facts($evidence()), $costs, $now, $quotes);
+$ready = TermSupport::readiness('enom', 'com', $facts($evidence()), $costs, $now, $quotes, Environment::Test);
 same([range(1, 10), null, 'unknown_price', 'reviewed'], [array_keys($ready['renew']), $ready['renew'][2]['reason'], $ready['renew'][5]['reason'], $ready['families']['ordinary']['state']], 'Staff readiness from today');
 
 // Price lines and cart rechecks, using the approved mock amounts.

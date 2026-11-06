@@ -29,6 +29,7 @@ final readonly class RenewalAdmission
         try {
             [$binding, $name, $stamp, $retail, $nonpremium, $capabilityUntil, $termRule] = $this->authority->capture($request);
             // A frozen NS17 rule admits a longer term on TEST accounts only; Live multi-year renewal waits for NS18 proof.
+            if ($binding->registrarKey === 'enom' && $binding->environment === Environment::Live && $request->years !== 1) { throw new RenewalRefused(RenewalCode::Term); }
             if(EnomTestRenewal::enabled($binding)&&$request->years!==1&&!($termRule&&$binding->environment===Environment::Test)){throw new RenewalRefused(RenewalCode::Term);}
             if ($reserve) { $this->accepted->reserve($binding); } else { $this->accepted->requireCurrent($binding); }
             $reader = $this->bindings->reader($binding->serverId); $binding->requireMatch($reader->binding());

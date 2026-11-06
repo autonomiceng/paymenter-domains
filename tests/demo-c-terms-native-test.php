@@ -36,14 +36,14 @@ foreach (['enom', 'namesilo'] as $registrar) {
     expect(OfferState::facts($tld->catalogue_facts) == $facts, $registrar.': stored evidence round-trips through domains_tlds');
     $terms = $caps->renewalTerms($binding, $tld, $prices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     same(range(1, 8), array_keys($terms), $registrar.': stored holding years stay inside the horizon');
-    // No registrar quotes an exact multi-year total before the send yet (Enom quotes annual x years), so even a
-    // reviewed, exactly priced two-year renewal stays held for both registrars.
-    same([false, null, 'no_exact_quote'], [$terms[2]['available'], $terms[2]['cost'], $terms[2]['reason']], $registrar.': stored two-year renewal held without an exact quote');
+    // Reviewed TEST evidence cannot open Live; NameSilo keeps its existing quote refusal.
+    $held = $registrar === 'enom' ? 'live_proof_required' : 'no_exact_quote';
+    same([false, null, $held], [$terms[2]['available'], $terms[2]['cost'], $terms[2]['reason']], $registrar.': stored two-year renewal held without an exact quote');
     same([true, '14.0000'], [$terms[1]['available'], $terms[1]['cost']], $registrar.': annual path unchanged');
     // Staff Off (sell false) is sales intent; holder renewal terms and the retained annual path do not depend on it.
     same($terms, $caps->renewalTerms($binding, $tld, $prices, new DateTimeImmutable('2027-11-20T00:00:00+00:00')), $registrar.': reads are repeatable');
     $ready = $caps->termReadiness($binding, 'com');
-    same([range(1, 10), 'no_exact_quote', 'reviewed'],
+    same([range(1, 10), $held, 'reviewed'],
         [array_keys($ready['renew']), $ready['renew'][2]['reason'], $ready['families']['ordinary']['state']], $registrar.': staff readiness');
     // A row from another account or a changed TLD binding refuses instead of mixing evidence.
     $foreign = clone $prices->first(); $foreign->account_fingerprint = str_repeat('f', 64);
@@ -54,7 +54,7 @@ foreach (['enom', 'namesilo'] as $registrar) {
     catch (DomainException) {}
     // Empty inventory: no stored prices leaves only the annual path, with no known cost.
     $empty = $caps->renewalTerms($binding, $tld, [], new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
-    same([true, null, 'no_exact_quote'], [$empty[1]['available'], $empty[1]['cost'], $empty[2]['reason']], $registrar.': empty inventory');
+    same([true, null, $held], [$empty[1]['available'], $empty[1]['cost'], $empty[2]['reason']], $registrar.': empty inventory');
     // Publishing a renew:2 observation after renew:1 never replaces the stored annual retail.
     $publish = new ReflectionMethod(Writer::class, 'publishPrices');
     $publish->invoke((new ReflectionClass(Writer::class))->newInstanceWithoutConstructor(), $tld, $now);

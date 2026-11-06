@@ -3,26 +3,26 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
-use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
+use Paymenter\Extensions\Servers\Domains\Data\{CostUnit, Environment};
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
-/** NS17 term and renewal-family rules. Pure: no database, provider or clock access.
- * Annual renewal and provider registration terms keep their existing authority. A longer renewal needs a
- * first-pass suffix, a registrar whose pre-send read quotes exact multi-year totals (none yet), current facts, current reviewed
- * ordinary-family and term evidence in `term_total` units and a fresh exact-term cost. Anything else is held. */
+/** Reviewed longer renewal terms. Annual renewal retains its existing authority. */
 final class TermSupport
 {
-    /** Reviewed first-pass suffixes. Every other suffix keeps today's annual renewal. */
     public const FIRST_PASS = ['com', 'net', 'org'];
-    /** Registrars whose pre-send admission read quotes the exact multi-year renewal total. None yet:
-     * Enom GetExtendInfo/Check give one annual price (the admission quote is annual x years) and PE_GetProductPrice
-     * is a selected-term annual rate; NameSilo getPrices has no years parameter. Longer terms stay held
-     * (`no_exact_quote`) until NS18 adds a reviewed exact-term read. */
-    public const EXACT_QUOTES = [];
-    /** Reviewed `term_evidence`/`renewal_families` for producers without their own dated source, by registrar then
-     * suffix. Empty: no saved evidence qualifies yet. Only deployment review may add an entry. NameSilo TEST evidence
-     * rides with its dated protocol facts instead. */
-    public const REVIEWED_EVIDENCE = [];
+    /** Reviewed pre-send total: Enom's agreed per-year renewal cost multiplied by years.
+     * TEST only; Live needs NS18 proof. NameSilo has no reviewed longer-term quote. */
+    public const EXACT_QUOTES = ['enom'];
+    private const ENOM_TEST_PROOF = ['source' => 'enom_test_annual_renewal_approval', 'version' => '2026-11-05',
+        'reviewed_at' => '2026-11-05T00:00:00+00:00', 'valid_until' => '2027-11-05T00:00:00+00:00',
+        'terms' => [2], 'price_unit' => 'term_total', 'rule' => 'annual_cost_times_years'];
+    /** Approved TEST scope. Producers still require fresh annual cost and ordinary renewal facts. */
+    public const REVIEWED_EVIDENCE = ['enom' => ['com' => [
+        'term_evidence' => ['format' => 1, 'entries' => ['renew' => [2 => self::ENOM_TEST_PROOF]]],
+        'renewal_families' => ['format' => 1, 'entries' => ['ordinary' => self::ENOM_TEST_PROOF + [
+            'states' => ['Active'], 'expiry_precision' => 'instant', 'horizon_years' => 10,
+            'safe_boundary' => 'before_confirmed_expiry']]],
+    ]]];
     public const HORIZON_YEARS = 10;
 
     /** Producers attach reviewed evidence. Other suffixes carry none, so a refresh drops it. */
@@ -41,14 +41,14 @@ final class TermSupport
     /** Renewal years for one holding, keyed by years, inside the registry horizon from today.
      * Year 1 is today's annual renewal. Each entry names its new expiry, exact cost and frozen rule, or why it is held. */
     public static function renewal(string $registrar, string $tld, ?Facts $facts, array $costs,
-        \DateTimeImmutable $expiry, \DateTimeImmutable $now, array $exactQuotes = self::EXACT_QUOTES): array
+        \DateTimeImmutable $expiry, \DateTimeImmutable $now, array $exactQuotes = self::EXACT_QUOTES, Environment $environment = Environment::Live): array
     {
         $registry = $now->modify('+'.self::HORIZON_YEARS.' years'); $out = [];
         $annual = self::current($costs['renew:1'] ?? null, $now);
         foreach (range(1, self::HORIZON_YEARS) as $years) {
             $until = self::addYears($expiry, $years);
             if ($until > $registry) { break; }
-            [$reason, $rule] = $years === 1 ? [null, null] : self::held($registrar, $tld, $facts, $costs, $years, $until, $now, $exactQuotes);
+            [$reason, $rule] = $years === 1 ? [null, null] : self::held($registrar, $tld, $facts, $costs, $years, $until, $now, $exactQuotes, $environment);
             $out[$years] = ['years' => $years, 'available' => $reason === null, 'reason' => $reason,
                 'expiry' => $until->format('Y-m-d'), 'cost' => $years === 1 ? $annual?->total : ($rule['cost']['amount'] ?? null), 'rule' => $rule];
         }
@@ -72,10 +72,10 @@ final class TermSupport
 
     /** Staff readiness for one ending's renewal years, from today's date as the expiry. */
     public static function readiness(string $registrar, string $tld, ?Facts $facts, array $costs, \DateTimeImmutable $now,
-        array $exactQuotes = self::EXACT_QUOTES): array
+        array $exactQuotes = self::EXACT_QUOTES, Environment $environment = Environment::Live): array
     {
         $today = new \DateTimeImmutable($now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'));
-        return ['renew' => self::renewal($registrar, $tld, $facts, $costs, $today, $now, $exactQuotes), 'families' => self::families($facts, $now)];
+        return ['renew' => self::renewal($registrar, $tld, $facts, $costs, $today, $now, $exactQuotes, $environment), 'families' => self::families($facts, $now)];
     }
 
     /** Exact cap for one new renewal debt: the annual cost for 1 year, the frozen exact-term cost otherwise. */
@@ -86,13 +86,11 @@ final class TermSupport
         return $term['cost'] === null ? null : ['amount' => $term['cost'], 'currency' => 'USD'];
     }
 
-    /** Admission accepts a longer term only for a registrar whose pre-send read quotes the exact multi-year total
-     * (none yet), and only when its debt froze an NS17 rule for exactly that term, with a cap covering the frozen
-     * exact cost (a staff complimentary cap may be higher). A frozen multi-year debt is otherwise held: `no_exact_quote`. */
-    public static function admits(string $registrar, int $years, ?array $renewal, array $exactQuotes = self::EXACT_QUOTES): bool
+    /** Longer debt needs a reviewed TEST quote and its frozen rule/cap. No Live multi-year authority. */
+    public static function admits(string $registrar, int $years, ?array $renewal, array $exactQuotes = self::EXACT_QUOTES, Environment $environment = Environment::Live): bool
     {
         if ($years === 1) { return true; }
-        if (!in_array($registrar, $exactQuotes, true)) { return false; }
+        if (!in_array($registrar, $exactQuotes, true) || $environment !== Environment::Test) { return false; }
         $rule = $renewal['term_rule'] ?? null;
         if (!is_array($rule) || ($rule['years'] ?? null) !== $years || ($renewal['term'] ?? null) !== $years) { return false; }
         try { return PricingRule::units($renewal['cost_cap']['amount'] ?? '') >= PricingRule::units($rule['cost']['amount'] ?? ''); }
@@ -119,10 +117,11 @@ final class TermSupport
     }
 
     private static function held(string $registrar, string $tld, ?Facts $facts, array $costs, int $years,
-        \DateTimeImmutable $until, \DateTimeImmutable $now, array $exactQuotes): array
+        \DateTimeImmutable $until, \DateTimeImmutable $now, array $exactQuotes, Environment $environment): array
     {
         if (!in_array($tld, self::FIRST_PASS, true)) { return ['not_reviewed', null]; }
         if (!in_array($registrar, $exactQuotes, true)) { return ['no_exact_quote', null]; }
+        if ($environment !== Environment::Test) { return ['live_proof_required', null]; }
         if ($facts === null) { return ['unknown_facts', null]; }
         if (!$facts->fresh($now)) { return ['stale_facts', null]; }
         if ($facts->renewalSafe !== true || $facts->autoRenewOnly !== false || !in_array(1, $facts->terms['renew'] ?? [], true)) { return ['unsupported_facts', null]; }
@@ -131,7 +130,7 @@ final class TermSupport
         if ($until > $now->modify('+'.$family['horizon_years'].' years')) { return ['horizon', null]; }
         $term = ExpansionFacts::term($facts->expansion, 'renew', $years, $now);
         if ($term === null || !in_array($years, $family['terms'], true)) { return ['term_unreviewed', null]; }
-        // Annual units are the guessed annual-times-years total this replaces, never an exact cap.
+        // Reviewed totals are stored in term units; annual observations cannot masquerade as a longer total.
         if ($term['price_unit'] !== CostUnit::TermTotal->value || $family['price_unit'] !== CostUnit::TermTotal->value) { return ['annual_unit', null]; }
         $cost = $costs['renew:'.$years] ?? null;
         if ($cost === null) { return ['unknown_price', null]; }
