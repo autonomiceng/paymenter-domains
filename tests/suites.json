@@ -586,7 +586,9 @@
     "tests/test_installed_enom_facts_upgrade-test.php",
     "tests/test_installed_renewal_uncertain-test.php",
     "tests/test_installed_renewal_cooldown-test.php",
-    "tests/test_installed_renewal_repeat_wait-test.php"
+    "tests/test_installed_renewal_repeat_wait-test.php",
+    "tests/late-renewal-deadline-test.php",
+    "tests/late-renewal-autopay-test.php"
   ],
   "ui": [],
   "runner": [
