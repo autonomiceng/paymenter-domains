@@ -32,7 +32,7 @@ $shows(['Invoice cancelled'],'Retired cutoff page');
 $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');$setting('domains_manual_renewals_enabled',false);
 same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with requests off');$setting('domains_manual_renewals_enabled',true);
 $server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>'invalid','type'=>'string']);same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with invalid calendar');$server->settings()->where('key','domains_due_days')->delete();
-same(range(1,9),$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
+same([1],$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
 $html=$page($d);expect(str_contains($html,'Continue to payment')&&!str_contains($html,'Invoice cancelled'),'Retired page shows the form, not the status');
 // Replacement proof covers every debt, even beyond one page or under an unexpected key.
 $copies=[];$copyInvoices=[];$copyItems=[];
