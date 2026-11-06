@@ -253,7 +253,7 @@ final class RequestFacts
         }
         if (isset($facts['outcome'])) {
             $recover=HistoryRecovery::offered($op);$tooOld=HistoryRecovery::tooOld($op);
-            return ['title'=>$facts['outcome'],'body'=>implode(' ',array_filter([$recover?HistoryRecovery::CAUSE:($tooOld?HistoryRecovery::TOO_OLD:null),isset($op->policy['status_check'])?implode('. ',\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op)):null,$facts['auto_renew']??PaidUncertainty::holdSummary($op)])),'tone'=>'warning',
+            return ['title'=>$facts['outcome'],'body'=>implode(' ',array_filter([$recover?HistoryRecovery::CAUSE:($tooOld?HistoryRecovery::TOO_OLD:null),\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::status($op)!==null?implode('. ',\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op)):null,$facts['auto_renew']??PaidUncertainty::holdSummary($op)])),'tone'=>'warning',
                 'action'=>$recover?HistoryRecovery::NAME:($tooOld?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {

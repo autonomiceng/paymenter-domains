@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestContext;
-use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
 {
@@ -68,13 +68,34 @@ final class RegistrarCheck
     }
     private static function answerAfter(array $check): string
     { return (new \DateTimeImmutable('@'.(int)($check['answer_after'] ?? 0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT'; }
+    /** Older lost replies need no worker turn to expose their existing answer step. Read only. */
+    public static function status(Operation $op): ?array
+    {
+        $check = $op->policy['status_check'] ?? null;
+        if ($op->action !== 'renew' || !in_array($op->state, ['running', 'pending', 'uncertain'], true)
+            || isset($op->policy['enom_answer']) || isset($op->attempt['reconciliation'])) { return $check; }
+        try {
+            $now = app(Clock::class)->now();
+            if ($op->state === 'running' && $op->lease_expires_at !== null && $op->lease_expires_at > $now) { return $check; }
+            $account = Account::where('server_id', $op->server_id)->sole();
+            $domain = $op->domain;
+            if ($op->account_fingerprint !== $account->account_fingerprint || $op->account_fingerprint !== $domain->account_fingerprint
+                || $op->authority_generation !== $domain->authority_generation) { return $check; }
+            $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account));
+            if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $now)) {
+                return ['outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
+                    'answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
+            }
+        } catch (\Throwable) {}
+        return $check;
+    }
     /** Customers wait for our registrar check; recording the answer is a staff task. */
     public static function forCustomer(Operation $op): array
     {
-        $check = $op->policy['status_check'] ?? null;
+        $check = self::status($op);
         if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::for($op); }
         $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
         return ['title'=>ucfirst($kind).' pending','body'=>'We’re confirming this '.$kind.' with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.self::answerAfter($check).'.','tone'=>'info'];
     }
-    public static function for(Operation $op): array { return self::words($op->policy['status_check'] ?? null, $op->state === 'succeeded'); }
+    public static function for(Operation $op): array { return self::words(self::status($op), $op->state === 'succeeded'); }
 }
