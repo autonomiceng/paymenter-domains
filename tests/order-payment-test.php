@@ -87,6 +87,8 @@ same('Paid. Add the auth code to start the transfer.',DomainListRow::orderExpire
 same(null,DomainPage::notice($owned(['state'=>'paid','kind'=>'registration','next'=>'setup_required']),'/tickets/create'),'Never says nothing to do while a step is left');
 $notice=DomainPage::notice($owned($paid),'/tickets/create');
 same('Paid. We’re finishing the registration. There’s nothing you need to do.',$notice['text'],'Paid notice says it plainly');
+// slop-sweep: a complimentary order was never paid, so its notice says Complimentary, as staff and the invoice do.
+same('Complimentary. We’re finishing the registration. There’s nothing you need to do.',DomainPage::notice($owned([...$paid,'complimentary'=>true]),'/tickets/create')['text'],'Complimentary notice');
 same(['label'=>'Contact support','url'=>'/tickets/create'],$notice['action'],'Paid notice says how to reach us');
 // Work that is ours reads blue; amber is for a step the customer owns. The Off switch is the reason we give first.
 $held=static fn(int|string|null $refused)=>new OwnedDomain('held.example','Active','good',null,'',null,['show'=>'/domains/1'],[],[],[],['contacts'=>['recordCheckHeld'=>true]],false,changesUnavailable:$refused!==null,changesRefused:$refused);
