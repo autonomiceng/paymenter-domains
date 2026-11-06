@@ -589,7 +589,10 @@
     "tests/renewal-cycle-early-test.php",
     "tests/renewal-cycle-late-test.php",
     "tests/renewal-funds-boundary-test.php",
-    "tests/renewal-completion-safety-test.php"
+    "tests/renewal-completion-safety-test.php",
+    "tests/owner-auto-renew-cycle-test.php",
+    "tests/owner-auto-renew-calendar-test.php",
+    "tests/owner-auto-renew-safety-test.php"
   ],
   "ui": [],
   "runner": [
