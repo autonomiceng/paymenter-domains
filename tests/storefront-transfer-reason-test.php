@@ -77,5 +77,24 @@ $public->states = ['pending transfer'];
 $assertRefusal($check(), 'already in progress');
 $page = (new OwnedTransferController($store))->show($req(['name' => 'transfer-placeholder.com'], 'GET'))->render();
 expect(str_contains($page, 'data-mode="transfer"'), 'Transfer page requests transfer results');
+// Transfer-only sales must not depend on a one-year registration check. The real Enom
+// adapter rejects that query when the synthetic registry requires at least two years.
+$public->states = ['active'];
+$b = Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+$registry = (new ReflectionProperty($transferBindings,'registry'))->getValue($transferBindings);
+$wire = new class implements Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
+    public function send($environment,$command,array $parameters,string $uid,string $token,int $timeoutMs): string {
+        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><Domains><Domain><Name>transfer-placeholder.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable><MinRegYear>2</MinRegYear></Properties></Domain></Domains></interface-response>';
+    }
+};
+$registry->registerBoundReader($b,static fn($binding,$credentials)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
+    new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']));
+$q = new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
+$ports->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($b,'com',['transfer']),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+foreach ([true,false] as $transferMode) {
+    $onlyTransfer = $check($transferMode);
+    same('transferable',$onlyTransfer['status'],'Transfer-only sales bypass registration minimum terms');
+    expect(str_contains($onlyTransfer['html'],'value="transfer"'),'Transfer-only sales retain the Transfer action');
+}
 $nativeSuccessful = true;
 echo "Customer transfer reasons, next steps and registration isolation passed.\n";
