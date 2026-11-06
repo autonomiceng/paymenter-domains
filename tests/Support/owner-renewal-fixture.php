@@ -40,8 +40,11 @@ $controller=new OwnerRenewalController($owners,$billing);$session=app('request')
 // The calendar matrix prepares and proves each of its own domains; other owner matrices use this pair.
 if (!($ownerCalendarTerms ?? false)) {
     [$source]=$prepare(placeholderComFixtureName('owner-renew-placeholder.com'));same('succeeded',$reconcile->run($source->id)->state,'Owner registration confirmed');
-    [$lateSource]=$prepare(placeholderComFixtureName('owner-renew-late-placeholder.com'));same('succeeded',$reconcile->run($lateSource->id)->state,'Late registration confirmed');
-    $d=$source->domain()->firstOrFail();$late=$lateSource->domain()->firstOrFail();
+    $d=$source->domain()->firstOrFail();
+    if (($ownerRenewalDomains??2)>1) {
+        [$lateSource]=$prepare(placeholderComFixtureName('owner-renew-late-placeholder.com'));same('succeeded',$reconcile->run($lateSource->id)->state,'Late registration confirmed');
+        $late=$lateSource->domain()->firstOrFail();
+    }
 }
 $server=$product->server;Queue::fake();storefrontViews();
 $setting=static fn(string $key,bool $value)=>$server->settings()->updateOrCreate(['key'=>$key],['value'=>$value,'type'=>'boolean']);
