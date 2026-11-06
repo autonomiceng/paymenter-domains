@@ -52,6 +52,8 @@ class TldResource extends Resource
         $isDemo=static function(Tld $t)use(&$demo):bool {
             return $demo[$t->server_id]??=DemoData::is(Account::where('server_id',$t->server_id)->first());
         };
+        // The Note column already says No registrar selected; the price cells show only the price.
+        $cause=static fn(array $fact,string $field)=>($c=TldFacts::priceState($fact,'renew',$field)['cause'])==='No registrar selected'&&str_starts_with((string)($fact['sales']['reason']??''),$c)?null:$c;
         return $table->columns([
             TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('account')->label('Registrar account')->state(fn(Tld $record)=>$record->server->name)
@@ -61,11 +63,11 @@ class TldResource extends Resource
             TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['value'])
                 ->color(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['tone'])
                 ->icon(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['missing']?Missing::icon():null)
-                ->description(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['cause'])->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
+                ->description(fn(Tld $record,$livewire)=>$cause($row($record,$livewire),'retail'))->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
             TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['value'])
                 ->color(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['tone'])
                 ->icon(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['missing']?Missing::icon():null)
-                ->description(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['cause'])->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
+                ->description(fn(Tld $record,$livewire)=>$cause($row($record,$livewire),'cost'))->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
                 ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->extraAttributes(fn(Tld $record,$livewire)=>StatusMark::attributes($row($record,$livewire)['sales']['tone'],'tld-'.$record->id)),
