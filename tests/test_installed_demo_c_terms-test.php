@@ -38,7 +38,12 @@ same('Longer terms are not reviewed yet.',
     Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReason($ordinary['reason']),
     'Unreviewed Ordinary family keeps its own explanation rather than the Grace review');
 $accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
-expect(str_contains($accountHtml,'Supported terms')&&str_contains($accountHtml,'Scheduled renewals'),'Account sheet renders family readiness, not only the source rows');
+// The account sheet summarizes the selected TLDs; individual family terms live on each TLD.
+$accountText=storefrontDom($accountHtml)->evaluate('string(//body)');
+foreach(['Selected TLD terms','1 of 1 read','Scheduled renewals','1 year'] as $text){
+    expect(str_contains($accountText,$text),'Account sheet renders current term readiness: '.$text);
+}
+expect(!str_contains($accountText,'Supported terms'),'Account sheet does not revive the replaced readiness label');
 $r10Failures=[];$r10Check=static function(bool $ok,string $message)use(&$r10Failures):void{if(!$ok){$r10Failures[]=$message;}};
 // More than ten unsold alphabetic entries must not hide the sold .com.
 for($i=0;$i<11;$i++){
