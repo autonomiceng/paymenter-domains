@@ -45,7 +45,7 @@ final class WatchFacts
         $domain['Registrar records']=self::fact($e['state'],$e['at']?'Checked '.self::date(strtotime($e['at'])):'No registrar read for this monitored name.');
         $domain['Billing and ownership']=self::fact('Separate checks',$e['separation']);
         $checks['Registrar refresh']=self::fact($e['state'],$e['at']?self::date(strtotime($e['at'])):'No registrar read yet.');
-        $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){$at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?'Checked '.self::date(is_int($at)?$at:strtotime($at)):'No saved observation.');}
+        $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){$at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($key==='public'&&$e['public_stale']?'Historical answers. ':'').'Checked '.self::date(is_int($at)?$at:strtotime($at)):'No saved observation.');}
         return ['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence];
     }
     /** The latest check across nameservers, records and registry. Only failed checks are red; waiting or old evidence explains its next step. */

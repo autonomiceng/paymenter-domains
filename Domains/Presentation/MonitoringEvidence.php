@@ -24,8 +24,25 @@ final class MonitoringEvidence
         try{foreach($public?->facts['queries']??[] as $q){if(($q['name']??null)!==$name||!in_array($q['type']??null,['A','AAAA'],true)){continue;}
             foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];}
-        return ['state'=>$state,'public'=>$answers,'public_at'=>$public?->started_at,'registrar'=>$registrar,'registrar_at'=>$families['families']['dns']['at']??null,'at'=>$families['at']??null,'families'=>$families,
+        return ['state'=>$state,'public_stale'=>self::publicStale($d,$public,$name),'public'=>$answers,'public_at'=>$public?->started_at,'registrar'=>$registrar,'registrar_at'=>$families['families']['dns']['at']??null,'at'=>$families['at']??null,'families'=>$families,
             'separation'=>'Billing and ownership use separate checks. Public DNS cannot confirm a registrar change or renewal.'];
+    }
+    /** Use the established public-signal freshness and structural target checks; retained answers are historical. */
+    private static function publicStale(?Domain $d,?PublicDnsObservation $public,?string $name): bool
+    {
+        $now=app(Clock::class)->now()->getTimestamp();
+        if(!$public||$public->check_kind!=='points'||$public->result!=='complete'||$public->partial||$public->valid_until===null||$now<$public->started_at||$now>=$public->valid_until){return true;}
+        if($public instanceof ManagedPublicObservation){
+            if(!$d||$d->domain!==$name||(int)$public->domain_id!==(int)$d->id||(int)$public->user_id!==(int)$d->user_id||$public->account_fingerprint!==$d->account_fingerprint||(int)$public->generation!==(int)$d->authority_generation||(int)$public->domain_revision!==(int)$d->confirmed_revision){return true;}
+            $target=\Paymenter\Extensions\Servers\Domains\Dns\PublicSignalsTarget::managed((int)$d->id,(int)$d->user_id,$d->account_fingerprint,(int)$d->authority_generation,(int)$d->confirmed_revision);
+        }else{
+            $watch=WatchName::whereKey($public->watch_id)->where('user_id',$public->user_id)->where('canonical_name',$name)->first();
+            if(!$watch||(int)$public->watch_revision!==(int)$watch->revision){return true;}
+            $target=\Paymenter\Extensions\Servers\Domains\Dns\PublicSignalsTarget::watch((int)$watch->id,(int)$watch->user_id,(int)$watch->revision);
+        }
+        try{$fresh=(new \Paymenter\Extensions\Servers\Domains\Services\PublicSignalsProjection)->read($target,$now);}
+        catch(\Illuminate\Contracts\Encryption\DecryptException){return true;}
+        return !collect(['website','email'])->contains(fn($axis)=>!($fresh[$axis]['stale']??true)&&($fresh[$axis]['checked_at']??null)===$public->started_at);
     }
     /** Only timestamps actually retained by the registrar inventory are represented as read events. */
     public static function history(WatchName $w): array
