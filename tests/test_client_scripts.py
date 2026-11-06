@@ -120,6 +120,27 @@ def main():
                                  input=json.dumps({'script': scripts.scripts[0]}), capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr
         print(checked.stdout.strip())
+        # Execute the actual rendered summary closure with transfer result rows.
+        checked = subprocess.run([node, '-e', r'''
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const script = require('node:fs').readFileSync(0, 'utf8');
+const start = script.indexOf('const summary = () => {');
+const end = script.indexOf('const check = async row =>', start);
+assert.ok(start >= 0 && end > start);
+for (const [state, expected] of [['busy', 'Try again in a moment.'],
+    ['transferable', 'This name can be transferred. Choose Transfer to continue.'],
+    ['in_cart', 'Already in your cart. Go to your cart to continue.'],
+    ['error', 'Couldn’t check this transfer. Retry to check it.']]) {
+    const live = {textContent: ''};
+    const row = {dataset: {state}, querySelector: () => ({textContent: ''})};
+    const list = {dataset: {mode: 'transfer'}, querySelectorAll: () => [row],
+        querySelector: selector => selector === '[data-busy]' ? null : row};
+    vm.runInNewContext(script.slice(start, end) + '; summary();', {live, list});
+    assert.equal(live.textContent, expected, state + ' transfer announcement');
+}
+'''], input=scripts.scripts[0], capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
         scripts = InlineScripts()
         scripts.feed((Path(temporary)/'partials.client-script.html').read_text())
         checked = subprocess.run([node, str(ROOT/'tests/Support/contact-suggestions.js')],
