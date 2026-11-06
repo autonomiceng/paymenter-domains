@@ -31,6 +31,12 @@ same(['Early renewal','1 year','Longer renewals need an accepted exact-term quot
     'Ordinary retains annual renewal and its exact-term refusal');
 same(['Grace renewal','Off','Review registry rules and safe deadlines before enabling grace renewal.'],$rows[3],'Grace keeps its review explanation');
 same(1,substr_count(view('domains::admin.term-readiness',['readiness'=>$rows])->render(),'safe deadlines'),'The Terms dialog says the grace review once');
+// Family readiness has its own Ordinary explanation; it does not override the exact-quote precedence above.
+$ordinary=Capabilities::routed()->termReadiness($binding,'com')['families']['ordinary'];
+same(['state'=>'annual_only','reason'=>'family_unreviewed','terms'=>[1]],$ordinary,'Ordinary family is unreviewed and annual-only');
+same('Longer terms are not reviewed yet.',
+    Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReason($ordinary['reason']),
+    'Unreviewed Ordinary family keeps its own explanation rather than the Grace review');
 $accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
 expect(str_contains($accountHtml,'Supported terms')&&str_contains($accountHtml,'Scheduled renewals'),'Account sheet renders family readiness, not only the source rows');
 $r10Failures=[];$r10Check=static function(bool $ok,string $message)use(&$r10Failures):void{if(!$ok){$r10Failures[]=$message;}};
