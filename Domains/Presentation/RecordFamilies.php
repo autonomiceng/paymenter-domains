@@ -28,6 +28,12 @@ final class RecordFamilies
         try{$status=ObservationProjection::recordStatus($d,$now);$hold=$d->observation['record_hold']['reason']??null;
             $currentRead=$status['at']!==null&&($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d);}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$empty=clone $d;$empty->observation=[];$status=ObservationProjection::recordStatus($empty,$now);$hold=null;$currentRead=false;}
+        // Reuse the editor's identity-checked, sequence-ordered readback projection.
+        if($currentRead){$dns=ObservationProjection::sections($d)['dns']??null;
+            if(isset($dns['facts']['records'],$dns['at'])&&$dns['at']>=($status['families']['dns']['at']??'')){
+                $status['families']['dns']=[...$status['families']['dns'],'records'=>$dns['facts']['records'],'state'=>'complete','at'=>$dns['at']];
+            }
+        }
         $rows=[];$caa=[];$caaAt=null;
         foreach(['settings'=>['nameservers'=>'Nameservers','contacts'=>'Contacts','flags'=>'Domain settings'],'families'=>['dns'=>'DNS records','srv'=>'SRV records','ds'=>'DS records','glue'=>'Glue records']] as $group=>$labels){
             foreach($labels as $kind=>$label){$f=$status[$group][$kind];$state=$f['expectation']==='unsupported'?'unsupported':$f['state'];

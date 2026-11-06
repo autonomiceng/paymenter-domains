@@ -86,5 +86,10 @@ $check(!($glueProjected->management['glue']['family_only']??false),'Authorized g
 $failed=clone $d;$saved=$failed->observation;$saved['records']=$record;$saved['record_failure']=['identity'=>ObservationRecords::identity($failed),'at'=>$now->format(DATE_ATOM),'code'=>'read_failed'];$failed->observation=$saved;
 $failedFacts=RecordFamilies::read($failed,$now);
 $same($record['at'],$failedFacts['caa_at'],'Retained nonempty CAA is marked historical after a failed primary read');
+// The same confirmed readback drives both the editor and its visible inventory.
+$newer=clone $d;$saved=$newer->observation;$saved['records']=$record;
+$saved['record_reads']=[['identity'=>ObservationRecords::identity($newer),'action'=>'dns','operation_key'=>'newer-dns','sequence'=>1,'at'=>'2026-11-05T10:00:00+00:00','facts'=>['records'=>[['name'=>'@','type'=>'A','address'=>'192.0.2.99','mx_pref'=>10,'ttl'=>300]]]]];$newer->observation=$saved;
+$latest=RecordFamilies::owner($editable,RecordFamilies::read($newer,$now));
+$same('192.0.2.99',$latest->management['dns']['inventory'][0]['address']??null,'Visible inventory uses the newer confirmed DNS readback');
 expect($failures===[],implode("; ",$failures));
 $nativeSuccessful=true;echo "Demo C record-family UI passed.\n";
