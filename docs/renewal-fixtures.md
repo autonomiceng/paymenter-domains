@@ -15,4 +15,3 @@ suite-slot --quick python3 scripts/render-reminders.py "$RENEWAL_SETUP_DIR" test
 
 `renewal-initialized-fixture-test.php` also runs the normal installer on the restored state and verifies
 its authority remains unchanged. A stale snapshot fails; tests never rebuild or accept it automatically.
-
