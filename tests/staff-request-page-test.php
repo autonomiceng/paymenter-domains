@@ -135,6 +135,12 @@ DB::table('domains_operations')->where('id',$heldOp->id)->update(['state'=>'unce
 Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('NameSilo has not confirmed this transfer.')
     ->assertSee('Paid domain changes on this NameSilo account wait until the result is known (73 hours so far).')->assertSee('Check status')
     ->assertDontSee('Release hold')->assertDontSee('Account spending holds')->assertDontSee('Paid outcome review');
+// ui-r19: a send that may have gone out is said once, in History; Details has no second dated row for it.
+$keptRow=(array)DB::table('domains_operations')->where('id',$heldOp->id)->first(['attempt','updated_at']);
+Operation::find($heldOp->id)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']])->saveQuietly();
+$unsure=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('Request created')->html();
+same(1,substr_count($unsure,'Registrar has not confirmed the result'),'The unconfirmed result is said once on the request page');unset($unsure);
+DB::table('domains_operations')->where('id',$heldOp->id)->update($keptRow);unset($keptRow);
 
 // Completed: Completed pill, no notice and no More menu.
 $done=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$doneOp->id]);
