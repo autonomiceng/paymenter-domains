@@ -96,7 +96,18 @@ final class SettingsActions
             $fields=[Hidden::make('review_key')->default(fn()=>Review::ticket((int)Auth::id(),$server,$tld,$name,value($stamp)))];
             if(in_array($name,['default_pricing','override'],true)){
                 // Saving writes rule and fee together. The form shows only the rule's own fields, so no fee may swap them for the built-in rule.
-                $rule=self::cached(static function()use($tld,$name,$server){try{return $tld&&$name==='override'?(StaffCatalogue::routed()?->pricing($server,Tld::findOrFail($tld))??(new PricingRules)->rule(Tld::findOrFail($tld))):(new PricingRules)->defaultRule(fee:CardFee::NONE);}catch(\Throwable){return PricingRule::DEFAULT;}});
+                $savedRule=self::cached(static function()use($tld,$name,$server):array{
+                    $kind='default';
+                    try{
+                        $t=$tld&&$name==='override'?Tld::findOrFail($tld):null;
+                        if($t){$kind='pricing';$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);$kind=!\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::hasOwn($t)?'default':match($intent['pricing_rule']['mode']??$t->pricing_mode){'fixed'=>'fixed','markup_percent','markup_amount','markup_fee_percent'=>'markup',default=>'pricing'};}
+                        $rule=$t?(StaffCatalogue::routed()?->pricing($server,$t)??(new PricingRules)->rule($t)):(new PricingRules)->defaultRule(fee:CardFee::NONE);
+                        return ['rule'=>$rule,'error'=>null];
+                    }catch(\Throwable){return ['rule'=>PricingRule::DEFAULT,'error'=>match($kind){'fixed'=>'Invalid fixed price rule','markup'=>'Invalid markup rule','default'=>'Invalid default pricing rule',default=>'Invalid pricing rule'}];}
+                });
+                $rule=static fn()=>$savedRule()['rule'];
+                $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Missing: '.$savedRule()['error'].'. Enter valid prices below or choose Default pricing.')
+                    ->key('invalid_saved_rule')->visible(fn()=>$savedRule()['error']!==null);
                 $default=self::cached(static function(){try{return (new PricingRules)->defaultRule();}catch(\Throwable){return null;}});
                 $own=static fn($get)=>$name!=='override'||$get('pricing')!=='default';
                 if($name==='override'){
@@ -280,7 +291,7 @@ final class SettingsActions
         if($t===null||$rule===null){return new \Illuminate\Support\HtmlString('');}
         $now=now()->toDateTimeImmutable();
         try{$rows=(StaffCatalogue::routed() ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->preview($t,$rule);}catch(\Throwable){$rows=[];}
-        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>No saved costs to preview. Use Sync prices on the TLD list first.</p>');}
+        if($rows===[]){return new \Illuminate\Support\HtmlString('<p>Exact registrar costs missing. '.e(TldFacts::refreshText(TldFacts::snapshot($t)['refresh']??[])).'</p>');}
         $costs=Staff::can(Staff::COSTS);$money=static fn(?string $v)=>$v===null?'None':'$'.preg_replace('/(\.\d{2}\d*?)0+$/D','$1',$v);
         $cell=static fn(string $html)=>'<td>'.$html.'</td>';
         $html='<div class="domains-preview"><table cellpadding="6"><thead><tr>';
@@ -334,7 +345,7 @@ final class SettingsActions
         foreach($summary['failed'] as $account=>$tlds){$failed[]=$account.($tlds===[]?'':' ('.implode(', ',$tlds).')');}
         return implode(' ',array_filter([
             $count===0?'No prices changed.':'Published new prices for '.$count.' '.($count===1?'TLD':'TLDs').'.',
-            $failed===[]?null:'Could not publish '.implode(', ',$failed).'. Use Sync prices under What you sell, then save again.',
+            $failed===[]?null:'Could not publish '.implode(', ',$failed).'. Check the exact missing cost or pricing rule on the TLD page. Sync prices is an optional retry.',
             $summary['skipped']===[]?null:'Off in Paymenter, so skipped: '.implode(', ',$summary['skipped']).'.',
             ($summary['audit_failed']??false)?"Nothing was undone: your change and any prices published stay in place. Only the record of this result couldn't be saved.":null,
         ]));
@@ -440,7 +451,7 @@ final class SettingsActions
             'Explicit restoration required.'=>'To turn sales back on, tick the box to confirm this account is set up for them. Check What you sell.',
             'Acquisition acceptance unavailable.'=>($data['transfer']??false)&&$a!==null&&!$a['transfer_allowed']?'Transfers are not set up for '.$ending.' on this account. Change sales under What you sell. Turn off Transfers.'
                 :'These '.$ending.' sales are not set up on this account. Check What you sell.',
-            'Catalogue publication evidence missing.','Catalogue publication evidence changed.'=>'Prices for '.$ending.' are missing or out of date. Use Sync prices on the TLD list, then try again.',
+            'Catalogue publication evidence missing.','Catalogue publication evidence changed.'=>'Prices for '.$ending.' are missing or out of date. See the last successful refresh and next due on the TLD page. Sync prices is an optional retry.',
             'Retained holders require annual renewal support.'=>'Customers still own '.$ending.' domains here, so renewals must stay on.',
             default=>null};
         return $text===null?null:$text.' Nothing was saved.';
@@ -501,7 +512,7 @@ final class SettingsActions
                 'namesilo_identity_unavailable'=>'NameSilo did not confirm the key. Check the API key and account mode. Nothing was saved.',
                 'Review key used.'=>$name==='enroll_sandbox'?'This was already submitted, so no new key check was sent. An earlier try may still be running, and this page can’t show that. Wait for it to finish. '.self::OUTCOME_NEXT:'This was already submitted. Check this page, then try again if you need to.',
                 'This percentage cannot cover the card fee. Lower the markup or card fee.'=>'No price can cover the card fee with this markup. Lower the markup or the card fee. Nothing was changed.',
-                'Costs required before publication.'=>'Costs are missing. Use Sync prices on the TLD list, then save again. Nothing was changed.',
+                'Costs required before publication.'=>'Exact registrar costs are missing. See the last successful refresh and next due on the TLD page. Sync prices is an optional retry. Nothing was changed.',
                 'Explicit renewal billing confirmation required.'=>'Tick the box to continue. Nothing was saved.',
                 'Invalid renewal billing input.'=>'Check the fields and try again. Nothing was saved.',
                 'Invalid renewal timing.'=>'Enter whole numbers of days. Nothing was saved.',
