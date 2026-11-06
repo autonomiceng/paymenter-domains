@@ -13,6 +13,8 @@ $marker = json_decode(file_get_contents($fixture.'/.domains-fixture.json'), true
 same('ee729f7d99ac18942625b79f3f93d8d8b21255e8', $marker['commit'] ?? null, 'Pinned Paymenter source');
 same('fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be',
     hash_file('sha256', $fixture.'/composer.lock'), 'Pinned native dependency lock');
+// Export only the fixture marker already accepted by the native source/lock guards.
+define('DOMAINS_TEST_NATIVE_COMMIT', $marker['commit']);
 foreach (['APP_ENV' => 'testing', 'APP_KEY' => 'base64:'.base64_encode(str_repeat('t', 32)),
     'APP_URL' => 'http://domains-tests.invalid', 'DB_CONNECTION' => 'sqlite', 'DB_DATABASE' => ':memory:',
     'CACHE_STORE' => 'array', 'QUEUE_CONNECTION' => 'sync', 'SESSION_DRIVER' => 'array',

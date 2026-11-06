@@ -2,7 +2,6 @@
 // Generator for the empty native component fixture; run through the pinned native harness.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require dirname(__DIR__).'/native-app.php';
 require_once __DIR__.'/renewal-initialized.php';
 function buildRenewalInitializedFixture(): array
 {
@@ -15,8 +14,12 @@ function buildRenewalInitializedFixture(): array
     $rows['settings']=array_map(static fn($r)=>(array)$r,$db->table('settings')->where('key','like','domains%')->get()->all());
     $rows['notification_templates']=array_map(static fn($r)=>(array)$r,$db->table('notification_templates')->where('key','like','domains%')->get()->all());
     $rows['migrations']=array_map(static fn($r)=>(array)$r,$db->table('migrations')->whereIn('migration',array_keys(app(Illuminate\Database\Migrations\Migrator::class)->getMigrationFiles([dirname(__DIR__,2).'/Domains/database/migrations'])))->get()->all());
-    return ['runtime_sha256'=>renewalRuntimeDigest(),'paymenter_commit'=>'ee729f7d99ac18942625b79f3f93d8d8b21255e8','schema'=>$schema,'rows'=>$rows];
+    return ['runtime_sha256'=>renewalRuntimeDigest(),'paymenter_commit'=>DOMAINS_TEST_NATIVE_COMMIT,'schema'=>$schema,'rows'=>$rows];
 }
 
-file_put_contents($argv[1].'/renewal-initialized.json',json_encode(buildRenewalInitializedFixture(),JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n");
-$nativeSuccessful=true;
+// Including the generator in a native witness exposes the same real-installer payload without file output.
+if(realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__){
+    require dirname(__DIR__).'/native-app.php';
+    file_put_contents($argv[1].'/renewal-initialized.json',json_encode(buildRenewalInitializedFixture(),JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)."\n");
+    $nativeSuccessful=true;
+}

@@ -14,7 +14,7 @@ function initializedRenewalFixture(): void
 {
     $snapshot=json_decode(file_get_contents(__DIR__.'/../fixtures/renewal-initialized.json'),true,512,JSON_THROW_ON_ERROR);
     same(renewalRuntimeDigest(),$snapshot['runtime_sha256'],'Renewal setup must be regenerated through the real installer for this source');
-    same('ee729f7d99ac18942625b79f3f93d8d8b21255e8',$snapshot['paymenter_commit'],'Prepared setup uses the native source pin');
+    same(DOMAINS_TEST_NATIVE_COMMIT,$snapshot['paymenter_commit'],'Prepared setup uses the native source pin');
     same('sqlite',Illuminate\Support\Facades\DB::connection()->getDriverName(),'Prepared renewal setup is SQLite only');
     same([],array_values(array_filter(Illuminate\Support\Facades\Schema::getTableListing(),static fn($t)=>str_starts_with($t,'domains_'))),'Prepared renewal setup requires an empty module');
     $pdo=Illuminate\Support\Facades\DB::connection()->getPdo();
