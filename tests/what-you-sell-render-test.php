@@ -1,7 +1,7 @@
 <?php
 // Native light/dark What you sell captures; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';
+require __DIR__.'/native-app.php';require __DIR__.'/Support/staff-tlds.php';require __DIR__.'/Support/storefront-catalogue.php';
 use Filament\Facades\Filament;
 use Illuminate\Support\Facades\{Auth,Blade,DB};
 use Illuminate\Support\HtmlString;
@@ -18,14 +18,13 @@ App\Models\Server::whereKey($second->server_id)->update(['name'=>'NameSilo accou
 App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,
     'value'=>['mode'=>'markup_fee_percent','markup'=>'5','round_up'=>'ending_99']]);
 activeFixtureRepublish($prices,$first);
-DB::table('domains_tlds')->where('id',$second->id)->update(['use_default_rule'=>false,'pricing_mode'=>'fixed','round_up'=>'none',
-    'fixed_register'=>'7.80','fixed_renew'=>'8.10','fixed_transfer'=>'9.10']);
+storefrontFixtureRule($native,$second,'7.80','8.10','9.10');
 DB::table('domains_prices')->where(['server_id'=>$second->server_id,'action'=>'renew','term'=>1])->update(['retail'=>'8.10']);
 // Rows the demo has none of: a saved price below cost, a term with no saved price, a TLD left out and one the registrar no longer lists. They show the red loss, Missing, the amber line and the blocked row.
 DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>1])->update(['retail'=>'5.00']);
 DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>3])->update(['retail'=>null]);
-$left=$first->replicate();$left->tld='bad';$left->use_default_rule=false;$left->pricing_mode='unknown';$left->save();
-$gone=$first->replicate();$gone->tld='gone';$gone->save();
+$left=$first->replicate();$left->tld='bad';$left->use_default_rule=false;$left->pricing_mode='unknown';$bad=json_decode($left->catalogue_intent,true);$bad['pricing_rule']=['mode'=>'unknown'];$left->catalogue_intent=json_encode($bad,JSON_THROW_ON_ERROR);$left->save();
+$gone=$first->replicate();$gone->tld='gone';$facts=json_decode($gone->catalogue_facts,true);$facts['terms']=[];$gone->catalogue_facts=json_encode($facts,JSON_THROW_ON_ERROR);$gone->save();
 $u=staffUser([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('acceptance')]);Auth::setUser($u);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
@@ -45,7 +44,7 @@ foreach([1,3] as $years){
         writeRenderArtifact($out.'/what-you-sell-'.$years.'-year-'.$mode.'.html',$page);
     }
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert above the toolbar in render');expect(str_contains($html,'list this TLD'),'Blocked row reason in render');
+    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert above the toolbar in render');expect(str_contains($html,'Not offered by this registrar for this term.'),'Blocked row reason in render');
     expect($years===3?str_contains($html,'To add one, open the TLD page and use Edit prices.'):str_contains($html,'This price is below registrar cost.'),'Loss and Missing in render');
 }
 echo "Native What you sell rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;
