@@ -31,6 +31,9 @@ same('2028-10-18',$d->fresh()->provider_expires_at->format('Y-m-d'),'Original re
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-support-answer-placeholder.com'));[$engine,$writer,$completion]=$compose($b);
 $state->lost=true;$writes=$state->writes;same('uncertain',$engine->run($op->id,$writer)->state,'Missing reply remains uncertain');$attempt=$op->fresh()->attempt;
 $clock->instant=$clock->now()->modify('+25 hours');$state->lost=false;$state->expiry='2028-10-18';$state->charge='8.00';
+// The answer needs Enom's real reader, but later commerce still owns both enrolled accounts.
+$fixtureBindings=app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class);
+try {
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$renewBindings);
 $staff=commerceUser();$role=\App\Models\Role::create(['name'=>'Renewal support answer','permissions'=>['admin.domains.view','admin.domains.manage-policy','admin.domains.settings.enom_answer']]);$staff->update(['role_id'=>$role->id]);
 $reviewClass=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;
@@ -41,6 +44,7 @@ same('succeeded',$completion->run($op->id)->state,'Supported renewal settles onl
 same($attempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Original sealed renewal evidence remains unchanged');
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$d->fresh(),$b),'Staff-supported renewal proof anchors the next cycle');
 same($writes+1,$state->writes,'Support answer and reconciliation never send another renewal');
+} finally { app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$fixtureBindings); }
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock,$ports){
     $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());
     $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$d->tld],'renew');
