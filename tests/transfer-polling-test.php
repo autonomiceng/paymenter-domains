@@ -1,6 +1,7 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$nativeInvoiceAttachmentFixture=true;
 // Native funding/authority locks and the real read adapter are needed to prove automatic completion without another purchase.
 // Collect completed checkout graphs between independent polling scenarios.
 $automaticPollingGc=gc_enabled();gc_disable();

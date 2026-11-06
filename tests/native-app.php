@@ -30,6 +30,7 @@ same('sqlite', config('database.default'), 'Native database isolation');
 same(':memory:', config('database.connections.sqlite.database'), 'Native database is memory only');
 Illuminate\Support\Facades\Http::preventStrayRequests();
 Illuminate\Support\Facades\Artisan::call('migrate', ['--force' => true]);
+if($nativeInvoiceAttachmentFixture??false){require __DIR__.'/Support/native-invoice-attachment.php';}
 
 // Public-data updater also uses an explicit fake: native runtime tests must never resolve DNS.
 $app->instance(\Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,
