@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/namesilo-test-activation-test.php';$nativeSuccessful=false;
 require __DIR__.'/Support/native-commerce.php';
+// Checklist and checkout both render the extension's scoped native views.
+app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\{Category,Currency,Setting};
 use Illuminate\Support\Facades\DB;

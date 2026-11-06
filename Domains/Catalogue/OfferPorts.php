@@ -38,7 +38,7 @@ final class OfferPorts
             }
             $transport = new Enom\OfferTransport($this->bindings, $binding, $revision, current: $current);
             $feed = new Enom\OfferFeed(new Enom\Driver(new Enom\Api\Client($binding, $credentials['uid'], $credentials['token'], $transport), []),
-                expansion: TermSupport::REVIEWED_EVIDENCE['enom'] ?? []);
+                expansion: $binding->environment === Environment::Test ? TermSupport::REVIEWED_EVIDENCE['enom'] : []);
         } else {
             // #386 is an explicit dependency; never silently fall back to the unadmitted cURL transport.
             if ($binding->registrarKey !== 'namesilo' || !is_file(dirname(__DIR__).'/Registrars/NameSilo/AdmittedTransport.php')

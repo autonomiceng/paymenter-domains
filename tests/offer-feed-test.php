@@ -62,6 +62,21 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     $enomWire->calls = [];
     $c = $context($binding); $rows = $indexed($feed->prices($c));
     same('10.0010', $rows['com']->costs['register:1']->total ?? null, 'Enom feed returns exact reseller cost observations');
+    $savedTime = $clock->at; $clock->at = new DateTimeImmutable('2026-11-05T12:00:00Z');
+    $approved = new EnomFeed($driver, new CatalogueFreshness, expansion: \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::REVIEWED_EVIDENCE['enom']);
+    $approvedRows = $indexed($approved->prices($context($binding)));
+    same($environment === Environment::Test ? '22.0000' : null, $approvedRows['com']->costs['renew:2']->total ?? null,
+        'Reviewed TEST two-year total is twice bucket-one renewal cost; Live has no derived quote');
+    same(false, isset($approvedRows['co.uk']->costs['renew:2']), 'Unreviewed suffix has no derived renewal');
+    $approvedFacts = $approved->facts('com', $context($binding, 2))->facts;
+    if ($environment === Environment::Test) {
+        $terms = \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::renewal('enom', 'com', $approvedFacts,
+            $approvedRows['com']->costs, new DateTimeImmutable('2027-10-18'), $clock->now(), environment: $environment);
+        same([true, '22.0000'], [$terms[2]['available'], $terms[2]['cost']], 'Real feed supplies annual support, reviewed evidence and exact two-year total');
+    }
+    $clock->at = $savedTime;
+    $enomWire->calls = array_slice($enomWire->calls, 0, 5);
+
     same(5, count($enomWire->calls), 'Four buckets and one suffix list, independent of catalogue size');
     same(0, $c->budget->remaining(), 'Every feed wire consumes the bound request budget');
     same([1, 2, 5, 10], array_column(array_column(array_slice($enomWire->calls, 0, 4), 2), 'Years'), 'All four bucket requests use explicit years');

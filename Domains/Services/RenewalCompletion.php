@@ -70,6 +70,16 @@ final readonly class RenewalCompletion
             $over = WriteMoney::compare($cost['amount'], $cap['amount']) > 0;
             $changed = WriteMoney::compare($cost['amount'], $attempt->expectedCharge->amount) !== 0;
             $below = $op->funding_basis!=='complimentary' && WriteMoney::compare($cost['amount'], $op->amount) > 0; $corrections = $proof['observed_corrections'] !== [];
+            // The TEST annual-rate rule cannot silently accept a larger incurred charge, even under a higher staff cap.
+            if ($attempt->binding->registrarKey === 'enom' && $attempt->query->years > 1
+                && WriteMoney::compare($cost['amount'], $attempt->expectedCharge->amount) > 0) {
+                $reason = $over ? 'actual_cost_overrun' : 'actual_charge_changed';
+                $policy['renewal_execution'] = ['staff_alert' => true, 'reason' => $reason, 'refundable_later' => false];
+                $op->update(['state' => 'uncertain', 'safe_code' => $reason, 'policy' => $policy,
+                    'attempt' => [...$op->attempt, 'reconciliation' => $proof], 'cost' => ['actual' => $cost], 'lease_expires_at' => null]);
+                $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => true]]);
+                return $op;
+            }
             $policy['renewal_execution'] = ['staff_alert' => $over || $changed || $below || $corrections,
                 'reason' => $over ? 'actual_cost_overrun' : ($changed ? 'actual_charge_changed' : ($below ? 'below_cost' : 'confirmed')), 'refundable_later' => false];
             $op->update(['state' => 'succeeded', 'safe_code' => $changed ? 'actual_charge_changed' : null, 'policy' => $policy,
