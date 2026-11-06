@@ -714,7 +714,7 @@ def main():
                             'tests/managed-public-relink-test.php',
                             'tests/owner-actions-test.php',
                             # Focused views read verified dependencies; isolate app state, not another vendor copy.
-                            'tests/owned-pages-test.php', 'tests/owner-renewal-test.php', 'tests/staff-watch-findings-test.php',
+                            'tests/owned-pages-test.php', 'tests/owner-renewal-test.php', 'tests/staff-watch-findings-test.php', 'tests/owner-renewal-retained-test.php', 'tests/owner-renewal-integrity-test.php', 'tests/owner-renewal-expiry-test.php', 'tests/owner-renewal-history-test.php', 'tests/owner-renewal-calendar-test.php',
                             'tests/registration-enom-test.php',
                             'tests/registration-enom-outcomes-test.php',
                             'tests/registration-enom-recovery-test.php',
