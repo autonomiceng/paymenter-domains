@@ -64,7 +64,9 @@ Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$empty->id]
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$demo->server_id])->assertSee('Demo NameSilo')->assertSee('Demo');
 // Orders paused: by staff, and by an unconfirmed paid request.
 DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['processing_enabled'=>false]);
-Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Orders paused')->assertSee('Paused by staff');
+$pausedHtml=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Orders paused')->assertSee('Paused by staff')->assertSee('Check setup, then turn on Orders.')->html();
+// ui-r19: the head says Orders paused, so the Orders row (Off) gives only the next step.
+same(1,substr_count($pausedHtml,'Orders paused')+substr_count($pausedHtml,'Orders are paused'),'Orders paused shows once on the account page');unset($pausedHtml);
 DB::table('domains_accounts')->where('server_id',$silo->server_id)->update(['processing_enabled'=>true]);
 // Admit the second registrar's service too; retain its real request when arranging an uncertain result.
 $siloBinding=AccountBindings::binding($silo->fresh());
