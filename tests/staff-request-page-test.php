@@ -185,7 +185,18 @@ same(['title'=>$title,'body'=>'We won\'t try again. If the change is still neede
 // One line says what a stopped or ended change did, from its real state, for staff and customers alike.
 $line=static fn(Operation $op)=>Labels::requestStatus($op)['reason'];
 same($title,$line($unsent),'Held and never sent reads Not sent');
-same($title,Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unsent,$unsent->domain,true)['status']['reason'],'The rail reads the same');
+// 90f1ac46 added current Orders/retry guidance to recoverable changes; the raw outcome above still proves no send.
+$rail=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unsent,$unsent->domain,true);
+same('Not sent. Orders are off for this account.',$rail['status']['reason'],'The rail names the current Orders hold');
+same($rail['status']['reason'],$rail['sub'],'The rail detail keeps the same current hold');
+same($rail['status'],RequestFacts::status($unsent,true,$unsent->domain),'The request page and rail read the same');
+$retryAccount=RequestFacts::account($unsent)['account'];$processing=$retryAccount->processing_enabled;
+try{
+    DB::table('domains_accounts')->where('id',$retryAccount->id)->update(['processing_enabled'=>true]);
+    $retryRail=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unsent,$unsent->domain,false);
+    same('Not sent. It will retry automatically.',$retryRail['status']['reason'],'Orders on names the automatic retry');
+    same($retryRail['status']['reason'],$retryRail['sub'],'The rail detail keeps the retry step');
+}finally{DB::table('domains_accounts')->where('id',$retryAccount->id)->update(['processing_enabled'=>$processing]);}
 $sealed=(clone $unsent)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']]);
 same('Registrar has not confirmed the result',$line($sealed),'Only a change that may have gone out is unknown');
 same('Under review',Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row((clone $sealed)->forceFill(['state'=>'succeeded','completed_at'=>now()]),$unsent->domain,true)['status']['label'],'A change the registrar has not read back reads Under review on the rail, as in customer History');
