@@ -206,6 +206,7 @@ final class AccountChecklist
         }
         $rows[]=self::row('Unpaid hold',UnpaidHoldSetting::minutes($server).' minutes',null,null,'unpaid_hold',SettingsActions::details('unpaid_hold'));
         $rows[]=self::renewEarly($server);
+        // Confirmed annual terms count as read; missing facts need attention regardless of term range.
         $terms=TldTerms::summary($server);$attention=count($terms['attention']);
         try{$url=TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server],'needs_attention'=>['isActive'=>true]]]);}catch(\Throwable){$url=null;}
         // Nothing to do when every selected TLD has its terms: no instruction and no link to an empty list.
