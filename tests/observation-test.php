@@ -123,7 +123,7 @@ $send=$unsent[4]->operations()->sole();
 DB::table('domains_observation_work')->insert(['server_id'=>$send->server_id,'account_fingerprint'=>$send->account_fingerprint,
     'domain_id'=>$send->domain_id,'generation'=>$send->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
 // A real stopped holding on the same account must remain stopped.
-DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>'read_failed']);
+DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>'binding_mismatch']);
 $holdingWork=DB::table('domains_observation_work')->where('domain_id',$d->id)->get()->toJson();
 // Supply funding through the normal fixture before claiming this previously unpaid order.
 DB::table('invoices')->where('id',$send->invoice_id)->update(['status'=>'paid']);
@@ -140,8 +140,8 @@ expect(DB::table('domains_observation_work')->where('domain_id',$sending->id)->e
 // A failure from after submission must remain stopped, including on later discovery turns.
 DB::table('domains_observation_work')->where('domain_id',$sending->id)->update(['safe_code'=>'read_failed']);
 $calls=count($observation->calls);$work->tick(1);
-same($calls,count($observation->calls),'Submitted acquisition failure is not automatically retried');
-expect(ObservationWork::stopped($sending->fresh()),'Possibly-sent attempt retains its genuine sync stop');
+same($calls,count($observation->calls),'Submitted acquisition failure is not retried before its due time');
+expect(!ObservationWork::stopped($sending->fresh()),'Possibly-sent read failure is retryable, never permission to resend the purchase');
 // A known registrar holding stays observable even when the pending order was not its source.
 $known=$unsent[0]->fresh();$known->update(['observation'=>['facts'=>['name'=>$known->domain,'generation'=>$known->authority_generation,'account_fingerprint'=>$known->account_fingerprint,'owned'=>true]]]);
 $observation->name=$known->domain;$calls=count($observation->calls);$work->tick(1);
