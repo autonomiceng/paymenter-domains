@@ -112,7 +112,12 @@ $outage=new class implements Paymenter\Extensions\Servers\Domains\Registrars\Nam
     public function sendWithin($e,$c,$r,string $k,int $t):Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\TransportResponse{$this->calls++;throw new RuntimeException('Synthetic registrar outage');}
 };
 $failureRegistry=new Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
-$failureRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,$c['token'],$outage),['renew'],$clock));
+$failureRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,$c['token'],$outage),['renew'],$clock),
+    authenticator:new class implements Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+        public function authenticate(Paymenter\Extensions\Servers\Domains\Data\Environment $environment,array $credentials):void {
+            throw new LogicException('The already enrolled outage fixture must not authenticate again');
+        }
+    });
 $failureReconcile=new OperationReconciliation($claims,new Paymenter\Extensions\Servers\Domains\Services\AccountBindings($failureRegistry),$clock);
 $writes=$state->calls;$r=$failureReconcile->run($op->id);
 expect($outage->calls>0,'Outage attempted registrar requests');same($writes,$state->calls,'Outage never resends transfer');
