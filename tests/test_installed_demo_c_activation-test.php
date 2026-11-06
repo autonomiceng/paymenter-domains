@@ -20,6 +20,10 @@ DB::table('domains_sales_policies')->where('server_id',$t->server_id)->where('tl
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json($intent)]);
 $before=DB::table('domains_tlds')->where('id',$t->id)->value('catalogue_intent');
 same(['.com'],LiveActivationAction::retainedOff($a),'The summary retains seller-policy Off with default transfers On and no intent override');
+// Unsold or unassigned catalogue entries are not saved transfer-Off choices.
+$notSelling=$t->replicate();$notSelling->tld='unsold.example';$notSelling->catalogue_intent=OfferState::json(['sell'=>false,'transfers'=>true]);$notSelling->save();
+$unassigned=$t->replicate();$unassigned->tld='unassigned.example';$unassigned->catalogue_intent=OfferState::json(['sell'=>true,'transfers'=>true]);$unassigned->save();
+same(['.com'],LiveActivationAction::retainedOff($a),'Unsold and missing-seller entries do not displace explicit transfer choices');
 $summary=['text'=>'Activate selected actions.','help'=>'Readiness is reviewed.','retained_off'=>LiveActivationAction::retainedOff($a),'missing'=>[],'failures'=>[],'costs'=>[]];
 $html=view('domains::admin.live-activation',compact('summary'))->render();
 expect(str_contains($html,'.com')&&str_contains($html,'TLDs kept Off')&&str_contains($html,'Edit terms'),'Activation renders retained Off and its next step');
