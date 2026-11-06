@@ -75,7 +75,7 @@ same([1,''],[preg_match('/^\d+ records? checked\./',$countSub),$countValue],'DNS
 same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@data-record-family]/preceding-sibling::span[@data-help]')->length,'The ? sits with its label, before the status');
 same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__a"]/a[normalize-space()="Edit"]')->length,'The DNS row has its Edit action');
 preg_match_all('/@media \(max-width: 639px\) \{(.*?)\n\}/s',view('domains::partials.styles')->render(),$narrow);$narrow=implode("\n",$narrow[1]);
-expect(str_contains($narrow,'.domains .domains-rows > .domains-row:has(> .domains-row__a) > .domains-row__l { grid-column: 1; }')&&str_contains($narrow,'.domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; }'),'At 390 Edit sits beside the label, status and value');
+expect(str_contains($narrow,'.domains .domains-rows > .domains-row:has(> .domains-row__a) > .domains-row__l { grid-column: 1; }')&&str_contains($narrow,'.domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; align-self: start; }'),'At 390 Edit sits beside the label and status, not centred on a tall value');
 // r16: a domain that ended without a registration has no expiry to show, so Renewal says nothing rather than Expires None.
 $ended=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'example.com',status:'Cancelled',tone:'muted',expiry:null,renewal:'',renewalPrice:null,actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,order:['state'=>'cancelled','credit'=>'10.99']);
 $endedHtml=view('domains::partials.owner-renew',['domain'=>$ended,'summary'=>null,'support'=>null])->render();
