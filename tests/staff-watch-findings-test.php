@@ -72,8 +72,8 @@ same(['label'=>'Avery Customer','email'=>'avery@example.test','url'=>UserResourc
 Livewire::actingAs($editor)->test(ListWatches::class)->assertSee('Avery Customer')->assertDontSee('avery@example.test');
 $editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW]]);same(['label'=>'Customer #'.$uid,'email'=>null,'url'=>null],$customer($editor),'Revoked user permission falls back');$editor->role->update(['permissions'=>[Staff::VIEW,Writes::VIEW,'admin.users.view','admin.users.update']]);
 // Detail shows the status first, with the same customer rules.
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSeeInOrder(['Problem found','Nameservers changed','Domain','Customer #'.$uid,'Checks','Nameservers','Changed'])->assertDontSee('avery@example.test');
-Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSeeInOrder(['Monitoring','Domain','Checks','Matches template'])->assertDontSee('Problem found');
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['ns-changed']])->assertSeeInOrder(['Problem found','Nameservers changed','Domain','Customer #'.$uid,'Latest checks','Nameservers','Other'])->assertDontSee('avery@example.test');
+Livewire::actingAs($viewer)->test(ViewWatch::class,['record'=>$w['healthy']])->assertSeeInOrder(['Monitoring','Domain','Latest checks','Matches template'])->assertDontSee('Problem found');
 Livewire::actingAs($editor)->test(ViewWatch::class,['record'=>$w['expired']])->assertSeeInOrder(['Problem found','Expired','Avery Customer','avery@example.test'])->assertSeeHtml('href="'.e(UserResource::getUrl('edit',['record'=>$uid])).'"');
 Livewire::actingAs($users)->test(ViewWatch::class,['record'=>$w['expired']])->assertSee('avery@example.test')->assertDontSeeHtml('/admin/users/'.$uid.'/edit');
 same($before,$writes(),'Staff list, filter and detail GETs write nothing');
