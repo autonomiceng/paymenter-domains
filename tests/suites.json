@@ -50,7 +50,8 @@
     "tests/ote-order-window-test.php",
     "tests/ote-collection-shapes-test.php",
     "tests/owned-style-test.php",
-    "tests/renewal-ready-copy-test.php"
+    "tests/renewal-ready-copy-test.php",
+    "tests/scenario-inventory-test.php"
   ],
   "native": [
     "tests/offer-queued-trigger-test.php",
