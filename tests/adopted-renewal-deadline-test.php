@@ -19,6 +19,7 @@ $cases = require __DIR__.'/Support/renewal-deadline-cases.php';
 foreach ([2027,2028] as $year) {
     same($year === 2027 ? 'adoption' : 'completed_operation', DB::transaction(fn () => HoldingAnchor::resolve(HoldingLocks::take($domain)))->kind, 'Deadline covers current adopted anchor branch');
     $clock->time = new DateTimeImmutable($year.'-09-29T12:00:00Z');
+    $observeRenewal();
     $invoice = $billing->invoice($domain->id, $owner); $op = Operation::where('invoice_id',$invoice->id)->sole();
     \App\Helpers\ExtensionHelper::addPayment($invoice,null,$op->amount); $op->refresh();
     $state->expiry = '10/20/'.$year.' 5:00:00 AM'; $state->day = '10/20/'.$year;
