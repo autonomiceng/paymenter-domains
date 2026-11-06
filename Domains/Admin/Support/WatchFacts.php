@@ -34,6 +34,9 @@ final class WatchFacts
         $checks=['Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active,$missing)];
         if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:$missing);}
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
+        // Last check already says when; a saved answer from that same minute needs no second Checked time.
+        $lastMinute=($lastAt=(int)($last['at']??0))>0&&is_string($last['value'])&&$last['value']!==''?intdiv($lastAt,60):null;
+        $checked=fn(int|string $at)=>intdiv($t=is_int($at)?$at:(int)strtotime($at),60)===$lastMinute?null:Sheet::moment($t,'Checked');
         if($active){$checks['Next check']=self::nextCheck($w);}
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
         // A failed customer alert says why and what to do; the staff alert links here.
@@ -46,7 +49,7 @@ final class WatchFacts
         if($s?->website===null && $s?->email===null && $e['public']){
             $at=$e['public_at'];
             $checks['DNS records']=self::fact(implode('; ',$e['public']),
-                new \Illuminate\Support\HtmlString(($at?Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked')->toHtml().'. ':'').'Choose a DNS template to compare these records.'));
+                new \Illuminate\Support\HtmlString(($at&&($when=$checked($at))?$when->toHtml().'. ':'').'Choose a DNS template to compare these records.'));
         }
         // Registrar records exist only for a domain we register. The Domain section says their state once.
         if($w->managed_domain_id!==null){
@@ -58,7 +61,7 @@ final class WatchFacts
         // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
             if(!$e[$key]&&($key==='registrar'||!$active)){continue;}
-            $at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked'):'No saved observation.');}
+            $at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?$checked($at):'No saved observation.');}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
     public static function missingCause(WatchName $w): string
