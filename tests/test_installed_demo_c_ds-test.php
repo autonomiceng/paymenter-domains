@@ -62,6 +62,6 @@ $staffFact=DsState::staff($inventory);$check(str_contains($staffFact['sub'],'123
 $by=DsState::owner($base,$active,true)->progress;
 $same('Staff',$by[0]['by']??null,'DS history preserves staff attribution');
 $row=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($held->operations()->where('action','ds_add')->sole(),$held,true);
-$check(str_contains($row['sub'],'Turn Orders on'),'Queued DS history preserves account pause guidance');
+$check(str_contains($row['sub'],'Orders are off for this account.')&&str_contains($row['sub'],'Turn them on in Registrars.'),'Queued DS history preserves account pause guidance');
 expect($failures===[],implode("; ",$failures));
 $nativeSuccessful=true;echo "Demo C DS UI passed.\n";
