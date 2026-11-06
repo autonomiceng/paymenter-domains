@@ -23,6 +23,13 @@ $admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bin
 $binder=new InvoiceBinding($admission,$native,$prices,$clock);$binder->boot();app()->instance(InvoiceBinding::class,$binder);
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $product=$native->product($tlds[0],'register');$hosting=commerceHosting();
+// The native view receives public properties before render listeners run. Assert its money,
+// not only the component's corrected post-render state (the theme uses these same properties).
+$cartViews=getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/comp-cart';mkdir($cartViews,0700,true);
+file_put_contents($cartViews.'/cart.blade.php','<div><span data-subtotal>{{ $total?->format($total->subtotal) }}</span><span data-total>{{ $total?->format($total->total) }}</span>@foreach(\App\Classes\Cart::items() as $item)<span data-line>{{ $item->price->format($item->price->total) }}</span>@endforeach</div>');
+Illuminate\Support\Facades\View::getFinder()->prependLocation($cartViews);
+Illuminate\Support\Facades\View::getFinder()->flush();
+
 // A native Livewire update rebuilds line models; the account grant must survive customer edits.
 $reviewCart=commerceCart($user);
 $remove=commerceAdd($reviewCart,$product,placeholderComFixtureName('comp-remove-placeholder.com'));
@@ -34,6 +41,10 @@ Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$reviewCart
 $page->call('removeProduct',$remove->id);
 same(0.0,(float)$page->get('total')->total,'Removing a complimentary line keeps the remaining total zero');
 same(0.0,(float)App\Classes\Cart::items()->sole()->price->total,'Remaining complimentary line stays zero');
+expect(str_contains($page->html(), 'data-subtotal>$0.00</span>'), 'Rendered complimentary subtotal stays zero after removal');
+expect(str_contains($page->html(), 'data-total>$0.00</span>'), 'Rendered complimentary total stays zero after removal');
+expect(!str_contains($page->html(), '$8.00'), 'Rendered summary never restores the paid plan price');
+
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('comp-account-placeholder.com'));commerceAdd($cart,$hosting,'hosting');
 $checkout=commerceCheckout($user,$cart);$checkout->assertHasNoErrors();
 expect(Domain::where('domain','comp-account-placeholder.com')->exists(),'Complimentary checkout must commit: '.json_encode($checkout->effects['dispatches']??[]));
