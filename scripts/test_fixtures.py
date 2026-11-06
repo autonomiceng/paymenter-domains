@@ -50,6 +50,8 @@ def shared_vendor(jobs, requested):
                 'tests/observation-namesilo-test.php', 'tests/demo-c-c1-observation-test.php',
                 'tests/demo-c-terms-native-test.php', 'tests/enom-multiyear-native-test.php',
                 'tests/staff-domain-page-test.php',
+                # Staff page/history fixtures read vendor; application and DB state stay isolated.
+                'tests/staff-request-page-test.php', 'tests/staff-review-history-test.php',
                 'tests/staff-domain-status-test.php',
                 'tests/staff-operation-reads-test.php',
                 'tests/staff-domains-test.php',
