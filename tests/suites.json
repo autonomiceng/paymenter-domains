@@ -593,6 +593,7 @@
     "tests/test_installed_standard_renewal_summary-test.php",
     "tests/test_installed_watch_dispatch_due-test.php",
     "tests/enom-multiyear-native-test.php",
+    "tests/enom-multiyear-charge-test.php",
     "tests/test_installed_enom_facts_upgrade-test.php"
   ],
   "ui": [],
