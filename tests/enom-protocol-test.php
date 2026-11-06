@@ -122,3 +122,8 @@ foreach (['host','record'] as $container) {
         same($type==='TXT'?$address:trim($address),$reply->value($container.'.address'),'Only TXT preserves address bytes in '.$container);
     }
 }
+
+// NS14 paired wire regression, kept here until C1 serializes suite registration.
+(static function (): void { require __DIR__.'/Support/demo-c-ds-inventory.php'; })();
+(static function (): void { require __DIR__.'/Support/demo-c-ds-policy.php'; })();
+(static function (): void { require __DIR__.'/Support/demo-c-ds-readback.php'; })();
