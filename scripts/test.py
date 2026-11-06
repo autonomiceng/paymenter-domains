@@ -694,6 +694,7 @@ def main():
                             'tests/runtime-records-test.php', 'tests/owner-management-test.php',
                             'tests/owner-management-namesilo-test.php', 'tests/staff-monitoring-test.php',
                             'tests/namesilo-dns-form-test.php', 'tests/managed-public-observer-test.php',
+                            'tests/namesilo-dns-delete-form-test.php', 'tests/namesilo-dns-capability-form-test.php',
                             'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php',
                             'tests/registrars-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',

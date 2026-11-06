@@ -683,6 +683,7 @@ class RunnerTests(unittest.TestCase):
                    'tests/runtime-records-test.php', 'tests/owner-management-test.php',
                    'tests/owner-management-namesilo-test.php', 'tests/staff-monitoring-test.php',
                    'tests/namesilo-dns-form-test.php', 'tests/managed-public-observer-test.php',
+                   'tests/namesilo-dns-delete-form-test.php',
                    'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php']
         cases = [(1, [path], True) for path in focused]
         cases += [(1, focused, True), (2, focused, False),
