@@ -36,7 +36,8 @@ final class LiveActivationAction
         $defaults=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($a->catalogue_defaults);$off=[];
         foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$a->server_id)->where('registrar_key',$a->registrar_key)->where('account_fingerprint',$a->account_fingerprint)->orderBy('tld')->cursor() as $t){
             $intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);
-            if(!($intent['sell']??$defaults['defaultSell']??true)||!AccountChecklist::savedTransfers($t,['transfers'=>$defaults['defaultTransfers']??false])){$off[]='.'. $t->tld;}
+            $seller=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->where('server_id',$t->server_id)->where('registrar_key',$t->registrar_key)->where('account_fingerprint',$t->account_fingerprint)->first();
+            if($seller&&($intent['sell']??$defaults['defaultSell']??true)&&!AccountChecklist::savedTransfers($t,['transfers'=>$defaults['defaultTransfers']??false])){$off[]='.'. $t->tld;}
         }
         return $off;
     }
