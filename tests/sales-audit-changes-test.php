@@ -36,6 +36,18 @@ $save(['terms' => ['com' => ['transfer' => false]]]);
 $history = TldFacts::history($t->server_id, null);
 same('No sales settings changed', $history[0]['change'], 'No-op does not claim a sales change');
 same('', $history[0]['reason'], 'No-op invents no changed fields');
+// Saving identical normalized defaults is a no-op in account history, even though its revision moves.
+$rule = ['mode'=>'only', 'years'=>2, 'transfers'=>false, 'max_cost'=>'12.00'];
+$save(['rule'=>$rule]);
+$defaults = OfferState::decode(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
+unset($defaults['_revision']);
+$save(['rule'=>$rule]);
+$again = OfferState::decode(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
+unset($again['_revision']);
+same($defaults,$again,'Repeated default rule keeps the same effective defaults');
+$history = TldFacts::history($t->server_id, null);
+same('No sales settings changed',$history[0]['change'],'Unchanged defaults do not claim a sales change');
+same('',$history[0]['reason'],'Unchanged defaults invent no changed fields');
 // Intent can already allow transfers while the chosen registrar sells registration only.
 $save(['terms' => ['com' => ['transfer' => true]]]);
 $revision = $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;

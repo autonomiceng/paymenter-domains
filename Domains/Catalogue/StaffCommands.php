@@ -85,7 +85,7 @@ final class StaffCommands
         }}
         if(count($entries)>25||$entries===[]){throw new \DomainException('Review 1 to 25 valid commands.');}
         if($review->action==='import'&&$this->sync===null){throw new \LogicException('Offer sync composition required.');}
-        $review->input([...$data,...($sell===[]?[]:['changes'=>[],'rule'=>$sell['rule']??null,'rule_changed'=>$defaults,'rows'=>[]])]);
+        $review->input([...$data,...($sell===[]?[]:['changes'=>[],'rule'=>$sell['rule']??null,'rule_changed'=>false,'rows'=>[]])]);
         $batch=$this->writer->reviewed($review,$entries,static fn()=>self::stamp($review->serverId,$review->tldId));
         $result=$batch['rows'];$failed=[...$failed,...$batch['failures']];
         if($defaults){($this->wake)($binding);}

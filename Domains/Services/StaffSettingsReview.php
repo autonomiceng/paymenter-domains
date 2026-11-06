@@ -27,8 +27,8 @@ final class StaffSettingsReview
     public function input(array $data): void
     { $this->input=array_intersect_key($data,array_flip(['hours','dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','retained_annual_retail','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     /** Actual accepted intent changes, captured under the writer locks. */
-    public function salesRows(array $rows): void
-    { $this->input['rows']=$rows; $this->input['changes']=array_fill_keys(array_keys($rows),true); }
+    public function salesRows(array $rows, bool $defaultsChanged = false): void
+    { $this->input['rows']=$rows; $this->input['changes']=array_fill_keys(array_keys($rows),true); $this->input['rule_changed']=$defaultsChanged; }
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason,private readonly ?\Closure $current=null) {}
     /** Syncing prices, saving what you sell, DNS template selection and testing the connection ask no reason; the audit still records who, when and what. */

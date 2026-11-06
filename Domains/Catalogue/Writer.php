@@ -157,13 +157,17 @@ final class Writer implements Catalogue
                 if ($reason !== null) { $refused[$command->tld()] = $reason; } else { $accepted[$i] = true; }
             }
             if (!$accepted) { throw new \DomainException(reset($refused)); }
-            $results = []; $sales = [];
+            $results = []; $sales = []; $defaultsChanged = false;
             foreach ($entries as $i => [$command, $expected]) {
                 if (!isset($accepted[$i])) { continue; }
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
                 $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
                 $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
                 $current = OfferState::revision($t, $d, $policy);
+                if ($command->kind === 'defaults') {
+                    $oldDefaults = new Intent(...array_intersect_key($d, get_object_vars(new Intent)));
+                    $defaultsChanged = !OfferState::equivalent(get_object_vars($oldDefaults), get_object_vars($command->intent));
+                }
                 $salesEdit = $review->action === 'acceptance' && $command->kind === 'override';
                 if ($salesEdit) {
                     $old = OfferState::decode($t->catalogue_intent); $before = $after = [];
@@ -185,7 +189,7 @@ final class Writer implements Catalogue
                     if ($after !== []) { $sales[$command->tld()] = ['old' => $before, 'new' => $after]; }
                 }
             }
-            if ($review->action === 'acceptance') { $review->salesRows($sales); }
+            if ($review->action === 'acceptance') { $review->salesRows($sales, $defaultsChanged); }
             $review->record('completed', ['rows' => array_keys($results), 'failures' => $refused]);
             return ['rows' => $results, 'failures' => $refused];
         });
