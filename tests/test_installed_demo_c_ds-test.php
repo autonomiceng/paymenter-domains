@@ -63,5 +63,20 @@ $by=DsState::owner($base,$active,true)->progress;
 $same('Staff',$by[0]['by']??null,'DS history preserves staff attribution');
 $row=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($held->operations()->where('action','ds_add')->sole(),$held,true);
 $check(str_contains($row['sub'],'Orders are off for this account.')&&str_contains($row['sub'],'Turn them on in Registrars.'),'Queued DS history preserves account pause guidance');
+// Stored unreadable evidence must reach the DS-specific review state on both staff surfaces.
+$queued=$held->operations()->where('action','ds_add')->sole();
+foreach(['attempt','policy','funding'] as $field){
+    $raw=$queued->getRawOriginal($field);
+    Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$queued->id)->update([$field=>'unreadable-synthetic-evidence']);
+    try{
+        $unreadable=$queued->fresh();
+        $row=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::row($unreadable,$held,true);
+        $same('Under review',$row['status']['label'],'Unreadable '.$field.' retains the staff DS review state');
+        $check(str_contains($row['sub'],'DS evidence cannot be read'),'Unreadable '.$field.' has the staff DS explanation');
+        $steps=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::steps($held,[$unreadable]);
+        $check(count($steps)===1,'Unreadable '.$field.' still produces an Activity step');
+    }catch(Illuminate\Contracts\Encryption\DecryptException){$check(false,'Unreadable '.$field.' broke staff History and Activity');}
+    Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$queued->id)->update([$field=>$raw]);
+}
 expect($failures===[],implode("; ",$failures));
 $nativeSuccessful=true;echo "Demo C DS UI passed.\n";
