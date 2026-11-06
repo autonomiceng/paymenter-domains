@@ -12,12 +12,12 @@
 <div><dt>Expires</dt><dd>@if ($expires['missing'])@include('domains::partials.missing', ['cause' => $expires['cause'], 'fix' => $expires['fix'], 'stack' => true])@else<span class="domains-date domains-card__v{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $domain->expiry, 'fallback' => 'None'])</span>@if ($expires['note']) <span class="domains-sub">{{ $expires['note'] }}</span>@endif @endif</dd></div>
 @if ($domain->renewal !== '' && !$domain->setupPending)
 <div><dt>Renewal invoices @include('domains::partials.help', ['id' => 'auto-renew', 'label' => 'Renewal invoices'])</dt><dd><span class="domains-card__v">{{ $domain->autoRenew ? ($domain->autoRenew['enabled'] ? 'On' : 'Off') : $domain->renewal }}</span>@if ($domain->autoRenew) <span class="domains-row__a domains-card__a"><button type="submit" form="form-auto-renew" class="domains-a domains-linkbtn">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button></span>@elseif ($domain->renewal === 'Off' && $support) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $support }}">Contact support</a></span>@endif</dd></div>
-@if ($domain->renewal === 'On')
+@if ($domain->renewal === 'On' && $domain->renewalPrice !== \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL)
 <div><dt>Auto Pay</dt><dd><span class="domains-card__v">{{ $domain->autoPay ? 'On' : 'Off' }}</span>@if (!$domain->autoPay && isset($domain->actions['autoPay'])) <span class="domains-card__a"><a class="domains-a" href="{{ $domain->actions['autoPay'] }}">Manage Auto Pay</a></span>@endif<span class="domains-sub">{{ $domain->autoPay ? 'We charge your saved payment method for each renewal invoice.' : 'We send you an invoice and you pay it to renew.' }}</span></dd></div>
 @endif
 @endif
 @if ($domain->renewalPrice && !($domain->renewNow['late'] ?? false) && $domain->renewal === 'On' && !$domain->setupPending)
-<div><dt>Renewal price</dt><dd><span class="domains-card__v">{{ $domain->renewalPrice }}/yr</span></dd></div>
+<div><dt>Renewal price</dt><dd><span class="domains-card__v">{{ $domain->renewalPrice }}{{ $domain->renewalPrice === \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL ? '' : '/yr' }}</span></dd></div>
 @endif
 @if ($invoice)
 <div><dt>Next invoice</dt><dd>@if ($invoice['missing'] ?? false)@include('domains::partials.missing', ['cause' => $invoice['cause'] ?? null, 'fix' => $invoice['fix'] ?? null, 'stack' => true])@elseif (isset($invoice['tone']))@include('domains::partials.status-pill', ['pill' => ['label' => $invoice['value'], 'tone' => $invoice['tone']]]) <span class="domains-sub">{{ $invoice['note'] }}</span>@else<span class="domains-card__v">{{ $invoice['value'] }}</span>@isset($invoice['action']) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $invoice['action']['url'] }}">{{ $invoice['action']['label'] }}</a></span>@endisset @endif</dd></div>
@@ -45,7 +45,7 @@
 </dl>
 @if ($domain->renewNow['late'] ?? false)<p class="domains-hint">Late renewal @include('domains::partials.help', ['id' => 'late-renewal', 'label' => 'Late renewal', 'helpText' => \Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP])</p>@endif
 @if ($domain->renewNow['order_by'] ?? null)<p class="domains-hint">You can renew online until @include('domains::partials.date', ['date' => $domain->renewNow['order_by']]).</p>@endif
-<div class="domains-buttons"><button type="button" class="domains-btn domains-btn--secondary" data-dialog-close>Cancel</button><noscript><a href="{{ $show }}">Cancel</a></noscript><button type="submit" class="domains-btn domains-btn--primary">Continue to payment</button></div></form>
+<div class="domains-buttons"><button type="button" class="domains-btn domains-btn--secondary" data-dialog-close>Cancel</button><noscript><a href="{{ $show }}">Cancel</a></noscript><button type="submit" class="domains-btn domains-btn--primary">{{ $domain->renewalPrice === \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL ? 'Confirm renewal' : 'Continue to payment' }}</button></div></form>
 </dialog>
 @endif
 </div></section>

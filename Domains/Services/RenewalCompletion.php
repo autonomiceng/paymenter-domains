@@ -66,9 +66,10 @@ final readonly class RenewalCompletion
                     : ($autoRenewConfirmed && $op->safe_code === 'provider_auto_renew_unconfirmed' ? null : $op->safe_code), 'policy' => $policy]); return $op;
             }
             $cost = $proof['charge']; $cap = $op->policy['renewal']['cost_cap'];
+            if(isset($op->policy['account_complimentary'])){$cap['amount']=ComplimentaryCosts::cap($op,$cap['amount']);}
             $over = WriteMoney::compare($cost['amount'], $cap['amount']) > 0;
             $changed = WriteMoney::compare($cost['amount'], $attempt->expectedCharge->amount) !== 0;
-            $below = WriteMoney::compare($cost['amount'], $op->amount) > 0; $corrections = $proof['observed_corrections'] !== [];
+            $below = $op->funding_basis!=='complimentary' && WriteMoney::compare($cost['amount'], $op->amount) > 0; $corrections = $proof['observed_corrections'] !== [];
             $policy['renewal_execution'] = ['staff_alert' => $over || $changed || $below || $corrections,
                 'reason' => $over ? 'actual_cost_overrun' : ($changed ? 'actual_charge_changed' : ($below ? 'below_cost' : 'confirmed')), 'refundable_later' => false];
             $op->update(['state' => 'succeeded', 'safe_code' => $changed ? 'actual_charge_changed' : null, 'policy' => $policy,
@@ -79,6 +80,7 @@ final readonly class RenewalCompletion
                 'renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => $over || ($d->renewal_policy['automatic_spend_paused'] ?? false),
                     'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key,
                         ...($l['identity_source']['kind'] === 'adoption' ? ['kind' => 'completed_operation', 'confirmed_revision' => $d->confirmed_revision + 1] : [])]]]);
+            ComplimentaryInvoices::complete($op);
             return $op;
         });
     }
