@@ -37,6 +37,9 @@ final class InvoiceDescription
         return self::line('WHOIS privacy: ', $name, self::term(1).', '.self::period($start, 1));
     }
 
+    public static function complimentary(string $name,string $action,int $years):string
+    {return str_replace([' (',')'],[', ',''],self::line('', $name.' '.(['register'=>'registration','renew'=>'renewal','transfer'=>'transfer'][$action]), self::term($years)));}
+
     private static function term(int $years): string
     {
         return $years === 1 ? '1 year' : $years.' years';

@@ -77,7 +77,8 @@ final class FundsWaits
                     }
                     // Queued retries still carry their original claim. Normalize only the proof copy, preserving all evidence.
                     $proof=clone $current;$proof->state='held';$proof->safe_code='registrar_balance_insufficient';
-                    RefundProof::requireUnsent($proof,$l['domain']);RefundPayment::requireCurrent($proof,$l);
+                    RefundProof::requireUnsent($proof,$l['domain']);
+                    if($proof->funding_basis==='complimentary'){ComplimentaryInvoices::require($proof,$l);}else{RefundPayment::requireCurrent($proof,$l);}
                     if(isset($proof->attempt['claim_key'])&&!OperationTerminalProof::unsentClaim($proof,$l['domain'],$l['operations'])){throw new \DomainException('Funds hold outcome needs review.');}
                     $current->update(['state'=>'rejected','safe_code'=>'registrar_balance_insufficient','completed_at'=>$now,
                         'attempt'=>OperationTerminalProof::rejectedAttempt($proof,$l['domain'])]);
@@ -85,7 +86,8 @@ final class FundsWaits
                         $l['invoices']->firstWhere('id',$current->invoice_id)?->status,$now);
                     $l['domain']->update(['status'=>$current->action==='transfer'?'transfer_rejected':'registration_rejected']);
                 });
-                app(Refunds::class)->creditRejected((int)$op->id);
+                // A complimentary receipt has no customer payment to return.
+                if($op->funding_basis!=='complimentary'){app(Refunds::class)->creditRejected((int)$op->id);}
                 if($alerts){DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','funds_wait_review')->whereNull('resolved_at')->update(['resolved_at'=>$now->getTimestamp()]);}
             }catch(\Throwable){
                 if($alerts){DB::transaction(function()use($op,$now):void {

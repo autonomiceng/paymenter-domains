@@ -4,6 +4,9 @@
 .domains-dialog .fi-modal-footer:is(.fi-align-end,.fi-align-right) .fi-modal-footer-actions{flex-direction:row;justify-content:flex-end}
 .domains-mono,.domains-wrap,.domains-row .fi-in-entry-content-col{overflow-wrap:anywhere}
 .domains-title{display:inline-flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0}
+.domains-form-stack{display:grid;gap:1rem}
+.domains-form-switch{display:flex;gap:.75rem;align-items:center}
+.domains-form-input{display:block;width:100%}
 .domains-missing-mark{display:inline-block;width:14px;height:16px;flex:none;vertical-align:middle;color:inherit}
 .domains-missing{display:inline-flex;align-items:center;gap:.375rem;color:var(--beco-err,var(--danger-600));font-weight:600}
 .domains-missing--calm{color:var(--beco-fg-3,var(--gray-500));font-weight:500}
