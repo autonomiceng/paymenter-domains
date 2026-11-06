@@ -21,7 +21,10 @@ final class NativeDomainGuard
         Domain::updating(static function (Domain $d): void {
             if ($d->isDirty('price_mode') || (!$d->attachingAdoption() && $d->isDirty('billing_managed'))) { throw new \DomainException('Managed pricing authority requires a dedicated audited transition.'); }
         });
-        InvoiceTransaction::creating(fn (InvoiceTransaction $payment) => RenewalCycles::beforePayment((int) $payment->invoice_id, $this->clock));
+        InvoiceTransaction::creating(function(InvoiceTransaction $payment):void {
+            if(Operation::where('invoice_id',$payment->invoice_id)->where('funding_basis','complimentary')->exists()){throw new \DomainException('Complimentary receipts cannot accept payments.');}
+            RenewalCycles::beforePayment((int)$payment->invoice_id,$this->clock);
+        });
         foreach (['updating', 'deleting'] as $event) {
             InvoiceTransaction::$event(static function (InvoiceTransaction $payment) use ($event): void {
                 if (Operation::whereIn('invoice_id', [$payment->invoice_id, $payment->getRawOriginal('invoice_id')])->exists()) {
@@ -79,7 +82,7 @@ final class NativeDomainGuard
             if (Domain::whereIn('service_id', Service::whereIn('plan_id', self::ids($p))->select('id'))->exists()) { throw new \DomainException('Holding annual plans are retained.'); }
         });
         InvoiceItem::creating(static function (InvoiceItem $item): void {
-            if (Operation::where('invoice_id', $item->invoice_id)->whereIn('action', ['renew','privacy_purchase','privacy_renew'])->exists()
+            if (Operation::where('invoice_id', $item->invoice_id)->where(fn($q)=>$q->whereIn('action',['renew','privacy_purchase','privacy_renew'])->orWhere('funding_basis','complimentary'))->exists()
                 || ($item->reference_type === (new Service)->getMorphClass() && Domain::where('service_id', $item->reference_id)->exists())) {
                 throw new \DomainException('Managed renewal items require the billing authority.');
             }
@@ -87,12 +90,13 @@ final class NativeDomainGuard
         foreach (['updating', 'deleting'] as $event) {
             InvoiceItem::$event(static function (InvoiceItem $item): void {
                 if (Operation::whereIn('invoice_item_id', self::ids($item))->exists()
-                    || Operation::whereIn('invoice_id', [$item->invoice_id, $item->getRawOriginal('invoice_id')])->whereIn('action', ['renew','privacy_purchase','privacy_renew'])->exists()) {
+                    || Operation::whereIn('invoice_id', [$item->invoice_id, $item->getRawOriginal('invoice_id')])->where(fn($q)=>$q->whereIn('action',['renew','privacy_purchase','privacy_renew'])->orWhere('funding_basis','complimentary'))->exists()) {
                     throw new \DomainException('Issued domain invoice items and renewal membership are immutable.');
                 }
             });
         }
         Invoice::updating(static function (Invoice $invoice): void {
+            if($invoice->isDirty('status')&&Operation::whereIn('invoice_id',self::ids($invoice))->where('funding_basis','complimentary')->exists()){throw new \DomainException('Complimentary receipts stay paid.');}
             if ($invoice->isDirty(['id', 'user_id', 'currency_code', 'due_at']) && Operation::whereIn('invoice_id', self::ids($invoice))->exists()) {
                 throw new \DomainException('Issued domain invoice routing and calendar are immutable.');
             }
@@ -192,7 +196,8 @@ final class NativeDomainGuard
     {
         if (($locked['advisory'] ?? true) || $op->state !== 'rejected' || !in_array($op->action, ['register', 'transfer'], true)
             || !$locked['operations']->contains(static fn ($row) => $row === $op)) { throw new \DomainException('No retained refund disposition.'); }
-        RefundProof::requireReturnable($op, $locked['domain']); RefundPayment::requireCurrent($op, $locked);
+        RefundProof::requireReturnable($op, $locked['domain']);
+        if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$locked);}else{RefundPayment::requireCurrent($op, $locked);}
         $service = $locked['service'];
         self::persist($service, ['status' => Service::STATUS_CANCELLED, 'expires_at' => null]);
     }

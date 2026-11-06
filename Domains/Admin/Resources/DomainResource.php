@@ -78,6 +78,7 @@ class DomainResource extends Resource
                 ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
                 ->description(fn(Domain $record,$state)=>$state===Missing::LABEL?DomainFacts::NO_ACCOUNT:(self::REGISTRARS[$record->registrar_key]??null))),
         ],['server_id'])->filters([
+            SelectFilter::make('price_mode')->label('Domain funding')->options(['standard'=>'Standard','complimentary'=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL]),
             SelectFilter::make('status')->label('Status')->multiple()->options(self::statusOptions())
                 ->query(fn(Builder $query,array $data)=>DomainQueries::status($query,$data['values']??[])),
             SelectFilter::make('server_id')->label('Registrar account')->options(function(): array {
