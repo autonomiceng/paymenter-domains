@@ -18,7 +18,7 @@ final class RecordFamilies
             // Missing inventory must not revoke controls already granted by the native management projection.
             if(!$facts['current_read']){$management[$key]=$section;continue;}
             if($family['state']!=='complete'){
-                // Existing native controls already carry per-host preflight authority; a partial list grants no replacement.
+                // Keep already authorized Enom per-host additions and edits; a partial list grants no replacement.
                 $section['actions']=$key==='glue'&&($facts['registrar_key']??null)==='enom'&&$family['state']==='partial'?array_intersect_key($section['actions'],array_flip(['glue_add','glue_update','glue_delete'])):[];
                 $section['family_only']=$section['actions']===[];
             }
