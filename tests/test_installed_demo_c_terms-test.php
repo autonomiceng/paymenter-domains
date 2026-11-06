@@ -99,6 +99,13 @@ expect(str_contains($html,'2 years: $28.00; new expiry Nov 20, 2029'),'No-script
 expect(strpos($html,'>Cancel</button>')<strpos($html,'>Continue to payment</button>'),'Cancel is a button before payment');
 expect(str_contains($html,'domains-total'),'Customer renewal total has shared prominent money treatment');
 expect(!str_contains($html,'exact-term')&&!str_contains($html,'registry'),'No staff eligibility reason in customer form');
+foreach([null,[],['lines'=>[]]] as $missingChoices){
+    try{
+        $fallback=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'support'=>null,'keys'=>['renew'=>str_repeat('a',64)],'renewalChoices'=>$missingChoices])->render();
+        preg_match('/<noscript>(.*?)<\/noscript>/s',$fallback,$noScript);
+        $r10Check(str_contains($noScript[1]??'','Total and new expiry confirmed at payment.'),'No-script renewal explains missing term totals and expiry');
+    }catch(Throwable $error){$r10Check(false,'Missing renewal choices must render safely: '.get_class($error));}
+}
 $result=storefrontData()['results'][0];$result['term']=1;$result['price']='$12.00';
 $html=view('domains::partials.result',['result'=>$result])->render();
 $x=storefrontDom($html);same('1 year',$x->query('//select/option')->item(0)->textContent,'Years select labels years, not prices');
