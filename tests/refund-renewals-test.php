@@ -2,6 +2,7 @@
 // Enom d1392a8 late retired and unsuitable paid renewal refunds; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
+require __DIR__.'/Support/retained-renewal-term.php';
 use App\Models\{Credit, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -40,7 +41,8 @@ same($nativeBeforeReplay, nativeFinancialSnapshot($corrected), 'Replay preserves
 $state->expiry='2028-10-18'; $state->charge='8.00'; same('succeeded',$completion->run($corrected->id)->state,'Corrected renewal completes');
 same($history,$corrected->fresh()->funding['financial_adjustments'],'Completion retains audit');
 // Unsuitable fixed multiyear grace, with full native payment: refund retains holding and expiry.
-[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('refund-grace-term-placeholder.com'),true,3); [$engine,$writer]=$compose($b);
+[$op,$d,$b]=$makeRenewal(placeholderComFixtureName('refund-grace-term-placeholder.com'),false);
+$op=retainedRenewalTerm($op,3); [$engine,$writer]=$compose($b);
 $clock->instant=new DateTimeImmutable('2027-10-18T12:00:01Z'); $beforeWrites=$state->writes;
 same('held',$engine->run($op->id,$writer)->state,'Unsuitable paid term held'); same($beforeWrites,$state->writes,'No provider write');
 $expiry=$d->provider_expires_at->format('Y-m-d');$before=$credit();
