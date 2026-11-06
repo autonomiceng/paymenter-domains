@@ -1,14 +1,9 @@
 <?php
 // Enom 444f31c owner view parity; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/owned.php';
-require_once __DIR__.'/Support/reserved-fixtures.php';
-use Illuminate\Http\Request;
-use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
+require __DIR__.'/Support/owned-page-controller.php';
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
-$controller=new OwnedDomainController($owners); $session=app('request')->session();
 $maxSld=(str_repeat('a',51).'-placeholder');
-$request=static function($actor)use($session){$r=Request::create('/domains','GET');$r->setUserResolver(fn()=>$actor);$r->setLaravelSession($session);return $r;};
 $other=commerceUser(); $snapshots=[];
 foreach ([0,1] as $i) {
     $name=$i?'other-placeholder.com':$maxSld.'.com';
@@ -91,8 +86,5 @@ $dto=$owners->present($sealed->domain);expect($dto->transfer['unchecked']&&!$dto
 storefrontViews();$calls=$state->calls;$html=$controller->code($request($user),$sealed->domain_id)->render();
 expect(str_contains($html,'<dt>Expires</dt>')&&str_contains($html,'Missing</span> <span class="domains-missing__cause">Fills in by itself when the transfer finishes</span>'),'Real presenter-to-Blade preserves unchecked provenance: Expires Missing with its cause');
 same(0,storefrontDom($html)->query('//input[@name="transfer_code"]')->length,'Provenance grants no code editor');same($calls,$state->calls,'Rendering provenance performs no I/O');
-require __DIR__.'/Support/late-contact-pages.php';
 foreach(['show','setup','code','index','transfer']as$route){$r=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$route);expect(in_array('auth',$r->gatherMiddleware(),true)&&in_array('web',$r->gatherMiddleware(),true),'Dormant routes have native auth/session boundary');}
-require __DIR__.'/Support/owned-tone-cases.php';
-require __DIR__.'/Support/owned-list-sorts.php';
 $nativeSuccessful=true;echo "Owned DTO, native controllers, real Blade, held/correction/capability and ownership checks passed.\n";
