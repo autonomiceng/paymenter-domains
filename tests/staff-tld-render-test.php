@@ -52,6 +52,7 @@ foreach(array_intersect_key(Review::ACTIONS,array_flip(array_diff([...$tldAction
     $strings[$action]=['label'=>$label,'description'=>in_array($action,['processing','price_freshness'],true)?null:SettingsActions::description($action)];
 }
 app()->instance(StaffSettingsWrites::class,$writer);
+staffSalesFixture();
 // Edit prices with the live preview: own prices, with one below-cost row, then the account default.
 // Dialog content renders in the action-modals partial, not the page body.
 $sees=static function($page,array $texts):void{$html=$page->effects['partials']['action-modals.0']??'';foreach($texts as $text){expect(str_contains($html,$text),'Dialog shows: '.$text);}};
