@@ -15,7 +15,7 @@ $dueRecords();$runtimePorts->initialManagedRecordObservations();same([],$state->
 $bindings->setProcessing($d->server_id,true,static fn()=>null);$compositionReady=false;$dueRecords();$runtimePorts->initialManagedRecordObservations();
 same([],$state->calls,'Enabled account without accepted composition makes no record reads');expect(!ObservationRecords::held($d->fresh()),'Missing acceptance creates no fabricated record hold');
 $compositionReady=true;$dueRecords();$clock->instant=$clock->now()->modify('+1 hour');app(RuntimeWork::class)->tick();
-same([],$state->calls,'Installed daily scheduler makes no record reads');same(null,ObservationRecords::current($d->fresh()),'Daily read does not invent inventory');
+foreach(['GetHosts','GetDomainSRVHosts','GetDnsSec'] as $command){same(1,count(array_filter($state->calls,fn($call)=>$call[0]===$command)),'Installed scheduler reads each supported record family once: '.$command);}same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Accepted scheduled read publishes actual inventory');
 app(DomainObservation::class)->run($d->id,readRecords:true);same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Native producer publishes complete records');
 $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();same(0,$job->tries,'Successful native refresh resets tries');same($clock->now()->getTimestamp()+86400,$job->due_at,'Ordinary refresh cadence is daily');
 $io=count($state->calls);$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'No duplicate early refresh');
