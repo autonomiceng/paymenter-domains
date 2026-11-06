@@ -569,7 +569,9 @@
     "tests/test_installed_comp_account_transfer-test.php",
     "tests/test_installed_comp_account_recovery-test.php",
     "tests/registration-namesilo-authority-test.php",
-    "tests/registration-namesilo-nexus-test.php"
+    "tests/registration-namesilo-nexus-test.php",
+    "tests/storefront-corruption-test.php",
+    "tests/storefront-queries-test.php"
   ],
   "ui": [],
   "runner": [
