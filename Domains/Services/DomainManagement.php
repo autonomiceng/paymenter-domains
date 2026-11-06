@@ -327,7 +327,7 @@ final class DomainManagement
     }
     private function finish(Domain $seed, int $id, ManagementProtocol $driver, ManagementResult $result, ?string $stamp = null): Operation
     {
-        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp): Operation {
+        return $this->locked($seed, $id, $driver, function ($l, $op) use ($result, $stamp, $driver): Operation {
             if(!in_array($op->state,['running','uncertain'],true)||($op->attempt['seal']??null)!=='sealed'){throw new \DomainException('Management readback no longer applicable.');}
             if ($stamp !== null && $l['stamp'] !== $stamp) { throw new \DomainException('Management changed during readback.'); }
             $facts = $result->facts(); $ack = $op->attempt['management_ack'] ?? [];
@@ -356,6 +356,9 @@ final class DomainManagement
                 }
             }
             $projection['management_sequence']=$sequence; $l['domain']->update(['observation'=>$projection]);
+            if ($op->action==='dns' && $ok && $confirmed && ManagementEvidence::resolved($op,$l['domain'])) {
+                ObservationRecords::saveDnsReadback($l['domain'],$facts,$this->clock->now(),$driver->observationCapabilities());
+            }
             return $op;
         }, false, false);
     }
