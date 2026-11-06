@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, array $identities = []): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, array $identities = [], array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
@@ -40,7 +40,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
             return new FakeRegistrar($b, new Capabilities($b, []), $eligible
                 ? new DriverResult($b, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, new Evidence(premium: $reads->premium, available: $reads->available))
                 : new DriverResult($b, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unverified));
-        },authenticator:$key==='namesilo'&&!isset($identities[$key])?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+        },authenticator:$key==='namesilo'&&$nameSiloLocal&&!isset($identities[$key])?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
             public function authenticate(Environment $environment,array $credentials):void { /* Synthetic connectivity only. */ }
         }:null);
     }
@@ -56,10 +56,10 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $sellers=new SellerPolicies($prices,$bindings,$offers);
         app()->instance(AccountBindings::class,$bindings);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     }
-    foreach (['enom', 'namesilo'] as $key) {
+    foreach ($registrars as $key) {
         $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
         $review=null;
-        if($key==='namesilo'){
+        if($key==='namesilo'&&$nameSiloLocal){
             // Use the real local enrollment/review with a synthetic authenticator; no provider routing is installed.
             $role=App\Models\Role::create(['name'=>'Synthetic account reviewer','permissions'=>array_keys(\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::permissions())]);
             $actor=App\Models\User::create(['first_name'=>'Synthetic','last_name'=>'Reviewer','email'=>'fixture-enrollment@example.test','password'=>'synthetic-password','role_id'=>$role->id]);

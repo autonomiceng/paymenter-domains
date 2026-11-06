@@ -583,7 +583,11 @@
     "tests/test_installed_renewal_uncertain-test.php",
     "tests/test_installed_renewal_cooldown-test.php",
     "tests/late-renewal-deadline-test.php",
-    "tests/late-renewal-autopay-test.php"
+    "tests/late-renewal-autopay-test.php",
+    "tests/renewal-complimentary-cycle-test.php",
+    "tests/renewal-cycle-credit-test.php",
+    "tests/renewal-cycle-early-test.php",
+    "tests/renewal-cycle-late-test.php"
   ],
   "ui": [],
   "runner": [
