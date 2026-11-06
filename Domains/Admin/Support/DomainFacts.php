@@ -410,6 +410,8 @@ final class DomainFacts
     }
     /** The domain sits on a registrar's test account. */
     public static function test(Domain $d): bool { return self::account($d)?->environment==='test'; }
+    /** Whether the page shows Sync now, so a row may tell staff to use it. */
+    public static function syncNow(Domain $d): bool { return Staff::can('admin.domains.manage')&&$d->status==='active'; }
     private static function account(Domain $d): ?Account
     {
         return Account::where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->where('account_fingerprint',$d->account_fingerprint)->first();

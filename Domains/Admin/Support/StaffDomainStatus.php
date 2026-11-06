@@ -51,7 +51,7 @@ final class StaffDomainStatus
         if ($behind) {
             if ($step === self::CHECK) {
                 $line = RequestFacts::status($behind);
-                [$step, $request, $act] = $line['reason'] === null ? [Labels::action($behind->action).' in progress. Nothing to do yet.', null, false] : [self::sentence($line['reason']).self::check($behind->id), $behind->id, true];
+                [$step, $request, $act] = $line['reason'] === null ? [Labels::action($behind->action).' in progress. Nothing to do yet.', null, false] : [self::sentence($line['reason']).self::ordersOrCheck($behind,$line['reason']), $behind->id, true];
             }
             $shared = [...$shared, 'tone' => $act ? $shared['tone'] : 'info', 'reason' => null];
         } elseif ($unknown && $step === self::CHECK) {
@@ -73,8 +73,7 @@ final class StaffDomainStatus
         if ($state === 'adoption_pending') { return ['Check open invoices.', true, null]; }
         if ($op && in_array($d->status, self::ACQUIRING, true)) {
             if (($ready=RequestFacts::readyMessage($op))!==null) {
-                if ($op->state==='queued'&&OperationQueries::ordersOff($op)) { $ready.=RequestFacts::ordersStep($ready); }
-                return [$ready.self::check($op->id),true,$op->id];
+                return [$ready.self::ordersOrCheck($op,$ready),true,$op->id];
             }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op), true, $op->id]; }
             if ($state === 'awaiting_payment') { return [self::UNPAID, false, null]; }
@@ -113,7 +112,7 @@ final class StaffDomainStatus
         return match (true) {
             in_array($op->state, ['held', 'uncertain'], true) => [self::stopped($op), $op->id, true],
             $op->state === 'awaiting_payment' => [Labels::requestStatus($op)['reason'], null, false],
-            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.self::check($op->id), $op->id, true],
+            $op->state === 'queued' && ($ready = RequestFacts::readyMessage($op)) !== null => [$ready.self::ordersOrCheck($op, $ready), $op->id, true],
             default => [self::RENEWING, null, false],
         };
     }
@@ -125,6 +124,9 @@ final class StaffDomainStatus
         return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : RequestStatus::UNCONFIRMED)).self::check($op->id);
     }
     private static function check(int $id): string { return ' Check request #'.$id.'.'; }
+    /** One step: a request that waits only on Orders names the switch, since its page says no more; any other names the request. */
+    private static function ordersOrCheck(Operation $op, string $reason): string
+    { return $op->state==='queued'&&OperationQueries::ordersOff($op)?RequestFacts::ordersStep($reason):self::check($op->id); }
     /** The first danger alert, else the oldest. */
     private static function topAlert(array $alerts): array
     {

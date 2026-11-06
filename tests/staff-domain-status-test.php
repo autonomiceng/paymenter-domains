@@ -169,7 +169,7 @@ same(false,isset(DomainFacts::for($cases['past expiry'][0]->fresh())['Next invoi
 $d=$row('active',null,null,null,730); $paid=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'paid','due_at'=>now()]));
 $stopped=$request($d,'renew','queued',[...$sent($d),'invoice_id'=>$paid->id]); $members['active'][]=$d->id;
 Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>false]);
-same('Not sent. Orders are off for this account. Check request #'.$stopped->id.'.',DomainFacts::status($d->fresh())['step'],'Queued renewal says Orders are off on the domain');
+same('Not sent. Orders are off for this account. Turn them on in Registrars.',DomainFacts::status($d->fresh())['step'],'Queued renewal says Orders are off on the domain, with the one step');
 same('Not sent. Orders are off for this account.',RequestFacts::reason($stopped->fresh()),'Queued renewal says Orders are off on the request');
 Account::where('server_id',$stopped->server_id)->update(['processing_enabled'=>true]);
 // An inspection closes only what is proven cleared, and the alert never flips while a fix moves along.
@@ -298,6 +298,7 @@ $live=$row('active','transfer','succeeded'); $live->forceFill(['renewal_policy'=
 expect(!str_contains((string)DomainFacts::for($ended->fresh())['Registrar']['sub'],'orders paused'),'Cancelled domain has no paused orders');
 expect(str_contains((string)DomainFacts::for($live->fresh())['Registrar']['sub'],'orders paused'),'Live domain keeps the pause');
 // Orders off: the list and the heading read the customer's word, then the request's reason. The request reads the same word.
+// A queued request waits only on Orders, so its one step is the switch; a held one still sends staff to the request.
 $offTransfer=$row('transfer_pending','transfer','held','processing'); $offChange=$row('something_new','nameservers','queued');
 Account::where('server_id',$seed->server_id)->update(['processing_enabled'=>false]);
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable('w2-case-')->set('tableRecordsPerPage',100);
@@ -305,7 +306,7 @@ $columns=$page->instance()->getTable()->getColumns(); $records=$page->instance()
 foreach ([$offTransfer,$offChange] as $d) {
     $op=$d->operations()->sole(); $line=RequestFacts::status($op); $status=DomainFacts::status($d->fresh());
     same('Under review',$line['label'],'The request reads its domain\'s word');
-    $read=['Under review',rtrim((string)$line['reason'],'.').'. Check request #'.$op->id.'.'];
+    $read=['Under review',rtrim((string)$line['reason'],'.').($op->state==='queued'?'. Turn them on in Registrars.':'. Check request #'.$op->id.'.')];
     same($read,[$status['label'],DomainFacts::statusLine($status)],'The heading keeps the customer word, then the request');
     same($read,[$columns['status']->record($records[$d->id])->getState(),$columns['note']->record($records[$d->id])->getState()],'The list reads as its request');
 }

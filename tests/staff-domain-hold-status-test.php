@@ -35,7 +35,7 @@ foreach([false,true] as $ordersOn){
     Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id])
         ->callAction('release')->assertHasNoActionErrors()->assertNotified('Hold released');
     same(['queued',null],[$op->fresh()->state,$op->fresh()->safe_code],'Release clears the hold independently of Orders');
-    [$head,$request,$entry,$text]=$page($op);
+    [$head,$request,$entry,$text,$xpath]=$page($op);
     $check(!str_contains(strtolower($head.' '.$request),'put on hold by staff'),'Released header and request activity drop the old staff hold');
     if($ordersOn){
         $check(str_contains($head,'Pending transfer')&&str_contains($head,'Transfer in progress. Nothing to do yet.'),'Running orders leave the domain transfer in progress');
@@ -43,9 +43,14 @@ foreach([false,true] as $ordersOn){
     }else{
         $check(str_contains($head,'Pending transfer')&&str_contains($head,'Orders are off for this account.'),'Paused orders are the current header cause: '.$head);
         // slop-sweep: after "Orders are off for this account." the step says only "Turn them on in Registrars."
-        $check(str_contains($head,'Turn them on in Registrars'),'Paused header names the next step');
-        $check(str_contains($request,'Under review')&&str_contains($request,'Orders are off for this account.'),'Paused orders are the current request activity cause');
-        $check(str_contains($request,'Turn them on in Registrars'),'Paused request activity names the next step');
+        $check(str_contains($head,'Turn them on in Registrars')&&!str_contains($head,'Check request #'),'Paused header names one next step: '.$head);
+        // The header says the cause once; the request's Activity entry keeps its status.
+        $check(str_contains($request,'Under review')&&!str_contains($request,'Orders are off for this account.'),'Paused request activity does not repeat the header: '.$request);
+        $page36=$text($xpath->query('//body')->item(0));
+        $check(substr_count($page36,'Orders are off for this account.')===1,'Orders are off is said once on the page');
+        // Not active: no Sync now button and nothing confirmed yet.
+        $check(!str_contains($page36,'Sync this domain')&&!str_contains($page36,'Use Sync now'),'No row asks for a sync the page cannot start');
+        $check(!str_contains($page36,'Last confirmed data is retained'),'Nothing confirmed means nothing retained');
     }
     same(1,$entry('Hold released')->length,'One release event appears in Activity');
     $released=$text($entry('Hold released')->item(0));

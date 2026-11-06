@@ -189,6 +189,8 @@ foreach ($releaseOps as $i=>$request) {
     }
     $railText=preg_replace('/\s+/',' ',$xpath->query($rail)->item(0)->textContent);
     expect(str_contains($railText,'Request #'.$request->id.' Transfer Under review'),'Both request lines keep their existing status word');
-    if ($i===0) { expect(str_contains($railText,'Not sent. Orders are off for this account.'),'The released request keeps its Orders-off reason'); }
+    // The header names the released request's Orders-off reason; its rail entry does not say it again.
+    if ($i===0) { same(1,substr_count(preg_replace('/\s+/',' ',$dom->documentElement->textContent),'Not sent. Orders are off for this account.'),'The released request keeps its Orders-off reason, said once');
+        expect(!str_contains($railText,'Not sent. Orders are off for this account.'),'The rail does not repeat the header'); }
 }
 echo "Staff domain edits passed.\n";$nativeSuccessful=true;

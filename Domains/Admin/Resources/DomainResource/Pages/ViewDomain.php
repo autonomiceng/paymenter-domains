@@ -44,10 +44,10 @@ class ViewDomain extends ViewRecord
     }
     public function getSubheading(): string|Htmlable|null
     {
-        $d=$this->getRecord(); $status=$this->status();
-        $head=DomainFacts::head($d,$status,$this->facts(),$this->edits()['request']);
-        return StatusMark::line($head['tone'],$status['label'],'domain-'.$d->id,$head['step']);
+        $d=$this->getRecord(); $head=$this->head();
+        return StatusMark::line($head['tone'],$this->status()['label'],'domain-'.$d->id,$head['step']);
     }
+    private function head(): array { return DomainFacts::head($this->getRecord(),$this->status(),$this->facts(),$this->edits()['request']); }
     private function edits(): array { return $this->edits??=DomainEditActions::for($this->getRecord()); }
     private function status(): array { return $this->domainStatus??=DomainFacts::status($this->getRecord()); }
     private function facts(): array
@@ -104,7 +104,7 @@ class ViewDomain extends ViewRecord
     private function syncNow(): Action
     {
         // Record reads use registrar calls; Sync now lets staff request them only when needed.
-        return Action::make('sync_now')->label('Sync now')->color('gray')->visible(fn()=>Staff::can('admin.domains.manage')&&$this->getRecord()->status==='active')
+        return Action::make('sync_now')->label('Sync now')->color('gray')->visible(fn()=>DomainFacts::syncNow($this->getRecord()))
             ->action(function():void {
                 if (!Staff::can('admin.domains.manage')) { abort(403); }
                 try {
@@ -220,7 +220,9 @@ class ViewDomain extends ViewRecord
     {
         $entries=DomainHistory::entries($d);
         $url=DomainResource::getUrl('view',['record'=>$d->id,'relation'=>'0']);
-        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace(DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS)))],
+        $step=$this->head()['step']; $said=$step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5);
+        $steps=DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request']),$said);
+        return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace($steps)],
             after:$entries===[]?[]:[Sheet::link('view_history','View all '.count($entries),$url)]);
     }
     /** A row's action column: its edits or its link. Renewal invoices and Last sync draw the page's own actions. */
