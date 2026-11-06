@@ -63,7 +63,7 @@ final class DomainHistory
             $ds=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::event($entry,$domain,true);
             return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' DNSSEC','sub'=>$ds['text'],'status'=>['label'=>$ds['state'],'tone'=>$ds['tone']],'by'=>self::requester($entry,$domain)];
         }
-        if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).' Turn Orders on in Registrars.'; }
+        if ($entry->state==='queued'&&$ordersOff&&$reason!==null) { $reason=StaffDomainStatus::sentence($reason).RequestFacts::ordersStep($reason); }
         return ['time'=>$entry->created_at,'event'=>'Request #'.$entry->id.' '.Labels::action($entry->action),
             'sub'=>$reason,
             'status'=>RequestFacts::status($entry,$ordersOff,$domain),'by'=>self::requester($entry,$domain)];

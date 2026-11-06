@@ -43,6 +43,10 @@ $case('D05 D06 feed absence and no seller',function()use($t,$actor,$now){
     DB::table('domains_sales_policies')->where('tld',$missing->tld)->delete();
     $state=TldFacts::priceState(TldFacts::snapshot($missing));
     expect(str_contains($state['cause'],'No registrar selected'),'Unsold without a registrar says why');same(null,$state['tone'],'Unsold gap is quiet');
+    // slop-sweep: the list says No registrar selected once per row, in Note, with its next step; price cells show only the price.
+    $list=Livewire::actingAs($actor)->test(ListTlds::class)->searchTable($missing->tld)->instance();$rec=$list->getTableRecords()->first();
+    same([null,null],[$list->getTable()->getColumn('renewal')->record($rec)->getDescriptionBelow(),$list->getTable()->getColumn('cost')->record($rec)->getDescriptionBelow()],'Price cells do not repeat No registrar selected');
+    expect(str_contains((string)$list->getTable()->getColumn('note')->record($rec)->getState(),'No registrar selected. Open the TLD and use Change registrar.'),'Note says it once with the next step');
 });
 $case('D02 automatic refresh times',function()use($t,$actor,$now){
     DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp(),'turn'=>0]);

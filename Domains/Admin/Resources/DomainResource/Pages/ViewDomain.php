@@ -61,7 +61,7 @@ class ViewDomain extends ViewRecord
     protected function afterActionCalled(Action $action): void
     {
         parent::afterActionCalled($action);
-        $this->edits=$this->facts=$this->domainStatus=null;
+        $this->edits=$this->facts=$this->domainStatus=$this->families=null;
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     public function hasCombinedRelationManagerTabsWithContent(): bool { return true; }
@@ -185,24 +185,28 @@ class ViewDomain extends ViewRecord
     /** One row per registrar record family. A family's saved values, its DNSSEC state and its edit buttons sit on the same row. */
     private function recordFamilies(Domain $d, array $facts, array $edits, string|Htmlable|null $note): Section
     {
-        $state=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
+        $state=$this->familyState();
         $resume=$this->getAction('resume_observation',false);
         $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part]));
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
         $rows=[$view('head')];$shown=[];
         foreach (($state['cancelled_without_records']??false)?[]:$state['rows'] as $family) {
             $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;
-            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[]);
+            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[],$state['at']??null);
         }
         foreach (array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); }
         $rows[]=$view('tail');
         return Sheet::section('Registrar records',$rows,$note,after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
     }
+    /** One registrar records read per render, shared by the records section and the Last sync row. */
+    private ?array $families=null;
+    private function familyState(): array
+    { return $this->families??=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($this->getRecord(),app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()); }
     /** The family's read state above the row's own value, which keeps its red Missing, Failed or Under review tone and demo tag.
      * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state alone. */
-    private function familyRow(array $family, ?array $fact, array|Html $side): Flex
+    private function familyRow(array $family, ?array $fact, array|Html $side, mixed $readAt = null): Flex
     {
-        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true])->render().'</div>');
+        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true,'readAt'=>$readAt])->render().'</div>');
         if ($fact===null) {
             return Sheet::row(TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status),$side,key:'fact_'.md5($family['label']));
         }
@@ -229,7 +233,8 @@ class ViewDomain extends ViewRecord
             return $html?Html::make(Sheet::buttons($html)):[];
         }
         if ($label==='Open alerts') { return $review?Html::make(Sheet::buttons([$review])):[]; }
-        if ($label==='Last sync') { $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
+        // One Resume sync per page: the Registrar records head draws it when the records show the stop.
+        if ($label==='Last sync') { $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
         if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::blocked('held_'.md5($label),self::blockedLabel($label,$fact),$label,$edits['held']); }
         if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }

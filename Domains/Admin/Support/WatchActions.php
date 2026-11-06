@@ -69,7 +69,7 @@ final class WatchActions
                 ->color('danger')->requiresConfirmation()->modalHeading('Stop monitoring?')->modalDescription("Checks and alerts stop. The domain won't be added again automatically.")->modalSubmitActionLabel('Stop monitoring')];
         return [...$main,ActionGroup::make($more)->label('More')->button()->color('gray')];
     }
-    /** "Check now" for the page notice and Missing hints; hidden unless the domain is monitored. */
+    /** "Check now" for Missing check-time hints; hidden unless the domain is monitored. */
     public static function check(WatchName $w,int $revision): Action
     {return self::action('watch',(int)$w->id,$revision,'read','Check now')->name('check')->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
     public static function enable(WatchProfile $row,int $revision): Action

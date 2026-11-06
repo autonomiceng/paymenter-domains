@@ -11,6 +11,9 @@ final class RequestFacts
 {
     public const NO_TIME='No time recorded. No action needed.';
     private const ORDERS_OFF='Orders are off for this account.';
+    /** The step after a queued request's reason while Orders are off. A reason that already says so needs only the step. */
+    public static function ordersStep(string $reason): string
+    { return str_contains($reason,self::ORDERS_OFF)?' Turn them on in Registrars.':' Turn Orders on in Registrars.'; }
     private const ORDERS_SWITCH='Go to Orders switch';
     private const DNS_SWITCH='Turn them on';
     /** Link words that promise a switch, and the switch they land on (RegistrarFacts::SWITCHES). */
