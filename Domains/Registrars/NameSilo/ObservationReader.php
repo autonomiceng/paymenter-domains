@@ -51,6 +51,11 @@ final class ObservationReader extends Management
                 $out['settings']['contacts']=['state'=>'partial','facts'=>['contacts'=>$contacts]];
             }
             if (count($contacts)!==4) { throw new \DomainException('Contacts incomplete.'); }
+            foreach ($contacts as $contact) {
+                foreach (array_diff(array_keys(ContactDetails::limits('namesilo')),['organization_name','address2']) as $field) {
+                    if (trim($contact[$field])==='') { throw new \DomainException('Contacts incomplete.'); }
+                }
+            }
             $out['settings']['contacts']['state']='complete';
         } catch (ReadDeferred|EnomTestCallLimit $e) { throw $e; }
         catch (\Throwable $e) { $out['failure_code']=ReadFailure::code($e);$out['failed_family']=$family; }

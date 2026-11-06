@@ -24,6 +24,17 @@ same('complete',$discovered['settings']['contacts']['state'],'Bounded contacts r
 same(1,count(array_filter($ms->calls,fn($r)=>$r[0]==='contactList')),'Shared contact IDs consume one read');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d,$discovered,$clock->now(),$ns15->observationCapabilities());
 $good=$d->fresh()->observation['records'];
+// Real encrypted inventory must retain readable fields without certifying a blank required contact.
+$ms->profiles['900001']['first_name']='   ';$clock->instant=$clock->now()->modify('+1 minute');
+$partialContact=$ns15->discover($request,$ctx());
+same('partial',$partialContact['settings']['contacts']['state'],'Blank required NameSilo contact stays partial');
+same('Person',$partialContact['settings']['contacts']['facts']['contacts']['registrant']['last_name'],'Readable contact fields survive incomplete evidence');
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),$partialContact,$clock->now(),$ns15->observationCapabilities());
+expect(\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::incomplete($d->fresh()),'Blank required contact cannot certify the encrypted refresh');
+same($good['last_complete_at'],$d->fresh()->observation['records']['last_complete_at'],'Partial contacts retain the last complete refresh time');
+$ms->profiles['900001']['first_name']='Synthetic';$clock->instant=$clock->now()->modify('+1 minute');
+\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),$ns15->discover($request,$ctx()),$clock->now(),$ns15->observationCapabilities());
+$good=$d->fresh()->observation['records'];
 same(false,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::incomplete($d->fresh()),'DS mutation Off / supported read is not a perpetual failure');
 $inventory=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::nameSilo($d->fresh());
 same($discovered['dns']['records'],$inventory['records'],'Encrypted CAA, TTL, provider IDs and opaque SRV survive projection');
