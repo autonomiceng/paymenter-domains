@@ -151,6 +151,7 @@
     "tests/closed-renewal-summary-test.php",
     "tests/renewal-execution-namesilo-test.php",
     "tests/renewal-completion-test.php",
+    "tests/renewal-completion-claims-test.php",
     "tests/renewal-read-recovery-test.php",
     "tests/refunds-test.php",
     "tests/refund-evidence-test.php",
