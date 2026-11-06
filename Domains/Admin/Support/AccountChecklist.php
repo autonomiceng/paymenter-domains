@@ -329,8 +329,8 @@ final class AccountChecklist
     public static function termReason(?string $reason): string
     {
         return match($reason) {
-            'no_exact_quote'=>'Longer renewals are held: the registrar does not provide an accepted exact-term quote yet.',
-            'family_unreviewed'=>'Registry renewal-family rules are not reviewed. Review the registry facts before enabling this family.',
+            'no_exact_quote'=>'Longer renewals need an accepted exact-term quote.',
+            'family_unreviewed'=>'Review registry rules and safe deadlines before enabling grace renewal.',
             'live_proof_required'=>'Live renewal proof is still required.',
             'not_reviewed','term_unreviewed'=>'Longer terms have not been reviewed for this ending.',
             'annual_unit'=>'An annual estimate cannot prove an exact-term total.',

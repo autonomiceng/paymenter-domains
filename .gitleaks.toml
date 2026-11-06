@@ -1,0 +1,9 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated source inventories contain SHA-256 digests, not API credentials"
+condition = "AND"
+paths = ['''^(scripts/conversion/source\.json|tests/fixtures/native-identity-files\.json)$''']
+regexTarget = "match"
+regexes = ['''":\s*"[0-9a-f]{64}"''']
