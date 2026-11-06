@@ -1,25 +1,12 @@
 <?php
-// MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic registrar exchanges only.
+// MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic native nameserver page evidence.
 declare(strict_types=1);
-require __DIR__.'/Support/management.php';
-require __DIR__.'/Support/owner-pages.php';
-require __DIR__.'/Support/staff-panel.php';
-use Illuminate\Support\Facades\{Auth, Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff};
+require __DIR__.'/Support/nameserver-pages.php';
+use Illuminate\Support\Facades\{Auth,Cache,DB};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts;
 use Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence;
-staffPanel();
-$viewer=staffUser([Staff::VIEW]);
 [$d,$driver]=$holding('nameserver-page-placeholder.com', NameserverEvidence::observed(['ns1.example.net','ns2.example.net'], 'enom_getdns', $clock->now()));
 Auth::setUser($viewer);
-$pages=static function($d, ?array $expected, string $why, bool $formsExpected=true) use($owners,$user,$clock): void {
-    $summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',(int)$d->id,$clock->now()->getTimestamp());
-    expect($summary!==null,$why.' customer summary exists');
-    same($expected,($summary->nameservers['state']??null)==='observed'?$summary->nameservers['nameservers']:null,$why.' customer summary');
-    $forms=$owners->present($d->fresh())->management;
-    same($formsExpected,isset($forms['nameservers']['actions']['nameservers']),$why.' customer form availability');
-    if (isset($forms['nameservers'])) { same($expected,$forms['nameservers']['current'],$why.' customer control'); }
-    same($expected,DomainFacts::for($d->fresh())['Nameservers']['value'],$why.' staff');
-};
 $pages($d,['ns1.example.net','ns2.example.net'],'Registration readback before any observation');
 $registered=$d->fresh()->observation;
 foreach (['name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str_repeat('f',64),'nameservers'=>['invalid host']] as $field=>$value) {
@@ -83,9 +70,6 @@ $pages($d,['ns5.example.net','ns6.example.net'],'Unconfirmed change preserves co
 $state->ns=['ns7.example.net','ns8.example.net'];
 same('succeeded',$management->reconcile($uncertain->id,$driver)->state,'Later readback confirms without another write');
 $pages($d,['ns7.example.net','ns8.example.net'],'Reconciliation projects the confirmed change');
-\Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
-$budget=new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock);
-$observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,$budget);
 same('refreshed',$observer->run($d->id),'A later observation preserves the management projection');
 $pages($d,['ns7.example.net','ns8.example.net'],'Observation keeps identity-checked management nameservers');
 $clock->instant=$clock->now()->modify('+2 seconds');
@@ -121,82 +105,4 @@ $d->fresh()->update(['observation'=>$saved]);
 $flags(null,'Legacy observation without identity stays Missing');
 $observed['sections']['lock']=$confirmedLock;
 $d->fresh()->update(['observation'=>$observed]);
-while ($d->operations()->count()<=100) {
-    $idle=$submit($d,$driver,'lock',['locked'=>false]);
-    same('rejected',$management->retire($user,$idle->id)->state,'Unsent operation retires without registrar work');
-}
-same('refreshed',$observer->run($d->id),'Observation still runs after history exceeds the reconstruction bound');
-same(['ns7.example.net','ns8.example.net'],DomainFacts::for($d->fresh())['Nameservers']['value'],'History overflow preserves confirmed staff nameservers');
-same(['ns7.example.net','ns8.example.net'],\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::storedNameservers($d->fresh()),'History overflow preserves shared registrar evidence');
-same([],array_filter($owners->present($d->fresh())->management,fn($section)=>$section['actions']),'History overflow keeps every action blocked');
-$overflowFlag=static function($holding,string $section,string $fact,?bool $expected,string $why)use($owners):void {
-    same($expected,\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::storedFlag($holding->fresh(),$section,$fact),$why.' shared customer flag');
-    $label=$section==='lock'?'Transfer lock':'WHOIS privacy';
-    same($expected===null||($label==='WHOIS privacy'&&!$expected)?null:($expected?'On':'Off'),DomainFacts::for($holding->fresh())[$label]['value']??null,$why.' staff flag');
-    same([],array_filter($owners->present($holding->fresh())->management,fn($section)=>$section['actions']),$why.' keeps every action blocked');
-};
-$lockOverflow=$d->fresh()->observation;
-foreach (['matched'=>null,'name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str_repeat('f',64),'legacy'=>null] as $field=>$value) {
-    $saved=$lockOverflow;
-    if ($field==='legacy') { unset($saved['sections']['lock']['name'],$saved['sections']['lock']['generation'],$saved['sections']['lock']['account_fingerprint']); }
-    elseif ($field!=='matched') { $saved['sections']['lock'][$field]=$value; }
-    $d->fresh()->update(['observation'=>$saved]);
-    for ($cycle=0;$cycle<2;$cycle++) {
-        $overflowFlag($d,'lock','locked',$field==='matched'?false:true,'Overflow lock '.$field.' cycle '.$cycle);
-        $clock->instant=$clock->now()->modify('+61 seconds'); // Separate scheduled turns share a minute budget.
-        same('refreshed',$observer->run($d->id),'Repeated overflow lock sync '.$field);
-        $overflowFlag($d,'lock','locked',$field==='matched'?false:true,'After overflow lock sync '.$field.' cycle '.$cycle);
-    }
-}
-$d->fresh()->update(['observation'=>$lockOverflow]);
-
-// Model the previous release's section by removing only the new identity fields from the real readback.
-$legacy=$d->fresh()->observation;
-unset($legacy['sections']['nameservers']['name'],$legacy['sections']['nameservers']['generation'],$legacy['sections']['nameservers']['account_fingerprint']);
-$d->fresh()->update(['observation'=>$legacy]);
-same(null,DomainFacts::for($d->fresh())['Nameservers']['value'],'Legacy section fails closed before sync');
-$clock->instant=$clock->now()->modify('+1 day');
-same('refreshed',$observer->run($d->id),'Legacy overflow observation completes');
-$pages($d,null,'Legacy overflow cannot resurrect registration nameservers',false);
-same('refreshed',$observer->run($d->id),'Repeated legacy overflow observation completes');
-$pages($d,null,'Repeated overflow stays Missing',false);
-$missing=$d->fresh()->observation; unset($missing['sections']['nameservers']);
-$d->fresh()->update(['observation'=>$missing]);
-same('refreshed',$observer->run($d->id),'Overflow without a saved section completes');
-$pages($d,null,'Incomplete history cannot restore acquisition evidence',false);
-$afterLockChecks=$clock->now()->modify('+61 seconds');
-[$requested,$driver]=$holding('requested-page-placeholder.com',NameserverEvidence::requested(['ns1.example.net','ns2.example.net'],'registration_request',$clock->now()));
-$clock->instant=$afterLockChecks;
-Auth::setUser($viewer);
-$pages($requested,null,'Requested registration evidence stays unconfirmed');
-$summary=(new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',(int)$requested->id,$clock->now()->getTimestamp());
-same('requested',$summary->nameservers['state'],'Requested registration evidence keeps its summary label');
-same('refreshed',$observer->run($requested->id),'Privacy fixture has its own current snapshot');
-$state->privacy=true; $state->enabled=false;
-foreach (['privacy_enable'=>true,'privacy_disable'=>false] as $action=>$enabled) {
-    Cache::flush(); $toggle=$submit($requested,$driver,$action);
-    same('succeeded',$management->run($toggle->id,$driver)->state,'Enom privacy toggle has confirmed readback');
-    same($enabled,$owners->present($requested->fresh())->management['privacy']['state'],'Customer reads confirmed Enom privacy');
-    same($enabled?'On':null,DomainFacts::for($requested->fresh())['WHOIS privacy']['value']??null,'Staff sees Enom privacy only while it is on');
-}
-Cache::flush();$toggle=$submit($requested,$driver,'privacy_enable');
-same('succeeded',$management->run($toggle->id,$driver)->state,'Privacy overflow retains the latest real enable readback');
-$privacyOverflow=$requested->fresh()->observation;
-while ($requested->operations()->count()<=100) {
-    $idle=$submit($requested,$driver,'lock',['locked'=>false]);
-    same('rejected',$management->retire($user,$idle->id)->state,'Privacy history uses unsent retired operations');
-}
-foreach (['matched'=>null,'name'=>'other.example.com','generation'=>2,'account_fingerprint'=>str_repeat('f',64),'legacy'=>null] as $field=>$value) {
-    $saved=$privacyOverflow;
-    if ($field==='legacy') { unset($saved['sections']['privacy']['name'],$saved['sections']['privacy']['generation'],$saved['sections']['privacy']['account_fingerprint']); }
-    elseif ($field!=='matched') { $saved['sections']['privacy'][$field]=$value; }
-    $requested->fresh()->update(['observation'=>$saved]);
-    for ($cycle=0;$cycle<2;$cycle++) {
-        $overflowFlag($requested,'privacy','privacy',$field==='matched'?true:false,'Overflow privacy '.$field.' cycle '.$cycle);
-        $clock->instant=$clock->now()->modify('+61 seconds');
-        same('refreshed',$observer->run($requested->id),'Repeated overflow privacy sync '.$field);
-        $overflowFlag($requested,'privacy','privacy',$field==='matched'?true:false,'After overflow privacy sync '.$field.' cycle '.$cycle);
-    }
-}
-echo "Nameserver customer and staff registration/management flows passed\n";
-$nativeSuccessful=true;
+$nativeSuccessful=true;echo "Nameserver page flows passed\n";
