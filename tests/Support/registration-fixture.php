@@ -22,7 +22,9 @@ foreach (['enom', 'namesilo'] as $key) {
         $quote = new QuoteEvidence($registration->query, new Money((6 * $registration->query->years).'.00', 'USD'), CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+120 seconds'));
         return new FakeRegistrar($b, new Capabilities($b, []), new DriverResult($b, Disposition::Accepted, SendState::Sent,
             ResultReason::Acknowledged, new Evidence(quote: $quote, balance: new Money('100.00', 'USD'), available: true, premium: false)));
-    });
+    },authenticator:$key==='namesilo'?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+        public function authenticate(Environment $environment,array $credentials):void { /* Synthetic local enrollment composition. */ }
+    }:null);
 }
 $freshBindings = new AccountBindings($registry);
 $makeEngine = static function ($binding, $exchange, ?WriteFeatures $features = null) use (&$engine, &$bridge, &$protocol, &$fresh, &$acceptance, &$profiles, $claims, $freshBindings, $clock, $registration) {
@@ -42,7 +44,7 @@ $runRegistration = static function (Operation $op) use (&$engine, $registration)
     $registration->query = OperationClaims::query($op, $op->domain); return $engine->execute($op->id);
 };
 $assertRetained = static function ($result, array $corrections): void {
-    same('pending', $result->state, 'Accepted purchase awaits unique charge');
+    same('pending', $result->state, 'Accepted purchase awaits unique charge: '.$result->state.' / '.$result->safe_code);
     same(true, $result->attempt['registration']['accepted'], 'Durable acceptance');
     same('awaiting_unique_charge', $result->attempt['registration']['financial_completion'], 'Slice22 correlation outstanding');
     same($corrections, array_keys($result->attempt['corrections']), 'Durable separately authorized correction work');
