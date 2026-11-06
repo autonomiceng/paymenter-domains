@@ -1,7 +1,8 @@
 <?php
 // Enom d1392a8 grace and covered renewal observation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/renewal-execution.php';
+$renewalFixtureNames=['renew-late-ack','renew-concurrent','renew-prewire','renew-postsend-cancel','renew-support-answer','renew-below-cost'];
+require __DIR__.'/Support/renewal-batch-fixture.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
 use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
@@ -55,4 +56,5 @@ same('1.00',$op->amount,'Below-cost renewal billed at exact retail with no floor
 $state->expiry='2028-10-18'; $state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Below-cost outcome completes');
 same('below_cost',$op->fresh()->policy['renewal_execution']['reason'],'Below-cost outcome alerts staff');
+same([],array_keys($registrations),'Every independent renewal scenario ran');
 echo "Renewal claim safety, staff answer and below-cost completion passed\n"; $nativeSuccessful=true;
