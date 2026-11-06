@@ -9,7 +9,7 @@
     @if ($family['read_checking'] ?? false)
         @include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'muted']])
     @else
-        @include('domains::partials.missing', ['cause'=>null])
+        @include('domains::partials.missing', ['cause'=>null, 'calm'=>!$staff && \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice ?? null)])
     @endif
 @else
     @include('domains::partials.status-pill', ['pill'=>['label'=>$family['value'],'tone'=>match($family['state']){'complete'=>'ok','partial'=>$staff?'warn':'info',default=>'muted'}]])
