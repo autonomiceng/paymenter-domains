@@ -26,7 +26,8 @@ same(null,$row->transfer,'The real query has no transfer intent override');
 $fields=$edit->invoke($page,$row);$transfer=collect($fields)->first(fn($f)=>method_exists($f,'getName')&&$f->getName()==='transfer');
 same('Leave as is (Off)',$transfer->getOptions()['keep'],'Default pricing does not replace saved transfer Off');
 $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($binding,'com');
-same('Early renewal',$rows[1][0],'Staff renewal family is shown');expect(str_contains($rows[1][2],'exact-term'),'Staff sees why longer renewals are held');
+same(['Early renewal','1 year','Review registry rules and safe deadlines before enabling grace renewal.'],$rows[1],
+    'Unreviewed family retains annual renewal and its review explanation');
 $accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
 // The account sheet summarizes the selected TLDs; individual family terms live on each TLD.
 $accountText=storefrontDom($accountHtml)->evaluate('string(//body)');
@@ -41,8 +42,9 @@ for($i=0;$i<11;$i++){
     $unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();
 }
 $accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
-$r10Check($accountRows[4]['label']==='.com','Sold TLD readiness precedes the alphabetic unsold catalogue');
-$r10Check(count(array_filter($accountRows,fn($r)=>$r['label']==='.com'))===1,'One compact row per TLD');
+$selected=array_values(array_filter($accountRows,fn($r)=>$r['label']==='Selected TLD terms'));
+$r10Check(count($selected)===1&&$selected[0]['value']==='1 of 1 read','Unsold alphabetic catalogue does not change the complete selected TLD summary');
+$r10Check(count(array_filter($accountRows,fn($r)=>str_starts_with($r['label'],'.aaa')))===0,'Unsold TLDs do not add account readiness rows');
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
 $editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
 same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
