@@ -1,8 +1,11 @@
 <?php
 // Native late-renewal frozen deadlines and partial receipts; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/renewal-initialized.php';
+$fixtureInitialization=initializedRenewalFixture(...);
 require_once __DIR__.'/Support/scenario-inventory.php';
 $scenarios=new NativeScenarioInventory(['switch:off','switch:resumed','deadline:on','deadline:off','deadline:unknown','replay:on','replay:off','partial:paid','partial:replay','partial:processing']);
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/late-renewal.php';
 use App\Models\{BillingAgreement,Gateway,Invoice};
 use Illuminate\Support\Facades\{Cache,Mail};

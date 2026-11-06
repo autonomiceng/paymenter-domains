@@ -1,11 +1,14 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/renewal-initialized.php';
+$fixtureInitialization=initializedRenewalFixture(...);
 require_once __DIR__.'/Support/scenario-inventory.php';
 $scenarios=new NativeScenarioInventory(['actions','unregistered','invalid-reason','stop','stale','permission','history-full','ownership:missing-anchor','ownership:unconfirmed-anchor','ownership:immediate-cancellation','view-only','audit','gateway-create','gateway-immutable']);
 ini_set('memory_limit','256M');
 require_once __DIR__.'/Support/reserved-fixtures.php';
 // Modal ownership and payment cases use Enom holdings only.
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/renewal-execution.php';
 require __DIR__.'/Support/staff-panel.php';
 require_once __DIR__.'/Support/converted-holding.php';

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/scenario-inventory.php';
 $scenarios=new NativeScenarioInventory(['paid-off','completion','later-cycle','staff-facts','staff-audit','unreadable-audit']);
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/owner-auto-renew.php';
 use App\Helpers\ExtensionHelper;
 use App\Models\{Invoice,ServiceCancellation};

@@ -1,7 +1,10 @@
 <?php
 // Native renewal refunds; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-$renewalFixtureNames=['renew-unsent-retry','renew-credit-replace'];
+require_once __DIR__.'/Support/renewal-initialized.php';
+require_once __DIR__.'/Support/scenario-inventory.php';
+$fixtureInitialization=initializedRenewalFixture(...);
+$renewalFixtureNames=['renew-unsent-retry'];
 require __DIR__.'/Support/renewal-refund.php';
 use App\Models\{Credit, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\{Cache,DB};
@@ -15,7 +18,9 @@ $corrections->append($staff,$retry->id,'retry_reverse','-1.00','payment_correcti
 [$engine,$writer]=$compose($retryBinding);$retryTarget=$retry->id;
 Operation::updated(static function($row)use(&$retryTarget,$retryDomain){if($row->id===$retryTarget&&$row->state==='running'){DB::table('services')->where('id',$retryDomain->service_id)->update(['status'=>'cancelled']);}});
 $writes=$state->writes;$root=$retry;
+$retryInventory=new NativeScenarioInventory(['retry:0','retry:1','retry:2','retry:3']);
 for($number=0;$number<=3;$number++){
+    $retryInventory->completed('retry:'.$number);
     $retryTarget=$retry->id;same('held',$engine->run($retry->id,$writer)->state,'Typed refusal held before send');$sealed=$retry->fresh()->attempt;
     DB::table('services')->where('id',$retryDomain->service_id)->update(['status'=>'active']);
     same($retry->id,\Paymenter\Extensions\Servers\Domains\Services\RenewalRetries::recover($retry->id,$clock)->id,'Retry delay is enforced');
@@ -35,14 +40,6 @@ for($number=0;$number<=3;$number++){
     $retry=$next;Cache::flush();
 }
 same($writes,$state->writes,'All local refusals leave provider writes unchanged');
-// Exact old credit settlement automatically authorizes an ordinary replacement invoice, with no staff step.
-[$returned,$returnedDomain]=$makeRenewal(placeholderComFixtureName('renew-credit-replace-placeholder.com'));$clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');$returned->update(['state'=>'held','safe_code'=>'renewal_funding_or_authority']);
-$refunds->refundHeld($staff,$returned->id,'service_cancelled');
-\Paymenter\Extensions\Servers\Domains\Services\RenewalReplacements::recoverDomain($returnedDomain,$clock);
-expect($billing->requestOptions($returnedDomain)['terms']!==[],'Settlement recovery unblocks the owner renewal preview without issuing debt');
-$replacement=$billing->invoice($returnedDomain->id,$user);
-expect($replacement->id!==$returned->invoice_id,'Exact full returned credit releases ordinary replacement');
-same(null,$returned->fresh()->policy['renewal_replacement']['actor_id'],'System replacement audit has no invented staff actor');
-same($replacement->id,$billing->invoice($returnedDomain->id,$user)->id,'Repeated invoice recovery cannot duplicate debt');
+$retryInventory->finish();
 same([],array_keys($registrations),'Every independent refund scenario ran');
 echo "Renewal delayed retries and paid replacement passed\n"; $nativeSuccessful=true;

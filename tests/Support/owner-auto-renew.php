@@ -1,8 +1,11 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native fixtures and synthetic registrar only.
 declare(strict_types=1);
+require_once __DIR__.'/renewal-initialized.php';
+$fixtureInitialization??=initializedRenewalFixture(...);
 require_once __DIR__.'/reserved-fixtures.php';
-require __DIR__.'/renewal-execution.php';
+if(isset($ownerFixtureNames)){$renewalFixtureNames=$ownerFixtureNames;require __DIR__.'/renewal-batch-fixture.php';}
+else{require __DIR__.'/renewal-execution.php';}
 require __DIR__.'/owner-pages.php';
 require __DIR__.'/staff-panel.php';
 use App\Helpers\ExtensionHelper;
