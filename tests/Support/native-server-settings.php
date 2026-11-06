@@ -166,7 +166,7 @@ serverSettingsReject(fn()=>$a->fresh()->delete());
 $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('System checks')->assertSee('Balance');
 // A link that promises a switch lands on it: the row has its anchor, and only the one asked for is marked.
 expect(str_contains($owned->html(),'id="switch-orders"')&&!str_contains($owned->html(),'domains-row-target'),'The Orders row has its anchor and no mark unasked');
-$marked=static function(string $switch)use($server):int {
+$marked=static function(string $switch)use($server,$staff):int {
     $count=substr_count(Livewire::actingAs($staff)->withQueryParams(['switch'=>$switch])->test(RegistrarAccount::class,['account'=>$server->id])->html(),'domains-row-target');
     gc_collect_cycles();gc_mem_caches();return $count;
 };
