@@ -37,6 +37,15 @@ $work=OfferState::decode((clone $queue)->value('offer_work'));
 $work['facts']['com']=['sold_only'=>true,'due_at'=>$old->freshUntil->getTimestamp(),'succeeded_at'=>$old->observedAt->getTimestamp(),'tries'=>0];
 $queue->update(['offer_work'=>OfferState::json($work)]);
 same('17.9000',OfferState::cost(OfferState::decode(DB::table('domains_prices')->where('server_id',$server->id)->where('action','renew')->where('term',2)->value('catalogue_observation')))->total,'Fresh reviewed two-year cost already exists');
+// Completion of retained provider work is independent of upgraded term authority.
+$before=count($GLOBALS['catalogueCalls']);
+same(true,$worker->settled($b,$clock->now()->modify('-1 second'),['com']),'Completed old facts settle without current expansion');
+same($before,count($GLOBALS['catalogueCalls']),'Settlement is read-only and never calls the provider');
+same(false,$worker->settled($b,$clock->now(),['com']),'Same-second completion cannot prove a prior attempt');
+$broken=$work;$broken['facts']['com']['failure']='provider_transport_failed';
+$queue->update(['offer_work'=>OfferState::json($broken)]);
+same(false,$worker->settled($b,$clock->now()->modify('-1 second'),['com']),'Failed facts cannot settle an interrupted refresh');
+$queue->update(['offer_work'=>OfferState::json($work)]);
 $scheduler->requestFacts($b,'com');
 same($clock->now()->getTimestamp(),$scheduler->status($b,'com')['due_at'],'New reviewed authority wakes retained fresh facts now');
 $before=count($GLOBALS['catalogueCalls']);$worker->accountTurn($server->id);
