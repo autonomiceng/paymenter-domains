@@ -164,6 +164,9 @@ final class RequestFacts
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string
     {
+        if (ManagementEvidence::recoverable($op)) {
+            return self::account($op)['account']?->processing_enabled?'Not sent. It will retry automatically.':'Not sent. '.self::ORDERS_OFF;
+        }
         if (BalanceRetries::pending($op)) {
             $reason=OperationClaims::balanceAdmissionReason($op);$account=self::account($op)['account'];
             if(self::heldByOrders($reason,$account)){return 'Not sent. '.self::ORDERS_OFF;}
