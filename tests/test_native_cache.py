@@ -76,19 +76,26 @@ class NativeCacheTests(unittest.TestCase):
             self.assertEqual(len(phases), 2)
             self.assertNotEqual(phases[0], phases[1])
 
-    def test_retained_shared_setup_releases_pages_in_the_final_complete_check(self):
+    def test_retained_shared_setup_keeps_only_php_until_the_final_complete_check(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / 'source'; source.mkdir()
             git, lock = fixtures.NativeGuardTests().fixture(source)
-            count = len(native.hashes(source / 'vendor'))
+            names = set(native.hashes(source / 'vendor'))
+            assets = {name for name in names if not name.endswith('.php')}
+            released = []
+            def release(fd, offset, length, advice):
+                path = Path(os.readlink(f'/proc/self/fd/{fd}'))
+                released.append(path.relative_to(source / 'vendor').as_posix())
             with mock.patch.object(native, 'git', side_effect=git), \
                     mock.patch.object(native, 'LOCK_SHA256', lock), \
-                    mock.patch.object(native.os, 'posix_fadvise') as release:
+                    mock.patch.object(native.os, 'posix_fadvise', side_effect=release):
                 snapshot = native.prepare(source, Path(temp) / 'copy', share_vendor=True,
                                           retain_vendor_cache=True)
-                release.assert_not_called()
+                self.assertEqual(set(released), assets)
+                self.assertEqual(len(released), len(assets))
                 self.assertEqual(native.verify(source)[1], snapshot)
-                self.assertEqual(release.call_count, count)
+                self.assertEqual(set(released[len(assets):]), names)
+                self.assertEqual(len(released), len(assets) + len(names))
 
     def test_retention_requires_shared_read_only_vendor(self):
         with tempfile.TemporaryDirectory() as temp, \

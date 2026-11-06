@@ -16,7 +16,7 @@ COMMIT = 'ee729f7d99ac18942625b79f3f93d8d8b21255e8'
 LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'
 
 
-def hashes(root, *, release_cache=False):
+def hashes(root, *, release_cache=False, retain_php_cache=False):
     def files():
         pending = [(root, '')] if root.is_dir() else []
         while pending:
@@ -35,7 +35,7 @@ def hashes(root, *, release_cache=False):
         name, path = file
         with open(path, "rb") as handle:
             value = hashlib.file_digest(handle, "sha256").hexdigest()
-            if release_cache:
+            if release_cache and not (retain_php_cache and name.endswith('.php')):
                 # Release only after hashing every byte, including on cold files.
                 try:
                     os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
@@ -57,7 +57,7 @@ def git(source, *args):
     return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.PIPE)
 
 
-def verify(source, *, fixture_snapshot=None, release_vendor_cache=True):
+def verify(source, *, fixture_snapshot=None, release_vendor_cache=True, retain_php_cache=False):
     source = Path(source)
     if not source.is_absolute() or source.is_symlink() or source.resolve() != source or str(source).startswith('/var/www/'):
         raise ValueError('Use a canonical pristine development dependency.')
@@ -77,7 +77,7 @@ def verify(source, *, fixture_snapshot=None, release_vendor_cache=True):
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        vendor = {'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=release_vendor_cache).items()}
+        vendor = {'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=release_vendor_cache, retain_php_cache=retain_php_cache).items()}
         if vendor != {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}:
             raise ValueError('Fixture vendor inventory changed.')
         return {}, fixture_snapshot
@@ -122,7 +122,7 @@ def verify(source, *, fixture_snapshot=None, release_vendor_cache=True):
     ):
         raise ValueError('Installed dependencies do not match the pinned lock.')
     snapshot = {name: hashlib.sha256((source/name).read_bytes()).hexdigest() for name in members}
-    snapshot.update({'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=release_vendor_cache).items()})
+    snapshot.update({'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=release_vendor_cache, retain_php_cache=retain_php_cache).items()})
     return members, snapshot
 
 
@@ -130,8 +130,9 @@ def prepare(source, destination, *, share_vendor=False, retain_vendor_cache=Fals
     if retain_vendor_cache and not share_vendor:
         raise ValueError('Retaining cache requires shared vendor.')
     # The two full setup checks bracket fixture creation. Shared vendor has no copy;
-    # keep pages between those checks. Bounded read-only callers may also keep
-    # them through PHP, until the runner's final full verification releases them.
+    # keep pages between those checks. Bounded read-only callers retain only
+    # PHP pages through execution; release verified assets before PHP starts.
+    # The runner's final full verification releases the remaining PHP pages.
     # Hash every byte both times, including intervening changes.
     members, before = verify(source, release_vendor_cache=not share_vendor)
     destination.mkdir(mode=0o700)
@@ -161,6 +162,6 @@ def prepare(source, destination, *, share_vendor=False, retain_vendor_cache=Fals
     (destination / ".domains-fixture.json").write_text(
         json.dumps({"commit": COMMIT, "composer_lock_sha256": LOCK_SHA256})
     )
-    if verify(source, release_vendor_cache=not retain_vendor_cache)[1] != before:
+    if verify(source, retain_php_cache=retain_vendor_cache)[1] != before:
         raise RuntimeError('Dependency changed while copying the fixture.')
     return before
