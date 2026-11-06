@@ -63,7 +63,7 @@ final class DsState
         }
         if($op->state==='rejected'&&$resolved){return ['state'=>'Failed','tone'=>'danger','text'=>$staff?'Check request #'.$op->id.'.':'The registrar did not accept this change. Contact support.'];}
         $sent=($op->attempt['seal']??null)==='sealed';
-        if(!$sent){return ['state'=>'Unknown','tone'=>'info','text'=>$staff?'The registrar did not return a complete DS list. Nothing was sent. Check request #'.$op->id.'.':'We could not load your DS records. Nothing was sent. We will try again shortly.'];}
+        if(!$sent){return ['state'=>'Waiting','tone'=>'info','text'=>$staff?'Waiting for the registrar DS check. Nothing was sent. Check request #'.$op->id.'.':'Waiting for the DS check. Nothing was sent.'];}
         $slow=$op->created_at&&$op->created_at->getTimestamp()<=now()->getTimestamp()-30;
         return ['state'=>'Checking the result…','tone'=>'info','text'=>$staff?($slow?'This is taking longer than usual. We will keep checking. ':'The record has been sent. ').'Waiting for an independent registrar read. Check request #'.$op->id.'.':($slow?'This is taking longer than usual. We’re still checking. Nothing to do yet.':'Sent. We’re checking the result with the registrar.')];
     }
