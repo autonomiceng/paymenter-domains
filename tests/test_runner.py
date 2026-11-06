@@ -679,7 +679,11 @@ class RunnerTests(unittest.TestCase):
     def test_focused_regressions_share_vendor_only_for_serial_reads(self):
         focused = ['tests/namesilo-enrollment-test.php',
                    'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php',
-                   'tests/watch-scheduler-test.php']
+                   'tests/watch-scheduler-test.php',
+                   'tests/runtime-records-test.php', 'tests/owner-management-test.php',
+                   'tests/owner-management-namesilo-test.php', 'tests/staff-monitoring-test.php',
+                   'tests/namesilo-dns-form-test.php', 'tests/managed-public-observer-test.php',
+                   'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php']
         cases = [(1, [path], True) for path in focused]
         cases += [(1, focused, True), (2, focused, False),
                   (1, [focused[0], 'tests/offer-routing-test.php'], False)]
