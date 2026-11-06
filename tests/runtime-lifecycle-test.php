@@ -1,7 +1,8 @@
 <?php
 // Fresh native application bootstrap acceptance. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/runtime-presenter-test.php';$nativeSuccessful=false;
+// Preserve the installed two-provider checkout state without retaining another test's Filament component graphs.
+require __DIR__.'/Support/runtime-native-holdings.php';$nativeSuccessful=false;
 // Export only this disposable fixture's synthetic database, then boot through native provider discovery.
 $file=$fixture.'/database/runtime.sqlite';\Illuminate\Support\Facades\DB::statement("VACUUM INTO '".str_replace("'","''",$file)."'");
 putenv('DB_DATABASE='.$file);$_ENV['DB_DATABASE']=$_SERVER['DB_DATABASE']=$file;
