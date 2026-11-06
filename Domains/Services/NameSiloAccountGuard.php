@@ -19,7 +19,7 @@ final class NameSiloAccountGuard
             if($binding->registrarKey!=='namesilo'){throw new \DomainException;}
             $server=Server::whereKey($binding->serverId)->where('extension','Domains')->where('enabled',true)->firstOrFail();
             $account = Account::where('server_id', $binding->serverId)->sole();
-            if (LocalAccountEnrollment::enrolled($account)) {
+            if (LocalAccountEnrollment::enrolled($account) || $server->settings()->where('key',LocalAccountEnrollment::KEY)->exists()) {
                 $binding->requireMatch(AccountBindings::binding($account));
                 if (!app(AccountBindings::class)->configurationAvailable($binding->serverId)) { throw new \DomainException; }
                 return; // Local enrollment grants no identity claim; owner-profile proofs remain in the operation.

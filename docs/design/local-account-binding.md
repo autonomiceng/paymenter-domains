@@ -20,8 +20,10 @@ account; operators must rotate an existing account rather than enroll it again.
 Authentication runs outside locks. The actor-bound single-use review rechecks its original
 settings snapshot before saving; concurrent changes refuse the save. Local enrollment requires
 this review even for direct callers. Live readers still require explicit HTTPS site confirmation;
-a copied site cannot rotate the original account. Existing OTE enrollments are retained and cannot
-be converted or rotated through this path.
+a copied site cannot rotate the original account. An existing balance-only OTE enrollment can
+authenticate the same key through this path in TEST. It retains its original identity, encrypted
+enrollment facts, holdings, held requests and history; processing stays off. Its sealed key cannot
+change, and another TEST account still cannot enroll that key. Live behavior is unchanged.
 
 `AccountBindings::credentialRevision(binding)` captures the current opaque local credential
 revision. Credential-bound work must recheck it with `requireCredentialRevision` before saving or

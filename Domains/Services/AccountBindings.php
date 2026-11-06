@@ -77,10 +77,14 @@ final class AccountBindings
             $credentials = $this->registry->credentials($registrar, $credentials);
             $account = Account::where('server_id', $serverId)->first();
             if ($account) {
-                if (!LocalAccountEnrollment::enrolled($account) || $account->registrar_key !== $registrar || $account->environment !== $environment->value) {
+                $sandbox = $registrar === 'namesilo' && $environment === Environment::Test && NameSiloSandbox::enrolled($account);
+                if ((!LocalAccountEnrollment::enrolled($account) && !$sandbox) || $account->registrar_key !== $registrar || $account->environment !== $environment->value) {
                     throw new \DomainException('Local account binding is immutable.');
                 }
-                $this->configuration($account, true);
+                $retained = $this->configuration($account, true, sandboxUpgrade: $sandbox);
+                // The old facts seal this exact key to this TEST lineage. Upgrade the connection,
+                // not its identity: all holdings, held operations and budgets keep their binding.
+                if ($sandbox && $credentials !== $retained) { throw new \DomainException('Sandbox enrollment is immutable.'); }
                 $identity = $account->stable_identity;
             } else {
                 $this->freshEnrollment($serverId);
@@ -472,7 +476,7 @@ final class AccountBindings
         return $binding;
     }
 
-    private function configuration(Account $account, bool $requireSite = false, ?Server $lockedServer = null, bool $advisory = false): array
+    private function configuration(Account $account, bool $requireSite = false, ?Server $lockedServer = null, bool $advisory = false, bool $sandboxUpgrade = false): array
     {
         try {
             $binding = $this->binding($account);
@@ -494,7 +498,8 @@ final class AccountBindings
             }
             if(NameSiloSandbox::enrolled($account)){
                 $facts=json_decode($this->secret((int)$account->server_id,NameSiloSandbox::KEY,$lockedServer,$advisory),true,8,JSON_THROW_ON_ERROR);
-                NameSiloSandbox::validate($account,$facts,$credentials);
+                if ($localMarker || $sandboxUpgrade) { NameSiloSandbox::validateRetained($account,$facts,$credentials); }
+                else { NameSiloSandbox::validate($account,$facts,$credentials); }
             }elseif($account->registrar_key==='namesilo'&&($lockedServer??$this->server((int)$account->server_id))->settings()->where('key',NameSiloSandbox::KEY)->exists()){
                 throw new \DomainException('Sandbox enrollment cannot be rebound.');
             }
