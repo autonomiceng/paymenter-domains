@@ -285,7 +285,7 @@ final class Writer implements Catalogue
                 && (int) $policy->server_id === $binding->serverId && $policy->account_fingerprint === $binding->fingerprint
                 && $policy->registrar_key === $binding->registrarKey && (!$command->sellerTransfers || self::transfersSupported($target, $now))) {
                 // An explicit transfer switch updates only the same chosen registrar; registrations stay as they were.
-                DB::table('domains_sales_policies')->where('id', $policy->id)->update(['transfer_enabled' => $command->sellerTransfers, 'revision' => $revision->selection + 1]);
+                DB::table('domains_sales_policies')->where('id', $policy->id)->update(['transfer_enabled' => $command->sellerTransfers, 'revision' => $revision->selection + 1, 'updated_at' => $now]);
                 $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
             }
             if ($seller) {
@@ -293,9 +293,9 @@ final class Writer implements Catalogue
                     'registrar_key' => $command->actions ? $binding->registrarKey : null,
                     'account_fingerprint' => $command->actions ? $binding->fingerprint : null,
                     'register_enabled' => in_array('register', $command->actions, true),
-                    'transfer_enabled' => in_array('transfer', $command->actions, true), 'revision' => $revision->selection + 1];
+                    'transfer_enabled' => in_array('transfer', $command->actions, true), 'revision' => $revision->selection + 1, 'updated_at' => $now];
                 if ($policy) { DB::table('domains_sales_policies')->where('id', $policy->id)->update($values); }
-                else { DB::table('domains_sales_policies')->insert(['tld' => $name, ...$values]); }
+                else { DB::table('domains_sales_policies')->insert(['tld' => $name, 'created_at' => $now, ...$values]); }
                 $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
             }
             foreach ($seller ? $offers : [$target] as $offer) {
