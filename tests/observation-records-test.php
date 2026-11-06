@@ -2,6 +2,7 @@
 // Enom 444f31c snapshot/glue cases; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/owner-records.php';
+require_once __DIR__.'/Support/observation-work.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,ManagementRequest,RequestBudget,RequestContext,RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -84,16 +85,23 @@ same('refreshed',$observer->run($d->id,readRecords:true),'Record failure preserv
 same('read_failed',$d->fresh()->observation['record_hold']['code']??null,'Partial Enom discovery retains its safe failure cause');
 require_once __DIR__.'/Support/staff-panel.php';
 \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
-same("Sync stopped: couldn't read DNS records.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Staff record notice names the stopped read');
+// A queued automatic recovery is not a stop; separately render the existing permanent-stop state.
+same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Scheduled recovery has no stopped-read notice');
+$partialJob=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
+DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>'records_incomplete']);
+same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Staff record notice names the stopped read');
 $unsafe=clone $d->fresh();$unsafeFacts=$unsafe->observation;$unsafeFacts['record_hold']['code']='PRIVATE-PROVIDER-PAYLOAD';$unsafe->observation=$unsafeFacts;
-same("Sync stopped: couldn't read DNS records.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($unsafe),'Arbitrary stored payload cannot become a displayed cause');
+same("Sync stopped: couldn't read SRV records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($unsafe),'Arbitrary stored payload cannot become a displayed cause');
 \Illuminate\Support\Facades\Auth::login($user);
 $r=$d->fresh()->observation['records'];same('complete',$r['families']['dns']['state'],'Independent completed family remains proven');
 same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unknown',$r['families']['ds']['state'],'Unattempted family unknown');
 expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'No further wire after failure');
-$html=$page();same(['Missing','Our team needs to check this domain. No action needed.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="srv"]/span[@class="domains-row__v"]//span[contains(concat(@class," "),"domains-missing ") or @class="domains-sub"]'))),'Unknown SRV held shows Missing with its cause');
+$html=$page();$srvDom=storefrontDom($html);
+same('Missing',trim($srvDom->query('//li[@id="srv"]//*[@data-record-family="srv"]')->item(0)?->textContent??''),'Unknown stopped SRV shows Missing');
+same('The registrar did not return a complete supported record family. These records will appear after a successful registrar read.',preg_replace('/\s+/',' ',trim($srvDom->query('//li[@id="srv"]/span[@class="domains-row__v"]/span[@class="domains-sub"]')->item(0)?->textContent??'')),'Unknown stopped SRV names the safe cause and existing recovery guidance');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/srv")]')->length,'Failed refresh cannot retain old edit form');
 expect(isset(OwnerRecords::forDomain($d->fresh())['dns']),'Healthy primary retains independently complete DNS under partial-record hold');
+DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>$partialJob->safe_code]);
 // A later primary failure also invalidates the healthy family under an existing partial-record hold.
 $prior=$d->fresh()->observation;$observation->fault='info_missing';$clock->instant=$clock->now()->modify('+61 seconds');
 same('read_no_evidence',$observer->run($d->id,readRecords:true),'Failed primary under existing partial-record hold');
@@ -157,7 +165,11 @@ foreach(['GetHosts','GetDomainInfo','CheckNSStatus']as$fault){
   same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Glue parser failure still saves fresh core facts');
   foreach(['dns','srv','ds'] as $kind) { same('complete',$d->fresh()->observation['records']['families'][$kind]['state'],'Glue parser failure preserves completed '.$kind); }
   \Illuminate\Support\Facades\Auth::login(staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]));
+  same(null,\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Queued glue recovery is not a stopped whole-domain read');
+  $glueJob=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)->sole();
+  DB::table('domains_observation_work')->where('id',$glueJob->id)->update(['safe_code'=>'records_incomplete']);
   same("Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::recordHold($d->fresh()),'Glue failure is not presented as a stopped whole-domain sync');
+  DB::table('domains_observation_work')->where('id',$glueJob->id)->update(['safe_code'=>$glueJob->safe_code]);
   \Illuminate\Support\Facades\Auth::login($user);
  }
 }
@@ -172,9 +184,10 @@ same(14,count($partial['glue']['records']),'Unchecked hosts retained explicitly 
 $state->calls=[];$ctx=new RequestContext($b,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget(25),$clock);$driver->discover(new ManagementRequest($b,'rotated-glue','discovery-placeholder.com','discovery',[],'456'),$ctx,$partial['glue']['records']);
 expect(in_array(['CheckNSStatus',['CheckNSName'=>'ns14.discovery-placeholder.com']],$state->calls,true),'Next turn rotates to previously unchecked child host');
 // Scheduled core reads never discover records, including after a record hold or resume.
-$work=new ObservationWork($observer,$clock,$budget);$work->enroll($d->server_id);
+// Core-only composition intentionally has no family reader; full-family daily work is covered by self-heal-records.
+$work=fixtureObservationWork(new DomainObservation($readBindings,$clock,$budget),$clock);$work->enroll($d->server_id);
 $before=$d->fresh()->observation['records'];$io=count($state->calls);$domainIo=count($observation->calls);
-$clock->instant=$clock->now()->modify('+1 day');$work->tick(1);
+$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);
 same($io,count($state->calls),'Daily work makes no glue, DNS, SRV or DS registrar reads');
 same($before,$d->fresh()->observation['records'],'Daily work preserves record timestamp and inventory');
 expect(in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Nameservers,array_slice($observation->calls,$domainIo),true),'Daily primary read still checks nameservers');
