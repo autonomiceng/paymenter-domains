@@ -10,7 +10,7 @@ $registrationPrepare=$prepare;$ownerCataloguePorts=$ports;
 $prepare=static function(...$args)use($registrationPrepare,$ownerCataloguePorts):array{
     $result=$registrationPrepare(...$args);$binding=$result[1];
     $at=new DateTimeImmutable('2026-10-18T00:00:00Z');$until=new DateTimeImmutable('2028-11-05T00:00:00Z');
-    $proof=['source'=>'synthetic_owner_calendar','version'=>'calendar-1','reviewed_at'=>'2026-10-01T00:00:00Z',
+    $proof=['source'=>'synthetic_owner_calendar','version'=>'calendar-1','reviewed_at'=>'2026-10-01T00:00:00+00:00',
         'valid_until'=>$until->format(DATE_ATOM),'terms'=>range(1,10),'price_unit'=>'term_total','rule'=>'synthetic_exact_totals'];
     $terms=[];$costs=[];
     foreach(range(1,10) as $years){
