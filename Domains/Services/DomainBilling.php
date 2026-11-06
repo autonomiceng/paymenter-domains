@@ -196,24 +196,24 @@ final class DomainBilling
 
     private function options(Domain $d): array
     {
-        return DB::transaction(function () use ($d): array {
-            $l = HoldingLocks::take($d, advisory: true, catalogue: $this->catalogue);
-            $l['settings'] = $l['server']->settings()->orderBy('id')->get();
-            // Replacement proof needs all invoice members, including unexpected retained items.
-            $l['items'] = \App\Models\InvoiceItem::whereIn('invoice_id', $l['invoices']->pluck('id'))->orderBy('id')->get();
-            RenewalCycles::next($l);
-            $late = self::expired($l['domain'], $this->clock->now()) && EnomLateRenewal::accepted(AccountBindings::binding($l['account']));
-            $calendar = $this->requireRequest($l, true, $late ? 1 : null, $late);
-            if ($late) { return ['terms' => [1], 'order_by' => null, 'late' => true]; }
-            $annual = $l['domain']->price_mode==='complimentary'?'0.00':$this->native->quote($l)['annual_gross'];
-            $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
-            if (($support = self::renewalTerms($l, $this->catalogue)) !== null) {
-                $terms = array_values(array_filter($terms, static fn (int $y) => $support[$y]['available'] ?? false));
-            }
-            return ['terms' => $terms, 'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d'),
-                'lines' => array_combine($terms, array_map(static fn (int $y) => TermSupport::lines($annual, $annual, $y)
-                    + ['expiry' => $l['domain']->provider_expires_at->addYearsNoOverflow($y)->format('Y-m-d')], $terms)), 'next_annual' => $annual];
-        });
+        // Page options are advisory; an outer transaction would make catalogue generation checks lock.
+        // The invoice writer repeats these checks under its complete native/account prefix.
+        $l = HoldingLocks::take($d, advisory: true, catalogue: $this->catalogue);
+        $l['settings'] = $l['server']->settings()->orderBy('id')->get();
+        // Replacement proof needs all invoice members, including unexpected retained items.
+        $l['items'] = \App\Models\InvoiceItem::whereIn('invoice_id', $l['invoices']->pluck('id'))->orderBy('id')->get();
+        RenewalCycles::next($l);
+        $late = self::expired($l['domain'], $this->clock->now()) && EnomLateRenewal::accepted(AccountBindings::binding($l['account']));
+        $calendar = $this->requireRequest($l, true, $late ? 1 : null, $late);
+        if ($late) { return ['terms' => [1], 'order_by' => null, 'late' => true]; }
+        $annual = $l['domain']->price_mode==='complimentary'?'0.00':$this->native->quote($l)['annual_gross'];
+        $terms = self::terms($l['domain']->provider_expires_at->toDateTimeImmutable(), $this->clock->now());
+        if (($support = self::renewalTerms($l, $this->catalogue)) !== null) {
+            $terms = array_values(array_filter($terms, static fn (int $y) => $support[$y]['available'] ?? false));
+        }
+        return ['terms' => $terms, 'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d'),
+            'lines' => array_combine($terms, array_map(static fn (int $y) => TermSupport::lines($annual, $annual, $y)
+                + ['expiry' => $l['domain']->provider_expires_at->addYearsNoOverflow($y)->format('Y-m-d')], $terms)), 'next_annual' => $annual];
     }
 
     /** New-debt eligibility only. Existing invoices keep their own dates and terms. */
