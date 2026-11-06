@@ -170,7 +170,7 @@ final class RequestFacts
         if (BalanceRetries::pending($op)) {
             $reason=OperationClaims::balanceAdmissionReason($op);$account=self::account($op)['account'];
             if(self::heldByOrders($reason,$account)){return 'Not sent. '.self::ORDERS_OFF;}
-            if($reason){return rtrim(Labels::reason($reason),'.').'.';}
+            if($reason){return rtrim(Labels::reason($reason,$op->funding_basis==='complimentary'),'.').'.';}
             if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)){return Labels::reason($op->safe_code).'. It will retry automatically.';}
             if(BalanceRetries::legacyHold($op)){return Labels::operationReason($op).'.';}
             if($op->safe_code==='write_rate_limited'){return 'Not sent: our request limit reached. It will retry automatically.';}
