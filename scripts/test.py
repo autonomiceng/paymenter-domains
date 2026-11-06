@@ -713,6 +713,8 @@ def main():
                             'tests/managed-dns-setup-test.php',
                             'tests/managed-public-relink-test.php',
                             'tests/owner-actions-test.php',
+                            # Owner views read verified dependencies; isolate app state, not another vendor copy.
+                            'tests/owned-pages-test.php', 'tests/owner-renewal-test.php',
                             'tests/registration-enom-test.php',
                             'tests/registration-enom-outcomes-test.php',
                             'tests/registration-enom-recovery-test.php',
