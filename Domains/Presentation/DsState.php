@@ -37,8 +37,8 @@ final class DsState
     public static function staff(Domain $d): array
     {
         if($d->status==='cancelled' && RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now())['cancelled_without_records']){
-            return ['value'=>'Not applicable','tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,
-                'sub'=>'Registration cancelled; no registrar records to check'];
+            // The Registrar records head says the registration was cancelled and there is nothing to check.
+            return ['value'=>'Not applicable','tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,'sub'=>null];
         }
         try{$records=ObservationProjection::sections($d)['ds']['facts']['records']??null;}catch(\Illuminate\Contracts\Encryption\DecryptException){$records=null;}
         $fact=['value'=>$records===null?'Unknown':($records===[]?'Off':'On'),'tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,

@@ -180,7 +180,7 @@ final class DomainFacts
     {
         // The head names a held order, or the top alert when no notice takes its place, so a review alert on a row would only repeat them.
         $inputs=StaffDomainInputs::for([$d])[$d->id]; $status=self::status($d,$inputs);
-        $notice=self::notice($d);
+        $notice=self::notice($d); $resumeNotice=$notice['resume']??false;
         $op=$d->latestAcquisition; $named=$op&&in_array($op->state,['held','uncertain'],true)&&in_array($d->status,StaffDomainStatus::ACQUIRING,true)?(int)$op->id:(in_array($status['alert'],['operation_review','held_obligation'],true)&&($notice===null||($notice['resume']??false))?$status['request']:null);
         // One link at a time: another held request stays in the rail, and the head names it once this one clears.
         $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$named!==null&&($a['request']===$named||$named===$status['request'])));
@@ -199,8 +199,8 @@ final class DomainFacts
                 continue;
             }
             $fact=$f[$row];
-            // The Last sync row already says it stopped, beside the button.
-            if ($code==='observation_review'&&str_ends_with((string)$fact['sub'],'Stopped until resumed.')) { continue; }
+            // The Last sync row already says it stopped, beside the button. When the page notice names the stop and Resume sync, a Read stopped row says it alone.
+            if ($code==='observation_review'&&(str_ends_with((string)$fact['sub'],'Stopped until resumed.')||($resumeNotice&&$fact['value']==='Read stopped'))) { continue; }
             if ($fact['sub']!==null&&$fact['sub']!==$cause) { $fact['plain']??=StaffDomainStatus::sentence($fact['sub']); }
             $fact['sub']=$fact['sub']===null||$fact['sub']===$cause?$cause:StaffDomainStatus::sentence($fact['sub']).' '.$cause;
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone; $fact['alert']=true;
