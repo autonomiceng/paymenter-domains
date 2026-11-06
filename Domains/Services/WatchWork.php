@@ -47,7 +47,8 @@ final class WatchWork
             DB::table('domains_watch_schedule')->insertOrIgnore(['scope'=>'dispatch']);
             $q=DB::table('domains_watch_schedule')->where('scope','dispatch'); $row=$q->lockForUpdate()->first();
             if ($now<0 || $row->due_at>$now) { return null; }
-            $q->update(['due_at'=>$now+300,'data'=>$row->data??json_encode(['started_at'=>$now]),'cursor'=>(int)$row->cursor+1]); return ['turn'=>(int)$row->cursor+1,'data'=>json_decode($row->data??'{}',true)];
+            // Join the next cron minute even if this turn started a few seconds late.
+            $q->update(['due_at'=>(intdiv($now,60)+1)*60,'data'=>$row->data??json_encode(['started_at'=>$now]),'cursor'=>(int)$row->cursor+1]); return ['turn'=>(int)$row->cursor+1,'data'=>json_decode($row->data??'{}',true)];
         });
         if (!$run) { return 0; }
         $failures=$run['data']['local_failures']??[];$discovered=0;
