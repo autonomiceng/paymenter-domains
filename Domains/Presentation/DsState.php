@@ -18,7 +18,7 @@ final class DsState
         $management=$page->management;
         $progress=self::progress($d)['ds']??null;
         if(isset($management['ds'])&&$progress&&!($progress['settled']??false)){$management['ds']['progress']=$progress;}
-        if(self::off($d)){$management['ds']=['label'=>'DNSSEC','off'=>true,'actions'=>[],'url'=>null,'reason'=>self::CUSTOMER,'progress'=>$progress];}
+        if(self::off($d)){$management['ds']=[...($management['ds']??[]),'label'=>'DNSSEC','off'=>true,'actions'=>[],'url'=>null,'reason'=>self::CUSTOMER,'progress'=>$progress,'records'=>ObservationProjection::sections($d)['ds']['facts']['records']??null];}
         $history=array_values(array_filter($page->progress,fn($row)=>($row['label']??null)!=='DNSSEC'));
         foreach($d->operations()->whereIn('action',['ds_add','ds_delete'])->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(25)->get() as $op){
             $event=self::event($op,$d);$history[]=['label'=>'DNSSEC','state'=>$event['state'],'note'=>$event['text'],'date'=>$op->updated_at?->toIso8601String(),'retry'=>false];
@@ -37,8 +37,8 @@ final class DsState
     public static function staff(Domain $d): array
     {
         try{$records=ObservationProjection::sections($d)['ds']['facts']['records']??null;}catch(\Illuminate\Contracts\Encryption\DecryptException){$records=null;}
-        $fact=['value'=>self::off($d)?'Off':($records===null?'Unknown':($records===[]?'Off':'On')),'tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,
-            'sub'=>self::off($d)?($d->tld?str_replace('this TLD','.'. $d->tld,self::STAFF):self::STAFF):($records===null?'Current DS records have not been confirmed. Sync this domain.':($records===[]?'The registrar confirmed there are no DS records.':implode('; ',array_map(fn($ds)=>'Key tag '.$ds['key_tag'].', algorithm '.$ds['algorithm'].', digest type '.$ds['digest_type'].': '.$ds['digest'],$records))))];
+        $fact=['value'=>$records===null?'Unknown':($records===[]?'Off':'On'),'tone'=>'gray','url'=>null,'demo'=>false,'help'=>null,
+            'sub'=>(self::off($d)?($d->tld?str_replace('this TLD','.'. $d->tld,self::STAFF):self::STAFF).' ':'').($records===null?'Current DS records have not been confirmed. Sync this domain.':($records===[]?'The registrar confirmed there are no DS records.':implode('; ',array_map(fn($ds)=>'Key tag '.$ds['key_tag'].', algorithm '.$ds['algorithm'].', digest type '.$ds['digest_type'].': '.$ds['digest'],$records))))];
         $progress=\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($d)['ds']??null;
         if($progress&&($op=$d->operations()->whereKey($progress['id'])->first())&&!($progress['settled']??false)){
             $event=self::event($op,$d,true);$fact['value']=$event['state'];$fact['tone']=$event['tone'];

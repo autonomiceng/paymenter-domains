@@ -59,7 +59,7 @@
 @endcomponent
 @endif
 @elseif ($section['off'] ?? false)
-<span class="domains-row__v">@include('domains::partials.status-pill', ['pill'=>['label'=>'Off','tone'=>'muted']])<span class="domains-sub">{{ $section['reason'] }}</span>@if (isset($section['family']))@include('domains::partials.record-family-status',['family'=>$section['family']])@endif</span>
+<span class="domains-row__v">@include('domains::partials.status-pill', ['pill'=>['label'=>'Off','tone'=>'muted']])<span class="domains-sub">{{ $section['reason'] }}</span> @if (isset($section['family']))@include('domains::partials.record-family-status',['family'=>$section['family']])@endif</span>
 <span class="domains-row__a"><button class="domains-btn domains-btn--secondary" type="button" aria-disabled="true" disabled>Add DS record</button></span>
 @elseif ($section['unavailable'] ?? false)
 @php $total = $records === null ? null : count($records) + count($section['fixed'] ?? []); @endphp
@@ -147,6 +147,7 @@
 @endif
 @endif
 @endif
+@if ($cap==='ds' && ($section['off']??false))<span class="domains-row__v">@if ($section['records'] ?? [])<span class="domains-sub">Observed DS records</span>@foreach ($section['records'] as $ds)<span class="domains-sub domains-mono">Key tag {{ $ds['key_tag'] }}, algorithm {{ $ds['algorithm'] }}, digest type {{ $ds['digest_type'] }}: {{ $ds['digest'] }}</span>@endforeach @endif</span>@endif
 @if ($cap==='dns' && !($section['family_only']??false) && isset($section['inventory']))<span class="domains-row__v">@include('domains::partials.dns-inventory')</span>@endif
 </li>
 @endforeach
