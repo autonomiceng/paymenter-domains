@@ -6,11 +6,17 @@
     $authCode = $page::authCode($domain, $support);
     $show = $domain->actions['show'];
     $renewOpen = request()->query('edit') === 'renew' || session('domains_failed_form') === ($domain->renewNow['url'] ?? false);
+    // A domain that ended without a registration (closed unpaid, or cancelled and credited) has no date: the row is left out, not None.
+    $showExpires = $expires['missing'] || $domain->expiry !== null;
+    $renewalRows = $domain->renewal !== '' && !$domain->setupPending;
 @endphp
+@if ($showExpires || $renewalRows || $invoice || $authCode || isset($domain->renewNow['url']))
 <section class="domains-panel" id="renewal" aria-labelledby="heading-renewal"><div class="domains-panel__h"><h2 id="heading-renewal" class="domains-h2">Renewal</h2></div><div class="domains-panel__b">
 <dl class="domains-card">
+@if ($showExpires)
 <div><dt>Expires</dt><dd>@if ($expires['missing'])@include('domains::partials.missing', ['cause' => $expires['cause'], 'fix' => $expires['fix'], 'stack' => true])@else<span class="domains-date domains-card__v{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $domain->expiry, 'fallback' => 'None'])</span>@if ($expires['note']) <span class="domains-sub">{{ $expires['note'] }}</span>@endif @endif</dd></div>
-@if ($domain->renewal !== '' && !$domain->setupPending)
+@endif
+@if ($renewalRows)
 <div><dt>Renewal invoices @include('domains::partials.help', ['id' => 'auto-renew', 'label' => 'Renewal invoices'])</dt><dd><span class="domains-card__v">{{ $domain->autoRenew ? ($domain->autoRenew['enabled'] ? 'On' : 'Off') : $domain->renewal }}</span>@if ($domain->autoRenew) <span class="domains-row__a domains-card__a"><button type="submit" form="form-auto-renew" class="domains-a domains-linkbtn">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button></span>@elseif ($domain->renewal === 'Off' && $support) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $support }}">Contact support</a></span>@endif</dd></div>
 @if ($domain->renewal === 'On' && $domain->renewalPrice !== \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL)
 <div><dt>Auto Pay</dt><dd><span class="domains-card__v">{{ $domain->autoPay ? 'On' : 'Off' }}</span>@if (!$domain->autoPay && isset($domain->actions['autoPay'])) <span class="domains-card__a"><a class="domains-a" href="{{ $domain->actions['autoPay'] }}">Manage Auto Pay</a></span>@endif<span class="domains-sub">{{ $domain->autoPay ? 'We charge your saved payment method for each renewal invoice.' : 'We send you an invoice and you pay it to renew.' }}</span></dd></div>
@@ -48,3 +54,4 @@
 </dialog>
 @endif
 </div></section>
+@endif
