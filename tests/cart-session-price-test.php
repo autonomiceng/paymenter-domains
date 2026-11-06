@@ -34,7 +34,7 @@ $get=static function()use(&$jar,$app,$kernel){
     return $res->getContent();
 };
 $html=$get(); expect(str_contains($html,'$23.40'),'Original HTTP cart shows 23.40');
-$q=new Query($binding,['com'],'register',3);$rev=$ports->readOffers($q,Context::Staff)[0]->revision;
+$q=new Query($binding,['com'],'register',3);$rev=offerCommerceAsStaff(static fn()=>$ports->readOffers($q,Context::Staff)[0]->revision);
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,transfers:true),[...PricingRule::DEFAULT,'markup'=>'50.00']),$rev);
 // A non-checkout Livewire update may race publication. It must not silently advance the saved shown amount.
 // Use the actual signed page snapshot through Livewire's native component lifecycle.
@@ -50,7 +50,7 @@ expect(str_contains($html,'$27.00'),'HTTP reload shows the new quote');
 if(isset($argv[1])){require __DIR__.'/Support/demo-c-r11-cart-render.php';}
 // Checkout rechecks the signed page even if another publish follows the reload.
 $snapshot=json_decode($x->query('//*[@*[name()="wire:snapshot"]]')->item(0)->getAttribute('wire:snapshot'),true);
-$rev=$ports->readOffers($q,Context::Staff)[0]->revision;
+$rev=offerCommerceAsStaff(static fn()=>$ports->readOffers($q,Context::Staff)[0]->revision);
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,transfers:true),[...PricingRule::DEFAULT,'markup'=>'70.00']),$rev);
 $calls=[['method'=>'checkout','params'=>[['contact'=>commerceOrderContact($user),'save_account'=>false]],'path'=>'']];
 Illuminate\Support\Once::flush();
