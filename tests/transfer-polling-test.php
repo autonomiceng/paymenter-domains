@@ -5,6 +5,15 @@ declare(strict_types=1);
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances,OperationReconciliation};
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
+// Each independent checkout rewinds the clock after days of polling. Restore
+// its synthetic catalogue facts/publication too; later readback must not leave
+// future-dated observations in the next sale's fixture.
+$prepareOriginal=$prepare;
+$prepare=static function($label)use($prepareOriginal,$clock,$now,$prices){
+    $clock->instant=$now;
+    activeCommerceFacts($now,$now->modify('+1 day'),activeFixturePorts($prices));
+    return $prepareOriginal($label);
+};
 $op=$prepare('automatic-wait');
 HistoryAcceptances::save(new HistoryAcceptance($binding,'America/Los_Angeles',0,8*86400,'namesilo_transfer_v1'));
 $observe->status='Pending at Registry'; $sent=$state->calls;

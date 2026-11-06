@@ -4,7 +4,27 @@
 declare(strict_types=1);
 // The included native actions collect completed trees explicitly; avoid scanning live forms on each request.
 $automaticWordingGc=gc_enabled();gc_disable();
-require __DIR__.'/namesilo-settings-test.php';$nativeSuccessful=false;
+// Use the native enrollment witness; settings toggles/rotations are independently
+// registered in namesilo-settings-test.php and need not remount every form here.
+require __DIR__.'/namesilo-test-activation-test.php';$nativeSuccessful=false;
+Illuminate\Support\Facades\Schema::create('cache',static function($t):void {
+    $t->string('key')->primary();$t->mediumText('value');$t->integer('expiration');
+});
+staffPanel();$panel=Filament\Facades\Filament::getCurrentPanel();
+$pages=[Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,
+    Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::class,
+    Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class];
+$panel->pages($pages);
+Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($pages,$panel):void {
+    foreach($pages as $p){$p::registerRoutes($panel);}
+});
+app('router')->getRoutes()->refreshNameLookups();
+// Preserve the original three-authentication witness using real key rotation,
+// without repeating settings-test's unrelated action mounts and assertions.
+foreach(['synthetic-rotation-off-key','synthetic-rotation-on-key'] as $key){
+    $writes->run($review('configure'),['registrar'=>'namesilo','environment'=>'test','credentials'=>['api_key'=>$key]]);
+}
+
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,AccountChecklist};

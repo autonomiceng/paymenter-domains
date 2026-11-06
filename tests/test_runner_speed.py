@@ -344,9 +344,10 @@ class SchedulingTests(unittest.TestCase):
             root = Path(temporary)
             (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
-            ready, escaped = root/'ready', root/'escaped'
+            ready, escaped, pidfile = root/'ready', root/'escaped', root/'pid'
             sleeper = ("import subprocess,sys,time; from pathlib import Path; "
-                       f"subprocess.Popen([sys.executable,'-c',\"import time; from pathlib import Path; time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
+                       f"subprocess.Popen([sys.executable,'-c',\"import os,time; from pathlib import Path; Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
+                       f"deadline=time.monotonic()+5\nwhile not Path({str(pidfile)!r}).exists() and time.monotonic()<deadline: time.sleep(.002)\nassert Path({str(pidfile)!r}).exists(); "
                        f"Path({str(ready)!r}).touch(); print('started',flush=True); time.sleep(30)")
             failure = ("import time; from pathlib import Path; "
                        f"ready=Path({str(ready)!r}); deadline=time.monotonic()+5; "
@@ -367,7 +368,7 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(receipt['not_run'], [{'index': 2, 'kind': 'provider', 'argv': commands[2][1]}])
             self.assertEqual(receipt['commands_planned'], len(commands))
             self.assertIn('started', (output/'000.stdout.txt').read_text())
-            time.sleep(2.1)
+            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
             self.assertFalse(escaped.exists(), 'Grandchild survived cancellation')
 
 
@@ -375,9 +376,10 @@ class SchedulingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
-            ready, escaped = root/'ready', root/'escaped'
+            ready, escaped, pidfile = root/'ready', root/'escaped', root/'pid'
             sleeper = ("import subprocess,sys,time; from pathlib import Path; "
-                       f"subprocess.Popen([sys.executable,'-c',\"import time; from pathlib import Path; time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
+                       f"subprocess.Popen([sys.executable,'-c',\"import os,time; from pathlib import Path; Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
+                       f"deadline=time.monotonic()+5\nwhile not Path({str(pidfile)!r}).exists() and time.monotonic()<deadline: time.sleep(.002)\nassert Path({str(pidfile)!r}).exists(); "
                        f"Path({str(ready)!r}).touch(); time.sleep(8)")
             success = ("import time; from pathlib import Path; "
                        f"ready=Path({str(ready)!r}); deadline=time.monotonic()+5; "
@@ -396,7 +398,7 @@ class SchedulingTests(unittest.TestCase):
             self.assertEqual(len(receipt['results']), 2)
             self.assertEqual(receipt['not_run'], [])
             self.assertLess(time.monotonic()-started, 5)
-            time.sleep(2.1)
+            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
             self.assertFalse(escaped.exists(), 'Grandchild survived output failure')
 
 
@@ -425,9 +427,10 @@ class SchedulingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
-            ready, escaped = root/'ready', root/'escaped'
+            ready, escaped, pidfile = root/'ready', root/'escaped', root/'pid'
             orphan = ("import subprocess,sys,os; from pathlib import Path; "
-                      f"subprocess.Popen([sys.executable,'-c',\"import time; from pathlib import Path; time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
+                      f"subprocess.Popen([sys.executable,'-c',\"import os,time; from pathlib import Path; Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
+                       f"deadline=time.monotonic()+5\nwhile not Path({str(pidfile)!r}).exists() and time.monotonic()<deadline: time.sleep(.002)\nassert Path({str(pidfile)!r}).exists(); "
                       f"Path({str(ready)!r}).write_text(str(os.getpid()))")
             failure = ("import time; from pathlib import Path; "
                        f"ready=Path({str(ready)!r}); deadline=time.monotonic()+5; "
@@ -439,7 +442,7 @@ class SchedulingTests(unittest.TestCase):
                 status = runner.run(commands, dict(os.environ), output, ['provider'], {}, jobs=2, fail_fast=True)
             self.assertEqual(status, 1)
             self.assertLess(time.monotonic()-started, 5)
-            time.sleep(2.1)
+            self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
             self.assertFalse(escaped.exists(), 'Detached child survived parent exit and cancellation')
 
 
@@ -621,13 +624,20 @@ class SchedulingTests(unittest.TestCase):
                             signals.reverse()
                         for signum in signals:
                             os.kill(process.pid, signum)
-                        status = process.wait(timeout=3)
+                        # Wait for the actual exit: supervisor draining, thread-pool
+                        # joining and receipt persistence share the enclosing runner's
+                        # unchanged 60-second timeout, not a competing three-second race.
+                        status = process.wait()
                         receipt, = root.rglob('receipt.json')
                         self.assertEqual(status, 130, receipt.read_text())
                         self.assertTrue(cleaned.exists())
                         self.assertFalse(Path('/proc/'+ready.read_text()).exists())
                         receipt, = root.rglob('receipt.json')
-                        self.assertFalse(json.loads(receipt.read_text())['complete'])
+                        evidence = json.loads(receipt.read_text())
+                        self.assertFalse(evidence['complete'])
+                        self.assertEqual(evidence['runner_error'], 'KeyboardInterrupt')
+                        self.assertEqual(len(evidence['results']), 1)
+                        self.assertTrue(evidence['results'][0]['cancelled'])
                     finally:
                         owner.cleanup(None)
         finally:
