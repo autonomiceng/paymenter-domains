@@ -172,7 +172,7 @@ final class TldFacts
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
-    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.'];
+    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.','No registrar selected'=>'Open the TLD and use Change registrar.'];
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}
