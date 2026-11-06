@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\{ListOperations,ViewOperation};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\RelationManagers\RequestsRelationManager;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{RequestFacts,Staff,StaffReviewHistory};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{Labels,RequestFacts,Staff,StaffReviewHistory};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Services\StaffOperationReview;
 $op=$new(placeholderComFixtureName('staff-history-placeholder.com'));$domain=$op->domain;
@@ -41,13 +41,23 @@ same('Read current evidence',$rows[2]['sub'],'Check reason stays under its event
 expect(!in_array('Staff',array_column($rows,'by'),true),'History names who acted');
 $activity()->assertSuccessful()->assertDontSee('Hold for evidence')->assertDontSee('Read current evidence')->assertDontSee('Release after evidence review');
 $history()->assertSuccessful()->assertSee('Request #'.$op->id)->assertDontSee('Release after evidence review')->assertDontSee('Hold for evidence');
-// History is carried in loaded policy; one and four rows must perform exactly the same reads.
+// 2dbfa1b7 and 5bed66aa added separate release/hold events. Each request here has all three rows.
+$checkHistory=static function($table,array $requests):void{
+    $records=collect($table->instance()->getTableRecords()->items());
+    foreach($requests as $request){
+        $change='Request #'.$request->id.' '.Labels::action($request->action);
+        $events=$records->filter(fn(array $row)=>$row['change']===$change||$row['reason']===$change.'.')->pluck('change')->sort()->values()->all();
+        $expected=['Hold released','Put on hold',$change];sort($expected);
+        same($expected,$events,'History has exactly one request, hold and release for request #'.$request->id);
+    }
+};
+// History is carried in loaded policy; one and four requests must perform exactly the same reads.
 $measure=static function($page){DB::enableQueryLog();DB::flushQueryLog();$page->call('$refresh')->assertSuccessful();$q=DB::getQueryLog();DB::disableQueryLog();return count($q);};
-$cell=$activity();$one=$measure($cell);$timeline=$history();$historyOne=$measure($timeline);
+$cell=$activity();$one=$measure($cell);$timeline=$history()->assertCountTableRecords(3);$checkHistory($timeline,[$op]);$historyOne=$measure($timeline);
 for($i=1;$i<=3;$i++){$copy=$op->fresh()->replicate();$copy->operation_key='history-copy-'.$i;$copy->invoice_item_id=null;$copy->save();}
 $copies=Paymenter\Extensions\Servers\Domains\Models\Operation::where('operation_key','like','history-copy-%')->get();
 $cell->call('$refresh')->assertCanSeeTableRecords([$op,...$copies]);$many=$measure($cell);
-$timeline->call('$refresh')->assertCountTableRecords(4);same($historyOne,$measure($timeline),'Domain History query count stays constant at one versus four requests');
+$timeline->call('$refresh')->assertCountTableRecords(12);$checkHistory($timeline,[$op,...$copies]);same($historyOne,$measure($timeline),'Domain History query count stays constant at one versus four requests');
 same($one,$many,'Registrar requests list query counts remain constant at one versus four requests');
 echo 'Registrar requests list queries: '.$one.' at 1 row; '.$many." at 4 rows.\n";
 // Additional bounded, synthetic retained entries include a stored display name and failed phase.
