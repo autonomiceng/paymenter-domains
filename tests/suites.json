@@ -569,7 +569,8 @@
     "tests/registration-namesilo-nexus-test.php",
     "tests/storefront-corruption-test.php",
     "tests/storefront-queries-test.php",
-    "tests/payment-live-ceiling-test.php"
+    "tests/payment-live-ceiling-test.php",
+    "tests/test_installed_standard_renewal_summary-test.php"
   ],
   "ui": [],
   "runner": [
