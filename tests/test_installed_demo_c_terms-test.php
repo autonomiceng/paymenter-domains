@@ -56,6 +56,21 @@ $holding=new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'clos
 $gift=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal'))->invoke(null,$holding);
 $schema=$gift->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true);$text=(string)$schema[array_key_last($schema)]->getContent();
 $r10Check(str_contains($text,'Next annual renewal: $10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
+// A short preview must not evaluate every explicitly unsold catalogue entry.
+$priceQueries=0;DB::listen(static function($query)use(&$priceQueries):void{$priceQueries++;});
+Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);$smallQueries=$priceQueries;
+for($i=0;$i<110;$i++){$unsold=$t->replicate();$unsold->tld='unsold'.$i.'.example';$unsold->catalogue_facts=null;$unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();}
+$priceQueries=0;Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
+$r10Check($priceQueries<=$smallQueries+4,'Ten-row preview skips offer evaluation for explicitly unsold catalogue entries ('.$smallQueries.' vs '.$priceQueries.' queries)');
+// Confirmed annual-only terms and missing facts are different states.
+$originalFacts=$t->fresh()->catalogue_facts;$annual=OfferState::decode($originalFacts);$annual['terms']['register']=[1];
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($annual)]);
+$annualRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
+$r10Check(collect($annualRows)->contains(fn($r)=>$r['label']==='.com'&&$r['value']==='1 year'),'Confirmed annual terms keep a plain TLD label');
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
+$missingRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
+$r10Check(collect($missingRows)->contains(fn($r)=>$r['label']==='Unknown term range .aaaa.pro'&&$r['value']==='Missing'),'Missing registrar facts are labeled unknown');
+DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>$originalFacts]);
 $probe->setValue(null,null);
 storefrontViews();require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';app('router')->getRoutes()->refreshNameLookups();
 $domain=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'orbit-example.com',status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,renewNow:['url'=>'/domains/1/renew','terms'=>[1,2]]);

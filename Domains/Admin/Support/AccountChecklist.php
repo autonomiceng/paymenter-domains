@@ -213,7 +213,7 @@ final class AccountChecklist
                 foreach($tlds as $t){$sales=$states[$t->id]['acquisition']??[];if(($sales['register']??false)||($sales['transfer']??false)){$sold[]=$t;}else{$rest[]=$t;}}
             });
             foreach(array_slice([...$sold,...$rest],0,10) as $t){
-                $terms=self::termReadiness($binding,$t->tld)[0];$unknown=$terms[1]==='1 year';
+                $terms=self::termReadiness($binding,$t->tld)[0];$unknown=$terms[1]==='Missing';
                 $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::getUrl(['account'=>$server,'tld'=>$t->tld]))]];
             }
         }catch(\Throwable){/* Current setup remains visible when term facts cannot be read. */}
