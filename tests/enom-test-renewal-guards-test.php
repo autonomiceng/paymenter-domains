@@ -2,6 +2,7 @@
 // Local opt-in and reservation boundaries; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/renewal-execution.php';
+require __DIR__.'/Support/retained-renewal-term.php';
 require __DIR__.'/Support/enom-wire.php';
 require __DIR__.'/Support/WireLimit.php';
 set_exception_handler(static function (Throwable $error): never {fwrite(STDERR,$error::class.': '.$error->getMessage()."\n".$error->getTraceAsString()."\n");exit(1);});
@@ -24,7 +25,9 @@ config(['domains.enom_test_sends_per_day'=>1000]);Cache::flush();same('pending',
 $state->afterWrite=static fn()=>throw new EnomTestCallLimit;
 same('uncertain',$wireEngine->run($wireOp->id,$wireWriter)->state,'Off preserves uncertainty at the old explicit-runtime wire boundary');
 [$onCapOp,$onCapDomain,$onCapBinding]=$makeRenewal(placeholderComFixtureName('renew-on-wire-cap-placeholder.com'));[$onCapEngine,$onCapWriter]=$compose($onCapBinding);
-[$termOp,$termDomain,$termBinding]=$makeRenewal(placeholderComFixtureName('renew-test-annual-only-placeholder.com'),true,2);[$termEngine,$termWriter]=$compose($termBinding);
+// New multi-year billing is refused; retain a genuinely paid historical debt to test execution.
+[$termOp,$termDomain,$termBinding]=$makeRenewal(placeholderComFixtureName('renew-test-annual-only-placeholder.com'),false);
+$termOp=retainedRenewalTerm($termOp,2);[$termEngine,$termWriter]=$compose($termBinding);
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.renewal'=>$off]);expect(!EnomTestRenewal::enabled($b),'Strict boolean opt-in');}
 config(['domains.enom_writes.renewal'=>true]);expect(EnomTestRenewal::enabled($b),'TEST opt-in opens');
