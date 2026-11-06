@@ -604,7 +604,8 @@
     "tests/owner-renewal-integrity-test.php",
     "tests/owner-renewal-history-test.php",
     "tests/test_installed_renewal_uncertain-test.php",
-    "tests/test_installed_renewal_cooldown-test.php"
+    "tests/test_installed_renewal_cooldown-test.php",
+    "tests/test_installed_renewal_repeat_wait-test.php"
   ],
   "ui": [],
   "runner": [
