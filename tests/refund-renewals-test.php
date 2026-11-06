@@ -1,7 +1,8 @@
 <?php
 // Enom d1392a8 late retired and unsuitable paid renewal refunds; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/renewal-execution.php';
+$renewalFixtureNames=['renew-corrected-funding','refund-grace-term','refund-typed-prewire','refund-late-retired','refund-retired-partial','retired-card-partial','refund-renew-sent','renew-unsent-retry','renew-credit-replace','reversed-credit'];
+require __DIR__.'/Support/renewal-batch-fixture.php';
 require __DIR__.'/Support/retained-renewal-term.php';
 use App\Models\{Credit, InvoiceTransaction, Role};
 use Illuminate\Support\Facades\{Cache,DB};
@@ -264,4 +265,5 @@ foreach([null,$gateway] as $choice){
     same($choice?->id,$manual->fresh()->gateway_id,'A new staff payment keeps the gateway picked in the form');
 }
 commerceReject(fn()=>InvoiceTransaction::findOrFail($manual->id)->update(['gateway_id'=>null]));
+same([],array_keys($registrations),'Every independent refund scenario ran');
 echo "Unsuitable renewals, independent typed prewire proof and late retired payment credit passed\n"; $nativeSuccessful=true;
