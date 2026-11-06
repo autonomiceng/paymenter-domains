@@ -127,7 +127,8 @@ foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
 $sync=static function()use($held): array { $f=DomainFacts::for($held->fresh()); return array_key_exists('Last sync',$f)?[$f['Last sync']['value'],$f['Last sync']['sub']]:['absent',null]; };
 foreach ([['read_unavailable',1],['budget_exhausted',5]] as [$code,$tries]) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code,'tries'=>$tries]);
-    same(['Read stopped','The registrar read stopped. Cause: '.$code.'. Fix the cause, then use Resume sync.'],$sync(),'Stopped read retains its exact safe cause');
+    same(['Read stopped',null],$sync(),'Stopped read row does not repeat the notice or cause');
+    same($code,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($held->fresh())['read_code'],'Stopped read retains its exact safe cause');
     same($tries,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($held->fresh())['read_attempts'],'Stopped read retains its attempt count');
 }
 foreach ([null,'healthy_pending','refreshed','unresolved'] as $code) {
