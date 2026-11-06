@@ -115,14 +115,19 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
             same($flag === 'transfer_enabled' ? null : '$22.00', $rows['qnet']['transfer'], 'TLD action flags isolate transfer');
         }
         same($before, $reads->calls, 'TLD flags are local catalogue inputs');
-        same($flag === 'transfer_enabled' ? 'available' : 'held', $store->check('example.qnet')['status'], 'Check reads current TLD '.$flag);
+        $checked=$store->check('example.qnet');
+        if($flag==='register_enabled'){
+            expect(!array_key_exists('terms',$checked),'Check offers no disabled registration term, even when transfer remains selected');
+            commerceReject(static fn()=>$store->offer('qnet','register',1));
+        }else{same($flag === 'transfer_enabled' ? 'available' : 'held',$checked['status'],'Check reads current TLD '.$flag);}
         storefrontFixtureIntent($native,$catalogueTlds['qnet'],['stops'=>[]]);
     }
     // Native/raw mutations below exercise fresh render eligibility; warm display lag is covered separately.
     $register = $native->product($catalogueTlds['qnet'], 'register');
     DB::table('products')->where('id',$register->id)->update(['stock'=>0]); $rows = array_column(storefrontFreshEndings($store), null, 'tld');
     same([], $rows['qnet']['terms'], 'Native stock invalidates all registration terms');
-    same('held', $store->check('example.qnet')['status'], 'Check cannot reuse prior in-stock registration');
+    expect(!array_key_exists('terms',$store->check('example.qnet')),'Check cannot reuse prior in-stock registration terms');
+    commerceReject(static fn()=>$store->offer('qnet','register',1));
     DB::table('products')->where('id',$register->id)->update(['stock'=>null]);
     same(range(1, 10), array_column(storefrontFreshEndings($store), null, 'tld')['qnet']['terms'], 'Restored stock is visible');
     DB::table('domains_tlds')->where('id',$catalogueTlds['qnet']->id)->update(['catalogue_intent'=>json_encode(array_replace(json_decode($catalogueTlds['qnet']->fresh()->catalogue_intent,true),['pricing_rule'=>['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'25.00','renew'=>'21.00','transfer'=>'22.00']]])), 'catalogue_revision'=>DB::raw('catalogue_revision + 1')]); $before = $reads->calls;
