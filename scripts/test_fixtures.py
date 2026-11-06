@@ -79,6 +79,7 @@ def shared_vendor(jobs, requested):
                 'tests/namesilo-runtime-read-test.php',
                 'tests/namesilo-settings-wording-test.php',
                 'tests/native-server-settings-test.php', 'tests/native-server-settings-namesilo-test.php',
+                'tests/native-server-recovery-test.php', 'tests/native-server-recovery-namesilo-test.php', 'tests/native-server-lifecycle-guards-test.php',
                 'tests/transfer-polling-test.php',
                 'tests/namesilo-rebind-test.php',
                 'tests/namesilo-enrollment-test.php',
