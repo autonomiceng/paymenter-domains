@@ -68,6 +68,15 @@ expect(ObservationRecords::held($d->fresh()),'Partial refresh remains held with 
 $state->fault='';$tick();$wired->run($d->id,readRecords:true);
 app()->instance(Clock::class,$appClock);
 expect(!ObservationRecords::held($d->fresh()),'A lagging app clock does not hold a fresh wired refresh');
+// A required registrant cannot be omitted even when the other roles are not collected.
+$state->contacts['registrant']=['registrantcontactmatch'=>'NotCollected'];
+foreach (['admin','tech','auxbilling'] as $role) { $state->contacts[$role]=[$role.'contactmatch'=>'NotCollected']; }
+$tick();$wired->run($d->id,readRecords:true);
+same('partial',$d->fresh()->observation['records']['settings']['contacts']['state'],'Uncollected registrant keeps contact evidence partial');
+same(['records_unavailable','contacts'],$hold(),'Uncollected registrant cannot clear the records hold');
+$state->contacts['registrant']=['FirstName'=>'Synthetic','LastName'=>'Person','Address1'=>'1 Example Street','City'=>'Portland','PostalCode'=>'97201','Country'=>'US','EmailAddress'=>'synthetic@example.com','Phone'=>'+1.5035550123'];
+$tick();$wired->run($d->id,readRecords:true);
+expect(!ObservationRecords::held($d->fresh()),'Uncollected optional roles still allow a complete registrant refresh');
 same([],$writes(),'Wired observation cycle and resume send no registrar writes');
 
 $nativeSuccessful=true;echo "C1 observation: legacy fallback, CAA hold, wired format=1 cycle, resume, glue reason and one clock passed.\n";

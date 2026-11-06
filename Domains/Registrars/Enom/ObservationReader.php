@@ -33,7 +33,7 @@ final class ObservationReader implements ReadPort
             if ($contacts===null) { throw new \DomainException('Contacts unavailable.'); }
             $complete=true;
             foreach (['registrant','admin','tech','auxbilling'] as $role) {
-                if (($contacts['collected'][$role]??null)===false) { continue; }
+                if (($contacts['collected'][$role]??null)===false) { if ($role==='registrant') { $complete=false; } continue; }
                 foreach (['first_name','last_name','address1','city','postal_code','country','email_address','phone'] as $field) {
                     if (!is_string($contacts['contacts'][$role][$field]??null)||trim($contacts['contacts'][$role][$field])==='') { $complete=false; }
                 }
