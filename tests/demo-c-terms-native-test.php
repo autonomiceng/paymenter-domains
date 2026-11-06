@@ -52,6 +52,21 @@ foreach (['enom', 'namesilo'] as $registrar) {
     $other = new AccountBinding($registrar, $server->id, Environment::Live, str_repeat('0', 64));
     try { $caps->renewalTerms($other, $tld, $prices, new DateTimeImmutable('2027-11-20T00:00:00+00:00')); expect(false, $registrar.': changed binding refused'); }
     catch (DomainException) {}
+    // Account policy can shorten the age of an already stored bulk observation. Native settings/rows
+    // are required to exercise the same owner-cap and staff readers used after a settings edit.
+    $annualPrice = $prices->firstWhere('term', 1); $original = $annualPrice->catalogue_observation;
+    $bulk = new Cost('renew', 1, true, '14.0000', CostUnit::TermTotal,
+        $registrar === 'enom' ? 'enom_bulk_bucket_1' : 'namesilo_account_annual', $now->modify('-25 hours'), $now->modify('+23 hours'));
+    DB::table('domains_prices')->where('id', $annualPrice->id)->update(['catalogue_observation' => OfferState::json(OfferState::encodeCost($bulk))]);
+    $server->settings()->updateOrCreate(['key' => 'domains_price_freshness_hours'], ['value' => 24, 'type' => 'integer']);
+    $policyPrices = Price::where(['server_id' => $server->id, 'tld' => 'com', 'action' => 'renew'])->get();
+    $policyTerms = $caps->renewalTerms($binding, $tld, $policyPrices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
+    $policyReady = $caps->termReadiness($binding, 'com');
+    same([null, null], [$policyTerms[1]['cost'], $policyReady['renew'][1]['cost']], $registrar.': shortened account age removes stale annual caps and readiness costs');
+    $server->settings()->updateOrCreate(['key' => 'domains_price_freshness_hours'], ['value' => 48, 'type' => 'integer']);
+    $policyTerms = $caps->renewalTerms($binding, $tld, $policyPrices, new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
+    same('14.0000', $policyTerms[1]['cost'], $registrar.': current account age restores the same observation without redating it');
+    DB::table('domains_prices')->where('id', $annualPrice->id)->update(['catalogue_observation' => $original]);
     // Empty inventory: no stored prices leaves only the annual path, with no known cost.
     $empty = $caps->renewalTerms($binding, $tld, [], new DateTimeImmutable('2027-11-20T00:00:00+00:00'));
     same([true, null, 'no_exact_quote'], [$empty[1]['available'], $empty[1]['cost'], $empty[2]['reason']], $registrar.': empty inventory');

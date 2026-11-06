@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RenewalPrice};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CatalogueFreshness, Environment, RenewalPrice};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
 use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, RegistryInputs};
@@ -113,17 +113,17 @@ final class Capabilities
             ? new RenewalPrice($row?->id, $row?->revision, $value, 'USD', true, $warning) : null;
         return compact('retail', 'cost');
     }
-    /** NS17 renewal years for an already locked holding, keyed by years. Pure over the retained rows:
-     * no query here. Year 1 keeps today's annual path; longer years need TermSupport's reviewed evidence. */
+    /** NS17 renewal years for an already locked holding, keyed by years, using the current account age policy.
+     * Year 1 keeps today's annual path; longer years need TermSupport's reviewed evidence. */
     public function renewalTerms(AccountBinding $b, Tld $t, iterable $prices, \DateTimeImmutable $expiry): array
     {
         ($this->authorize)(new Query($b, [$t->tld], 'renew'), Context::Holder);
-        $this->identity($b, $t->tld, $t); $costs = [];
+        $this->identity($b, $t->tld, $t); $costs = []; $freshness = CatalogueFreshness::forAccount($b->serverId);
         foreach ($prices as $p) {
             if ((int)$p->server_id !== $b->serverId || $p->account_fingerprint !== $b->fingerprint
                 || $p->registrar_key !== $b->registrarKey || $p->tld !== $t->tld) { throw new \DomainException('Holding cost binding changed.'); }
             if ($p->action !== 'renew' || $p->currency !== 'USD' || $p->catalogue_observation === null) { continue; }
-            $c = OfferState::cost(OfferState::decode($p->catalogue_observation));
+            $c = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
             if ($c->action === 'renew' && $c->term === (int)$p->term) { $costs[$c->key()] = $c; }
         }
         try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
@@ -137,10 +137,10 @@ final class Capabilities
         $t = Tld::where('server_id', $b->serverId)->where('tld', $name)->sole(); $this->identity($b, $name, $t);
         $prices = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', $name)->where('action', 'renew')->orderBy('id')->get();
         try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
-        $costs = [];
+        $costs = []; $freshness = CatalogueFreshness::forAccount($b->serverId);
         foreach ($prices as $p) {
             if ($p->account_fingerprint !== $b->fingerprint || $p->currency !== 'USD' || $p->catalogue_observation === null) { continue; }
-            try { $c = OfferState::cost(OfferState::decode($p->catalogue_observation)); } catch (\Throwable) { continue; }
+            try { $c = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation))); } catch (\Throwable) { continue; }
             if ($c->term === (int)$p->term) { $costs[$c->key()] = $c; }
         }
         return TermSupport::readiness($b->registrarKey, $name, $f, $costs, $this->clock->now());
