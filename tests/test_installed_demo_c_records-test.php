@@ -142,6 +142,10 @@ $gluePage=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[
 $glueProjected=RecordFamilies::owner($gluePage,$glueFacts);
 $same(['/domains/1/glue/add'],array_values($glueProjected->management['glue']['actions']),'Partial glue keeps the authorized per-host Add action');
 $check(!($glueProjected->management['glue']['family_only']??false),'Authorized glue Add remains in the interactive section');
+// A primary read failure retains nonempty CAA with its historical read time.
+$failed=clone $d;$saved=$failed->observation;$saved['records']=$record;$saved['record_failure']=['identity'=>ObservationRecords::identity($failed),'at'=>$now->format(DATE_ATOM),'code'=>'read_failed'];$failed->observation=$saved;
+$failedFacts=RecordFamilies::read($failed,$now);
+$same($record['at'],$failedFacts['caa_at'],'Retained nonempty CAA is marked historical after a failed primary read');
 expect($failures===[],implode("; ",$failures));
 
 $nativeSuccessful=true;echo "Demo C record-family UI passed.\n";

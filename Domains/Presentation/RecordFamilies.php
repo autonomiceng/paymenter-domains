@@ -62,6 +62,7 @@ final class RecordFamilies
                 }
                 if($kind==='dns'){
                     $records=$f['records']??[];
+                    if($records&&$state==='unknown'){$caaAt=$f['at'];}
                     if(!$records&&$state!=='complete'){$records=$f['last_good']['records']??[];$caaAt=$f['last_good_at'];}
                     foreach($records as $record){
                         if(($record['type']??null)!=='CAA'){continue;}
