@@ -19,7 +19,7 @@ $op=$prepare('missing-nameservers'); $observe->fault='missing_nameservers'; $r=$
 same('succeeded',$r->state,'Missing nameserver readback does not block transfer completion');
 same(['ns1.provider.example','ns2.provider.example'],$r->domain->fresh()->observation['nameservers']['nameservers']??null,'Submitted nameservers remain visible without readback');
 same('requested',$r->domain->fresh()->observation['nameservers']['state']??null,'NameSilo transfer fallback stays unconfirmed');
-$unresolved(['inactive','auto','privacy','short','owner','nocharge','duplicate','late','credited','unknowncharge','paged','nohistory','lag']);
+// The unchanged refusal matrix runs in two bounded native entrypoints.
 // Slice25 accepts the no-ID anchor and still requires immutable ordinary acquisition proof.
 $observe->name=$completed->domain->domain; $observe->fault=''; $authority=new RenewalAuthority($readBindings,$clock,offers: $GLOBALS['caps']??null);
 $request=new RenewalRequest($completed->domain_id,$completed->authority_generation,$completed->domain->confirmed_revision,'2028-01-01',null);
