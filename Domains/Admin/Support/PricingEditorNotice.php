@@ -55,8 +55,10 @@ final class PricingEditorNotice
         if($native&&!NativeIdentity::productRows(NativeIdentity::rows($record))){return '';}
         if(!$native&&!$record instanceof Tld){return '';}
         $tld=$record instanceof Tld?$record->fresh():null;
-        // With no registrar selected, the TLD page head already says Not for sale and why. Price changes can't stop sales that are already off.
-        if($tld&&!$native&&(\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::salesState($tld)['reason']??null)==='No registrar selected'){return '';}
+        // With no registrar selected or a broken pricing rule, the TLD page head already says Not for sale, why, and the fix.
+        // Price changes can't stop sales that are already off, so the card would only repeat the head.
+        if($tld&&!$native){$snapshot=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::snapshot($tld);
+            if(($snapshot['sales']['reason']??null)==='No registrar selected'||($snapshot['invalid_rule']??false)){return '';}}
         if($native){
             $id=$record->settings()->where('key','domains_tld_id')->value('value');
             $tld=Tld::where('server_id',$record->server_id)->find($id);

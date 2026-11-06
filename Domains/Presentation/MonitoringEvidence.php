@@ -25,7 +25,7 @@ final class MonitoringEvidence
             foreach($q['records']??[] as $r){if(is_string($r['value']??null)&&filter_var($r['value'],FILTER_VALIDATE_IP)){$answers[]=$q['type'].' @ → '.$r['value'];}}}}
         catch(\Illuminate\Contracts\Encryption\DecryptException){$answers=[];}
         return ['state'=>$state,'public_stale'=>self::publicStale($d,$public,$name),'public'=>$answers,'public_at'=>$public?->started_at,'registrar'=>$registrar,'registrar_at'=>$families['families']['dns']['at']??null,'at'=>$families['at']??null,'families'=>$families,
-            'separation'=>'Billing and ownership use separate checks. Public DNS cannot confirm a registrar change or renewal.'];
+            'separation'=>RecordFamilies::EVIDENCE];
     }
     /** Use the established public-signal freshness and structural target checks; retained answers are historical. */
     private static function publicStale(?Domain $d,?PublicDnsObservation $public,?string $name): bool
