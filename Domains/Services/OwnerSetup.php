@@ -35,9 +35,10 @@ final class OwnerSetup
                 || $op->state==='held'&&!in_array($op->safe_code,['contact_details_required','transfer_setup_review_required','nameservers_required'],true)) {
                 throw new \DomainException('Setup unavailable.');
             }
-            RefundProof::requireUnsent($op,$d); RefundPayment::requireLine($op,$l);
+            RefundProof::requireUnsent($op,$d);
             $invoice=$l['invoices']->firstWhere('id',$op->invoice_id);
-            if ($invoice->status!=='pending') { RefundPayment::requireCurrent($op,$l); }
+            if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}
+            else {RefundPayment::requireLine($op,$l);if($invoice->status!=='pending'){RefundPayment::requireCurrent($op,$l);}}
             if ($op->action==='transfer') {
                 if ($invoice->status==='paid' && !TransferInputs::deadline($op,$this->clock->now())) { throw new \DomainException('Unverified payment date.'); }
                 TransferInputs::requireEditable($op,$this->clock->now());

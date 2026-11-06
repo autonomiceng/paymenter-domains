@@ -20,7 +20,7 @@ final class DomainPage
         $movedAt = isset($s?->noticeDates['dns']) ? ' on '.CarbonImmutable::createFromTimestampUTC((int) $s->noticeDates['dns'])->format('M j, Y') : '';
         $contact = $support ? ['label' => 'Contact support', 'url' => $support] : null;
         $order = $d->order['state'] ?? null; $word = ($d->order['kind'] ?? null) === 'transfer' ? 'transfer' : 'registration';
-        return match (true) {
+        $notice = match (true) {
             $d->syncPaused => self::ours('Sync paused: the demo registrar is off. Nameservers show when it resumes.', $contact),
             $d->setupPending => self::ours('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know.', $contact),
             $order === 'unpaid' => ['tone' => 'warn', 'text' => 'This order isn’t paid yet. Pay the invoice to start the '.$word.'.', 'action' => ['label' => 'Pay invoice', 'url' => $d->order['invoice'], 'button' => true]],
@@ -46,6 +46,11 @@ final class DomainPage
             $d->changesUnavailable => ['tone' => 'info', 'text' => 'Changes to this domain are on hold right now. Try again later.', 'action' => $contact],
             default => null,
         };
+        // Funding describes the issued order even when setup or a registrar check supplies its next step.
+        if ($order === 'paid' && ($d->order['complimentary'] ?? false) && $notice !== null && !str_starts_with($notice['text'], 'Complimentary. ')) {
+            $notice['text'] = 'Complimentary. '.$notice['text'];
+        }
+        return $notice;
     }
     /** A notice for work that is ours: blue, with the way to reach us. */
     private static function ours(string $text, ?array $contact): array
@@ -55,7 +60,8 @@ final class DomainPage
     {
         if ($d->expiry === null) {
             if ($s?->abandoned) { return ['missing' => false, 'tone' => null, 'note' => null]; }
-            if ($order = DomainListRow::orderExpires($d->order, $support)) { return $order; }
+            $said = str_starts_with(self::notice($d, $support, $s)['text'] ?? '', 'Complimentary. ');
+            if ($order = DomainListRow::orderExpires($d->order, $support, funding: !$said)) { return $order; }
             if (self::checkHeld($d)) { return ['missing' => true, 'cause' => self::TEAM_CHECK, 'fix' => null]; }
             $list = $s ? DomainListRow::expires($s) : null;
             return ['missing' => true, 'cause' => $list['cause'] ?? Missing::fills('after the next sync'), 'fix' => isset($list['cause']) ? $list['fix'] : null];

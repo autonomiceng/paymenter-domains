@@ -19,6 +19,7 @@ final class CartCheckoutRefresh
                 $held = session()->get(self::shownKey().'.lines', session()->get(self::shownKey(), []));
                 $review = session()->get(self::shownKey().'.review');
                 $admission->refresh();
+                if(ComplimentaryAccounts::authorization((int)\Illuminate\Support\Facades\Auth::id())){self::show($component,self::cartTotal());}
                 // A new price may extend the review; the customer's own term/quantity edit invalidates it.
                 $choices = static fn (array $lines) => array_map(static fn (array $line) => [$line['plan_id'], $line['quantity']], $lines);
                 if (is_array($review) && ($review['shown'] ?? null) === $held
@@ -85,6 +86,14 @@ final class CartCheckoutRefresh
             // Native line prices are dynamic on every render, not just checkout. Never advance the
             // signed/session shown amount silently when an unrelated Livewire update races publication.
             $held = (array) \Livewire\store($component)->get('domains.shown');
+            if (\Livewire\store($component)->get('domains.customer_edit')
+                && ComplimentaryAccounts::authorization((int)\Illuminate\Support\Facades\Auth::id())) {
+                // Native customer edits reload line models and recalculate from persisted paid plans.
+                // Reapply the account grant before rendering both line prices and the native total.
+                try { $admission->refresh(); self::show($component, self::cartTotal()); }
+                catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
+                catch (\Throwable $e) { self::unavailable($component, $e); }
+            }
             if ($held) {
                 try {
                     $beforeOffers = (array) \Livewire\store($component)->get('domains.offers');
