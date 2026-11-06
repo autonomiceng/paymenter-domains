@@ -195,8 +195,8 @@ final class DomainFacts
                 continue;
             }
             $fact=$f[$row];
-            // The Last sync row already says it stopped, beside the button. When the page notice names the stop and Resume sync, the row says Read stopped alone.
-            if ($code==='observation_review'&&(str_ends_with((string)$fact['sub'],'Stopped until resumed.')||$resumeNotice)) { continue; }
+            // The Last sync row already says it stopped, beside the button. When the page notice names the stop and Resume sync, a Read stopped row says it alone.
+            if ($code==='observation_review'&&(str_ends_with((string)$fact['sub'],'Stopped until resumed.')||($resumeNotice&&$fact['value']==='Read stopped'))) { continue; }
             if ($fact['sub']!==null&&$fact['sub']!==$cause) { $fact['plain']??=StaffDomainStatus::sentence($fact['sub']); }
             $fact['sub']=$fact['sub']===null||$fact['sub']===$cause?$cause:StaffDomainStatus::sentence($fact['sub']).' '.$cause;
             $fact['tone']=$fact['tone']==='danger'?'danger':$tone; $fact['alert']=true;
