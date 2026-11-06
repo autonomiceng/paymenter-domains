@@ -83,6 +83,9 @@ $page=static fn()=>(new OwnedDomainController($owners))->show($request('GET','/d
 $post=static function()use($controller,$request,$d){$r=$request('POST','/domains/'.$d->id.'/renew',['years'=>'1']);
     $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':renew'));return $controller->renew($r,$d->id);};
 $debt=static fn()=>serialize([scenarioMoney(),Operation::where('domain_id',$d->id)->get()->map->getRawOriginal()->all()]);
+$renewUrl=route('domains.domains.renew',$d->id);
+$renewOpen=route('domains.domains.show',$d->id).'?edit=renew#edit-renew';
+$renewalControls=static fn(string $html)=>storefrontDom($html)->query('//form[@action="'.$renewUrl.'"]|//*[@formaction="'.$renewUrl.'"]|//a[@href="'.$renewOpen.'"]|//dialog[@id="edit-renew"]|//select[@id="renew-years"]')->length;
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);
 $cycles=new RenewalCycles($bindings,$clock);$cycles->retireUnpaid($op->id);
 same(['state'=>'cancelled'],$owners->present($d->fresh(),false)->renewalInvoice,'Adopted retired cycle remains visible without forms');
@@ -90,7 +93,12 @@ config(['settings.credits_auto_use'=>false]);
 foreach(['unpaid','refund'] as $replacementCase){
     $before=$debt();$dto=$owners->present($d->fresh());$html=$page();
     same([],$dto->renewalInvoice,'Adopted replaceable cycle does not suppress form: '.$replacementCase);
-    expect(isset($dto->renewNow['url'])&&str_contains($html,'>Create invoice<'),'Adopted replacement request visible: '.$replacementCase);
+    expect(isset($dto->renewNow['url']),'Adopted replacement request admitted: '.$replacementCase);
+    $form=storefrontDom($html);
+    same(1,$form->query('//dialog[@id="edit-renew"]/form[@method="POST" and @action="'.$renewUrl.'"]')->length,'One adopted replacement form: '.$replacementCase);
+    same(1,$form->query('//dialog[@id="edit-renew"]//button[@type="submit" and normalize-space(.)="Continue to payment"]')->length,'Adopted replacement submit: '.$replacementCase);
+    same(1,$form->query('//dialog[@id="edit-renew"]//input[@name="_request_key"]')->length,'Adopted replacement has native intent: '.$replacementCase);
+    same(['1'],array_map(static fn($option)=>$option->getAttribute('value'),iterator_to_array($form->query('//dialog[@id="edit-renew"]//select[@name="years"]/option'))),'Adopted replacement remains annual: '.$replacementCase);
     expect(!str_contains($html,'Renewal being checked')&&!str_contains($html,'Invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);
     same($before,$debt(),'Adopted replacement page is read-only: '.$replacementCase);
     $response=$post();$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->firstOrFail();
@@ -98,10 +106,10 @@ foreach(['unpaid','refund'] as $replacementCase){
     same(route('invoices.show',$replacement->invoice_id),$response->getTargetUrl(),'Adopted POST returns replacement invoice: '.$replacementCase);
     $after=$debt();same($response->getTargetUrl(),$post()->getTargetUrl(),'Adopted replacement POST retry returns same invoice: '.$replacementCase);same($after,$debt(),'Adopted retry creates no duplicate debt: '.$replacementCase);
     $html=$page();same(1,substr_count($html,'>Pay invoice</a>'),'One adopted pending cycle panel: '.$replacementCase);
-    expect(str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted current debt replaces request form: '.$replacementCase);
+    expect(str_contains($html,'>Pay invoice</a>')&&$renewalControls($html)===0,'Adopted current debt replaces request form: '.$replacementCase);
     $item=App\Models\InvoiceItem::findOrFail($replacement->invoice_item_id);$rawItem=$item->getRawOriginal();
     DB::table('invoice_items')->where('id',$item->id)->update(['price'=>'0.01']);$html=$page();
-    expect(str_contains($html,'Renewal being checked')&&!str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted invalid retained item shows review: '.$replacementCase);
+    expect(str_contains($html,'Renewal being checked')&&!str_contains($html,'>Pay invoice</a>')&&$renewalControls($html)===0,'Adopted invalid retained item shows review: '.$replacementCase);
     DB::table('invoice_items')->where('id',$item->id)->update($rawItem);
 
     if($replacementCase==='refund'){break;}
