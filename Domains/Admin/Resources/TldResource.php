@@ -52,8 +52,8 @@ class TldResource extends Resource
         $isDemo=static function(Tld $t)use(&$demo):bool {
             return $demo[$t->server_id]??=DemoData::is(Account::where('server_id',$t->server_id)->first());
         };
-        // The Note column already says No registrar selected; the price cells show only the price.
-        $cause=static fn(array $fact,string $field)=>($c=TldFacts::priceState($fact,'renew',$field)['cause'])==='No registrar selected'&&str_starts_with((string)($fact['sales']['reason']??''),$c)?null:$c;
+        // The Note column already says No registrar selected, and a price sync can't fix it; the price cells show only the price.
+        $cause=static fn(array $fact,string $field)=>str_starts_with((string)($c=TldFacts::priceState($fact,'renew',$field)['cause']),'No registrar selected')&&str_starts_with((string)($fact['sales']['reason']??''),'No registrar selected')?null:$c;
         return $table->columns([
             TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('account')->label('Registrar account')->state(fn(Tld $record)=>$record->server->name)
