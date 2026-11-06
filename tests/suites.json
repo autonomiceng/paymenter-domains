@@ -593,7 +593,8 @@
     "tests/owner-auto-renew-cycle-test.php",
     "tests/owner-auto-renew-calendar-test.php",
     "tests/owner-auto-renew-safety-test.php",
-    "tests/staff-holding-modals-test.php"
+    "tests/staff-holding-modals-test.php",
+    "tests/namesilo-legacy-account-guard-test.php"
   ],
   "ui": [],
   "runner": [

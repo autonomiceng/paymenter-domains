@@ -121,6 +121,7 @@ function fixtureNameSiloFacts($binding,string $ending,\Paymenter\Extensions\Serv
 {
     if($binding->registrarKey!=='namesilo'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){return $facts;}
     $account=Account::where('server_id',$binding->serverId)->sole();
+    if(!\Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::enrolled($account)){return $facts;}
     $copy=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($facts->terms,$facts->registryFields,$facts->renewalSafe,
         $facts->requiresNameservers,$facts->autoRenewOnly,'namesilo_test_protocol',$facts->observedAt,$facts->freshUntil);
     $rows=config('domains.namesilo_test.accounts',[]);$row=$rows[$account->stable_identity]??[];
