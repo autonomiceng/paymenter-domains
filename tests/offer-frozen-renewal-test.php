@@ -68,4 +68,3 @@ same(true,$atBoundary,'Expiry regression reaches the final spending boundary aft
 same(0,$sends,'Expired independent renewal facts authorize zero physical sends');
 $nativeSuccessful=true;
 echo "Offer frozen renewals: ok\n";
-
