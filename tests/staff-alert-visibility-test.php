@@ -75,6 +75,6 @@ Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($domain->doma
 Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::install();$watcher=staffUser([Staff::VIEW,'admin.domains.watch.view']);$failedAt=time();
 Paymenter\Extensions\Servers\Domains\Services\WatchNoticeHealth::record((int)$domain->user_id,(int)$domain->id,'managed','render_failed',$failedAt,['template'=>'domains_watch_ns_changed','channel'=>'mail']);
 Livewire::actingAs($watcher)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts')
-    ->assertSee('Customer alert failed '.gmdate('M j, Y H:i',$failedAt).' UTC.')->assertSee('An alert template has an error. Fix it in Notification templates.');
+    ->assertSee('Customer alert failed '.gmdate('M j, Y, g:i A',$failedAt).' UTC.')->assertSee('An alert template has an error. Fix it in Notification templates.');
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertDontSee('Customer alert failed');
 $nativeSuccessful=true;echo "Staff alert visibility passed.\n";

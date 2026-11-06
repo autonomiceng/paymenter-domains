@@ -22,7 +22,7 @@ final class AccountChecklist
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
     public const TRANSFER_LABEL='Transfers (Experimental)';
-    private const PRICES='The last successful registrar price refresh and the next due time. Sync prices is an optional retry.';
+    private const PRICES='Prices refresh from the registrar once a day. Sync prices refreshes them now.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
@@ -178,16 +178,16 @@ final class AccountChecklist
         if($binding===null){return [...self::row('TLD prices',null,null,'Restore the API connection first.',null,self::PRICES),'buttons'=>[]];}
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
-            return [...self::row('TLD prices',ucfirst($status['state']),null,TldFacts::refreshText($status),null,self::PRICES),'buttons'=>self::priceButtons($a)];
+            return [...self::row('TLD prices',ucfirst($status['state']),null,isset($status['succeeded_at'])?Sheet::moment((int)$status['succeeded_at'],'Updated'):'Not updated yet.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
             $at=$failure['at']===null?'':', '.$failure['at'];
-            $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Check the saved failure cause. Sync prices is an optional retry.',null,self::PRICES);
+            $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Fix this cause first. Sync prices is an optional retry.',null,self::PRICES);
             return [...$row,'buttons'=>self::priceButtons($a)];
         }
         $synced=RegistrarFacts::lastSync((int)$a->server_id);
-        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'No successful price refresh recorded. Check the account runtime and scheduled refresh. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
+        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'No price refresh has finished yet. Check Site setup and the background worker. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
     }
     /** Sync covers every TLD of the account at once. Staff who can't sync can still open the TLD list. */
     private static function priceButtons(Account $a): array
@@ -207,9 +207,11 @@ final class AccountChecklist
         $rows[]=self::renewEarly($server);
         $terms=TldTerms::summary($server);$attention=count($terms['attention']);
         try{$url=TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server],'needs_attention'=>['isActive'=>true]]]);}catch(\Throwable){$url=null;}
+        // Nothing to do when every selected TLD has its terms: no instruction and no link to an empty list.
         $rows[]=[...self::row('Selected TLD terms',$terms['read'].' of '.$terms['total'].' read',$attention?'danger':null,
-            $attention.' need attention. Review current registrar terms on the TLD list.'),
-            'buttons'=>[Sheet::link('selected_terms','View TLDs needing attention',$url)]];
+            $attention?$attention.' '.($attention===1?'needs':'need').' attention. Review current registrar terms on the TLD list.':null,null,
+            'Whether the current registrar renewal terms are saved for each TLD you sell. They refresh on a schedule.'),
+            'buttons'=>$attention?[Sheet::link('selected_terms','View TLDs needing attention',$url)]:[]];
         $rows[]=self::row('Scheduled renewals','1 year',null,null,null,'Scheduled renewal invoices remain annual.');
         $rows[]=ReminderFacts::emails($server);
         if(($schedule=ReminderFacts::scheduleRow($server))!==null){$rows[]=$schedule;}
@@ -257,11 +259,11 @@ final class AccountChecklist
     /** Per-account check: the site must supply the registrar runtime. */
     public static function runtime(Account $a): array
     {
-        $help='Checks this site can compose the authenticated registrar connection.';
+        $help='Checks this site has a working connection for this registrar.';
         if(app(RuntimePorts::class)->registered($a)){return self::row('Site setup','OK',null,'Ready for this registrar.',null,$help);}
         $cause=\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enrolled($a)
             ?'This account uses the old balance-only TEST connection. Connect an authenticated TEST account.'
-            :'Authenticated registrar runtime missing for this account. Check the registrar environment configuration and connect an authenticated account.';
+            :"The registrar connection isn't set up on this site. Check the registrar's site settings, then connect the account again.";
         return self::row('Site setup',null,'danger',$cause,null,$help);
     }
     /** Domains on this account with an open alert, linked to the filtered list. */
@@ -327,8 +329,8 @@ final class AccountChecklist
             'live_proof_required'=>'Live renewal proof is still required.',
             'not_reviewed','term_unreviewed'=>'Longer terms have not been reviewed for this ending.',
             'annual_unit'=>'An annual estimate cannot prove an exact-term total.',
-            'stale_facts','stale_price'=>'The saved term evidence is out of date. The scheduled facts check refreshes it.',
-            default=>'Current term evidence is missing. Review the registrar terms; a supported background facts check can fill it.',
+            'stale_facts','stale_price'=>'The saved terms are out of date. The scheduled check refreshes them.',
+            default=>'Current terms are not saved yet. Review the registrar terms. Where the registrar supports it, the scheduled check fills them.',
         };
     }
     /** The saved sales choice is independent of whether pricing follows the default rule. */

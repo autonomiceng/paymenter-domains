@@ -102,7 +102,7 @@ class RegistrarAccount extends Page
             $sections[]=Sheet::section('Renewals',$this->rows('renewal',$pick('Renewals','Late renewal','Customer can renew early','Invoice issued','Invoice due','Unpaid hold','Scheduled renewals','Selected TLD terms','Reminder emails','Reminder schedule')));
             $default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal();
             $sections[]=Sheet::section('Domain settings',$this->rows('settings',[...$pick('DNS, nameservers and contacts','WHOIS privacy'),
-                self::fact('Site DNS default',$refusal?null:$default?->name,$refusal??($default?null:SiteDnsDefault::MISSING))]));
+                self::fact('Site DNS default',$refusal?null:$default?->name,$refusal??($default?null:'Choose one in Domain monitoring settings.'))]));
         } else {
             $sections[]=Sheet::section('Account',$this->rows('account',[self::fact('Registrar',null,'Account not set up yet. Use Connect account.'),self::fact('Domains',(string)Domain::where('server_id',$s->id)->count())]));
         }
@@ -199,8 +199,8 @@ class RegistrarAccount extends Page
         $requests=RegistrarFacts::requests((int)$s->id);$staff=array_filter($requests['staff']);
         $waiting=$staff===[]?null:RegistrarFacts::tone(implode(', ',array_map(fn(string $key,int $n)=>$n.' '.strtolower(RequestFacts::STATUSES[$key][0]),array_keys($staff),$staff)),'warning',RegistrarFacts::requestsUrl((int)$s->id,array_keys($staff)));
         $rows[]=[...self::fact('Registrar requests',$requests['open'].' open',$waiting),'buttons'=>[Sheet::link('view_requests','View requests',RegistrarFacts::requestsUrl((int)$s->id,RegistrarFacts::OPEN_REQUESTS))]];
-        if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact($a->environment==='live'?'API calls, today (UTC)':'API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
-        $rows[]=[...self::fact('Prices stay current for',\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$s->id)->hours.' hours',null,'Prices sync daily. Older prices stop new orders until checked again.'),'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\PriceFreshnessAction::make($a,$this->reviewStamp)]];
+        if ($calls=RegistrarFacts::calls($a)) { $rows[]=[...self::fact($a->environment==='live'?'API calls, today (UTC)':'API calls, last 24 hours',$calls['value'],$calls['sub'],$calls['help']),'tone'=>$calls['tone'],'edit'=>true,'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\ApiCallLimitAction::make($a,$this->reviewStamp)]]; }
+        $rows[]=[...self::fact('Prices stay current for',\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$s->id)->hours.' hours',null,'Prices sync daily. Older prices stop new orders until checked again.'),'edit'=>true,'buttons'=>[\Paymenter\Extensions\Servers\Domains\Admin\Support\PriceFreshnessAction::make($a,$this->reviewStamp)]];
         return $rows;
     }
 }

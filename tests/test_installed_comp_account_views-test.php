@@ -23,22 +23,25 @@ $before=null;
 $op->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>[...$op->policy,'complimentary_cost_review'=>['amount'=>'8.01','usual'=>'8.00']]]);
 $managed=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);
 $managed->assertSee('Use Approve registrar cost to continue. Nothing is charged until approval.')->assertActionVisible('approveComplimentaryCost');
-$compReason='Not sent: registrar price exceeds the frozen order limit. Cancel, or use Release hold after the price falls.';
-$paidReason='Not sent: registrar price exceeds the frozen order limit. Cancel and add credit, or use Release hold after the price falls.';
+// ui-r15 R2: a cost-review hold names the notice's one step, not Cancel or Release hold.
+$compReason='Needs approval: registrar cost $8.01 is above the usual $8.00. Use Approve registrar cost to continue.';
+$paidReason='Not sent: the registrar price is above the limit saved with the order. Cancel and add credit, or use Release hold after the price falls.';
 $managed->assertSee($compReason)->assertDontSee('Cancel and add credit');
 // Both saved first holds and subsequent engine holds use the term's retained funding basis.
 $story=clone $op;$story->policy=[...$op->policy,'first_hold'=>['at'=>$clock->now()->format(DATE_ATOM),'reason'=>'registrar_price_increased'],
     'staff_actions'=>[['action'=>'engine_hold','at'=>$clock->now()->format(DATE_ATOM),'reason'=>'registrar_price_increased']]];
-foreach([['complimentary',$compReason],['paid_invoice',$paidReason]] as [$basis,$reason]){
+// History keeps the saved hold reason; only the current reason names the approval step (ui-r15 R2).
+$compHistory='Not sent: the registrar price is above the limit saved with the order. Cancel, or use Release hold after the price falls.';
+foreach([['complimentary',$compReason,$compHistory],['paid_invoice',$paidReason,$paidReason]] as [$basis,$reason,$held]){
     $story->funding_basis=$basis;same($reason,Labels::operationReason($story),'Request wording follows the funded term');
     $subs=array_column(StaffReviewHistory::timeline($story,StaffReviewHistory::rows($story)),'sub');
-    same(2,count(array_filter($subs,fn($sub)=>$sub===$reason)),'Both retained history holds use the correct cancellation wording');
+    same(2,count(array_filter($subs,fn($sub)=>$sub===$held)),'Both retained history holds use the correct cancellation wording');
 }
 $costManagedHtml=$managed->html();
 $fundOnly=staffUser([Staff::VIEW,Staff::COSTS,'admin.domains.fund']);
 $limited=Livewire::actingAs($fundOnly)->test(ViewDomain::class,['record'=>$d->id]);
 $limited->assertSee('Ask staff with domain management and funding permissions to approve this cost. Nothing is charged until approval.')->assertActionHidden('approveComplimentaryCost');
-$limited->assertSee($compReason)->assertDontSee('Cancel and add credit');
+$limited->assertSee('Needs approval: registrar cost $8.01 is above the usual $8.00. Ask staff with domain management and funding permissions to approve this cost.')->assertDontSee('Use Approve registrar cost')->assertDontSee('Cancel and add credit');
 $costFundOnlyHtml=$limited->html();
 $policy=$op->fresh()->policy;unset($policy['complimentary_cost_review']);$op->refresh()->update(['state'=>'queued','safe_code'=>null,'policy'=>$policy]);
 $runRenewal($op,$binding);[$engine,$writer,$completion]=$compose($binding);$state->expiry='2028-10-18';$state->after='2028-10-18';$state->charge='8.00';

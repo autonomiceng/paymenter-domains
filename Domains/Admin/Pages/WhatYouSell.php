@@ -202,18 +202,11 @@ class WhatYouSell extends Page implements HasTable
         $csv=app(PriceList::class)->csv($years,$this->show()??'all',$this->account===self::ALL?null:$this->account,$this->held());
         return response()->streamDownload(static function()use($csv):void{echo $csv;},'domain-prices-'.$years.'-'.($years===1?'year':'years').'.csv',['Content-Type'=>'text/csv; charset=UTF-8']);
     }
-    /** The head line: what this account sells. All accounts has no one rule to sum, so it says why the buttons are off. */
+    /** All accounts has no one rule to sum, so it says why the buttons are off. One account needs no head line: the table shows what is for sale. */
     public function getSubheading(): Htmlable|string|null
     {
         if($this->account===self::ALL){return $this->mayEdit()||$this->canSync()?'Choose one account to sync or edit.':null;}
-        if(($binding=$this->binding())===null){return null;}
-        $snapshot=$this->catalogue()->summary($binding->serverId,$this->years());
-        $count=$snapshot['count'];$highest=$snapshot['highest'];
-        $summary=$count.' '.($count===1?'TLD':'TLDs').' for sale.';
-        if($this->canSeeCosts()&&$highest!==null){$summary.=' Highest cost USD '.number_format((float)$highest,2).' a year.';}
-        $filled=$snapshot['filled'];
-        return new HtmlString(HelpHint::beside(e($summary),'Prices are checked before a TLD goes on sale. Orders must be on under Registrars. On Live, use Activate after reviewing setup and spending. Missing prices, unsupported registry details and prices below cost keep a TLD off.')
-            .($filled===null?'':' Prices from '.view('domains::partials.moment',['at'=>CarbonImmutable::createFromTimestamp((int)$filled)])->render().'.'));
+        return null;
     }
     /** The saved read the panel and the left-out warning show. Empty for staff without costs. */
     public function savedPrices(): array {return $this->reads()->saved();}
@@ -250,14 +243,15 @@ class WhatYouSell extends Page implements HasTable
         $saved=$this->savedPrices();
         foreach($saved['warnings'] as $warning){
             $one=$warning['cause']==='custom_rule'&&count($warning['tlds'])===1?collect($saved['skipped'])->first(fn($row)=>$row['server_id']===$warning['server_id']&&$row['tld']===$warning['tlds'][0]):null;
-            $components[]=Callout::make('Prices left out')->warning()->columnSpanFull()
+            $tlds=$warning['tlds'];
+            $components[]=Callout::make(count($tlds)===1?'No price for '.$tlds[0]:'No prices for '.count($tlds).' TLDs')->warning()->columnSpanFull()
                 ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
                 ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
         }
         if(($hidden=$this->reads()->hiddenWarnings())!==[]){
             $count=count($hidden);
-            $components[]=Callout::make('Prices left out on other pages')->warning()->columnSpanFull()
-                ->description($count.' more '.($count===1?'TLD has':'TLDs have').' prices left out.')
+            $components[]=Callout::make($count===1?'No price for '.$hidden[0]['tld']:'No prices for '.$count.' more TLDs')->warning()->columnSpanFull()
+                ->description(($count===1?'It is':'They are').' on another page of this list. Open '.($count===1?'it':'each one').' to fix the pricing.')
                 ->footer(new HtmlString(implode(' ',array_map(fn(array $row)=>$button('Open '.$row['tld'],TldResource::getUrl('view',['record'=>$row['id']]))->toHtml(),$hidden))));
         }
         return $schema->components([...$components,EmbeddedTable::make()]);
@@ -266,7 +260,7 @@ class WhatYouSell extends Page implements HasTable
     {
         if(!$this->narrowed()){return 'No prices yet';}
         $only=$this->show()!==null&&!$this->hasTableSearch()&&!$this->switchedOn('country')&&!$this->switchedOn('no_cost');
-        return $only&&$this->reads()->leftOutExplains($this->show())?'No prices to show. Some TLDs are left out.':'No TLDs match';
+        return $only&&$this->reads()->leftOutExplains($this->show())?'No prices to show. See the note above.':'No TLDs match';
     }
     private function focused(): bool {return $this->tld!==null&&$this->getTableSearch()===$this->tld;}
     private function switchedOn(string $filter): bool {return (bool)($this->getTableFilterState($filter)['isActive']??false);}
@@ -335,7 +329,9 @@ class WhatYouSell extends Page implements HasTable
                 ...array_map(fn(string $action)=>$this->moneyGroup($action),array_keys(PriceList::ACTIONS)),
                 TextColumn::make('status')->label('Status')->extraHeaderAttributes(['class'=>'domains-sell-status'])->extraCellAttributes(['class'=>'domains-sell-status'])->badge()->state(fn(OfferRow $record)=>$this->reads()->status($record)['label'])
                     ->color(fn(OfferRow $record)=>$this->reads()->status($record)['tone'])->extraAttributes(fn(OfferRow $record)=>StatusMark::attributes($this->reads()->status($record)['tone'],'sell-'.$record->server_id.'-'.$record->tld))
-                    ->description(fn(OfferRow $record)=>$this->reads()->status($record)['next']??null)->tooltip(fn(OfferRow $record)=>$this->canEdit()?$this->reads()->blocked($record):null)
+                    // Staff rows stay one line (table standard). A gray state keeps its reason on hover; a state that needs action shows its next step.
+                    ->description(fn(OfferRow $record)=>($s=$this->reads()->status($record))['tone']==='gray'?null:($s['next']??null))
+                    ->tooltip(fn(OfferRow $record)=>implode(' ',array_filter([($s=$this->reads()->status($record))['tone']==='gray'?($s['next']??null):null,$this->canEdit()?$this->reads()->blocked($record):null]))?:null)
                     ->url(fn(OfferRow $record)=>match($this->reads()->status($record)['open']??null){'tld'=>TldResource::getUrl('view',['record'=>$this->reads()->tldId($record)]),'account'=>RegistrarAccount::getUrl(['account'=>$record->server_id]),default=>null}),
             ])
             ->checkIfRecordIsSelectableUsing(fn(OfferRow $record)=>$this->reads()->blocked($record)===null)

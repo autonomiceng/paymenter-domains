@@ -39,7 +39,7 @@ foreach([1,3] as $years){
     $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
     $html=preg_replace('~src="https?://[^\"]+"~','src="data:image/svg+xml;base64,'.base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#64748b"/></svg>').'"',$html);
     $html=str_replace('</head>','<style>'.$css.'</style>'.\Livewire\Mechanisms\FrontendAssets\FrontendAssets::styles().'</head>',$html);
-    expect(str_contains($html,'How prices are worked out'),'Explanation in render');
+    expect(str_contains($html,'How to read this table'),'Explanation in render');
     foreach(['light','dark'] as $mode){
         $page=preg_replace('~<html\b[^>]*>~','<html lang="en" class="'.$mode.'">',$html,1);
         writeRenderArtifact($out.'/what-you-sell-'.$years.'-year-'.$mode.'.html',$page);

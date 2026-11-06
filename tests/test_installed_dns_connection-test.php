@@ -64,13 +64,13 @@ $select=static function(WatchProfile $profile,array $accounts,string $oldRule)us
     }
 };
 $initial=SiteDnsDefault::profile()->id;
-$silo=$connect('namesilo');$siloRule='NameSilo requires 2 to 13 valid nameservers. Update this DNS template before saving the site default.';
+$silo=$connect('namesilo');$siloRule='NameSilo takes 2 to 13 nameservers. Update this DNS template or choose another one.';
 $assertMissing($silo,$siloRule);same($initial,SiteDnsDefault::profile()->id,'Incompatible reference remains saved');
 $domain=Domain::create(['server_id'=>$silo->server_id,'registrar_key'=>'namesilo','account_fingerprint'=>$silo->account_fingerprint,
     'domain'=>'example.com','sld'=>'example','tld'=>'com','user_id'=>$staff->id,'service_id'=>401,'status'=>'active',
     'observation'=>['facts'=>['nameservers'=>['ns1.customer.test','ns2.customer.test']]]]);
 $thirteen=$make(13);$select($thirteen,[$silo],$siloRule);
-$enom=$connect('enom');$enomRule='Enom requires 2 to 12 valid nameservers. Update this DNS template before saving the site default.';
+$enom=$connect('enom');$enomRule='Enom takes 2 to 12 nameservers. Update this DNS template or choose another one.';
 $assertMissing($enom,$enomRule);$assertMissing($silo,$enomRule);
 same($thirteen->id,SiteDnsDefault::profile()->id,'Later Enom connection never replaces NameSilo-compatible default');
 $twelve=$make(12);$select($twelve,[$silo,$enom],$enomRule);
