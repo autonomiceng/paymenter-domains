@@ -90,6 +90,7 @@ final class CartCheckoutRefresh
         }
         $component->dispatch('cartUpdated');
         CartNotice::set($component, 'Domain removed', $removed->getMessage(), $removed->getMessage(), 'warning', $removed->names);
+    }
 
     private static function shownKey(): string
     { return 'domains.cart_shown.'.NativeCart::get()->ulid; }
