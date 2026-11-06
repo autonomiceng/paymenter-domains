@@ -62,7 +62,8 @@ final class WatchWork
             if (!$ok) { $failures[$key]??=$now; } elseif ($processed>0) { unset($failures[$key]); }
         }
         $count=0;$dispatchOk=$this->stage(function()use($reconcile,$now,&$count):void {
-            $hints=$reconcile->due($now,true);$failed=false;
+            // Discovery callbacks enroll with their current clock; include those checks in this turn.
+            $hints=$reconcile->due(($this->clock)(),true);$failed=false;
             foreach($hints as$hint) { if ($this->stage(fn()=>($this->dispatch)($hint))) { $count++; } else { $failed=true; } }
             if ($failed) { throw new \RuntimeException(); }
         });

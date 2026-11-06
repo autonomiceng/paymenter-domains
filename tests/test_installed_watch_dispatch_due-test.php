@@ -62,4 +62,26 @@ same(900,$managedAt-(int)$oldest->due_at,'Oldest managed read receives its bound
 DB::table('domains_watch_work')->where('watch_id',$watch->id)->update(['due_at'=>$now+86400]);
 $sent=[];$now+=60;same(2,$work->tick(),'Managed work still receives the same bounded owner turn');
 expect(count(array_filter($sent,fn($h)=>isset($h['domain_id'])))===2,'Managed backlog remains eligible');
+// Discovery saves enroll revised targets using the current clock, after this turn began.
+// The real dispatcher/enrollment boundary is required; a selector-only test misses the stale cutoff.
+$now=1800003000;$shown=$now-37;
+DB::table('domains_watch_names')->where('id',$watch->id)->increment('revision');
+DB::table('domains_watch_work')->where('watch_id',$watch->id)->update(['due_at'=>$now+86400]);
+DB::table('domains_watch_work')->where('watch_id',$watch->id)->whereIn('kind',['delegation','points'])->update(['due_at'=>$shown]);
+DB::table('domains_managed_public_work')->update(['due_at'=>$now+86400]);
+DB::table('domains_watch_discovery')->update(['due_at'=>$now,'hint'=>true]);
+$sent=[];$enrolledAt=null;$duringDiscovery=null;
+$duringDiscovery=new WatchWork(new Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader(),
+    new WatchDiscoveryWork(static function()use(&$now,&$duringDiscovery,&$enrolledAt,$watch,$owner):void {
+        $now+=15;$duringDiscovery->enrollWatch($watch->id,$owner->id);$enrolledAt=$now;
+    }),true,static function()use(&$now){return $now;},
+    static function($hint)use(&$sent,&$now):void {$sent[]=['at'=>$now,...$hint];});
+same(2,$duringDiscovery->tick(),'Checks enrolled during discovery are dispatched in this turn');
+same(['delegation','points'],array_column($sent,'kind'),'Current-clock enrollment retains both watch deadlines');
+same(1800003015,$enrolledAt,'Discovery advanced the clock before enrollment');
+$now+=60;
+foreach($sent as$hint){expect($duringDiscovery->observe($hint),'The next-minute consumer executes the dispatched watch check');}
+$observations=Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::where('watch_id',$watch->id)->where('watch_revision',$watch->fresh()->revision)->get();
+same(2,$observations->count(),'Both DNS observations are retained after the next queue turn');
+foreach($observations as$observation){expect($observation->started_at-$shown<=120,'A watch read starts within two minutes of the shown time');}
 $nativeSuccessful=true;echo "Minute dispatch of independently due watch work passed.\n";
