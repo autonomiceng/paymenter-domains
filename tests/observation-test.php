@@ -2,6 +2,7 @@
 // Enom444f31c synthetic observation regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/management.php';
+require_once __DIR__.'/Support/observation-work.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationSchema,ObservationWork};
 ObservationSchema::install(); $budget=new AccountReadBudget($clock); $observer=new DomainObservation($readBindings,$clock,$budget);
@@ -20,42 +21,42 @@ commerceReject(fn()=>$observer->run($d->id));same($prior,$d->fresh()->observatio
 commerceReject(fn()=>$observer->run($d->id,999));
 // Durable restart/duplicate delivery, due times, failure hold and explicit bounded resume.
 $observation->years=1;
-$work=new ObservationWork($observer,$clock,$budget);$work->enroll($d->server_id);$work->enroll($d->server_id);
-same(1,DB::table('domains_observation_queues')->count(),'Account enrollment idempotent');
-$work->tick(1); $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole(); $calls=count($observation->calls);
-(new ObservationWork($observer,$clock,$budget))->tick(1);same($calls,count($observation->calls),'Due/lease survives new worker');
+$work=fixtureObservationWork($observer,$clock);$work->enroll($d->server_id);$work->enroll($d->server_id);
+same(1,DB::table('domains_observation_queues')->where('server_id',$d->server_id)->count(),'Account enrollment idempotent');
+$work->tick(2); $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole(); $calls=count($observation->calls);
+(fixtureObservationWork($observer,$clock))->tick(2);same($calls,count($observation->calls),'Due/lease survives new worker');
 DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp(),'lease_until'=>$clock->now()->getTimestamp()+300]);
-$work->tick(1);same($calls,count($observation->calls),'Live worker not duplicated');
+$work->tick(2);same($calls,count($observation->calls),'Live worker not duplicated');
 $clock->instant=$clock->now()->modify('+301 seconds');$observation->fault='info_missing';
-same('read_no_evidence',$work->tick(1)[$d->server_id],'Failed domain read retains its cause');
+same('read_no_evidence',$work->tick(2)[$d->server_id]['holding'],'Failed domain read retains its cause');
 same('read_no_evidence',DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code'),'Scheduled failure retains safe cause with bound account');
 expect(ObservationWork::stopped($d->fresh()),'Specific failure cause remains stopped');$calls=count($observation->calls);
-$clock->instant=$clock->now()->modify('+1 day');$work->tick(1);same($calls,count($observation->calls),'Failed read has no automatic retries');
+$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);same($calls,count($observation->calls),'Failed read has no automatic retries');
 $observation->fault='';$work->resume($job->id,'staff_read_resume');
 DB::table('domains_read_budgets')->where('server_id',$d->server_id)->update(['used'=>60,'window_at'=>$clock->now()->getTimestamp()*1000000]);
-same('read_deferred',$work->tick(1)[$d->server_id],'Local quota refusal is retryable');same(0,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Local denial spends no failure try');
-$clock->instant=$clock->now()->modify('+60 seconds');$work->tick(1);expect(count($observation->calls)>$calls,'Quota reset permits read without another resume');
+same('read_deferred',$work->tick(2)[$d->server_id]['holding'],'Local quota refusal is retryable');same(0,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Local denial spends no failure try');
+$clock->instant=$clock->now()->modify('+60 seconds');$work->tick(2);expect(count($observation->calls)>$calls,'Quota reset permits read without another resume');
 expect(isset($d->fresh()->observation['resumptions'][0]),'Resume audit retained');same($before,$original->fresh()->getAttributes(),'Refresh/restart/resume preserves operation bytes');
 // Enom TEST cap denial is also local: no failure try or stopped state, then automatic recovery.
 DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
 $priorJob=DB::table('domains_observation_work')->where('id',$job->id)->sole();
 $observation->during=static fn()=>throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit;
-same('read_deferred',$work->tick(1)[$d->server_id],'TEST call cap defers scheduled primary read');
+same('read_deferred',$work->tick(2)[$d->server_id]['holding'],'TEST call cap defers scheduled primary read');
 $capped=DB::table('domains_observation_work')->where('id',$job->id)->sole();
 same([$priorJob->tries,$priorJob->safe_code,null,0,$clock->now()->getTimestamp()+60],[$capped->tries,$capped->safe_code,$capped->claim,$capped->lease_until,$capped->due_at],'Cap clears lease and restores tries and prior safe code');
 $calls=count($observation->calls);$clock->instant=$clock->now()->modify('+60 seconds');
-same('refreshed',$work->tick(1)[$d->server_id],'Capacity recovery needs no staff resume');expect(count($observation->calls)>$calls,'Next due tick performs read');
+same('refreshed',$work->tick(2)[$d->server_id]['holding'],'Capacity recovery needs no staff resume');expect(count($observation->calls)>$calls,'Next due tick performs read');
 same($before,$original->fresh()->getAttributes(),'Cap recovery preserves original operation evidence');
 // A disabled TEST limit is the same non-consuming refusal, even over successive due turns.
 $capConfig=config('domains.enom_test_sends_per_day');config(['domains.enom_test_sends_per_day'=>0]);
 foreach([1,2] as $turn){
  DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
  $observation->during=static fn()=>\Paymenter\Extensions\Servers\Domains\Services\EnomTestSendLimit::admit(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,'synthetic-uid','GetDomainInfo');
- same('read_deferred',$work->tick(1)[$d->server_id],'Cap zero remains deferred on due turn '.$turn);
+ same('read_deferred',$work->tick(2)[$d->server_id]['holding'],'Cap zero remains deferred on due turn '.$turn);
  $zero=DB::table('domains_observation_work')->where('id',$job->id)->sole();same([0,'refreshed',null,0,$clock->now()->getTimestamp()+60],[$zero->tries,$zero->safe_code,$zero->claim,$zero->lease_until,$zero->due_at],'Cap zero never spends a failure try or stops work');
  $clock->instant=$clock->now()->modify('+60 seconds');
 }
-config(['domains.enom_test_sends_per_day'=>$capConfig]);same('refreshed',$work->tick(1)[$d->server_id],'Restored capacity recovers without staff resume');
+config(['domains.enom_test_sends_per_day'=>$capConfig]);same('refreshed',$work->tick(2)[$d->server_id]['holding'],'Restored capacity recovers without staff resume');
 // Separately authorized correction: immutable link and appended readback progress, never closure.
 $bindings->setProcessing($d->server_id, true, syntheticActivation());$op=$management->request($user,$d->id,'auto_renew_off',[],$key(),$driver,correction:$original->operation_key);
 same('auto_renew',$op->policy['management']['correction_link']['section'],'Frozen section link');same('succeeded',$management->run($op->id,$driver)->state,'Separate correction execution');
@@ -75,29 +76,31 @@ $observer->run($d->id);same($a->operation_key,$d->fresh()->observation['sections
 // A real management preparation interleaving cannot be held by a background projection save.
 Illuminate\Support\Facades\Cache::flush();$race=$submit($d,$driver,'auto_renew_off');$priorTries=DB::table('domains_observation_work')->where('id',$job->id)->value('tries');
 DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp()]);
-$state->during=function()use($work,$d,$job,$priorTries){same('read_deferred',$work->tick(1)[$d->server_id],'Observation yields during management preparation');same($priorTries,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Busy authority spends no observation try');};
+$queue=DB::table('domains_observation_queues')->where('server_id',$d->server_id)->sole();
+$holdingWork=new \Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork($observer,$clock);
+$state->during=function()use($holdingWork,$queue,$d,$job,$priorTries){same('read_deferred',$holdingWork->turn($queue,static fn()=>null),'Observation yields during management preparation');same($priorTries,DB::table('domains_observation_work')->where('id',$job->id)->value('tries'),'Busy authority spends no observation try');};
 same('succeeded',$management->run($race->id,$driver)->state,'Live management claim consumes and sends after deferred observation');
 // Exhausted pre-acquisition history cannot suppress a new completed-acquisition phase.
-$bindings->setProcessing($d->server_id, true, syntheticActivation());$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$d->server_id,true,true,$now);[$pending]=$prepare(placeholderComFixtureName('followup-after-exhaustion-placeholder.com'));$pendingDomain=$pending->domain()->firstOrFail();$work->tick(1);
+$bindings->setProcessing($d->server_id, true, syntheticActivation());$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$d->server_id,true,true,$now);[$pending]=$prepare(placeholderComFixtureName('followup-after-exhaustion-placeholder.com'));$pendingDomain=$pending->domain()->firstOrFail();$work->tick(2);
 $pendingJob=DB::table('domains_observation_work')->where('domain_id',$pendingDomain->id)->sole();DB::table('domains_observation_work')->where('id',$pendingJob->id)->update(['safe_code'=>'budget_exhausted','tries'=>5]);
 same('succeeded',$reconcile->run($pending->id)->state,'Actual completion after pending work exhausted');
-for($i=0;$i<3;$i++){$clock->instant=$clock->now()->modify('+301 seconds');(new ObservationWork($observer,$clock,$budget))->tick(1);}
+for($i=0;$i<3;$i++){$clock->instant=$clock->now()->modify('+301 seconds');(fixtureObservationWork($observer,$clock))->tick(2);}
 same('observed',$pendingDomain->fresh()->observation['followup']['state'],'New acquisition phase drains through restarted queue');
 same(2,DB::table('domains_observation_work')->where('domain_id',$pendingDomain->id)->count(),'Distinct acquisition work retains pending history');same(5,DB::table('domains_observation_work')->where('id',$pendingJob->id)->value('tries'),'Old exhausted history unchanged');
 // Account-level failures retain a safe cause and never consume provider capacity.
 $queue=DB::table('domains_observation_queues')->where('server_id',$d->server_id)->sole();$calls=count($observation->calls);
 DB::table('domains_observation_queues')->where('id',$queue->id)->update(['account_fingerprint'=>str_repeat('e',64)]);
-same('binding_mismatch',$work->tick(1)[$d->server_id],'Account catch retains binding failure cause');
+same('binding_mismatch',$work->tick(2)[$d->server_id]['holding'],'Account catch retains binding failure cause');
 same($calls,count($observation->calls),'Account mismatch never reads provider');
 DB::table('domains_observation_queues')->where('id',$queue->id)->update(['account_fingerprint'=>$queue->account_fingerprint]);
 // A broken catalogue audit cannot prevent an independent due domain read.
-$savedAcceptance=App\Models\Server::findOrFail($d->server_id)->settings()->where('key','domains_catalogue_acceptance')->sole();$savedAcceptance->delete();
-DB::table('domains_observation_queues')->where('id',$queue->id)->update(['catalogue_audit'=>'invalid-json','catalogue_hold'=>null,'catalogue_due'=>0]);
+$savedOfferWork=DB::table('domains_observation_queues')->where('id',$queue->id)->value('offer_work');
+DB::table('domains_observation_queues')->where('id',$queue->id)->update(['offer_work'=>'invalid-json']);
 DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>null,'due_at'=>0,'lease_until'=>0]);
-$calls=count($observation->calls);$isolated=new ObservationWork($observer,$clock,$budget,new \Paymenter\Extensions\Servers\Domains\Services\CatalogueSync($readBindings,$prices));$isolated->tick(1);
+$calls=count($observation->calls);$isolated=fixtureObservationWork($observer,$clock);$isolated->tick(2);
 expect(count($observation->calls)>$calls,'Catalogue diagnostic persistence cannot skip independent domain reads');
 // Unsent acquisitions have no holding to observe, including work retained by an older sweep.
-$savedAcceptance->replicate()->save();$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);
+DB::table('domains_observation_queues')->where('id',$queue->id)->update(['offer_work'=>$savedOfferWork]);$clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);
 DB::table('domains_observation_work')->update(['due_at'=>$now->getTimestamp()+30*86400]);
 $unsent=[];
 foreach([['held','usd_balance_required'],['held','staff_review_required'],['cancelled',null],['held','usd_balance_required'],['awaiting_payment',null],['awaiting_code',null]] as $i=>[$state,$reason]){
@@ -107,7 +110,7 @@ foreach([['held','usd_balance_required'],['held','staff_review_required'],['canc
 $preseal=$new(placeholderComFixtureName('unsent-preseal-placeholder.com'));[$claimed]=$claims->claim($preseal->id);
 $claims->finish($claimed,null,'pre_send_interrupted');$unsent[]=$preseal->domain()->firstOrFail();
 $calls=count($observation->calls);$money=$nativeMoney();
-$work->tick(1);same($calls,count($observation->calls),'Unsent acquisitions consume no provider reads');
+$work->tick(2);same($calls,count($observation->calls),'Unsent acquisitions consume no provider reads');
 same(0,DB::table('domains_observation_work')->whereIn('domain_id',array_map(fn($d)=>$d->id,$unsent))->count(),'Unsent acquisitions are not enrolled');
 foreach($unsent as $u){
     DB::table('domains_observation_work')->insert(['server_id'=>$u->server_id,'account_fingerprint'=>$u->account_fingerprint,'domain_id'=>$u->id,'generation'=>$u->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
@@ -115,7 +118,7 @@ foreach($unsent as $u){
     try{$observer->run($u->id);expect(false,'Unsent direct read must defer');}catch(\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred){}
 }
 same([],ObservationWork::stoppedIds(collect($unsent)),'Batched sync status also ignores old unsent failures');
-$work->tick(1);same($calls,count($observation->calls),'Retained unsent work and direct reads spend no provider reads');
+$work->tick(2);same($calls,count($observation->calls),'Retained unsent work and direct reads spend no provider reads');
 same(0,DB::table('domains_observation_work')->whereIn('domain_id',array_map(fn($d)=>$d->id,$unsent))->count(),'Old unsent queue diagnostics are removed, not permanently stopped');
 same($money,$nativeMoney(),'Exclusion changes no invoices, payments or jobs');
 // Dispatch may beat discovery after apply: an old false failure must not revive at seal.
@@ -135,15 +138,19 @@ expect(!ObservationWork::stopped($sending->fresh()),'Dispatch before discovery m
 same($holdingWork,DB::table('domains_observation_work')->where('domain_id',$d->id)->get()->toJson(),'Dispatch preserves a real holding failure');
 expect(ObservationWork::stopped($d->fresh()),'Real holding still requires resume');
 $observation->name=$sending->domain;$calls=count($observation->calls);
-$work->tick(1);expect(count($observation->calls)>$calls,'Possibly sent acquisition is observed without a receipt');
+$work->tick(2);expect(count($observation->calls)>$calls,'Possibly sent acquisition is observed without a receipt');
 expect(DB::table('domains_observation_work')->where('domain_id',$sending->id)->exists(),'Submitted acquisition can enroll after exclusion');
 // A failure from after submission must remain stopped, including on later discovery turns.
 DB::table('domains_observation_work')->where('domain_id',$sending->id)->update(['safe_code'=>'read_failed']);
-$calls=count($observation->calls);$work->tick(1);
+$calls=count($observation->calls);$work->tick(2);
 same($calls,count($observation->calls),'Submitted acquisition failure is not retried before its due time');
 expect(!ObservationWork::stopped($sending->fresh()),'Possibly-sent read failure is retryable, never permission to resend the purchase');
+DB::table('domains_observation_work')->where('domain_id',$sending->id)->update(['safe_code'=>'read_no_evidence']);
+$calls=count($observation->calls);$work->tick(2);
+same($calls,count($observation->calls),'Submitted acquisition failure is not automatically retried');
+expect(ObservationWork::stopped($sending->fresh()),'Possibly-sent attempt retains its genuine sync stop');
 // A known registrar holding stays observable even when the pending order was not its source.
 $known=$unsent[0]->fresh();$known->update(['observation'=>['facts'=>['name'=>$known->domain,'generation'=>$known->authority_generation,'account_fingerprint'=>$known->account_fingerprint,'owned'=>true]]]);
-$observation->name=$known->domain;$calls=count($observation->calls);$work->tick(1);
+$observation->name=$known->domain;$calls=count($observation->calls);$work->tick(2);
 expect(count($observation->calls)>$calls,'Current owned registrar evidence remains eligible');
 $nativeSuccessful=true;echo "Shared observation, follow-up and correction projections passed\n";
