@@ -8,7 +8,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{PricingEditorNotice,Staff};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
-extract(commerceFixture(true)); tldPanel(); Carbon\Carbon::setTestNow($now);
+extract(commerceFixture(true)); staffSalesFixture();tldPanel(); Carbon\Carbon::setTestNow($now);
 app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now));
 $permissions=[Staff::VIEW,Staff::POLICY,Staff::COSTS,'admin.products.viewAny','admin.products.view','admin.products.update'];
 foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
@@ -57,9 +57,11 @@ $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
 expect(str_contains($page->html(),'Registration: Not for sale'),'Reopening a saved unpublished rule shows paused registration');
 // The sweep puts a saved rule on sale by itself and says so in the history.
 // Bounded local work republishes it through the real writer, with no staff actor.
+$systemPublications=static fn()=>count(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id),static fn($row)=>$row['change']==='Prices published'&&$row['by']==='System'));
+$publishedBefore=$systemPublications();
 activeFixtureRepublish($sellers,$tlds[0]);
 expect(str_contains(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id])->html(),'Registration: For sale'),'The sweep restores sale when saved and published prices differ');
-same(['Prices published','System'],(static fn($row)=>[$row['change'],$row['by']])(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id)[0]),'The audit log shows the system did it');
+same($publishedBefore+1,$systemPublications(),'The new publication has its own System audit event');
 $product=$native->product($tlds[0],'register');
 $edit=Livewire::actingAs($u)->test(App\Admin\Resources\ProductResource\Pages\EditProduct::class,['record'=>$product->id])->assertStatus(200);
 expect(str_contains($edit->html(),'Don’t change this product’s server'),'What not to change stays on the page');
