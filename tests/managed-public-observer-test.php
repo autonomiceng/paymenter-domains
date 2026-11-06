@@ -7,6 +7,11 @@ use Paymenter\Extensions\Servers\Domains\Dns\{DnsQuery,DnsAnswer,PublicSignalsTa
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicObservation,ManagedPublicConfig,WatchName,WatchSource};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,PublicSignalsProjection,ManagedPublicWorkSchema};
 extract(managedFixture(true));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+// The installer seeds this shared window with wall time; this scenario uses the fixture clock.
+$pool=DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->where('id',1);
+same(0,(int)(clone $pool)->value('used'),'The observer starts without public quota consumption');
+same([],json_decode((clone $pool)->value('active'),true),'The observer starts without active public checks');
+$pool->update(['window_at'=>$now]);
 // This confirmation/isolation scenario starts with known delegation; first-read imports have their own table.
 $d->update(['observation'=>\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::recordNameservers($d,
     \Paymenter\Extensions\Servers\Domains\Data\NameserverEvidence::observed($profile->profile()->nameservers,'enom_getdns',new DateTimeImmutable('@'.$now)))]);
@@ -41,6 +46,8 @@ expect($signals->observe($id,$uid,'delegation'),'Fresh read after prior evidence
 same(false,ManagedPublicObservation::orderByDesc('id')->first()->ns_confirmed,'Expired confirmation requires a new second sample');
 same($authority,$d->fresh()->getRawOriginal(),'Public DNS does not change holding authority, expiry, permissions or observation');same($money,scenarioMoney(),'No financial mutation');same($calls,count($wire->calls),'No registrar reads');
 // Glue drift shares this public schedule and resolver; it never contacts the registrar.
+// Saved inventory reads use the native clock; keep it in step with the public observer.
+$clock->instant=new DateTimeImmutable('@'.$time->now);
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),['glue'=>['records'=>['ns1.example.com'=>'8.8.8.8']]],new DateTimeImmutable('@'.$time->now));
 $glueAuthority=$d->fresh()->getRawOriginal();$q=new DnsQuery('ns1.example.com','A');
 $fake->answers[$q->key()]=DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'1.1.1.1']]);
