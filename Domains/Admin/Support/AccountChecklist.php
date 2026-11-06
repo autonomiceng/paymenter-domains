@@ -104,14 +104,15 @@ final class AccountChecklist
         $billing=RenewalBillingSettings::read($server);
         return $help.(!$billing['scheduled']&&$billing['manual']?' Invoices are owner-requested only; scheduled billing is off.':'');
     }
-    /** Orders stop or start every registrar request on this account. Saved credentials must match before they can start. */
+    /** Orders stop or start every registrar request on this account. Saved credentials must match before they can start.
+     * Off already says they are paused, as the page head does, so the cause gives only the next step. */
     private static function orders(Account $a): array
     {
         $on=(bool)$a->processing_enabled;
         $status=$on?'matched':app(AccountBindings::class)->configurationStatus((int)$a->server_id);
-        $cause=match(true){$status==='site_unbound'&&$a->registrar_key==='namesilo'=>'Orders are paused. Ask your site admin to confirm the Live site for this account.',
-            $status==='site_unbound'||(!$on&&$status==='matched'&&$a->environment==='live'&&!EnomLiveActivation::current(AccountBindings::binding($a)))=>'Orders are paused. Use Activate to check setup and turn on Orders.',
-            $status==='matched'=>'Orders are paused. Check setup, then turn on Orders.',default=>'Orders are paused. Fix the API connection first.'};
+        $cause=match(true){$status==='site_unbound'&&$a->registrar_key==='namesilo'=>'Ask your site admin to confirm the Live site for this account.',
+            $status==='site_unbound'||(!$on&&$status==='matched'&&$a->environment==='live'&&!EnomLiveActivation::current(AccountBindings::binding($a)))=>'Use Activate to check setup and turn on Orders.',
+            $status==='matched'=>'Check setup, then turn on Orders.',default=>'Fix the API connection first.'};
         return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:$cause,'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
     }
     /** An Off feature needs attention when this account already manages domains. No settings change here. */
