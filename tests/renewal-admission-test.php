@@ -80,7 +80,8 @@ same(RenewalCode::Admitted, $capturedDecision->code, 'Captured flat GetExtendInf
 same(RenewalStatus::Ordinary, $capturedDecision->status, 'Captured pair retains ordinary status through authority rechecks');
 same('8.9500', $capturedDecision->cost?->amount, 'Captured empty currency gives exact one-year USD admission cost');
 $state->captured = false;
-same('26.8500', $check($request(3))->cost?->amount, 'Exact supported three-year renewal total');
+same(RenewalCode::Term, $check($request(3))->code, 'Longer renewal without a frozen exact-term rule refuses');
+same([], $state->calls, 'Refused longer renewal performs no provider reads');
 $state->price = '99.00'; $decision = $check(); same(RenewalCode::Admitted, $decision->code, 'Below-cost renewals remain admitted');
 same('below_cost', $decision->staffAlert, 'Below-cost renewal alerts staff'); $state->price = '8.95';
 expect(!str_contains(json_encode($decision), '99') && !str_contains(print_r($decision, true), '99'), 'Generic summaries redact money');
@@ -118,7 +119,7 @@ $clock->instant = new DateTimeImmutable('2027-10-18T11:59:59Z'); same(RenewalSta
 same('2027-10-18T12:00:00+00:00', $check()->validUntil?->format(DATE_ATOM), 'Ordinary validity never crosses expiry');
 $state->duringCommand = ReadCommand::Renewal;
 $state->during = static fn () => $clock->instant = new DateTimeImmutable('2027-10-18T12:00:01Z');
-same(RenewalCode::Changed, $check($request(3))->code, 'Multi-year ordinary read crossing expiry cannot bypass grace');
+same(RenewalCode::Changed, $check()->code, 'Annual ordinary read crossing expiry cannot bypass grace');
 $state->duringCommand = null;
 $clock->instant = new DateTimeImmutable('2027-10-18T12:00:00Z');
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.renewal'=>true]);

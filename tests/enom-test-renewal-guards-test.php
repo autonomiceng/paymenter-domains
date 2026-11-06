@@ -36,6 +36,13 @@ DB::table('invoice_items')->where('id',$termOp->invoice_item_id)->update(['price
 App\Helpers\ExtensionHelper::addPayment($termInvoice->id,null,$termAmount);
 $termOp=$termOp->fresh();same(2,(int)$termOp->term,'Retained fixture has a real two-year debt');
 [$termEngine,$termWriter]=$compose($termBinding);
+// Full native debt is required to reach the spending boundary; a value-only fixture cannot prove no reads/sends.
+$termRequest=new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($termDomain->id,$termDomain->authority_generation,
+    $termDomain->confirmed_revision,$termOp->base_expires_at->format('Y-m-d'),$termDomain->provider_domain_id,2,$termOp->operation_key);
+$termAdmission=new RenewalAdmission($authority,$renewBindings,new RenewalAcceptance($termBinding,true,true,25,true),$clock);
+same('renewal_term_refused',$termAdmission->check($termRequest)->code->value,'Opt-out explicit runtime refuses retained longer debt');
+same([],$state->calls,'Opt-out longer debt never reaches provider reads');
+
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.renewal'=>$off]);expect(!EnomTestRenewal::enabled($b),'Strict boolean opt-in');}
 config(['domains.enom_writes.renewal'=>true]);expect(EnomTestRenewal::enabled($b),'TEST opt-in opens');
