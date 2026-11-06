@@ -234,7 +234,8 @@ final readonly class OwnedDomains
             try { $read=ObservationProjection::sections($d);$saved=OwnerRecords::forDomain($d,$read); } catch (\Throwable) { $read=$saved=[]; }
             $management['dns']=['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>$saved['dns']??null,'fixed'=>$saved['dns_fixed']??[],'asOf'=>isset($saved['dns'])?($read['dns']['at']??null):null];
         }
-        foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; $section['progress']=($row['settled']??false)?null:self::askUs($row,(bool)$section['actions']); } unset($section);
+        // A change in progress holds every section of its setting; its result shows only in its own section.
+        foreach ($management as $key=>&$section) { $row=$progressBySetting[ManagementProgress::setting($key)]??null; if ($row && !$row['pending'] && $row['section']!==$key) { $row=null; } $section['progress']=($row['settled']??false)?null:self::askUs($row,(bool)$section['actions']); } unset($section);
         // Try again only where the customer can make the change; otherwise they ask us.
         $editable=[]; foreach ($management as $key=>$section) { $editable[ManagementProgress::setting($key)]=($editable[ManagementProgress::setting($key)]??false)||$section['actions']; }
         foreach ($progress as &$row) { if (isset($row['setting'])) { $row['retry']=$editable[$row['setting']]??false; unset($row['setting']); } } unset($row);

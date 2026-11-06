@@ -19,6 +19,9 @@ final class ManagementProgress
     { return match($action) { 'contact_profile'=>'contacts','srv'=>'dns',
         'privacy_enable','privacy_disable','privacy_purchase','privacy_renew'=>'privacy','ds_add','ds_delete'=>'ds',
         'glue_add','glue_update','glue_delete'=>'glue',default=>$action }; }
+    /** The page section a change belongs to. DNS and SRV share one setting, one zone write at a time, but are separate sections. */
+    public static function section(string $action): string
+    { return $action==='srv'?'srv':self::setting($action); }
     /** A change's status key on its domain. Customer History and the staff Activity rail read this one word:
      * a result counts only once the registrar's readback confirms it. Null when the request is not a change. */
     public static function statusKey(Operation $op, Domain $d, bool $ordersOff = false): ?string
@@ -57,7 +60,7 @@ final class ManagementProgress
                 $row=['id'=>(int)$op->id,'pending'=>false,'slow'=>false,'unreadable'=>true,'text'=>self::UNREADABLE];
                 $priority=2;
             }
-            if(!isset($priorities[$key]) || $priority>$priorities[$key]){$rows[$key]=$row;$priorities[$key]=$priority;}
+            if(!isset($priorities[$key]) || $priority>$priorities[$key]){$rows[$key]=[...$row,'section'=>self::section($op->action)];$priorities[$key]=$priority;}
         }
         return $rows;
     }

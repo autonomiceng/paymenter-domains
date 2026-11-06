@@ -83,6 +83,9 @@ Cache::flush();$r=$post('dns',['records'=>$rows,'preimage_digest'=>ManagementPay
 $op=$d->operations()->orderByDesc('id')->firstOrFail();same('succeeded',$management->run($op->id,$driver)->state,'Maximum DNS records through native controller');
 $dto=$owners->present($d->fresh());$long=new \Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($dto),'name'=>placeholderComFixtureName((str_repeat('a',51).'-placeholder').'.com')]);
 $html=view('domains::show',['domain'=>$long,'keys'=>array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64))])->render();$dom=storefrontDom($html);
+// DNS and SRV share one setting; after the DNS save only its own section says Saved.
+expect(str_contains($dom->query('//li[@id="dns"]')->item(0)->textContent,'Saved.'),'The saved DNS section says Saved.');
+expect(!str_contains($dom->query('//li[@id="srv"]')->item(0)->textContent,'Saved.'),'The unchanged SRV section does not say Saved.');
 same(50,$dom->query('//li[@id="dns"]//tbody/tr')->length,'Maximum is bounded to 50 visible rows');expect(str_contains($html,(str_repeat('a',51).'-placeholder')),'Long label preserved');expect(!str_contains($html,'value="<synthetic>'),'Record values escaped');
 $ids=[];foreach($dom->query('//*[@id]')as$node){expect(!isset($ids[$node->getAttribute('id')]),'Unique field IDs');$ids[$node->getAttribute('id')]=true;}
 foreach($dom->query('//*[@aria-describedby]')as$node){foreach(explode(' ',$node->getAttribute('aria-describedby'))as$id){expect(isset($ids[$id]),'Every description exists');}}
