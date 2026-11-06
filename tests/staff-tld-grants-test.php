@@ -37,7 +37,7 @@ function tldListCost($page,int $size): array
     return [count($q),$count('users'),$count('roles'),$count('domains_prices')];
 }
 for($n=4;$n<100;$n++){
-    $copy=$t->replicate();$copy->tld='ending'.$n;$copy->save();
+    $copy=$t->replicate();$copy->tld='ending'.chr(97+intdiv($n,26)).chr(97+$n%26);$copy->save();
     foreach(Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $price){$row=$price->replicate();$row->tld=$copy->tld;$row->save();}
 }
 $twentyFive=tldListCost($page,25);$hundred=tldListCost($page,100);
@@ -46,7 +46,12 @@ same($twentyFive[3],$hundred[3],'Saved prices load once per page');
 same($twentyFive[0],$hundred[0],'No queries per additional row');
 foreach(\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$t->server_id)->get() as $ending){
     $prototype=Price::where('server_id',$t->server_id)->where('tld',$ending->tld)->where('action','register')->firstOrFail();
-    foreach([2,4,5,6,7,8,9,10] as $term){$row=$prototype->replicate();$row->term=$term;$row->save();}
+    foreach([2,4,5,6,7,8,9,10] as $term){
+        $row=$prototype->replicate();$row->term=$term;
+        $source=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($prototype->catalogue_observation));
+        $cost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',$term,true,bcmul('6.0000',(string)$term,4),$source->sourceUnit,$source->source,$source->observedAt,$source->freshUntil,normalized:true);
+        $row->catalogue_observation=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($cost));$row->save();
+    }
 }
 same($twentyFive,tldListCost($page,25),'Four versus twelve price rows have identical 25-row query cost');
 same($hundred,tldListCost($page,100),'Four versus twelve price rows have identical 100-row query cost');

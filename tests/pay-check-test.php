@@ -17,7 +17,7 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 $live=(object)['available'=>true,'premium'=>false,'cost'=>'0.01','fail'=>false,'reads'=>0,'query'=>null];
 $registry=new RegistrarRegistry;
 $verifier=new class implements AccountVerifier {public function verify(Environment $e,#[SensitiveParameter] array $credentials):string{return 'verified-stable-id';}};
-$registry->register('enom',['token'],$verifier,static function(AccountBinding $b,array $c)use($live,$clock):FakeRegistrar {
+$payReader=static function(AccountBinding $b,array $c)use($live,$clock):FakeRegistrar {
     $quote=$live->query?new QuoteEvidence($live->query,new Money($live->cost,'USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds')):null;
     $reader=new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(quote:$quote,available:$live->available,premium:$live->premium)));
     $reader->beforeRead=static function(string $method)use($live):void {
@@ -26,9 +26,14 @@ $registry->register('enom',['token'],$verifier,static function(AccountBinding $b
         if($live->fail){throw new RuntimeException('Synthetic registrar timeout');}
     };
     return $reader;
-});
+};
+$registry->register('enom',['token'],$verifier,$payReader,registrationPreflightFactory:$payReader);
 require dirname(__DIR__).'/Domains/routes/web.php';app('router')->getRoutes()->refreshNameLookups();
-app()->instance(PayCheck::class,new PayCheck(new AccountBindings($registry),$clock));PayCheck::boot();
+// Initialize the genuine installed holding route before the isolated pay-check fixture replaces its adapter.
+Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
+// Pay checks and checkout share this explicit active catalogue composition.
+$payCheck=new class(new AccountBindings($registry),$clock) extends PayCheck {use OfferCommerceRoute;};
+$payCheck->fixtureOffers=$offers;app()->instance(PayCheck::class,$payCheck);PayCheck::boot();
 $aim=static function(Invoice $invoice)use($live):void {$op=Operation::where('invoice_id',$invoice->id)->first();$live->query=OperationClaims::query($op,$op->domain);};
 // The three pay paths prove the hook; the other cases ask the same check directly because a Livewire render takes two seconds here.
 $stop=static function(Invoice $invoice)use($aim):?array {$aim($invoice);return app(PayCheck::class)->stop($invoice);};

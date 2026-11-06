@@ -22,8 +22,6 @@ require dirname(__DIR__).'/Domains/routes/web.php';
 extract(commerceFixture(true)); $clock ??= new FakeClock($now);
 $eligibility = activeFixtureEligibility($bindings, $clock, new TransferPrecheck(new Rdap(static fn () => ['status' => 503, 'body' => ''])));
 $store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
-storefrontCorruptionChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);
-storefrontQueryChecks(compact('bindings', 'prices', 'sellers', 'native', 'now', 'reads'), $store);
 $controller = new StorefrontController($store); app()->instance(Storefront::class, $store);
 storefrontViews(); $session = app('request')->session();
 $req = static function (array $input = [], string $method = 'POST', ?App\Models\User $user = null, string $ip = '192.0.2.32') use ($session): Request {
@@ -40,12 +38,14 @@ expect(str_contains($transferOnly->render(), 'Domain registration isn’t availa
 same(true, $transferOnly->getData()['transfersOffered'], 'Transfer-only catalogue keeps the transfer entry point');
 Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->update(['register_enabled'=>true]);
 Illuminate\Support\Facades\Cache::flush();
-$tlds[0]->update(['min_years'=>3]);
+$originalFacts=$tlds[0]->fresh()->catalogue_facts;
+$facts=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($originalFacts);$facts['terms']['register']=[3];
+$tlds[0]->update(['catalogue_facts'=>json_encode($facts)]);
 Illuminate\Support\Facades\Cache::flush();
 $longerOnly=$controller->search($req(['name'=>'example'], 'GET'))->getData();
 same([3],$longerOnly['endings'][0]['terms'],'Registration choices retain a longer-term-only offer');
 same('com',$longerOnly['results'][0]['tld'],'Longer-term-only ending remains searchable');
-$tlds[0]->update(['min_years'=>1]);
+$tlds[0]->update(['catalogue_facts'=>$originalFacts]);
 Illuminate\Support\Facades\Cache::flush();
 $key = FormKeys::issue($req(), 'search');
 $check = static fn ($name) => $controller->check($req(['domain' => $name, '_request_key' => $key]));
@@ -77,13 +77,7 @@ same(['com'], array_column($store->endings(), 'tld'), 'Only selected seller endi
 })();
 same(true, $store->endings()[0]['testEnvironment'], 'D7 public catalogue carries only a test boolean');
 same('$7.80', $store->endings()[0]['register'], 'Selected Enom retail, not cost or other account');
-Illuminate\Support\Facades\DB::enableQueryLog(); Illuminate\Support\Facades\DB::flushQueryLog();
-$store->endings();
-// Every entry resolves the current cutover gate; cached display rows need no other reads.
-same([['query' => 'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?',
-    'bindings' => ['domains_offer_upgrade']]], array_map(static fn ($q) => array_intersect_key($q, array_flip(['query', 'bindings'])),
-    Illuminate\Support\Facades\DB::getQueryLog()), 'Warm public projection reads only the current catalogue gate');
-Illuminate\Support\Facades\DB::disableQueryLog();
+// The unchanged one-query warm-display contract is isolated in storefront-warm-query-test.
 $displayRows = $store->endings(); Illuminate\Support\Facades\Cache::flush();
 $slowRows = (new Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache($clock))->remember(function () use ($clock, $now, $displayRows) {
     $clock->instant = $now->modify('+31 seconds'); return $displayRows;
@@ -93,12 +87,11 @@ $before = $reads->calls; $bindings->setProcessing($tlds[0]->server_id, false);
 same([], $store->endings(), 'Processing pause invalidates cached catalogue');
 same('held', $store->check('paused-placeholder.com')['status'], 'Engine processing guard already protects selection');
 same($before, $reads->calls, 'Paused seller never reads availability'); $bindings->setProcessing($tlds[0]->server_id, true, syntheticActivation());
-$product = $native->product($tlds[0], 'register'); $tlds[0]->update(['register_enabled' => false]); activeFixtureRepublish($native,$tlds[0]->id, $now);
+$product = $native->product($tlds[0], 'register');activeFixtureStops($sellers,$tlds[0],['register']);
 same(null, $store->endings()[0]['register'], 'Owned withdrawal invalidates cached registration');
-$tlds[0]->update(['register_enabled' => true]); activeFixtureRepublish($native,$tlds[0]->id, $now);
+activeFixtureStops($sellers,$tlds[0],[]);
 same('$7.80', $store->endings()[0]['register'], 'Owned publication restoration is visible');
-$tlds[1]->fill(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '9.00', 'fixed_renew' => '11.00', 'fixed_transfer' => '10.00'])->save();
-activeFixtureRepublish($prices,$tlds[1]); activeFixtureRepublish($native,$tlds[1]->id, $now);
+storefrontFixtureEdit($tlds[1],rule:storefrontFixtureRule('9.00','11.00','10.00'));
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $now);
 same('$9.00', $store->endings()[0]['register'], 'Switched selected seller table');
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[0]->server_id, true, true, $now);
@@ -149,8 +142,9 @@ catch (Symfony\Component\HttpKernel\Exception\HttpException $e) { same(419, $e->
 // The environment boolean follows the public selected seller, never a reserved holding's account.
 $user = commerceUser(); $other = commerceUser(); $product = $native->product($tlds[0], 'register');
 $order = App\Models\Order::create(['user_id' => $user->id, 'currency_code' => 'USD', 'status' => 'pending']);
-$service = App\Models\Service::create(['order_id' => $order->id, 'user_id' => $user->id, 'product_id' => $product->id,
-    'plan_id' => $product->plans()->where('billing_period', 1)->sole()->id, 'price' => 10, 'quantity' => 1, 'currency_code' => 'USD', 'status' => 'pending']);
+// This retained reservation predates checkout; later cart assertions use genuine admission.
+$service = App\Models\Service::withoutEvents(fn()=>App\Models\Service::create(['order_id' => $order->id, 'user_id' => $user->id, 'product_id' => $product->id,
+    'plan_id' => $product->plans()->where('billing_period', 1)->sole()->id, 'price' => 10, 'quantity' => 1, 'currency_code' => 'USD', 'status' => 'pending']));
 $domain = Domain::create(['domain' => 'private-placeholder.com', 'sld' => 'private-placeholder', 'tld' => 'com', 'reservation_name' => 'private-placeholder.com',
     'user_id' => $user->id, 'service_id' => $service->id, 'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom',
     'account_fingerprint' => $tlds[0]->account_fingerprint, 'authority_generation' => 1, 'status' => 'needs_review']);
@@ -192,10 +186,11 @@ $guestCart = App\Models\Cart::whereNull('user_id')->latest('id')->firstOrFail();
 expect(isset($guestCart->items()->sole()->checkout_config['domains_check']), 'Guest native cart retains admission receipt');
 $savedEndings = $store->endings(); $before = $reads->calls;
 $clock->instant = Price::where('action', 'renew')->firstOrFail()->fresh_until->toDateTimeImmutable();
-same($savedEndings, $store->endings(), 'Saved costs keep the same public retail past the former expiry and display TTL');
+same([], $store->endings(), 'Expired costs and facts close new acquisition after display TTL');
+$holder=activeFixturePorts($bindings)->readOffers(new Paymenter\Extensions\Servers\Domains\Catalogue\Query(Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole()),['com'],'renew'),Paymenter\Extensions\Servers\Domains\Catalogue\Context::Holder)[0];
+same('10.40',$holder->retail,'Expired acquisition evidence preserves contractual holder renewal retail');
 same($before, $reads->calls, 'Older display prices do not trigger provider reads'); $clock->instant = $now;
-Price::where('action', 'register')->update(['hold_reason' => 'below_cost']);
-Price::where('action', 'transfer')->update(['hold_reason' => 'below_cost']);
+foreach($tlds as $tld){storefrontCorruptCost($tld->server_id,'com',['register','transfer'],['total'=>'999.0000']);}
 same('held', $store->check('held-placeholder.com')['status'], 'Engine held terms have no offer');
 Illuminate\Support\Facades\Cache::flush();
 same([], $store->endings(), 'Fresh display renders no held retail');

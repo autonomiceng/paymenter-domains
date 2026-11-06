@@ -3,9 +3,10 @@
 import concurrent.futures
 import os
 from pathlib import Path
+import select
 import subprocess
+import threading
 import tempfile
-import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,9 +27,31 @@ class SendLimitConcurrency(unittest.TestCase):
                 return result.stdout
 
             def race(**limits):
-                limits['LIMIT_START'] = str(time.time() + 15)
+                ready = threading.Barrier(6, timeout=45)
+
+                def contend(_):
+                    with subprocess.Popen([str(ROOT / 'scripts/php-test'),
+                                           str(ROOT / 'tests/Support/enom-send-limit-concurrent.php'), 'admit'],
+                                          env=dict(os.environ, SEND_LIMIT_DB=str(database), **limits),
+                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                          text=True) as process:
+                        try:
+                            self.assertTrue(select.select([process.stdout], [], [], 60)[0], 'Worker ready deadline')
+                            self.assertEqual(process.stdout.readline(), 'READY\n')
+                            # Release only after all six independent connections are ready.
+                            ready.wait()
+                            output, errors = process.communicate(input='GO\n', timeout=60)
+                            self.assertEqual(process.returncode, 0, errors)
+                            self.assertFalse(errors, errors)
+                            return output
+                        except BaseException:
+                            ready.abort()
+                            process.kill()
+                            process.communicate()
+                            raise
+
                 with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-                    results = list(pool.map(lambda _: run('admit', **limits), range(6)))
+                    results = list(pool.map(contend, range(6)))
                 self.assertEqual(sum('ADMITTED' in result for result in results), 3, results)
                 self.assertEqual(sum('REFUSED' in result for result in results), 3, results)
 

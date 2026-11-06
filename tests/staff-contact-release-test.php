@@ -108,7 +108,9 @@ same($money,nativeFinancialSnapshot($late),'Late correction preserves native mon
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$late->id])->assertActionHidden('release')->assertDontSee('Release hold');
 commerceReject(fn()=>$run($late->fresh(),'release'));
 // Orders off held these paid requests before any attempt. Orders on takes them back with no staff step.
-\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$tlds[0]->server_id)->update(['observed_at'=>$clock->now()]);
+// This new order follows the earlier paid-code deadline; refresh current catalogue facts and costs.
+activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);
+activeCommerceCostObservations($clock->now(),$clock->now()->modify('+30 days'),$ports);
 $held=static function(string $name)use($new):\Paymenter\Extensions\Servers\Domains\Models\Operation {$op=$new(placeholderComFixtureName($name),true,true);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'held','safe_code'=>'processing']);return $op->fresh();};
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();$dispatch=app(\Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class);
 $ready=$held('staff-orders-ready-placeholder.com');\Illuminate\Support\Facades\Auth::setUser($staff);

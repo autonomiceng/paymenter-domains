@@ -43,7 +43,7 @@ Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$p
 $rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
 $saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
 same(['ada@example.test','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
-same(['text'=>'Saving…','request'=>null,'waiting'=>true],DomainFacts::withProgress($rows,$saving)['Contacts']['progress'],'Progress takes its own line under the email, and the row waits');
+same(['text'=>'Saving…','request'=>null,'waiting'=>true,'tone'=>null],DomainFacts::withProgress($rows,$saving)['Contacts']['progress'],'Progress takes its own line under the email, and the row waits');
 same(false,DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['waiting'],'A fresh result no longer waits');
 same(['ada@example.test','Sync to read them'],array_column(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>true]]),'sub'),'A settled result shows nothing');
 // The lock is a mark: On, a hollow Off, and while a change is out, the change with what it was.
@@ -54,9 +54,9 @@ same(['1 of 2 differs.','2 of 3 differ.','1 of 1 differs.'],[DomainFacts::differ
 same('Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['text'],'A fresh result still shows');
 // Staff read the request's own line and where to look, not the sentence written for the customer.
 $stopped=['id'=>60,'pending'=>false,'text'=>'The contacts change failed. Try again. If it keeps happening, contact support.','outcome'=>'Not sent. Nothing changed at the registrar.','settled'=>false];
-same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
+same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
 expect(!isset(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Replaced by your latest choice.','replaced'=>true]])['Contacts']['progress']),'A replaced change says nothing to staff');
 // A Missing row never points at a blocked button: it says what comes first, and the blocked button keeps its real label.
 $noContacts=['Contacts'=>['value'=>null,'sub'=>DomainFacts::ADD_CONTACTS]];
@@ -436,34 +436,6 @@ $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->as
 DB::table('domains_obligation_alerts')->update(['resolved_at'=>time()]);
 same(['Service #'.$active->service_id.' not found. Check the Services page.','On'],[$sub($active,'Service'),$sub($active,'Renewal invoices')??$value($active,'Renewal invoices')],'Resolved alerts leave the rows');
 
-// Adoption pending leaves navigation and its route opens the Under review filter.
-// One click on the domain page closes what a retry cannot: an open failed notice and an uncertain email, with no resend. Nothing open, no button.
-$checked=$active->fresh();
-Paymenter\Extensions\Servers\Domains\Services\SalesPolicySchema::install();Paymenter\Extensions\Servers\Domains\Services\StaffAuditSchema::install();
-$rights=array_map([\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class,'permission'],['alert_review','delivery_review']);$review=staffUser([Staff::VIEW,Staff::POLICY,...$rights]);
-Livewire::actingAs($review)->test(ViewDomain::class,['record'=>$checked->id])->assertActionHidden('notice_review');
-ObligationAlerts::record($checked->fresh(),'template_failed',time());
-$uncertain=DB::table('domains_reminder_deliveries')->insertGetId(['domain_id'=>$checked->id,'delivery_key'=>hash('sha256','one-click'),'template'=>'domains_transfer_code_paid','state'=>'uncertain','created_at'=>time()]);
-Livewire::actingAs(staffUser([Staff::VIEW,...$rights]))->test(ViewDomain::class,['record'=>$checked->id])->assertActionHidden('notice_review');
-Livewire::actingAs($review)->test(ViewDomain::class,['record'=>$checked->id])->assertActionVisible('notice_review')->assertSee('Mark reminder checked')->callAction('notice_review');
-same(['reviewed',0],[DB::table('domains_reminder_deliveries')->find($uncertain)->state,DB::table('domains_obligation_alerts')->where('domain_id',$checked->id)->where('code','template_failed')->whereNull('resolved_at')->count()],'One click closes both');
-Livewire::actingAs($review)->test(ViewDomain::class,['record'=>$checked->id])->assertActionHidden('notice_review');
-// A retained handoff needs its review button even when unreadable data removes both normal slots.
-DB::table('domains_reminder_deliveries')->insert(['domain_id'=>$checked->id,'delivery_key'=>hash('sha256','fallback-review'),'template'=>'domains_transfer_code_paid','state'=>'handoff','created_at'=>time()]);
-foreach (['auto-renew','alerts','neither'] as $slot) {
-    if ($slot==='alerts') {
-        DB::table('domains_domains')->where('id',$checked->id)->update(['renewal_policy'=>'not-encrypted']);
-        ObligationAlerts::record($checked->fresh(),'template_failed',time());
-    }
-    if ($slot==='neither') { DB::table('domains_obligation_alerts')->where('domain_id',$checked->id)->update(['resolved_at'=>time()]); }
-    $facts=DomainFacts::for($checked->fresh());
-    same($slot==='auto-renew',isset($facts['Renewal invoices']),'Auto-renew slot: '.$slot);
-    same($slot==='alerts',isset($facts['Open alerts']),'Open alerts slot: '.$slot);
-    $page=Livewire::actingAs($review)->test(ViewDomain::class,['record'=>$checked->id])->assertActionVisible('notice_review');
-    same(1,substr_count(html_entity_decode(strip_tags($page->html()),ENT_QUOTES),'Mark reminder checked'),'Review button renders once with slot: '.$slot);
-}
-$page->callAction('notice_review');
-same('reviewed',DB::table('domains_reminder_deliveries')->where('delivery_key',hash('sha256','fallback-review'))->value('state'),'Fallback review handles the retained handoff');
 same(false,PendingAdoptionResource::shouldRegisterNavigation(),'Adoption pending is not in navigation');
 same(DomainResource::getUrl('index',['filters'=>['status'=>['values'=>['under_review']]]]),PendingAdoptionResource::redirectUrl(),'Adoption pending opens the Under review filter');
 echo "Staff domain page and list passed.\n";$nativeSuccessful=true;

@@ -18,7 +18,9 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Dispo
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation,Price};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceForecast, BalanceReads, BalanceSchema, ObservationSchema, RegistrarBalances, RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
-extract(commerceFixture(true));$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock($now);
+extract(commerceFixture(true));
+// Account enrollment needs a reviewer during setup; this matrix creates its own two alert recipients below.
+App\Models\User::where('email','fixture-enrollment@example.test')->sole()->role->update(['permissions'=>[]]);
 app()->instance(AccountBindings::class,$bindings);BalanceSchema::install();\Paymenter\Extensions\Servers\Domains\Services\BalanceAlertSchema::install();ObservationSchema::install();
 $a=Account::where('server_id',$tlds[0]->server_id)->sole();$b=Account::where('server_id',$tlds[1]->server_id)->sole();
 $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);$other=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($b);
@@ -26,10 +28,11 @@ $row=static fn($a)=>DB::table(BalanceSchema::TABLE)->where('server_id',$a->serve
 $forecast=static fn()=>BalanceForecast::for($a,$clock->now());
 $user=commerceUser();$product=$native->product($tlds[0],'register');
 $order=App\Models\Order::create(['user_id'=>$user->id,'currency_code'=>'USD']);
-$seed=App\Models\Service::create(['user_id'=>$user->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$native->annualPlan($product)->id,
-    'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'active']);
+// These retained forecast holdings deliberately predate extension checkout admission.
+$seed=App\Models\Service::withoutEvents(fn()=>App\Models\Service::create(['user_id'=>$user->id,'order_id'=>$order->id,'product_id'=>$product->id,'plan_id'=>$native->annualPlan($product)->id,
+    'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'active']));
 $make=static function(string $name,?string $expiry='2026-11-20',?Account $account=null)use($seed,$a):Domain {
-    $account??=$a;$s=$seed->replicate();$s->status='active';$s->save();
+    $account??=$a;$s=$seed->replicate();$s->status='active';App\Models\Service::withoutEvents(fn()=>$s->save());
     return Domain::create(['domain'=>$name,'sld'=>substr($name,0,-4),'tld'=>'com','user_id'=>$s->user_id,'service_id'=>$s->id,
         'server_id'=>$account->server_id,'registrar_key'=>$account->registrar_key,'account_fingerprint'=>$account->account_fingerprint,
         'status'=>'active','provider_expires_at'=>$expiry,'renewal_policy'=>[]]);
@@ -157,9 +160,15 @@ foreach(['budget','cap','throw','malformed','success'] as $mode){
 BalanceReads::record($binding,null,$clock->now(),'preflight','read_failed');
 BalanceReads::record($binding,new Money('8.00','USD'),$clock->now()->modify('-1 second'),'manual');
 same('read_failed',$row($a)->last_error_code,'Old completion cannot replace newer failure');
-$rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=$rate->wholesale;
-$rate->update(['wholesale'=>null,'revision'=>$rate->revision+1]);same(1,$forecast()['unknown'],'Unknown cost is counted');
-same(1,RegistrarBalances::facts($a,$clock->now())['unknown'],'Facts count renewals without a cost');same(1,$forecast()['unpriced'],'A dated renewal without a cost waits on the price read');$rate->update(['wholesale'=>$saved,'revision'=>$rate->revision+1]);
+$rate=Price::where('server_id',$a->server_id)->where('action','renew')->sole();$saved=$rate->getRawOriginal('catalogue_observation');
+// Missing current annual evidence, rather than the retired publication columns, drives the forecast.
+DB::table('domains_prices')->where('id',$rate->id)->update(['catalogue_observation'=>null]);same(1,$forecast()['unknown'],'Unknown cost is counted');
+same(1,RegistrarBalances::facts($a,$clock->now())['unknown'],'Facts count renewals without a cost');same(1,$forecast()['unpriced'],'A dated renewal without a cost waits on the price read');DB::table('domains_prices')->where('id',$rate->id)->update(['catalogue_observation'=>$saved]);
+$refreshForecastCost=static function()use($ports,$binding,$clock):void {
+    $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+    $cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+3 days'));
+    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+};
 $d->update(['billing_managed'=>false]);
 $overdue=$make(placeholderComFixtureName('balance-overdue-placeholder.com'),'2026-10-20');
 same('8.000000',$forecast()['total'],'Past Paymenter due date and future expiry without open invoice counts as due now');
@@ -317,11 +326,12 @@ foreach(['PRIVATE-PROVIDER-REPLY','account-enom','account-namesilo',$a->account_
 staffAlertFixture();
 $forecastQueries=0;
 DB::listen(static function($query)use(&$forecastQueries):void {
-    if(str_starts_with($query->sql,'select')&&str_contains($query->sql,'"domains_prices"')){$forecastQueries++;}
+    // One holding scan identifies each forecast. Current annual pricing has separate cost and observation-presence reads.
+    if(str_starts_with($query->sql,'select')&&str_contains($query->sql,'from "domains_domains" where')){$forecastQueries++;}
 });
 $secondStaff=staffUser([Staff::VIEW]);$customer=commerceUser();
 $d->update(['billing_managed'=>true,'provider_expires_at'=>'2026-11-01']);
-$rate->update(['revision'=>$rate->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+3 days')]);
+$refreshForecastCost();
 $clock->instant=$clock->now()->modify('+1 day');$balances->daily($a);
 $assertAlerts=static fn()=>staffAlerts('Low balance',$serverName.' balance is below renewals due in 30 days.',route('filament.admin.pages.registrar-setup'),[$staff,$secondStaff]);
 $transactions=0;
@@ -348,7 +358,7 @@ App\Models\Notification::creating(static function($n)use(&$notificationFailure,&
     }
 });
 foreach(['veto','throw','missing-inbox','missing-receipts'] as $failure){
-    $clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);
+    $clock->instant=$clock->now()->modify('+1 day');$refreshForecastCost();
     $notificationFailure=in_array($failure,['veto','throw'],true)?$failure:false;
     DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
     $unavailable=match($failure){'missing-inbox'=>'notifications','missing-receipts'=>\Paymenter\Extensions\Servers\Domains\Services\StaffAlertSchema::TABLE,default=>null};
@@ -374,7 +384,7 @@ foreach(['veto','throw','missing-inbox','missing-receipts'] as $failure){
     same(gmdate('Y-m-d',$readAt+10980),$row($a)->notified_on,'Recovery acknowledges the actual UTC delivery day');
 }
 // Due retries revalidate the retained balance and stop when it is no longer low.
-$clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);
+$clock->instant=$clock->now()->modify('+1 day');$refreshForecastCost();
 $notificationFailure='veto';
 DB::table(BalanceSchema::TABLE)->where('id',$row($a)->id)->update(['daily_due_at'=>0,'notified_on'=>null]);
 $balances->daily($a);
@@ -387,7 +397,7 @@ same($forecastBefore+1,$forecastQueries,'Due retry revalidates low balance exact
 $forecastBefore=$forecastQueries;$clock->instant=$clock->now()->modify('+60 seconds');$balances->daily($a);
 same($forecastBefore,$forecastQueries,'Cleared low balance work does not rebuild the forecast');
 $notificationFailure=false;
-$clock->instant=$clock->now()->modify('+1 day');$rate->update(['revision'=>$rate->revision+1,'fresh_until'=>$clock->now()->modify('+3 days')]);$notificationFailure='veto';$replacement=$clock->now()->getTimestamp()+172800;
+$clock->instant=$clock->now()->modify('+1 day');$refreshForecastCost();$notificationFailure='veto';$replacement=$clock->now()->getTimestamp()+172800;
 DB::table(BalanceSchema::TABLE)->where('server_id',$a->server_id)->where('account_fingerprint',$a->account_fingerprint)->update(['daily_due_at'=>0,'notified_on'=>null]);
 $balances->daily($a);same($replacement,(int)$row($a)->daily_due_at,'Failure cannot release a replacement daily claim');$notificationFailure=false;
 // The quota-refusal twin must also preserve a replacement claim.
@@ -407,7 +417,7 @@ $replacedLimiter=new class($a,$replacement) implements Paymenter\Extensions\Serv
 $notificationFailure='veto';$replacement=null;
 $clock->instant=$clock->now()->setTimezone(new DateTimeZone('UTC'))->modify('+2 days')->setTime(23,59,30);
 $midnightStart=$clock->now();
-$rate->update(['revision'=>$rate->revision+1,'observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+3 days')]);
+$refreshForecastCost();
 DB::table(BalanceSchema::TABLE)->where('id',$row($a)->id)->update(['daily_due_at'=>0,'notified_on'=>null]);
 $alertQuery()->update(['pending_day'=>null,'retry_at'=>0,'attempts'=>0,'claim'=>null]);
 $recipientCount=fn()=>App\Models\Notification::where('title','Low balance')->where('user_id',$staff->id)->count();

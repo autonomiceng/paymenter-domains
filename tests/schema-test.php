@@ -12,7 +12,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, Pri
 use Paymenter\Extensions\Servers\Domains\Services\{FoundationSchema, ObservationSchema};
 
 $migration = require dirname(__DIR__).'/Domains/database/migrations/2026_10_18_000001_create_domains_foundation.php';
-app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations']);
+// The extension lifecycle owns fresh-install authority through catalogue retirement.
+(new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 $installedTables = Schema::getTableListing(); sort($installedTables);
 FoundationSchema::verify();
 expect(DB::table('migrations')->where('migration', '2026_10_18_000001_create_domains_foundation')->exists(), 'Native migration history recorded');
@@ -69,8 +70,8 @@ same(41, $operation->domain->id, 'ID-preserving relation');
 same(71, $domain->operations()->first()->id, 'ID-preserving history');
 expect(!str_contains($account->getRawOriginal('stable_identity'), 'synthetic'), 'Identity encrypted on first save');
 same(false, $account->fresh()->processing_enabled, 'Processing defaults off');
-$tld = Tld::create($binding + ['id' => 101, 'tld' => 'com', 'cost_register_terms' => ['2' => '19.1234']]);
-same(['2' => '19.1234'], $tld->fresh()->cost_register_terms, 'Exact-term legacy costs');
+$tld = Tld::create($binding + ['id' => 101, 'tld' => 'com']);
+expect(!Schema::hasColumn('domains_tlds','cost_register_terms'),'Current installation retires the legacy cost mirror');
 $priceData = $binding + ['tld' => 'com', 'action' => 'register', 'term' => 2, 'currency' => 'USD',
     'unit' => 'exact_term', 'source' => 'synthetic', 'observed_at' => '2026-10-18 00:00:00'];
 $price = Price::create($priceData);
@@ -133,6 +134,9 @@ Schema::swap(DB::connection()->getSchemaBuilder());
 try {
     FoundationSchema::install();
     FoundationSchema::verify();
+    // The isolated old foundation still retains exact legacy costs before catalogue conversion.
+    DB::table('domains_tlds')->insert([...$tldRow,'id'=>101,'cost_register_terms'=>json_encode(['2'=>'19.1234'])]);
+    same(['2'=>'19.1234'],json_decode(DB::table('domains_tlds')->where('id',101)->value('cost_register_terms'),true,512,JSON_THROW_ON_ERROR),'Exact-term legacy costs');
     // Upgrade populated old storage without changing its evidence or ordinary debt uniqueness.
     $legacyRow=$operationRow;unset($legacyRow['retry_number']);
     DB::table('domains_operations')->insert($legacyRow);

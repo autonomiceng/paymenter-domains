@@ -56,10 +56,11 @@ same($renders[0],$renders[1],'Identical customer message for both holders');
 // Native USD formatting belongs to the administrator, including separators and both affixes.
 $currency = App\Models\Currency::where('code', 'USD')->sole();
 $currencyFormat = $currency->only(['format', 'prefix', 'suffix']);
-$tld = $tlds[0]; $rule = $tld->only(['use_default_rule', 'pricing_mode', 'fixed_register', 'fixed_renew', 'fixed_transfer']);
+$tld = $tlds[0]; $rule = $tld->only(['catalogue_intent','use_default_rule', 'pricing_mode', 'fixed_register', 'fixed_renew', 'fixed_transfer']);
 try {
     $currency->update(['format' => '1.000,00', 'prefix' => 'US$', 'suffix' => 'USD']);
     $tld->update(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_register' => '20.00', 'fixed_renew' => '20.00', 'fixed_transfer' => '1234.56']);
+    $intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($tld->catalogue_intent);$tld->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json([...$intent,'pricing_rule'=>\Paymenter\Extensions\Servers\Domains\Services\PricingRule::validate(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'20.00','renew'=>'20.00','transfer'=>'1234.56']])])]);
     activeFixtureRepublish($prices,$tld->fresh()); activeFixtureRepublish($native,$tld->id, $now);
     $clock->instant = $now; $op = $newTransfer(placeholderComFixtureName('custom-native-money-placeholder.com'), 0, true, false);
     expect($reminders->remind($op->domain_id), 'M1 custom-format paid transfer queues its real notice');
