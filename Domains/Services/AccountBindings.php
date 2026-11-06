@@ -421,10 +421,10 @@ final class AccountBindings
         if (!$account->processing_enabled) { throw new RuntimeIneligible(RuntimeReason::ProcessingOff); }
     }
 
-    /** Caller holds these server/account rows in its checkout/claim transaction; never re-query a snapshot. */
+    /** Writers hold these rows in their transaction; advisory previews validate the same configuration without locks. */
     public function requireProcessingLocked(Server $server, Account $account, bool $advisory = false): void
     {
-        if (DB::transactionLevel() === 0) { throw new \LogicException('Locked processing requires an outer transaction.'); }
+        if (!$advisory && DB::transactionLevel() === 0) { throw new \LogicException('Locked processing requires an outer transaction.'); }
         if (!$server->enabled || $server->extension !== 'Domains' || (int) $account->server_id !== (int) $server->id) {
             throw new \DomainException('Locked registrar server is unavailable.');
         }
