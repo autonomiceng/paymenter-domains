@@ -64,12 +64,15 @@ config(['domains.enom_live.accounts.live-uid.late_renewal_evidence'=>null]);expe
 $write('late_renewal',['accept'=>false]);
 
 same($historyBefore+3,count(Review::historyRows($server->fresh())),'Activate and two late switch changes each record one audited transaction');
+// Enabling Orders invalidates the previous publication; arrange current offers before the independent pause/resume review.
+$write('publish',[],$tld->id);
 // A worker stopping after the page opened must not stale an emergency Orders pause.
 $pause=new Review($staff->id,$server->id,null,'processing',Review::ticket($staff->id,$server->id,null,'processing',Review::stamp($server->id,null)),'Pause after the worker stops');
 DB::table('domains_runtime_turns')->update(['finished_at'=>$clock->now()->getTimestamp()-901]);
 $settings->run($pause,['enabled'=>false,'confirmed'=>true]);
 expect(!Account::where('server_id',$server->id)->sole()->processing_enabled,'An already mounted Orders pause survives worker liveness changing');
 DB::table('domains_runtime_turns')->update(['finished_at'=>$clock->now()->getTimestamp()]);$write('processing',['enabled'=>true,'confirmed'=>true]);
+$write('publish',[],$tld->id);
 $used=$review();$settings->run($used,$activation);$deny(fn()=>$settings->run($used,$activation));
 $settings->run($review(),[...$activation,'management'=>false]);expect(EnomTestRenewal::accepted($binding)&&!EnomTestManagement::accepted($binding),'Activate saves the selected features exactly');
 $write('live_management',['accept'=>true]);
@@ -126,7 +129,9 @@ $deny(fn()=>$write('activate',$activation));
 config(['domains.support_url'=>'https://support.example.com','domains.enom_live.accounts'=>['live-uid'=>$accountConfig]]);
 DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->update(['read_at'=>$activationBalance->read_at]);
 $deny(fn()=>$write('activate',$activation)); // Worker readiness is still checked under the review mutex.
-DB::table('domains_runtime_turns')->update(['finished_at'=>$clock->now()->getTimestamp()]);$write('activate',$activation);
+DB::table('domains_runtime_turns')->update(['finished_at'=>$clock->now()->getTimestamp()]);$write('publish',[],$tld->id);$write('activate',$activation);
+// The preceding all-Off/Activate cycle enabled Orders and invalidated the old publication.
+$write('publish',[],$tld->id);
 // An unreadable identity must still permit an audited emergency pause.
 $savedIdentity=Account::where('server_id',$server->id)->sole()->getRawOriginal('stable_identity');
 DB::table('domains_accounts')->where('server_id',$server->id)->update(['stable_identity'=>'broken ciphertext']);

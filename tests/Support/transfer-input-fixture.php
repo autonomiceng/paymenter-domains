@@ -12,14 +12,16 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, ContactRecovery, ContactSetup, InvoiceBinding, NativeDomainGuard, HolderPricing, PricingRule, Rdap, Refunds, TransferInputs, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+// Every input fixture addresses only the Enom account; keep the real unrelated native cancellation.
+extract(commerceFixture(true,registrars:['enom'])); $clock ??= new FakeClock($now);
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now);
 $server = App\Models\Server::find($tlds[0]->server_id);
 $server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
 $rdap = new Rdap(fn () => throw new RuntimeException('Synthetic offline lookup'));
 $eligibility = activeFixtureEligibility($bindings,$clock,new TransferPrecheck($rdap));
 $adapter = activeFixtureAdmission($native,$sellers,$eligibility,$clock); $adapter->boot();
-(new InvoiceBinding($adapter,$native,$prices,$clock))->boot();
+$invoiceBinding=new InvoiceBinding($adapter,$native,$prices,$clock);$invoiceBinding->boot();
+app()->instance(InvoiceBinding::class,$invoiceBinding);
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $user = commerceUser(); $other = commerceUser(); $product = $native->product($tlds[0],'transfer');
 $refunds = new Refunds($clock); $inputs = new TransferInputs($clock,$refunds);

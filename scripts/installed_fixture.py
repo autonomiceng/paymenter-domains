@@ -16,7 +16,7 @@ import native
 @contextmanager
 def application(fixture, scenario):
     vendor = (fixture / "vendor").resolve(strict=True)
-    before = native.hashes(vendor)
+    before = native.hashes(vendor, release_cache=True)
     with tempfile.TemporaryDirectory(
         prefix=f"domains-installed-{scenario}-", dir=fixture.parent
     ) as temporary:
@@ -34,17 +34,19 @@ def application(fixture, scenario):
         try:
             yield root, app
         finally:
-            if native.hashes(vendor) != before:
+            if native.hashes(vendor, release_cache=True) != before:
                 raise RuntimeError(
                     "Installed scenario changed shared vendor dependencies."
                 )
 
 
-def package(source, output):
+def package(source, output, *, builder=None):
+    builder = build if builder is None else builder
     # The runner owns this cache and runs installed scenarios exclusively. Other
     # processes/files reuse only immutable ZIPs, never databases or installed apps.
     fingerprint = hashlib.sha256(
         json.dumps(native.hashes(source), sort_keys=True).encode()
+        + Path(builder.__file__).read_bytes()
     ).hexdigest()
     cache = (
         Path(os.environ["PAYMENTER_TEST_FIXTURE"]).parent
@@ -53,9 +55,9 @@ def package(source, output):
     )
     if cache.exists():
         receipt = json.loads((cache / "manifest.json").read_text())
-        build.verify(cache / receipt["archive"], receipt)
+        builder.verify(cache / receipt["archive"], receipt)
     else:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        receipt = build.build(source, cache)
+        receipt = builder.build(source, cache)
     output.symlink_to(cache, target_is_directory=True)
     return receipt

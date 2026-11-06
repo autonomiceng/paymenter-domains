@@ -58,6 +58,13 @@ final class Writer implements Catalogue
             $review->lockActor();$review->lockAccounts();
             if($this->current){($this->current)();}else{UpgradeGate::active(UpgradeGate::generation());}
             $review->check(false,static fn()=>StaffCommands::stamp(StaffSettingsReview::ALL_ACCOUNTS));
+            // A fee-only edit cannot change an ordinary default's retail calculation or publication authority.
+            try{$prior=(new PricingRules)->defaultRule(true,\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE);}
+            catch(\DomainException|\InvalidArgumentException){$prior=null;}
+            $ruleChanged=$prior!==PricingRule::validate([...$rule,'card_fee'=>\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE]);
+            try{$priorFee=\Paymenter\Extensions\Servers\Domains\Services\CardFee::read(true);}
+            catch(\DomainException|\InvalidArgumentException){$priorFee=null;}
+            $feeChanged=$priorFee!==$fee;
             \Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(PricingRules::KEY,$rule);
             \Paymenter\Extensions\Servers\Domains\Services\BusinessSetting::saveLocked(\Paymenter\Extensions\Servers\Domains\Services\CardFee::KEY,$fee);
             $targets=[];$accounts=Account::orderBy('server_id')->lockForUpdate()->get()->keyBy('server_id');
@@ -69,8 +76,13 @@ final class Writer implements Catalogue
                     if($own!==null){PricingRule::validate([...$own,'card_fee'=>\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE]);}}
                 catch(\DomainException|\InvalidArgumentException){continue;}
                 if($own!==null&&$own['mode']!=='markup_fee_percent'){continue;}
+                // Discovery invalidates the offer revision before publication. A failed turn remains pending.
+                try{$pending=$t->catalogue_published_revision===null||(OfferState::decode($t->catalogue_published_revision)['offer']??null)!==(int)$t->catalogue_revision;}
+                catch(\JsonException){$pending=true;}
+                $feeMode=($own??$rule)['mode']==='markup_fee_percent';
+                if(!$pending&&!($own===null&&$ruleChanged)&&!($feeMode&&$feeChanged)){continue;}
                 if($own!==null){PricingRule::validate([...$own,'card_fee'=>$fee]);}
-                $targets[$t->server_id][]=(int)$t->id;
+                $targets[$t->server_id][]=['id'=>(int)$t->id,'own'=>$own];
                 // Failed publications must not leave old prices purchasable after the shared rule changes.
                 $t->increment('catalogue_revision');
             }
@@ -80,17 +92,24 @@ final class Writer implements Catalogue
         foreach(Account::orderBy('server_id')->get() as $a){
             $server=Server::find($a->server_id);$name=$server?->name??'Server #'.$a->server_id;
             if(!$server?->enabled){$summary['skipped'][]=$name;continue;}
-            try{foreach($targets[$a->server_id]??[] as $id){
-                $t=Tld::findOrFail($id);
+            try{foreach($targets[$a->server_id]??[] as $target){
+                $id=$target['id'];$t=Tld::findOrFail($id);$pricingChanged=false;
                 try{
                     $rows=DB::table('domains_prices')->where('server_id',$a->server_id)->where('tld',$t->tld)->where('account_fingerprint',$a->account_fingerprint)->where('currency','USD')->get();
                     if($rows->isEmpty()){throw new \DomainException('Current costs required.');}
                     $freshness=\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int)$a->server_id);
                     foreach($rows as $p){if($p->catalogue_observation===null||!$freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)))->fresh($this->clock->now())){throw new \DomainException('Current costs required.');}}
                     $b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
-                    $this->apply(Edit::republish($b,$t->tld),OfferState::revision($t,OfferState::decode($a->catalogue_defaults),DB::table('domains_sales_policies')->where('tld',$t->tld)->first()));
+                    // Target discovery precedes this turn. Recheck after acquiring its writer mutexes.
+                    $this->withGuard(static function()use($id,$target,&$pricingChanged):void {
+                        $own=Pricing::own(Tld::findOrFail($id),\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE);
+                        if($own!==$target['own']){
+                            $pricingChanged=true;throw new \DomainException('TLD pricing changed during publication.');
+                        }
+                    })->apply(Edit::republish($b,$t->tld),OfferState::revision($t,OfferState::decode($a->catalogue_defaults),DB::table('domains_sales_policies')->where('tld',$t->tld)->first()));
                     $summary['published']++;
                 }catch(\Throwable $error){
+                    if($pricingChanged){continue;}
                     $summary['failed'][$name.' #'.$a->server_id][]='.'.$t->tld;
                     if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$t->tld,'exception_class'=>$error::class]);}
                 }

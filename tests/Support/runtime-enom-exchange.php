@@ -46,7 +46,7 @@ $setting=App\Models\Server::find($binding->serverId)->settings()->where('key','d
 DB::table('settings')->where('id',$setting->id)->update(['value'=>'invalid-ciphertext']);$factory();
 $ports=installedRuntimePorts();$ports->register($binding->fingerprint,$factory);expect($ports->accepted($account),'Pure readiness needs no plaintext');
 DB::table('settings')->where('id',$setting->id)->update(['value'=>$raw]);
-$auth->setProcessing($binding->serverId,true,static fn()=>null);
+$auth->setProcessing($binding->serverId,true,static fn()=>null);activeFixtureRepublish($sellers,$tlds[0]);
 app()->instance(RuntimePorts::class,$ports);$limiter=new AccountReadBudget($clock,48);app()->instance(ReadLimiter::class,$limiter);
 $inputs=new TransferInputs($clock,new Refunds($clock));
 $new=static function(string $name,string $action='register')use($user,$native,$tlds,$clock,$state,$inputs):Operation {
@@ -113,7 +113,7 @@ $state->query=OperationClaims::query($op,$op->domain);$auth->setProcessing($bind
 // runs once at exchange entry, with real grants and the physical slot already consumed.
 echo "Installed exchange capacity and pre-entry pause passed.\n";
 foreach(['processing','server','binding'] as $drift){
-    $auth->setProcessing($binding->serverId,true,static fn()=>null);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('sealed-drift-'.$drift.'-placeholder.com'));
+    $auth->setProcessing($binding->serverId,true,static fn()=>null);activeFixtureRepublish($sellers,$tlds[0]);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();$op=$new(placeholderComFixtureName('sealed-drift-'.$drift.'-placeholder.com'));
     resetWire(['reply'=>$reply,'before'=>static function()use($op,$drift,$binding,$account,$otherIdentityBytes){
         same('sealed',$op->fresh()->attempt['seal'],'Drift occurs after real seal');same(0,DB::transactionLevel(),'Drift outside financial locks');
         if($drift==='processing'){DB::table('domains_accounts')->where('id',$account->id)->update(['processing_enabled'=>false]);}

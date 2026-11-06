@@ -35,6 +35,10 @@ $loader=require $fixture.'/vendor/autoload.php';
 $loader->addPsr4('App\\',$fixture.'/app/',true);
 $loader->addPsr4('Paymenter\\Extensions\\',$fixture.'/extensions/',true);
 $app=require $fixture.'/bootstrap/app.php';$logs=[];$artisanStarts=0;
+// HTTP pricing resolves catalogue readers during kernel boot, before the recovery composition below.
+require_once __DIR__.'/FakeRegistrar.php';
+$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:10:00Z'));
+$app->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 $_SERVER['argv']=['artisan','--env','staging','schedule:work','--token=PRIVATE-ARGUMENT','PRIVATE-CUSTOMER'];
 $request=Illuminate\Http\Request::create('/domains/pricing?token=PRIVATE-QUERY');
 if($mode==='http'){$app->instance('request',$request);}
@@ -151,7 +155,7 @@ if($phase==='healthy'){echo "Healthy full $mode provider boot: no warning.\n";$n
 // Use the same genuine action bridges as both native-paid matrices, with no network sender.
 require_once __DIR__.'/commerce.php';require_once __DIR__.'/offline-acquisition.php';require_once __DIR__.'/native-financial-snapshot.php';
 $ops=json_decode(file_get_contents($root.'/operations.json'),true,8,JSON_THROW_ON_ERROR);
-$clock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:10:00Z'));
+
 Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
 $preflight=(object)['supported'=>true];require __DIR__.'/native-paid-acquisition.php';
 $bindings=$paidBindings;$claims=new OperationClaims($bindings,$clock);$features=new WriteFeatures(true,true,true,true);

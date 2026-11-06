@@ -157,7 +157,7 @@ final class DomainManagement
         try {
             if(!$this->testManagement){return $work();}
             $op=Operation::findOrFail($id);$b=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->firstOrFail());
-            return EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
+            return $b->registrarKey==='enom'&&EnomTestManagement::enabled($b)?EnomTestWriteReservation::run($b,'management',$id,$work):$work();
         }catch(WriteHeld $e){if($e->reason!=='write_acceptance_required'){throw $e;}return Operation::findOrFail($id);}
     }
     private function runEntered(int $id, ManagementProtocol $driver, RequestOrigin $origin, \DateTimeImmutable $deadline): Operation

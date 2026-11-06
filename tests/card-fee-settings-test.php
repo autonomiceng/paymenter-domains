@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\{Auth,DB};
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
+use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,Pricing};
 use Paymenter\Extensions\Servers\Domains\Models\Price;
 use Paymenter\Extensions\Servers\Domains\Services\{CardFee,PriceCatalogue,PricingRule,PricingRules,StaffSettingsReview as Review,StaffSettingsWrites};
 $f=commerceFixture(true);extract($f);tldPanel();Carbon\Carbon::setTestNow($now);$t=$tlds[0];
@@ -14,11 +15,11 @@ $u=staffUser($permissions);Auth::setUser($u);$writer=new StaffSettingsWrites($na
 $review=static fn(string $action,?int $tld)=>new Review($u->id,$t->server_id,$tld,$action,Review::ticket($u->id,$t->server_id,$tld,$action,Review::stamp($t->server_id,$tld)),'Update prices for these TLDs');
 $fee=static fn(string $percent,string $fixed)=>pricingForm(fee:['percent'=>$percent,'fixed'=>$fixed]);
 $saved=static fn()=>collect(Review::historyRows(App\Models\Server::findOrFail($t->server_id)))->where('phase','completed')->last();
-$rows=static fn()=>Price::where('server_id',$t->server_id)->orderBy('id')->get()->map(fn($p)=>[$p->id,$p->revision,$p->retail,$p->eligibility])->all();
+$rows=static fn()=>Price::where('server_id',$t->server_id)->orderBy('id')->get()->map(fn($p)=>[$p->id,$p->revision,$p->retail,$p->catalogue_observation])->all();
 same(['percent'=>'2.90','fixed'=>'0.30'],CardFee::read(),'Default card fee');
-$oldRule=(new PricingRules)->rule($t);$before=$rows();
+$oldRule=Pricing::rule($t);$before=$rows();
 same(['published'=>0,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('3.10','0.40'),$now),'Changing fee does not publish ordinary modes');
-same($oldRule,(new PricingRules)->rule($t->fresh()),'Ordinary saved rule unchanged');same($before,$rows(),'Ordinary published revisions unchanged');
+same($oldRule,Pricing::rule($t->fresh()),'Ordinary saved rule unchanged');same($before,$rows(),'Ordinary published revisions unchanged');
 same(['percent'=>'3.10','fixed'=>'0.40'],CardFee::read(),'Every account shares the fee');
 $audit=$saved();
 same('Edit default pricing',$audit['action'],'Card fee change audited');
@@ -31,9 +32,9 @@ $before=$rows();
 same(['published'=>1,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('10','1'),$now),'Fee change republishes fee modes only');
 same('8.99',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'New fee used in published price');
 same('6.99',$snapshot->retail,'Earlier snapshot stays unchanged');
-same(['percent'=>'10.00','fixed'=>'1.00'],(new PricingRules)->rule($t->fresh())['card_fee'],'Fee mode uses account setting');
+same(['percent'=>'10.00','fixed'=>'1.00'],Pricing::rule($t->fresh())['card_fee'],'Fee mode uses account setting');
 $writer->run($review('override',$t->id),['mode'=>'markup_percent','markup'=>'30','round_up'=>'none'],$now);
-same($oldRule,(new PricingRules)->rule($t->fresh()),'Switch back retains legacy rule shape and hash');
+same($oldRule,Pricing::rule($t->fresh()),'Switch back retains legacy rule shape and hash');
 same('7.80',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Switch back restores old calculation');
 $weak=staffUser(array_values(array_diff($permissions,[Review::permission('card_fee')])));Auth::setUser($weak);
 $denied=pricingReview($weak->id,'Update card fee estimate');
@@ -41,12 +42,14 @@ tldRefusal(fn()=>$writer->run($denied,$fee('2.9','0.3'),$now),'Current staff per
 same(['percent'=>'10.00','fixed'=>'1.00'],CardFee::read(),'Denied fee change saves nothing');
 Auth::setUser($u);
 $before=$rows();
-tldRefusal(fn()=>$writer->run(pricingReview($u->id),pricingForm(['fee_percent'=>'100','fee_fixed'=>'0']),$now),'Invalid card fee.');
+try{$writer->run(pricingReview($u->id),pricingForm(['fee_percent'=>'100','fee_fixed'=>'0']),$now);expect(false,'A 100% card fee must be refused');}
+catch(InvalidArgumentException $e){same('Enter a card fee below 100% and a fixed amount from 0 to 100000.',$e->getMessage(),'Exact current card-fee validation');}
 same($before,$rows(),'Invalid fee leaves publications alone');same(['percent'=>'10.00','fixed'=>'1.00'],CardFee::read(),'Invalid fee leaves setting alone');
 // Default followers republish while an ordinary own rule on the same account stays unchanged.
 $writer->run(pricingReview($u->id),pricingForm($feeRule),$now);
 $writer->run($review('remove_override',$t->id),[],$now);
-$own=$t->fresh()->replicate();$own->fill(['tld'=>'net','use_default_rule'=>false,'pricing_mode'=>'markup_percent','markup'=>'30','round_up'=>'none'])->save();
+$own=$t->fresh()->replicate();$own->fill(['tld'=>'net','use_default_rule'=>false,'pricing_mode'=>'markup_percent','markup'=>'30','round_up'=>'none',
+    'catalogue_intent'=>OfferState::json([...OfferState::decode($own->catalogue_intent),'pricing_rule'=>PricingRule::DEFAULT])])->save();
 foreach(Price::where(['server_id'=>$t->server_id,'tld'=>'com'])->get() as $p){$copy=$p->replicate();$copy->tld='net';$copy->save();}
 $ownRows=static fn()=>Price::where(['server_id'=>$t->server_id,'tld'=>'net'])->orderBy('id')->get()->map(fn($p)=>$p->getRawOriginal())->all();
 $ordinaryBefore=$ownRows();$followerBefore=$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now);
@@ -60,10 +63,10 @@ same(['published'=>2,'failed'=>[],'skipped'=>[]],$writer->run(pricingReview($u->
 commerceReject(fn()=>$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$later));
 same($now->format('Y-m-d H:i:s'),Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'register','term'=>1])->sole()->observed_at->format('Y-m-d H:i:s'),'Card-fee republication never refreshes the saved cost');
 // Missing annual cost still blocks publication without undoing the saved fee.
-$renewal=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew'])->sole();$cost=$renewal->wholesale;$renewal->update(['wholesale'=>null,'revision'=>$renewal->revision+1]);$before=$rows();
+$renewal=Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew'])->sole();$cost=$renewal->catalogue_observation;$renewal->update(['catalogue_observation'=>null,'revision'=>$renewal->revision+1]);$before=$rows();
 same(['published'=>1,'failed'=>['Synthetic #'.$t->server_id=>['.com']],'skipped'=>[]],$writer->run(pricingReview($u->id),$fee('22','2'),$later),'Follower missing annual cost reports its name');
 same(['percent'=>'22.00','fixed'=>'2.00'],CardFee::read(),'Fee still commits when publication cost is missing');same($before,$rows(),'Failed publication retains every old revision');
-$renewal->update(['wholesale'=>$cost,'revision'=>$renewal->revision+1]);
+$renewal->update(['catalogue_observation'=>$cost,'revision'=>$renewal->revision+1]);
 // Register a real postcommit race on the matching fee save, after the completed audit and before fanout.
 $server=App\Models\Server::findOrFail($t->server_id);$default=App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->sole()->value;
 $pending=true;$raced=false;
@@ -83,7 +86,8 @@ same(['percent'=>'12.00','fixed'=>'1.00'],CardFee::read(),'Committed fee survive
 App\Models\Setting::whereNull('settingable_type')->where('key','domains_pricing_default_rule')->firstOrFail()->update(['type'=>'array','value'=>$default]);
 // An unreadable saved fee can be repaired through the full native form, including fee-mode rules.
 pinStaffClock($now);app()->instance(StaffSettingsWrites::class,$writer);
-$own->update(['pricing_mode'=>'markup_fee_percent','markup'=>'100']);
+$own->update(['pricing_mode'=>'markup_fee_percent','markup'=>'100',
+    'catalogue_intent'=>OfferState::json([...OfferState::decode($own->catalogue_intent),'pricing_rule'=>PricingRule::validate([...PricingRule::DEFAULT,'mode'=>'markup_fee_percent','markup'=>'100','card_fee'=>CardFee::NONE])])]);
 $setting=App\Models\Setting::whereNull('settingable_type')->where('key',CardFee::KEY)->sole();$setting->update(['type'=>'string','value'=>'unreadable']);
 $brokenFee=$setting->fresh()->getRawOriginal();$before=$rows();$historyBefore=Review::historyRows($server);$keysBefore=DB::table(Review::KEYS)->count();
 $display=new \Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache(app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));
@@ -108,7 +112,7 @@ same(['percent'=>'3.10','fixed'=>'0.40'],CardFee::read(),'Native form repairs th
 $audit=$saved();
 same('unavailable',$audit['before']['card_fee'],'Repair audit retains unavailable old fee');same('unavailable',$audit['before']['rule'],'Repair audit retains unavailable old default rule');
 same(['percent'=>'3.10','fixed'=>'0.40'],$audit['after']['card_fee'],'Repair audit contains the validated new fee');
-same(['percent'=>'3.10','fixed'=>'0.40'],(new PricingRules)->rule($own->fresh())['card_fee'],'Own fee mode uses the repaired fee');
+same(['percent'=>'3.10','fixed'=>'0.40'],Pricing::rule($own->fresh())['card_fee'],'Own fee mode uses the repaired fee');
 same('6.99',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Default follower republishes after repair');
 same('13.65',$prices->current($t->server_id,$t->account_fingerprint,'net','register',1,'USD',$now)->retail,'Own fee rule republishes after repair');
 same(null,$display->cachedRows(),'Successful repair invalidates display cache after commit');same(0,$reads->calls,'No provider calls in card fee changes or repair');
