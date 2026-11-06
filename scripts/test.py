@@ -696,7 +696,7 @@ def main():
                             'tests/staff-monitoring-actions-test.php', 'tests/staff-monitoring-poll-test.php',
                             'tests/staff-monitoring-filters-test.php', 'tests/staff-monitoring-templates-test.php',
                             'tests/staff-monitoring-expiry-test.php',
-                            'tests/registrars-page-test.php',
+                            'tests/registrars-page-test.php', 'tests/registrar-account-page-test.php', 'tests/registrar-limits-page-test.php', 'tests/registrar-activation-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',
                             'tests/owner-records-test.php',
                             'tests/self-heal-records-test.php',
