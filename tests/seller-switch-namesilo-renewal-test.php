@@ -29,11 +29,16 @@ $writer = new RenewalWriter($binding, $features, $accepted, fn () => $engine, st
 });
 $completion = new RenewalCompletion($renewBindings, $clock);
 $holding->service->product->server->settings()->updateOrCreate(['key' => 'domains_manual_renewals_enabled'], ['value' => true, 'type' => 'boolean']);
-Price::where(['server_id' => $binding->serverId, 'action' => 'renew'])->sole()->update(['wholesale' => '8.95', 'revision' => 2]);
+$observeRenewal = static function () use ($clock,$ports,$binding): void {
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);
+    $q=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+    $cost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.9500',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+    $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+};
 $staff = commerceUser(); $role = Role::create(['name' => 'Cycle funding', 'permissions' => ['admin.domains.manage', 'admin.domains.fund']]); $staff->update(['role_id' => $role->id]);
 foreach (['paid', 'cap-exact-unknown', 'cap-over'] as $cycle => $case) {
     $year = 2027 + $cycle; $clock->instant = new DateTimeImmutable($year.'-09-27T12:00:00Z');
-    Price::query()->update(['observed_at' => $clock->now(), 'fresh_until' => $clock->now()->modify('+1 year')]);
+    $observeRenewal();
     scenarioRetained($holding, static fn () => scenarioSwitch($sellers, $clock, $tlds[0]->server_id));
     $bill = $billing->invoice($holding->id, $user); $op = Operation::where('invoice_id', $bill->id)->sole();
     same($tlds[0]->server_id, SalesPolicy::where('tld', 'com')->sole()->server_id, 'Enom sells while NameSilo renews');
@@ -45,7 +50,7 @@ foreach (['paid', 'cap-exact-unknown', 'cap-over'] as $cycle => $case) {
         same(null, $op->invoice_id, 'Complimentary cycle creates no replacement debt');
     }
     $clock->instant = new DateTimeImmutable($year.'-10-16T12:00:00Z'); Cache::flush();
-    Price::query()->update(['observed_at' => $clock->now(), 'fresh_until' => $clock->now()->modify('+1 year')]);
+    $observeRenewal();
     $loseResponse = $case === 'cap-exact-unknown'; $before = $writes; $money = scenarioMoney();
     $switchesBefore = $sendSwitches;
     $duringSend = static function () use (&$sendSwitches, $sellers, $clock, $tlds): void {

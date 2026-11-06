@@ -25,9 +25,15 @@ $writer = new RenewalWriter($binding,$features,$accepted,fn ()=>$engine,static f
 $completion = new RenewalCompletion($renewBindings,$clock);
 $server = $holding->service->product->server;
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-Price::where(['server_id'=>$binding->serverId,'action'=>'renew'])->sole()->update(['wholesale'=>'8.95','revision'=>2]);
+$observeRenewal = static function () use ($clock,$ports,$binding): void {
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);
+    $q=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+    $cost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.9500',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+    $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+};
 for ($cycle=0;$cycle<2;$cycle++) {
     $year = 2027+$cycle; $clock->instant = new DateTimeImmutable($year.'-09-27T12:00:00Z');
+    $observeRenewal();
     $bill = $billing->invoice($holding->id,$user); $renewal = Operation::where('invoice_id',$bill->id)->sole();
     App\Helpers\ExtensionHelper::addPayment($bill,null,$renewal->amount); Cache::flush();
     $wire->commands=[]; $clock->instant = new DateTimeImmutable($year.'-10-16T12:00:00Z');
@@ -85,7 +91,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
     same(false,array_key_exists('registration_admission',$renewal->fresh()->attempt),'Original nonpremium evidence remains on registration only');
 }
 same(2,$writes,'Repeated cycles send once each');
-$clock->instant=new DateTimeImmutable('2029-09-27T12:00:00Z'); $bill=$billing->invoice($holding->id,$user);
+$clock->instant=new DateTimeImmutable('2029-09-27T12:00:00Z'); $observeRenewal(); $bill=$billing->invoice($holding->id,$user);
 $renewal=Operation::where('invoice_id',$bill->id)->sole(); App\Helpers\ExtensionHelper::addPayment($bill,null,$renewal->amount); Cache::flush();
 $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->status='Expired'; }; }; }; }; }; }; };
 same('held',$engine->run($renewal->id,$writer)->state,'Final exact Active recheck refuses changed status'); same(2,$writes,'Unsafe final status sends nothing');
