@@ -55,6 +55,12 @@ if($nativeServerSettingsCase==='editor'){
     if($nativeServerSettingsRegistrar==='enom'){
         expect(!Schema::hasTable('domains_accounts'),'Fresh native form begins with no extension schema');
         Livewire::actingAs($noNative)->test(CreateServer::class)->assertForbidden();
+    }else{
+        // The original second native submission followed an existing Domains server and verified installation.
+        $entry->installed();
+        Server::create(['type'=>'server','extension'=>'Domains','name'=>'Native first registrar','enabled'=>true]);
+        app(Installation::class)->verify();
+        same(1,Server::where('extension','Domains')->count(),'Second native creation starts with an existing Domains server');
     }
     $serverName=$nativeServerSettingsRegistrar==='enom'?'Native first registrar':'Native second registrar';
     Livewire::actingAs($staff)->test(CreateServer::class)->fillForm(['name'=>$serverName,'extension'=>'Domains'])->call('create')->assertHasNoFormErrors();
