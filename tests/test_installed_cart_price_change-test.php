@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 
 $fixture = offerCommerceFixture(); extract($fixture);
-[$secondBinding, $second] = offerCommerceSecond($fixture);
+[$secondBinding, $second] = offerCommerceSecond($fixture,'example.net');
 $user = commerceUser(); $com = $storefront->offer('com', 'register', 3)['product'];
 $q = new Query($binding, ['com'], 'register', 3);
 $rev = static fn () => offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision);
@@ -56,22 +56,22 @@ same('27.00', Operation::latest('id')->first()->policy['price']['retail'], 'Seco
 
 // Staff take .com off sale: only that line goes, in plain words, on page load and at checkout.
 $cart = commerceCart($user); $closed = commerceAdd($cart, $com, 'closed-sale-placeholder.com', 3);
-$kept = commerceAdd($cart, $second['product'], 'example.net');
+$kept = commerceAdd($cart, $second['product'], 'kept.example.net');
 $page = $open($cart);
 $loaded = commerceCart($user); $loadedLine = commerceAdd($loaded, $com, 'closed-load-placeholder.com', 3);
 // Mixed carts: .com goes off sale and the .net account is paused later; the removal notice must still arrive.
 $mixedLoad = commerceCart($user); $mixedLoadCom = commerceAdd($mixedLoad, $com, 'mixed-load-placeholder.com', 3);
-$mixedLoadNet = commerceAdd($mixedLoad, $second['product'], 'example.net');
+$mixedLoadNet = commerceAdd($mixedLoad, $second['product'], 'kept.example.net');
 $mixedCart = commerceCart($user); $mixedCom = commerceAdd($mixedCart, $com, 'mixed-checkout-placeholder.com', 3);
-$mixedNet = commerceAdd($mixedCart, $second['product'], 'example.net');
+$mixedNet = commerceAdd($mixedCart, $second['product'], 'kept.example.net');
 $mixedPage = $open($mixedCart);
 // A later local mapping/read failure must not commit an earlier off-sale removal without its notice.
 $scanCart = commerceCart($user); $scanCom = commerceAdd($scanCart, $com, 'scan-placeholder.com', 3);
-$scanNet = commerceAdd($scanCart, $second['product'], 'example.net');
+$scanNet = commerceAdd($scanCart, $second['product'], 'kept.example.net');
 $raceCart = commerceCart($user); $raceLine = commerceAdd($raceCart, $com, 'race-placeholder.com', 3);
 $replacement = commerceHosting();
 $ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
-$netRow = Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $secondBinding->serverId)->where('tld', 'net')->sole();
+$netRow = Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id', $secondBinding->serverId)->where('tld', 'example.net')->sole();
 $savedIntent = $netRow->catalogue_intent;
 Illuminate\Support\Facades\DB::table('domains_tlds')->where('id', $netRow->id)->update(['catalogue_intent' => '{']);
 Illuminate\Support\Once::flush(); app('request')->cookies->set('cart', $scanCart->ulid);
@@ -110,7 +110,7 @@ same('closed-sale-placeholder.com is no longer for sale, so we removed it from y
 same(ltrim($second['price'], '$'), $total($page), 'Total now covers only the remaining line');
 $checkout($page, $cart);
 same($before[2] + 1, Operation::count(), 'Remaining line checks out on the next click');
-same('net', Operation::latest('id')->first()->domain->tld, 'Only the remaining line is bought');
+same('example.net', Operation::latest('id')->first()->domain->tld, 'Only the remaining line is bought');
 Illuminate\Support\Once::flush();
 $page = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $loaded->ulid])->test(App\Livewire\Cart::class);
 expect(!$loaded->items()->whereKey($loadedLine->id)->exists(), 'Page load also removes the off-sale line');
