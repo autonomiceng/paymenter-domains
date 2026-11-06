@@ -4,7 +4,16 @@ declare(strict_types=1);
 require __DIR__.'/Support/namesilo-fingerprint-reset.php';
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount;
-$page=Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful();
+// The installed account page no longer offers the retained default-contact reset.
+Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertActionDoesNotExist('accept_namesilo_account');
+// Keep the complete legacy action and service matrix on a test-only page.
+class RetainedNameSiloAccountReview extends RegistrarAccount
+{
+    protected function getHeaderActions(): array
+    {return [\Paymenter\Extensions\Servers\Domains\Admin\Support\NameSiloAccountAction::make($this->account)];}
+}
+Livewire::component('retained-namesilo-account-review',RetainedNameSiloAccountReview::class);
+$page=Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->assertSuccessful();
 same(0,$wire->calls,'Opening the account page sends no provider request');
 $page->mountAction('accept_namesilo_account')->assertActionMounted('accept_namesilo_account');
 $review=$page->get('mountedActions.0.data');
@@ -23,7 +32,8 @@ $page->setActionData(['reason'=>'Default contact changed after staff review'])->
 $pin=$server->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountGuard::PIN)->sole();
 same(['binding'=>$binding->fingerprint,'contact_id'=>'901','email'=>'new@example.com'],json_decode($pin->value,true,8,JSON_THROW_ON_ERROR),'Explicit staff acceptance replaces the encrypted fingerprint');
 expect($pin->encrypted&&!str_contains($pin->getRawOriginal('value'),'new@example.com'),'New fingerprint stays encrypted at rest');
-$rows=Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows($server);
+$history=static fn()=>array_values(array_filter(Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows($server),static fn($row)=>$row['action']===Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountReset::LABEL));
+$rows=$history();
 same(1,count($rows),'One audit row for one accepted reset');$audit=$rows[0];
 same($actor->id,$audit['actor_id'],'Audit identifies the staff actor');same('Default contact changed after staff review',$audit['reason'],'Audit retains typed reason');
 same($before,$audit['before']['fingerprint'],'Audit retains pinned values');same('901',$audit['after']['fingerprint']['contact_id'],'Audit retains accepted contact ID');
@@ -31,7 +41,7 @@ same('new@example.com',$audit['after']['fingerprint']['email'],'Audit retains ac
 same($heldBefore,$held->fresh()->getRawOriginal(),'Held request and all attempt/funding evidence stay unchanged');
 Illuminate\Support\Facades\Queue::assertNothingPushed();
 $guardKey=Paymenter\Extensions\Servers\Domains\Services\NameSiloAccountGuard::PIN;
-$history=static fn()=>Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::historyRows($server);
+
 $reject=static function(Closure $run,string $message):void {
     try{$run();expect(false,'Expected refusal: '.$message);}catch(DomainException $e){same($message,$e->getMessage(),'Specific refusal');}
 };
@@ -51,7 +61,7 @@ try{$checkGuard();expect(false,'Numeric wire ID must remain held');}catch(Paymen
 $wire->id='901';$checkGuard();
 // Mismatch is displayed, then refused without a second provider read or a write.
 $wire->email='other@example.com';$advance();
-$mismatch=Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction('accept_namesilo_account')->assertActionMounted('accept_namesilo_account');
+$mismatch=Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->mountAction('accept_namesilo_account')->assertActionMounted('accept_namesilo_account');
 $modal=$mismatch->html().implode('',$mismatch->effects['partials']??[]);
 expect(str_contains($modal,'The NameSilo contact email is'),'Staff sees why acceptance is refused');
 $reads=$wire->calls;$saved=$server->settings()->where('key',$guardKey)->sole()->getRawOriginal();
@@ -65,7 +75,7 @@ $reject(fn()=>$accept($reviewed),'The current contact changed. Open this review 
 same('901',json_decode($server->settings()->where('key',$guardKey)->sole()->value,true)['contact_id'],'Unreviewed contact is never saved');
 // Revocation is checked on direct calls and after the fresh read.
 $reviewed=$preview();$reads=$wire->calls;$actor->role->update(['permissions'=>['admin.domains.view']]);
-Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionHidden('accept_namesilo_account');
+Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->assertActionHidden('accept_namesilo_account');
 try{$accept($reviewed);expect(false,'Manage permission is required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Direct acceptance denies missing manage permission');}
 same($reads,$wire->calls,'Denied actor sends no read');$actor->role->update(['permissions'=>['admin.domains.view','admin.domains.manage']]);
 $reviewed=$preview();$wire->during=static function()use($actor):void {$actor->role->update(['permissions'=>['admin.domains.view']]);};
@@ -94,7 +104,7 @@ same('903',json_decode($server->settings()->where('key',$guardKey)->sole()->valu
 $expired=$preview();$clock->instant=$clock->now()->modify('+301 seconds');
 $reject(fn()=>$accept($expired),'Open the account review again.');
 $wire->failed=true;$advance();
-$failure=Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$server->id])->mountAction('accept_namesilo_account');
+$failure=Livewire::actingAs($actor)->test(RetainedNameSiloAccountReview::class,['account'=>$server->id])->mountAction('accept_namesilo_account');
 same(null,$failure->get('mountedActions.0.data.review'),'Read failure produces no acceptance ticket');
 $modal=$failure->html().implode('',$failure->effects['partials']??[]);
 expect(str_contains($modal,'Could not read the current NameSilo default contact.'),'Read failure is explained');

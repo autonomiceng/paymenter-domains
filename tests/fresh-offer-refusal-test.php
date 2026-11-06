@@ -75,7 +75,8 @@ DB::table('migrations')->insert(['migration'=>'2000_01_01_000001_create_domains_
 try { $entry->installed(); } catch (DomainException) {}
 $legacy('Unfamiliar Domains migration history');
 // Schema maintenance represents an already installed, empty C6 database, never new-install authority.
-(new Installation)->install(); $before = DB::table('migrations')->orderBy('id')->get()->toJson();
+$legacyFiles=array_values(array_filter($files,static fn($path)=>basename($path,'.php')<Paymenter\Extensions\Servers\Domains\Services\OfferRetirement::BEGIN));
+app(Illuminate\Database\Migrations\Migrator::class)->run($legacyFiles,['force'=>true]); $before = DB::table('migrations')->orderBy('id')->get()->toJson();
 foreach ([fn() => $entry->installed(), fn() => $entry->upgraded('0.1.0')] as $upgrade) {
     try { $upgrade(); throw new LogicException('Old empty installation skipped the bridge'); }
     catch (DomainException $e) { expect(str_contains($e->getMessage(), 'bridge 0.1.0 at 891124421645'), 'Old empty installation names the required bridge'); }

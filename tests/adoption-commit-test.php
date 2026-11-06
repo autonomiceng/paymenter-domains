@@ -13,7 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Registrars\Enom\EnomAdoptionReader;
 use Paymenter\Extensions\Servers\Domains\Models\{Adoption, Domain, Operation, Price};
 use Paymenter\Extensions\Servers\Domains\Services\{AdoptionCommit, HoldingAdoptionSchema, NativeDomainGuard, HolderPricing, RegistrarFactories, RegistrarRegistry};
 config(['app.url' => 'https://domains-tests.invalid']);
-extract(adoptionFixture(Environment::Live)); HoldingAdoptionSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
+// The alternate-provider contract below uses a synthetic provider identity, not local enrollment lineage.
+extract(adoptionFixture(Environment::Live,nameSiloLocal:false)); HoldingAdoptionSchema::install(); \Paymenter\Extensions\Servers\Domains\Services\HistoryLinkSchema::install();
 // Installed composition exposes the dedicated import reader without making a provider call.
 $installedRegistry = new RegistrarRegistry;
 RegistrarFactories::install($installedRegistry, new class implements AccountVerifier {

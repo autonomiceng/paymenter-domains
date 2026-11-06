@@ -1,6 +1,7 @@
 <?php
 // Synthetic storage/authority integration. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureTransferRegistrars=['namesilo'];
 require __DIR__.'/Support/management-namesilo.php';
 use Illuminate\Support\Facades\{Cache,DB};
 use Paymenter\Extensions\Servers\Domains\Contracts\ManagementProtocol;
@@ -32,7 +33,24 @@ $exchangeSequence=static function($o,$cmd,$p,$timeout)use($wire):string {
     if($cmd==='snapshot'){$wire->reads++;if($wire->during){$f=$wire->during;$wire->during=null;$f();}return json_encode($wire->state);}
     $wire->writes[]=$p['delta'];$wire->state[]=$p['delta'];if($wire->lost){throw new RuntimeException('Synthetic lost response');}return '{}';
 };
-$setup=static function($label)use($holding,&$binding,$wire,$exchangeSequence){[$d]=$holding($label);\App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>true]);$wire->state=[];$wire->writes=[];$wire->lost=false;$wire->during=null;return [$d,new SyntheticSequence($binding,$exchangeSequence)];};
+// The sequence cases vary management proof, not acquisition. Capture one real
+// paid, sealed and readback-completed native transfer, then restore all committed
+// native rows before each independent case. Runtime I/O remains outside transactions.
+require_once __DIR__.'/Support/fixture-checkpoint.php';
+[$fixtureDomain,,$fixtureOriginal]=$holding('durable-sequence');
+$fixtureAt=$clock->now();$fixtureDomainRaw=$fixtureDomain->getRawOriginal();
+$fixtureFinance=nativeFinancialSnapshot($fixtureOriginal);
+$restoreSequence=nativeFixtureCheckpoint();
+$setup=static function($label)use($restoreSequence,$fixtureDomain,$fixtureDomainRaw,$fixtureOriginal,$fixtureFinance,$fixtureAt,$clock,&$binding,$wire,$exchangeSequence){
+    $restoreSequence();$clock->instant=$fixtureAt;
+    Carbon\Carbon::setTestNow($fixtureAt);Carbon\CarbonImmutable::setTestNow($fixtureAt);
+    $d=$fixtureDomain->fresh();
+    same($fixtureDomainRaw,$d->getRawOriginal(),'Each sequence case starts from the exact completed native holding: '.$label);
+    same($fixtureFinance,nativeFinancialSnapshot($fixtureOriginal),'Each sequence case restores all original native finance: '.$label);
+    \App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>true]);
+    $wire->state=[];$wire->writes=[];$wire->lost=false;$wire->during=null;
+    return [$d,new SyntheticSequence($binding,$exchangeSequence)];
+};
 [$d,$driver]=$setup('durable-sequence');$intent=['changes'=>[1,2,3]];$nonce=hash('sha256','durable-sequence');
 $op=$management->request($user,$d->id,'dns',$intent,$nonce,$driver);
 $steps=$d->operations()->where('action','dns')->orderBy('id')->get();
@@ -73,7 +91,13 @@ same($op->id,$submit($d,$driver,'dns',['changes'=>[4]])->id,'New intent cannot r
 $progress=ManagementProgress::for($d)['dns'];expect(str_contains($progress['text'],'Contact support'),'Unknown child has a support next step');same('warning',$progress['tone'],'Unknown child uses shared warning tone');
 // Freeze evidence cannot be edited after a save.
 try{$p=$op->policy;$p['management']['sequence']['preimage']=[99];$op->update(['policy'=>$p]);throw new LogicException('Mutable preimage');}catch(DomainException){}
-[$d,$driver]=$setup('slow-unclaimed');$op=$submit($d,$driver,'dns',$intent);$op->update(['created_at'=>$op->created_at->copy()->subSeconds(31)]);
+[$d,$driver]=$setup('slow-unclaimed');$op=$submit($d,$driver,'dns',$intent);$created=$op->created_at;
+$op->update(['created_at'=>$created->copy()->subSeconds(119)]);
+$reads=$wire->reads;$progress=ManagementProgress::for($d)['dns'];
+same(false,$progress['slow'],'Unclaimed sequence is not slow before the two-minute boundary');
+expect(str_contains($progress['text'],'Saving the remaining changes.'),'Young unclaimed sequence retains its normal progress');
+same($reads,$wire->reads,'Young progress reads only retained facts');
+$op->update(['created_at'=>$created->copy()->subSeconds(120)]);
 $reads=$wire->reads;$progress=ManagementProgress::for($d)['dns'];
 expect(str_contains($progress['text'],'Contact support'),'Slow unclaimed sequence has a next step even when a write gate prevents claiming');
 expect($progress['pending'],'Slow unclaimed sequence retains the setting');same($reads,$wire->reads,'Progress reads only retained facts');
