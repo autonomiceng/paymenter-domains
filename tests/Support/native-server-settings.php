@@ -82,12 +82,15 @@ $configure=static function(Server $s,string $registrar,string $secret)use($staff
     $page->setActionData($data)->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
     unset($page);gc_collect_cycles();gc_mem_caches();
 };
-$seed=static function(string $registrar,string $secret)use($staff,$writer):Server {
-    $server=Server::create(['type'=>'server','extension'=>'Domains','name'=>'Seeded '.$registrar,'enabled'=>true]);
+$configureReviewed=static function(Server $server,string $registrar,string $secret)use($staff,$writer):void {
     $data=['registrar'=>$registrar,'environment'=>'test','reason'=>'Verify the original synthetic account',...($registrar==='enom'?['uid'=>'synthetic-enom','token'=>$secret]:['api_key'=>$secret])];
     $stamp=Review::stamp($server->id,null);
     $review=new Review($staff->id,$server->id,null,'configure',Review::ticket($staff->id,$server->id,null,'configure',$stamp),$data['reason']);
-    $writer->run($review,$data);return $server;
+    $writer->run($review,$data);
+};
+$seed=static function(string $registrar,string $secret)use($configureReviewed):Server {
+    $server=Server::create(['type'=>'server','extension'=>'Domains','name'=>'Seeded '.$registrar,'enabled'=>true]);
+    $configureReviewed($server,$registrar,$secret);return $server;
 };
 if($nativeServerSettingsCase==='editor'){
     if($nativeServerSettingsRegistrar==='enom'){
@@ -129,6 +132,24 @@ if($nativeServerSettingsCase==='editor'){
     same($rawBefore,DB::table('settings')->where('settingable_id',$server->id)->whereIn('key',['domains_credentials','domains_verified_credentials'])->orderBy('id')->get()->toJson(),'Native payload cannot persist undeclared credential settings');
     // The native editor has finished all hydration/save assertions.
     unset($edit);gc_collect_cycles();gc_mem_caches();
+    // Owned-editor privacy needs rotated, paused credentials and real audit history.
+    // The recovery entries own the UI rotation assertions; seed only that prerequisite here.
+    $configureReviewed($server,$nativeServerSettingsRegistrar,'PRIVATE-ROTATED-'.$nativeServerSettingsRegistrar);
+    $savedDigest=$server->settings()->where('key','domains_verified_credentials')->sole()->value;
+    $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('System checks')->assertSee('Balance');
+    // A link that promises a switch lands on it: the row has its anchor, and only the one asked for is marked.
+    expect(str_contains($owned->html(),'id="switch-orders"')&&!str_contains($owned->html(),'domains-row-target'),'The Orders row has its anchor and no mark unasked');
+    $marked=static function(string $switch)use($server,$staff):int {
+        $count=substr_count(Livewire::actingAs($staff)->withQueryParams(['switch'=>$switch])->test(RegistrarAccount::class,['account'=>$server->id])->html(),'domains-row-target');
+        gc_collect_cycles();gc_mem_caches();return $count;
+    };
+    same([1,0],[$marked('orders'),$marked('nothing')],'Only a known switch is marked');
+    foreach([$secret,'PRIVATE-ROTATED-'.$a->registrar_key,$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($owned->html(),$private),'Owned setup excludes saved credentials, HMAC and fingerprints');}
+    $audit=Review::historyRows($server->fresh());expect(count($audit)>=2,'Configuration and rotation retain audited review outcomes');
+    foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG','domains_credentials',$savedDigest] as $private){expect(!str_contains(json_encode($audit),$private),'Retained owned audit excludes credentials and verification digest');}
+    $history=json_encode(TldFacts::history($server->id));
+    foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG',$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($history,$private),'Owned history projection excludes secrets, digest and account fingerprint');}
+    unset($owned);gc_collect_cycles();gc_mem_caches();
 }elseif($nativeServerSettingsCase==='recovery'){
     $secret=$nativeServerSettingsRegistrar==='enom'?'PRIVATE-ORIGINAL-ENOM':'PRIVATE-ORIGINAL-NAMESILO';
     $server=$seed($nativeServerSettingsRegistrar,$secret);$a=Account::where('server_id',$server->id)->sole();$binding=AccountBindings::binding($a);
@@ -170,20 +191,6 @@ if($nativeServerSettingsCase==='editor'){
     same('USD 42.17',RegistrarBalances::facts($a,$clock->now())['balance'],'Same verified account can display its retained amount again');
     $digest=$server->settings()->where('key','domains_verified_credentials')->sole();$savedDigest=$digest->value;$digest->update(['value'=>str_repeat('f',64)]);
     serverSettingsReject(fn()=>$bindings->reader($server->id));same(null,RegistrarBalances::facts($a,$clock->now())['balance'],'Digest-only changes also hide the balance');$digest->update(['value'=>$savedDigest]);
-    $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('System checks')->assertSee('Balance');
-    // A link that promises a switch lands on it: the row has its anchor, and only the one asked for is marked.
-    expect(str_contains($owned->html(),'id="switch-orders"')&&!str_contains($owned->html(),'domains-row-target'),'The Orders row has its anchor and no mark unasked');
-    $marked=static function(string $switch)use($server,$staff):int {
-        $count=substr_count(Livewire::actingAs($staff)->withQueryParams(['switch'=>$switch])->test(RegistrarAccount::class,['account'=>$server->id])->html(),'domains-row-target');
-        gc_collect_cycles();gc_mem_caches();return $count;
-    };
-    same([1,0],[$marked('orders'),$marked('nothing')],'Only a known switch is marked');
-    foreach([$secret,'PRIVATE-ROTATED-'.$a->registrar_key,$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($owned->html(),$private),'Owned setup excludes saved credentials, HMAC and fingerprints');}
-    $audit=Review::historyRows($server->fresh());expect(count($audit)>=2,'Configuration and rotation retain audited review outcomes');
-    foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG','domains_credentials',$savedDigest] as $private){expect(!str_contains(json_encode($audit),$private),'Retained owned audit excludes credentials and verification digest');}
-    $history=json_encode(TldFacts::history($server->id));
-    foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG',$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($history,$private),'Owned history projection excludes secrets, digest and account fingerprint');}
-    unset($owned);gc_collect_cycles();gc_mem_caches();
 }else{
     $servers=[];
     foreach(['enom','namesilo'] as $registrar){
