@@ -23,17 +23,28 @@ $sent=[];$work=null;
 $work=new WatchWork($fake,new WatchDiscoveryWork(static fn()=>null),true,static function()use(&$now){return $now;},static function($hint)use(&$sent,&$work){$sent[]=$hint;$work->observe($hint);});
 app()->instance(WatchWork::class,$work);$work->enrollWatch($watch->id,$owner->id);
 DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','expiry')->update(['due_at'=>$now+86400]);
-// A real queue turn, inherited encrypted policy, confirmation interval and both renderers
-// are needed to cover the call site missed by the direct planner test.
-$start=$now;foreach([0,300,600,900,1200]as$offset){$now=$start+$offset;$work->tick();}
-$last=WatchDnsObservation::where('watch_id',$watch->id)->where('check_kind','delegation')->latest('id')->first();
-expect($last!==null&&$last->facts['ns_confirmed'],'Scheduled worker confirms the inherited mismatch');
-expect(DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','delegation')->value('due_at')>$now,'Confirmation advances its due time');
-same(null,$watch->fresh()->expected_dns,'Inheritance does not rewrite the watch');
 require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Domains/routes/owned.php';staffPanel();
 $panel=\Filament\Facades\Filament::getCurrentPanel();$panel->viteTheme([])->theme(new \Illuminate\Support\HtmlString(''));$panel->resources([WatchResource::class,RoutingProfileResource::class]);
 Route::name('filament.admin.')->prefix($panel->getPath())->group(function()use($panel){WatchResource::registerRoutes($panel);RoutingProfileResource::registerRoutes($panel);});app('router')->getRoutes()->refreshNameLookups();
 $manager=staffUser([Staff::VIEW,'admin.domains.watch.view']);Auth::setUser($manager);
+// A real queue turn, inherited encrypted policy, confirmation interval and both renderers
+// are needed to cover the call site missed by the direct planner test.
+$start=$now;$work->tick();
+$initial=WatchDnsObservation::where('watch_id',$watch->id)->where('check_kind','delegation')->latest('id')->first();
+expect($initial!==null&&!$initial->facts['ns_confirmed'],'Initial real DNS read has not passed notification confirmation');
+$initialSummary=(new DomainSummaries())->one($owner,'watch',$watch->id,$now);
+$initialStaff=WatchFacts::for($watch->fresh(),['keys'=>[],'summary'=>$initialSummary]);
+expect(str_contains(json_encode($initialStaff),'does not use Beco nameservers'),'Staff explains the initial observed mismatch');
+$initialCustomer=view('domains::partials.summary',['summary'=>$initialSummary])->render();
+expect(str_contains($initialCustomer,'does not use Beco nameservers'),'Customer explains the same initial observed mismatch');
+expect(str_contains(WatchPage::notice($initialSummary,[],[])['text']??'','does not use Beco nameservers'),'Customer watch page uses the existing mismatch notice immediately');
+expect(WatchPage::nameservers($initialSummary)['sub']!=='Checking again','Initial observed mismatch no longer masquerades as pending');
+same(0,DB::table('domains_watch_notices')->count(),'Displaying an observed mismatch does not bypass notification confirmation');
+foreach([300,600,900,1200]as$offset){$now=$start+$offset;$work->tick();}
+$last=WatchDnsObservation::where('watch_id',$watch->id)->where('check_kind','delegation')->latest('id')->first();
+expect($last!==null&&$last->facts['ns_confirmed'],'Scheduled worker confirms the inherited mismatch');
+expect(DB::table('domains_watch_work')->where('watch_id',$watch->id)->where('kind','delegation')->value('due_at')>$now,'Confirmation advances its due time');
+same(null,$watch->fresh()->expected_dns,'Inheritance does not rewrite the watch');
 $summary=(new DomainSummaries())->one($owner,'watch',$watch->id,$now);
 $staff=WatchFacts::for($watch->fresh(),['keys'=>[],'summary'=>$summary]);
 $customer=view('domains::partials.summary',['summary'=>$summary])->render();
