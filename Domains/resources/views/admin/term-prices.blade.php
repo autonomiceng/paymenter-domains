@@ -13,7 +13,7 @@
 @foreach ($groups as $group)
 @php $price=$group['price']; @endphp
 <div><dt>{{ $group['start'] }}{{ $group['end']!==$group['start'] ? ' to '.$group['end'] : '' }} {{ $group['end']===1 ? 'year' : 'years' }}</dt><dd>
-@if ($group['missing'])<span>Missing</span><span class="domains-sub">Sync prices to read these term totals.</span>
+@if ($group['missing']){{ \Paymenter\Extensions\Servers\Domains\Presentation\Missing::html('No saved registrar total for these terms.') }}<span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::refreshText($refresh ?? []) }}</span>
 @else<strong>Customer total {{ $price['current']===null ? 'Missing' : '$'.$price['current'] }}</strong><span class="domains-sub">Registrar cost {{ $price['cost']===null ? 'Missing' : '$'.number_format((float)$price['cost'],2,'.','') }}.@if (!$price['synced'] && $price['cost']!==null) Out of date. Sync prices to refresh this cost.@endif</span>@endif
 </dd></div>
 @endforeach

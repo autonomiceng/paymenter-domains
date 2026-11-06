@@ -39,10 +39,10 @@ expect(str_contains($r['domains_domain_expiring']['in_app_body'],'@else Auto-ren
 expect(str_contains($r['domains_domain_expiring']['body'],"Auto-renew is off. To keep this domain,@if(\$can_turn_on) turn it on or renew it on the domain page.@else contact support before **{{ \$expires }}**.@endif"),'Expiring email: Auto-renew is off');
 $none(json_encode($r,JSON_UNESCAPED_UNICODE),['transfer code','Transfer code','Renewal is turned off','could not','did not'],'Reminder templates');
 $w=WatchNoticeTemplates::definitions();
-same(['Monitoring alert: expires soon','Monitoring alert: expired','Monitoring alert: nameservers changed','Monitoring alert: nameservers restored'],array_column($w,'name'),'Monitoring alert names');
+same(['Monitoring alert: expires soon','Monitoring alert: expired','Monitoring alert: nameservers not in use','Monitoring alert: nameservers restored'],array_column($w,'name'),'Monitoring alert names');
 same(['Monitoring alerts'],array_values(array_unique(array_column($w,'edit_preference_message'))),'Monitoring alerts preference');
 same('{{ $domain }} has expired',$w['domains_watch_expired']['subject'],'Expired subject');
-same('As of {{ $date }}, {{ $domain }} no longer uses {{ $nameservers }}. If you didn’t expect this, contact support.',$w['domains_watch_ns_changed']['in_app_body'],'Nameservers changed body');
+expect(str_contains($w['domains_watch_ns_changed']['in_app_body'],'$previously_matched') && str_contains($w['domains_watch_ns_changed']['in_app_body'],'does not use'),'Nameserver default distinguishes an initial mismatch from a change');
 foreach($w as $key=>$t){
     $body=$plain($t['body']);
     expect(str_ends_with($body,'View domain You get this because monitoring alerts are on. Turn them off on the domain page.'),'Footer said once, after the link: '.$key);
@@ -173,11 +173,12 @@ expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controlle
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Http\Controllers\StorefrontController::class),"'Check the TLD after the dot, for example '"),'Search TLD error');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\NativeActivationInformation::class),'We may ask for the auth code from your current registrar.'),'Activation information');
 expect(str_contains($source(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class),"['name'=>'Domain prices',"),'Client nav names the prices page by its title');
-// Previous defaults upgrade twice; custom text is retained.
+// Previous shipped defaults upgrade twice; custom text is retained.
+$shipped=priorWatchDefaults();
 foreach ($w as $key=>$fields) {
     $t=NotificationTemplate::where('key',$key)->sole();
     foreach (array_intersect(['name','subject','in_app_title','in_app_body','body'],\Illuminate\Support\Facades\Schema::getColumnListing('notification_templates')) as $field) {
-        $old=str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]);
+        $old=$key==='domains_watch_ns_changed'?end($shipped[$key][$field]):str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]);
         if ($key==='domains_watch_ns_restored' && $field==='name') { $old=hex2bin('4d6f6e69746f72696e6720616c6572743a206e616d6573657276657273206261636b20746f204265636f'); }
         $t->setAttribute($field,$old)->save();
         WatchNoticeTemplates::ensure();WatchNoticeTemplates::ensure();
