@@ -17,7 +17,7 @@ same('Next invoice: Paid',DomainListRow::renewal($s)['note'],'Valid standard inv
 $state=$op->fresh()->state;$op->forceFill(['state'=>'uncertain'])->saveQuietly();
 $s=$summary();
 same('Under review',$detail($s)['value'],'Detail keeps an unconfirmed paid renewal under review');
-same('Next invoice: Under review',DomainListRow::renewal($s)['note'],'List agrees with detail on an unconfirmed paid renewal');
+same('Next invoice: Under review. There’s nothing you need to do.',DomainListRow::renewal($s)['note'],'List agrees with detail on an unconfirmed paid renewal');
 expect(!$s->renewalInvoicePaid && !$s->renewalInvoiceMissing,'Unconfirmed paid renewal is neither Paid nor not issued');
 $op->forceFill(['state'=>$state])->saveQuietly();
 same('Next invoice: Paid',DomainListRow::renewal($summary())['note'],'Restored renewal is Paid on the list again');
@@ -29,6 +29,6 @@ same(2,$invoice->items()->count(),'Extra-line fixture retains both invoice membe
 $s=$summary();
 same('Under review',$detail($s)['value'],'Detail refuses a standard invoice with an extra line');
 $row=DomainListRow::renewal($s);
-same('Next invoice: Under review',$row['note'],'List agrees with detail instead of trusting the Paid status');
+same('Next invoice: Under review. There’s nothing you need to do.',$row['note'],'List agrees with detail instead of trusting the Paid status');
 expect(!$s->renewalInvoicePaid && !$row['invoiceMissing'],'Invalid issued debt is under review rather than Paid or not issued');
 $nativeSuccessful=true;echo "Standard paid renewal invoice membership agrees on list and detail.\n";

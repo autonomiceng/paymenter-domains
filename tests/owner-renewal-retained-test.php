@@ -16,7 +16,7 @@ require __DIR__.'/Support/owner-renewal-issued.php';
 $cycleStates=['pending'=>['state'=>'awaiting_payment','result'=>['invoice'=>route('invoices.show',$invoice)],'heading'=>'Pay invoice'],
     'paid'=>['state'=>'pending','result'=>['status'=>'paid'],'heading'=>'Updates when the renewal completes'],
     'cancelled'=>['state'=>'awaiting_payment','result'=>['status'=>'cancelled'],'heading'=>'Invoice cancelled'],
-    'held'=>['state'=>'held','result'=>['status'=>'review'],'heading'=>'Renewal being checked. No action needed.']];
+    'held'=>['state'=>'held','result'=>['status'=>'review'],'heading'=>'There’s nothing you need to do.']];
 foreach(['manual','stop','service','domain','cutoff','calendar'] as $gate){
     $rawDomain=$d->fresh()->getRawOriginal();$rawService=$d->service->fresh()->getRawOriginal();$savedTime=$clock->instant;
     if($gate==='manual'){$setting('domains_manual_renewals_enabled',false);}

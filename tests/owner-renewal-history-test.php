@@ -20,7 +20,7 @@ $shows=static function(array $texts,string $label)use($page,$d):void {$html=$pag
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'paid']);same(['status'=>'paid'],$cycle(),'Paid cycle shows payment received');
 $shows(['Paid','Updates when the renewal completes'],'Paid page');
 DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'pending']);DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'held']);
-same(['status'=>'review'],$cycle(),'Held cycle shows review');$shows(['Under review','Renewal being checked. No action needed.'],'Review page');
+same(['status'=>'review'],$cycle(),'Held cycle shows review');$shows(['Under review','>There’s nothing you need to do.<'],'Review page');
 DB::table('domains_operations')->where('id',$op->id)->update(['state'=>'awaiting_payment']);DB::table('invoices')->where('id',$invoice->id)->update(['status'=>'cancelled']);$cancelled=$ledger();
 same(['status'=>'cancelled'],$cycle(),'Cancelled invoice shows its status');$shows(['Invoice cancelled','Contact support'],'Cancelled page');
 $refused($d,['years'=>'2'],OwnerRenewalController::CANCELLED);same($cancelled,$ledger(),'Cancelled cycle request creates no invoice');

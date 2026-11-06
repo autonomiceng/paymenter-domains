@@ -95,8 +95,8 @@ final class DomainPage
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => 'Paid', ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
-            // When the page notice already says there is nothing to do, the row does not say it again.
-            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked.'.(self::noActionSaid(self::notice($d, $support, $s)) ? '' : ' '.Missing::NO_ACTION)],
+            // Under review already says we are checking it. The row adds only that the customer has nothing to do, unless the page notice says so.
+            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => self::noActionSaid(self::notice($d, $support, $s)) ? null : self::NOTHING_TO_DO],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
             $s?->renewalIssueAt !== null => ['value' => self::date($s->renewalIssueAt)],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],

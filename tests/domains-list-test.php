@@ -68,7 +68,7 @@ $rows=[
     'test-expiring.example'=>[$dto('test-expiring.example','managed',['testEnvironment'=>true,'expiry'=>'2026-11-02','daysLeft'=>1,'renewalInvoiceMissing'=>true,'statusState'=>'active']),'Nov 2, 2026 In 1 day','On Next invoice: Missing Not issued yet Contact support','Test'],
     'watch-expired.example'=>[$dto('watch-expired.example','watch',['demo'=>true,'expiry'=>'2026-10-21','daysLeft'=>-2,'relatedServices'=>$hosting,'relatedOverflow'=>1,'statusState'=>'watch.expired','statusReason'=>'Renew at your registrar']),'Oct 21, 2026','At your registrar','Demo'],
     'watch-unknown.example'=>[$dto('watch-unknown.example','watch',['relatedServices'=>array_slice($hosting,0,1)]),'Missing Check at your registrar','At your registrar',null],
-    'renewal-review.example'=>[$dto('renewal-review.example','managed',['expiry'=>'2029-11-05','daysLeft'=>1095,'renewalPrice'=>'$10.99','statusState'=>'active','renewalInvoiceReview'=>true]),'Nov 5, 2029','On Next invoice: Under review',null],
+    'renewal-review.example'=>[$dto('renewal-review.example','managed',['expiry'=>'2029-11-05','daysLeft'=>1095,'renewalPrice'=>'$10.99','statusState'=>'active','renewalInvoiceReview'=>true]),'Nov 5, 2029','On Next invoice: Under review. There’s nothing you need to do.',null],
 ];
 $page=new LengthAwarePaginator(array_column($rows,0),count($rows),25);
 $html=view('domains::index',['domains'=>$page,'filterCounts'=>[''=>count($rows),'active'=>2,'under_review'=>1,'expired'=>1]])->render(); $dom=storefrontDom($html);
