@@ -102,7 +102,7 @@ final class TldFacts
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');
-            $html.='<tr>'.self::cell($account,false).self::cell(e(self::pricing($row)))
+            $html.='<tr>'.self::cell($account,false).self::cell(e($fact['pricing']))
                 .self::cell($price($first('register'))).self::cell($price(self::renewal($prices))).self::cell($transfer);
             if($grants->costs){
                 $renew=self::renewal($prices);$note=self::costNote($renew);

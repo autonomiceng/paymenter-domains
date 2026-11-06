@@ -529,7 +529,10 @@
     "tests/cart-removal-checkout-test.php",
     "tests/cart-removal-price-failure-test.php",
     "tests/native-autoload-path-test.php",
-    "tests/cart-notice-render-test.php"
+    "tests/cart-notice-render-test.php",
+    "tests/staff-invalid-tld-detail-test.php",
+    "tests/management-runtime-recovery-test.php",
+    "tests/staff-sync-worker-test.php"
   ],
   "ui": [],
   "runner": [
