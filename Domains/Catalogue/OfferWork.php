@@ -52,10 +52,15 @@ final class OfferWork
         $this->editQueue($binding, function ($q, $row) use ($binding, $tld, $soldOnly): void {
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail();
             $this->offerBinding($binding, $t); $work = OfferState::decode($row->offer_work);
-            if (isset($work['facts'][$tld])) { return; }
-            if (count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
             $facts = OfferState::facts($t->catalogue_facts);
-            $work['facts'][$tld] = ['sold_only' => $soldOnly, 'due_at' => $facts && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
+            $current = $facts && TermSupport::currentFacts($binding, $tld, $facts);
+            $authority = hash('sha256', OfferState::json(TermSupport::evidence($binding, $tld)));
+            $state = $work['facts'][$tld] ?? null;
+            if ($state !== null && ($current || ($state['authority'] ?? null) === $authority)) { return; }
+            if ($state === null && count($work['facts'] ?? []) >= 5000) { throw new \DomainException('Offer facts queue is full.'); }
+            // Wake once per authority change. Subsequent hints keep provider failure backoff intact.
+            $work['facts'][$tld] = ['sold_only' => $state['sold_only'] ?? $soldOnly, 'authority' => $authority,
+                'due_at' => $current && $facts->fresh($this->clock->now()) ? $facts->freshUntil->getTimestamp() : $this->at()];
             $q->update(['offer_work' => OfferState::json($work)]);
         });
     }
@@ -95,7 +100,7 @@ final class OfferWork
             $t = Tld::where('server_id', $binding->serverId)->where('tld', $tld)->firstOrFail(); $this->offerBinding($binding, $t);
             if ($failure) { return $failure; }
             $state = $work['facts'][$tld] ?? []; $facts = OfferState::facts($t->catalogue_facts);
-            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
+            return [...$state, 'state' => $facts && $facts->fresh($this->clock->now()) && TermSupport::currentFacts($binding, $tld, $facts) ? 'ready' : (!$state ? 'unknown' : (!empty($state['unsupported']) ? 'unsupported' : (!empty($state['failure']) ? 'retrying' : 'queued'))),
                 'due_at' => $state['due_at'] ?? null];
         }
         if (!$row || $row->offer_work === null) { return ['state' => 'idle']; }
@@ -150,6 +155,8 @@ final class OfferWork
                 $work['credential_revision'] = $credential; $work['upgrade_generation'] = $this->generation;
             }
             $this->republish($writer, $b, $work);
+            // Local republication can wake an existing month-long facts entry after authority changes.
+            $work['facts'] = OfferState::decode(DB::table('domains_observation_queues')->where('server_id', $b->serverId)->value('offer_work'))['facts'] ?? [];
             $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
                 if ($t) { $this->facts($writer, $b, $t, $work, $guard); }
