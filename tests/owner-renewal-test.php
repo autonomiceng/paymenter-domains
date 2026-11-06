@@ -27,13 +27,13 @@ $html=$page($d);$noRenewalForm($html,$d,'Off page shows no renewal form');
 $before=$ledger();$refused($d,['years'=>'1'],'You can’t renew online right now. Contact support to renew this domain.');
 same($before,$ledger(),'Off request creates no invoice');
 
-// On: form offers only terms inside the ten-year registry horizon.
+// No exact multi-year quotes: offer annual renewal while preserving the registry horizon checks.
 $setting('domains_manual_renewals_enabled',true);$dto=$owners->present($d->fresh());
-same(['url'=>route('domains.domains.renew',$d->id),'terms'=>range(1,9),'order_by'=>'2027-10-17'],$dto->renewNow,'Request offers horizon-bounded terms until the day before expiry');
+same(['url'=>route('domains.domains.renew',$d->id),'terms'=>[1],'order_by'=>'2027-10-17'],$dto->renewNow,'Request offers horizon-bounded terms until the day before expiry');
 $html=$page($d);
-foreach(['Renew now','>Renew '.$d->domain.'<','>Years<','<option value="9">9 years</option>','<option value="1">1 year</option>',
+foreach(['Renew now','>Renew '.$d->domain.'<','>Years<','<option value="1">1 year</option>',
     'You can renew online until <time datetime="2027-10-17">Oct 17, 2027</time>.','Create invoice','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
-expect(!str_contains($html,'<option value="10">'),'Term beyond the horizon is not offered');
+foreach (range(2,10) as $years) { expect(!str_contains($html,'<option value="'.$years.'">'),'Unsupported longer term is not offered'); }
 same(range(1,10),DomainBilling::terms(new DateTimeImmutable('2027-10-18'),new DateTimeImmutable('2027-10-18T00:00:00Z')),'Horizon admits ten years from expiry day');
 same([1,2],DomainBilling::terms(new DateTimeImmutable('2035-08-01'),new DateTimeImmutable('2027-09-01T12:00:00Z')),'Far expiry narrows the term list');
 same([],DomainBilling::terms(new DateTimeImmutable('2037-10-18'),new DateTimeImmutable('2027-09-01T12:00:00Z')),'Expiry past the horizon offers no term');
@@ -43,6 +43,7 @@ $before=$ledger();
 foreach(['0','01','abc','',' 2','2.0','-1','100'] as $years){$refused($d,['years'=>$years],'Choose how many years to renew for.');}
 $refused($d,[],'Choose how many years to renew for.');$refused($d,['years'=>['2']],'Choose how many years to renew for.');
 foreach(['10','11','99'] as $years){$refused($d,['years'=>$years],'Domains can be registered for at most 10 years ahead. Choose a shorter term.');}
+foreach (range(2,9) as $years) { $refused($d,['years'=>(string)$years],OwnerRenewalController::UNAVAILABLE); }
 same($before,$ledger(),'Refused terms create no invoice');
 
 // Foreign owner, wrong intent and another domain's key are refused before billing.
@@ -54,7 +55,7 @@ same($before,$ledger(),'Foreign and mismatched intents create no invoice');
 // Processing off is an internal refusal: generic copy, no reason code.
 $bindings->setProcessing($server->id,false);
 same([],$owners->present($d->fresh())->renewNow,'Processing off hides the request');
-expect(!str_contains($page($d),'Create invoice'),'Processing off page has no request');$refused($d,['years'=>'2'],OwnerRenewalController::UNAVAILABLE);$bindings->setProcessing($server->id, true, syntheticActivation());
+expect(!str_contains($page($d),'Create invoice'),'Processing off page has no request');$refused($d,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);$bindings->setProcessing($server->id, true, syntheticActivation());
 same($before,$ledger(),'Paused processing creates no invoice');
 // Raw rows retain invalid authority that normal model guards would refuse.
 $policy=$d->fresh()->renewal_policy;
@@ -82,13 +83,13 @@ foreach (['spending','anchor','prior','price','service','domain'] as $case) {
 }
 
 // Success sends the owner to the invoice; duplicates return the same invoice.
-$first=$req($d,['years'=>'2']);$stale=clone $first;$response=$controller->renew($first,$d->id);
+$first=$req($d,['years'=>'1']);$stale=clone $first;$response=$controller->renew($first,$d->id);
 $op=Operation::where('domain_id',$d->id)->where('action','renew')->sole();$invoice=Invoice::findOrFail($op->invoice_id);
 same(route('invoices.show',$invoice),$response->getTargetUrl(),'Owner lands on the renewal invoice');
-same([2,'awaiting_payment','2027-10-11',(int)$user->id],[(int)$op->term,$op->state,$invoice->due_at->format('Y-m-d'),(int)$invoice->user_id],'Requested term, due date and owner recorded');
-same('Domain renewal: owner-renew-placeholder.com (2 years, Oct 18, 2027 to Oct 18, 2029)',$invoice->items->sole()->description,'Invoice names the requested term');
+same([1,'awaiting_payment','2027-10-11',(int)$user->id],[(int)$op->term,$op->state,$invoice->due_at->format('Y-m-d'),(int)$invoice->user_id],'Requested term, due date and owner recorded');
+same('Domain renewal: owner-renew-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)',$invoice->items->sole()->description,'Invoice names the requested term');
 $replay(fn()=>$controller->renew($stale,$d->id));$issued=$ledger();
-same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Fresh duplicate returns the same invoice');
+same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'1']),$d->id)->getTargetUrl(),'Fresh duplicate returns the same invoice');
 same($issued,$ledger(),'Duplicate submit creates no second invoice');
 $refused($d,['years'=>'3'],'This domain already has a renewal invoice for a different term. Pay that invoice, or contact support to change it.');
 same($issued,$ledger(),'Different term on an issued cycle creates no invoice');
@@ -97,7 +98,7 @@ $html=$page($d);expect(str_contains($html,'Pay invoice')&&str_contains($html,'hr
 expect(str_contains($html,'Invoice ready. Due Oct 11, 2027.')&&!str_contains($html,'Early renewal not paid'),'Customer reads the same early renewal words as staff');
 $setting('domains_manual_renewals_enabled',false);
 same(['invoice'=>route('invoices.show',$invoice)],$owners->present($d->fresh())->renewNow,'Off retains the issued-invoice link');
-same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'2']),$d->id)->getTargetUrl(),'Turning requests off still returns the issued invoice');
+same(route('invoices.show',$invoice),$controller->renew($req($d,['years'=>'1']),$d->id)->getTargetUrl(),'Turning requests off still returns the issued invoice');
 same($issued,$ledger(),'Off duplicate creates nothing');$setting('domains_manual_renewals_enabled',true);
 
 // Auto-renew off: billing refuses manual requests for a stopped renewal, so the page offers none; turning it on restores the form.
@@ -106,7 +107,7 @@ same(['Off',[]],[$dto->renewal,$dto->renewNow],'Auto-renew off hides the request
 $html=$page($late);$noRenewalForm($html,$late,'Auto-renew off page shows no renewal form');
 $refused($late,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($issued,$ledger(),'Auto-renew off request creates no invoice');
 $late->update(['renewal_policy'=>$policy]);$dto=$owners->present($late->fresh());
-same(['On',range(1,9)],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
+same(['On',[1]],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
 
 // Outside the calendar: hidden on the expiry date and refused with plain copy.
 $clock->instant=new DateTimeImmutable('2027-10-17T23:00:00Z');expect($owners->present($late->fresh())->renewNow!==[],'Last request day still offers renewal');
@@ -135,7 +136,7 @@ $shows(['Invoice cancelled'],'Retired cutoff page');
 $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');$setting('domains_manual_renewals_enabled',false);
 same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with requests off');$setting('domains_manual_renewals_enabled',true);
 $server->settings()->updateOrCreate(['key'=>'domains_due_days'],['value'=>'invalid','type'=>'string']);same(['status'=>'cancelled'],$cycle(),'Retired unpaid cycle remains visible with invalid calendar');$server->settings()->where('key','domains_due_days')->delete();
-same(range(1,9),$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
+same([1],$cycle()['terms']??null,'Retired unpaid cycle offers a replacement request');
 $html=$page($d);expect(str_contains($html,'Create invoice')&&!str_contains($html,'Invoice cancelled'),'Retired page shows the form, not the status');
 // Replacement proof covers every debt, even beyond one page or under an unexpected key.
 $copies=[];$copyInvoices=[];$copyItems=[];
@@ -193,17 +194,17 @@ $html=$page($d);expect(str_contains($html,'Pay invoice'),'Large history page sti
 DB::table('domains_operations')->whereIn('id',$copies)->delete();
 DB::table('invoice_items')->whereIn('id',$copyItems)->delete();DB::table('invoices')->whereIn('id',$copyInvoices)->delete();
 
-// Late requests keep horizon-bounded terms and share the preview's expiry limit with the writer.
+// Late annual requests share the preview's expiry limit with the writer.
 foreach ([true,false] as $autoRenew) {
     $lastDay=$lastDays[(int)$autoRenew];
     $lastDay->update(['renewal_policy'=>[...($lastDay->renewal_policy??[]),'owner_auto_renew'=>$autoRenew]]);
     $clock->instant=new DateTimeImmutable('2027-10-17T23:59:59Z');
-    same(['terms'=>range(1,9),'order_by'=>'2027-10-17'],$billing->requestOptions($lastDay),'Last-day preview: '.($autoRenew?'On':'Off'));
-    $response=$controller->renew($req($lastDay,['years'=>'2']),$lastDay->id);
+    same(['terms'=>[1],'order_by'=>'2027-10-17'],$billing->requestOptions($lastDay),'Last-day preview: '.($autoRenew?'On':'Off'));
+    $response=$controller->renew($req($lastDay,['years'=>'1']),$lastDay->id);
     $lastOp=Operation::where('domain_id',$lastDay->id)->where('action','renew')->sole();$lastInvoice=Invoice::findOrFail($lastOp->invoice_id);
-    same(route('invoices.show',$lastInvoice),$response->getTargetUrl(),'Last-day POST accepts two-year request');
+    same(route('invoices.show',$lastInvoice),$response->getTargetUrl(),'Last-day POST accepts annual request');
     same('2027-10-17',$lastInvoice->due_at->format('Y-m-d'),'Late invoice is due today');
-    same($lastInvoice->id,$billing->invoice($lastDay->id,$user,2)->id,'Late duplicate reuses invoice');
+    same($lastInvoice->id,$billing->invoice($lastDay->id,$user,1)->id,'Late duplicate reuses invoice');
     if($autoRenew){same($lastInvoice->id,$billing->invoice($lastDay->id)->id,'Scheduled billing reuses late manual cycle');}
     else{same(null,$billing->invoice($lastDay->id),'Owner Off still skips scheduled billing');}
     same(1,Operation::where('domain_id',$lastDay->id)->where('action','renew')->count(),'One late cycle invoice');

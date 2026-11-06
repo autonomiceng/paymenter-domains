@@ -5,10 +5,10 @@ namespace Paymenter\Extensions\Servers\Domains\Catalogue;
 
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Environment, RenewalPrice};
+use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, CatalogueFreshness, Environment, RenewalPrice};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts;
-use Paymenter\Extensions\Servers\Domains\Services\RegistryInputs;
+use Paymenter\Extensions\Servers\Domains\Services\{PricingRule, RegistryInputs};
 
 /** Authorized provider facts and holder evidence. Public intent never grants execution support.
  * Locked consumers pass their retained rows; this view acquires no locks after operation locks. */
@@ -107,9 +107,43 @@ final class Capabilities
             if ($p->catalogue_observation !== null) { $cost = $this->current(\Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount($b->serverId)->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)))); }
         }
         $value = OfferState::money($t->catalogue_retained_annual_retail, 2);
-        $retail = $value !== null && \Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($value) > 0
-            ? new RenewalPrice($row?->id, $row?->revision, $value, 'USD', true, 'retained_renewal') : null;
+        $warning = $value !== null && $cost !== null && PricingRule::minor($value) * 100 < PricingRule::units($cost->total)
+            ? 'below_cost' : 'retained_renewal';
+        $retail = $value !== null && PricingRule::minor($value) > 0
+            ? new RenewalPrice($row?->id, $row?->revision, $value, 'USD', true, $warning) : null;
         return compact('retail', 'cost');
+    }
+    /** NS17 renewal years for an already locked holding, keyed by years, using the current account age policy.
+     * Year 1 keeps today's annual path; longer years need TermSupport's reviewed evidence. */
+    public function renewalTerms(AccountBinding $b, Tld $t, iterable $prices, \DateTimeImmutable $expiry): array
+    {
+        ($this->authorize)(new Query($b, [$t->tld], 'renew'), Context::Holder);
+        $this->identity($b, $t->tld, $t); $costs = []; $freshness = CatalogueFreshness::forAccount($b->serverId);
+        foreach ($prices as $p) {
+            if ((int)$p->server_id !== $b->serverId || $p->account_fingerprint !== $b->fingerprint
+                || $p->registrar_key !== $b->registrarKey || $p->tld !== $t->tld) { throw new \DomainException('Holding cost binding changed.'); }
+            if ($p->action !== 'renew' || $p->currency !== 'USD' || $p->catalogue_observation === null) { continue; }
+            $c = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
+            if ($c->action === 'renew' && $c->term === (int)$p->term) { $costs[$c->key()] = $c; }
+        }
+        try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
+        // NameSilo stays annual before any TEST protocol check: its price read has no years parameter.
+        return TermSupport::renewal($b->registrarKey, $t->tld, $f, $costs, $expiry, $this->clock->now());
+    }
+    /** Staff Edit terms/account setup: supported renewal years and why each longer year or family is held. */
+    public function termReadiness(AccountBinding $b, string $name): array
+    {
+        ($this->authorize)(new Query($b, [$name], 'renew'), Context::Staff);
+        $t = Tld::where('server_id', $b->serverId)->where('tld', $name)->sole(); $this->identity($b, $name, $t);
+        $prices = DB::table('domains_prices')->where('server_id', $b->serverId)->where('tld', $name)->where('action', 'renew')->orderBy('id')->get();
+        try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
+        $costs = []; $freshness = CatalogueFreshness::forAccount($b->serverId);
+        foreach ($prices as $p) {
+            if ($p->account_fingerprint !== $b->fingerprint || $p->currency !== 'USD' || $p->catalogue_observation === null) { continue; }
+            try { $c = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation))); } catch (\Throwable) { continue; }
+            if ($c->term === (int)$p->term) { $costs[$c->key()] = $c; }
+        }
+        return TermSupport::readiness($b->registrarKey, $name, $f, $costs, $this->clock->now());
     }
     private function current(?Cost $cost): ?Cost
     { return $cost && $cost->action === 'renew' && $cost->term === 1 && $cost->enabled && $cost->fresh($this->clock->now()) ? $cost : null; }

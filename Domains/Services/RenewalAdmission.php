@@ -3,7 +3,7 @@
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, ExpiryPrecision, Query, RenewalCode, RenewalDecision, RenewalRequest, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, SendState};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, Disposition, Environment, ExpiryPrecision, Query, RenewalCode, RenewalDecision, RenewalRequest, RenewalStatus, RequestBudget, RequestContext, RequestOrigin, SendState};
 /** Prospective admission only: no obligation, invoice, claim, seal, funding grant or provider write. */
 final readonly class RenewalAdmission
 {
@@ -27,8 +27,9 @@ final readonly class RenewalAdmission
     {
         OperationClaims::outside(); $status = RenewalStatus::Unknown; $renewalUntil = null;
         try {
-            [$binding, $name, $stamp, $retail, $nonpremium, $capabilityUntil] = $this->authority->capture($request);
-            if(EnomTestRenewal::enabled($binding)&&$request->years!==1){throw new RenewalRefused(RenewalCode::Term);}
+            [$binding, $name, $stamp, $retail, $nonpremium, $capabilityUntil, $termRule] = $this->authority->capture($request);
+            // A frozen NS17 rule admits a longer term on TEST accounts only; Live multi-year renewal waits for NS18 proof.
+            if($request->years!==1&&!($termRule&&$binding->environment===Environment::Test)){throw new RenewalRefused(RenewalCode::Term);}
             if ($reserve) { $this->accepted->reserve($binding); } else { $this->accepted->requireCurrent($binding); }
             $reader = $this->bindings->reader($binding->serverId); $binding->requireMatch($reader->binding());
             $started = $this->clock->now()->setTimezone(new \DateTimeZone('UTC'));

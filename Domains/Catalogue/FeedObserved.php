@@ -34,7 +34,7 @@ final readonly class FeedObserved implements Command
                 && \Paymenter\Extensions\Servers\Domains\Services\PricingRule::units($cost->total) > 0 ? [1] : [];
         }
         return new Facts($terms, $metadata->registryFields, $metadata->renewalSafe, $metadata->requiresNameservers,
-            $metadata->autoRenewOnly, $metadata->source, $metadata->observedAt, $metadata->freshUntil);
+            $metadata->autoRenewOnly, $metadata->source, $metadata->observedAt, $metadata->freshUntil, $metadata->expansion);
     }
     public function binding(): AccountBinding { return $this->account; }
     public function tld(): string { return $this->ending; }

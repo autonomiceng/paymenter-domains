@@ -24,7 +24,25 @@ config(['domains.enom_test_sends_per_day'=>1000]);Cache::flush();same('pending',
 $state->afterWrite=static fn()=>throw new EnomTestCallLimit;
 same('uncertain',$wireEngine->run($wireOp->id,$wireWriter)->state,'Off preserves uncertainty at the old explicit-runtime wire boundary');
 [$onCapOp,$onCapDomain,$onCapBinding]=$makeRenewal(placeholderComFixtureName('renew-on-wire-cap-placeholder.com'));[$onCapEngine,$onCapWriter]=$compose($onCapBinding);
-[$termOp,$termDomain,$termBinding]=$makeRenewal(placeholderComFixtureName('renew-test-annual-only-placeholder.com'),true,2);[$termEngine,$termWriter]=$compose($termBinding);
+// New debt is annual only. Reconstruct a pre-C2 frozen two-year paid debt through model encryption
+// so the execution guard still proves that retained longer debt cannot gain send authority.
+[$termOp,$termDomain,$termBinding,$termInvoice]=$makeRenewal(placeholderComFixtureName('renew-test-annual-only-placeholder.com'),false);
+$termAmount=Paymenter\Extensions\Servers\Domains\Services\PricingRule::total($termOp->amount,2);
+$termPolicy=$termOp->policy;$termPolicy['renewal']['term']=2;$termPolicy['renewal']['cost_cap']=['amount'=>'16.0000','currency'=>'USD'];
+$termOp->policy=$termPolicy;
+DB::table('domains_operations')->where('id',$termOp->id)->update(['term'=>2,'amount'=>$termAmount,
+    'expected_expires_at'=>'2029-10-18','policy'=>$termOp->getAttributes()['policy']]);
+DB::table('invoice_items')->where('id',$termOp->invoice_item_id)->update(['price'=>$termAmount]);
+App\Helpers\ExtensionHelper::addPayment($termInvoice->id,null,$termAmount);
+$termOp=$termOp->fresh();same(2,(int)$termOp->term,'Retained fixture has a real two-year debt');
+[$termEngine,$termWriter]=$compose($termBinding);
+// Full native debt is required to reach the spending boundary; a value-only fixture cannot prove no reads/sends.
+$termRequest=new \Paymenter\Extensions\Servers\Domains\Data\RenewalRequest($termDomain->id,$termDomain->authority_generation,
+    $termDomain->confirmed_revision,$termOp->base_expires_at->format('Y-m-d'),$termDomain->provider_domain_id,2,$termOp->operation_key);
+$termAdmission=new RenewalAdmission($authority,$renewBindings,new RenewalAcceptance($termBinding,true,true,25,true),$clock);
+same('renewal_term_refused',$termAdmission->check($termRequest)->code->value,'Opt-out explicit runtime refuses retained longer debt');
+same([],$state->calls,'Opt-out longer debt never reaches provider reads');
+
 config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true]);
 foreach([false,'true',1,null] as $off){config(['domains.enom_writes.renewal'=>$off]);expect(!EnomTestRenewal::enabled($b),'Strict boolean opt-in');}
 config(['domains.enom_writes.renewal'=>true]);expect(EnomTestRenewal::enabled($b),'TEST opt-in opens');
