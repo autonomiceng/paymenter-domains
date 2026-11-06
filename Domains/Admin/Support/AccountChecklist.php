@@ -306,7 +306,7 @@ final class AccountChecklist
                 ['Registration',self::termYears($register),$register===[1]?'Only the annual term is confirmed. Longer terms stay off.':null],
                 ['Early renewal',self::termYears($renew),$held?self::termReason($held[0]['reason']):null],
                 ['Renewal horizon','10 years from today','The time left on the registration reduces the years that can be added.'],
-                ['Grace renewal','Off',self::termReason($ready['families']['grace']['reason'])],
+                ['Grace renewal','Off',self::termReason($ready['families']['grace']['reason'],grace:true)],
                 ['Redemption','Off','Restoration is separate. Review the restoration options on the domain.'],
             ];
         } catch (\Throwable) {
@@ -321,13 +321,14 @@ final class AccountChecklist
     }
     public static function termYears(array $years): string
     { sort($years);return $years===[]?'Off':(count($years)>1&&$years===range(min($years),max($years))?min($years).' to '.max($years):implode(', ',$years)).' '.($years===[1]?'year':'years'); }
-    public static function termReason(?string $reason): string
+    /** An unreviewed family means grace review only on the Grace row; on Ordinary it means longer terms are unreviewed. */
+    public static function termReason(?string $reason,bool $grace=false): string
     {
         return match($reason) {
             'no_exact_quote'=>'Longer renewals need an accepted exact-term quote.',
-            'family_unreviewed'=>'Review registry rules and safe deadlines before enabling grace renewal.',
+            'family_unreviewed'=>$grace?'Review registry rules and safe deadlines before enabling grace renewal.':'Longer terms are not reviewed yet.',
             'live_proof_required'=>'Live renewal proof is still required.',
-            'not_reviewed','term_unreviewed'=>'Longer terms have not been reviewed for this ending.',
+            'not_reviewed','term_unreviewed'=>'Longer terms are not reviewed yet.',
             'annual_unit'=>'An annual estimate cannot prove an exact-term total.',
             'stale_facts','stale_price'=>'The saved terms are out of date. The scheduled check refreshes them.',
             default=>'Current terms are not saved yet. Review the registrar terms. Where the registrar supports it, the scheduled check fills them.',
