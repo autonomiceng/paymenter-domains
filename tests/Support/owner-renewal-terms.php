@@ -7,9 +7,9 @@ use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 // This fixture tests the full ten-year horizon, independently of the production TEST approval's two-year scope.
 // Store explicit reviewed facts and exact totals through the real catalogue writer; keep every admission gate.
 $registrationPrepare=$prepare;$ownerCataloguePorts=$ports;
-$prepare=static function(...$args)use($registrationPrepare,$ownerCataloguePorts):array{
+$prepare=static function(...$args)use($registrationPrepare,$ownerCataloguePorts,$clock):array{
     $result=$registrationPrepare(...$args);$binding=$result[1];
-    $at=new DateTimeImmutable('2026-10-18T00:00:00Z');$until=new DateTimeImmutable('2028-11-05T00:00:00Z');
+    $clock->instant=$clock->now()->modify('+1 second');$at=$clock->now();$until=new DateTimeImmutable('2028-11-05T00:00:00Z');
     $proof=['source'=>'synthetic_owner_calendar','version'=>'calendar-1','reviewed_at'=>'2026-10-01T00:00:00+00:00',
         'valid_until'=>$until->format(DATE_ATOM),'terms'=>range(1,10),'price_unit'=>'term_total','rule'=>'synthetic_exact_totals'];
     $terms=[];$costs=[];
