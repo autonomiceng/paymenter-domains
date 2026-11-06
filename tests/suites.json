@@ -532,6 +532,7 @@
     "tests/staff-transfer-keep-off-test.php",
     "tests/staff-hidden-tld-link-test.php",
     "tests/staff-adopted-price-label-test.php",
+    "tests/staff-complimentary-line-test.php",
     "tests/staff-open-renewal-invoice-test.php",
     "tests/staff-nameserver-refusal-label-test.php",
     "tests/cart-reload-price-test.php",
