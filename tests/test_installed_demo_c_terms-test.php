@@ -26,9 +26,9 @@ same(null,$row->transfer,'The real query has no transfer intent override');
 $fields=$edit->invoke($page,$row);$transfer=collect($fields)->first(fn($f)=>method_exists($f,'getName')&&$f->getName()==='transfer');
 same('Leave as is (Off)',$transfer->getOptions()['keep'],'Default pricing does not replace saved transfer Off');
 $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($binding,'com');
-// ui-r17: the grace review line shows once, under Grace; Ordinary says why its longer terms are off.
-same(['Early renewal','1 year','Longer terms are not reviewed yet.'],$rows[1],
-    'Unreviewed family retains annual renewal and its own review explanation');
+// Main retains the exact-term refusal on Ordinary; the grace review line still shows once under Grace.
+same(['Early renewal','1 year','Longer renewals need an accepted exact-term quote.'],$rows[1],
+    'Ordinary retains annual renewal and its exact-term refusal');
 same(['Grace renewal','Off','Review registry rules and safe deadlines before enabling grace renewal.'],$rows[3],'Grace keeps its review explanation');
 same(1,substr_count(view('domains::admin.term-readiness',['readiness'=>$rows])->render(),'safe deadlines'),'The Terms dialog says the grace review once');
 $accountHtml=Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$binding->serverId])->html();
