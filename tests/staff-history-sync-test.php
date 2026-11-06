@@ -19,6 +19,10 @@ $commands=new StaffCommands(new Writer(new Projection($native),$clock,static fn(
 $review=new Review($actor->id,$binding->serverId,$t->id,'override',Review::ticket($actor->id,$binding->serverId,$t->id,'override',StaffCommands::stamp($binding->serverId,$t->id)),'Keep this staff price edit');
 $commands->run($review,['mode'=>'fixed','fixed_register'=>'12.00','fixed_renew'=>'14.00','fixed_transfer'=>'13.00']);
 $server=App\Models\Server::findOrFail($binding->serverId);
+// A completed reviewed sync is a staff action, separate from its per-TLD feed rows.
+DB::transaction(function()use($server,$now):void {
+    Review::append($server,['key'=>'reviewed-sync','actor_id'=>null,'at'=>$now->format(DATE_ATOM),'action'=>Review::ACTIONS['import'],'phase'=>'completed','input'=>['endings'=>['com']],'before'=>[],'after'=>[]]);
+});
 // A bulk sync crosses several encrypted archive batches, as hundreds of TLDs do in the demo.
 DB::transaction(function()use($server,$now):void {
     for($i=0;$i<300;$i++){
@@ -36,4 +40,7 @@ DB::transaction(function()use($server,$entry):void {
 });
 $ordered=array_values(array_filter(TldFacts::history($server->id,$t->id),fn($row)=>in_array($row['reason'],['Newer offset entry','Older UTC entry'],true)));
 same(['Newer offset entry','Older UTC entry'],array_slice(array_column($ordered,'reason'),0,2),'History orders different offsets by their actual instants');
+foreach([null,$t->id] as $scope){
+    expect(collect(TldFacts::history($server->id,$scope))->contains(fn($row)=>$row['change']==='Prices synced'&&$row['reason']===''),'Reviewed price sync remains in staff History after later feed entries');
+}
 $nativeSuccessful=true;echo "Staff edit survives syncs in History and Activity.\n";

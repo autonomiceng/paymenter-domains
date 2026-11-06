@@ -155,7 +155,7 @@ final class StaffSettingsReview
     public static function append(Server $s,array $entry): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer audit transaction required.');}
-        $sync=in_array($entry['action'],['catalogue_feed','catalogue_facts','catalogue_republish','catalogue_sync','Sync TLD prices'],true)||($entry['phase']??null)==='catalogue_imported';
+        $sync=in_array($entry['action'],['catalogue_feed','catalogue_facts','catalogue_republish','catalogue_sync'],true)||($entry['phase']??null)==='catalogue_imported';
         $key=$sync?self::SYNC_KEY:self::KEY;$family=$sync?'catalogue_sync':'staff_settings';
         $setting=$s->settings()->where('key',$key)->lockForUpdate()->first()??$s->settings()->make(['key'=>$key]);
         $rows=$setting->exists?self::batch($setting):[];
