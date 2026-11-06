@@ -18,7 +18,7 @@ final class RenewalExecution
         $work=fn()=>EntryDeadline::run($this->clock, fn ($finishCap) => $this->runEntered($id, $writer, $finishCap));
         $op=Operation::findOrFail($id);$a=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$op->server_id)->first();
         try{$b=$a?AccountBindings::binding($a):null;}catch(\Throwable){$b=null;}
-        return $b&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
+        return $b&&$b->registrarKey==='enom'&&EnomTestRenewal::enabled($b)?EnomTestWriteReservation::run($b,'renewal',$id,$work):$work();
     }
     private function runEntered(int $id, RenewalWriter $writer, \DateTimeImmutable $finishCap): Operation
     {
@@ -35,6 +35,19 @@ final class RenewalExecution
             if ($op->funding_basis === 'paid_invoice' && $l['invoices']->firstWhere('id', $op->invoice_id)?->status === 'pending') { return null; }
             try { $this->configured($l); } catch (\Throwable) { $this->hold($op, RenewalCode::Acceptance->value, true); return null; }
             try { $this->current($op, $l); } catch (RenewalHold $held) { $this->hold($op, $held->reason, $held->reason===EnomLateRenewal::PAUSED); return null; } catch (RenewalRefused $refused) { $this->hold($op, $refused->reason->value); return null; } catch (\Throwable) { $this->hold($op, 'renewal_funding_or_authority'); return null; }
+            // Enom's Extend contract requires OverrideOrder for another renewal within 24 hours.
+            // Wait from confirmed completion (later than the send), never bypass replay protection.
+            if ($op->registrar_key === 'enom') {
+                $binding = AccountBindings::binding($l['account']);
+                foreach ($l['operations'] as $prior) {
+                    if ($prior->action === 'renew' && $prior->completed_at !== null
+                        && $prior->completed_at->copy()->addHours(24) > $this->clock->now()
+                        && RenewalAuthority::completed($prior, $l['domain'], $binding)) {
+                        $this->hold($op, RenewalCode::Rate->value, true);
+                        return null;
+                    }
+                }
+            }
             $claim = bin2hex(random_bytes(16));
             $op->update(['policy' => [...$op->policy, 'renewal_admission' => ['key' => $claim, 'until' => $this->clock->now()->modify('+360 seconds')->format(DATE_ATOM)]]]);
             $d = $l['domain']; return [new RenewalRequest($d->id, $d->authority_generation, $d->confirmed_revision,
