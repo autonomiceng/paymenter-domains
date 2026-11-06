@@ -23,6 +23,17 @@ $admission=activeFixtureAdmission($native,$sellers,activeFixtureEligibility($bin
 $binder=new InvoiceBinding($admission,$native,$prices,$clock);$binder->boot();app()->instance(InvoiceBinding::class,$binder);
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $product=$native->product($tlds[0],'register');$hosting=commerceHosting();
+// A native Livewire update rebuilds line models; the account grant must survive customer edits.
+$reviewCart=commerceCart($user);
+$remove=commerceAdd($reviewCart,$product,placeholderComFixtureName('comp-remove-placeholder.com'));
+commerceAdd($reviewCart,$product,placeholderComFixtureName('comp-remain-placeholder.com'));
+Illuminate\Support\Once::flush();
+$page=Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$reviewCart->ulid])->test(App\Livewire\Cart::class);
+same(0.0,(float)$page->get('total')->total,'Two complimentary lines display zero');
+Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$reviewCart->ulid);
+$page->call('removeProduct',$remove->id);
+same(0.0,(float)$page->get('total')->total,'Removing a complimentary line keeps the remaining total zero');
+same(0.0,(float)App\Classes\Cart::items()->sole()->price->total,'Remaining complimentary line stays zero');
 $cart=commerceCart($user);commerceAdd($cart,$product,placeholderComFixtureName('comp-account-placeholder.com'));commerceAdd($cart,$hosting,'hosting');
 $checkout=commerceCheckout($user,$cart);$checkout->assertHasNoErrors();
 expect(Domain::where('domain','comp-account-placeholder.com')->exists(),'Complimentary checkout must commit: '.json_encode($checkout->effects['dispatches']??[]));

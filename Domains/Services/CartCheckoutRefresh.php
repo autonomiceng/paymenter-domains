@@ -89,6 +89,14 @@ final class CartCheckoutRefresh
             // Native line prices are dynamic on every render, not just checkout. Never advance the
             // signed/session shown amount silently when an unrelated Livewire update races publication.
             $held = (array) \Livewire\store($component)->get('domains.shown');
+            if (\Livewire\store($component)->get('domains.customer_edit')
+                && ComplimentaryAccounts::authorization((int)\Illuminate\Support\Facades\Auth::id())) {
+                // Native customer edits reload line models and recalculate from persisted paid plans.
+                // Reapply the account grant before rendering both line prices and the native total.
+                try { $admission->refresh(); self::show($component, self::cartTotal()); }
+                catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
+                catch (\Throwable $e) { self::unavailable($component, $e); }
+            }
             if ($held && !\Livewire\store($component)->get('domains.customer_edit')) {
                 try {
                     $was = self::changedShown($held);
