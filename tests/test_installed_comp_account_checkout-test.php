@@ -30,6 +30,16 @@ $d=Domain::where('domain','comp-account-placeholder.com')->sole();$op=$d->operat
 same(['complimentary','0.00','complimentary'],[$op->funding_basis,$op->amount,$d->price_mode],'Only this account receives complimentary domain authority');
 $gift=Invoice::findOrFail($op->invoice_id);same(['paid',0.0,0],[$gift->status,(float)$gift->total,$gift->transactions()->count()],'Gift invoice is paid with no payment transaction');
 $hostingInvoice=Invoice::where('id','!=',$gift->id)->sole();same(['pending',5.0],[$hostingInvoice->status,(float)$hostingInvoice->total],'Hosting still charges its normal price');
+// Native checkout and owner DTOs must agree before the registrar has finished registration.
+$cataloguePorts=$ports;require __DIR__.'/Support/owner-pages.php';$ports=$cataloguePorts;
+$pending=$owners->present($d->fresh());
+expect($pending->order['complimentary']??false,'Pending registration retains its issued complimentary basis');
+$notice=Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::notice($pending);
+expect(str_contains($notice['text']??'','Complimentary.'),'Pending registration notice states complimentary even while choosing nameservers');
+same($pending->actions['setup'],$notice['action']['url'],'Complimentary notice preserves the pending setup action');
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+$expires=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::expires($summary);
+expect(str_contains($expires['cause']??'','Complimentary.'),'Pending list expiry states the same complimentary funding');
 $proof=fn()=>DB::transaction(function()use($op,$d){$f=InvoiceFunding::lock($op->invoice_id);return $f->requireInitial($op->fresh(),$d->fresh());});
 same('complimentary',$proof()['basis'],'Zero invoice uses complimentary funding only');
 Event::dispatch(new App\Events\Invoice\Paid($gift));Event::dispatch(new App\Events\InvoiceItem\Created($gift->items()->sole()));
