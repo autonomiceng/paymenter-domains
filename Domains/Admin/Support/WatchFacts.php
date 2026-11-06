@@ -14,7 +14,7 @@ final class WatchFacts
     public const DECRYPT="Can't read saved data. Ask your site admin.";
     public const TEMPLATE_UNAVAILABLE='Saved DNS records cannot be read. Ask your site admin to restore this template.';
     private static function gate(): void{abort_unless(Staff::can(Writes::VIEW),403);}
-    private static function fact(mixed $value,?string $sub=null,?string $tone=null,?string $url=null,?string $cause=null,bool $check=false): array{return compact('value','sub','tone','url','cause','check');}
+    private static function fact(mixed $value,string|\Illuminate\Support\HtmlString|null $sub=null,?string $tone=null,?string $url=null,?string $cause=null,bool $check=false): array{return compact('value','sub','tone','url','cause','check');}
     /** @return array{Domain:array<string,array>,Checks:array<string,array>} */
     public static function for(WatchName $w,?array $row=null): array
     {
@@ -46,12 +46,12 @@ final class WatchFacts
         if($s?->website===null && $s?->email===null && $e['public']){
             $at=$e['public_at'];
             $checks['DNS records']=self::fact(implode('; ',$e['public']),
-                ($at?'Checked '.self::date(is_int($at)?$at:strtotime($at)).'. ':'').'Choose a DNS template to compare these records.');
+                new \Illuminate\Support\HtmlString(($at?Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked')->toHtml().'. ':'').'Choose a DNS template to compare these records.'));
         }
-        $domain['Registrar records']=self::fact($e['state'],$e['at']?'Checked '.self::date(strtotime($e['at'])):'No registrar read for this monitored name.');
+        $domain['Registrar records']=self::fact($e['state'],$e['at']?Sheet::moment((int)strtotime($e['at']),'Checked'):'No registrar read for this monitored name.');
         $domain['Billing and ownership']=self::fact('Separate checks',$e['separation']);
-        $checks['Registrar refresh']=self::fact($e['state'],$e['at']?self::date(strtotime($e['at'])):'No registrar read yet.');
-        $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){$at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($key==='public'&&$e['public_stale']?'Historical answers. ':'').'Checked '.self::date(is_int($at)?$at:strtotime($at)):'No saved observation.');}
+        $checks['Registrar refresh']=self::fact($e['state'],$e['at']?Sheet::moment((int)strtotime($e['at'])):'No registrar read yet.');
+        $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){$at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?new \Illuminate\Support\HtmlString(($key==='public'&&$e['public_stale']?'Historical answers. ':'').Sheet::moment(is_int($at)?$at:(int)strtotime($at),'Checked')->toHtml()):'No saved observation.');}
         return ['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence];
     }
     public static function missingCause(WatchName $w): string
@@ -84,7 +84,7 @@ final class WatchFacts
     private static function nextCheck(WatchName $w): array
     {
         $work=$w->work()->get();if($work->contains(fn($r)=>$r->lease_until>time())){return self::fact('Checking now');}
-        $due=$work->min('due_at');return self::fact($due?self::date((int)$due):null,cause:'No check scheduled. Open Registrars and check the background worker.',check:true);
+        $due=$work->min('due_at');return [...self::fact($due?self::date((int)$due):null,cause:'No check scheduled. Open Registrars and check the background worker.',check:true),'at'=>$due?(int)$due:null];
     }
     /** The nameservers the last delegation check found, compared with the expected ones. */
     private static function nameservers(WatchName $w): array
@@ -114,7 +114,7 @@ final class WatchFacts
     public static function history(WatchName $w): ?array
     {
         self::gate();
-        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>self::date($a->created_at->getTimestamp()),'event'=>self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
+        try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>gmdate('c',$a->created_at->getTimestamp()),'event'=>self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
         catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
         $rows=[...array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows),...\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::history($w)];
@@ -131,5 +131,6 @@ final class WatchFacts
                     ->whereColumn('predecessor.user_id','domains_domains.user_id')->whereColumn('predecessor.canonical_name','domains_domains.reservation_name')
                     ->where(fn($q)=>$q->where('predecessor.ns_profile_id',$id)->when($inherited,fn($q)=>$q->orWhereNull('predecessor.ns_profile_id')))->whereIn('predecessor.state',['active','paused']))->count();
     }
-    public static function date(?int $at): string{return $at?gmdate('M j, Y H:i',$at).' UTC':Missing::LABEL;}
+    /** For plain text. The watch page shows the same instants in the viewer's zone through each fact's 'at'. */
+    public static function date(?int $at): string{return $at?gmdate('M j, Y, g:i A',$at).' UTC':Missing::LABEL;}
 }

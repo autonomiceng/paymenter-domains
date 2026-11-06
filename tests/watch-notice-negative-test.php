@@ -30,7 +30,7 @@ require dirname(__DIR__).'/Domains/routes/web.php';require dirname(__DIR__).'/Do
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\WatchWork::class,new \Paymenter\Extensions\Servers\Domains\Services\WatchWork(new \Paymenter\Extensions\Servers\Domains\Dns\NativeDnsReader(static fn()=>[]),new \Paymenter\Extensions\Servers\Domains\Services\WatchDiscoveryWork(static fn()=>null),true));
 $watchPage=fn()=>Livewire\Livewire::actingAs($staff[0])->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ViewWatch::class,['record'=>$id]);
-$watchPage()->assertSee('Customer alert failed '.gmdate('M j, Y H:i',$at).' UTC.')->assertSee($template->name)->assertSee('template has an error. Fix it in Notification templates.');
+$watchPage()->assertSee('Customer alert failed '.gmdate('M j, Y, g:i A',$at).' UTC.')->assertSee($template->name)->assertSee('template has an error. Fix it in Notification templates.');
 // Another channel going out proves nothing about the broken mail body: the step stays until mail from this template goes out.
 $app=$delivery->reserve($n->id,'app',$at+1);expect($app!==null && $delivery->handoff($app,$at+1),'App goes out while mail is broken');
 expect((static function()use($n,$uid):bool {try{WatchNoticeDelivery::prepare($n,'mail',App\Models\User::findOrFail($uid));return false;}catch(\Throwable){return true;}})(),'Mail still cannot be prepared');
