@@ -70,7 +70,7 @@ final class TermSupport
     public static function readiness(string $registrar, string $tld, ?Facts $facts, array $costs, \DateTimeImmutable $now,
         array $exactQuotes = self::EXACT_QUOTES): array
     {
-        $today = new \DateTimeImmutable($now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'));
+        $today = new \DateTimeImmutable($now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d'), new \DateTimeZone('UTC'));
         return ['renew' => self::renewal($registrar, $tld, $facts, $costs, $today, $now, $exactQuotes), 'families' => self::families($facts, $now)];
     }
 

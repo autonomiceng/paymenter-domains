@@ -131,6 +131,15 @@ same('family_unreviewed', TermSupport::families($facts($evidence()), $now)['grac
 $ready = TermSupport::readiness('enom', 'com', $facts($evidence()), $costs, $now, $quotes);
 same([range(1, 10), null, 'unknown_price', 'reviewed'], [array_keys($ready['renew']), $ready['renew'][2]['reason'], $ready['renew'][5]['reason'], $ready['families']['ordinary']['state']], 'Staff readiness from today');
 
+// Paymenter supports APP_TIMEZONE; staff readiness must still use the UTC calendar near midnight.
+$zone = date_default_timezone_get();
+try {
+    date_default_timezone_set('America/Los_Angeles');
+    $midnight = $at('2026-11-04T00:30:00+00:00');
+    $utcReady = TermSupport::readiness('enom', 'com', null, [], $midnight);
+    same(range(1, 10), array_keys($utcReady['renew']), 'Staff readiness keeps all ten UTC calendar years in a western timezone');
+} finally { date_default_timezone_set($zone); }
+
 // Price lines and cart rechecks, using the approved mock amounts.
 same(['years' => 3, 'first_year' => '12.00', 'renewal' => '14.00', 'renewal_years' => 2, 'total' => '40.00'], TermSupport::lines('12.00', '14.00', 3), 'First year plus renewal x (years - 1)');
 same(['26.00', '138.00', '28.00'], [TermSupport::lines('12', '14.00', 2)['total'], TermSupport::lines('12.00', '14.00', 10)['total'], TermSupport::lines('14.00', '14.00', 2)['total']], 'Mock totals');
