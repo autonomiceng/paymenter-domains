@@ -74,9 +74,10 @@ $schema=$gift->getSchema(Filament\Schemas\Schema::make($page)->statePath('data')
 $r10Check(str_contains(storefrontDom($text)->query('//div[dt="Next annual renewal"]/dd')->item(0)?->textContent??'','$10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
 // A short preview must not evaluate every explicitly unsold catalogue entry.
 $priceQueries=0;DB::listen(static function($query)use(&$priceQueries):void{$priceQueries++;});
-Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);$smallQueries=$priceQueries;
-for($i=0;$i<110;$i++){$unsold=$t->replicate();$unsold->tld='unsold'.$i.'.example';$unsold->catalogue_facts=null;$unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();}
-$priceQueries=0;Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
+$smallRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);$smallQueries=$priceQueries;
+for($i=0;$i<1100;$i++){$unsold=$t->replicate();$unsold->tld='unsold'.$i.'.example';$unsold->catalogue_facts=null;$unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();}
+$priceQueries=0;$largeRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
+$r10Check(count($largeRows)===count($smallRows),'Unsold catalogue does not grow account summary storage');
 $r10Check($priceQueries<=$smallQueries+4,'Ten-row preview skips offer evaluation for explicitly unsold catalogue entries ('.$smallQueries.' vs '.$priceQueries.' queries)');
 // Confirmed annual-only terms and missing facts are different states.
 $originalFacts=$t->fresh()->catalogue_facts;$annual=OfferState::decode($originalFacts);$annual['terms']['register']=[1];
@@ -85,7 +86,7 @@ $annualRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist:
 $r10Check(collect($annualRows)->contains(fn($r)=>$r['label']==='Selected TLD terms'&&$r['value']==='1 of 1 read'&&$r['tone']===null),'Confirmed annual terms remain read without an unknown label');
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
 $missingRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
-$r10Check(collect($missingRows)->contains(fn($r)=>$r['label']==='Selected TLD terms'&&$r['value']==='0 of 1 read'&&$r['tone']==='danger'&&str_contains($r['reason'],'1 needs attention')),'Missing registrar facts require attention in the selected summary');
+$r10Check(collect($missingRows)->contains(fn($r)=>$r['label']==='Selected TLD terms'&&$r['value']==='0 of 1 read'&&$r['tone']==='danger'&&str_contains($r['cause'],'1 needs attention')),'Missing registrar facts require attention in the selected summary');
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>$originalFacts]);
 
 $probe->setValue(null,null);
