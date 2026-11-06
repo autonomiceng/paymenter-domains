@@ -197,7 +197,7 @@ final class CartCheckoutRefresh
 
     private static function unavailable(Cart $component, \Throwable $e): void
     {
-        \Illuminate\Support\Facades\Log::warning('Domains checkout check unavailable.', ['exception_class' => $e::class]);
+        \Illuminate\Support\Facades\Log::warning('Domains checkout check unavailable.', CartHandoffFailure::context($e,'checkout_check'));
         if ($e instanceof \App\Exceptions\DisplayException) { $component->notify($e->getMessage(), 'error'); return; }
         if ($e instanceof CheckoutRefreshTimeout || $e instanceof ReadDeferred) {
             CartNotice::set($component, 'We could not get your price', 'Try again shortly.', 'We could not get your price. Try again shortly.', 'error');

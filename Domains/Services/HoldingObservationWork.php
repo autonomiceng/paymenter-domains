@@ -8,18 +8,17 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Shared bounded holding portion. Only its owner selects and advances account turns. */
 final class HoldingObservationWork
 {
-    private const STOPPED=['read_unavailable','budget_exhausted','superseded',...ReadFailure::CODES];
     /** Only the current binding, generation and follow-up phase can stop this holding. */
     public static function stopped(Domain $d): bool
     {
         if (!Schema::hasTable('domains_observation_work')) { return false; }
-        return self::current($d,true)->whereIn('safe_code',self::STOPPED)->exists() && ObservationEligibility::allows($d);
+        return HoldingReadRetry::stoppedQuery(self::current($d,true))->exists() && ObservationEligibility::allows($d);
     }
     /** Batched stopped() for a page of domains: the ids, as keys, of those whose current work stopped. */
     public static function stoppedIds(\Illuminate\Support\Collection $domains): array
     {
         if ($domains->isEmpty()||!Schema::hasTable('domains_observation_work')) { return []; }
-        $rows=DB::table('domains_observation_work')->whereIn('domain_id',$domains->pluck('id'))->whereIn('safe_code',self::STOPPED)
+        $rows=HoldingReadRetry::stoppedQuery(DB::table('domains_observation_work')->whereIn('domain_id',$domains->pluck('id')))
             ->get(['domain_id','server_id','account_fingerprint','generation','phase']);
         $stopped=$domains->filter(fn(Domain $d)=>$rows->contains(fn($r)=>(int)$r->domain_id===(int)$d->id&&(int)$r->server_id===(int)$d->server_id
             &&$r->account_fingerprint===$d->account_fingerprint&&(int)$r->generation===(int)$d->authority_generation&&$r->phase===self::readPhase($d)))
@@ -78,7 +77,7 @@ final class HoldingObservationWork
                 ->where('lease_until','>',$this->clock->now()->getTimestamp());
             if(!(DB::transactionLevel()>0?$q->lockForUpdate():$q)->exists()){throw new ReadDeferred('Stale observation work.');}
         };
-        try{return $this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:false,current:$current,
+        try{return $this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:true,current:$current,
             completion:fn(string $code,?\Closure $credentials):string=>$this->finish($job,$code,$current,$credentials));}
         catch(ReadDeferred|EnomTestCallLimit){$code='read_deferred';}
         catch(\Throwable $error){$code=ReadFailure::code($error);}
@@ -101,9 +100,30 @@ final class HoldingObservationWork
                 if (self::discardUnsent($d,$this->clock->now())) { continue; }
                 DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
                     'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$this->clock->now()->getTimestamp()]);
+                $this->recover($d);
+                // Legacy healthy ownership-only jobs must not postpone a missing or stale family read.
+                if($this->observer->readsRecords()&&$d->status==='active'&&ObservationProjection::recordStatus($d,$this->clock->now())['stale']){
+                    self::current($d)->where('safe_code','refreshed')->where('lease_until','<=',$this->clock->now()->getTimestamp())
+                        ->update(['due_at'=>$this->clock->now()->getTimestamp()]);
+                }
             }
             $q->update(['cursor'=>$rows->count()===25?$rows->last()->id:0]);
         });
+    }
+    /** Repaired configuration wakes legacy stopped reads once; a new failure records today's credential fence. */
+    private function recover(Domain $d): void
+    {
+        $job=self::current($d)->lockForUpdate()->first();$now=$this->clock->now()->getTimestamp();
+        if(!$job||$job->lease_until>$now||!in_array($job->safe_code,HoldingReadRetry::RECOVERABLE,true)
+            ||($job->safe_code!=='configuration_unverified'&&$job->tries<HoldingReadRetry::LIMIT)||$job->resumes>=20){return;}
+        try{$a=Account::where('server_id',$d->server_id)->sole();$credential=app(AccountBindings::class)->holdingCredentialRevision(AccountBindings::binding($a));}
+        catch(\Throwable){return;}
+        $p=$d->observation??[];$prior=$p['read_retry']??[];
+        if(($prior['work_id']??null)===(int)$job->id&&($prior['credential']??null)===$credential){return;}
+        $p['read_retry']=['work_id'=>(int)$job->id,'credential'=>$credential,'auto_resumed'=>true,'at'=>$this->clock->now()->format(DATE_ATOM)];
+        $p['resumptions']=[...($p['resumptions']??[]),['work_id'=>(int)$job->id,'reason'=>'configuration_restored','at'=>$this->clock->now()->format(DATE_ATOM)]];
+        $d->update(['observation'=>$p]);
+        self::current($d)->where('id',$job->id)->update(['tries'=>0,'resumes'=>$job->resumes+1,'claim'=>null,'safe_code'=>null,'due_at'=>$now]);
     }
     private function claim(object $queue, \Closure $guard): ?object
     {
@@ -111,11 +131,12 @@ final class HoldingObservationWork
             $guard((int)$queue->server_id);
             $now=$this->clock->now()->getTimestamp(); $q=DB::table('domains_observation_work')->where('server_id',$queue->server_id)
                 ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
-                ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',self::STOPPED);});
+                ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',HoldingReadRetry::STOPPED)
+                    ->orWhere(fn($q)=>$q->whereIn('safe_code',HoldingReadRetry::TRANSIENT)->where('tries','<',HoldingReadRetry::LIMIT));});
             $job=$q->orderBy('due_at')->orderBy('id')->lockForUpdate()->first(); if (!$job) { return null; }
             $d=Domain::find($job->domain_id);
             if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
-            if ($d && ($d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
+            if ($d && (!in_array($d->status,['active','registration_pending','transfer_pending'],true)||!ObservationEligibility::allows($d)||$d->account_fingerprint!==$job->account_fingerprint||$d->adoptionPending() || (int)$job->generation!==$d->authority_generation || $job->phase!==self::phase($d))) {
                 DB::table('domains_observation_work')->where('id',$job->id)->update(['safe_code'=>'superseded']); return null;
             }
 
@@ -133,7 +154,7 @@ final class HoldingObservationWork
                 DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)
                     ->update(['claim'=>null,'lease_until'=>0]); return 'read_deferred';
             }
-            $this->finishCurrent($job,$code); return $code;
+            $this->finishCurrent($job,$code); return $code==='read_deferred'?$code:(DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code')??$code);
         });
     }
     private function finishCurrent(object $job, string $code): void
@@ -144,15 +165,28 @@ final class HoldingObservationWork
                 'claim'=>null,'lease_until'=>0,'tries'=>$job->tries,'safe_code'=>$job->safe_code,'due_at'=>$now+60]); return;
         }
         $d=Domain::findOrFail($job->domain_id); $tries=$job->tries+1;
+        if($code==='refreshed'&&ObservationRecords::held($d)){
+            $held=$d->observation['record_hold'];
+            $code=in_array($held['code']??null,ReadFailure::CODES,true)?$held['code']:'records_incomplete';
+        }
+        if(in_array($code,HoldingReadRetry::RECOVERABLE,true)){
+            $p=$d->observation??[];$prior=$p['read_retry']??[];$credential=null;
+            try{$a=Account::where('server_id',$d->server_id)->sole();$credential=app(AccountBindings::class)->holdingCredentialRevision(AccountBindings::binding($a));}catch(\Throwable){}
+            $p['read_retry']=['work_id'=>(int)$job->id,'credential'=>$credential,'at'=>$this->clock->now()->format(DATE_ATOM),
+                'auto_resumed'=>($prior['work_id']??null)===$job->id?($prior['auto_resumed']??false):false];
+            $d->update(['observation'=>$p]);
+        }
         $pending=$code==='healthy_pending'; $start=$d->operations()->where('action','transfer')->where('authority_generation',$d->authority_generation)->orderBy('id')->get()->first(fn($o)=>($o->attempt['seal']??null)==='sealed'&&in_array($o->state,['pending','uncertain','held'],true))?->started_at;
         $startAt=$start instanceof \DateTimeInterface?$start->getTimestamp():($start===null?null:(new \DateTimeImmutable($start))->getTimestamp());
         $within=$pending&&$startAt!==null&&$now<$startAt+7*86400;
-        $exhausted=$pending?(!$within||$tries>=28):($code!=='refreshed'&&$tries>=5);
+        // A closed record gate still completed the ordinary core read. Keep its own code so stale-family discovery cannot wake it early.
+        $coreRead=in_array($code,['refreshed','records_disabled'],true);
+        $exhausted=$pending?(!$within||$tries>=28):(!$coreRead&&$tries>=5);
         $follow=($d->observation['followup']['state']??null)==='pending';
         DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
-            'claim'=>null,'lease_until'=>0,'tries'=>$code==='refreshed'?0:$tries,
-            'due_at'=>$now+($pending?21600:($code==='refreshed'?($follow?300:86400):900)),
-            'safe_code'=>in_array($code,ReadFailure::CODES,true)?$code:($exhausted?'budget_exhausted':$code)]);
+            'claim'=>null,'lease_until'=>0,'tries'=>$coreRead?0:$tries,
+            'due_at'=>$now+($pending?21600:($coreRead?($code==='refreshed'&&$follow?300:86400):HoldingReadRetry::delay($tries))),
+            'safe_code'=>in_array($code,HoldingReadRetry::STOPPED,true)?$code:($exhausted?'budget_exhausted':$code)]);
     }
     public static function phase(Domain $d): string
     { $follow=$d->observation['followup']??[]; return isset($follow['operation_key'])&&($follow['generation']??null)===$d->authority_generation?hash('sha256',$follow['operation_key']):'holding'; }

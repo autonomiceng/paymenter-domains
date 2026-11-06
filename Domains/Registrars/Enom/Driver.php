@@ -210,7 +210,7 @@ final class Driver implements RegistrarDriver, \Paymenter\Extensions\Servers\Dom
         return $reply->status === 'success'
             ? new DriverResult($this->binding(), Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, $facts)
             : new DriverResult($this->binding(), Disposition::Unknown, in_array($reply->code, ['transport', 'context_refused'], true)
-                ? SendState::PossiblySent : SendState::Sent, ResultReason::Unresolved, $facts);
+                ? SendState::PossiblySent : SendState::Sent, ResultReason::Unresolved, $facts, registrarCode:preg_match('/^[0-9]{3,9}$/D',(string)$reply->code)?(string)$reply->code:null);
     }
     private function unsupported(#[\SensitiveParameter] RequestContext $context): DriverResult
     {
