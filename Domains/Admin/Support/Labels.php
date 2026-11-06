@@ -113,7 +113,7 @@ final class Labels
             'renewal_admitted'=>null,'renewal_authority_invalid'=>'Not sent: registrar account changed',
             'renewal_anchor_changed'=>'Not sent: expiry date changed','renewal_prior_outcome_unresolved'=>RequestStatus::UNCONFIRMED,
             'automatic_spend_paused'=>'Not sent: orders paused for this domain','renewal_acceptance_required'=>'Not sent: Renewals off for this account',
-            'renewal_rate_limited'=>'Not sent: our request limit reached. Try later.','renewal_binding_changed'=>'Not sent: registrar account changed',
+            'renewal_rate_limited'=>'Not sent: our request limit reached. Try later.','renewal_repeat_wait'=>\Paymenter\Extensions\Servers\Domains\Services\RenewalRepeatWait::STAFF,'renewal_binding_changed'=>'Not sent: registrar account changed',
             'renewal_reads_unavailable'=>'Status check failed','provider_membership_unconfirmed'=>'Not sent: domain not in registrar account',
             'provider_auto_renew_unconfirmed'=>'Not sent: registrar auto-renew may be on','renewal_restore_refused'=>'Not sent: domain in redemption',
             'renewal_state_unconfirmed'=>RequestStatus::UNCONFIRMED,'renewal_term_refused'=>'Not sent: term not supported',

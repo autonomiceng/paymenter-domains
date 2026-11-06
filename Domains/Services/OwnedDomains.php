@@ -253,7 +253,7 @@ final readonly class OwnedDomains
         $renewNow = $this->renewNow($d, $forms);
         if ($adopted) {
             if (isset($renewNow['invoice'])) { $renewalInvoice = ['state' => 'pending', 'due' => $renewalDue]; }
-            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status']]; }
+            elseif (isset($renewNow['status'])) { $renewalInvoice = ['state' => $renewNow['status'], ...array_intersect_key($renewNow, ['goes' => true])]; }
         }
         if ($adopted && $renewal === 'On' && $renewalInvoice === [] && $d->provider_expires_at) {
             try {
@@ -365,7 +365,7 @@ final readonly class OwnedDomains
             }
             return match (true) {
                 $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => ['invoice' => route('invoices.show', $invoice)],
-                $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => ['status' => 'paid'],
+                $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => ['status' => 'paid', ...self::goes($cycle)],
                 default => ['status' => 'review'] };
         }
         // A retired or refunded debt permits a replacement only when billing's cycle proof holds.
@@ -378,6 +378,12 @@ final readonly class OwnedDomains
                 });
         } catch (\Throwable) { return ['status' => 'review']; }
         return $retained && !RenewalCycles::closedEarly($cycle) ? ['status' => $cycle->safe_code === 'renewal_cancelled_unpaid' ? 'cancelled' : 'review'] : null;
+    }
+    /** goes: the fixed time a paid renewal waiting out Enom's 24-hour repeat refusal goes to the registrar (ISO, UTC). */
+    public static function goes(Operation $cycle): array
+    {
+        $until = RenewalRepeatWait::until($cycle);
+        return $until ? ['goes' => $until->setTimezone(new \DateTimeZone('UTC'))->format(DATE_ATOM)] : [];
     }
     private static function renewalLedger(Domain $d, \Illuminate\Support\Collection $ops): array
     {

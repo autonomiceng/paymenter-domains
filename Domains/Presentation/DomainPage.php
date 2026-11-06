@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Carbon\CarbonImmutable;
 use Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels;
-use Paymenter\Extensions\Servers\Domains\Services\DomainManagement;
+use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, RenewalRepeatWait};
 /** The client domain page: its one notice and the Renewal card rows, from the page DTOs alone. */
 final class DomainPage
 {
@@ -89,7 +89,7 @@ final class DomainPage
         if ($state === null && ($d->renewal !== 'On' || $d->setupPending)) { return null; }
         return match (true) {
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
-            $state === 'paid' => ['value' => 'Paid'],
+            $state === 'paid' => ['value' => 'Paid', ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
             $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => 'Renewal being checked. '.Missing::NO_ACTION],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
