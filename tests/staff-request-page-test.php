@@ -140,7 +140,10 @@ $keptRow=(array)DB::table('domains_operations')->where('id',$heldOp->id)->first(
 Operation::find($heldOp->id)->forceFill(['attempt'=>['seal'=>'sealed','send_state'=>'possibly_sent']])->saveQuietly();
 $unsure=Livewire::actingAs($manager)->test(ViewOperation::class,['record'=>$heldOp->id])->assertSee('Request created')->html();
 same(1,substr_count($unsure,'Registrar has not confirmed the result'),'The unconfirmed result is said once on the request page');
-same(1,substr_count($unsure,'has not confirmed'),'The notice title does not say it again');unset($unsure);
+same(1,substr_count($unsure,'has not confirmed'),'The notice title does not say it again');
+// ui-r20: History opens with Request created and its time; Details has no Created row repeating it.
+$createdAt=Operation::find($heldOp->id)->created_at->copy()->utc()->format('M j, Y, g:i A T');
+same(2,substr_count($unsure,$createdAt),'The created time is said once: one moment, its text and its UTC hover');unset($unsure,$createdAt);
 DB::table('domains_operations')->where('id',$heldOp->id)->update($keptRow);unset($keptRow);
 
 // Completed: Completed pill, no notice and no More menu.
