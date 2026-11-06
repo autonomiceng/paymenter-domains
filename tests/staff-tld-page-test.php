@@ -143,7 +143,7 @@ DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->up
 // No registrar for new orders.
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('No registrar selected')->assertSee('Change registrar');
-expect(str_contains($text($page->html()),'Registrar for new orders Not for sale'),'No registrar for new orders is Missing');
+expect(str_contains($text($page->html()),'Registrar for new orders Missing'),'No registrar for new orders is Missing');
 $page->assertSeeHtml('href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl()).'"');
 same(1,$accountLinks($page->html(),(int)$enom->server_id),'Missing goes to Registrars; the prices table still opens the account');
 $clean($page->html(),'TLD page no registrar');
