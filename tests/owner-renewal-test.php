@@ -51,7 +51,8 @@ $clock->instant=new DateTimeImmutable('2027-09-01T12:00:00Z');
 // Off: no form, no key in use, and a direct POST refuses with plain copy and no debt.
 $setting('domains_manual_renewals_enabled',false);$setting('domains_billing_enabled',true);
 same([],$owners->present($d->fresh())->renewNow,'Manual renewals off hide the request');
-$html=$page($d);expect(!str_contains($html,'Renew now')&&!str_contains($html,route('domains.domains.renew',$d->id)),'Off page shows no renewal form');
+$html=$page($d);
+same(0,storefrontDom($html)->query('//form[@data-renewal-form] | //a[@data-dialog-open and contains(@href,"?edit=renew#edit-renew")]')->length,'Off page shows no renewal form or opening action');
 $before=$ledger();$refused($d,['years'=>'1'],'You can’t renew online right now. Contact support to renew this domain.');
 same($before,$ledger(),'Off request creates no invoice');
 
@@ -228,7 +229,8 @@ same([],$bounded(fn()=>$owners->present($late->fresh())->renewNow),'Missing expi
 // Auto-renew off: billing refuses manual requests for a stopped renewal, so the page offers none; turning it on restores the form.
 $policy=$late->fresh()->renewal_policy??[];$late->update(['renewal_policy'=>[...$policy,'renewals_stopped'=>true]]);$dto=$owners->present($late->fresh());
 same(['Off',[]],[$dto->renewal,$dto->renewNow],'Auto-renew off hides the request billing refuses');
-$html=$page($late);expect(!str_contains($html,'Renew now')&&!str_contains($html,route('domains.domains.renew',$late->id)),'Auto-renew off page shows no renewal form');
+$html=$page($late);
+same(0,storefrontDom($html)->query('//form[@data-renewal-form] | //a[@data-dialog-open and contains(@href,"?edit=renew#edit-renew")]')->length,'Auto-renew off page shows no renewal form or opening action');
 $refused($late,['years'=>'1'],OwnerRenewalController::UNAVAILABLE);same($issued,$ledger(),'Auto-renew off request creates no invoice');
 $late->update(['renewal_policy'=>$policy]);$dto=$owners->present($late->fresh());
 same(['On',range(1,9)],[$dto->renewal,$dto->renewNow['terms']??null],'Auto-renew on offers the request again');
