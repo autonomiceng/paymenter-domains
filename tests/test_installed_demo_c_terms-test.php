@@ -47,7 +47,11 @@ $gift=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\
 $gift=$gift->invoke(null,new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed']));
 same('Confirm complimentary renewal',$gift->getModalSubmitActionLabel(),'Complimentary confirmation matches the mock');
 expect(!$gift->isVisible(),'An ineligible holding has no empty complimentary action');
-$service=App\Models\Service::create(['user_id'=>$actor->id,'order_id'=>App\Models\Order::create(['user_id'=>$actor->id,'currency_code'=>'USD'])->id,'product_id'=>App\Models\Product::firstOrFail()->id,'plan_id'=>App\Models\Product::firstOrFail()->plans()->firstOrFail()->id,'status'=>'active','quantity'=>1,'price'=>'10.99','currency_code'=>'USD']);
+// A real checkout establishes the service authority; the retained custom annual price is arranged afterward.
+$buyer=commerceUser();$cart=commerceCart($buyer);commerceAdd($cart,$native->product($t->fresh(),'register'),placeholderComFixtureName('staff-term-price-placeholder.com'));
+commerceCheckout($buyer,$cart)->assertHasNoErrors();
+$service=App\Models\Service::where('user_id',$buyer->id)->sole();
+DB::table('services')->where('id',$service->id)->update(['price'=>'10.99']);$service->refresh();Auth::setUser($actor);
 $holding=new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed','domain'=>'example.com','service_id'=>$service->id]);
 $gift=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal'))->invoke(null,$holding);
 $schema=$gift->getSchema();$text=(string)$schema[array_key_last($schema)]->getContent();
