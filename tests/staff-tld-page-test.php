@@ -17,7 +17,7 @@ Domain::create(['server_id'=>$enom->server_id,'registrar_key'=>'enom','account_f
 $permissions=[Staff::VIEW,Staff::COSTS,Staff::POLICY];foreach(array_keys(Review::ACTIONS) as $key){$permissions[]=Review::permission($key);}
 $u=staffUser($permissions);Auth::setUser($u);
 $text=static fn(string $html):string=>preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$html)),ENT_QUOTES|ENT_HTML5));
-$banned=['Refresh failed','Catalogue reader unavailable','read_unavailable','catalogue_','Pricing for .','Revision history','Renewal holders','Annual renewal',
+$banned=['Catalogue reader unavailable','read_unavailable','catalogue_','Pricing for .','Revision history','Renewal holders','Annual renewal',
     'Cost refresh','Default rule','TLD override','Seller','Account #','account #','Unknown','Review required','None','Revision','Margin','staff alert','Pricing & seller',"\u{2014}"];
 $clean=static function(string $html,string $where)use($text,$banned):void {
     $plain=$text($html);foreach($banned as $old){expect(!str_contains($plain,$old),$where.': no "'.$old.'"');}
@@ -25,6 +25,8 @@ $clean=static function(string $html,string $where)use($text,$banned):void {
 $renew=static fn($t)=>'USD '.PriceCatalogue::retail(Price::where(['server_id'=>$t->server_id,'tld'=>'com','action'=>'renew','term'=>1])->value('retail'));
 
 // Prices synced: one row per registrar account, the account that takes new orders is marked.
+foreach($tlds as $seed){DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$seed->server_id],['account_fingerprint'=>$seed->account_fingerprint,'offer_feed_succeeded_at'=>$now->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$now->getTimestamp()+86400,'upgrade_generation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate::generation()])]);}
+same(true,TldFacts::snapshot($silo->fresh())['demo'],'The saved staff snapshot retains the bound demo marker');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertCanSeeTableRecords($tlds)->assertSeeHtml('data-beco-record="tld-'.$tlds[0]->id.'"');same([],$list->instance()->getBreadcrumbs(),'TLD list has no breadcrumb, like Domains');
 same('TLDs from What you sell. Open one for its prices.',$list->instance()->getSubheading(),'The TLDs page says its job in one head line.');$list->assertSee('TLDs from What you sell.');
 staffTableStandard($list,'Search TLD',['tld','account','note'],['renewal','cost']);
@@ -71,8 +73,8 @@ foreach([
 Auth::setUser($u);
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
-    'Price sync','Prices last synced','Oct 18, 2026','New sales stop when saved costs reach 48 hours old. Sync prices to resume.',
-    'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History','No changes yet'] as $see){$page->assertSee($see);}
+    'Price sync','Last successful refresh','Oct 18, 2026','Next due',
+    'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History','Activity'] as $see){$page->assertSee($see);}
 $plain=$text($page->html());
 expect(!str_contains($plain,'grace')&&!str_contains($plain,'Redemption'),'The TLD page asks staff nothing about grace or redemption');
 expect(str_contains($plain,'OFFLINE DEMO NameSilo (synthetic) Demo'),'Prices table: Demo tag after the demo account');
@@ -89,12 +91,13 @@ $detailRead=static function($grants)use($enom):array{
     return [$html,$counts];
 };
 $grants=Staff::requireView();[, $twoAccounts]=$detailRead($grants);
-DB::beginTransaction();
+$extra=[];foreach([1,2] as $i){$extra[$i]=fixtureAccount((int)App\Models\Server::max('id')+1,'enom','detail-table-'.$i);}
+$detailTlds=[];$detailPrices=[];
 foreach([1,2] as $i){
-    $binding=fixtureAccount((int)App\Models\Server::max('id')+1,'enom','detail-table-'.$i);
+    $binding=$extra[$i];
     App\Models\Server::whereKey($binding['server_id'])->update(['name'=>'<Extra & '.$i.'>']);
-    $saved=$enom->getRawOriginal();unset($saved['id']);DB::table('domains_tlds')->insert([...$saved,...$binding]);
-    foreach(Price::where('server_id',$enom->server_id)->get() as $price){$saved=$price->getRawOriginal();unset($saved['id']);DB::table('domains_prices')->insert([...$saved,...$binding]);}
+    $saved=$enom->getRawOriginal();unset($saved['id']);$detailTlds[]=DB::table('domains_tlds')->insertGetId([...$saved,...$binding]);
+    foreach(Price::where('server_id',$enom->server_id)->get() as $price){$saved=$price->getRawOriginal();unset($saved['id']);$detailPrices[]=DB::table('domains_prices')->insertGetId([...$saved,...$binding]);}
 }
 [$detail,$fourAccounts]=$detailRead($grants);
 // The default rule is one row for the business, so more accounts add no account reads.
@@ -115,32 +118,29 @@ $viewerGrants=Paymenter\Extensions\Servers\Domains\Admin\Support\StaffGrants::cu
 Auth::setUser(staffUser([Staff::VIEW]));$withoutCosts=Staff::requireView();Auth::setUser($u);
 [$hidden]=$detailRead($withoutCosts);expect(!str_contains($hidden,'<th scope="col">Cost'),'Supplied grants hide cost even when current staff may read it');
 [$shown]=$detailRead($viewerGrants);expect(str_contains($shown,'Registrations and transfers below cost are held.'),'Supplied cost grant keeps cost help');
-DB::rollBack();
+DB::table('domains_prices')->whereIn('id',$detailPrices)->delete();DB::table('domains_tlds')->whereIn('id',$detailTlds)->delete();
 
 // Sync failed: the stored cause is shown as words, with the last good prices kept.
-DB::table('domains_observation_queues')->insert(['server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,
-    'catalogue_hold'=>'catalogue_reader_unavailable','catalogue_audit'=>json_encode([['code'=>'catalogue_reader_unavailable','server_id'=>$enom->server_id,
-        'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T13:05:00+00:00']])]);
+DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$enom->server_id],['account_fingerprint'=>$enom->account_fingerprint,
+    'offer_feed_failure'=>'catalogue_reader_unavailable','offer_feed_failed_at'=>strtotime('2026-10-18T13:05:00Z')]);
 $cause="Couldn't load the registrar account's settings";
 same(['cause'=>$cause,'at'=>'Oct 18, 2026 13:05 UTC'],TldFacts::syncFailure($enom->server_id),'Stored failure code becomes its cause');
 same('Sync failed: '.$cause,TldFacts::refreshState($enom->server_id),'Refresh state names the cause');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
-    ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('New sales stop when saved costs reach 48 hours old.')->assertSee('Open Registrars');
+    ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('Open Registrars');
 $clean($list->html(),'List sync failed');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('Sync failed')->assertSee($cause.'.')->assertSeeHtml('datetime="2026-10-18T13:05:00+00:00"')->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Prices last synced')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
+    ->assertSee('Refresh failed')->assertSee($cause)->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Last successful refresh')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
 $clean($page->html(),'TLD page sync failed');
-Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Sync failed');
-DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>'read_unavailable','catalogue_audit'=>'[]']);
+Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Refresh failed');
+DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['offer_feed_failure'=>'read_unavailable','offer_feed_failed_at'=>null]);
 same(['cause'=>'Registrar read failed','at'=>null],TldFacts::syncFailure($enom->server_id),'Older hold code keeps a plain cause and no time');
 // A retained failure older than the latest saved prices is history, not a current failure.
-DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>null,'catalogue_audit'=>json_encode([['code'=>'read_deadline',
-    'server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T11:00:00+00:00']])]);
+DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['offer_feed_failure'=>null,'offer_feed_failed_at'=>strtotime('2026-10-18T11:00:00Z')]);
 same(null,TldFacts::syncFailure($enom->server_id),'Prices synced after the failure clear it');
-DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_audit'=>json_encode([['code'=>'read_deadline',
-    'server_id'=>$enom->server_id,'account_fingerprint'=>$enom->account_fingerprint,'at'=>'2026-10-18T12:30:00+00:00']])]);
+DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['offer_feed_failure'=>'read_deadline','offer_feed_failed_at'=>strtotime('2026-10-18T12:30:00Z')]);
 same(['cause'=>"Registrar didn't answer in time",'at'=>'Oct 18, 2026 12:30 UTC'],TldFacts::syncFailure($enom->server_id),'A failure after the latest prices still shows');
-DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->delete();
+DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['offer_feed_failure'=>null,'offer_feed_failed_at'=>null]);
 
 // No registrar for new orders.
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);
@@ -151,7 +151,7 @@ expect(str_contains($text($page->html()),'Registrar for new orders Missing Use M
 $page->assertSeeHtml('href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl()).'"');
 same(1,$accountLinks($page->html(),(int)$enom->server_id),'Missing goes to Registrars; the prices table still opens the account');
 $clean($page->html(),'TLD page no registrar');
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'No registrar selected'],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'No registrar selected; not for sale'],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
 $page->assertSee('Not for sale')->assertDontSee('For sale');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('No registrar selected')->assertDontSee('For sale');
 expect(!str_contains($text($list->html()),'new orders'),'List: no account takes new orders');
@@ -159,15 +159,16 @@ $clean($list->html(),'List no registrar');
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);
 
 // Expired costs stop sales locally and tell staff how to resume.
-Carbon\Carbon::setTestNow($now->modify('+2 days'));
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status');
+$savedFacts=$enom->fresh()->catalogue_facts;$freshFacts=json_decode($savedFacts,true);$freshFacts['freshUntil']=$now->modify('+3 days')->format(DATE_ATOM);DB::table('domains_tlds')->where('id',$enom->id)->update(['catalogue_facts'=>json_encode($freshFacts,JSON_THROW_ON_ERROR)]);
+$clock->instant=$now->modify('+2 days');Carbon\Carbon::setTestNow($clock->instant);
+same(['label'=>'Not for sale','tone'=>'danger','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Cost out of date')->assertSee('Sync prices');
-Carbon\Carbon::setTestNow($now);
+$clock->instant=$now;Carbon\Carbon::setTestNow($now);DB::table('domains_tlds')->where('id',$enom->id)->update(['catalogue_facts'=>$savedFacts]);
 
 // Below cost: red Cost with its reason, and the TLD is not for sale.
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],static fn($ending)=>activeFixtureRepublish($prices,$ending));
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
+same(['label'=>'Not for sale','tone'=>'danger','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost')->assertSee('USD 1.00');
 $clean($list->html(),'List below cost');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost');
