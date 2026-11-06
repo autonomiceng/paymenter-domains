@@ -90,6 +90,8 @@ class ViewWatch extends ViewRecord
     private static function entry(string $label,array $fact,?\Closure $fix): Flex
     {
         $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($fact['value'])->listWithLineBreaks()->belowContent($fact['value']!==null?$fact['sub']:null)->url($fact['url']);
+        // A time reads in the viewer's zone, with UTC on hover.
+        if (($fact['at']??null)&&is_string($fact['value'])&&$fact['value']!=='') { $entry->formatStateUsing(fn()=>Sheet::moment((int)$fact['at'])); }
         return Sheet::row(MissingEntry::apply($entry,fix:$fact['check'] && $fix?$fix():null,cause:$fact['value']===null?$fact['cause']:null,color:$fact['tone']));
     }
     /** The rail: the newest history, with the tab holding the rest. */
