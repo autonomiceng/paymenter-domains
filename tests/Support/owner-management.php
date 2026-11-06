@@ -56,7 +56,10 @@ same(['name'=>'Jane Doe','email'=>'jane@example.com'],$owners->present($d->fresh
 $saved=OwnedDomains::contacts($d->fresh());same(['Jane',$registrant['first_name']],[$saved['registrant']['first_name'],$saved['admin']['first_name']],'A one-role change leaves the other roles');
 Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$changed->id)->delete();
 $html=(new OwnedDomainController($owners))->show($r,$d->id)->render();$dom=storefrontDom($html);
-$forms=$dom->query('//form[@method="POST"]');expect($forms->length>=($free?6:7),'Supported management forms offered');
+$forms=$dom->query('//form[@method="POST"]');
+$actions=array_map(fn($form)=>basename(parse_url($form->getAttribute('action'),PHP_URL_PATH)),iterator_to_array($forms));sort($actions);
+same(['auth_code_email','contacts','glue_add','lock','nameservers'],$actions,'Every offered management action has exactly one form');
+same(0,$dom->query('//li[@id="privacy"]')->length,'New privacy choices stay hidden');
 same($forms->length,$dom->query('//form/input[@name="_token"]')->length,'Every form has native CSRF');
 same($forms->length,$dom->query('//form/input[@name="_request_key"]')->length,'Every form has single-use intent');
 same(0,$dom->query('//input[@type="checkbox"]')->length,'Owner management forms have no checkboxes');
@@ -64,8 +67,9 @@ same(1,$dom->query('//li[@id="contacts"]/span[contains(@class,"domains-row__v")]
 if(isset($dto->management['auth_code_email'])){same($free?'We email it to the admin contact email':'We email it to the registrant email',trim(preg_replace('/\s+/',' ',$dom->query('//li[@id="auth_code_email"]/span[contains(@class,"domains-row__v")]')->item(0)->textContent)),'Auth code row names who receives the code');}
 same(0,$dom->query('//input[@name="confirmed"]')->length,'No form carries a ticked or hidden confirmation');
 foreach(['nameservers','lock','auth_code_email']as$risky){if(isset($dto->management[$risky])&&!($risky==='lock'&&($dto->management['lock']['state']??null)===false)){same(1,$dom->query('//li[@id="'.$risky.'"]//form[@data-confirm]//dialog[@data-confirm-dialog][not(@open)]//button[@name="confirmed"]')->length,'Risky action has a closed confirm dialog: '.$risky);}}
-foreach(['contacts','privacy']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
-foreach($free?['srv','ds','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
+foreach(['contacts']as$plain){if(isset($dto->management[$plain])){same(1,$dom->query('//li[@id="'.$plain.'"]')->length,'Plain action row rendered: '.$plain);same(0,$dom->query('//li[@id="'.$plain.'"]//dialog[@data-confirm-dialog]|//li[@id="'.$plain.'"]//form[@data-confirm]')->length,'Plain action has no confirm step: '.$plain);}}
+foreach($free?['srv','auth_code_display']:['dns','srv','ds','auth_code_display']as$a){expect(!isset($dto->management[$a]),'Unsupported or disabled advanced/display forms are absent');}
+if($free){same(['label'=>'DNSSEC','off'=>true,'actions'=>[],'url'=>null,'reason'=>'DS changes are not offered for this TLD yet. Contact support if you need DNSSEC.','progress'=>null],$dto->management['ds'],'Unsupported DS stays visible as Off without change controls');}
 if($free){same(['label'=>'DNS records','unavailable'=>true,'actions'=>[],'url'=>null,'records'=>null,'fixed'=>[],'asOf'=>null,'progress'=>null],$dto->management['dns'],'Dormant NameSilo DNS shows as not available');}
 if($free){ // Stopped reads never restart by themselves, so an unknown row names the step instead of a time.
     $d->update(['observation'=>null]);$lockRow=static fn():string=>trim(preg_replace('/\s+/',' ',storefrontDom((new OwnedDomainController($owners))->show($r,$d->id)->render())->query('//li[@id="lock"]/span[@class="domains-row__v"]')->item(0)->textContent));
