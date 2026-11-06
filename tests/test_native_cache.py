@@ -36,6 +36,45 @@ class NativeCacheTests(unittest.TestCase):
                               if name.startswith('vendor/')}, expected)
             self.assertEqual(native.hashes(root / 'vendor'), expected)
 
+    def test_shared_setup_retains_pages_only_until_the_second_complete_check(self):
+        for shared in [False, True]:
+            with self.subTest(shared=shared), tempfile.TemporaryDirectory() as temp:
+                source = Path(temp) / 'source'; source.mkdir()
+                git, lock = fixtures.NativeGuardTests().fixture(source)
+                count = len(native.hashes(source / 'vendor'))
+                phases = []
+                verify = native.verify
+                with mock.patch.object(native, 'git', side_effect=git), \
+                        mock.patch.object(native, 'LOCK_SHA256', lock), \
+                        mock.patch.object(native.os, 'posix_fadvise') as release:
+                    def checked(*args, **kwargs):
+                        result = verify(*args, **kwargs)
+                        phases.append(release.call_count)
+                        return result
+                    with mock.patch.object(native, 'verify', side_effect=checked):
+                        native.prepare(source, Path(temp) / 'copy', share_vendor=shared)
+                self.assertEqual(phases, [0, count] if shared else [count, 2 * count])
+
+    def test_shared_setup_rechecks_bytes_and_refuses_intervening_vendor_mutation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / 'source'; source.mkdir()
+            git, lock = fixtures.NativeGuardTests().fixture(source)
+            verify = native.verify
+            phases = []
+            def changed(*args, **kwargs):
+                if phases:
+                    (source / 'vendor/autoload.php').write_bytes(b'changed between complete checks')
+                result = verify(*args, **kwargs)
+                phases.append(result[1])
+                return result
+            with mock.patch.object(native, 'git', side_effect=git), \
+                    mock.patch.object(native, 'LOCK_SHA256', lock), \
+                    mock.patch.object(native, 'verify', side_effect=changed), \
+                    self.assertRaisesRegex(RuntimeError, 'Dependency changed while copying'):
+                native.prepare(source, Path(temp) / 'copy', share_vendor=True)
+            self.assertEqual(len(phases), 2)
+            self.assertNotEqual(phases[0], phases[1])
+
     def test_ordinary_hashes_keep_the_callers_cache_policy(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
