@@ -25,11 +25,11 @@ final class WatchNoticeTemplates
     private const TEXT=['name','edit_preference_message','subject','in_app_title','in_app_body','body'];
     public static function ensure(): void
     {
-        $v2=self::definitions();
+        $terms=self::templates(self::TERMS);$v2=$terms;
         foreach ($v2 as &$fields) { foreach (self::TEXT as $field) { $fields[$field]=str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]); } }
         unset($fields);
         $columns=array_flip(Schema::getColumnListing('notification_templates'));$previous=self::templates(self::V1);
-        DB::transaction(function()use($columns,$previous,$v2):void {
+        DB::transaction(function()use($columns,$previous,$v2,$terms):void {
             foreach(self::definitions() as $key=>$template) {
                 $stored=NotificationTemplate::where('key',$key)->lockForUpdate()->first();
                 if (!$stored) { (new NotificationTemplate())->forceFill(array_intersect_key(['key'=>$key,...$template],$columns))->save(); continue; }
@@ -38,7 +38,7 @@ final class WatchNoticeTemplates
                     // Match the earlier default name by digest so only that exact stored value is upgraded.
                     $oldName=$key==='domains_watch_ns_restored' && $field==='name' && is_string($value)
                         && hash('sha256',$value)==='078ddbdde621a7eac58d2297b01e9cf4f10ce3a69b16fb6634ff8f2b0ea236cc';
-                    if (isset($columns[$field]) && ($value===$previous[$key][$field] || $value===$v2[$key][$field] || $oldName)) { $stored->setAttribute($field,$template[$field]); }
+                    if (isset($columns[$field]) && ($value===$previous[$key][$field] || $value===$v2[$key][$field] || $value===$terms[$key][$field] || $oldName)) { $stored->setAttribute($field,$template[$field]); }
                 }
                 if ($stored->isDirty()) { $stored->save(); }
             }
@@ -46,7 +46,13 @@ final class WatchNoticeTemplates
     }
     public static function definitions(): array
     {
-        return self::templates(self::TERMS);
+        $w=self::TERMS;
+        $w['names']['ns_changed']='nameservers not in use';
+        $w['copy']['ns_changed']=[
+            '@if($previously_matched)Nameservers changed for {{ $domain }}@else{{ $domain }} does not use {{ $nameservers }}@endif',
+            'As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @else does not use @endif{{ $nameservers }}. If you didn’t expect this, contact support.',
+        ];
+        return self::templates($w);
     }
     private static function templates(array $w): array
     {

@@ -240,10 +240,10 @@ same('Finish setup to start registration. Finish setup',$norm(storefrontDom($ren
 same('The auth code deadline passed. Update your details so we can finish the transfer. Update details',$norm(storefrontDom($render($setup(['defaults'=>false,'contacts'=>true],['phase'=>'cutoff','open'=>false,'received'=>false])))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Cutoff notice');
 $import=$domain(['status'=>'Under review','tone'=>'info','renewal'=>'','management'=>[],'renewNow'=>[],'autoRenew'=>[],'setupPending'=>true]);
 same('We’re confirming this domain. Changes and renewals start after that. If it expires soon, let us know. Contact support',$norm(storefrontDom($render($import))->query('//div[contains(@class,"domains-notice")]')->item(0)),'Import notice');
-$moved=$domain();$dom=storefrontDom($render($moved,$summary($moved,['stateKeys'=>['domain.active','watch.ns_changed'],'noticeDates'=>['dns'=>1792540800]])));
+$moved=$domain();$dom=storefrontDom($render($moved,$summary($moved,['dnsPreviouslyMatched'=>true,'stateKeys'=>['domain.active','watch.ns_changed'],'noticeDates'=>['dns'=>1792540800]])));
 same($name.' stopped using Example Hosting nameservers on Oct 21, 2026. Change nameservers',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change notice');
 same('/domains/1?edit=nameservers#edit-nameservers',$dom->query('//div[contains(@class,"domains-notice")]/a')->item(0)?->getAttribute('href'),'Nameserver change opens the editor');
-$moved=$domain(['management'=>[]]);$dom=storefrontDom($render($moved,$summary($moved,['stateKeys'=>['watch.ns_changed']])));
+$moved=$domain(['management'=>[]]);$dom=storefrontDom($render($moved,$summary($moved,['dnsPreviouslyMatched'=>true,'stateKeys'=>['watch.ns_changed']])));
 same($name.' stopped using Example Hosting nameservers. Contact support',$norm($dom->query('//div[contains(@class,"domains-notice")]')->item(0)),'Nameserver change without a date or an editor');
 $demo=$domain(['management'=>[],'demo'=>true,'syncPaused'=>true]);$html=$render($demo,$summary($demo,['demo'=>true]));$dom=storefrontDom($html);
 same(1,$dom->query('//div[contains(@class,"domains-notice")]')->length,'One notice');
