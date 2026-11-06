@@ -17,7 +17,7 @@ final class SellTable
     private array $rowTlds=[];
     private ?array $savedRead=null;
     private ?array $savedRows=null;
-    private ?int $hiddenWarnings=null;
+    private ?array $hiddenWarnings=null;
     private array $filtered=[];
     private ?StaffGrants $grants=null;
     /** Account and settings reads the next-step hints share across Register, Renew and Transfer in this build. */
@@ -91,13 +91,14 @@ final class SellTable
         $this->facts();
         return $this->savedRead=$this->costs?$this->source()->matrix(collect($this->rowTlds),$this->years):['rows'=>[],'skipped'=>[],'warnings'=>[],'explanations'=>[]];
     }
-    /** Count omitted TLDs on other filtered pages without loading their offer/price snapshots. */
-    public function hiddenWarnings(): int
+    /** Name omitted TLDs on other filtered pages without loading their offer/price snapshots. */
+    public function hiddenWarnings(): array
     {
-        if(!$this->grants()->costs||!$this->costs||$this->filteredRows===null){return 0;}
+        if(!$this->grants()->costs||!$this->costs||$this->filteredRows===null){return [];}
         if($this->hiddenWarnings!==null){return $this->hiddenWarnings;}
-        $this->facts();$hidden=$this->tlds(($this->filteredRows)(),['server_id','tld','catalogue_intent','use_default_rule','pricing_mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'])->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]));
-        return $this->hiddenWarnings=count($this->source()->omissions($hidden));
+        $this->facts();$hidden=$this->tlds(($this->filteredRows)(),['id','server_id','tld','catalogue_intent','use_default_rule','pricing_mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer'])->reject(fn(Tld $t)=>isset($this->rowTlds[$t->server_id.':'.$t->tld]));
+        $omitted=array_flip($this->source()->omissions($hidden));
+        return $this->hiddenWarnings=$hidden->filter(fn(Tld $t)=>isset($omitted[$t->server_id.':'.$t->tld]))->map(fn(Tld $t)=>['id'=>(int)$t->id,'tld'=>'.'.$t->tld])->values()->all();
     }
     public function scope(): ?int {return count($this->bindings)===1?array_key_first($this->bindings):null;}
     private function savedRow(OfferRow $row): ?array

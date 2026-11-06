@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo']): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
@@ -57,7 +57,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
         $sellers=new SellerPolicies($prices,$bindings,$offers);
         app()->instance(AccountBindings::class,$bindings);app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
     }
-    foreach (['enom', 'namesilo'] as $key) {
+    foreach ($registrars as $key) {
         $server = Server::create(['name' => 'Synthetic', 'type' => 'server', 'extension' => 'Domains', 'enabled' => true]);
         $review=null;
         if($key==='namesilo'){

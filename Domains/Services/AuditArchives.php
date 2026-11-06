@@ -11,7 +11,7 @@ final class AuditArchives
     public static function append(int $server,string $family,string $json): void
     {
         if(DB::transactionLevel()!==1){throw new \LogicException('Outer audit transaction required.');}
-        if(!in_array($family,['staff_settings','reminders'],true)){throw new \LogicException('Unknown audit family.');}
+        if(!in_array($family,['staff_settings','catalogue_sync','reminders'],true)){throw new \LogicException('Unknown audit family.');}
         $payload=Crypt::encryptString($json);
         if(strlen($payload)>64000){throw new \DomainException('Audit archive too large. Changes held.');}
         DB::table(self::TABLE)->insert(['server_id'=>$server,'family'=>$family,'payload'=>$payload]);

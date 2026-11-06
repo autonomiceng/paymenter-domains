@@ -82,8 +82,9 @@ final class ObligationAlerts
             if($op->account_fingerprint!==$d->account_fingerprint||$op->authority_generation!==$d->authority_generation){continue;}
             $p=$op->policy??[];
             if($op->action==='renew'&&isset($p['price'])){
+                // Retained retail is informational; RenewalReminders checks current cost independently.
                 $code=$p['price']['staff_alert']??null;
-                if($code!==null||($p['price']['retained']??false)){
+                if($code!=='retained_renewal'&&($code!==null||($p['price']['retained']??false))){
                     $keys[]=self::record($d,$code==='below_cost'?'below_cost':'unknown_cost',$now,(int)$op->id);
                 }
             }
@@ -128,7 +129,7 @@ final class ObligationAlerts
     {
         if($alert->code==='observation_review'){try{return !ObservationRecords::stopped($d);}catch(\Throwable){return false;}}
         if(!$op){return false;}
-        try{return in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
+        try{return $alert->code==='unknown_cost'&&($op->policy['price']['staff_alert']??null)==='retained_renewal'||in_array($alert->code,self::REVIEW,true)&&($op->state==='succeeded'&&!self::flagged($op,$operations,$d)||ManagementEvidence::recoverable($op));}
         catch(\Throwable){return false;}
     }
     /** A request that succeeds closes its own alert now: a paused sync runs no inspection, and the Open alerts filter reads the row.

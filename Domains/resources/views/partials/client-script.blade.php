@@ -142,6 +142,7 @@
                 if (live) live.textContent = row?.querySelector('.domains-result__note').textContent.trim()
                     || (states.includes('transferable') ? 'This name can be transferred. Choose Transfer to continue.'
                     : states.includes('in_cart') ? 'Already in your cart. Go to your cart to continue.'
+                    : states.includes('busy') ? 'Try again in a moment.'
                     : 'Couldn’t check this transfer. Retry to check it.');
                 return;
             }

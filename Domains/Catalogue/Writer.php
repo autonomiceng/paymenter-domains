@@ -157,13 +157,20 @@ final class Writer implements Catalogue
                 if ($reason !== null) { $refused[$command->tld()] = $reason; } else { $accepted[$i] = true; }
             }
             if (!$accepted) { throw new \DomainException(reset($refused)); }
-            $results = []; $sales = [];
+            $results = []; $sales = []; $defaultsChanged = false;
             foreach ($entries as $i => [$command, $expected]) {
                 if (!isset($accepted[$i])) { continue; }
                 $t = Tld::where('server_id', $command->binding()->serverId)->where('tld', $command->tld())->sole();
                 $d = OfferState::decode(Account::where('server_id', $t->server_id)->sole()->catalogue_defaults);
                 $policy = DB::table('domains_sales_policies')->where('tld', $t->tld)->first();
                 $current = OfferState::revision($t, $d, $policy);
+                if ($command->kind === 'defaults') {
+                    $oldDefaults = get_object_vars(new Intent(...array_intersect_key($d, get_object_vars(new Intent))));
+                    $newDefaults = get_object_vars($command->intent);
+                    $oldDefaults['maxAnnualCost'] = PricingRule::wholesale($oldDefaults['maxAnnualCost']);
+                    $newDefaults['maxAnnualCost'] = PricingRule::wholesale($newDefaults['maxAnnualCost']);
+                    $defaultsChanged = !OfferState::equivalent($oldDefaults, $newDefaults);
+                }
                 $salesEdit = $review->action === 'acceptance' && $command->kind === 'override';
                 if ($salesEdit) {
                     $old = OfferState::decode($t->catalogue_intent); $before = $after = [];
@@ -185,7 +192,7 @@ final class Writer implements Catalogue
                     if ($after !== []) { $sales[$command->tld()] = ['old' => $before, 'new' => $after]; }
                 }
             }
-            if ($review->action === 'acceptance') { $review->salesRows($sales); }
+            if ($review->action === 'acceptance') { $review->salesRows($sales, $defaultsChanged); }
             $review->record('completed', ['rows' => array_keys($results), 'failures' => $refused]);
             return ['rows' => $results, 'failures' => $refused];
         });
@@ -273,11 +280,12 @@ final class Writer implements Catalogue
                 && ($command->rule === (OfferState::decode($target->catalogue_intent)['pricing_rule'] ?? null)));
             $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now) || $created;
             if (!$changed) { return $revision; }
-            if ($command instanceof Edit && $command->sellerTransfers && $policy && !$policy->transfer_enabled
+            if ($command instanceof Edit && $command->sellerTransfers !== null && $policy
+                && (bool) $policy->transfer_enabled !== $command->sellerTransfers
                 && (int) $policy->server_id === $binding->serverId && $policy->account_fingerprint === $binding->fingerprint
-                && $policy->registrar_key === $binding->registrarKey && self::transfersSupported($target, $now)) {
-                // Transfers On: the same chosen registrar now also takes transfers. Registrations stay as they were.
-                DB::table('domains_sales_policies')->where('id', $policy->id)->update(['transfer_enabled' => true, 'revision' => $revision->selection + 1]);
+                && $policy->registrar_key === $binding->registrarKey && (!$command->sellerTransfers || self::transfersSupported($target, $now))) {
+                // An explicit transfer switch updates only the same chosen registrar; registrations stay as they were.
+                DB::table('domains_sales_policies')->where('id', $policy->id)->update(['transfer_enabled' => $command->sellerTransfers, 'revision' => $revision->selection + 1]);
                 $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
             }
             if ($seller) {

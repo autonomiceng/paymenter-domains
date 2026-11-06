@@ -12,7 +12,7 @@ final readonly class Edit implements Command
 {
     private function __construct(private AccountBinding $account, private string $ending,
         public string $kind, public ?Intent $intent = null, public ?array $rule = null,
-        public ?string $retail = null, public array $actions = [], public bool $sellerTransfers = false)
+        public ?string $retail = null, public array $actions = [], public ?bool $sellerTransfers = null)
     { CanonicalName::parse('example.'.$ending, [$ending]); }
 
     public static function defaults(AccountBinding $b, string $tld, Intent $intent): self
@@ -22,9 +22,9 @@ final readonly class Edit implements Command
         }
         return new self($b, $tld, 'defaults', $intent);
     }
-    /** Null pricing rule removes the offer rule and inherits the business default. Staff Transfers On also
-     * allows transfers on this account's own seller row ($sellerTransfers), so one switch means one thing. */
-    public static function override(AccountBinding $b, string $tld, Intent $intent, ?array $rule = null, bool $sellerTransfers = false): self
+    /** Null pricing rule removes the offer rule and inherits the business default. An explicit staff transfer edit also
+     * updates this account's own seller row; null leaves that row alone. */
+    public static function override(AccountBinding $b, string $tld, Intent $intent, ?array $rule = null, ?bool $sellerTransfers = null): self
     { return new self($b, $tld, 'override', $intent, $rule === null ? null : PricingRule::validate($rule), sellerTransfers: $sellerTransfers); }
     /** The binding is the new seller; an empty action list deselects the ending. */
     public static function seller(AccountBinding $b, string $tld, array $actions): self

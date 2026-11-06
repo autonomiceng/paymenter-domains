@@ -254,9 +254,11 @@ class WhatYouSell extends Page implements HasTable
                 ->description(new HtmlString(view('domains::admin.sell-note',['warning'=>$warning])->render()))
                 ->footer($one===null?null:$button('Open '.$one['tld'],TldResource::getUrl('view',['record'=>$one['id']])));
         }
-        if(($hidden=$this->reads()->hiddenWarnings())>0){
+        if(($hidden=$this->reads()->hiddenWarnings())!==[]){
+            $count=count($hidden);
             $components[]=Callout::make('Prices left out on other pages')->warning()->columnSpanFull()
-                ->description($hidden.' more '.($hidden===1?'TLD has':'TLDs have').' prices left out. Open the other pages to see what needs fixing.');
+                ->description($count.' more '.($count===1?'TLD has':'TLDs have').' prices left out.')
+                ->footer(new HtmlString(implode(' ',array_map(fn(array $row)=>$button('Open '.$row['tld'],TldResource::getUrl('view',['record'=>$row['id']]))->toHtml(),$hidden))));
         }
         return $schema->components([...$components,EmbeddedTable::make()]);
     }

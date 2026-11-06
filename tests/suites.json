@@ -46,7 +46,8 @@
     "tests/test_staff_docs.py",
     "tests/ote-order-window-test.php",
     "tests/ote-collection-shapes-test.php",
-    "tests/owned-style-test.php"
+    "tests/owned-style-test.php",
+    "tests/renewal-ready-copy-test.php"
   ],
   "native": [
     "tests/offer-queued-trigger-test.php",
@@ -191,6 +192,7 @@
     "tests/owner-actions-test.php",
     "tests/owner-nameservers-test.php",
     "tests/owner-renewal-test.php",
+    "tests/owner-renewal-retained-test.php",
     "tests/owner-auto-renew-test.php",
     "tests/owner-declutter-test.php",
     "tests/owner-help-test.php",
@@ -496,7 +498,25 @@
     "tests/test_installed_registrar_account_counts-test.php",
     "tests/test_installed_cart_price_change-test.php",
     "tests/storefront-transfer-reason-test.php",
-    "tests/payment-live-ceiling-test.php"
+    "tests/payment-live-ceiling-test.php",
+    "tests/staff-history-sync-test.php",
+    "tests/staff-price-cost-alert-test.php",
+    "tests/staff-purchase-price-label-test.php",
+    "tests/staff-pricing-preview-cost-test.php",
+    "tests/staff-transfer-keep-off-test.php",
+    "tests/staff-hidden-tld-link-test.php",
+    "tests/staff-adopted-price-label-test.php",
+    "tests/staff-open-renewal-invoice-test.php",
+    "tests/staff-nameserver-refusal-label-test.php",
+    "tests/cart-reload-price-test.php",
+    "tests/customer-nameserver-refusal-test.php",
+    "tests/customer-lock-history-test.php",
+    "tests/customer-deferred-progress-test.php",
+    "tests/customer-registration-history-test.php",
+    "tests/cart-removal-checkout-test.php",
+    "tests/cart-removal-price-failure-test.php",
+    "tests/native-autoload-path-test.php",
+    "tests/cart-notice-render-test.php"
   ],
   "ui": [],
   "runner": [

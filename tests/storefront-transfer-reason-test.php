@@ -56,9 +56,56 @@ $setting->update(['value' => 'com']);
 $result = $check();
 same('transferable', $result['status'], 'Eligible name offers a transfer');
 expect(str_contains($result['html'], 'value="transfer"'), 'Eligible name has the Transfer action');
+// The first registrar read succeeds; admission defers the second, transfer-specific read.
+$limiter = new class implements Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
+    public int $calls = 0;
+    public function acquire($binding, $origin): string {
+        if (++$this->calls === 2) { throw new Paymenter\Extensions\Servers\Domains\Services\ReadDeferred; }
+        return 'synthetic-read';
+    }
+    public function release($binding, $origin, string $token): void {}
+};
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class, new Paymenter\Extensions\Servers\Domains\Services\Runtime);
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class, $limiter);
+$deferred = $check();
+same(2,$limiter->calls,'The transfer precheck reaches the second read admission');
+same('busy',$deferred['status'],'Deferred transfer read is retryable');
+expect(str_contains($deferred['html'],'data-domains-retry'),'Deferred transfer keeps the Retry control');
+$limiter->calls=0;
+$deferredRegister=$check(false);
+same(2,$limiter->calls,'Registration search confirms availability before the transfer read defers');
+same('taken',$deferredRegister['status'],'A deferred transfer read preserves confirmed registration unavailability');
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 $public->states = ['pending transfer'];
 $assertRefusal($check(), 'already in progress');
 $page = (new OwnedTransferController($store))->show($req(['name' => 'transfer-placeholder.com'], 'GET'))->render();
 expect(str_contains($page, 'data-mode="transfer"'), 'Transfer page requests transfer results');
+// Transfer-only sales must not depend on a one-year registration check. The real Enom
+// adapter rejects that query when the synthetic registry requires at least two years.
+$public->states = ['active'];
+$b = Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+$registry = (new ReflectionProperty($transferBindings,'registry'))->getValue($transferBindings);
+$wire = new class implements Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
+    public function send($environment,$command,array $parameters,string $uid,string $token,int $timeoutMs): string {
+        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><Domains><Domain><Name>transfer-placeholder.com</Name><RRPCode>211</RRPCode><IsPremium>0</IsPremium><IsPlatinum>0</IsPlatinum><IsEAP>0</IsEAP><Properties><Transferable>true</Transferable><MinRegYear>2</MinRegYear></Properties></Domain></Domains></interface-response>';
+    }
+};
+$registry->registerBoundReader($b,static fn($binding,$credentials)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
+    new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($binding,$credentials['token'],'synthetic',$wire),['com']));
+$q = new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
+$ports->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::seller($b,'com',['transfer']),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+foreach ([true,false] as $transferMode) {
+    $onlyTransfer = $check($transferMode);
+    same('transferable',$onlyTransfer['status'],'Transfer-only sales bypass registration minimum terms');
+    expect(str_contains($onlyTransfer['html'],'value="transfer"'),'Transfer-only sales retain the Transfer action');
+}
+// Without registration offers, the initial Taken placeholder is not confirmed availability.
+$limiter->calls=1;
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class,new Paymenter\Extensions\Servers\Domains\Services\Runtime);
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,$limiter);
+same('busy',$check(false)['status'],'A transfer-only seller keeps Retry when no registration read confirmed Taken');
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
+app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
 $nativeSuccessful = true;
 echo "Customer transfer reasons, next steps and registration isolation passed.\n";

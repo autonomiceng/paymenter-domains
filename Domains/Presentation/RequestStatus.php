@@ -14,6 +14,7 @@ final class RequestStatus
         'completed' => ['Completed', 'success'], 'failed' => DomainStatus::SET['failed'], 'cancelled' => DomainStatus::SET['cancelled'],
     ];
     /** The registrar said no. Customers and staff read this same sentence, each with their own next step. */
+    public const NAMESERVERS_REFUSED = 'The registrar didn’t accept these nameservers. Check them or contact support.';
     public const REFUSED = 'The registrar did not take this change.';
     /** The result of a change that may have reached the registrar is not known yet. */
     public const UNCONFIRMED = 'Registrar has not confirmed the result';
@@ -60,7 +61,7 @@ final class RequestStatus
     { return 'Paid after this invoice closed. We added '.$amount.' to account credit. You can apply it on an invoice.'; }
     /** One sentence for an unpaid early renewal, on both sides. */
     public static function earlyRenewal(string $due): string
-    { return 'Early renewal not paid. Nothing is due until '.gmdate('M j, Y', strtotime($due.' 00:00:00 UTC')).'.'; }
+    { return 'Invoice ready. Due '.gmdate('M j, Y', strtotime($due.' 00:00:00 UTC')).'.'; }
     /** @return array{label:string,tone:string,reason:?string} */
     public static function for(?string $state, ?string $cause = null): array
     {

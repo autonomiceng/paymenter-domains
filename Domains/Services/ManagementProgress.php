@@ -63,7 +63,9 @@ final class ManagementProgress
     }
     private static function row(Operation $op, Domain $d): array
     {
-        $pending=self::pending($op,$d);$slow=$pending && $op->created_at->getTimestamp()<=now()->getTimestamp()-30;
+        $deferrals=$op->attempt['management_deferrals']??[];
+        $since=$deferrals?new \DateTimeImmutable(end($deferrals)):$op->created_at;
+        $pending=self::pending($op,$d);$slow=$pending && $since->getTimestamp()<=now()->getTimestamp()-120;
         $sent=($op->attempt['seal']??null)==='sealed';
         $text=match(true){
             $slow=>"This is taking longer than usual. We'll keep trying.",
@@ -75,6 +77,7 @@ final class ManagementProgress
             $op->state==='succeeded' && $op->action==='nameservers' && self::nameserversChanged($op,$d)=>'Nameservers changed after this request. Check them and change them if needed.',
             $op->state==='succeeded'=>'Saved.',
             $op->safe_code==='management_retired'=>'Replaced by your latest choice.',
+            $op->action==='nameservers' && $op->safe_code==='management_provider_refused'=>RequestStatus::NAMESERVERS_REFUSED,
             default=>(ManagementEvidence::outcome($op)===RequestStatus::UNSENT?RequestStatus::UNSENT:($op->action==='auth_code_email'?'The auth code email request failed.':'The '.strtolower(['lock'=>'Transfer lock','nameservers'=>'Nameservers','contacts'=>'Contacts','dns'=>'DNS records','privacy'=>'WHOIS privacy','ds'=>'DNSSEC','glue'=>'Glue records'][self::setting($op->action)]??'change').' change failed.')).self::TRY_AGAIN,
         };
         if($op->action==='auth_code_email' && $pending && $sent && !$slow){$text='Email request sent. Acceptance is not confirmed. We will keep checking.';}

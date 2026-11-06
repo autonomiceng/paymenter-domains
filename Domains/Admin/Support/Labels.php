@@ -44,6 +44,9 @@ final class Labels
         if(RequestFacts::quietRegistrationDns($op)){
             return \Paymenter\Extensions\Servers\Domains\Services\RegistrationDns::pending($op,$op->domain)?'Domain registered. Chosen nameservers not confirmed':null;
         }
+        if ($op->action==='nameservers'&&$op->safe_code==='management_provider_refused') {
+            return 'The registrar didn’t accept these nameservers. Check them or contact support.';
+        }
         if ($op->safe_code==='management_retired') {
             $actor=$op->attempt['management_terminal']['actor_id']??null;
             return $actor===null ? 'Cancelled' : 'Cancelled by '.((int)$actor===(int)$op->domain->user_id?'customer':'staff');
