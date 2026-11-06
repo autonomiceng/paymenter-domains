@@ -94,7 +94,8 @@ function withNameSiloGuardLimiter(int $allowed,Closure $run): mixed
 {
     $runtime=Paymenter\Extensions\Servers\Domains\Services\Runtime::class;
     $contract=Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class;
-    expect(!app()->bound($runtime)&&!app()->bound($contract),'Guard fixture starts without runtime limiter bindings');
+    $previousRuntime=app()->bound($runtime)?app($runtime):null;
+    $previousLimiter=app()->bound($contract)?app($contract):null;
     $limiter=new class($allowed) implements Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {
         public int $calls=0;
         public function __construct(public int $remaining){}
@@ -106,7 +107,11 @@ function withNameSiloGuardLimiter(int $allowed,Closure $run): mixed
         public function release(Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding,Paymenter\Extensions\Servers\Domains\Data\RequestOrigin $origin,string $token): void {}
     };
     app()->instance($runtime,new $runtime);app()->instance($contract,$limiter);
-    try{return $run($limiter);}finally{app()->offsetUnset($runtime);app()->offsetUnset($contract);}
+    same($limiter,app($contract),'The scoped guard fixture owns its explicit capacity limiter');
+    try{return $run($limiter);}finally{
+        $previousRuntime!==null?app()->instance($runtime,$previousRuntime):app()->offsetUnset($runtime);
+        $previousLimiter!==null?app()->instance($contract,$previousLimiter):app()->offsetUnset($contract);
+    }
 }
 function assertNameSiloLimitedAcquisition($op,$engine,$clock,object $guard,Closure $paidCalls,$claims=null): void
 {
