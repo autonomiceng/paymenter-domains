@@ -1,6 +1,8 @@
 <?php
 // Native staff workflow boundaries; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Every holding below belongs to Enom; no second registrar enrollment is needed.
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/staff-operation-fixture.php';
 // These assertions need native financial events, not PDF layout.
 require __DIR__.'/Support/native-invoice-attachment.php';
