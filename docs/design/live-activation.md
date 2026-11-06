@@ -6,18 +6,24 @@ activation receipts. `Contracts/LiveActivationEvidence` supplies provider policy
 without transport. Readiness takes a required price-check closure: no prices are
 read, inferred or written by the shared engine itself.
 
-`EnomLiveActivation` remains the installed staff/runtime entry point. Its existing
-price interface, summaries, transaction/audit, feature writers, transfer default
-Off and dated transfer pilot requirement remain unchanged. The Enom adapter uses
-`EnomLive`; existing receipt bytes and review stamps remain valid. Price-module
-cutover and transfer policy changes belong to their own work.
+`EnomLiveActivation` remains the installed staff/runtime entry point. Activation
+is an explicit staff review; reading defaults or upgrading writes no feature or
+processing permission. For an unreviewed account, transfers follow the deployment
+feature default. A saved account Off, or a previous activation with no saved
+transfer choice, remains Off. Activation never changes TLD intent or sellers.
 
-The NameSilo adapter is dormant. Nothing registers it in staff actions, runtime
-factories or feature writers. Calling its local checks cannot enable processing,
-write feature settings, authenticate a key or call a provider. Installed activation
-and final price integration remain separate dependencies.
+Both registrars require dated account/site-bound history, including transfer
+history when selected. Enom no longer requires a separate paid transfer pilot
+packet. Existing packet/receipt bytes are not rewritten. Deployment, account,
+Orders, selected seller, exact cost, funding, reservation, history and one-send
+guards remain; revoking transfers still permits sent-attempt reconciliation.
+Actual transfer/charge/refund proof remains a separately authorized paid check.
 
-For that future composition, it reads `domains.namesilo_account.environment` and
+The NameSilo adapter supplies local policy; Live activation still requires an
+accepted deployed runtime composition. TEST has its own reviewed switches and
+Orders action. No readiness call creates transport or spending authority.
+
+The NameSilo adapter reads `domains.namesilo_account.environment` and
 `domains.namesilo_live`: explicit HTTPS `site`, boolean catalogue/features,
 `runtime_revision`, and `accounts[stable_local_identity]`. Each account requires
 its exact `fingerprint`, `currency: USD`, `balance_funding: true`, positive daily
@@ -33,7 +39,7 @@ The same dated packet records `portal_controls` with all three strictly true:
 `reject_invalid_contacts`, `restore_disabled`, `auto_replenishment_disabled`.
 Retain the underlying redacted portal/provider evidence. These controls reuse the
 existing activation review; they introduce no routine button or identity check.
-Transfer history is required when selected. NameSilo has no Enom pilot receipt.
+Transfer history is required when selected; neither registrar requires a pilot receipt.
 
 NameSilo checks current NS1 local enrollment and credential revision without
 reading a default contact or asserting provider account identity. Its receipts

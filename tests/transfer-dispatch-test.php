@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/transfer-dispatch-fixture.php';
+$assertTransferGuards(0);
 $assertTransferDispatch(0);
 $balanceRow=Illuminate\Support\Facades\DB::table('domains_registrar_balances')->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->sole();
 same(['100.00','USD',null,'preflight'],[$balanceRow->amount,$balanceRow->currency,$balanceRow->last_error_code,$balanceRow->source],'Successful transfer preflight retains exact account balance');
