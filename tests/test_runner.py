@@ -687,7 +687,8 @@ class RunnerTests(unittest.TestCase):
                    'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php',
                    'tests/self-heal-queue-test.php', 'tests/self-heal-recovery-test.php',
                    'tests/registrar-account-page-test.php', 'tests/registrar-limits-page-test.php',
-                   'tests/registrar-activation-page-test.php']
+                   'tests/registrar-activation-page-test.php',
+                   'tests/order-payment-test.php', 'tests/staff-domain-hold-status-test.php']
         cases = [(1, [path], True) for path in focused]
         cases += [(1, focused, True), (2, focused, False),
                   (1, [focused[0], 'tests/offer-routing-test.php'], False)]

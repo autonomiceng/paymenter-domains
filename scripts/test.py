@@ -695,7 +695,7 @@ def main():
                             'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php',
                             'tests/staff-monitoring-actions-test.php', 'tests/staff-monitoring-poll-test.php',
                             'tests/staff-monitoring-filters-test.php', 'tests/staff-monitoring-templates-test.php',
-                            'tests/staff-monitoring-expiry-test.php',
+                            'tests/staff-monitoring-expiry-test.php', 'tests/order-payment-test.php', 'tests/staff-domain-hold-status-test.php',
                             'tests/registrars-page-test.php', 'tests/registrar-account-page-test.php', 'tests/registrar-limits-page-test.php', 'tests/registrar-activation-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',
                             'tests/owner-records-test.php',
