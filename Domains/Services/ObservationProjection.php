@@ -131,6 +131,24 @@ final class ObservationProjection
         if ($gap || count($glue)>GlueDiscoveryLimit::HOSTS) { unset($sections['dns'],$sections['srv'],$sections['ds']); }
         $sections['known_glue']=$glue; return $sections;
     }
+    /** UI evidence DTO: registrar reads only; public DNS cannot advance these states or times. */
+    public static function recordStatus(Domain $d, \DateTimeImmutable $now): array
+    {
+        $r=ObservationRecords::current($d,$now);$failed=($d->observation['record_failure']['identity']??null)===ObservationRecords::identity($d);
+        $out=['at'=>$r['at']??null,'last_complete_at'=>$r['last_complete_at']??null,
+            'stale'=>$failed||!$r||new \DateTimeImmutable($r['at'])<=$now->modify('-1 day'),
+            'resume'=>ObservationRecords::held($d),'failed_family'=>ObservationRecords::held($d)?($d->observation['record_hold']['family']??null):null,'families'=>[],'settings'=>[]];
+        foreach (['families'=>RecordFormat::FAMILIES,'settings'=>['nameservers','contacts','flags']] as $group=>$kinds) {
+            foreach ($kinds as $kind) {
+                $f=$r[$group][$kind]??[];$out[$group][$kind]=[
+                    'expectation'=>$group==='families'?($r['expected_families'][$kind]??'unknown'):'supported',
+                    'state'=>$failed?'unknown':($f['state']??'unknown'),'at'=>$f['at']??$r['at']??null,
+                    'last_good_at'=>$f['last_good']['at']??null,
+                    ...array_intersect_key($f,array_flip(['records','facts','last_good']))];
+            }
+        }
+        return $out;
+    }
     private static function corrections(Domain $d): array
     {
         $progress=[]; $ops=$d->operations()->where('authority_generation',$d->authority_generation)->orderByDesc('id')->limit(100)->get();

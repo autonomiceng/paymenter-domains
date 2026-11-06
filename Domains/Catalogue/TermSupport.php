@@ -19,6 +19,10 @@ final class TermSupport
      * is a selected-term annual rate; NameSilo getPrices has no years parameter. Longer terms stay held
      * (`no_exact_quote`) until NS18 adds a reviewed exact-term read. */
     public const EXACT_QUOTES = [];
+    /** Reviewed `term_evidence`/`renewal_families` for producers without their own dated source, by registrar then
+     * suffix. Empty: no saved evidence qualifies yet. Only deployment review may add an entry. NameSilo TEST evidence
+     * rides with its dated protocol facts instead. */
+    public const REVIEWED_EVIDENCE = [];
     public const HORIZON_YEARS = 10;
 
     /** Producers attach reviewed evidence. Other suffixes carry none, so a refresh drops it. */

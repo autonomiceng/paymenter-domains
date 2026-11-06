@@ -21,7 +21,9 @@ $credentials=static function()use(&$count){$count++;return ['uid'=>'synthetic-ui
 $make=static fn($b,$get)=>RuntimeFactory::make($b,$bindings,$clock,new WriteFeatures,new WriteAcceptance($b,catalogue: $GLOBALS['caps']??null),new RenewalAcceptance($b),new TransferPrecheck(new Rdap(static fn()=>null)),$get);
 app()->instance(Runtime::class,new Runtime);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new AccountReadBudget($clock));
 resetWire();$factory=$make($binding,$credentials);$composition=$factory();
-same(array_keys(RuntimePorts::TYPES),array_keys($composition),'Seven pure runtime roles');same(0,$count,'Construction never decrypts');same(0,$GLOBALS['enomWire']['inits'],'Construction never opens cURL');
+same([...array_keys(RuntimePorts::TYPES),'observation_reader'],array_keys($composition),'Seven runtime roles plus the dedicated observation reader');
+expect($composition['observation_reader'] instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader,'Factory selects the read-only Enom observation port');
+same(true,$composition['observation_reader']->bindsTo($binding),'Dedicated reader retains the exact account binding');same(0,$count,'Construction never decrypts');same(0,$GLOBALS['enomWire']['inits'],'Construction never opens cURL');
 // Reflection is test-only: the shipping factory exposes no exchange or generic sender.
 $wire=(new ReflectionFunction($factory))->getStaticVariables()['wire'];
 $exchange=static function($w,$role):Closure {

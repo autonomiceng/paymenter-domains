@@ -41,6 +41,9 @@ expect($signals->observe($id,$uid,'delegation'),'Fresh read after prior evidence
 same(false,ManagedPublicObservation::orderByDesc('id')->first()->ns_confirmed,'Expired confirmation requires a new second sample');
 same($authority,$d->fresh()->getRawOriginal(),'Public DNS does not change holding authority, expiry, permissions or observation');same($money,scenarioMoney(),'No financial mutation');same($calls,count($wire->calls),'No registrar reads');
 // Glue drift shares this public schedule and resolver; it never contacts the registrar.
+// The saved registrar inventory and public DNS checks use the same synthetic instant.
+$clock->time=new DateTimeImmutable('@'.$time->now);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d->fresh(),['glue'=>['records'=>['ns1.example.com'=>'8.8.8.8']]],new DateTimeImmutable('@'.$time->now));
 $glueAuthority=$d->fresh()->getRawOriginal();$q=new DnsQuery('ns1.example.com','A');
 $fake->answers[$q->key()]=DnsAnswer::rrset($q,[['host'=>$q->name,'type'=>'A','class'=>'IN','ttl'=>60,'ip'=>'1.1.1.1']]);

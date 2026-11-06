@@ -49,7 +49,7 @@ final class Management extends ManagementProtocol
             || !$this->binding->matches(new AccountBinding('enom',$this->binding->serverId,$this->binding->environment,$owner))) { throw new \DomainException('Owned domain identity required.'); }
     }
     /** Frozen Enom 444f31c snapshot/currentHostIp paths, through the existing bounded read seam. */
-    public function discover(ManagementRequest $r, RequestContext $c, array $knownGlue = []): array
+    public function discover(ManagementRequest $r, RequestContext $c, array $knownGlue = [], int $reservedReads = 0): array
     {
         $out=parent::discover($r,$c); $this->owned($r,$c);
         $out['glue']['records']=array_filter($knownGlue,fn($ip)=>$ip!=='');
@@ -58,9 +58,10 @@ final class Management extends ManagementProtocol
                 $v=$this->get($r,$c,$command); $c->requireReadSuccess($v->status==='success');
                 $out[$kind]=['state'=>'complete','records'=>ManagementRead::records($v,$kind)];
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
-            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); return $out; } // Stop at first failure; never retry a failed wire.
+            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); if ($error instanceof CaaRecords) { $out[$kind]['caa']=true; } return $out; } // Stop at first failure; never retry a failed wire.
         }
-        foreach (array_slice($knownGlue,0,13,true) as $host=>$prior) {
+        $limit=min(13,max(0,$c->budget->remaining()-$reservedReads));
+        foreach (array_slice($knownGlue,0,$limit,true) as $host=>$prior) {
             try {
                 $ip=ManagementRead::glue($this->get($r,$c,R::HostStatus,['CheckNSName'=>$host]),$host);
                 if ($ip!==null) { \Paymenter\Extensions\Servers\Domains\Services\ManagementPayload::publicIp($ip); $out['glue']['records'][$host]=$ip; } else { unset($out['glue']['records'][$host]); }
@@ -68,9 +69,9 @@ final class Management extends ManagementProtocol
             catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); $out['glue']['read_failed']=true; break; } // Retain partial history, never infer absence.
         }
         $candidates=array_keys($knownGlue);
-        $out['glue']['candidates']=[...array_slice($candidates,13),...array_slice($candidates,0,13)];
+        $out['glue']['candidates']=[...array_slice($candidates,$limit),...array_slice($candidates,0,$limit)];
         $hosts=$out['glue']['records'];
-        if (count($hosts)>13) { $out['glue']['records']=array_slice($hosts,13,null,true)+array_slice($hosts,0,13,true); }
+        if (count($hosts)>$limit) { $out['glue']['records']=array_slice($hosts,$limit,null,true)+array_slice($hosts,0,$limit,true); }
         return $out;
     }
     public function prepare(ManagementRequest $r, RequestContext $c): array { return $this->preflight($r,$c,false); }

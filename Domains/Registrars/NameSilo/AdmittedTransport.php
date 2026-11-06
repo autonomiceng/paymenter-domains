@@ -31,10 +31,10 @@ final class AdmittedTransport implements DeadlineTransport
     public static function feature(string $command): string
     {
         return match($command){
-            'getAccountBalance','getPrices','checkRegisterAvailability','checkTransferAvailability','getDomainInfo','checkTransferStatus','listOrders','orderDetails','contactList','listRegisteredNameServers','dnsListRecords'=>'catalogue',
+            'getAccountBalance','getPrices','checkRegisterAvailability','checkTransferAvailability','getDomainInfo','checkTransferStatus','listOrders','orderDetails','contactList','listRegisteredNameServers','dnsListRecords','dnsSecListRecords'=>'catalogue',
             'registerDomain'=>'registration','transferDomain'=>'transfer','renewDomain'=>'renewal',
             'contactAdd','contactDomainAssociate','changeNameServers','domainLock','domainUnlock','addPrivacy','removePrivacy','removeAutoRenewal','retrieveAuthCode',
-            'addRegisteredNameServer','modifyRegisteredNameServer','deleteRegisteredNameServer','dnsAddRecord','dnsUpdateRecord','dnsDeleteRecord'=>'management',
+            'addRegisteredNameServer','modifyRegisteredNameServer','deleteRegisteredNameServer','dnsAddRecord','dnsUpdateRecord','dnsDeleteRecord','dnsSecAddRecord','dnsSecDeleteRecord'=>'management',
             default=>throw new LiveReservationLimit,
         };
     }
@@ -42,9 +42,21 @@ final class AdmittedTransport implements DeadlineTransport
     public static function parameters(string $command,#[\SensitiveParameter] array $parameters): void
     {
         self::feature($command);
+        $dsWrite=in_array($command,['dnsSecAddRecord','dnsSecDeleteRecord'],true);
+        if($dsWrite||$command==='dnsSecListRecords'){
+            $keys=array_keys($parameters);sort($keys);
+            $expected=$dsWrite?['domain','digest','keyTag','digestType','alg']:['domain'];sort($expected);
+            if($keys!==$expected||!is_string($parameters['domain']??null)
+                ||\Paymenter\Extensions\Servers\Domains\Data\CanonicalName::normalize($parameters['domain'])!==$parameters['domain']){throw new LiveReservationLimit;}
+            if($dsWrite){
+                $tuple=Ds::tuple(['key_tag'=>$parameters['keyTag'],'algorithm'=>$parameters['alg'],
+                    'digest_type'=>$parameters['digestType'],'digest'=>$parameters['digest']]);
+                if([$parameters['keyTag'],$parameters['alg'],$parameters['digestType'],$parameters['digest']]!==array_values($tuple)){throw new LiveReservationLimit;}
+            }
+        }
         if(count($parameters)>64){throw new LiveReservationLimit;}
         foreach($parameters as $key=>$value){
-            if(!is_string($key)||!preg_match('/^[a-z][a-z0-9_]*$/D',$key)
+            if(!is_string($key)||(!preg_match('/^[a-z][a-z0-9_]*$/D',$key)&&!($dsWrite&&in_array($key,['keyTag','digestType'],true)))
                 ||in_array($key,['key','version','type','payment_id','coupon','portfolio','retail_prices'],true)
                 ||(!is_string($value)&&!is_int($value))||strlen((string)$value)>4096){throw new LiveReservationLimit;}
         }
