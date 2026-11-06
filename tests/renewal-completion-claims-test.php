@@ -1,6 +1,8 @@
 <?php
 // Enom d1392a8 grace and covered renewal observation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// This claim matrix exercises Enom only; do not build an unused NameSilo account.
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/renewal-execution.php';
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Data\{RenewalCode, RenewalRequest};
