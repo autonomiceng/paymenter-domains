@@ -306,7 +306,6 @@ $excluded=[
     'HoldingObservationWork.php'=>['holding','idle','configuration_restored','records_incomplete'], // Phase, turn result, audit event and HoldingReadRetry cause.
     'SiteDnsDefault.php'=>['platform'], // Inherited DNS intent, as in ManagedDnsSetup.
     'AccountComplimentaryRenewals.php'=>['account_complimentary'], // Funding authorization reason, not request safe_code (54730caf).
-    'AdoptionRenewalEligibility.php'=>['imported_renewal_unproven'], // Import eligibility snapshot; requireBilling refuses independently (57fedc62).
     'RegistrarAnswers.php'=>['registrar_not_processed'], // Refund authorization audit reason, not request safe_code (8082f7e1).
     'SellRule.php'=>['limit','sell','skipped','waiting'], // Row decisions, shown by What you sell.
     'EnomTestCalls.php'=>['send_check'],'EnomTestCallLimit.php'=>['send_check'], // Refusal reasons, shown by SettingsActions::testRefusal.
