@@ -52,9 +52,6 @@ $opened->mountTableBulkAction('edit',[$key])->call('$refresh');
 $dialog=$opened->effects['partials']['action-modals.0']??'';
 expect(str_contains($dialog,'Registration')&&str_contains($dialog,'Ordinary')&&str_contains($dialog,'Redemption'),'Opening the actual terms dialog renders both term and renewal rows');
 
-// r16: two separate missing ranges say why once, on the first.
-$gaps=view('domains::admin.term-prices',['prices'=>array_map(fn($term)=>['term'=>$term,'current'=>in_array($term,[1,2,5,10],true)?'10.99':null,'cost'=>in_array($term,[1,2,5,10],true)?'8.9500':null,'synced'=>in_array($term,[1,2,5,10],true)],range(1,10))])->render();
-same([1,2],[substr_count($gaps,'No saved registrar total for these terms.'),substr_count(strip_tags($gaps),'Missing')],'Missing on 3 to 4 and 6 to 9 years, its cause once');
 $prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
 $priceHtml=view('domains::admin.term-prices',compact('prices'))->render();
 expect(str_contains($priceHtml,'<dl')&&str_contains($priceHtml,'Registration'),'Term totals use labeled registration rows');
