@@ -662,7 +662,10 @@ class RunnerTests(unittest.TestCase):
                  (['tests/offer-work-test.php'], ['native'], True),
                  (['tests/offer-frozen-renewal-test.php'], ['native'], True),
                  (['tests/offer-work-test.php', 'tests/native-fixture-test.php'], ['native'], True)]
-        b2_checks = ['tests/enom-test-send-limit-test.php', 'tests/glossary-sweep-test.php',
+        b2_checks = ['tests/namesilo-runtime-read-test.php',
+                     'tests/namesilo-settings-wording-test.php',
+                     'tests/native-server-settings-test.php', 'tests/transfer-polling-test.php',
+                     'tests/enom-test-send-limit-test.php', 'tests/glossary-sweep-test.php',
                      'tests/native-lifecycle-test.php', 'tests/offer-installed-staff-test.php',
                      'tests/offer-ports-test.php', 'tests/registrar-balances-test.php',
                      'tests/registrars-page-test.php', 'tests/storefront-test.php']
