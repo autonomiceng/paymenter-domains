@@ -12,7 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{PricingRules,StaffSettingsWri
 extract(commerceFixture(true));tldPanel();pinStaffClock($now);
 $staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 app()->instance(StaffSettingsWrites::class,new StaffSettingsWrites($native,$sellers,$bindings,true));
-$broken=$tlds[0]->replicate();$broken->fill(['tld'=>'invalid','use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>null,'fixed_renew'=>null,'fixed_transfer'=>null])->save();
+$broken=$tlds[0]->replicate();$broken->fill(['tld'=>'invalid','use_default_rule'=>false,'pricing_mode'=>'fixed','fixed_register'=>null,'fixed_renew'=>null,'fixed_transfer'=>null,'catalogue_intent'=>json_encode(array_replace(json_decode($tlds[0]->catalogue_intent,true),['pricing_rule'=>['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>null,'renew'=>null,'transfer'=>null]]]),JSON_THROW_ON_ERROR)])->save();
 foreach(Price::where(['server_id'=>$broken->server_id,'tld'=>'com'])->get() as $price){$copy=$price->replicate();$copy->tld='invalid';$copy->save();}
 $savedTld=$broken->fresh()->getRawOriginal();
 $savedPrices=static fn()=>Price::where(['server_id'=>$broken->server_id,'tld'=>'invalid'])->orderBy('id')->get()->map(fn($p)=>$p->getRawOriginal())->all();
@@ -36,7 +36,7 @@ $assertWarning(Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSucce
 same($savedTld,$broken->fresh()->getRawOriginal(),'Unreadable own rule is never replaced by a guessed rule');
 same($before,$savedPrices(),'Unreadable TLD keeps every saved price and revision');
 // An unreadable fee-mode override must not block the shared save's own-rule fee preflight either.
-$broken->fresh()->update(['pricing_mode'=>'markup_fee_percent','markup'=>'-1.00']);$savedTld=$broken->fresh()->getRawOriginal();
+$bad=json_decode($broken->fresh()->catalogue_intent,true);$bad['pricing_rule']=['mode'=>'markup_fee_percent','markup'=>'-1.00','round_up'=>'none','fixed'=>['register'=>null,'renew'=>null,'transfer'=>null]];$broken->fresh()->update(['catalogue_intent'=>json_encode($bad,JSON_THROW_ON_ERROR)]);$savedTld=$broken->fresh()->getRawOriginal();
 $page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL);
 $page->mountAction('default_pricing')->assertActionMounted('default_pricing')
     ->setActionData(['markup'=>'3.00','fee_percent'=>'3.10','reason'=>'Keep malformed own fee pricing on its repair path'])
