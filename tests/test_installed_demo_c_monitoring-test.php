@@ -50,13 +50,35 @@ $missingFacts=WatchFacts::for($watch->fresh());
 same(null,$missingFacts['Domain']['DNS template']['value'],'Fixture has no DNS template');
 expect($missingFacts['Checks']['Nameservers']['sub']!=='Matches template','No template cannot establish a nameserver match');
 expect(str_contains($missingFacts['Checks']['Nameservers']['sub']??'','template'),'Missing comparison says how to configure it');
-// No template means no comparison, not no public evidence. Keep the same saved A/AAAA answers and observation time.
-$recordFact=$missingFacts['Checks']['DNS records']??['value'=>null,'sub'=>null];
-same('A @ → 192.0.2.10',$recordFact['value'],'DNS records shows stored public answers without a template');
-// ui-r15 R2: the check time is a <time> in the viewer's zone, so compare its datetime.
-expect(str_contains((string)($recordFact['sub']??''),'template'),'Unconfigured comparison explains the next step');
-expect(str_contains((string)($recordFact['sub']??''),'datetime="'.gmdate('c',$at->getTimestamp()-60).'"'),'DNS records retains the actual observation time');
-$html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();
-$x=storefrontDom($html);$row=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="DNS records"]]')->item(0);
-expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!str_contains($row->textContent,'Missing'),'Real monitoring row renders the saved public record');
+// Saved answers need no template. Same-minute timestamps belong in Last check only;
+// observations from an earlier minute retain their own exact time in both facts and rendered rows.
+foreach ([60=>false,120=>true] as $age=>$showTime) {
+    $observedAt=$at->getTimestamp()-$age;
+    DB::table($public->getTable())->where('id',$public->id)->update(['started_at'=>$observedAt,'completed_at'=>$observedAt+1]);
+    $saved=$watch->fresh();$facts=WatchFacts::for($saved);
+    $recordFact=$facts['Checks']['DNS records'];
+    same('A @ → 192.0.2.10',$recordFact['value'],'DNS records shows stored public answers without a template');
+    same($observedAt,MonitoringEvidence::read($d,$saved->points,'example.com')['public_at'],'Evidence keeps the actual observation instant');
+    same($at->getTimestamp()-30,$facts['Checks']['Last check']['at'],'Last check retains the newer delegation instant');
+    $sub=(string)$recordFact['sub'];
+    expect(str_contains($sub,'Choose a DNS template to compare these records.'),'Unconfigured comparison explains the next step');
+    $datetime='datetime="'.gmdate('c',$observedAt).'"';
+    if ($showTime) {
+        expect(str_contains($sub,$datetime),'Earlier-minute DNS records retains the exact observation time');
+        expect(str_contains((string)$facts['Evidence']['Public DNS']['sub'],$datetime),'Earlier-minute public evidence retains the exact observation time');
+    } else {
+        same('Choose a DNS template to compare these records.',$sub,'Same-minute DNS records omits the redundant Checked time');
+        expect(!str_contains((string)$facts['Evidence']['Public DNS']['sub'],'<time'),'Same-minute public evidence omits the redundant Checked time');
+    }
+    $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();
+    $x=storefrontDom($html);$rows='//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")]';
+    $row=$x->query($rows.'[.//*[normalize-space(.)="DNS records"]]')->item(0);
+    expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!str_contains($row->textContent,'Missing'),'Real monitoring row renders the saved public record');
+    $times=$x->query('.//time',$row);
+    same($showTime?1:0,$times->length,'Rendered DNS records repeats its time only for an earlier minute');
+    if ($showTime) { same(gmdate('c',$observedAt),$times->item(0)->getAttribute('datetime'),'Rendered DNS records uses its actual observation time'); }
+    $last=$x->query($rows.'[.//*[normalize-space(.)="Last check"]]//time')->item(0);
+    expect($last!==null,'Real Last check renders a time');
+    same(gmdate('c',$at->getTimestamp()-30),$last->getAttribute('datetime'),'Real Last check keeps the newer delegation time');
+}
 $nativeSuccessful=true;echo "Demo C monitoring evidence passed.\n";
