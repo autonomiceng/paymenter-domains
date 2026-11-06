@@ -85,7 +85,7 @@ final class StaffCommands
         }}
         if(count($entries)>25||$entries===[]){throw new \DomainException('Review 1 to 25 valid commands.');}
         if($review->action==='import'&&$this->sync===null){throw new \LogicException('Offer sync composition required.');}
-        $review->input([...$data,...($sell===[]?[]:['changes'=>array_fill_keys($names,null),'rule'=>$sell['rule']??null,'rows'=>array_map(static fn($name)=>['new'=>['choice'=>$sell['choices'][$name]??null,'longest'=>$sell['terms'][$name]['longest']??null,'transfer'=>$sell['terms'][$name]['transfer']??null]],array_combine($names,$names))])]);
+        $review->input([...$data,...($sell===[]?[]:['changes'=>[],'rule'=>$sell['rule']??null,'rule_changed'=>$defaults,'rows'=>[]])]);
         $batch=$this->writer->reviewed($review,$entries,static fn()=>self::stamp($review->serverId,$review->tldId));
         $result=$batch['rows'];$failed=[...$failed,...$batch['failures']];
         if($defaults){($this->wake)($binding);}
@@ -112,7 +112,7 @@ final class StaffCommands
         }
         $terms=$sell['terms'][$name]??[];
         foreach(['longest'=>'longest','transfer'=>'transfers'] as $key=>$field){if(array_key_exists($key,$terms)){$raw[$field]=$terms[$key];}}
-        return Edit::override($binding,$name,$this->intent($raw),$rule);
+        return Edit::override($binding,$name,$this->intent($raw),$rule,($terms['transfer']??null)===true);
     }
     private function settings($binding,Tld $t,array $raw,array $data,?array $rule): Edit
     {
@@ -126,7 +126,7 @@ final class StaffCommands
         if(in_array('renew',$raw['stops'],true)&&Domain::where(['server_id'=>$binding->serverId,'tld'=>$t->tld,'account_fingerprint'=>$binding->fingerprint])->whereNotNull('reservation_name')->exists()){
             throw new \DomainException('Retained holders require annual renewal support.');}
         // A verified checkbox is administrative intent only; this command never creates or ages Facts.
-        return Edit::override($binding,$t->tld,$this->intent($raw),$rule);
+        return Edit::override($binding,$t->tld,$this->intent($raw),$rule,$raw['transfers']&&!in_array('transfer',$raw['stops'],true));
     }
     private function seller(Tld $t,array $data): Edit
     {

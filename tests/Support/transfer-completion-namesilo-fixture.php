@@ -15,7 +15,7 @@ $wire=new class($observe) implements DeadlineTransport {
     public function sendWithin($e,$c,$r,#[SensitiveParameter] string $k,int $t): TransportResponse {
         same(0,DB::transactionLevel(),'Read outside locks'); expect($t>0 && $t<=25000,'Read deadline bounded'); $s=$this->s; $s->calls[]=$r->command;
         if ($s->during) { $hook=$s->during; $s->during=null; $hook(); }
-        $row=['description'=>$s->name.' - transfer','years_qty'=>'1','status'=>'Processed','subtotal'=>'99.00'];
+        $row=['description'=>$s->name.' - transfer','years_qty'=>'1','status'=>'Processed','subtotal'=>'7.00'];
         if ($s->fault==='credited') { $row['credited_amount']='0.00'; }
         if ($s->fault==='unknowncharge') { $row['status']='Pending'; }
         $reply=['code'=>300,'detail'=>'synthetic']+match($r->command) {
@@ -26,7 +26,7 @@ $wire=new class($observe) implements DeadlineTransport {
                 ...($s->fault==='missing_nameservers'?[]:['nameservers'=>[['nameserver'=>'ns1.provider.example'],['nameserver'=>'ns2.provider.example']]])],
             'listOrders'=>['order'=>in_array($s->fault,['nocharge','reject','rejectowned'],true)?[]:[['order_number'=>'9001']]]+($s->fault==='paged'?['pager'=>['page'=>1]]:[]),
             'orderDetails'=>['order_number'=>'9001','order_date'=>$s->fault==='late'?'2026-10-18 05:10:00':'2026-10-18 05:00:01',
-                'total'=>'99.00','order_details'=>$s->fault==='duplicate'?[$row,$row]:[$row]],
+                'total'=>'7.00','order_details'=>$s->fault==='duplicate'?[$row,$row]:[$row]],
             'getPrices'=>['com'=>['registration'=>'8.95','transfer'=>'8.95','renew'=>'8.95']],
             'getAccountBalance'=>['balance'=>'100.00'],
             default=>throw new LogicException('Unexpected read'),
@@ -35,7 +35,7 @@ $wire=new class($observe) implements DeadlineTransport {
         return new TransportResponse(200,json_encode(['request'=>['operation'=>$r->command],'reply'=>$reply]));
     }
 };
-$registry=new RegistrarRegistry; $registry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock));
+$registry=new RegistrarRegistry; $registry->register('namesilo',['token'],$verifier,fn($b,$c)=>new Driver(new Client($b,$c['token'],$wire),['renew'],$clock),authenticator:$verifier);
 $readBindings=new AccountBindings($registry); $reconcile=new OperationReconciliation($claims,$readBindings,$clock);
 $prepare=static function($label)use($newTransfer,$makeTransfer,&$engine,&$binding,$clock,$now,$state,$observe){
     DB::table('domains_read_budgets')->delete(); // Each synthetic transfer starts an independent account-minute scenario.

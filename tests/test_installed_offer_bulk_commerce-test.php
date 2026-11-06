@@ -22,7 +22,7 @@ foreach ([['register', 1, '6.0000'], ['register', 3, '18.0000'], ['renew', 1, '8
         Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal, 'enom_bulk_bucket_'.($term === 3 ? 2 : 1), $bulkAt, $bulkAt->modify('+48 hours'));
 }
 $annualQuery = new Query($binding, ['com'], 'register');
-$annualRevision = fn () => $ports->readOffers($annualQuery, Context::Staff)[0]->revision;
+$annualRevision = fn () => offerCommerceAsStaff(static fn () => $ports->readOffers($annualQuery, Context::Staff)[0]->revision);
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', $bulkCosts), $annualRevision());
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding, 'com',
     new Paymenter\Extensions\Servers\Domains\Catalogue\Facts(['register' => [1, 3]], [], true, false, false,

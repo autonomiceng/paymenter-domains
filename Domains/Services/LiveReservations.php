@@ -11,6 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Account;
 final class LiveReservations
 {
     private static array $checkoutHeadroom=[];
+    private static array $catalogue=[];
     public function __construct(private readonly LiveReservationPolicy $policy,private readonly Environment $environment=Environment::Live) {}
 
     private static function key(string $provider,#[\SensitiveParameter] string $identity,Environment $environment=Environment::Live): string
@@ -34,6 +35,12 @@ final class LiveReservations
         self::$checkoutHeadroom[$account]=min($prior??100,$dailyPercent);
         try{return $read();}finally{if($prior===null){unset(self::$checkoutHeadroom[$account]);}else{self::$checkoutHeadroom[$account]=$prior;}}
     }
+    /** Mark only this account/environment's catalogue reads; nested scopes restore on every exit. */
+    public static function withCatalogueShare(string $provider,#[\SensitiveParameter] string $identity,\Closure $read,Environment $environment=Environment::Live): mixed
+    {
+        $key=self::key($provider,$identity,$environment);$outer=isset(self::$catalogue[$key]);self::$catalogue[$key]=true;
+        try{return $read();}finally{if(!$outer){unset(self::$catalogue[$key]);}}
+    }
     public static function day(): string
     {return app(Clock::class)->now()->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d');}
     private static function micros(string $amount): int
@@ -50,11 +57,26 @@ final class LiveReservations
             $ceiling=self::micros($spend);$amount=$cost?self::micros($cost->amount):0;
             if($amount>$ceiling){throw new LiveReservationLimit;}
             $day=self::day();$key=$this->account($binding);
-            if(isset(self::$checkoutHeadroom[$key])){$share=self::$checkoutHeadroom[$key];$limit=intdiv($limit,100)*$share+intdiv(($limit%100)*$share,100);}
+            $catalogue=isset(self::$catalogue[$key])?CatalogueShare::limit($limit):null;
+            if(isset(self::$checkoutHeadroom[$key])){$limit=CatalogueShare::limit($limit,self::$checkoutHeadroom[$key]);}
             DB::table(LiveReservationSchema::TABLE)->insertOrIgnore(['account'=>$key,'day'=>$day,'used'=>0,'spend_micros'=>0]);
-            if(DB::table(LiveReservationSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
-                ->where('spend_micros','<=',$ceiling-$amount)->update(['used'=>DB::raw('used + 1'),'spend_micros'=>DB::raw('spend_micros + '.$amount)])!==1){throw new LiveReservationLimit;}
+            $query=DB::table(LiveReservationSchema::TABLE)->where(['account'=>$key,'day'=>$day])->where('used','<',$limit)
+                ->where('spend_micros','<=',$ceiling-$amount);
+            $values=['used'=>DB::raw('used + 1'),'spend_micros'=>DB::raw('spend_micros + '.$amount)];
+            if($catalogue!==null){$query->where('catalogue_used','<',$catalogue);$values['catalogue_used']=DB::raw('catalogue_used + 1');}
+            if($query->update($values)!==1){throw new LiveReservationLimit;}
             if($day!==self::day()){throw new LiveReservationLimit;}return $day;
+        }catch(\Throwable){throw new LiveReservationLimit;}
+    }
+    /** Read-only advice; reserve() repeats both ceilings in one conditional SQL update. */
+    public function catalogueAllowance(AccountBinding $binding): int
+    {
+        try {
+            $limit=$this->policy->limits($binding)['daily_call_cap']??null;
+            if(!is_int($limit)||$limit<1||$limit>100000){throw new LiveReservationLimit;}
+            $query=DB::table(LiveReservationSchema::TABLE)->where(['account'=>$this->account($binding),'day'=>self::day()]);
+            $row=$query->first(['used','catalogue_used']);
+            return max(0,min($limit-(int)($row->used??0),CatalogueShare::limit($limit)-(int)($row->catalogue_used??0)));
         }catch(\Throwable){throw new LiveReservationLimit;}
     }
     /** @return array{used:int,spend_micros:int} Current counters, with no write or new send authority. */

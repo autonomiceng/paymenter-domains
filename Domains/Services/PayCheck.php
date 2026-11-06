@@ -63,7 +63,7 @@ class PayCheck
             $moneyMoving=self::moneyMoving((int)$invoice->id);
             $deadline=$this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');
             foreach($this->orders($invoice) as $op){
-                if(self::sellingStopped($op)){return ['why'=>'unavailable','text'=>'Domains can’t be ordered right now. Please try again later.','name'=>$op->domain->domain];}
+                if(self::sellingStopped($op)){self::refused($invoice,'selling_stopped');return ['why'=>'unavailable','text'=>'Domains can’t be ordered right now. Please try again later.','name'=>$op->domain->domain];}
                 if($moneyMoving||!in_array($op->state,self::OPEN,true)){continue;}
                 $answer=$this->answer($op,$deadline);
                 if(!in_array($answer,[self::CLEAR,self::UNKNOWN],true)){return $this->close($invoice,$op,$answer);}
@@ -80,7 +80,7 @@ class PayCheck
         $unavailable = ['why' => 'unavailable', 'text' => 'Domains can’t be ordered right now. Please try again later.'];
         try {
             // A partial receipt freezes money; it does not authorize collecting more after a Live opt-out.
-            foreach ($ops as $op) { if (self::sellingStopped($op)) { return $unavailable; } }
+            foreach ($ops as $op) { if (self::sellingStopped($op)) { self::refused($invoice, 'selling_stopped'); return $unavailable; } }
             if (self::moneyMoving((int)$invoice->id)) { return null; }
             $selections = $ops->map(static function ($op) use ($offers) {
                 $receipt = $op->policy['checkout']['catalogue'] ?? throw new \DomainException('No catalogue receipt.');
@@ -89,8 +89,8 @@ class PayCheck
                     || $s->action !== $op->action || $s->term !== (int)$op->term || $s->tld !== $op->domain->tld) {
                     throw new \DomainException('Frozen catalogue binding changed.');
                 }
-                return isset($s->catalogue['order_quote'])
-                    ? $offers->paymentSelection($s, $op->domain->domain, $op->cost['estimated'], (string)$op->amount) : $s;
+                // Staff saves move offer revisions; the issued invoice stands while the same sale still fits it.
+                return $offers->paymentSelection($s, $op->domain->domain, $op->cost['estimated'], (string)$op->amount);
             })->values()->all();
             foreach ($selections as $s) { $offers->validate($s); }
             $deadline = $this->clock->now()->modify('+'.self::READ_SECONDS.' seconds');
@@ -107,12 +107,22 @@ class PayCheck
                     catch (\Throwable) { throw new \RuntimeException('Local catalogue evidence changed.'); }
                 };
                 $closed = app(AcquisitionRetirement::class)->closeUnpaid((int)$invoice->id, $notice, $guard);
-                if (!in_array($op->domain->domain, $closed['also'], true)) { return $unavailable; }
+                if (!in_array($op->domain->domain, $closed['also'], true)) { self::refused($invoice, 'close_failed'); return $unavailable; }
+                self::refused($invoice, $answer);
                 return [...$notice, ...$closed, 'name' => $op->domain->domain,
                     'also' => array_values(array_diff($closed['also'], [$op->domain->domain]))];
             }
             return null;
-        } catch (\Throwable) { return $unavailable; }
+        } catch (PaymentPriceChanged $e) {
+            self::refused($invoice, 'price_changed', $e);
+            return [...$unavailable, 'text' => "The price of {$e->name} went up after this invoice was issued. You have not been charged. Try again later, or contact us for a new invoice."];
+        } catch (\Throwable $e) { self::refused($invoice, 'unavailable', $e); return $unavailable; }
+    }
+    /** Every refusal leaves a reason. Only local refusal messages are logged; other exceptions log their class. */
+    private static function refused(Invoice $invoice, string $reason, ?\Throwable $e = null): void
+    {
+        Log::warning('Domains pay refused.', ['invoice_id' => (int)$invoice->id, 'reason' => $reason,
+            ...($e === null ? [] : ['exception_class' => $e::class]), ...($e instanceof \DomainException ? ['detail' => $e->getMessage()] : [])]);
     }
 
     private function orders(Invoice $invoice): Collection
@@ -162,8 +172,9 @@ class PayCheck
             if(!self::answered($binding,$quote)){return self::UNKNOWN;}
             $cost=WriteMoney::cost($quote->evidence()->quote,$query,$started,$this->clock->now());
             if(!$cost){return self::UNKNOWN;}
-            // Compared with what the customer pays, not the catalogue cost: a stale catalogue would stop every sale with no new price to show.
-            return WriteMoney::compare($cost->amount,(string)$op->amount)>0?self::CHANGED:self::CLEAR;
+            // The live quote must fit both the issued debt and its frozen registrar spending authority.
+            return WriteMoney::compare($cost->amount,(string)$op->amount)>0
+                || WriteMoney::compare($cost->amount,$op->cost['estimated'])>0?self::CHANGED:self::CLEAR;
         }catch(\Throwable){return self::UNKNOWN;}
     }
     private static function answered(AccountBinding $binding,DriverResult $result): bool
@@ -178,7 +189,7 @@ class PayCheck
     /** The answer already stands, so payment stays stopped even when the close itself fails. */
     private function close(Invoice $invoice,Operation $op,string $why): array
     {
-        $name=$op->domain->domain;$notice=self::notice($why,$name);$closed=['invoice'=>null,'also'=>[]];
+        $name=$op->domain->domain;$notice=self::notice($why,$name);$closed=['invoice'=>null,'also'=>[]];self::refused($invoice,$why);
         try{$closed=app(AcquisitionRetirement::class)->closeUnpaid((int)$invoice->id,$notice);}
         catch(\Throwable $e){Log::warning('Domains pay check could not close the order.',['invoice_id'=>$invoice->id,'exception_class'=>$e::class]);}
         return [...$notice,...$closed,'name'=>$name,'also'=>array_values(array_diff($closed['also'],[$name]))];

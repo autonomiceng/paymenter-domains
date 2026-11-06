@@ -60,56 +60,84 @@ final class AcquisitionOffers
             'generation' => UpgradeGate::generation(), 'credential' => $this->bindings->offerCredentialRevision($b),
             'revision' => get_object_vars($acquire->decision->revision), 'prices' => [$acquire->identity(), $renew->identity()], 'rule' => $rule];
         $costs = $retail = []; $driver = null;
-        foreach ([$acquire, $renew] as $row) {
-            $cost = $row->observation();
-            if (!$cost?->enabled) { throw new \DomainException('Order price unavailable.'); }
-            if ($cost->fresh($clock->now())) { continue; }
-            // A successful first quote survives a pacing deferral on the second read.
-            $key = 'domains.order-price.'.hash('sha256', OfferState::json([$name, $stamp, $cost->key()]));
-            $saved = Cache::get($key);
-            $fresh = is_array($saved) ? OfferState::cost($saved) : null;
-            if (!$fresh?->fresh($clock->now())) {
-                $driver ??= $this->bindings->reader($b->serverId); $b->requireMatch($driver->binding());
-                $q = new OrderQuery($name,
-                    Action::from($cost->action), $cost->term);
-                $deadline = $clock->now()->modify('+'.min(10000, $batch->remainingMilliseconds()).' milliseconds');
-                $context = new RequestContext($b,
-                    RequestOrigin::Interactive, $deadline,
-                    new RequestBudget(3), $clock, Runtime::limiter());
-                $result = $driver instanceof AcquisitionPriceReader ? $driver->acquisitionQuote($q, $context) : $driver->quote($q, $context);
-                $batch->remainingMilliseconds();
-                $rate = CatalogueMapper::quote($result, $b, $q, $ending, $clock->now());
-                if ($clock->now() >= $deadline) { throw new CheckoutRefreshTimeout; }
-                $until = min($rate->freshUntil ?? $clock->now()->modify('+5 minutes'), $clock->now()->modify('+5 minutes'));
-                $evidence = $result->evidence()->quote;
-                $fresh = new Cost($cost->action, $cost->term, true, $evidence->cost->amount,
-                    $evidence->unit, $rate->source, $rate->observedAt, $until);
-                Cache::put($key, OfferState::encodeCost($fresh), 300);
+        try {
+            foreach ([$acquire, $renew] as $row) {
+                $cost = $row->observation();
+                if (!$cost?->enabled) { throw new \DomainException('Order price unavailable.'); }
+                if ($cost->fresh($clock->now())) { continue; }
+                // A successful first quote survives a pacing deferral on the second read.
+                $key = 'domains.order-price.'.hash('sha256', OfferState::json([$name, $stamp, $cost->key()]));
+                $saved = Cache::get($key);
+                $fresh = is_array($saved) ? OfferState::cost($saved) : null;
+                if (!$fresh?->fresh($clock->now())) {
+                    $driver ??= $this->bindings->reader($b->serverId); $b->requireMatch($driver->binding());
+                    $q = new OrderQuery($name,
+                        Action::from($cost->action), $cost->term);
+                    $deadline = $clock->now()->modify('+'.min(10000, $batch->remainingMilliseconds()).' milliseconds');
+                    $context = new RequestContext($b,
+                        RequestOrigin::Interactive, $deadline,
+                        new RequestBudget(3), $clock, Runtime::limiter());
+                    $result = $driver instanceof AcquisitionPriceReader ? $driver->acquisitionQuote($q, $context) : $driver->quote($q, $context);
+                    $batch->remainingMilliseconds();
+                    $rate = CatalogueMapper::quote($result, $b, $q, $ending, $clock->now());
+                    if ($clock->now() >= $deadline) { throw new CheckoutRefreshTimeout; }
+                    $until = min($rate->freshUntil ?? $clock->now()->modify('+5 minutes'), $clock->now()->modify('+5 minutes'));
+                    $evidence = $result->evidence()->quote;
+                    $fresh = new Cost($cost->action, $cost->term, true, $evidence->cost->amount,
+                        $evidence->unit, $rate->source, $rate->observedAt, $until);
+                    Cache::put($key, OfferState::encodeCost($fresh), 300);
+                }
+                $costs[$cost->key()] = OfferState::encodeCost($fresh);
+                $retail[$cost->key()] = Retail::quote($fresh, $rule);
             }
-            $costs[$cost->key()] = OfferState::encodeCost($fresh);
-            $retail[$cost->key()] = Retail::quote($fresh, $rule);
+            $token = bin2hex(random_bytes(32));
+            Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
+                'native_retail' => $acquire->listedRetail()], 300);
+            $seed = new SaleSelection(...[...get_object_vars($seed), 'catalogue' => ['order_quote' => $token]]);
+            return $this->load([$seed], false, false)[0]['selection'];
         }
-        $token = bin2hex(random_bytes(32));
-        Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
-            'native_retail' => $acquire->listedRetail()], 300);
-        $seed = new SaleSelection(...[...get_object_vars($seed), 'catalogue' => ['order_quote' => $token]]);
-        return $this->load([$seed], false, false)[0]['selection'];
+        catch (\DomainException $e) {
+            $quoted = $costs[$acquire->observation()?->key()] ?? null;
+            throw $quoted === null ? $e : new OrderQuoteRefused($e, OfferState::cost($quoted));
+        }
     }
 
-    /** Pending invoices may outlive their cart quote. Recheck the same sale without enlarging
-     * frozen retail or spending authority, then use that current selection for the pay guard. */
+    /** Pending invoices outlive cart quotes and staff saves. Recheck the same sale against the current offer:
+     * same seller, account, action, term and currency, still sold now, and the current cost within both the
+     * issued total and the frozen spending ceiling. Revisions and retail may move; the issued amount stands. */
     public function paymentSelection(SaleSelection $frozen, string $name, string $ceiling, string $total): SaleSelection
     {
-        $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
-            new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
-        $price = $this->load([$current], false, true)[0]['snapshot'];
-        if (($frozen->catalogue['retail'] ?? null) !== $price->retail
-            || ($frozen->catalogue['renewal'] ?? null) !== $current->catalogue['renewal']
-            || !PricingRule::covers($total, $price->wholesale)
-            || PricingRule::units($price->wholesale) !== PricingRule::units($ceiling)) {
-            throw new \DomainException('Frozen order price or spending ceiling changed.');
+        try {
+            $current = $this->checkoutSelection($name, $frozen->tld, $frozen->action, $frozen->term, $frozen,
+                new CheckoutRefreshBudget, $frozen->serverId, $frozen->fingerprint);
+        } catch (\DomainException $e) {
+            $this->costRefusal($frozen, $name, $ceiling, $total, $e instanceof OrderQuoteRefused ? $e->cost : null); throw $e;
         }
+        $sale = static fn (SaleSelection $s) => [$s->tld, $s->serverId, $s->registrar, $s->fingerprint, $s->action, $s->term,
+            $s->currency, $s->catalogue['generation'] ?? null, $s->catalogue['credential'] ?? null];
+        if ($sale($frozen) !== $sale($current)) { throw new \DomainException('Seller or account changed.'); }
+        $price = $this->load([$current], false, true)[0]['snapshot'];
+        if (!self::fits($price->wholesale, $ceiling, $total)) { throw new PaymentPriceChanged($name); }
         return $current;
+    }
+
+    private static function fits(string $cost, string $ceiling, string $total): bool
+    { return PricingRule::covers($total, $cost) && PricingRule::units($cost) <= PricingRule::units($ceiling); }
+
+    /** A refused current offer whose fresh cost (daily table, or this request's refreshed quote) no longer fits
+     * the invoice is a price change (a fixed retail below the new cost, for example), not a temporary stop.
+     * Staff or seller stops keep their own refusal. */
+    private function costRefusal(SaleSelection $s, string $name, string $ceiling, string $total, ?Cost $quoted = null): void
+    {
+        try {
+            $b = AccountBindings::binding(Account::where('server_id', $s->serverId)->sole());
+            if ($b->fingerprint !== $s->fingerprint || $b->registrarKey !== $s->registrar) { return; }
+            $row = $this->ports->loadBatch([new Query($b, [$s->tld], $s->action, $s->term)], Context::Public)[0][0];
+            $cost = $row->closed() ? null : ($quoted ?? $row->observation());
+        } catch (\Throwable) { return; }
+        if ($cost?->enabled && $cost->total !== null && $cost->fresh(app(Clock::class)->now()) && !self::fits($cost->total, $ceiling, $total)) {
+            throw new PaymentPriceChanged($name);
+        }
     }
 
     /** Native list row still has to match its original publication, even for a cart-only quote. */

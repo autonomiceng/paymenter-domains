@@ -6,6 +6,7 @@ require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 require __DIR__.'/Support/offer-commerce.php';
+require_once __DIR__.'/Support/storefront.php';
 use App\Models\{Invoice, Order};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Intent, Query};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
@@ -15,7 +16,7 @@ $fixture = offerCommerceFixture(); extract($fixture);
 [$secondBinding, $second] = offerCommerceSecond($fixture);
 $user = commerceUser(); $com = $storefront->offer('com', 'register', 3)['product'];
 $q = new Query($binding, ['com'], 'register', 3);
-$rev = static fn () => $ports->readOffers($q, Context::Staff)[0]->revision;
+$rev = static fn () => offerCommerceAsStaff(static fn () => $ports->readOffers($q, Context::Staff)[0]->revision);
 $counts = static fn (): array => [Order::count(), Invoice::count(), Operation::count()];
 $notice = static fn ($page): string => collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
 $total = static fn ($page): ?string => $page->get('total') === null ? null : number_format((float) $page->get('total')->total, 2, '.', '');
@@ -129,11 +130,57 @@ expect(!$mixedCart->items()->whereKey($mixedCom->id)->exists() && $mixedCart->it
     'Mixed checkout removes only the off-sale line');
 same('mixed-checkout-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
     $notice($mixedPage), 'A paused line cannot swallow the checkout removal notice');
+// A theme that includes the notice shows it at the top of the cart, titled, with the old line price struck through.
+$views = getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/cart-notice-harness'; if (!is_dir($views)) { mkdir($views, 0700, true); }
+// Same branching as the Landing cart: the notice shows above the lines and above an empty cart.
+file_put_contents($views.'/cart.blade.php', '<div>@includeIf(\'domains::cart-notice\')@if (\App\Classes\Cart::items()->count() === 0)<p class="empty">Empty</p>@else '
+    .'@foreach (\App\Classes\Cart::items() as $item)<div class="line">@includeIf(\'domains::cart-was\', [\'item\' => $item])'
+    .'{{ $item->price->format($item->price->total * $item->quantity) }}</div>@endforeach @endif</div>');
+Illuminate\Support\Facades\View::getFinder()->prependLocation($views); Illuminate\Support\Facades\View::getFinder()->flush();
+Illuminate\Support\Facades\View::addNamespace('domains', dirname(__DIR__).'/Domains/resources/views');
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
+$cart = commerceCart($user); commerceAdd($cart, $com, 'themed-notice-placeholder.com', 3);
+$page = $open($cart); same('27.00', $total($page), 'Themed page shows the held total');
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '70.00']), $rev());
+$before = $counts(); $checkout($page, $cart); $html = $page->html();
+same($before, $counts(), 'Themed price change places no order');
+expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'A theme that shows the notice gets no toast too');
+$dom = storefrontDom($html); $box = $dom->query('//*[@data-domains-cart-notice]//*[@role="status"]');
+same(1, $box->length, 'One cart notice');
+same('Your cart changed', trim($dom->query('.//strong', $box->item(0))->item(0)?->textContent ?? ''), 'Notice has its title');
+same('Review the total, then check out again.', trim($dom->query('.//p', $box->item(0))->item(0)?->textContent ?? ''), 'Notice keeps the sentence');
+same('Was $27.00', trim($dom->query('//*[@class="line"]/s')->item(0)?->textContent ?? ''), 'Changed line strikes the old price');
+expect($total($page) !== '27.00' && str_contains($dom->query('//*[@class="line"]')->item(0)->textContent, '$'.$total($page)), 'Line shows the new price beside it');
+
+// With a coupon, the struck amount is the discounted line the buyer saw, not the list price.
+$coupon = App\Models\Coupon::create(['code' => 'NOTICETEN', 'type' => 'percentage', 'value' => 10, 'applies_to' => 'price', 'recurring' => 0]);
+$cart = commerceCart($user); commerceAdd($cart, $com, 'coupon-notice-placeholder.com', 3); $cart->update(['coupon_id' => $coupon->id]);
+$page = $open($cart); $seen = $total($page);
+expect(str_contains(storefrontDom($page->html())->query('//*[@class="line"]')->item(0)->textContent, '$'.$seen), 'Coupon line shows the discounted amount');
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: true, longest: 3, transfers: true), [...PricingRule::DEFAULT, 'markup' => '50.00']), $rev());
+$checkout($page, $cart); $dom = storefrontDom($page->html());
+same('Your cart changed', trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent ?? ''), 'Coupon price change shows the notice');
+same('Was $'.$seen, trim($dom->query('//*[@class="line"]/s')->item(0)?->textContent ?? ''), 'Coupon line strikes the discounted amount it showed');
+
+// Removing the last line leaves an empty cart that still shows the titled notice, not a toast.
+$cart = commerceCart($user); $last = commerceAdd($cart, $com, 'last-line-placeholder.com', 3);
+$page = $open($cart);
+$ports->apply(Edit::override($binding, 'com', new Intent(sell: false, longest: 3, transfers: true)), $rev());
+$checkout($page, $cart); $dom = storefrontDom($page->html());
+expect(!$cart->items()->whereKey($last->id)->exists() && $dom->query('//*[@class="empty"]')->length === 1, 'The last line goes and the cart is empty');
+same('Domain removed', trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent ?? ''), 'Empty cart shows the removed notice');
+expect(collect($page->effects['dispatches'] ?? [])->contains('name', 'cartUpdated'), 'Removing the last domain refreshes the header cart badge');
+Illuminate\Support\Once::flush();
+$badge = new App\Livewire\Components\Cart; $badge->cartCount = 1;
+$badge->onCartUpdated(); same(0, $badge->cartCount, 'The native header listener reads the empty cart');
+same('last-line-placeholder.com is no longer for sale, so we removed it from your cart. Search again to find another domain.',
+    trim($dom->query('//*[@data-domains-cart-notice]//p')->item(0)?->textContent ?? ''), 'Removed notice keeps the sentence');
+expect(!collect($page->effects['dispatches'] ?? [])->contains('name', 'notify'), 'Empty cart with the notice gets no toast too');
 // Invoke the registered extension mount listener with native cart totals, gateway lookup and notification storage.
 // A stub admission supplies the already-covered removal result without calling unrelated native mount hooks.
 $noticeCart = commerceCart($user); commerceAdd($noticeCart, $replacement, 'unused.example');
 Illuminate\Support\Once::flush(); app('request')->cookies->set('cart', $noticeCart->ulid);
-App\Models\Gateway::create(['name' => 'Synthetic missing gateway', 'type' => 'gateway', 'extension' => 'MissingFixtureGateway', 'enabled' => true]);
+$missingGateway = App\Models\Gateway::create(['name' => 'Synthetic missing gateway', 'type' => 'gateway', 'extension' => 'MissingFixtureGateway', 'enabled' => true]);
 $noticeAdmission = new class($native, $sellers, $eligibility, $clock) extends Paymenter\Extensions\Servers\Domains\Services\CartAdmission {
     public function refresh(): void { throw new Paymenter\Extensions\Servers\Domains\Services\CartLinesRemoved(['notice-placeholder.com']); }
 };
@@ -142,8 +189,11 @@ $listeners = (new ReflectionProperty(Livewire\EventBus::class, 'listeners'))->ge
 $mount = end($listeners['mount']); $component = new App\Livewire\Cart; $escaped = null;
 try { $mount($component); } catch (Throwable $error) { $escaped = $error; }
 expect($escaped === null, 'Gateway recalculation failure cannot escape the removal-notice listener');
+$render = end($listeners['render']); $render($component)('<div></div>');
 $dispatches = array_map(static fn ($event) => $event->serialize(), Livewire\store($component)->get('dispatched', []));
 $notification = collect($dispatches)->firstWhere('name', 'notify');
 expect(str_contains($notification['params'][0]['message'] ?? '', 'notice-placeholder.com'), 'Removal notice survives a failing gateway recalculation');
+$missingGateway->delete();
+
 $nativeSuccessful = true;
 echo "Cart price change: ok\n";

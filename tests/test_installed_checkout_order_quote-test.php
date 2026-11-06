@@ -59,7 +59,7 @@ same(null, $pay->stop($invoice), 'Unchanged published prices keep an expired-quo
 same($frozen, [$op->fresh()->policy, $op->fresh()->cost, $op->fresh()->amount], 'Payment refresh leaves frozen invoice authority intact');
 $clock->instant = $now->modify('+7 minutes');
 $publication->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($binding, 'com', new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell: true, longest: 3, transfers: true), [...\Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '7.80', 'renew' => '12.00', 'transfer' => '9.10']]), $revision());
-same('unavailable', $pay->stop($invoice)['why'] ?? null, 'A changed follow-on renewal still blocks payment');
-same($frozen, [$op->fresh()->policy, $op->fresh()->cost, $op->fresh()->amount], 'Refused payment preserves the issued debt');
+same(null, $pay->stop($invoice), 'A changed follow-on renewal retail keeps the issued invoice payable');
+same($frozen, [$op->fresh()->policy, $op->fresh()->cost, $op->fresh()->amount], 'Payment after a renewal retail save preserves the issued debt');
 $nativeSuccessful = true;
 echo "Payment after unchanged daily publication: ok\n";

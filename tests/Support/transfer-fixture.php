@@ -82,16 +82,19 @@ $newTransfer = static function ($name, int $i=0, bool $paid=true, bool $code=tru
     $state->query = OperationClaims::query($op,$op->domain); return $op->fresh();
 };
 $registry = new RegistrarRegistry;
-$verifier = new class implements AccountVerifier { public function verify(Environment $e, array $c): string { return $c['token']; } };
+$verifier = new class implements AccountVerifier, \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+    public function verify(Environment $e, array $c): string { return $c['token']; }
+    public function authenticate(Environment $e, array $c): void { /* Synthetic connectivity only, as in commerceFixture. */ }
+};
 foreach (['enom','namesilo'] as $key) {
     $registry->register($key,['token'],$verifier,static function ($b,$c) use ($state,$clock) {
         same(0,DB::transactionLevel(),'Fresh reads outside locks'); $state->reads++;
         if ($state->during) { ($state->during)($state->reads); }
-        $q = new QuoteEvidence($state->query,new Money($state->quote??'99.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
+        $q = new QuoteEvidence($state->query,new Money($state->quote??'7.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
         $reader = new FakeRegistrar($b,new Capabilities($b,[]),new DriverResult($b,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,
             new Evidence(quote:$q,balance:new Money($state->funds,'USD'),available:$state->available,premium:$state->premium)));
         $state->readers[]=$reader;return $reader;
-    });
+    },authenticator:$key==='namesilo'?$verifier:null);
 }
 $freshBindings = new AccountBindings($registry); $claims = new OperationClaims($bindings,$clock,$caps??null);
 $exchange = static function ($origin,$command,$p,$timeout) use ($state): string {
@@ -115,7 +118,7 @@ $exchange = static function ($origin,$command,$p,$timeout) use ($state): string 
         }
         same('transferDomain',$command,'Only monetary transfer command'); same('https://ote.namesilo.com/apibatch',$origin,'Fixed batch route');
         same(0,$p['auto_renew'],'No automatic registrar renewal'); same(0,$p['private'],'Frozen privacy'); expect(str_starts_with($p['auth'],'base64:'),'Encoded auth');
-        $reply += ['domain'=>$p['domain'],'order_amount'=>'99.00']; $reply['code']=in_array($state->mode,['301','302'],true)?(int)$state->mode:300;
+        $reply += ['domain'=>$p['domain'],'order_amount'=>$state->quote??'7.00']; $reply['code']=in_array($state->mode,['301','302'],true)?(int)$state->mode:300;
     }
     return json_encode(['request'=>['operation'=>$command],'reply'=>$reply]);
 };
