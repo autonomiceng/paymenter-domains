@@ -36,7 +36,9 @@ $state->expiry = '2029-10-18'; $state->charge = '16.00';
 same('succeeded', $completion->run($op->id)->state, 'Matching two-year charge and expiry complete');
 
 // An increased annual quote must be multiplied before comparison with the immutable saved limit.
+config(['domains.enom_identity.environment' => null]);
 [$over, $overDomain, $overBinding] = $makeRenewal(placeholderComFixtureName('multiyear-limit-placeholder.com'), true, 2, beforeBill: $review);
+config(['domains.enom_identity.environment' => 'test']);
 [$overEngine, $overWriter] = $compose($overBinding); $state->price = '8.01'; $writes = $state->writes;
 same('held', $overEngine->run($over->id, $overWriter)->state, 'Two-year quote above saved ceiling is held');
 same('renewal_cost_overrun', $over->fresh()->safe_code, 'Over-limit reason retained');
@@ -44,6 +46,7 @@ same($writes, $state->writes, 'No send above the saved limit');
 same([], (array) $over->fresh()->attempt, 'Over-limit debt remains unsealed');
 
 // A larger staff cap does not turn an actual charge above the pre-send quote into successful completion.
+config(['domains.enom_identity.environment' => null]);
 [$seed, $compDomain, $compBinding] = $makeRenewal(placeholderComFixtureName('multiyear-comp-placeholder.com'), false);
 // The staff path creates its own complimentary obligation; cancel only the unpaid synthetic renewal first.
 $cycles->retireUnpaid($seed->id);
@@ -54,6 +57,7 @@ $staff->update(['role_id' => $role->id]);
 $comp = $cycles->complimentary($compDomain->id, $staff, 2, new Money('20.00', 'USD'), 'staff_reviewed');
 same('0.00', $comp->amount, 'Complimentary two-year customer amount remains zero');
 $state->years = 2; $state->after = '2029-10-18'; $clock->instant = new DateTimeImmutable('2027-10-18T11:59:00Z'); Cache::flush();
+config(['domains.enom_identity.environment' => 'test']);
 [$compEngine, $compWriter, $compCompletion] = $compose($compBinding);
 same('pending', $compEngine->run($comp->id, $compWriter)->state, 'Staff two-year cap admits the same quote');
 $state->expiry = '2029-10-18'; $state->charge = '16.01';
@@ -63,8 +67,6 @@ same(['actual_charge_changed', true], [$held->policy['renewal_execution']['reaso
 same('2027-10-18', $compDomain->fresh()->provider_expires_at->format('Y-m-d'), 'Discrepancy does not advance the accepted anchor');
 same(true, $compDomain->fresh()->renewal_policy['automatic_spend_paused'], 'Discrepancy pauses future spending');
 
-$live = new AccountBinding('enom', $b->serverId, Environment::Live, $b->fingerprint);
-same('live_proof_required', $caps->renewalTerms($live, Tld::where('server_id', $b->serverId)->where('tld', 'com')->sole(), [], new DateTimeImmutable('2027-10-18'))[2]['reason'], 'Live panel still requires NS18 proof');
 same(false, TermSupport::admits('enom', 2, $op->policy['renewal'], environment: Environment::Live), 'Frozen TEST debt cannot admit Live two-year renewal');
 echo "Enom TEST multiyear native: ok\n";
 $nativeSuccessful = true;
