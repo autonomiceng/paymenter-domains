@@ -25,7 +25,9 @@ final class LocalAccountEnrollment
             static function (AccountBinding $binding, #[\SensitiveParameter] array $credentials) use ($environment): NameSilo\Driver {
                 if ($binding->environment !== $environment) { throw new \DomainException('Credential environment changed.'); }
                 return new NameSilo\Driver(new NameSilo\Client($binding, $credentials['api_key']), []);
-            }, true,
+            // Local TEST enrollment already installs the admitted holding reader above.
+            // Live remains account-only until its separate account-bound composition is installed.
+            }, $environment !== Environment::Test,
             authenticator: new NameSilo\CredentialAuthenticator($environment, $transport));
         return true;
     }
@@ -43,7 +45,9 @@ final class LocalAccountEnrollment
     }
     public static function validate(Account $account, #[\SensitiveParameter] array $facts, #[\SensitiveParameter] array $credentials): void
     {
-        if (!self::enrolled($account) || ($facts['contract'] ?? null) !== 'local_account_enrollment_v1'
+        // An authenticated same-key TEST upgrade retains its original OTE identity and all ledger bindings.
+        $retainedTest = $account->registrar_key === 'namesilo' && $account->environment === Environment::Test->value && NameSiloSandbox::enrolled($account);
+        if ((!self::enrolled($account) && !$retainedTest) || ($facts['contract'] ?? null) !== 'local_account_enrollment_v1'
             || ($facts['provider_confirmed_account'] ?? null) !== false || ($facts['identity'] ?? null) !== $account->stable_identity
             || ($facts['binding'] ?? null) !== $account->account_fingerprint
             || !is_string($facts['credential_revision'] ?? null) || !preg_match('/^[a-f0-9]{32}$/D', $facts['credential_revision'])
