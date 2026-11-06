@@ -1,6 +1,7 @@
 <?php
 // Native Check status must explain its local history stop. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$nativeInvoiceAttachmentFixture=true;
 // Release the completed staff form before rendering the independent owner page.
 $automaticStatusGc=gc_enabled();gc_disable();
 require __DIR__.'/Support/registration-fixture.php';
