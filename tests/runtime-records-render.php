@@ -43,7 +43,8 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
                 same($prefix.($i+1),$input->item(0)->getAttribute('value'),'Customer '.$kind.' record order is numeric');
             }
         } else {
-            $expected=$stateName==='unknown'?'Contact support to sync these records.':'Our team needs to check this domain. No action needed.';
+            // slop-sweep: a held read is said once in the page notice, so its row shows a calm Missing alone.
+            $expected=$stateName==='unknown'?'Contact support to sync these records.':'Missing';
             expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName);
         }
         preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
