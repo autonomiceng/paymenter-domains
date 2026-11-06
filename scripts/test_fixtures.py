@@ -52,6 +52,7 @@ def shared_vendor(jobs, requested):
                 'tests/staff-domain-page-test.php',
                 # Staff page/history fixtures read vendor; application and DB state stay isolated.
                 'tests/staff-request-page-test.php', 'tests/staff-review-history-test.php',
+                'tests/adoption-customer-test.php',
                 'tests/staff-domain-status-test.php',
                 'tests/staff-operation-reads-test.php',
                 'tests/staff-domains-test.php',

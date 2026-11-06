@@ -90,7 +90,9 @@ config(['settings.credits_auto_use'=>false]);
 foreach(['unpaid','refund'] as $replacementCase){
     $before=$debt();$dto=$owners->present($d->fresh());$html=$page();
     same([],$dto->renewalInvoice,'Adopted replaceable cycle does not suppress form: '.$replacementCase);
-    expect(isset($dto->renewNow['url'])&&str_contains($html,'>Create invoice<'),'Adopted replacement request visible: '.$replacementCase);
+    // 3a8e7cd4 replaced Create invoice with the renewal dialog's Continue to payment submit.
+    expect(isset($dto->renewNow['url'])&&str_contains($html,'action="'.e($dto->renewNow['url']).'" class="domains-owner-form" data-renewal-form')
+        &&str_contains($html,'>Continue to payment</button>'),'Adopted replacement request visible: '.$replacementCase);
     expect(!str_contains($html,'>There’s nothing you need to do.<')&&!str_contains($html,'Invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);
     same($before,$debt(),'Adopted replacement page is read-only: '.$replacementCase);
     $response=$post();$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->firstOrFail();
@@ -98,10 +100,10 @@ foreach(['unpaid','refund'] as $replacementCase){
     same(route('invoices.show',$replacement->invoice_id),$response->getTargetUrl(),'Adopted POST returns replacement invoice: '.$replacementCase);
     $after=$debt();same($response->getTargetUrl(),$post()->getTargetUrl(),'Adopted replacement POST retry returns same invoice: '.$replacementCase);same($after,$debt(),'Adopted retry creates no duplicate debt: '.$replacementCase);
     $html=$page();same(1,substr_count($html,'>Pay invoice</a>'),'One adopted pending cycle panel: '.$replacementCase);
-    expect(str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted current debt replaces request form: '.$replacementCase);
+    expect(str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'class="domains-owner-form" data-renewal-form')&&!str_contains($html,'>Continue to payment</button>'),'Adopted current debt replaces request form: '.$replacementCase);
     $item=App\Models\InvoiceItem::findOrFail($replacement->invoice_item_id);$rawItem=$item->getRawOriginal();
     DB::table('invoice_items')->where('id',$item->id)->update(['price'=>'0.01']);$html=$page();
-    expect(str_contains($html,'>There’s nothing you need to do.<')&&!str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted invalid retained item shows review: '.$replacementCase);
+    expect(str_contains($html,'>There’s nothing you need to do.<')&&!str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'class="domains-owner-form" data-renewal-form')&&!str_contains($html,'>Continue to payment</button>'),'Adopted invalid retained item shows review: '.$replacementCase);
     DB::table('invoice_items')->where('id',$item->id)->update($rawItem);
 
     if($replacementCase==='refund'){break;}
