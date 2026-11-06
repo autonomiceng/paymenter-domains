@@ -137,8 +137,10 @@ class ViewDomain extends ViewRecord
         if ($button&&!isset($facts['Renewal invoices'])) { $facts['Open alerts']??=['value'=>['A reminder needs a check.'],'sub'=>null,'url'=>null,'tone'=>'warning','help'=>null,'demo'=>false]; }
         $slot=isset($facts['Renewal invoices'])?'Renewal invoices':'Open alerts';
         $placed=array_filter(DomainFacts::SECTIONS,fn(array $labels)=>array_intersect($labels,array_keys($facts))!==[]);
+        // Contacts and DNS rows sit on their registrar record rows, with their edit buttons, as in the approved mock.
+        $recordsHeld=isset($placed[self::HELD_SECTION]);unset($placed[self::HELD_SECTION]);
         // The rows that stay blocked are said once, at the head of their section. A request's head line names it, so only a page with no such section and no request needs the note elsewhere.
-        $held=isset($placed[self::HELD_SECTION])?self::HELD_SECTION:($edits['request']===null?array_key_first($placed):null);
+        $held=$recordsHeld?null:($edits['request']===null?array_key_first($placed):null);
         $sections=[];
         foreach ($placed as $title=>$labels) {
             $rows=[];
@@ -147,7 +149,12 @@ class ViewDomain extends ViewRecord
             }
             $sections[]=Sheet::section($title,$rows,$title===$held?$edits['note']:null);
         }
-        return $schema->components([Sheet::split([...$this->notices($d),...$sections,Sheet::section('Monitoring',[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d)]))]),$this->recordFamilies($d),Sheet::section('DNSSEC',[$this->row('DS records',\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d),[])])],[$this->activity($d)])]);
+        // Like the approved mock, an active domain leads with its registrar records. Other states lead with registration and billing.
+        $records=[$this->recordFamilies($d,$facts,$edits,$recordsHeld?$edits['note']:null)];
+        // The registrar records section above already shows each family's state and the last read, so Monitoring keeps only the public DNS evidence.
+        $monitoring=Sheet::section('Monitoring',[\Filament\Schemas\Components\Html::make(fn()=>view('domains::admin.monitoring-evidence',['evidence'=>\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read($d),'withRecords'=>true]))]);
+        $sheet=$d->status==='active'?[...$records,...$sections]:[...$sections,...$records];
+        return $schema->components([Sheet::split([...$this->notices($d),...$sheet,$monitoring],[$this->activity($d)])]);
     }
     /** @return list<Callout> */
     private function notices(Domain $d): array
@@ -175,11 +182,34 @@ class ViewDomain extends ViewRecord
         $facts[$row]['setup']=true;
         return $facts;
     }
-    private function recordFamilies(Domain $d): Section
+    /** One row per registrar record family. A family's saved values, its DNSSEC state and its edit buttons sit on the same row. */
+    private function recordFamilies(Domain $d, array $facts, array $edits, string|Htmlable|null $note): Section
     {
         $state=\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
         $resume=$this->getAction('resume_observation',false);
-        return Sheet::section('Record families',[Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true]))],after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+        $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part]));
+        $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
+        $rows=[$view('head')];$shown=[];
+        foreach (($state['cancelled_without_records']??false)?[]:$state['rows'] as $family) {
+            $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;
+            $rows[]=$this->familyRow($family,$fact,$fact!==null&&$label!=='DS records'?$this->side($label,$fact,$edits,null):[]);
+        }
+        foreach (array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); }
+        $rows[]=$view('tail');
+        return Sheet::section('Registrar records',$rows,$note,after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+    }
+    /** The family's read state above the row's own value, which keeps its red Missing, Failed or Under review tone and demo tag.
+     * A family with no read and a Missing value says Missing once. Families with no own fact (Domain settings, SRV) show the read state alone. */
+    private function familyRow(array $family, ?array $fact, array|Html $side): Flex
+    {
+        $status=new HtmlString('<div class="domains">'.view('domains::partials.record-family-status',['family'=>$family,'staff'=>true])->render().'</div>');
+        if ($fact===null) {
+            return Sheet::row(TextEntry::make('family_'.$family['kind'])->label($family['label'])->state($status),$side,key:'fact_'.md5($family['label']));
+        }
+        $entry=$this->entry($family['label'],$fact);
+        if ($family['label']==='DS records'&&$fact['value']!==null) { $entry->prefix('DNSSEC: '); }
+        if (!($family['state']==='unknown'&&$fact['value']===null)) { $entry->aboveContent($status); }
+        return Sheet::row($entry,$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($family['label']));
     }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section
@@ -234,6 +264,11 @@ class ViewDomain extends ViewRecord
     }
     private function row(string $label, array $fact, array|Html $side): Flex
     {
+        return Sheet::row($this->entry($label,$fact),$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($label));
+    }
+    /** A fact's value with its words, tone, red Missing and demo tag. */
+    private function entry(string $label, array $fact): TextEntry
+    {
         $waiting=$fact['progress']['waiting']??false;
         if ($label==='Transfer lock'&&in_array($fact['value'],['On','Off'],true)) { $fact=self::lockMark($fact,$waiting); }
         $entry=TextEntry::make('value_'.md5($label))->label($label)->state($fact['value'])
@@ -246,7 +281,7 @@ class ViewDomain extends ViewRecord
         if ($fact['demo']) { $entry->suffix(DemoData::tag(inline:true)); }
         $entry=MissingEntry::apply($entry,cause:$fact['value']===null?$fact['sub']:null,color:$fact['value']!==null&&($fact['alert']??false)?null:$fact['tone']);
         if (isset($fact['mark'])) { $entry=Sheet::state($entry,$fact['mark'],'lock-'.$this->getRecord()->id); }
-        return Sheet::row($entry,$side,pending:$waiting,key:'fact_'.md5($label));
+        return $entry;
     }
     /** The lock reads as a mark: On, a hollow Off, or the change on its way with what it was. */
     public static function lockMark(array $fact, bool $waiting): array

@@ -39,11 +39,11 @@ same(['This registrar doesn\'t support this change.',null],[DomainEditActions::h
 $unknown=DomainEditActions::held($active,null)['held'];
 expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
 Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$processing]);
-// Progress sits under a row's own words, and a finished change stops talking.
+// Progress sits under a row's own words, retains its optional tone (a7b7c7d4), and a finished change stops talking.
 $rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
 $saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
 same(['ada@example.test','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
-same(['text'=>'Saving…','request'=>null,'waiting'=>true],DomainFacts::withProgress($rows,$saving)['Contacts']['progress'],'Progress takes its own line under the email, and the row waits');
+same(['text'=>'Saving…','request'=>null,'waiting'=>true,'tone'=>null],DomainFacts::withProgress($rows,$saving)['Contacts']['progress'],'Progress takes its own line under the email, and the row waits');
 same(false,DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['waiting'],'A fresh result no longer waits');
 same(['ada@example.test','Sync to read them'],array_column(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>true]]),'sub'),'A settled result shows nothing');
 // The lock is a mark: On, a hollow Off, and while a change is out, the change with what it was.
@@ -54,9 +54,9 @@ same(['1 of 2 differs.','2 of 3 differ.','1 of 1 differs.'],[DomainFacts::differ
 same('Saved.',DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Saved.','settled'=>false]])['Contacts']['progress']['text'],'A fresh result still shows');
 // Staff read the request's own line and where to look, not the sentence written for the customer.
 $stopped=['id'=>60,'pending'=>false,'text'=>'The contacts change failed. Try again. If it keeps happening, contact support.','outcome'=>'Not sent. Nothing changed at the registrar.','settled'=>false];
-same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
-same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
+same(['text'=>'Not sent. Nothing changed at the registrar. Check request #60.','request'=>60,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],60)['Contacts']['progress'],'A stopped change names the request the head names');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped],61)['Contacts']['progress'],'A row names no request the head does not name');
+same(['text'=>'Not sent. Nothing changed at the registrar.','request'=>null,'waiting'=>false,'tone'=>null],DomainFacts::withProgress($rows,['contacts'=>$stopped])['Contacts']['progress'],'With no request in the head, a row names none');
 expect(!isset(DomainFacts::withProgress($rows,['contacts'=>['pending'=>false,'text'=>'Replaced by your latest choice.','replaced'=>true]])['Contacts']['progress']),'A replaced change says nothing to staff');
 // A Missing row never points at a blocked button: it says what comes first, and the blocked button keeps its real label.
 $noContacts=['Contacts'=>['value'=>null,'sub'=>DomainFacts::ADD_CONTACTS]];
