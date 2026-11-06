@@ -61,7 +61,9 @@ final class WatchFacts
         // Saved answers only. Registrar records with no values are already Unknown in the Domain section.
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){
             if(!$e[$key]&&($key==='registrar'||!$active)){continue;}
-            $at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?$checked($at):'No saved observation.');}
+            $at=$e[$key.'_at'];$sub=$at?$checked($at):'No saved observation.';
+            if($key==='public'&&$e[$key]&&$e['public_stale']){$sub=new \Illuminate\Support\HtmlString('Historical answers. '.($sub instanceof \Illuminate\Support\HtmlString?$sub->toHtml():($sub??'')));}
+            $evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$sub);}
         return array_filter(['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence]);
     }
     public static function missingCause(WatchName $w): string
