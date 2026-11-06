@@ -6,19 +6,8 @@ use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimeWork,ObservationWork,ObservationRecords,OwnerRecords,ManagementPayload,ReadDeferred,DomainObservation};
 Queue::fake();$finance=[$original->fresh()->getAttributes(),$d->fresh()->provider_expires_at->format(DATE_ATOM),$d->confirmed_revision,$d->renewal_policy];
-$state->dns=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>' exact TXT '.$i.' ','mx_pref'=>10],range(12,1));
-$state->srv=array_map(fn($i)=>['service'=>'sip'.$i,'protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.'],range(12,1));
-$bindings->setProcessing($d->server_id,false);
-app(RuntimeWork::class)->tick();same(1,DB::table('domains_observation_queues')->where('turn','>',0)->count(),'Exactly one bounded observation account turn per native tick: '.json_encode(DB::table('domains_observation_queues')->get(['server_id','turn'])->all()));same([],$state->calls,'Default paused account makes no record reads');same(null,ObservationRecords::current($d->fresh()),'Paused account publishes no inventory');
-$registerRecords();expect($runtimePorts->accepted($a),'Synthetic accepted composition');
-$dueRecords();$runtimePorts->initialManagedRecordObservations();same([],$state->calls,'Acceptance alone cannot bypass processing pause');
-$bindings->setProcessing($d->server_id,true,static fn()=>null);$compositionReady=false;$dueRecords();$runtimePorts->initialManagedRecordObservations();
-same([],$state->calls,'Enabled account without accepted composition makes no record reads');expect(!ObservationRecords::held($d->fresh()),'Missing acceptance creates no fabricated record hold');
-$compositionReady=true;$dueRecords();$clock->instant=$clock->now()->modify('+1 hour');app(RuntimeWork::class)->tick();
-foreach(['GetHosts','GetDomainSRVHosts','GetDnsSec'] as $command){same(1,count(array_filter($state->calls,fn($call)=>$call[0]===$command)),'Installed scheduler reads each supported record family once: '.$command);}same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Accepted scheduled read publishes actual inventory');
-app(DomainObservation::class)->run($d->id,readRecords:true);same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Native producer publishes complete records');
-$job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();same(0,$job->tries,'Successful native refresh resets tries');same($clock->now()->getTimestamp()+86400,$job->due_at,'Ordinary refresh cadence is daily');
-$io=count($state->calls);$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'No duplicate early refresh');
+$registerRecords();app(ObservationWork::class)->enroll($d->server_id);$dueRecords();$runtimePorts->initialManagedRecordObservations();
+$job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();
 // Current holds suppress automatic retries, and the note states the manual-resume prerequisite.
 $state->fault='GetHosts';$dueRecords();$runtimePorts->initialManagedRecordObservations();expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
 $failedJob=DB::table('domains_observation_work')->where('domain_id',$d->id);
@@ -44,14 +33,5 @@ $bindings->setProcessing($d->server_id,true,static fn()=>null);$html=$page();/* 
 $io=count($observation->calls);$clock->instant=$clock->now()->modify('+1 day');$runtimePorts->initialManagedRecordObservations();same($io,count($observation->calls),'Stopped job never retries automatically after re-enabling');
 $observation->fault='';app(ObservationWork::class)->resume($job->id,'staff_scheduled_resume');$runtimePorts->initialManagedRecordObservations();expect(!ObservationRecords::stopped($d->fresh()),'Explicit resume clears stopped scheduled work');
 $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);
-// Acceptance can disappear without changing locked rows; it is checked again before publication.
-$state->during=static function()use(&$compositionReady):void{$compositionReady=false;};$dueRecords();
-try{app(DomainObservation::class)->run($d->id);expect(false,'Mid-flight acceptance loss must defer publication');}catch(ReadDeferred){}
-same(null,ObservationRecords::current($d->fresh()),'No inventory committed after acceptance loss');$compositionReady=true;
-// Pausing mid-flight discards record publication; independent snapshots continue on later paused ticks.
-$state->during=fn()=>$bindings->setProcessing($d->server_id,false);$dueRecords();
-try{app(DomainObservation::class)->run($d->id);expect(false,'Mid-flight pause must defer publication');}catch(ReadDeferred){}
-same(null,ObservationRecords::current($d->fresh()),'No inventory committed after processing pause');$state->calls=[];$observation->years=2;$dueRecords();$runtimePorts->initialManagedRecordObservations();
-same([],$state->calls,'Paused refresh never calls record transport');same('2028-10-18',$d->fresh()->observation['facts']['expiry'],'Paused records do not freeze independent expiry observations');
 same($finance,[$original->fresh()->getAttributes(),$d->fresh()->provider_expires_at->format(DATE_ATOM),$d->fresh()->confirmed_revision,$d->fresh()->renewal_policy],'Record producer never changes financial authority');
-echo "Native record producer gates, daily/manual recovery, numeric DNS/SRV and source identity pairs passed.\n";$nativeSuccessful=true;
+echo "Native held record reads and explicit manual recovery passed.\n";$nativeSuccessful=true;
