@@ -3,6 +3,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/Support/reserved-fixtures.php';
 require __DIR__.'/Support/reconciliation-fixture.php';
+require __DIR__.'/Support/owner-renewal-terms.php';
 require __DIR__.'/Support/owner-pages.php';
 // Preserve the installed routing contract while exercising the real owner renewal path.
 app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class);
