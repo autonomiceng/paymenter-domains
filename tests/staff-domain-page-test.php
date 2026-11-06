@@ -263,17 +263,17 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])
     ->assertSee('The registrar read failed.')->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed');
 same(false,Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($active->fresh())['read_stopped'],'First transient failure remains eligible for retry');
 DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'read_unavailable','tries'=>5]);
-same(['Read stopped','danger','The registrar read stopped. Use Resume sync below.'],[$value($active,'Last sync'),DomainFacts::for($active->fresh())['Last sync']['tone'],$sub($active,'Last sync')],'Sync failed row');
-same('The registrar read stopped. Cause: read_unavailable. Fix the cause, then use Resume sync.',DomainFacts::notice($active->fresh())['title'],'Sync stopped notice');
+same(['Read stopped','danger',null],[$value($active,'Last sync'),DomainFacts::for($active->fresh())['Last sync']['tone'],$sub($active,'Last sync')],'Sync failed row');
+same(['The registrar read stopped.','Use Resume sync below.'],array_values(array_intersect_key(DomainFacts::notice($active->fresh()),array_flip(['title','body']))),'Sync stopped notice');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
-same('The registrar read stopped. Use Resume sync below.',$sub($active,'Expires'),'Missing expiry names the failed sync');
+same(null,$sub($active,'Expires'),'Missing expiry does not repeat the failed sync');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
 same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertSee('Cause: read_unavailable.');
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same('warning',$stoppedHead['tone'],'Active over a stopped sync turns amber');
-expect(str_contains((string)$stoppedHead['step'],'Cause: read_unavailable. Fix the cause, then use Resume sync.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
+expect(str_contains((string)$stoppedHead['step'],'The registrar read stopped. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
 Auth::setUser($viewer);expect(str_contains((string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()))['step'],'Ask staff who can resume sync.'),'Without the right the step names who can');
 // One rule for the request a page names: the one that needs staff, in the head and on the rows alike, and none when nothing does.
 Auth::setUser($staff);
@@ -433,7 +433,7 @@ same(['Oct 20, 2026 15:05 UTC',null],[$value($active,'Last sync'),$sub($active,'
 $retryAt=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->modify('+1 minute')->getTimestamp();
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
     'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>$retryAt,'safe_code'=>'read_failed','tries'=>1]);
-same('The registrar read failed. Next automatic retry: '.gmdate('M j, Y H:i',$retryAt).' UTC.',$sub($active,'Last sync'),'A sync review alert retains the actual scheduled retry');
+same('The registrar read failed. Next automatic retry: '.gmdate('M j, Y, g:i A',$retryAt).' UTC.',$sub($active,'Last sync'),'A sync review alert retains the actual scheduled retry');
 same(1,Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($active->fresh())['read_attempts'],'The first retry attempt remains visible in the shared read status');
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
