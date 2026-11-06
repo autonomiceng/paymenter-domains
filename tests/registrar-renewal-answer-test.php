@@ -5,7 +5,7 @@ require __DIR__.'/reconciliation-namesilo-test.php';$nativeSuccessful=false;
 require_once __DIR__.'/Support/namesilo-account-guard.php';
 use Illuminate\Support\Facades\{Cache,Queue};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,Price};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,EnomAnswers,HolderPricing,NativeDomainGuard,RenewalAcceptance,RenewalAdmission,RenewalAuthority,RenewalCompletion,RenewalExecution,RenewalWriter,StaffSettingsReview as Review,StaffSettingsWrites,WriteFeatures};
 nameSiloGuardExpected($binding,'expected@example.com');
 $renewBindings=new AccountBindings($registry);$authority=new RenewalAuthority($renewBindings,$clock,offers: $GLOBALS['caps']??null);
@@ -21,8 +21,13 @@ $writer=new RenewalWriter($binding,$features,$accepted,fn()=>$engine,static func
 });
 $server=$holding->service->product->server;
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-Price::where(['server_id'=>$binding->serverId,'action'=>'renew'])->sole()->update(['wholesale'=>'8.95','revision'=>2]);
-$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');$bill=$billing->invoice($holding->id,$user);
+$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
+// Publish current provider facts and cost through the installed catalogue writer.
+activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);
+$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+$cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.9500',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+$bill=$billing->invoice($holding->id,$user);
 $renewal=Operation::where('invoice_id',$bill->id)->sole();App\Helpers\ExtensionHelper::addPayment($bill,null,$renewal->amount);Cache::flush();
 $clock->instant=new DateTimeImmutable('2027-10-16T12:00:00Z');
 same('pending',$engine->run($renewal->id,$writer)->state,'No-ID acknowledged renewal is not completed');$renewal->refresh();$attempt=$renewal->attempt;

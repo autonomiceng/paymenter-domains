@@ -152,6 +152,7 @@
     "tests/closed-renewal-summary-test.php",
     "tests/renewal-execution-namesilo-test.php",
     "tests/renewal-completion-test.php",
+    "tests/renewal-completion-claims-test.php",
     "tests/renewal-read-recovery-test.php",
     "tests/refunds-test.php",
     "tests/refund-evidence-test.php",
@@ -598,7 +599,9 @@
     "tests/owner-renewal-calendar-test.php",
     "tests/owner-renewal-expiry-test.php",
     "tests/owner-renewal-integrity-test.php",
-    "tests/owner-renewal-history-test.php"
+    "tests/owner-renewal-history-test.php",
+    "tests/test_installed_renewal_uncertain-test.php",
+    "tests/test_installed_renewal_cooldown-test.php"
   ],
   "ui": [],
   "runner": [
