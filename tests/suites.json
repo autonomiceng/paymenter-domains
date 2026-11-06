@@ -592,7 +592,9 @@
     "tests/renewal-complimentary-cycle-test.php",
     "tests/renewal-cycle-credit-test.php",
     "tests/renewal-cycle-early-test.php",
-    "tests/renewal-cycle-late-test.php"
+    "tests/renewal-cycle-late-test.php",
+    "tests/renewal-funds-boundary-test.php",
+    "tests/renewal-completion-safety-test.php"
   ],
   "ui": [],
   "runner": [

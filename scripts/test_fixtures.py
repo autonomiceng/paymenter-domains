@@ -11,6 +11,8 @@ def shared_vendor(jobs, requested):
             Path(path).name.startswith("test_installed_")
             or path in {
                 # Renewal fixtures only read dependencies; all source/vendor guards still run.
+                'tests/renewal-completion-safety-test.php',
+                'tests/renewal-funds-boundary-test.php',
                 'tests/renewal-cycle-late-test.php',
                 'tests/renewal-cycle-early-test.php',
                 'tests/renewal-cycle-credit-test.php',
