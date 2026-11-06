@@ -15,7 +15,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, DomainOperations, InvoiceBinding, OperationClaims};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 
-extract(commerceFixture(true, $fixtureActivation ?? null, environment: $fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, ending: $fixtureEnding ?? 'com', active:$activeCommerceFixture??true, registrars:$fixtureRegistrars??['enom','namesilo'], nameSiloLocal:$fixtureNameSiloLocal??true)); $clock ??= new FakeClock($now);
+extract(commerceFixture(true, $fixtureActivation ?? null, environment: $fixtureEnvironment ?? \Paymenter\Extensions\Servers\Domains\Data\Environment::Test, ending: $fixtureEnding ?? 'com', active:$activeCommerceFixture??true, registrars:$fixtureRegistrars??['enom','namesilo'], nameSiloLocal:$fixtureNameSiloLocal??true, initialize:$fixtureInitialization??null)); $clock ??= new FakeClock($now);
 $transfers = new \Paymenter\Extensions\Servers\Domains\Services\TransferInputs($clock, new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock));
 $transferCheck = new \Paymenter\Extensions\Servers\Domains\Services\TransferPrecheck(new \Paymenter\Extensions\Servers\Domains\Services\Rdap(static fn () => throw new RuntimeException('Synthetic offline RDAP')));
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => $fixtureEnding ?? 'com']);

@@ -1,6 +1,8 @@
 <?php
 // Native renewal refunds; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/renewal-initialized.php';
+$fixtureInitialization=initializedRenewalFixture(...);
 $renewalFixtureNames=['refund-renew-sent','reversed-credit'];
 require __DIR__.'/Support/renewal-refund.php';
 use App\Models\{Credit, InvoiceTransaction, Role};

@@ -601,7 +601,10 @@
     "tests/refund-renewal-retries-test.php",
     "tests/refund-retired-partial-test.php",
     "tests/refund-retired-receipts-test.php",
-    "tests/refund-renewal-reversals-test.php"
+    "tests/refund-renewal-reversals-test.php",
+    "tests/renewal-completion-races-test.php",
+    "tests/refund-renewal-replacement-test.php",
+    "tests/renewal-initialized-fixture-test.php"
   ],
   "ui": [],
   "runner": [

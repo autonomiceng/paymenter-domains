@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/scenario-inventory.php';
 $scenarios=new NativeScenarioInventory(['hard:staff','hard:cancellation','lifecycle:status','lifecycle:service','lifecycle:expiry','lifecycle:managed','lifecycle:pending','staff-stop','staff-resume','save-veto','audit-veto','audit-exception','audit-recovery']);
 // Every hard-stop and rollback scenario uses Enom; avoid enrolling an unused second registrar.
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/owner-auto-renew.php';
 use App\Helpers\ExtensionHelper;
 use App\Models\{Invoice,ServiceCancellation};

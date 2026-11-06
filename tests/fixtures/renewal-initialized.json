@@ -1,0 +1,618 @@
+{
+  "runtime_sha256": "36d1fc531c91fd043a1961a92d8c3b720cccd0bfebc30912792ed4c27c3386ff",
+  "paymenter_commit": "ee729f7d99ac18942625b79f3f93d8d8b21255e8",
+  "schema": [
+    "CREATE TABLE \"domains_accounts\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"registrar_key\" varchar not null, \"account_fingerprint\" varchar not null, \"identity_fingerprint\" varchar not null, \"environment\" varchar not null, \"stable_identity\" text not null, \"live_site\" varchar, \"processing_enabled\" tinyint(1) not null default '0', \"created_at\" datetime, \"updated_at\" datetime, \"catalogue_defaults\" text)",
+    "CREATE TABLE \"domains_adoptions\" (\"id\" integer primary key autoincrement not null, \"request_key\" varchar not null, \"request_digest\" varchar not null, \"domain_id\" integer, \"service_id\" integer not null, \"user_id\" integer not null, \"server_id\" integer not null, \"registrar_key\" varchar not null, \"environment\" varchar not null, \"account_fingerprint\" varchar not null, \"state\" varchar not null, \"origin\" varchar not null, \"evidence\" text not null, \"actor_id\" integer not null, \"reason\" text not null, \"do_not_renew\" tinyint(1) not null, \"cancellation_id\" integer, \"observed_at\" datetime not null, \"valid_until\" datetime not null, \"committed_at\" datetime, \"authority_generation\" integer, \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_audit_archives\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"family\" varchar not null, \"payload\" text not null)",
+    "CREATE TABLE \"domains_balance_alerts\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"pending_day\" varchar, \"retry_at\" integer not null default '0', \"attempts\" integer not null default '0', \"claim\" varchar)",
+    "CREATE TABLE \"domains_complimentary_accounts\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer not null, \"enabled\" tinyint(1) not null, \"actor_id\" integer not null, \"reason\" varchar not null, \"created_at\" datetime not null)",
+    "CREATE TABLE \"domains_complimentary_approvals\" (\"id\" integer primary key autoincrement not null, \"operation_id\" integer not null, \"amount\" varchar not null, \"actor_id\" integer not null, \"reason\" varchar not null, \"created_at\" datetime not null)",
+    "CREATE TABLE \"domains_contact_profiles\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"profile_fingerprint\" varchar not null, \"details\" text not null, \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_domains\" (\"id\" integer primary key autoincrement not null, \"service_id\" integer not null, \"user_id\" integer not null, \"server_id\" integer not null, \"registrar_key\" varchar not null, \"account_fingerprint\" varchar not null, \"domain\" varchar not null, \"reservation_name\" varchar, \"sld\" varchar not null, \"tld\" varchar not null, \"status\" varchar not null, \"provider_expires_at\" date, \"provider_order_id\" varchar, \"snapshot\" text, \"capabilities\" text, \"last_synced_at\" datetime, \"provider_domain_id\" varchar, \"billing_managed\" tinyint(1) not null default '1', \"renewal_policy\" text, \"observation\" text, \"authority_generation\" integer not null default '0', \"confirmed_revision\" integer not null default '0', \"price_mode\" varchar not null default 'standard', \"reminders\" text, \"created_at\" datetime, \"updated_at\" datetime, \"provenance\" varchar, \"adoption_id\" integer)",
+    "CREATE TABLE \"domains_enom_live_calls\" (\"account\" varchar not null, \"day\" varchar not null, \"used\" integer not null default '0', \"spend_micros\" integer not null default '0', \"catalogue_used\" integer not null default '0', primary key (\"account\", \"day\"))",
+    "CREATE TABLE \"domains_enom_test_send_accounts\" (\"account\" varchar not null, primary key (\"account\"))",
+    "CREATE TABLE \"domains_enom_test_sends\" (\"id\" integer primary key autoincrement not null, \"account\" varchar not null, \"command\" varchar not null, \"sent_at\" integer not null)",
+    "CREATE TABLE \"domains_history_links\" (\"id\" integer primary key autoincrement not null, \"domain_id\" integer not null, \"service_id\" integer not null, \"user_id\" integer not null, \"invoice_id\" integer not null, \"invoice_item_id\" integer, \"source\" varchar not null, \"linked_by\" integer not null, \"reason\" text not null, \"linked_at\" datetime not null, \"evidence\" text not null, \"link_key\" varchar not null)",
+    "CREATE TABLE \"domains_managed_public_config\" (\"domain_id\" integer not null, \"user_id\" integer not null, \"profile_id\" integer, \"expected_dns\" varchar, \"revision\" integer not null default '1', \"notice_preferences\" text not null, \"origin_watch_id\" integer, \"dns_episode\" text, \"edited_by\" integer, \"reason\" text, \"created_at\" datetime, \"updated_at\" datetime, primary key (\"domain_id\"))",
+    "CREATE TABLE \"domains_managed_public_observations\" (\"id\" integer primary key autoincrement not null, \"domain_id\" integer not null, \"user_id\" integer not null, \"account_fingerprint\" varchar not null, \"generation\" integer not null, \"domain_revision\" integer not null, \"config_revision\" integer not null, \"profile_id\" integer, \"profile_revision\" integer, \"source_digest\" varchar not null, \"source_cursor\" integer not null default '0', \"check_kind\" varchar not null, \"started_at\" integer not null, \"completed_at\" integer not null, \"valid_until\" integer, \"result\" varchar not null, \"dns\" varchar, \"website\" tinyint(1), \"email\" tinyint(1), \"mixed\" tinyint(1) not null, \"partial\" tinyint(1) not null, \"ns_confirmed\" tinyint(1) not null default '0', \"safe_code\" varchar, \"facts\" text not null, \"digest\" varchar not null)",
+    "CREATE TABLE \"domains_managed_public_work\" (\"id\" integer primary key autoincrement not null, \"domain_id\" integer not null, \"user_id\" integer not null, \"generation\" integer not null, \"account_fingerprint\" varchar not null, \"kind\" varchar not null, \"due_at\" integer not null, \"profile_id\" integer, \"profile_revision\" integer, \"origin_watch_id\" integer, \"origin_observation_id\" integer, \"target_stamp\" varchar not null, \"safe_code\" varchar not null default 'awaiting_acceptance', \"domain_revision\" integer, \"config_revision\" integer, \"claim\" varchar, \"lease_until\" integer, \"attempts\" integer not null default '0', \"last_success_at\" integer, \"backoff_until\" integer, \"cursor\" integer not null default '0', \"source_cursor\" integer not null default '0', \"retired_at\" integer)",
+    "CREATE TABLE \"domains_native_intents\" (\"service_id\" integer primary key autoincrement not null, \"kind\" varchar not null, \"created_at\" datetime not null)",
+    "CREATE TABLE \"domains_obligation_alerts\" (\"id\" integer primary key autoincrement not null, \"alert_key\" varchar not null, \"domain_id\" integer not null, \"generation\" integer not null, \"code\" varchar not null, \"operation_id\" integer, \"first_seen\" integer not null, \"last_seen\" integer not null, \"resolved_at\" integer)",
+    "CREATE TABLE \"domains_observation_queues\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"catalogue_cursor\" integer not null default '0', \"catalogue_due\" integer not null default '0', \"catalogue_claim\" varchar, \"catalogue_lease\" integer not null default '0', \"catalogue_hold\" varchar, \"catalogue_resumes\" integer not null default '0', \"catalogue_audit\" text, \"cursor\" integer not null default '0', \"turn\" integer not null default '0', \"refund_cursor\" integer not null default '0', \"refund_turn\" integer not null default '0', \"timeout_cursor\" integer not null default '0', \"timeout_turn\" integer not null default '0', \"offer_feed_run\" integer not null default '0', \"offer_feed_tried_at\" integer, \"offer_feed_succeeded_at\" integer, \"offer_feed_failed_at\" integer, \"offer_feed_failure\" varchar, \"offer_queue_created\" tinyint(1) not null default '0', \"offer_work\" text, \"offer_claim\" varchar, \"offer_lease\" integer not null default '0', \"offer_turn\" integer not null default '0')",
+    "CREATE TABLE \"domains_observation_work\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"domain_id\" integer not null, \"generation\" integer not null, \"due_at\" integer not null, \"tries\" integer not null default '0', \"resumes\" integer not null default '0', \"claim\" varchar, \"lease_until\" integer not null default '0', \"safe_code\" varchar, \"phase\" varchar not null default 'holding')",
+    "CREATE TABLE \"domains_operations\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"registrar_key\" varchar not null, \"account_fingerprint\" varchar, \"authority_generation\" integer, \"domain_id\" integer not null, \"service_id\" integer not null, \"invoice_id\" integer, \"invoice_item_id\" integer, \"operation_key\" varchar not null, \"action\" varchar not null, \"term\" integer not null default '1', \"funding_basis\" varchar not null default 'paid_invoice', \"state\" varchar not null, \"amount\" numeric not null default '0', \"currency\" varchar not null, \"base_expires_at\" date, \"expected_expires_at\" date, \"confirmed_expires_at\" date, \"payload\" text, \"policy\" text, \"cost\" text, \"request_fingerprint\" varchar, \"safe_code\" varchar, \"attempt\" text, \"funding\" text, \"provider_order_id\" varchar, \"authorized_by\" integer, \"funding_reason\" varchar, \"started_at\" datetime, \"lease_expires_at\" datetime, \"completed_at\" datetime, \"created_at\" datetime, \"updated_at\" datetime, \"management_pending\" tinyint(1), \"retry_number\" integer not null default '0')",
+    "CREATE TABLE \"domains_prices\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"registrar_key\" varchar not null, \"account_fingerprint\" varchar not null, \"tld\" varchar not null, \"action\" varchar not null, \"term\" integer not null, \"currency\" varchar not null, \"revision\" integer not null default '1', \"wholesale\" numeric, \"retail\" numeric, \"unit\" varchar not null, \"source\" varchar not null, \"observed_at\" datetime not null, \"fresh_until\" datetime, \"created_at\" datetime, \"updated_at\" datetime, \"catalogue_observation\" text, \"catalogue_created\" tinyint(1) not null default '0')",
+    "CREATE TABLE \"domains_profile_operations\" (\"id\" integer primary key autoincrement not null, \"operation_id\" integer not null, \"user_id\" integer not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"authority_generation\" integer not null, \"payload_digest\" varchar not null, \"state\" varchar not null, \"attempt\" text not null, \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_psl_candidates\" (\"id\" integer not null, \"revision\" varchar not null, \"baseline_revision\" varchar not null, \"source_url\" varchar not null, \"compressed_body\" text not null, \"safe_code\" varchar not null, \"fetched_at\" integer not null, primary key (\"id\"))",
+    "CREATE TABLE \"domains_psl_snapshots\" (\"id\" integer primary key autoincrement not null, \"revision\" varchar not null, \"state\" varchar not null, \"source_url\" varchar not null, \"etag\" varchar, \"last_modified\" varchar, \"byte_size\" integer not null, \"icann_count\" integer not null, \"private_count\" integer not null, \"fetched_at\" integer not null, \"validated_at\" integer not null, \"compressed_body\" text not null)",
+    "CREATE TABLE \"domains_psl_status\" (\"id\" integer not null, \"last_attempt_at\" integer, \"last_network_fetch_at\" integer, \"checked_at\" integer, \"attempt_token\" varchar, \"last_result\" varchar, \"consecutive_failures\" integer not null default '0', primary key (\"id\"))",
+    "CREATE TABLE \"domains_public_dns_pool\" (\"id\" integer not null, \"window_at\" integer not null, \"used\" integer not null default '0', \"active\" text not null, \"dispatch_cursor\" integer not null default '0', \"sweep_cursor\" integer not null default '0', \"sweep_due_at\" integer not null default '0', primary key (\"id\"))",
+    "CREATE TABLE \"domains_public_evidence_refs\" (\"family\" varchar not null, \"observation_id\" integer not null, primary key (\"family\", \"observation_id\"))",
+    "CREATE TABLE \"domains_public_rdap_pool\" (\"scope\" varchar not null, \"window_at\" integer not null, \"used\" integer not null default '0', \"claim\" varchar, \"lease_until\" integer, \"failures\" integer not null default '0', \"backoff_until\" integer not null default '0', primary key (\"scope\"))",
+    "CREATE TABLE \"domains_read_budgets\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"window_at\" integer not null, \"used\" integer not null default '0', \"next_api_at\" integer not null default '0', \"leases\" text not null)",
+    "CREATE TABLE \"domains_registrar_balances\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"amount\" varchar, \"currency\" varchar, \"read_at\" integer, \"last_error_code\" varchar, \"source\" varchar, \"attempted_at\" integer not null default '0', \"daily_due_at\" integer not null default '0', \"manual_due_at\" integer not null default '0', \"notified_on\" varchar)",
+    "CREATE TABLE \"domains_reminder_deliveries\" (\"id\" integer primary key autoincrement not null, \"delivery_key\" varchar not null, \"domain_id\" integer not null, \"template\" varchar not null, \"state\" varchar not null, \"created_at\" integer not null, \"accepted_at\" integer)",
+    "CREATE TABLE \"domains_reminder_schedules\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"enabled\" tinyint(1) not null default '0', \"before_days\" text not null, \"after_days\" text not null, \"revision\" integer not null default '1', \"audit\" text not null, \"cursor\" integer not null default '0', \"turn\" integer not null default '0', \"due_at\" integer not null default '0')",
+    "CREATE TABLE \"domains_runtime_operations\" (\"id\" integer primary key autoincrement not null, \"operation_id\" integer not null, \"due_at\" integer not null default '0', \"attempts\" integer not null default '0')",
+    "CREATE TABLE \"domains_runtime_turns\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"account_fingerprint\" varchar not null, \"turn\" integer not null default '0', \"due_at\" integer not null default '0', \"operation_cursor\" integer not null default '0', \"domain_cursor\" integer not null default '0', \"tld_cursor\" integer not null default '0', \"finished_at\" integer not null default '0')",
+    "CREATE TABLE \"domains_sales_policies\" (\"id\" integer primary key autoincrement not null, \"tld\" varchar not null, \"server_id\" integer, \"registrar_key\" varchar, \"account_fingerprint\" varchar, \"revision\" integer not null default '1', \"register_enabled\" tinyint(1) not null default '0', \"transfer_enabled\" tinyint(1) not null default '0', \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_staff_alert_receipts\" (\"delivery_key\" varchar not null, \"user_id\" integer not null, \"notification_id\" integer, primary key (\"delivery_key\"))",
+    "CREATE TABLE \"domains_staff_review_keys\" (\"server_id\" integer not null, \"review_key\" varchar not null, \"expires_at\" integer not null, primary key (\"server_id\", \"review_key\"))",
+    "CREATE TABLE \"domains_tlds\" (\"id\" integer primary key autoincrement not null, \"server_id\" integer not null, \"registrar_key\" varchar not null, \"account_fingerprint\" varchar not null, \"tld\" varchar not null, \"enabled\" tinyint(1) not null default '0', \"register_enabled\" tinyint(1) not null default '0', \"renew_enabled\" tinyint(1) not null default '0', \"transfer_enabled\" tinyint(1) not null default '0', \"use_default_rule\" tinyint(1) not null default '1', \"round_up\" varchar not null default 'none', \"pricing_mode\" varchar not null default 'markup_percent', \"markup\" numeric, \"fixed_register\" numeric, \"fixed_renew\" numeric, \"fixed_transfer\" numeric, \"sort_order\" integer not null default '100', \"min_years\" integer not null default '1', \"max_years\" integer not null default '10', \"registry_fields\" text, \"created_at\" datetime, \"updated_at\" datetime, \"catalogue_intent\" text, \"catalogue_facts\" text, \"catalogue_revision\" integer not null default '0', \"catalogue_published_revision\" text, \"catalogue_retained_annual_retail\" numeric, \"catalogue_converted\" tinyint(1) not null default '0', \"catalogue_created\" tinyint(1) not null default '0', \"catalogue_issues\" text)",
+    "CREATE TABLE \"domains_user_deletions\" (\"user_id\" integer primary key autoincrement not null, \"created_at\" datetime not null)",
+    "CREATE TABLE \"domains_watch_audit\" (\"id\" integer primary key autoincrement not null, \"subject_type\" varchar not null, \"subject_id\" integer not null, \"user_id\" integer, \"actor_id\" integer, \"event\" varchar not null, \"reason\" text, \"before_revision\" varchar, \"after_revision\" varchar not null, \"data\" text not null, \"created_at\" datetime not null)",
+    "CREATE TABLE \"domains_watch_deliveries\" (\"id\" integer primary key autoincrement not null, \"notice_id\" integer not null, \"user_id\" integer not null, \"channel\" varchar not null, \"delivery_key\" varchar not null, \"template_key\" varchar not null, \"state\" varchar not null, \"attempts\" integer not null default '1', \"reserved_at\" integer not null, \"accepted_at\" integer, \"safe_code\" varchar, \"native_id\" integer, \"resend_of\" integer, \"actor_id\" integer, \"reason\" varchar)",
+    "CREATE TABLE \"domains_watch_discovery\" (\"product_id\" integer not null, \"cursor\" integer not null default '0', \"turn\" integer not null default '0', \"due_at\" integer not null default '0', \"hint\" tinyint(1) not null default '0', primary key (\"product_id\"))",
+    "CREATE TABLE \"domains_watch_mail_days\" (\"scope\" varchar not null, \"delivery_id\" integer not null, \"created_at\" integer not null, primary key (\"scope\"))",
+    "CREATE TABLE \"domains_watch_names\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer not null, \"canonical_name\" varchar not null, \"display_name\" varchar, \"psl_revision\" varchar not null, \"state\" varchar not null, \"revision\" integer not null default '1', \"origin\" varchar not null default 'service', \"registration\" varchar, \"registration_evidence\" text, \"expected_dns\" varchar, \"ns_profile_id\" integer, \"profile_revision\" integer not null default '0', \"managed_domain_id\" integer, \"created_by\" integer, \"notice_preferences\" text not null, \"last_observation_id\" integer, \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_watch_notice_state\" (\"scope\" varchar not null, \"user_id\" integer not null, \"data\" text not null, \"updated_at\" integer not null, primary key (\"scope\"))",
+    "CREATE TABLE \"domains_watch_notices\" (\"id\" integer primary key autoincrement not null, \"notice_key\" varchar not null, \"scope\" varchar not null, \"target_kind\" varchar not null, \"watch_id\" integer, \"managed_domain_id\" integer, \"user_id\" integer not null, \"kind\" varchar not null, \"episode_key\" varchar not null, \"threshold\" integer, \"family\" varchar not null, \"observation_id\" integer not null, \"state\" varchar not null, \"first_seen_at\" integer not null, \"last_seen_at\" integer not null, \"resolved_at\" integer, \"data\" text not null)",
+    "CREATE TABLE \"domains_watch_observations\" (\"id\" integer primary key autoincrement not null, \"watch_id\" integer not null, \"user_id\" integer not null, \"watch_revision\" integer not null, \"profile_id\" integer not null, \"profile_revision\" integer not null, \"psl_revision\" varchar not null, \"source_digest\" varchar not null, \"source_cursor\" integer not null default '0', \"check_kind\" varchar not null, \"started_at\" integer not null, \"completed_at\" integer not null, \"valid_until\" integer, \"result\" varchar not null, \"dns\" varchar, \"website\" tinyint(1), \"email\" tinyint(1), \"mixed\" tinyint(1) not null, \"partial\" tinyint(1) not null, \"safe_code\" varchar, \"facts\" text not null, \"digest\" varchar not null)",
+    "CREATE TABLE \"domains_watch_preferences\" (\"scope\" varchar not null, \"user_id\" integer not null, \"enabled\" tinyint(1) not null default '0', \"revision\" integer not null default ('1'), primary key (\"scope\"))",
+    "CREATE TABLE \"domains_watch_product_maps\" (\"id\" integer primary key autoincrement not null, \"product_id\" integer not null, \"property_key\" varchar not null, \"enabled\" tinyint(1) not null default '0', \"expected_ns_profile_id\" integer, \"revision\" integer not null default '1', \"edited_by\" integer not null, \"reason\" text not null, \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_watch_profiles\" (\"id\" integer primary key autoincrement not null, \"name\" varchar not null, \"nameservers\" text not null, \"website_endpoints\" text not null, \"email_endpoints\" text not null, \"revision\" integer not null default '1', \"enabled\" tinyint(1) not null default '0', \"edited_by\" integer not null, \"reason\" text not null, \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_watch_registry\" (\"id\" integer primary key autoincrement not null, \"watch_id\" integer not null, \"user_id\" integer not null, \"stamp\" varchar not null, \"source_cursor\" integer not null default '0', \"bootstrap_revision\" varchar not null, \"started_at\" integer not null, \"completed_at\" integer not null, \"valid_until\" integer, \"result\" varchar not null, \"reason\" varchar not null, \"safe_code\" varchar, \"facts\" text not null)",
+    "CREATE TABLE \"domains_watch_schedule\" (\"scope\" varchar not null, \"due_at\" integer not null default '0', \"cursor\" integer not null default '0', \"progress_at\" integer, \"alert_at\" integer, \"data\" text, primary key (\"scope\"))",
+    "CREATE TABLE \"domains_watch_sources\" (\"id\" integer primary key autoincrement not null, \"user_id\" integer not null, \"service_id\" integer, \"map_id\" integer not null, \"map_revision\" integer not null, \"hostname\" varchar, \"registrable_name\" varchar, \"watch_id\" integer, \"managed_domain_id\" integer, \"state\" varchar not null, \"safe_code\" varchar, \"source_digest\" varchar not null, \"revision\" integer not null default '1', \"last_seen_at\" integer not null, \"created_at\" datetime, \"updated_at\" datetime)",
+    "CREATE TABLE \"domains_watch_staff_claims\" (\"claim\" varchar not null, \"subject_type\" varchar not null, \"subject_id\" integer not null, \"action\" varchar not null, \"created_at\" integer not null, primary key (\"claim\"))",
+    "CREATE TABLE \"domains_watch_work\" (\"id\" integer primary key autoincrement not null, \"watch_id\" integer not null, \"kind\" varchar not null, \"due_at\" integer not null, \"claim\" varchar, \"lease_until\" integer, \"attempts\" integer not null default '0', \"last_success_at\" integer, \"backoff_until\" integer, \"safe_code\" varchar, \"watch_revision\" integer not null, \"cursor\" integer not null default '0', \"source_cursor\" integer not null default '0')",
+    "CREATE UNIQUE INDEX \"domains_accounts_identity_fingerprint_unique\" on \"domains_accounts\" (\"identity_fingerprint\")",
+    "CREATE UNIQUE INDEX \"domains_accounts_server_id_unique\" on \"domains_accounts\" (\"server_id\")",
+    "CREATE UNIQUE INDEX \"domains_adoptions_domain_id_authority_generation_unique\" on \"domains_adoptions\" (\"domain_id\", \"authority_generation\")",
+    "CREATE UNIQUE INDEX \"domains_adoptions_request_key_unique\" on \"domains_adoptions\" (\"request_key\")",
+    "CREATE INDEX \"domains_audit_archives_server_id_family_id_index\" on \"domains_audit_archives\" (\"server_id\", \"family\", \"id\")",
+    "CREATE UNIQUE INDEX \"domains_balance_alerts_server_id_account_fingerprint_unique\" on \"domains_balance_alerts\" (\"server_id\", \"account_fingerprint\")",
+    "CREATE INDEX \"domains_complimentary_accounts_user_id_id_index\" on \"domains_complimentary_accounts\" (\"user_id\", \"id\")",
+    "CREATE INDEX \"domains_complimentary_approvals_operation_id_id_index\" on \"domains_complimentary_approvals\" (\"operation_id\", \"id\")",
+    "CREATE UNIQUE INDEX \"domains_contact_profiles_server_id_profile_fingerprint_unique\" on \"domains_contact_profiles\" (\"server_id\", \"profile_fingerprint\")",
+    "CREATE INDEX \"domains_contact_profiles_user_id_index\" on \"domains_contact_profiles\" (\"user_id\")",
+    "CREATE INDEX \"domains_domains_domain_index\" on \"domains_domains\" (\"domain\")",
+    "CREATE UNIQUE INDEX \"domains_domains_reservation_name_unique\" on \"domains_domains\" (\"reservation_name\")",
+    "CREATE UNIQUE INDEX \"domains_domains_service_id_unique\" on \"domains_domains\" (\"service_id\")",
+    "CREATE INDEX \"domains_domains_user_id_index\" on \"domains_domains\" (\"user_id\")",
+    "CREATE INDEX \"domains_enom_test_sends_account_sent_at_index\" on \"domains_enom_test_sends\" (\"account\", \"sent_at\")",
+    "CREATE UNIQUE INDEX \"domains_history_links_link_key_unique\" on \"domains_history_links\" (\"link_key\")",
+    "CREATE INDEX \"domains_managed_public_observations_facts_idx\" on \"domains_managed_public_observations\" (\"domain_id\", \"check_kind\", \"completed_at\")",
+    "CREATE UNIQUE INDEX \"domains_managed_public_work_domain_id_generation_kind_unique\" on \"domains_managed_public_work\" (\"domain_id\", \"generation\", \"kind\")",
+    "CREATE INDEX \"domains_managed_public_work_due_at_retired_at_index\" on \"domains_managed_public_work\" (\"due_at\", \"retired_at\")",
+    "CREATE UNIQUE INDEX \"domains_obligation_alerts_alert_key_unique\" on \"domains_obligation_alerts\" (\"alert_key\")",
+    "CREATE INDEX \"domains_obligation_alerts_domain_id_index\" on \"domains_obligation_alerts\" (\"domain_id\")",
+    "CREATE UNIQUE INDEX \"domains_observation_queues_server_id_unique\" on \"domains_observation_queues\" (\"server_id\")",
+    "CREATE INDEX \"domains_observation_work_account_due_index\" on \"domains_observation_work\" (\"server_id\", \"account_fingerprint\", \"due_at\")",
+    "CREATE UNIQUE INDEX \"domains_observation_work_domain_id_generation_phase_unique\" on \"domains_observation_work\" (\"domain_id\", \"generation\", \"phase\")",
+    "CREATE INDEX \"domains_observation_work_due_at_index\" on \"domains_observation_work\" (\"due_at\")",
+    "CREATE UNIQUE INDEX \"domains_operations_debt_retry_u\" on \"domains_operations\" (\"invoice_item_id\", \"action\", \"retry_number\")",
+    "CREATE INDEX \"domains_operations_domain_id_index\" on \"domains_operations\" (\"domain_id\")",
+    "CREATE INDEX \"domains_operations_invoice_id_index\" on \"domains_operations\" (\"invoice_id\")",
+    "CREATE INDEX \"domains_operations_management_progress_i\" on \"domains_operations\" (\"domain_id\", \"authority_generation\", \"account_fingerprint\", \"action\", \"management_pending\", \"id\")",
+    "CREATE UNIQUE INDEX \"domains_operations_operation_key_unique\" on \"domains_operations\" (\"operation_key\")",
+    "CREATE INDEX \"domains_operations_service_id_index\" on \"domains_operations\" (\"service_id\")",
+    "CREATE INDEX \"domains_operations_state_index\" on \"domains_operations\" (\"state\")",
+    "CREATE UNIQUE INDEX \"domains_prices_price_unique\" on \"domains_prices\" (\"server_id\", \"tld\", \"action\", \"term\", \"currency\")",
+    "CREATE INDEX \"domains_profile_operations_account_i\" on \"domains_profile_operations\" (\"server_id\", \"account_fingerprint\")",
+    "CREATE UNIQUE INDEX \"domains_profile_operations_operation_id_unique\" on \"domains_profile_operations\" (\"operation_id\")",
+    "CREATE UNIQUE INDEX \"domains_psl_snapshots_revision_unique\" on \"domains_psl_snapshots\" (\"revision\")",
+    "CREATE UNIQUE INDEX \"domains_psl_snapshots_state_unique\" on \"domains_psl_snapshots\" (\"state\")",
+    "CREATE UNIQUE INDEX \"domains_read_budgets_server_id_unique\" on \"domains_read_budgets\" (\"server_id\")",
+    "CREATE UNIQUE INDEX \"domains_registrar_balances_server_id_account_fingerprint_unique\" on \"domains_registrar_balances\" (\"server_id\", \"account_fingerprint\")",
+    "CREATE UNIQUE INDEX \"domains_reminder_deliveries_delivery_key_unique\" on \"domains_reminder_deliveries\" (\"delivery_key\")",
+    "CREATE INDEX \"domains_reminder_deliveries_domain_id_index\" on \"domains_reminder_deliveries\" (\"domain_id\")",
+    "CREATE UNIQUE INDEX \"domains_reminder_schedules_server_id_unique\" on \"domains_reminder_schedules\" (\"server_id\")",
+    "CREATE UNIQUE INDEX \"domains_runtime_operations_operation_id_unique\" on \"domains_runtime_operations\" (\"operation_id\")",
+    "CREATE UNIQUE INDEX \"domains_runtime_turns_server_id_unique\" on \"domains_runtime_turns\" (\"server_id\")",
+    "CREATE UNIQUE INDEX \"domains_sales_policies_tld_unique\" on \"domains_sales_policies\" (\"tld\")",
+    "CREATE UNIQUE INDEX \"domains_tlds_server_id_tld_unique\" on \"domains_tlds\" (\"server_id\", \"tld\")",
+    "CREATE UNIQUE INDEX \"domains_watch_deliveries_delivery_key_unique\" on \"domains_watch_deliveries\" (\"delivery_key\")",
+    "CREATE INDEX \"domains_watch_deliveries_notice_id_channel_index\" on \"domains_watch_deliveries\" (\"notice_id\", \"channel\")",
+    "CREATE UNIQUE INDEX \"domains_watch_names_user_id_canonical_name_unique\" on \"domains_watch_names\" (\"user_id\", \"canonical_name\")",
+    "CREATE UNIQUE INDEX \"domains_watch_notices_notice_key_unique\" on \"domains_watch_notices\" (\"notice_key\")",
+    "CREATE INDEX \"domains_watch_notices_scope_index\" on \"domains_watch_notices\" (\"scope\")",
+    "CREATE INDEX \"domains_watch_notices_user_id_state_index\" on \"domains_watch_notices\" (\"user_id\", \"state\")",
+    "CREATE INDEX \"domains_watch_observations_facts_idx\" on \"domains_watch_observations\" (\"watch_id\", \"check_kind\", \"completed_at\")",
+    "CREATE INDEX \"domains_watch_preferences_user_id_index\" on \"domains_watch_preferences\" (\"user_id\")",
+    "CREATE UNIQUE INDEX \"domains_watch_product_maps_product_id_unique\" on \"domains_watch_product_maps\" (\"product_id\")",
+    "CREATE INDEX \"domains_watch_registry_watch_id_completed_at_index\" on \"domains_watch_registry\" (\"watch_id\", \"completed_at\")",
+    "CREATE INDEX \"domains_watch_sources_map_id_state_index\" on \"domains_watch_sources\" (\"map_id\", \"state\")",
+    "CREATE UNIQUE INDEX \"domains_watch_sources_service_id_unique\" on \"domains_watch_sources\" (\"service_id\")",
+    "CREATE INDEX \"domains_watch_sources_watch_id_state_index\" on \"domains_watch_sources\" (\"watch_id\", \"state\")",
+    "CREATE UNIQUE INDEX \"domains_watch_work_watch_id_kind_unique\" on \"domains_watch_work\" (\"watch_id\", \"kind\")",
+    "CREATE INDEX \"dws_ac87f2a8a5c65184\" on \"domains_watch_staff_claims\" (\"subject_type\", \"subject_id\", \"action\", \"created_at\")"
+  ],
+  "rows": {
+    "domains_accounts": [],
+    "domains_adoptions": [],
+    "domains_audit_archives": [],
+    "domains_balance_alerts": [],
+    "domains_complimentary_accounts": [],
+    "domains_complimentary_approvals": [],
+    "domains_contact_profiles": [],
+    "domains_domains": [],
+    "domains_enom_live_calls": [],
+    "domains_enom_test_send_accounts": [],
+    "domains_enom_test_sends": [],
+    "domains_history_links": [],
+    "domains_managed_public_config": [],
+    "domains_managed_public_observations": [],
+    "domains_managed_public_work": [],
+    "domains_native_intents": [],
+    "domains_obligation_alerts": [],
+    "domains_observation_queues": [],
+    "domains_observation_work": [],
+    "domains_operations": [],
+    "domains_prices": [],
+    "domains_profile_operations": [],
+    "domains_psl_candidates": [],
+    "domains_psl_snapshots": [],
+    "domains_psl_status": [
+      {
+        "id": 1,
+        "last_attempt_at": null,
+        "last_network_fetch_at": null,
+        "checked_at": null,
+        "attempt_token": null,
+        "last_result": null,
+        "consecutive_failures": 0
+      }
+    ],
+    "domains_public_dns_pool": [
+      {
+        "id": 1,
+        "window_at": 1793974898,
+        "used": 0,
+        "active": "[]",
+        "dispatch_cursor": 0,
+        "sweep_cursor": 0,
+        "sweep_due_at": 0
+      }
+    ],
+    "domains_public_evidence_refs": [],
+    "domains_public_rdap_pool": [],
+    "domains_read_budgets": [],
+    "domains_registrar_balances": [],
+    "domains_reminder_deliveries": [],
+    "domains_reminder_schedules": [],
+    "domains_runtime_operations": [],
+    "domains_runtime_turns": [],
+    "domains_sales_policies": [],
+    "domains_staff_alert_receipts": [],
+    "domains_staff_review_keys": [],
+    "domains_tlds": [],
+    "domains_user_deletions": [],
+    "domains_watch_audit": [],
+    "domains_watch_deliveries": [],
+    "domains_watch_discovery": [],
+    "domains_watch_mail_days": [],
+    "domains_watch_names": [],
+    "domains_watch_notice_state": [],
+    "domains_watch_notices": [],
+    "domains_watch_observations": [],
+    "domains_watch_preferences": [],
+    "domains_watch_product_maps": [],
+    "domains_watch_profiles": [],
+    "domains_watch_registry": [],
+    "domains_watch_schedule": [
+      {
+        "scope": "enrollment",
+        "due_at": 0,
+        "cursor": 0,
+        "progress_at": null,
+        "alert_at": null,
+        "data": "{\"refresh_dns\":true}"
+      }
+    ],
+    "domains_watch_sources": [],
+    "domains_watch_staff_claims": [],
+    "domains_watch_work": [],
+    "settings": [
+      {
+        "id": 2,
+        "key": "domains_offer_upgrade",
+        "value": "eyJpdiI6ImluQlpoeEVYNGV1MUlLRXRlbGlqZ2c9PSIsInZhbHVlIjoiZzFoblcwMWxOY1ZNV2xVbll6WnVMaWxCZy9QeUlmaHYrUHVGLzNiTG5HZUZwbEZoUDF0NlpFdU5Qd1dyVlNOM0NwbjFBU2toMlVSdmlpN3dVR2REU0ppWXdlbTJlTjR1OEVrSlpVS3gvbzZGUU5FWlc4VXNZVTlsMllUVTZUVFMwbUZXdnZaWFNyTWRGbWlhQTJUalNDRVh1OXpXR1JJbW9FYzJDQ0l6QkR4YU1sbkJ4ZjlpRlBtYjNpaWdqVCttL25pdzFCUUkrSk0yc21yQkQxZC9HSFZlYjN0L1FraTFVdG16Y3lsd3hrR1FqVGZpSDNwV0FLNzJ3ZythNlBlUiIsIm1hYyI6IjIwZTYwNTRjODhjNWRlMmVjMjNlMTUwMDI2Njc3NTBmMmNhYjRjMzZiZDA5MDFmOGI0MjE1NWU3MTZkNTA0MDEiLCJ0YWciOiIifQ==",
+        "type": "string",
+        "encrypted": 1,
+        "settingable_type": null,
+        "settingable_id": null,
+        "created_at": "2026-11-06 14:21:28",
+        "updated_at": "2026-11-06 14:21:38"
+      }
+    ],
+    "notification_templates": [
+      {
+        "id": 1,
+        "key": "domains_domain_expiring",
+        "subject": "{{ $domain }} expires on {{ $expires }}",
+        "enabled": 1,
+        "body": "# {{ $domain }} expires on {{ $expires }}\n\n@if($invoice)\n@if($overdue)\nYour renewal invoice for **{{ $years }} {{ $years === 1 ? 'year' : 'years' }}** ({{ $amount }}) was due on **{{ $due }}**. Contact support to check whether this domain can still be renewed.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $invoice_url }}\">View invoice</a></div>\n@else\nYour renewal invoice is ready for **{{ $years }} {{ $years === 1 ? 'year' : 'years' }}** ({{ $amount }}). Pay it by **{{ $due }}** and we'll renew the domain for you.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $invoice_url }}\">Pay invoice</a></div>\n@endif\n@elseif($invoice_on)\nYour renewal invoice is scheduled for **{{ $invoice_on }}**. Pay it by the due date and we'll renew the domain for you.\n@elseif($complimentary)\nThis domain has complimentary pricing. Contact support to confirm its renewal.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $domain_url }}\">View domain</a></div>\n@else\nAuto-renew is off. To keep this domain,@if($can_turn_on) turn it on or renew it on the domain page.@else contact support before **{{ $expires }}**.@endif After it expires, websites and email that use it may stop working.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $domain_url }}\">View domain</a></div>\n@endif",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "choice_on",
+        "in_app_enabled": "choice_on",
+        "in_app_title": "{{ $domain }} expires in {{ $days }} {{ $days === 1 ? 'day' : 'days' }}",
+        "in_app_body": "@if($invoice)@if($overdue)Your renewal invoice is overdue. Contact support to check renewal options.@else Pay the renewal invoice by {{ $due }}.@endif@elseif($invoice_on)Your renewal invoice is scheduled for {{ $invoice_on }}.@elseif($complimentary)Complimentary pricing. Contact support to confirm its renewal.@else Auto-renew is off. To keep this domain,@if($can_turn_on) turn it on or renew it on the domain page.@else contact support before it expires.@endif@endif",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Domain renewal reminders"
+      },
+      {
+        "id": 2,
+        "key": "domains_domain_expired",
+        "subject": "{{ $domain }} has expired",
+        "enabled": 1,
+        "body": "# {{ $domain }} expired on {{ $expires }}\n\nWebsites and email that use this domain may stop working. Contact support to check whether it can still be renewed.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $domain_url }}\">View domain</a></div>",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "choice_on",
+        "in_app_enabled": "choice_on",
+        "in_app_title": "{{ $domain }} has expired",
+        "in_app_body": "Contact support to check whether this domain can still be renewed.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Domain renewal reminders"
+      },
+      {
+        "id": 3,
+        "key": "domains_transfer_code_paid",
+        "subject": "Enter the auth code for {{ $domain }}",
+        "enabled": 1,
+        "body": "Thanks for your payment. To move {{ $domain }} to us, enter its auth code (also called EPP code). Your current registrar gives you this code. We'll check the transfer once we have it.\n\nEnter it by **{{ $deadline }}**.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $domain_url }}\">Enter auth code</a></div>\n\nIf we don't have it by then, we'll cancel the transfer and return {{ $amount }} to your original payment method where we can, otherwise as account credit.",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "force",
+        "in_app_enabled": "never",
+        "in_app_title": "Enter the auth code for {{ $domain }}",
+        "in_app_body": "Enter it by {{ $deadline }}.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Auth code reminders"
+      },
+      {
+        "id": 4,
+        "key": "domains_transfer_code_reminder",
+        "subject": "Reminder: auth code for {{ $domain }}",
+        "enabled": 1,
+        "body": "We still need the auth code for {{ $domain }}. Enter it by **{{ $deadline }}**.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $domain_url }}\">Enter auth code</a></div>\n\nIf we don't have it by then, we'll cancel the transfer and return {{ $amount }} to your original payment method where we can, otherwise as account credit.",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "force",
+        "in_app_enabled": "never",
+        "in_app_title": "Enter the auth code for {{ $domain }}",
+        "in_app_body": "Enter it by {{ $deadline }}.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Auth code reminders"
+      },
+      {
+        "id": 5,
+        "key": "domains_domain_order_refunded",
+        "subject": "Account credit for your {{ $action }} of {{ $domain }}",
+        "enabled": 1,
+        "body": "# Your {{ $action }} of {{ $domain }} was cancelled\n\nWe added **{{ $amount }}** to your account credit. You can use this credit toward a future invoice.\n\n<div class=\"action\"><a class=\"button button-blue\" href=\"{{ $domain_url }}\">View domain</a></div>",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "force",
+        "in_app_enabled": "choice_on",
+        "in_app_title": "{{ $amount }} added to your account credit",
+        "in_app_body": "Your {{ $action }} of {{ $domain }} was cancelled.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Domain renewal reminders"
+      },
+      {
+        "id": 6,
+        "key": "domains_watch_expiring",
+        "subject": "Check renewal for {{ $domain }} before {{ $date }}",
+        "enabled": 1,
+        "body": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;width:100%\"><tr><td style=\"color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere\">Check renewal for {{ $domain }} before {{ $date }}</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere\">The public registry lists {{ $date }} as the expiry date for {{ $domain }}. Public registry dates may not show recent changes. Check renewal with your registrar.</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px\"><a href=\"{{ $domain_url }}\" style=\"color:#2563eb;text-decoration:underline\">View domain</a></td></tr><tr><td style=\"color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px\">You get this because monitoring alerts are on. Turn them off on the domain page.</td></tr></table>",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "choice_on",
+        "in_app_enabled": "choice_on",
+        "in_app_title": "Check renewal for {{ $domain }} before {{ $date }}",
+        "in_app_body": "The public registry lists {{ $date }} as the expiry date for {{ $domain }}. Public registry dates may not show recent changes. Check renewal with your registrar.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Monitoring alerts"
+      },
+      {
+        "id": 7,
+        "key": "domains_watch_expired",
+        "subject": "{{ $domain }} has expired",
+        "enabled": 1,
+        "body": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;width:100%\"><tr><td style=\"color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere\">{{ $domain }} has expired</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere\">The public registry shows {{ $domain }} expired on {{ $date }}. Contact your registrar to check its status. Whether it can still be renewed depends on your registrar and the registry.</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px\"><a href=\"{{ $domain_url }}\" style=\"color:#2563eb;text-decoration:underline\">View domain</a></td></tr><tr><td style=\"color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px\">You get this because monitoring alerts are on. Turn them off on the domain page.</td></tr></table>",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "choice_on",
+        "in_app_enabled": "choice_on",
+        "in_app_title": "{{ $domain }} has expired",
+        "in_app_body": "The public registry shows {{ $domain }} expired on {{ $date }}. Contact your registrar to check its status. Whether it can still be renewed depends on your registrar and the registry.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Monitoring alerts"
+      },
+      {
+        "id": 8,
+        "key": "domains_watch_ns_changed",
+        "subject": "@if($previously_matched)Nameservers changed for {{ $domain }}@else{{ $domain }} does not use {{ $nameservers }}@endif",
+        "enabled": 1,
+        "body": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;width:100%\"><tr><td style=\"color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere\">@if($previously_matched)Nameservers changed for {{ $domain }}@else{{ $domain }} does not use {{ $nameservers }}@endif</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere\">As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @else does not use @endif{{ $nameservers }}. If you didn\u2019t expect this, contact support.</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px\"><a href=\"{{ $domain_url }}\" style=\"color:#2563eb;text-decoration:underline\">View domain</a></td></tr><tr><td style=\"color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px\">You get this because monitoring alerts are on. Turn them off on the domain page.</td></tr></table>",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "choice_on",
+        "in_app_enabled": "choice_on",
+        "in_app_title": "@if($previously_matched)Nameservers changed for {{ $domain }}@else{{ $domain }} does not use {{ $nameservers }}@endif",
+        "in_app_body": "As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @else does not use @endif{{ $nameservers }}. If you didn\u2019t expect this, contact support.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Monitoring alerts"
+      },
+      {
+        "id": 9,
+        "key": "domains_watch_ns_restored",
+        "subject": "{{ $domain }} uses {{ $nameservers }} again",
+        "enabled": 1,
+        "body": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border-collapse:collapse;width:100%\"><tr><td style=\"color:#1f2937;padding:0 0 16px;font-family:Arial,sans-serif;font-size:18px;line-height:26px;font-weight:bold;overflow-wrap:anywhere\">{{ $domain }} uses {{ $nameservers }} again</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px;overflow-wrap:anywhere\">As of {{ $date }}, {{ $domain }} uses {{ $nameservers }} again.</td></tr><tr><td style=\"color:#1f2937;padding:0 0 20px;font-family:Arial,sans-serif;font-size:16px;line-height:24px\"><a href=\"{{ $domain_url }}\" style=\"color:#2563eb;text-decoration:underline\">View domain</a></td></tr><tr><td style=\"color:#1f2937;font-family:Arial,sans-serif;font-size:14px;line-height:22px\">You get this because monitoring alerts are on. Turn them off on the domain page.</td></tr></table>",
+        "cc": null,
+        "bcc": null,
+        "created_at": "2026-11-06 14:21:38",
+        "updated_at": "2026-11-06 14:21:38",
+        "mail_enabled": "choice_on",
+        "in_app_enabled": "choice_on",
+        "in_app_title": "{{ $domain }} uses {{ $nameservers }} again",
+        "in_app_body": "As of {{ $date }}, {{ $domain }} uses {{ $nameservers }} again.",
+        "in_app_url": "{{ $domain_url }}",
+        "edit_preference_message": "Monitoring alerts"
+      }
+    ],
+    "migrations": [
+      {
+        "id": 72,
+        "migration": "2026_10_18_000001_create_domains_foundation",
+        "batch": 2
+      },
+      {
+        "id": 73,
+        "migration": "2026_10_18_000002_create_domains_sales_policies",
+        "batch": 2
+      },
+      {
+        "id": 74,
+        "migration": "2026_10_18_000003_create_domains_contact_profiles",
+        "batch": 2
+      },
+      {
+        "id": 75,
+        "migration": "2026_10_18_000004_create_observation_tables",
+        "batch": 2
+      },
+      {
+        "id": 76,
+        "migration": "2026_10_18_000005_create_reminder_tables",
+        "batch": 2
+      },
+      {
+        "id": 77,
+        "migration": "2026_10_18_000006_create_runtime_turns",
+        "batch": 2
+      },
+      {
+        "id": 78,
+        "migration": "2026_10_18_000007_add_holding_provenance",
+        "batch": 2
+      },
+      {
+        "id": 79,
+        "migration": "2026_10_19_000007_create_psl_snapshots",
+        "batch": 2
+      },
+      {
+        "id": 80,
+        "migration": "2026_10_19_000008_create_psl_reviews",
+        "batch": 2
+      },
+      {
+        "id": 81,
+        "migration": "2026_10_19_000009_create_watch_storage",
+        "batch": 2
+      },
+      {
+        "id": 82,
+        "migration": "2026_10_19_000010_create_domains_adoptions",
+        "batch": 2
+      },
+      {
+        "id": 83,
+        "migration": "2026_10_19_000011_create_domains_history_links",
+        "batch": 2
+      },
+      {
+        "id": 84,
+        "migration": "2026_10_19_000012_create_watch_dns",
+        "batch": 2
+      },
+      {
+        "id": 85,
+        "migration": "2026_10_19_000013_create_native_intents",
+        "batch": 2
+      },
+      {
+        "id": 86,
+        "migration": "2026_10_19_000014_add_holding_adoption",
+        "batch": 2
+      },
+      {
+        "id": 87,
+        "migration": "2026_10_19_000015_create_registrar_balances",
+        "batch": 2
+      },
+      {
+        "id": 88,
+        "migration": "2026_10_19_000016_null_managed_stock",
+        "batch": 2
+      },
+      {
+        "id": 89,
+        "migration": "2026_10_19_000018_create_managed_public_work",
+        "batch": 2
+      },
+      {
+        "id": 90,
+        "migration": "2026_10_19_000030_extend_managed_public_signals",
+        "batch": 2
+      },
+      {
+        "id": 91,
+        "migration": "2026_10_20_000031_create_watch_schedule",
+        "batch": 2
+      },
+      {
+        "id": 92,
+        "migration": "2026_10_20_000032_create_watch_notices",
+        "batch": 2
+      },
+      {
+        "id": 93,
+        "migration": "2026_10_20_000033_create_watch_staff_claims",
+        "batch": 2
+      },
+      {
+        "id": 94,
+        "migration": "2026_10_21_000034_create_staff_audit_storage",
+        "batch": 2
+      },
+      {
+        "id": 95,
+        "migration": "2026_10_21_000035_create_enom_test_calls",
+        "batch": 2
+      },
+      {
+        "id": 96,
+        "migration": "2026_10_22_000036_create_user_deletions",
+        "batch": 2
+      },
+      {
+        "id": 97,
+        "migration": "2026_10_22_000037_create_enom_live_calls",
+        "batch": 2
+      },
+      {
+        "id": 98,
+        "migration": "2026_10_22_000038_use_explicit_evidence_dates",
+        "batch": 2
+      },
+      {
+        "id": 99,
+        "migration": "2026_10_24_000039_create_staff_alert_receipts",
+        "batch": 2
+      },
+      {
+        "id": 100,
+        "migration": "2026_10_24_000040_index_operation_services",
+        "batch": 2
+      },
+      {
+        "id": 101,
+        "migration": "2026_10_26_000041_create_balance_alerts",
+        "batch": 2
+      },
+      {
+        "id": 102,
+        "migration": "2026_10_27_000042_create_enom_test_run_budget",
+        "batch": 2
+      },
+      {
+        "id": 103,
+        "migration": "2026_10_28_000043_create_enom_test_legacy_budget",
+        "batch": 2
+      },
+      {
+        "id": 104,
+        "migration": "2026_10_28_000044_create_enom_test_send_limit",
+        "batch": 2
+      },
+      {
+        "id": 105,
+        "migration": "2026_10_30_000045_create_sell_table",
+        "batch": 2
+      },
+      {
+        "id": 106,
+        "migration": "2026_10_31_000046_add_renewal_retry_number",
+        "batch": 2
+      },
+      {
+        "id": 107,
+        "migration": "2026_10_31_000046_require_watch_notice_opt_in",
+        "batch": 2
+      },
+      {
+        "id": 108,
+        "migration": "2026_11_01_000047_mark_saved_pricing_defaults",
+        "batch": 2
+      },
+      {
+        "id": 109,
+        "migration": "2026_11_01_000047_preserve_reminder_defaults",
+        "batch": 2
+      },
+      {
+        "id": 110,
+        "migration": "2026_11_01_000048_preserve_pricing_defaults",
+        "batch": 2
+      },
+      {
+        "id": 111,
+        "migration": "2026_11_01_000049_share_default_pricing",
+        "batch": 2
+      },
+      {
+        "id": 112,
+        "migration": "2026_11_02_000047_index_management_progress",
+        "batch": 2
+      },
+      {
+        "id": 113,
+        "migration": "2026_11_02_000048_add_offer_conversion",
+        "batch": 2
+      },
+      {
+        "id": 114,
+        "migration": "2026_11_02_000049_add_offer_work",
+        "batch": 2
+      },
+      {
+        "id": 115,
+        "migration": "2026_11_02_000049_create_profile_operations",
+        "batch": 2
+      },
+      {
+        "id": 116,
+        "migration": "2026_11_04_000052_begin_offer_retirement",
+        "batch": 2
+      },
+      {
+        "id": 117,
+        "migration": "2026_11_04_000053_retire_offer_stores",
+        "batch": 2
+      },
+      {
+        "id": 118,
+        "migration": "2026_11_04_000054_add_live_catalogue_usage",
+        "batch": 2
+      },
+      {
+        "id": 119,
+        "migration": "2026_11_05_000055_create_complimentary_accounts",
+        "batch": 2
+      }
+    ]
+  }
+}
