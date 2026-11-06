@@ -1,6 +1,8 @@
 <?php
 // Native Check status must explain its local history stop. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// Release the completed staff form before rendering the independent owner page.
+$automaticStatusGc=gc_enabled();gc_disable();
 require __DIR__.'/Support/registration-fixture.php';
 require __DIR__.'/Support/staff-panel.php';staffPanel();
 $binding=$bindingFor(0);
@@ -15,6 +17,7 @@ $words=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($result
 same(['title'=>'Enom has not answered yet','body'=>"Ask Enom to check this attempt. You can record Enom’s answer after ".$at.'.'],$words,'Staff gets a real Pacific time and next step');
 $page=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$result->id]);
 $page->assertSee($words['title'])->assertSee($words['body'])->assertDontSee('Cannot check registrar')->assertDontSee('PRIVATE-REPLY');
+unset($page);gc_collect_cycles();gc_mem_caches();
 require __DIR__.'/Support/owner-pages.php';
 $customer=App\Models\User::findOrFail($result->domain->user_id);
 Illuminate\Support\Facades\Auth::setUser($customer);
@@ -27,4 +30,5 @@ expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'C
 expect(str_contains($notice->textContent,'We’re confirming this registration with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.$at.'.'),'Customer sees the wait message and the real PT deadline');
 expect(str_contains($notice->getAttribute('class'),'domains-notice--info'),'Waiting for our registrar check asks no customer action');
 same('uncertain',$result->state,'No fabricated completion');same(null,$result->attempt['execution'],'Attempt remains unchanged');
+if($automaticStatusGc){gc_enable();}
 $nativeSuccessful=true;echo "Native local status stop explains next step and real PT time.\n";

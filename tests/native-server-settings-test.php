@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic identities and readers only.
 declare(strict_types=1);
+// Collect completed form graphs at account boundaries, without rescanning live forms.
+$automaticServerGc=gc_enabled();gc_disable();
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/installed.php';
 require __DIR__.'/Support/staff-panel.php';
@@ -156,6 +158,7 @@ foreach([$first,$second] as $server){
     foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG','domains_credentials',$savedDigest] as $private){expect(!str_contains(json_encode($audit),$private),'Retained owned audit excludes credentials and verification digest');}
     $history=json_encode(TldFacts::history($server->id));
     foreach(['PRIVATE-ORIGINAL','PRIVATE-ROTATED','PRIVATE-WRONG',$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($history,$private),'Owned history projection excludes secrets, digest and account fingerprint');}
+    unset($edit,$pause,$disabled,$owned,$unconfigured);gc_collect_cycles();gc_mem_caches();
 }
 class_alias(App\Classes\Extension\Server::class,'Paymenter\\Extensions\\Servers\\SyntheticHosting\\SyntheticHosting');
 $control=Server::create(['type'=>'server','extension'=>'SyntheticHosting','name'=>'Unrelated hosting control','enabled'=>false]);
@@ -197,4 +200,5 @@ Livewire::actingAs($staff)->test(CreateServer::class)->fillForm(['name'=>'Legacy
 expect(!Server::where('name','Legacy must refuse')->exists(),'Installation refusal precedes native persistence');
 DB::table('settings')->where('id',$toggle->id)->update(['value'=>'0']);
 same(0,$io->readers,'All native forms, local health and cached balance facts make zero provider reads');
+if($automaticServerGc){gc_enable();}
 echo "Native server editor qualification without remaps/interception: creation, exposure, harmless saves, holds, balances, rotation, permissions and lifecycle passed.\n";$nativeSuccessful=true;
