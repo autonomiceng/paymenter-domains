@@ -675,6 +675,11 @@ def main():
                             'tests/namesilo-management-facts-test.php',
                             'tests/test_client_scripts.py',
                             'tests/namesilo-settings-test.php',
+                            # These serial native witnesses only read the verified vendor tree.
+                            'tests/namesilo-runtime-read-test.php',
+                            'tests/namesilo-settings-wording-test.php',
+                            'tests/native-server-settings-test.php',
+                            'tests/transfer-polling-test.php',
                             'tests/namesilo-rebind-test.php',
                             'tests/namesilo-enrollment-test.php',
                             'tests/staff-domain-edits-namesilo-test.php',

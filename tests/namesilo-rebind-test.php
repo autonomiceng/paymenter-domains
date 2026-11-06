@@ -3,6 +3,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
+// Scan completed Filament trees once, rather than repeatedly traversing the live app.
+$automaticRebindGc=gc_enabled();gc_disable();
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/namesilo-enrollment-wire.php';
 require __DIR__.'/Support/staff-tlds.php';
@@ -76,6 +78,7 @@ $input=['registrar'=>'namesilo','environment'=>'test','api_key'=>$credentials['a
 // Exercise the existing staff action: before the fix it catches the immutable-binding refusal and saves nothing.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])
     ->callAction('configure_'.$server->id,data:$input)->assertHasNoActionErrors()->assertNotified('Saved');
+gc_collect_cycles();gc_mem_caches();
 same(2,$GLOBALS['enrollmentCalls'],'Existing staff action re-authenticates the same key once');
 same('matched',$bindings->configurationStatus($server->id),'Upgraded account has a verified authenticated TEST connection');
 $after=$account->fresh()->getRawOriginal();unset($after['updated_at'],$retained[0]['updated_at']);
@@ -109,4 +112,5 @@ config(['domains.namesilo_account.environment'=>'live']);
 $refuse(fn()=>$bindings->reader($server->id));
 same($retained[2],$operation->fresh()->getRawOriginal(),'Reads and refusal checks leave held requests untouched');
 echo "NameSilo same-key TEST upgrade preserves lineage, holdings, held requests, history, pause and guards.\n";
+if($automaticRebindGc){gc_enable();}
 $nativeSuccessful=true;
