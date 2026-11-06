@@ -112,7 +112,8 @@ class Storefront
         try { $transfer = $read->offer($ending, 'transfer', 1); } catch (\Throwable) {}
         if (!$offers && !$transfer) { return $transferOnly ? $this->transferRefusal($base, 'ending') : [...$base, 'status' => 'held']; }
         if ($transferOnly && !$transfer) { return $this->transferRefusal($base, 'ending'); }
-        $selection = ($offers ? reset($offers) : $transfer)['selection'];
+        if (!$offers) { return $this->transferResult($name, $transfer, $base, $transferOnly); }
+        $selection = reset($offers)['selection'];
         $driver = $this->bindings->reader($selection->serverId);
         if ($driver->binding()->fingerprint !== $selection->fingerprint) { throw new \DomainException('Search account changed.'); }
         $started = $this->clock->now();
@@ -140,22 +141,26 @@ class Storefront
             return [...$base, 'status' => 'available', 'price' => $first['price'], 'renew' => $first['renew'],
                 'term' => (int) array_key_first($offers), 'terms' => array_map(static fn ($offer) => $offer['price'], $offers)];
         }
-        if ($transfer) {
-            try {
-                $this->eligibility->observe($name, $transfer['selection'], ['storefront']);
-                return [...$base, 'status' => 'transferable', 'price' => $transfer['price'], 'term' => 1];
-            } catch (ReadDeferred) {
-                return [...$base, 'status' => 'busy'];
-            } catch (\Throwable $error) {
-                if ($transferOnly) {
-                    // Only known local reason codes can reach customers, never exception/provider text.
-                    $reason = $error instanceof WriteHeld ? $error->reason : ($error::class === \DomainException::class ? $error->getMessage() : null);
-                    $days = [60, 60];
-                    if (in_array($reason, ['transfer_creation_lock', 'transfer_previous_lock'], true)) {
-                        try { $days = TransferPrecheck::rules($transfer['selection']); } catch (\Throwable) { $reason = null; }
-                    }
-                    return $this->transferRefusal($base, $reason, $days);
+        return $transfer ? $this->transferResult($name, $transfer, $base, $transferOnly) : $base;
+    }
+
+    /** Transfer eligibility has its own registrar/RDAP checks; registration term gates grant no authority here. */
+    private function transferResult(string $name, array $transfer, array $base, bool $transferOnly): array
+    {
+        try {
+            $this->eligibility->observe($name, $transfer['selection'], ['storefront']);
+            return [...$base, 'status' => 'transferable', 'price' => $transfer['price'], 'term' => 1];
+        } catch (ReadDeferred) {
+            return [...$base, 'status' => 'busy'];
+        } catch (\Throwable $error) {
+            if ($transferOnly) {
+                // Only known local reason codes can reach customers, never exception/provider text.
+                $reason = $error instanceof WriteHeld ? $error->reason : ($error::class === \DomainException::class ? $error->getMessage() : null);
+                $days = [60, 60];
+                if (in_array($reason, ['transfer_creation_lock', 'transfer_previous_lock'], true)) {
+                    try { $days = TransferPrecheck::rules($transfer['selection']); } catch (\Throwable) { $reason = null; }
                 }
+                return $this->transferRefusal($base, $reason, $days);
             }
         }
         return $base;
