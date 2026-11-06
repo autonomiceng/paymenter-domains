@@ -91,7 +91,7 @@ $before = count($wire->calls); $click($page);
 same($before, count($wire->calls), 'Wait budget exhaustion does not bypass the pacing guard');
 same(3, App\Models\Order::count(), 'Wait budget exhaustion cannot create an order');
 same($line->id, $cart->items()->sole()->id, 'Wait budget exhaustion keeps the cart');
-$page->assertDispatched('notify', static fn($event, $params) => str_contains(strtolower($params[0]['message']), 'taking too long'));
+$page->assertDispatched('notify', static fn($event, $params) => str_contains($params[0]['message'], 'We could not get your price') && str_contains($params[0]['message'], 'Try again shortly.'));
 // Pacing must never make a minute-cap refusal retryable or charge a refused wire.
 DB::table('domains_read_budgets')->update(['window_at' => $micros, 'used' => 60]);
 $binding = \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[1]->server_id)->sole());
@@ -109,7 +109,7 @@ same(3, $cart->items()->count(), 'Batch deadline keeps all cart lines');
 foreach ($lines->take(2) as $line) { expect($line->fresh()->checkout_config['domains_check'] !== $line->checkout_config['domains_check'], 'Completed refresh persists before the batch stops'); }
 same($lines->last()->checkout_config, $lines->last()->fresh()->checkout_config, 'Timed-out line keeps its previous receipt for retry');
 expect(end($wire->timeouts) < 4000, 'Last physical read receives only the remaining batch timeout');
-$page->assertDispatched('notify', static fn($event, $params) => str_contains(strtolower($params[0]['message']), 'taking too long'));
+$page->assertDispatched('notify', static fn($event, $params) => str_contains($params[0]['message'], 'We could not get your price') && str_contains($params[0]['message'], 'Try again shortly.'));
 $wire->delayMs = 0; $clock->advance(1); $before = count($wire->calls); $click($page);
 same(4, App\Models\Order::count(), 'Retry completes the remaining line without starting over');
 same($before + 1, count($wire->calls), 'Retry reuses both completed receipts');
