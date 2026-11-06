@@ -51,7 +51,8 @@
     "tests/ote-collection-shapes-test.php",
     "tests/owned-style-test.php",
     "tests/renewal-ready-copy-test.php",
-    "tests/scenario-inventory-test.php"
+    "tests/scenario-inventory-test.php",
+    "tests/renewal-initialized-pin-test.php"
   ],
   "native": [
     "tests/offer-queued-trigger-test.php",
