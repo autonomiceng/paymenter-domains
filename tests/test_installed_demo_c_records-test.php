@@ -74,6 +74,12 @@ same([1,''],[preg_match('/^\d+ records? checked\./',$countSub),$countValue],'DNS
 // customer-layout: as in the 390 mock, the "?" sits right after its label, before the status, and Edit sits beside the status.
 same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__l"]/span[@data-record-family]/preceding-sibling::span[@data-help]')->length,'The ? sits with its label, before the status');
 same(1,$countDom->query('//li[@id="dns"]/span[@class="domains-row__a"]/a[normalize-space()="Edit"]')->length,'The DNS row has its Edit action');
+// dns-table-narrow: the records table takes its own full-width line under the row, not the label column beside Edit.
+$tableManagement=$partial->management;$tableManagement['dns']['inventory']=[['name'=>'www','type'=>'CNAME','address'=>'hosting.example.com','ttl'=>300]];
+$tableHtml=view('domains::partials.owner-management',['domain'=>new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($partial),'management'=>$tableManagement]),'caps'=>['dns'],'keys'=>['dns'=>str_repeat('b',64)]])->render();
+same(1,storefrontDom($tableHtml)->query('//li[@id="dns"]//span[contains(concat(" ",@class," ")," domains-row__full ")]//table[contains(@class,"domains-dns-inventory")]')->length,'The DNS records table spans the row');
+expect(str_contains(view('domains::partials.styles')->render(),'.domains .domains-rows > .domains-row > .domains-row__full { grid-column: 1 / -1;'),'The full-width line spans every row column');
+expect(str_contains($tableHtml,'hosting.<wbr>example.<wbr>com'),'A long value can wrap after a dot');
 preg_match_all('/@media \(max-width: 639px\) \{(.*?)\n\}/s',view('domains::partials.styles')->render(),$narrow);$narrow=implode("\n",$narrow[1]);
 expect(str_contains($narrow,'.domains .domains-rows > .domains-row:has(> .domains-row__a) > .domains-row__l { grid-column: 1; }')&&str_contains($narrow,'.domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; align-self: start; }'),'At 390 Edit sits beside the label and status, not centred on a tall value');
 // r16: a domain that ended without a registration has no expiry to show, so Renewal says nothing rather than Expires None.

@@ -525,6 +525,9 @@
 .domains .domains-row__l { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .375rem; font-size: .8125rem; font-weight: 500; color: var(--e-muted); overflow-wrap: normal; }
 .domains .domains-row__l > .domains-sub { flex-basis: 100%; margin-top: 0; overflow-wrap: anywhere; }
 .domains .domains-row__v { min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+/* A records table takes its own line under the row, across the card, so Value is not squeezed beside Edit. */
+.domains .domains-rows > .domains-row > .domains-row__full { grid-column: 1 / -1; margin-top: .5rem; }
+@media (min-width: 720px) { .domains .domains-dns-inventory td:not(.domains-cell-wide) { white-space: nowrap; } }
 .domains .domains-row__a { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .75rem; font-size: .8125rem; font-weight: 500; }
 /* Row actions are small outlined buttons; a link stays a link only when it leaves the page. */
 .domains .domains-row__a .domains-a { display: inline-flex; align-items: center; min-height: 2rem; padding: 0 .75rem; border: 1px solid var(--e-line); border-radius: .375rem; color: var(--e-fg); white-space: nowrap; }

@@ -31,7 +31,8 @@
 <span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif@if ($familyLabel)@include('domains::partials.record-family-status',['family'=>$section['family']])@endif
 @if (($section['progress'] ?? null) && !$section['progress']['pending'])<span class="domains-sub" role="status">{{ $section['progress']['text'] }}</span>@endif</span>
 @if (($section['family_only'] ?? false) && !($section['off'] ?? false) && !($section['progress']['pending'] ?? false))
-<span class="domains-row__v">@include('domains::partials.record-family-status',['family'=>$section['family']])@if ($cap==='dns')@include('domains::partials.dns-inventory')@endif</span>
+<span class="domains-row__v">@include('domains::partials.record-family-status',['family'=>$section['family']])</span>
+@if ($cap==='dns')<span class="domains-row__v domains-row__full">@include('domains::partials.dns-inventory')</span>@endif
 @elseif ($section['progress']['pending'] ?? false)
 <span class="domains-row__v">
 @if ($cap==='ds' && isset($section['progress']['state']))<strong data-ds-state>{{ $section['progress']['state'] }}</strong>@endif
@@ -153,6 +154,6 @@
 @endif
 @endif
 @endif
-@if ($cap==='dns' && !($section['family_only']??false) && isset($section['inventory']))<span class="domains-row__v">@include('domains::partials.dns-inventory')</span>@endif
+@if ($cap==='dns' && !($section['family_only']??false) && isset($section['inventory']))<span class="domains-row__v domains-row__full">@include('domains::partials.dns-inventory')</span>@endif
 </li>
 @endforeach
