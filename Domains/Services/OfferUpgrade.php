@@ -12,8 +12,8 @@ final class OfferUpgrade
     // Reviewed route contract shared by the pinned bridge and this package's fresh initialization.
     public const CONTRACT = '907d219e28e91b6d556793f7f1bd243521b99e1e65ccaa04c00a55ff4f910c00';
     public const MESSAGE = 'Install Domains bridge 0.1.0 at 891124421645 first, run the checked catalogue conversion, then retry.';
-    /** MESSAGE in staff words: panel pages name no versions or hashes. The site admin has the exact steps. */
-    public const STAFF = 'The Domains upgrade isn’t finished, so prices can’t be read. Ask your site admin to finish it, then try again.';
+    /** MESSAGE in staff words for any refused settings save: panel pages name no versions or hashes. The site admin has the exact steps. */
+    public const STAFF = 'The Domains upgrade isn’t finished. Ask your site admin to finish it, then try again. Nothing was changed.';
 
     public static function requireCompatible(): void
     {
