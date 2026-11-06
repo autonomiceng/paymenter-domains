@@ -21,7 +21,7 @@ final class DsState
         if(self::off($d)){$management['ds']=[...($management['ds']??[]),'label'=>'DNSSEC','off'=>true,'actions'=>[],'url'=>null,'reason'=>self::CUSTOMER,'progress'=>$progress,'records'=>ObservationProjection::sections($d)['ds']['facts']['records']??null];}
         $history=array_values(array_filter($page->progress,fn($row)=>($row['label']??null)!=='DNSSEC'));
         foreach($d->operations()->whereIn('action',['ds_add','ds_delete'])->where('authority_generation',$d->authority_generation)->where('account_fingerprint',$d->account_fingerprint)->orderByDesc('id')->limit(25)->get() as $op){
-            $event=self::event($op,$d);$history[]=['label'=>'DNSSEC','state'=>$event['state'],'note'=>$event['text'],'date'=>$op->updated_at?->toIso8601String(),'retry'=>false];
+            $event=self::event($op,$d);$history[]=['label'=>'DNSSEC','state'=>$event['state'],'note'=>$event['text'],'date'=>$op->updated_at?->toIso8601String(),'retry'=>false,'by'=>(int)$op->authorized_by!==(int)$d->user_id?'Staff':null];
         }
         usort($history,fn($a,$b)=>strcmp($b['date']??'',$a['date']??''));
         return new OwnedDomain(...[...get_object_vars($page),'management'=>$management,'progress'=>$history]);
