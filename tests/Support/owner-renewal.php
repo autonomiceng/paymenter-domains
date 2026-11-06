@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering. Reuse main's batched native owner registrations.
 declare(strict_types=1);
 $registrationNames=($ownerRenewalDomains??2)===0
-    ? ['owner-renew-placeholder.com','owner-renew-late-placeholder.com','owner-last-day-on-placeholder.com','owner-last-day-off-placeholder.com','owner-late-credited-placeholder.com']
+    ? ['owner-last-day-on-placeholder.com','owner-last-day-off-placeholder.com','owner-late-credited-placeholder.com']
     : ['owner-renew-placeholder.com','owner-renew-late-placeholder.com'];
 $ownerCalendarTerms=($ownerRenewalDomains??2)===0;
 require __DIR__.'/owner-renewal-fixture.php';
