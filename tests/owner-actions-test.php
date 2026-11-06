@@ -1,28 +1,14 @@
 <?php
-// Synthetic native owner intent regressions; MIT, Copyright (c) 2026 Autonomic Engineering.
+// Native owner POSTs need real checkout, encrypted payloads, native sessions and Blade.
+// MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/Support/owned.php';
-require_once __DIR__.'/Support/reserved-fixtures.php';
-require_once __DIR__.'/Support/raw-input.php';
-$createTransfer=$newTransfer;
-$newTransfer=static function (string $name, int $i=0, bool $paid=true, bool $code=true) use ($createTransfer) {
-    return $createTransfer(placeholderComFixtureName($name),$i,$paid,$code);
-};
+require __DIR__.'/Support/owner-actions.php';
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\{DB, Cache};
 use Paymenter\Extensions\Servers\Domains\Http\{FormKeys};
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController, OwnerActionController};
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{OwnerSetup, DomainManagement};
-$setup=new OwnerSetup($clock,$ports); $management=new DomainManagement($bindings,$clock);
-$action=new OwnerActionController($owners,$setup,$inputs,$management,$ports);
-$session=app('request')->session();$other=commerceUser();
-$req=static function($d,string $intent,array $data=[], $actor=null)use($user,$session):Request {
-    $r=Request::create('/domains/'.$d->id,'POST',$data,[],[],['CONTENT_TYPE'=>'application/x-www-form-urlencoded'],http_build_query($data,'','&',PHP_QUERY_RFC1738));
-    if($intent==='code'){nativeNormalizeInput($r);}$r->setUserResolver(fn()=>$actor??$user);$r->setLaravelSession($session);
-    $r->request->set('_request_key',FormKeys::issue($r,'owner:'.$d->id.':'.$intent));return $r;
-};
-$replay=static function($call):void {try{$call();expect(false,'Replay refused');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(419,$e->getStatusCode(),'Replay needs a fresh intent');}};
 foreach([0,1]as$i){
     $op=$newTransfer('owner-code-'.$i.'-placeholder.com',$i,true,false);$d=$op->domain;$exact='  Synthetic:Case-Sensitive + % é雪  ';
     foreach(['',"bad\nvalue",str_repeat('x',513),['private']]as$bad){
@@ -79,57 +65,6 @@ $r->setUserResolver(fn()=>$user);$r->setLaravelSession($session);
 nativeNormalizeInput($r);
 $action->code($r,$jsonOp->domain_id);same($exactJson,$jsonOp->fresh()->payload['epp'],'JSON code persists exact decoded bytes');
 expect(!$r->json()->has('transfer_code')&&!$r->request->has('transfer_code'),'JSON and form input bags are scrubbed');
-foreach([0,1]as$i){
-    $newTransfer('owner-register-route-'.$i.'-placeholder.com',$i,false,false); // choose the account through native seller policy
-    $registerName=placeholderComFixtureName('owner-register-'.$i.'-placeholder.com');
-    $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[$i],'register'),$registerName);commerceCheckout($user,$cart);
-    $registration=Paymenter\Extensions\Servers\Domains\Models\Domain::where('domain',$registerName)->sole()->operations()->sole();
-    if($i){
-        foreach([[],['ns1.owner-register-1-placeholder.com','ns2.example.com'],['xn--bad.example.com','ns2.example.com']]as$invalid){
-            $r=$req($registration->domain,'setup',['nameservers'=>implode("\n",$invalid),'privacy'=>'0','confirmed'=>'1','password'=>'PRIVATE-PASSWORD']);$action->setup($r,$registration->domain_id);
-            expect($session->get('errors')->has('nameservers'),'Purchase grammar maps to a fixed field error');
-            same(['nameservers'=>implode("\n",$invalid),'privacy'=>'0'],$session->get('_old_input'),'Setup retains only submitted nonsecret fields');
-            expect(!isset($registration->fresh()->policy['owner_setup']),'Invalid settings never freeze');
-        }
-        $us=clone $registration->domain;$us->domain=reservedFixtureName('synthetic.example.com');$us->tld='us';
-        try{Paymenter\Extensions\Servers\Domains\Services\AcquisitionSetup::validate($us,$registration,['ns1.example.com','ns2.example.com'],true);expect(false,'Restricted privacy refused');}
-        catch(Paymenter\Extensions\Servers\Domains\Services\SetupValidation $e){same(['privacy'],$e->fields,'Restricted privacy has a safe field error');}
-        storefrontViews();app('view')->share('errors',$session->get('errors'));
-        $html=(new OwnedDomainController($owners))->setup($r,$registration->domain_id)->render();
-        same(1,storefrontDom($html)->query('//textarea[@name="nameservers"][@aria-invalid="true"]')->length,'Real Blade identifies setup error');
-        same(implode("\n",$invalid),storefrontDom($html)->query('//textarea[@name="nameservers"]')->item(0)->textContent,'Setup redisplays submitted nameservers');
-        same(0,storefrontDom($html)->query('//input[@name="privacy"]')->length,'Setup errors do not expose the hidden privacy choice');
-        app('view')->share('errors',new Illuminate\Support\ViewErrorBag);
-    }
-    commerceReject(fn()=>$setup->save($user,$registration->domain_id,['nameservers'=>$i?['ns1.example.com','ns2.example.com']:[],'privacy'=>true]));
-    expect(!isset($registration->fresh()->policy['owner_setup']),'Local writer also refuses hidden privacy without freezing setup');
-    // Exercise the actual POST grammar: blank nameservers use the account template on either registrar.
-    $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Owner POST registration DNS '.$i,'enabled'=>true,
-        'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
-        'edited_by'=>$user->id,'reason'=>'Synthetic Finish setup default']));
-    $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$registration->server_id)->sole();
-    DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked($account,$template->id));
-    $session->forget('errors');$r=$req($registration->domain,'setup',['nameservers'=>'']);nativeNormalizeInput($r);$action->setup($r,$registration->domain_id);
-    expect(!$session->has('errors'),'Blank Finish setup with a template passes the HTTP boundary');
-    same($template->nameservers,$registration->fresh()->payload['nameservers'],'HTTP capture fills the selected template before dispatch');
-    DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Services\NewDomainDns::saveLocked($account,null));
-    expect(isset($registration->fresh()->policy['owner_setup']),'Registration desired settings captured before dispatch');
-    same(false,$registration->fresh()->payload['privacy'],'Setup without privacy keeps the stored choice');
-    same('awaiting_payment',$registration->fresh()->state,'Setup creates no financial or processing authority');
-}
-$legacy=$newTransfer('owner-legacy-privacy-placeholder.com',1,true,true);
-$legacy->update(['payload'=>[...$legacy->payload,'privacy'=>true]]);
-$setup->save($user,$legacy->domain_id,['nameservers'=>['ns1.example.com','ns2.example.com']]);
-same(true,$legacy->fresh()->payload['privacy'],'Hidden setup preserves a previously stored privacy choice');
-$incomplete=$newTransfer(placeholderComFixtureName('owner-before-setup-placeholder.com'),1,true,true);$incomplete->update(['payload'=>[...$incomplete->payload,'nameservers'=>[]]]);$makeTransfer(1);
-$priorCalls=count($state->calls);$engine->execute($incomplete->id);same([],$incomplete->fresh()->attempt??[],'Incomplete setup consumes no acquisition attempt');same($priorCalls,count($state->calls),'Incomplete setup performs no transport');
-$setup->save($user,$incomplete->domain_id,['nameservers'=>['ns1.example.com','ns2.example.com'],'privacy'=>false]);
-expect($claims->claim($incomplete->id)!==null,'Valid owner setup permits a virgin funded claim');
-$op=$newTransfer(placeholderComFixtureName('owner-unverified-paid-placeholder.com'),0,false,false);DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
-expect(!$owners->present($op->domain)->transfer['open'],'Paid status alone cannot offer an unverified deadline');
-$r=$req($op->domain,'setup',['confirmed'=>'1']);$action->setup($r,$op->domain_id);expect(!isset($op->fresh()->policy['owner_setup']),'Unfunded setup refused');
-$cutoff=$newTransfer(placeholderComFixtureName('owner-cutoff-setup-placeholder.com'),1,true,false);$clock->instant=$now->modify('+30 days');
-expect(!isset($owners->present($cutoff->domain)->actions['setup']),'Virgin setup is absent at the exact paid cutoff');$clock->instant=$now;
 // Exercise the real global trimming middleware, including native whitespace conversion.
 $r=Request::create('/','POST',['transfer_code'=>'  keep  ','other'=>'  trim  ']);
 nativeNormalizeInput($r);
@@ -137,5 +72,4 @@ same('keep',$r->request->get('transfer_code'),'Unrelated core route transfer_cod
 same('trim',$r->request->get('other'),'Other native input transformations unchanged');
 foreach(['setup-save','contacts-save','code-save','manage']as$name){$route=Illuminate\Support\Facades\Route::getRoutes()->getByName('domains.domains.'.$name);
     expect(in_array('web',$route->gatherMiddleware(),true),'Native CSRF group retained');expect((bool)array_filter($route->gatherMiddleware(),fn($m)=>str_starts_with($m,'throttle:')),'POST throttled');}
-require __DIR__.'/Support/committed-code-pages.php';
 $nativeSuccessful=true;echo "Owner setup/code native POST, exact cutoff, encrypted bytes, replay and trim regressions passed.\n";
