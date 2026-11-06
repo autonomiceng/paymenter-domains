@@ -680,11 +680,12 @@ class RunnerTests(unittest.TestCase):
         focused = ['tests/namesilo-enrollment-test.php',
                    'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php',
                    'tests/watch-scheduler-test.php',
-                   'tests/runtime-records-test.php', 'tests/runtime-records-order-test.php', 'tests/owner-management-test.php',
+                   'tests/runtime-records-test.php', 'tests/runtime-records-order-test.php', 'tests/runtime-records-gates-test.php', 'tests/runtime-records-fencing-test.php', 'tests/owner-management-test.php',
                    'tests/owner-management-namesilo-test.php', 'tests/staff-monitoring-test.php',
                    'tests/namesilo-dns-form-test.php', 'tests/managed-public-observer-test.php',
                    'tests/namesilo-dns-delete-form-test.php',
-                   'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php']
+                   'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php',
+                   'tests/self-heal-queue-test.php', 'tests/self-heal-recovery-test.php']
         cases = [(1, [path], True) for path in focused]
         cases += [(1, focused, True), (2, focused, False),
                   (1, [focused[0], 'tests/offer-routing-test.php'], False)]
