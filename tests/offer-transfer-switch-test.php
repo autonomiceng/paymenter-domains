@@ -44,6 +44,12 @@ $run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);
 same([1,1,(int)$binding->serverId],[(int)$policy()->register_enabled,(int)$policy()->transfer_enabled,(int)$policy()->server_id],'Transfers On allows transfers on the seller row and keeps registrations');
 expect($storefront->offer('com','transfer',1)!==null,'Transfers On makes a sold transfer purchasable');
 same(true,$offers->transfersOn('com'),'Customers see transfers for .com');
+// The same explicit switch also updates Change registrar when it is turned off.
+$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>false]]]]);
+same(0,(int)$policy()->transfer_enabled,'Transfers Off clears the selected registrar transfer flag');
+$run('acceptance',['sell'=>['terms'=>['com'=>['longest'=>3]]]]);
+same(0,(int)$policy()->transfer_enabled,'An unrelated sales edit does not change seller transfer intent');
+$run('acceptance',['sell'=>['terms'=>['com'=>['transfer'=>true]]]]);
 // If the seller row still blocks (changed by hand later), the staff hint names the real switch.
 DB::table('domains_sales_policies')->where('tld','com')->update(['transfer_enabled'=>false]);
 same('Allow transfers in More → Change registrar on .com.',$hint(),'The staff hint names the real next step');

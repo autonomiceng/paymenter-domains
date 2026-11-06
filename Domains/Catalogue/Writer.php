@@ -277,11 +277,12 @@ final class Writer implements Catalogue
                 && ($command->rule === (OfferState::decode($target->catalogue_intent)['pricing_rule'] ?? null)));
             $changed = $this->mutate($command, $target, $rows->where('server_id', $binding->serverId), $now) || $created;
             if (!$changed) { return $revision; }
-            if ($command instanceof Edit && $command->sellerTransfers && $policy && !$policy->transfer_enabled
+            if ($command instanceof Edit && $command->sellerTransfers !== null && $policy
+                && (bool) $policy->transfer_enabled !== $command->sellerTransfers
                 && (int) $policy->server_id === $binding->serverId && $policy->account_fingerprint === $binding->fingerprint
-                && $policy->registrar_key === $binding->registrarKey && self::transfersSupported($target, $now)) {
-                // Transfers On: the same chosen registrar now also takes transfers. Registrations stay as they were.
-                DB::table('domains_sales_policies')->where('id', $policy->id)->update(['transfer_enabled' => true, 'revision' => $revision->selection + 1]);
+                && $policy->registrar_key === $binding->registrarKey && (!$command->sellerTransfers || self::transfersSupported($target, $now))) {
+                // An explicit transfer switch updates only the same chosen registrar; registrations stay as they were.
+                DB::table('domains_sales_policies')->where('id', $policy->id)->update(['transfer_enabled' => $command->sellerTransfers, 'revision' => $revision->selection + 1]);
                 $policy = DB::table('domains_sales_policies')->where('tld', $name)->first();
             }
             if ($seller) {
