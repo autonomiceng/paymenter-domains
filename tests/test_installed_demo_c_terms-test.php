@@ -51,8 +51,9 @@ for($i=0;$i<11;$i++){
     $unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();
 }
 $accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
-$r10Check($accountRows[4]['label']==='.com','Sold TLD readiness precedes the alphabetic unsold catalogue');
-$r10Check(count(array_filter($accountRows,fn($r)=>$r['label']==='.com'))===1,'One compact row per TLD');
+$selected=array_values(array_filter($accountRows,fn($r)=>$r['label']==='Selected TLD terms'));
+$r10Check(count($selected)===1&&$selected[0]['value']==='1 of 1 read','Unsold alphabetic catalogue does not change the complete selected TLD summary');
+$r10Check(count(array_filter($accountRows,fn($r)=>str_starts_with($r['label'],'.aaa')))===0,'Unsold TLDs do not add account readiness rows');
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
 $editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
 same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
