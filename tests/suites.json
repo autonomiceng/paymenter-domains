@@ -192,6 +192,7 @@
     "tests/owner-actions-test.php",
     "tests/owner-nameservers-test.php",
     "tests/owner-renewal-test.php",
+    "tests/owner-renewal-retained-test.php",
     "tests/owner-auto-renew-test.php",
     "tests/owner-declutter-test.php",
     "tests/owner-help-test.php",
