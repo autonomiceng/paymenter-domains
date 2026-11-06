@@ -20,7 +20,8 @@ final class ObservationReader implements ReadPort
     public function observationCapabilities(): array { return $this->management->observationCapabilities(); }
     public function discover(ManagementRequest $r,RequestContext $c,array $knownGlue=[]): array
     {
-        $out=$this->management->discover($r,$c,$knownGlue);
+        // Nameservers, contacts and three flags reads share the observer's request budget.
+        $out=$this->management->discover($r,$c,$knownGlue,reservedReads:5);
         $out['settings']=array_fill_keys(['nameservers','contacts','flags'],['state'=>'unknown','facts'=>[]]);
         if (isset($out['failure_code'])) {
             foreach (['dns','srv','ds'] as $kind) { if (($out[$kind]['state']??null)!=='complete') { $out['failed_family']=$kind;break; } }

@@ -77,6 +77,20 @@ same(['records_unavailable','contacts'],$hold(),'Uncollected registrant cannot c
 $state->contacts['registrant']=['FirstName'=>'Synthetic','LastName'=>'Person','Address1'=>'1 Example Street','City'=>'Portland','PostalCode'=>'97201','Country'=>'US','EmailAddress'=>'synthetic@example.com','Phone'=>'+1.5035550123'];
 $tick();$wired->run($d->id,readRecords:true);
 expect(!ObservationRecords::held($d->fresh()),'Uncollected optional roles still allow a complete registrant refresh');
+// A real refresh shares its 25 requests between primary, record and settings reads.
+$hosts=[];for ($i=1;$i<=13;$i++) { $hosts['ns'.$i.'.'.$d->domain]='8.8.4.4'; }
+$state->glue=$hosts;$saved=$d->fresh()->observation;
+$saved['records']['families']['glue']['candidates']=array_keys($hosts);$d->update(['observation'=>$saved]);
+$turns=[];
+for ($turn=0;$turn<2;$turn++) {
+    $beforeCalls=count($state->calls);$tick();$wired->run($d->id,readRecords:true);
+    same('complete',$d->fresh()->observation['records']['settings']['flags']['state'],'Glue discovery reserves capacity for settings');
+    expect(!ObservationRecords::held($d->fresh()),'Successful bounded glue and settings reads clear the hold');
+    $turns[]=array_column(array_filter(array_slice($state->calls,$beforeCalls),static fn($call)=>$call[0]==='CheckNSStatus'),1);
+}
+$checked=static fn($calls)=>array_column($calls,'CheckNSName');
+expect(count($turns[0])>0&&count($turns[0])<13,'A refresh bounds glue below the remaining settings budget');
+same(13,count(array_unique([...$checked($turns[0]),...$checked($turns[1])])),'Later refresh rotates through every retained glue candidate');
 same([],$writes(),'Wired observation cycle and resume send no registrar writes');
 
 $nativeSuccessful=true;echo "C1 observation: legacy fallback, CAA hold, wired format=1 cycle, resume, glue reason and one clock passed.\n";
