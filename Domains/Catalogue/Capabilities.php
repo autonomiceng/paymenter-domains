@@ -128,7 +128,7 @@ final class Capabilities
         }
         try { $f = OfferState::facts($t->catalogue_facts); } catch (\Throwable) { $f = null; }
         // NameSilo stays annual before any TEST protocol check: its price read has no years parameter.
-        return TermSupport::renewal($b->registrarKey, $t->tld, $f, $costs, $expiry, $this->clock->now());
+        return TermSupport::renewal($b->registrarKey, $t->tld, $f, $costs, $expiry, $this->clock->now(), environment: $b->environment);
     }
     /** Staff Edit terms/account setup: supported renewal years and why each longer year or family is held. */
     public function termReadiness(AccountBinding $b, string $name): array
@@ -143,7 +143,7 @@ final class Capabilities
             try { $c = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation))); } catch (\Throwable) { continue; }
             if ($c->term === (int)$p->term) { $costs[$c->key()] = $c; }
         }
-        return TermSupport::readiness($b->registrarKey, $name, $f, $costs, $this->clock->now());
+        return TermSupport::readiness($b->registrarKey, $name, $f, $costs, $this->clock->now(), environment: $b->environment);
     }
     private function current(?Cost $cost): ?Cost
     { return $cost && $cost->action === 'renew' && $cost->term === 1 && $cost->enabled && $cost->fresh($this->clock->now()) ? $cost : null; }

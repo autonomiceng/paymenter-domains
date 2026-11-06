@@ -74,7 +74,7 @@ final readonly class RenewalAuthority
                 } catch (\InvalidArgumentException | \TypeError) {}
                 // NS17: a longer term is admissible only through its named debt's frozen exact-term rule.
                 $termRule = \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::admits($binding->registrarKey, $request->years,
-                    $all->first(fn ($op) => self::expected($op, $request))?->policy['renewal'] ?? null);
+                    $all->first(fn ($op) => self::expected($op, $request))?->policy['renewal'] ?? null, environment: $binding->environment);
                 return [$binding, $domain->domain, $current, $retail, $nonpremium, $capabilityUntil, $termRule];
             });
         } catch (RenewalRefused $error) { throw $error; }
