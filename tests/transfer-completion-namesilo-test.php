@@ -33,12 +33,4 @@ $billing=new DomainBilling($bindings,$guard,$clock,catalogue: $GLOBALS['caps']??
 $renew=Paymenter\Extensions\Servers\Domains\Models\Operation::where('invoice_id',$invoice->id)->sole();
 same('2028-01-01',$renew->base_expires_at->format('Y-m-d'),'Slice24 bills from NameSilo transfer anchor'); same('2029-01-01',$renew->expected_expires_at->format('Y-m-d'),'Fixed full renewal term');
 same($invoice->id,$billing->invoice($completed->domain_id,$user)->id,'Renewal invoice idempotent'); same(null,$invoice->items->sole()->reference_id,'No native renewal dispatch');
-$op=$prepare('revoked');
-$transferServer=App\Models\Server::findOrFail($binding->serverId);
-$transferServer->settings()->updateOrCreate(['key'=>'domains_namesilo_transfer'],['encrypted'=>true,'type'=>'string',
-    'value'=>json_encode(['fingerprint'=>$binding->fingerprint,'enabled'=>false],JSON_THROW_ON_ERROR)]);
-expect(!Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::accepted($binding),'Revoked NameSilo transfer permission refuses new work');
-$r=$reconcile->run($op->id);
-same('succeeded',$r->state,'A sent NameSilo transfer reconciles after account revocation');
-$calls=$observe->calls;$reconcile->run($op->id);same($calls,$observe->calls,'Revoked completed transfer never replays');
 echo "NameSilo transfer completion, financial gates and billing anchors passed.\n"; $nativeSuccessful=true;

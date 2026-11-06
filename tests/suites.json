@@ -155,6 +155,7 @@
     "tests/transfer-ceiling-test.php",
     "tests/transfer-completion-test.php",
     "tests/transfer-completion-namesilo-test.php",
+    "tests/transfer-completion-namesilo-revoked-test.php",
     "tests/registrar-transfer-answer-test.php",
     "tests/registrar-purchase-answer-test.php",
     "tests/registrar-renewal-answer-test.php",
