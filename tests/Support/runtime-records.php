@@ -16,7 +16,12 @@ app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$cl
 installedPanel();
 [$d,$driver,$original]=$holding(placeholderComFixtureName('record-runtime-placeholder.com'));
 // Finish commerce's two-account facts before selecting the Enom-only runtime reader.
-foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
+app()->instance(AccountBindings::class,$readBindings);
+// Fixture arrangers carry private catalogue ports; installed runtime adapters must use the installed route.
+foreach([NativeCatalogue::class,PriceCatalogue::class,SellerPolicies::class,
+    \Paymenter\Extensions\Servers\Domains\Services\Storefront::class,
+    \Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility::class,
+    \Paymenter\Extensions\Servers\Domains\Services\CartAdmission::class] as $type){app()->forgetInstance($type);}
 // Installation probes resolve these services before the synthetic ports exist.
 app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\DomainObservation::class);
 app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::class);
@@ -27,7 +32,7 @@ app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\AccountRead
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $nativePage=$page;$page=static function()use($nativePage):string { storefrontViews();app('view')->getFinder()->flush();return $nativePage(); };
-$runtimePorts=app(RuntimePorts::class);$compositionReady=true;
+$runtimePorts=app(RuntimePorts::class);expect(\Paymenter\Extensions\Servers\Domains\Services\Runtime::observations() instanceof \Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler,'Installed runtime uses the retained catalogue scheduler');$compositionReady=true;
 $registerRecords=static function()use($runtimePorts,$b,$bindings,$clock,$engine,$reconcile,$management,&$driver,&$compositionReady):void {
     $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock,offers: $GLOBALS['caps']??null);$accept=new RenewalAcceptance($b,true,true,25);
     $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
