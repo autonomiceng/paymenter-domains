@@ -63,7 +63,10 @@ config(['domains.hidden_endings'=>['com']]);commerceReject(fn()=>$run('acceptanc
 // A checkbox cannot manufacture missing terms/registry facts when restoring a staff stop.
 $run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>false,'renew'=>true,'transfer'=>false],$id);
 $facts=Tld::find($id)->catalogue_facts;DB::table('domains_tlds')->where('id',$id)->update(['catalogue_facts'=>null]);$before=StaffCommands::stamp($binding->serverId);
-commerceReject(fn()=>$run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>true,'renew'=>true,'transfer'=>false,'verified'=>true],$id));same($before,StaffCommands::stamp($binding->serverId),'Verified checkbox cannot invent independently dated facts');
+$run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>true,'renew'=>true,'transfer'=>false,'verified'=>true],$id);
+same(null,Tld::find($id)->catalogue_facts,'Pending intent cannot invent independently dated facts');
+expect($before!==StaffCommands::stamp($binding->serverId),'Pending intent is recorded for the next independent observation');
+commerceReject(fn()=>$storefront->offer('com','register',1));
 DB::table('domains_tlds')->where('id',$id)->update(['catalogue_facts'=>$facts]);
 expect($source->restorable(Tld::find($id))['register'],'TLD restore presenter reads independent facts');
 $run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>true,'renew'=>true,'transfer'=>false,'verified'=>true],$id);
@@ -82,6 +85,14 @@ $org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();
 $run('seller',['seller'=>(string)$binding->serverId,'register'=>true,'transfer'=>true],$id);
 $f=OfferState::facts($org->catalogue_facts);$expired=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($f->terms,$f->registryFields,$f->renewalSafe,$f->requiresNameservers,$f->autoRenewOnly,$f->source,$now->modify('-2 days'),$now->modify('-1 day'));
 DB::table('domains_tlds')->where('id',$org->id)->update(['catalogue_facts'=>OfferState::encodeFacts($expired)]);
+// Expired evidence may retain pending staff intent but cannot authorize a public offer.
+$pending=$run('acceptance',['sell'=>['choices'=>['org'=>'sell']]]);
+same(['org'],array_keys($pending['rows']),'Expired facts accept pending intent');same([],$pending['failed'],'Pending intent is not a business refusal');
+commerceReject(fn()=>$storefront->offer('org','register',1));
+$run('acceptance',['sell'=>['choices'=>['org'=>'skip']]]);
+// Fresh independently observed unsupported renewal facts produce the partial business refusal.
+$unsupported=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($f->terms,$f->registryFields,false,$f->requiresNameservers,$f->autoRenewOnly,$f->source,$now,$now->modify('+1 day'));
+DB::table('domains_tlds')->where('id',$org->id)->update(['catalogue_facts'=>OfferState::encodeFacts($unsupported)]);
 $audits=count(Review::historyRows(Server::find($binding->serverId)));$batch=$run('acceptance',['sell'=>['choices'=>['com'=>'sell','org'=>'sell']]]);
 same(['com'],array_keys($batch['rows']),'Valid existing sibling still applies');same(['.org'],$batch['failed'],'Refused existing ending is returned');same('Explicit verified widening required.',$batch['failures']['org'],'Business refusal includes its reason');
 same(false,OfferState::decode($org->fresh()->catalogue_intent)['sell'],'Refused existing row keeps its saved choice');expect($storefront->offer('com','register',1)!==null,'Fresh sibling reaches the public offer');same($audits+1,count(Review::historyRows(Server::find($binding->serverId))),'Partial business result consumes one reviewed audit');

@@ -5,12 +5,9 @@ require_once __DIR__.'/native-app.php';
 // The general fixture suppresses native audit noise. Enable the upstream default before booting
 // cancellation models, and include console events only for this synthetic CLI qualification.
 config(['audit.enabled'=>true,'audit.console'=>true]);
-require __DIR__.'/Support/reconciliation-fixture.php';
-require __DIR__.'/Support/staff-panel.php';
 use App\Models\{Service,ServiceCancellation};
 use Illuminate\Support\Facades\{Auth,DB};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCancellation,NativeIdentity,NativeIntentSchema};
-app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);
 // Negative discovery stays retryable until the extension table is installed.
 same([],NativeCancellation::withIntents(collect(),[999999],true)->all(),'Absent intent storage is harmless');
 NativeIntentSchema::install();
@@ -20,12 +17,26 @@ NativeCancellation::withIntents(collect(),[999999],false);
 $schema=array_filter(DB::getQueryLog(),fn($q)=>str_contains($q['query'],'sqlite_master'));
 DB::disableQueryLog();
 same(1,count($schema),'Successful intent discovery is reused by advisory and locked consumers');
-NativeCancellation::boot();
+// Qualify cancellation's own zero-read fast path before installation registers
+// the independent holding/identity guards. Restore the native dispatcher before
+// the full installer so integration checks retain its actual listener order.
 $plain=new Service;$plain->exists=true;$plain->setRawAttributes(['id'=>999999,'status'=>'active','label'=>'Before'],true);$plain->label='After';
-DB::enableQueryLog();DB::flushQueryLog();
-Service::getEventDispatcher()->dispatch('eloquent.updating: '.Service::class,$plain);
-$queries=DB::getQueryLog();DB::disableQueryLog();
+$nativeEvents=Service::getEventDispatcher();Service::setEventDispatcher(clone $nativeEvents);
+try {
+    NativeCancellation::boot();DB::enableQueryLog();DB::flushQueryLog();
+    Service::getEventDispatcher()->dispatch('eloquent.updating: '.Service::class,$plain);
+    $queries=DB::getQueryLog();
+} finally {
+    DB::disableQueryLog();Service::setEventDispatcher($nativeEvents);
+}
 same([], $queries,'Safe proposed status performs no native cancellation precheck reads');
+// Discard only the empty discovery probe before the full fresh installer owns its schema.
+Illuminate\Support\Facades\Schema::drop('domains_native_intents');
+require __DIR__.'/Support/reconciliation-fixture.php';
+require __DIR__.'/Support/staff-panel.php';
+app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);
+// The isolated probe claimed only its cloned dispatcher; qualify the real integration dispatcher too.
+NativeCancellation::boot();
 NativeIdentity::boot();
 $actor=staffUser(['admin.domains.view']);Auth::login($actor);
 [$op]=$prepare(placeholderComFixtureName('native-cancel-audit-placeholder.com'));same('succeeded',$reconcile->run($op->id)->state,'Completed managed holding');

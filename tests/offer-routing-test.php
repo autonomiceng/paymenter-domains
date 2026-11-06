@@ -13,7 +13,9 @@ use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 // Real installed container seams are necessary: a caller-supplied adapter matrix cannot prove cutover.
 (new Installation)->install(); extract(commerceFixture(true,active:true));
 app()->instance(AccountBindings::class, $bindings); app()->instance(NativeCatalogue::class, $native);
-app()->instance(Clock::class, new FakeClock($now)); Runtime::register();
+app()->instance(Clock::class, new FakeClock($now));
+// Exercise the runtime attachment on fresh ports, before checking duplicate registration below.
+app()->instance(RuntimePorts::class, new RuntimePorts); Runtime::register();
 same(true, is_callable([CallerRouting::class, 'contract']), 'Installed routing must expose its compiled construction-only contract');
 $before = DB::table('domains_tlds')->orderBy('id')->get()->toJson(); $calls = $reads->calls;
 $contract = CallerRouting::contract();

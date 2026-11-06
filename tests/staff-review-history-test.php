@@ -41,13 +41,14 @@ same('Read current evidence',$rows[2]['sub'],'Check reason stays under its event
 expect(!in_array('Staff',array_column($rows,'by'),true),'History names who acted');
 $activity()->assertSuccessful()->assertDontSee('Hold for evidence')->assertDontSee('Read current evidence')->assertDontSee('Release after evidence review');
 $history()->assertSuccessful()->assertSee('Request #'.$op->id)->assertDontSee('Release after evidence review')->assertDontSee('Hold for evidence');
-// History is carried in loaded policy; one and four rows must perform exactly the same reads.
+// History carries each request plus its hold/release events; one and four requests perform exactly the same reads.
 $measure=static function($page){DB::enableQueryLog();DB::flushQueryLog();$page->call('$refresh')->assertSuccessful();$q=DB::getQueryLog();DB::disableQueryLog();return count($q);};
 $cell=$activity();$one=$measure($cell);$timeline=$history();$historyOne=$measure($timeline);
 for($i=1;$i<=3;$i++){$copy=$op->fresh()->replicate();$copy->operation_key='history-copy-'.$i;$copy->invoice_item_id=null;$copy->save();}
 $copies=Paymenter\Extensions\Servers\Domains\Models\Operation::where('operation_key','like','history-copy-%')->get();
 $cell->call('$refresh')->assertCanSeeTableRecords([$op,...$copies]);$many=$measure($cell);
-$timeline->call('$refresh')->assertCountTableRecords(4);same($historyOne,$measure($timeline),'Domain History query count stays constant at one versus four requests');
+same(4,$domain->operations()->count(),'Exactly four retained requests share the domain');
+$timeline->call('$refresh')->assertCountTableRecords(12)->assertSee('Put on hold')->assertSee('Hold released');same($historyOne,$measure($timeline),'Domain History query count stays constant at one versus four requests');
 same($one,$many,'Registrar requests list query counts remain constant at one versus four requests');
 echo 'Registrar requests list queries: '.$one.' at 1 row; '.$many." at 4 rows.\n";
 // Additional bounded, synthetic retained entries include a stored display name and failed phase.

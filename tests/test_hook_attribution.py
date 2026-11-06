@@ -5,17 +5,18 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import tempfile
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import installed_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
     fixture = Path(os.environ['PAYMENTER_TEST_FIXTURE'])
-    with tempfile.TemporaryDirectory(prefix='domains-hook-', dir=fixture.parent) as temporary:
-        root = Path(temporary)
-        app = root/'paymenter'
-        shutil.copytree(fixture, app, ignore=shutil.ignore_patterns('*.sqlite', 'domains-editor-routes.php'))
+    # Reuse the guarded read-only vendor tree; each native app/database/cache remains private.
+    with installed_fixture.application(fixture, 'hook') as (root, app):
         installed = app/'extensions/Servers/Domains'
         if installed.is_symlink():
             installed.unlink()

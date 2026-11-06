@@ -102,10 +102,23 @@ final class IdentifierSweepBuilder extends SQLiteBuilder
 
 $builder = new IdentifierSweepBuilder(DB::connection());
 Schema::swap($builder);
-app(Illuminate\Database\Migrations\Migrator::class)->run([dirname(__DIR__).'/Domains/database/migrations'], ['force' => true]);
+// Keep the complete grammar sweep inside the actual fresh-install lifecycle.
+(new Installation)->install();
 (new Installation)->verify();
 // Exercise both retained install() and verify() entry points (including reminder install).
 foreach (Installation::SCHEMAS as $schema) { $schema::install(); }
+// Fresh installs never create retired sell stores. Replay their pinned bridge DDL so the
+// retained-only verifier is still exercised and compiled by the same MySQL grammar sweep.
+$bridge=json_decode(file_get_contents(__DIR__.'/fixtures/retained-offer-bridge.json'),true,512,JSON_THROW_ON_ERROR);
+same('89112442164558c4ab61ff32f210d1b102605112',$bridge['source'],'Exact retained schema source');
+$stores=\Paymenter\Extensions\Servers\Domains\Services\OfferRetirement::TABLES;
+foreach($bridge['objects'] as $object){
+    if($object['type']==='table'&&in_array($object['name'],$stores,true)
+        ||$object['type']==='index'&&array_filter($stores,fn($table)=>str_starts_with($object['name'],$table.'_'))){DB::statement($object['sql']);}
+}
+\Paymenter\Extensions\Servers\Domains\Services\OfferRetirement::verifyLegacyStores();
+\Paymenter\Extensions\Servers\Domains\Services\OfferRetirement::install();
+
 
 $sites = [];
 foreach (glob(dirname(__DIR__).'/Domains/Services/*.php') as $file) {

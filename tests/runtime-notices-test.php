@@ -58,7 +58,7 @@ $r=new Review($staff->id,$t->server_id,null,'alert_review',Review::ticket($staff
 $writer->run($r,['alert_id'=>$alertId,'confirmed'=>true],$now);expect(DB::table('domains_obligation_alerts')->find($alertId)->resolved_at!==null,'Manual check disposition retained');
 $rejectUnchanged($reviewFor('alert_review',$t->server_id),['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Current notification check alert required.');
 $rejectUnchanged($r,['alert_id'=>$alertId,'confirmed'=>true],'domains_obligation_alerts',$alertId,'Review key used.');
-same(['Review notification outcome','Review notification check'],array_column(Review::historyRows(App\Models\Server::findOrFail($t->server_id)),'action'),'Both independent notification reviews retain audit rows');
+same(['Review notification outcome','Review notification check'],array_values(array_filter(array_column(Review::historyRows(App\Models\Server::findOrFail($t->server_id)),'action'),static fn($action)=>in_array($action,['Review notification outcome','Review notification check'],true))),'Both independent notification reviews retain audit rows alongside the retained enrollment history');
 // A clean pass closes a failed reminder; a failed template stays open until its retry succeeds.
 $alerts=Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::class;$open=static fn(string $code)=>DB::table('domains_obligation_alerts')->where('domain_id',$op->domain_id)->where('code',$code)->whereNull('resolved_at')->count();
 $alerts::record($op->domain,'reminder_failed',$now->getTimestamp());$alerts::record($op->domain,'template_failed',$now->getTimestamp());
