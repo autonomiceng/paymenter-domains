@@ -79,7 +79,7 @@ final class StorefrontController extends Controller
         }
         try { $result = $this->storefront->check($input, $request->input('mode') === 'transfer'); }
         catch (\InvalidArgumentException) { return response()->json(['status' => 'invalid', 'message' => 'Enter a valid domain name.'], 422); }
-        catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('Domains search failed.',['exception_class'=>$e::class]); return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
+        catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('Domains search failed.',CartHandoffFailure::context($e,'search')); return response()->json(['status' => 'error', 'message' => 'Couldn’t check this name.'], 503); }
         if (in_array($result['status'], ['available', 'transferable'], true)) {
             $result['key'] = FormKeys::issue($request, 'order:'.$result['domain']);
         }
@@ -112,7 +112,7 @@ final class StorefrontController extends Controller
             return $this->refused($request, $input, $e->getMessage());
         } catch (\Throwable $e) {
             $key = CartHandoffFailure::key($e);
-            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',['exception_class'=>$e::class,'exception_message_key'=>$key]);
+            \Illuminate\Support\Facades\Log::warning('Domains cart handoff failed.',CartHandoffFailure::context($e,'cart_handoff'));
             $notice = $key === 'eligibility_unconfirmed' ? 'We couldn’t confirm this name right now. Try again.' : 'We couldn’t add that name to your cart. Check the latest results below and try again.';
             return $this->refused($request, $input, $notice);
         }

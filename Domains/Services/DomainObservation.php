@@ -10,6 +10,8 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 final class DomainObservation
 {
     public function __construct(private readonly AccountBindings $bindings, private readonly Clock $clock, private readonly ReadLimiter $budget, private readonly ?OwnerPorts $records=null, private readonly ?\Closure $recordGate=null, private readonly ?\Closure $observationReader=null) {}
+    /** A core-only observer cannot fill record inventory; do not repeatedly wake it for missing families. */
+    public function readsRecords(): bool { return $this->records!==null||$this->observationReader!==null; }
     public function run(int $id, ?int $generation=null, ?string $fingerprint=null, bool $readRecords=true, ?\Closure $current=null, ?\Closure $completion=null): string
     {
         OperationClaims::outside(); if($current){$current();} $seed=Domain::findOrFail($id);
@@ -97,8 +99,10 @@ final class DomainObservation
             }
             if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
             if ($deferred) { return 'read_deferred'; }
-            if ($readRecords && ($this->records!==null || $this->observationReader!==null) && !$recordEnabled) { return 'records_disabled'; }
-            return $l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
+            $baseCode=$l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
+            // A record gate must never hide drift, pending status or another unresolved core result.
+            if ($baseCode==='refreshed' && $readRecords && ($this->records!==null || $this->observationReader!==null) && !$recordEnabled) { return 'records_disabled'; }
+            return $baseCode;
         });
         return $completion ? $completion($code,$wireGuard) : $code;
     }
