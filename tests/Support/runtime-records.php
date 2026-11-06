@@ -13,9 +13,17 @@ require_once __DIR__.'/offline-acquisition.php';
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RuntimePorts, NativeCatalogue, PriceCatalogue, SellerPolicies, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
-foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
 installedPanel();
 [$d,$driver,$original]=$holding(placeholderComFixtureName('record-runtime-placeholder.com'));
+// Finish commerce's two-account facts before selecting the Enom-only runtime reader.
+foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
+// Installation probes resolve these services before the synthetic ports exist.
+app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\DomainObservation::class);
+app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::class);
+app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class);
+app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class);
+app()->forgetInstance(\Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget::class);
+\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $nativePage=$page;$page=static function()use($nativePage):string { storefrontViews();app('view')->getFinder()->flush();return $nativePage(); };
