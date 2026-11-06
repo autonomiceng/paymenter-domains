@@ -1,11 +1,11 @@
 <?php
 // Native encrypted sequence/grant witness. MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DsManagement;
-$dsWire=(object)['rows'=>[], 'writes'=>[], 'fault'=>''];
+use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\{DsManagement,DsRegistryPolicy};
+$dsWire=(object)['rows'=>[], 'writes'=>[], 'calls'=>[], 'fault'=>''];
 $dsExchange=static function($origin,$cmd,$p,$t)use($managementExchange,$dsWire):string {
     if (!str_starts_with($cmd,'dnsSec')) { return $managementExchange($origin,$cmd,$p,$t); }
-    same(0,Illuminate\Support\Facades\DB::transactionLevel(),'DS reads and writes stay outside locks');
+    $dsWire->calls[]=$cmd;same(0,Illuminate\Support\Facades\DB::transactionLevel(),'DS reads and writes stay outside locks');
     $reply=['code'=>300,'detail'=>'synthetic'];
     if ($cmd==='dnsSecListRecords') {
         if ($dsWire->fault!=='missing') { $reply['ds_record']=$dsWire->rows; }
@@ -23,8 +23,14 @@ App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=
 $fact=['suffix'=>'com','input'=>'ds','algorithms'=>[13],'digest_types'=>[2],
     'combinations'=>[['algorithm'=>13,'digest_type'=>2]],'source'=>'synthetic-registry','version'=>'rule-1',
     'reviewed_at'=>$clock->now()->modify('-1 hour')->format(DATE_ATOM),'valid_until'=>$clock->now()->modify('+1 day')->format(DATE_ATOM),'expiry_policy'=>'refuse'];
-$driver=new DsManagement($binding,$dsExchange,['format'=>1,'entries'=>['com'=>$fact]],$clock);
 $tuple=['key_tag'=>123,'algorithm'=>13,'digest_type'=>2,'digest'=>str_repeat('AB',32)];
+// The TEST runtime's empty deployment map refuses DS at submit, before any registrar call or invoice.
+$off=new DsManagement($binding,$dsExchange,DsRegistryPolicy::DEPLOYMENT_FACTS,$clock);$io=[$ms->calls,$dsWire->calls,App\Models\Invoice::count()];
+foreach (['ds_add'=>['ds'=>$tuple],'ds_delete'=>['ds'=>$tuple,'confirm_last_delete'=>true]] as $action=>$input) {
+    try { $submit($d,$off,$action,$input); throw new LogicException('Empty DS map admitted '.$action); } catch (DomainException) {}
+}
+same($io,[$ms->calls,$dsWire->calls,App\Models\Invoice::count()],'Empty DS map sends no registrar call and no invoice');
+$driver=new DsManagement($binding,$dsExchange,['format'=>1,'entries'=>['com'=>$fact]],$clock);
 $op=$submit($d,$driver,'ds_add',['ds'=>$tuple]);
 same(['format'=>1,...$fact],$op->fresh()->policy['management']['sequence']['preimage']['ds_policy'],'Encrypted operation retains exact policy version');
 $dsWire->fault='lost';

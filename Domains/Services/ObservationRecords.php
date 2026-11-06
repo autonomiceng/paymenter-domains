@@ -83,8 +83,8 @@ final class ObservationRecords
         if (in_array($family,['dns','srv','ds','glue','contacts','nameservers','flags'],true)) { $p['record_hold']['family']=$family; }
         $d->update(['observation'=>$p]);
     }
-    public static function incomplete(Domain $d): bool
-    { $r=self::current($d);return $r===null||RecordInventory::incomplete($r); }
+    public static function incomplete(Domain $d, ?\DateTimeImmutable $now=null): bool
+    { $r=self::current($d,$now);return $r===null||RecordInventory::incomplete($r); }
     public static function current(Domain $d, ?\DateTimeImmutable $now=null): ?array
     {
         $now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();

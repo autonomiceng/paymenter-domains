@@ -9,9 +9,9 @@ $work=new ObservationWork($observer,$clock,$budget);$enom=$tlds[0]->server_id;$n
 // A broken backlog is isolated and its account turn cannot monopolize the next worker.
 for($i=0;$i<30;$i++){DB::table('domains_observation_work')->insert(['server_id'=>$enom,'account_fingerprint'=>Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$enom)->value('account_fingerprint'),
     'domain_id'=>900000+$i,'generation'=>1,'due_at'=>0]);}
-same([$enom=> 'account_unavailable'],$work->tick(1),'Broken account bounded to one turn');
+same([$enom=> 'account_unavailable'],array_map(static fn($r)=>$r['holding'],$work->tick(1)),'Broken account bounded to one turn');
 $calls=count($observe->calls);
-same([$ns=>'idle'],$work->tick(1),'Transfer status is owned by financial reconciliation');
+same([$ns=>'idle'],array_map(static fn($r)=>$r['holding'],$work->tick(1)),'Transfer status is owned by financial reconciliation');
 same(0,DB::table('domains_observation_work')->where('domain_id',$d->id)->count(),'No duplicate transfer observation work');
 (new ObservationWork($observer,$clock,$budget))->tick(2);
 same($calls,count($observe->calls),'Restart does not add another transfer poller');
@@ -25,7 +25,10 @@ same([$enom],array_keys(ObservationCandidates::next('refund',1)),'First candidat
 $clock->instant=$now;Carbon\Carbon::setTestNow($now);Carbon\CarbonImmutable::setTestNow($now);$missing=$newTransfer(placeholderComFixtureName('missing-observation-code-placeholder.com'),1,true,false);$work->tick(2);
 $bindings->setProcessing($ns,false);$selected=ObservationCandidates::next('timeout',2);expect(in_array($missing->id,$selected[$ns],true),'Missing-code candidate selected even without processing');
 same('awaiting_code',$missing->fresh()->state,'Selection does not timeout or credit');
-$bindings->setProcessing($ns, true, syntheticActivation());[$active,$unused,$acquired]=$holding('followup');same('pending',$active->observation['followup']['state'],'Transfer completion seeds durable follow-up');
+$bindings->setProcessing($ns, true, syntheticActivation());
+// Resume advances the catalogue revision; publish locally before creating the follow-up transfer.
+activeFixtureRepublish($bindings, Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$ns,'tld'=>'com'])->sole());
+[$active,$unused,$acquired]=$holding('followup');same('pending',$active->observation['followup']['state'],'Transfer completion seeds durable follow-up');
 $bindings->setProcessing($ns,false);$clock->instant=$clock->now()->modify('+1 minute');same('refreshed',$observer->run($active->id),'Paused old account refreshes');
 same(1,$active->fresh()->observation['followup']['reads'],'Follow-up advances facts only');
 // Explicit verifier enrollment predates the local offer-enrollment marker.
@@ -36,7 +39,7 @@ same(true,$offerRefused,'Offer feeds still require local NameSilo enrollment');
 $scheduled=new ObservationWork($observer,$clock,$budget);
 DB::table('domains_observation_work')->where('server_id',$ns)->delete();
 $calls=count($observe->calls);
-same('refreshed',$scheduled->tick(2)[$ns],'Scheduled legacy NameSilo holding reads accept explicit verified enrollment');
+same('refreshed',$scheduled->tick(2)[$ns]['holding'],'Scheduled legacy NameSilo holding reads accept explicit verified enrollment');
 expect(count($observe->calls)>$calls,'Scheduled NameSilo holding reaches its established synthetic reader');
 // NS15 native encrypted round-trip, owner projection and sequence planning with opaque CAA/SRV siblings.
 [$d,$driver,$original]=$holding('ns15');$ms->route='apibatch';

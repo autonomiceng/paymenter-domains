@@ -57,9 +57,12 @@ final class DomainObservation
             if ($snapshot?->owned===true) {
                 try {
                     if($current){$current();}
-                    $port=$this->observationReader?($this->observationReader)($binding):$this->records->forDomain($seed);
+                    // A resolver may return null: that runtime has no dedicated reader, so the legacy read and row format stay.
+                    $port=$this->observationReader?($this->observationReader)($binding):null;
+                    if ($port!==null && (!$port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader || !$port->bindsTo($binding))) { throw new \DomainException('Observation reader binding changed.'); }
+                    $capabilities=$port?->observationCapabilities();
+                    $port??=$this->records?->forDomain($seed);
                     if (!$port instanceof \Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader || !$port->bindsTo($binding)) { throw new \DomainException('Observation reader binding changed.'); }
-                    $capabilities=$this->observationReader?$port->observationCapabilities():null;
                     if ($binding->registrarKey==='enom') { $knownGlue=GlueRecords::known($seed,$knownGlue,$snapshot?->nameservers?->nameservers??[]); }
                     $r=new \Paymenter\Extensions\Servers\Domains\Data\ManagementRequest($binding,'observation:'.$seed->id,$seed->domain,'discovery',[],$seed->provider_domain_id,domainId:(int)$seed->id);
                     $records=$port->discover($r,$ctx,$knownGlue);
@@ -80,9 +83,9 @@ final class DomainObservation
             if ($records!==null && count($records['glue']['records']??[])>GlueDiscoveryLimit::HOSTS) { $records=null; $recordOverflow=true; }
             if ($records!==null) { ObservationRecords::save($l['domain'],$records,$this->clock->now(),$capabilities); }
             if ($snapshot || $transfer!==TransferStatus::Unknown) { ObservationProjection::save($l['domain'],$snapshot,$transfer,$this->clock->now()); }
-            $incomplete=$records!==null && ObservationRecords::incomplete($l['domain']);
+            $incomplete=$records!==null && ObservationRecords::incomplete($l['domain'],$this->clock->now());
             if ($incomplete && $failedFamily===null) {
-                $inventory=ObservationRecords::current($l['domain']);
+                $inventory=ObservationRecords::current($l['domain'],$this->clock->now());
                 foreach (['dns','srv','ds','glue'] as $kind) {
                     if (($inventory['expected_families'][$kind]??'supported')==='supported' && ($inventory['families'][$kind]['state']??null)!=='complete'
                         && !($binding->registrarKey==='enom' && $kind==='glue' && ($inventory['families'][$kind]['state']??null)==='partial' && !($inventory['families'][$kind]['read_failed']??false))) { $failedFamily=$kind;break; }
@@ -90,7 +93,7 @@ final class DomainObservation
                 foreach ($inventory['settings']??[] as $kind=>$family) { if ($failedFamily===null && $family['state']!=='complete') { $failedFamily=$kind; } }
             }
             if ($recordEnabled && !$recordHeld && ($recordOverflow || $recordFailed || ($records['glue']['read_failed']??false) || $incomplete)) {
-                ObservationRecords::hold($l['domain'],$recordOverflow?'child_host_limit':($snapshot?->owned===false?'ownership_drift':(($records['glue']['read_failed']??false)&&$failedFamily==='glue'?'glue_unavailable':'records_unavailable')),$this->clock->now(),$failureCode,$failedFamily);
+                ObservationRecords::hold($l['domain'],$recordOverflow?'child_host_limit':($snapshot?->owned===false?'ownership_drift':(($records['glue']['read_failed']??false)&&$failedFamily==='glue'?'glue_unavailable':(($records['dns']['caa']??false)&&$failedFamily==='dns'?'caa_unsupported':'records_unavailable'))),$this->clock->now(),$failureCode,$failedFamily);
             }
             if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
             if ($deferred) { return 'read_deferred'; }

@@ -187,6 +187,7 @@
     "tests/observation-completion-test.php",
     "tests/observation-records-test.php",
     "tests/observation-namesilo-test.php",
+    "tests/demo-c-c1-observation-test.php",
     "tests/storefront-test.php",
     "tests/storefront-busy-test.php",
     "tests/sales-audit-changes-test.php",

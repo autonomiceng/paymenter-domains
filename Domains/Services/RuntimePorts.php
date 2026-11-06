@@ -29,6 +29,7 @@ final class RuntimePorts
         $ports=$factory(AccountBindings::binding($account));
         foreach(self::TYPES as $key=>$type){if(!($ports[$key]??null) instanceof $type){throw new \DomainException('Incomplete runtime composition.');}}
         // Old deployment factories remain compatible; no new reader or sender is selected by default.
+        $ports['observation_dedicated']=isset($ports['observation_reader']);
         $ports['observation_reader'] ??= $ports['management_protocol'];
         if (!$ports['observation_reader'] instanceof \Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader
             || !$ports['observation_reader']->bindsTo($binding)) { throw new \DomainException('Runtime observation binding changed.'); }
@@ -51,6 +52,9 @@ final class RuntimePorts
     {$a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(AccountBindings::binding($a));return $this->composition($a)['management'];}
     public function observationReader(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): \Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader
     {$a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(AccountBindings::binding($a));return $this->composition($a)['observation_reader'];}
+    /** The factory's own read-only observation port, or null so refresh keeps the legacy management read. */
+    public function dedicatedObservationReader(\Paymenter\Extensions\Servers\Domains\Data\AccountBinding $binding): ?\Paymenter\Extensions\Servers\Domains\Contracts\ObservationReader
+    {$a=Account::where('server_id',$binding->serverId)->firstOrFail();$binding->requireMatch(AccountBindings::binding($a));$ports=$this->composition($a);return $ports['observation_dedicated']?$ports['observation_reader']:null;}
     public function corrections(Domain $domain): void
     {
         $a=Account::where('server_id',$domain->server_id)->firstOrFail();

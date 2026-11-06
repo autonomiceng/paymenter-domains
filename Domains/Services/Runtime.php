@@ -34,7 +34,7 @@ final class Runtime
                     $a->make(AccountBindings::class)->requireProcessingLocked($l['server'],$l['account']);
                     return $a->make(RuntimePorts::class)->recordDiscoveryAccepted($l['account']);
                 } catch (\Throwable) { return false; }
-            }));
+            },static fn($binding)=>$a->make(RuntimePorts::class)->dedicatedObservationReader($binding)));
         $app->make(RuntimePorts::class)->registerInitialManagedRecordObservations(self::initialManagedRecordObservations(...));
         if (RegistrarFactories::bootstrap($app->make(RegistrarRegistry::class))) {
             $app->singleton(StaffSettingsWrites::class, fn($a)=>new StaffSettingsWrites($a->make(NativeCatalogue::class),

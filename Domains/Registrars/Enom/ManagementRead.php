@@ -30,6 +30,8 @@ final class ManagementRead
         if($kind==='dns'){$raw=$r->value('host');if($raw===null){if(Driver::flag($r->value('domainservices.hostrecords'))!==true){throw new \DomainException('DNS section missing.');}$raw=[];}elseif($raw===''){throw new \DomainException('DNS records malformed.');}}
         else{$box=$r->value('srv-records');if($box===''){$raw=[];}elseif(is_array($box)&&!array_is_list($box)&&array_keys($box)===['srv']&&is_array($box['srv'])){$raw=$box['srv'];}else{throw new \DomainException('SRV section missing or malformed.');}}
         $rows = self::rows($raw); $out=[];
+        // CAA has no Enom edit mapping here; name it so the hold can say why, and still refuse the whole list.
+        if ($kind === 'dns' && array_filter($rows, fn ($v) => is_array($v) && is_string($v['type'] ?? null) && strtoupper($v['type']) === 'CAA')) { throw new CaaRecords; }
         foreach ($rows as $v) {
             if (!is_array($v)) { throw new \DomainException('Malformed records.'); }
             // Provider targets may omit the root dot; desired input still uses the strict validator.

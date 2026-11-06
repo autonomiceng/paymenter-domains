@@ -64,8 +64,8 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment,Manage
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 $clock=new class implements Clock { public function now(): DateTimeImmutable { return new DateTimeImmutable('2026-11-04T12:00:00+00:00'); } };
 foreach (['enom','namesilo'] as $registrar) {
-    $b=new AccountBinding($registrar,1,Environment::Test,'synthetic-account');$calls=[];$fault='';$thin=false;
-    $wire=static function($origin,$cmd,$p,$timeout)use($registrar,&$calls,&$fault,&$thin):string {
+    $b=new AccountBinding($registrar,1,Environment::Test,'synthetic-account');$calls=[];$fault='';$thin=false;$dsRows=[];
+    $wire=static function($origin,$cmd,$p,$timeout)use($registrar,&$calls,&$fault,&$thin,&$dsRows):string {
         expect($timeout>0&&$timeout<=25000,'Each physical observation wire is deadline bounded');$calls[]=$cmd;
         if ($cmd===$fault) { return '{}'; }
         if ($registrar==='namesilo') {
@@ -74,6 +74,7 @@ foreach (['enom','namesilo'] as $registrar) {
                     'nameservers'=>[['nameserver'=>'ns1.dnsowl.com'],['nameserver'=>'ns2.dnsowl.com']],
                     'contact_ids'=>array_fill_keys(['registrant','administrative','technical','billing'],'900001')],
                 'dnsListRecords'=>['resource_record'=>[]], 'listRegisteredNameServers'=>['hosts'=>[]],
+                'dnsSecListRecords'=>$dsRows===null?[]:['ds_record'=>$dsRows],
                 'contactList'=>['contact'=>['contact_id'=>'900001','first_name'=>'Synthetic','last_name'=>'Person','company'=>'','address'=>'1 Example Street','address2'=>'',
                     'city'=>'Portland','state'=>'OR','zip'=>'97201','country'=>'US','email'=>'synthetic@example.com','phone'=>'+1.5035550123']],
                 default=>throw new LogicException('Unexpected observation command'),
@@ -115,6 +116,19 @@ foreach (['enom','namesilo'] as $registrar) {
     $calls=[];$foreign=new AccountBinding($registrar,2,Environment::Test,'synthetic-account');
     try { $reader->discover(new ManagementRequest($foreign,'foreign','example.com','discovery',[]),$ctx());expect(false,'Foreign reader request refused'); } catch (\Paymenter\Extensions\Servers\Domains\Data\AccountBindingMismatch) {}
     same([],$calls,'Identity mismatch makes no observation wire');
+    if ($registrar==='namesilo') {
+        // C1: NameSilo DS is readable while DS mutation stays Off (empty policy map).
+        same('supported',$reader->observationCapabilities()['families']['ds'],'NameSilo DS read is supported');
+        same([Paymenter\Extensions\Servers\Domains\Data\Support::Unsupported,null],[$reader->capabilities()->get('ds')->support,$reader->dsMutationPolicy('example.com')],'DS read support grants no DS mutation');
+        same(['state'=>'complete','records'=>[]],$reader->discover($request,$ctx())['ds'],'Explicit empty DS list is complete');
+        $tuple=['key_tag'=>123,'algorithm'=>13,'digest_type'=>2,'digest'=>str_repeat('AB',32)];
+        $dsRows=[$tuple,['key_tag'=>124,'algorithm'=>13,'digest_type'=>2,'digest'=>'XYZ']];$out=$reader->discover($request,$ctx());
+        same(['partial',[$tuple],'ds'],[$out['ds']['state'],$out['ds']['records'],$out['failed_family']],'Malformed DS sibling keeps valid rows partial and names the family');
+        $dsRows=null;$calls=[];$out=$reader->discover($request,$ctx());
+        same(['unknown','ds','dnsSecListRecords'],[$out['ds']['state'],$out['failed_family'],$calls[count($calls)-1]],'Missing DS collection is unknown, never empty, and stops later reads');
+        $dsRows=[$tuple];$out=$reader->discover($request,$ctx());
+        same(['complete',[$tuple]],[$out['ds']['state'],$out['ds']['records']],'Resumed complete DS read');expect(!isset($out['failed_family']),'Resume clears the failed family');
+    }
 }
 echo "NS15 bounded paired provider helpers passed.\n";
 }

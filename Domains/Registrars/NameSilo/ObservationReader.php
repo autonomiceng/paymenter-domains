@@ -4,16 +4,16 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 use Paymenter\Extensions\Servers\Domains\Data\{ManagementRequest,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Services\{ContactDetails,ManagementPayload,ReadDeferred,EnomTestCallLimit,ReadFailure};
-/** Dormant named reads. DS is unsupported until the independent D read contract is integrated. */
+/** Named reads only. DS read support comes from D's list parser; it grants no DS mutation (that stays on the policy map). */
 final class ObservationReader extends Management
 {
     public function observationCapabilities(): array
-    { return ['revision'=>'namesilo-records-1','families'=>['dns'=>'supported','srv'=>'unsupported','ds'=>'unsupported','glue'=>'supported']]; }
+    { return ['revision'=>'namesilo-records-1','families'=>['dns'=>'supported','srv'=>'unsupported','ds'=>'supported','glue'=>'supported']]; }
     protected function writeCommand(string $action): string
     { throw new \DomainException('Observation reader is read-only.'); }
-    protected function readCommands(): array { return [...parent::readCommands(),'dnsListRecords']; }
+    protected function readCommands(): array { return [...parent::readCommands(),'dnsListRecords','dnsSecListRecords']; }
     protected function validateRead(string $command,array $p): void
-    { parent::validateRead($command==='dnsListRecords'?'getDomainInfo':$command,$p); }
+    { parent::validateRead(in_array($command,['dnsListRecords','dnsSecListRecords'],true)?'getDomainInfo':$command,$p); }
     public function discover(ManagementRequest $r,RequestContext $c,array $knownGlue=[]): array
     {
         $this->binding->requireMatch($r->binding);$this->binding->requireMatch($c->binding);
@@ -31,6 +31,9 @@ final class ObservationReader extends Management
         try {
             $out['dns']=Dns::inventory($this->read($r,$c,'dnsListRecords',['domain'=>$r->name]),$r->name);
             if ($out['dns']['state']!=='complete') { throw new \DomainException('DNS incomplete.'); }
+            // Only an explicit list is complete; a missing collection stays unknown, never empty.
+            $family='ds';$out['ds']=Ds::inventory($this->read($r,$c,'dnsSecListRecords',['domain'=>$r->name]));
+            if ($out['ds']['state']!=='complete') { throw new \DomainException('DS incomplete.'); }
             $family='glue';
             $reply=$this->reply(Glue::preserveAddresses($this->read($r,$c,'listRegisteredNameServers',['domain'=>$r->name])),'listRegisteredNameServers');
             $out['glue']=['state'=>'complete','records'=>Glue::records($reply,$r->name)];

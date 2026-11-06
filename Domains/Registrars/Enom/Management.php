@@ -58,7 +58,7 @@ final class Management extends ManagementProtocol
                 $v=$this->get($r,$c,$command); $c->requireReadSuccess($v->status==='success');
                 $out[$kind]=['state'=>'complete','records'=>ManagementRead::records($v,$kind)];
             } catch (\Paymenter\Extensions\Servers\Domains\Services\ReadDeferred|\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $e) { throw $e; }
-            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); return $out; } // Stop at first failure; never retry a failed wire.
+            catch (\Throwable $error) { $out['failure_code']=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error); if ($error instanceof CaaRecords) { $out[$kind]['caa']=true; } return $out; } // Stop at first failure; never retry a failed wire.
         }
         foreach (array_slice($knownGlue,0,13,true) as $host=>$prior) {
             try {

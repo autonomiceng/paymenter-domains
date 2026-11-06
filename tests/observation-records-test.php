@@ -224,7 +224,7 @@ for($i=0;$i<101;$i++){$row['operation_key']=hash('sha256','overflow-'.$i);DB::ta
 $prior=$d->fresh()->observation['records'];$io=count($state->calls);$observation->years=2;
 DB::table('domains_observation_work')->where('id',$job->id)->update(['due_at'=>$clock->now()->getTimestamp(),'safe_code'=>null]);
 $observer->run($d->id,readRecords:true);
-same('unresolved',$work->tick(2)[$d->server_id],'Overflow holds records while domain work continues and reports drift');
+same('unresolved',$work->tick(2)[$d->server_id]['holding'],'Overflow holds records while domain work continues and reports drift');
 same($prior,$d->fresh()->observation['records'],'Overflow does not advance inventory or its watermark');same($io,count($state->calls),'Overflow skips record provider reads');
 same('2028-10-18',$d->fresh()->observation['facts']['expiry'],'Overflow still refreshes domain drift facts');expect(!isset(OwnerRecords::forDomain($d->fresh())['dns']),'Overflow does not present stale whole-list records');
 $domainIo=count($observation->calls);$observation->years=3;$clock->instant=$clock->now()->modify('+1 day');$work->tick(2);expect(count($observation->calls)>$domainIo,'Overflow retains daily domain refresh');same($io,count($state->calls),'Overflow never retries record discovery automatically');same('2029-10-18',$d->fresh()->observation['facts']['expiry'],'Overflow cannot freeze daily expiry facts');
