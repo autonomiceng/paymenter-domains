@@ -600,7 +600,12 @@
     "tests/owner-auto-renew-safety-test.php",
     "tests/staff-holding-modals-test.php",
     "tests/namesilo-legacy-account-guard-test.php",
-    "tests/renewal-cycle-late-replacement-test.php"
+    "tests/renewal-cycle-late-replacement-test.php",
+    "tests/refund-retired-renewals-test.php",
+    "tests/refund-renewal-retries-test.php",
+    "tests/refund-retired-partial-test.php",
+    "tests/refund-retired-receipts-test.php",
+    "tests/refund-renewal-reversals-test.php"
   ],
   "ui": [],
   "runner": [
