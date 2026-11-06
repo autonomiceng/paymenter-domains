@@ -15,7 +15,9 @@ Illuminate\Support\Once::flush();$page->call('checkout',['contact'=>commerceOrde
 same(1,App\Models\Order::count(),'The first checkout after page-load Domain removed succeeds');
 same('net',Paymenter\Extensions\Servers\Domains\Models\Operation::latest('id')->first()->domain->tld,'Only the remaining domain is bought');
 // Native removal must notify the header on this render, including the final line and a repeated stale removal.
-$cart=commerceCart($user);$first=commerceAdd($cart,$second['product'],'remove-first-placeholder.net');$last=commerceAdd($cart,$second['product'],'remove-last-placeholder.net');
+$ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,transfers:true)),$ports->readOffers(new Query($binding,['com'],'register',3),Context::Staff)[0]->revision);
+$com=$storefront->offer('com','register',3)['product'];
+$cart=commerceCart($user);$first=commerceAdd($cart,$com,placeholderComFixtureName('remove-first-placeholder.com'),3);$last=commerceAdd($cart,$com,placeholderComFixtureName('remove-last-placeholder.com'),3);
 Illuminate\Support\Once::flush();
 $page=Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class);
 Illuminate\Support\Once::flush();app('request')->cookies->set('cart',$cart->ulid);
