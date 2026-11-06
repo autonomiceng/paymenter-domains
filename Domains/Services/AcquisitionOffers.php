@@ -60,42 +60,44 @@ final class AcquisitionOffers
             'generation' => UpgradeGate::generation(), 'credential' => $this->bindings->offerCredentialRevision($b),
             'revision' => get_object_vars($acquire->decision->revision), 'prices' => [$acquire->identity(), $renew->identity()], 'rule' => $rule];
         $costs = $retail = []; $driver = null;
-        foreach ([$acquire, $renew] as $row) {
-            $cost = $row->observation();
-            if (!$cost?->enabled) { throw new \DomainException('Order price unavailable.'); }
-            if ($cost->fresh($clock->now())) { continue; }
-            // A successful first quote survives a pacing deferral on the second read.
-            $key = 'domains.order-price.'.hash('sha256', OfferState::json([$name, $stamp, $cost->key()]));
-            $saved = Cache::get($key);
-            $fresh = is_array($saved) ? OfferState::cost($saved) : null;
-            if (!$fresh?->fresh($clock->now())) {
-                $driver ??= $this->bindings->reader($b->serverId); $b->requireMatch($driver->binding());
-                $q = new OrderQuery($name,
-                    Action::from($cost->action), $cost->term);
-                $deadline = $clock->now()->modify('+'.min(10000, $batch->remainingMilliseconds()).' milliseconds');
-                $context = new RequestContext($b,
-                    RequestOrigin::Interactive, $deadline,
-                    new RequestBudget(3), $clock, Runtime::limiter());
-                $result = $driver instanceof AcquisitionPriceReader ? $driver->acquisitionQuote($q, $context) : $driver->quote($q, $context);
-                $batch->remainingMilliseconds();
-                $rate = CatalogueMapper::quote($result, $b, $q, $ending, $clock->now());
-                if ($clock->now() >= $deadline) { throw new CheckoutRefreshTimeout; }
-                $until = min($rate->freshUntil ?? $clock->now()->modify('+5 minutes'), $clock->now()->modify('+5 minutes'));
-                $evidence = $result->evidence()->quote;
-                $fresh = new Cost($cost->action, $cost->term, true, $evidence->cost->amount,
-                    $evidence->unit, $rate->source, $rate->observedAt, $until);
-                Cache::put($key, OfferState::encodeCost($fresh), 300);
+        try {
+            foreach ([$acquire, $renew] as $row) {
+                $cost = $row->observation();
+                if (!$cost?->enabled) { throw new \DomainException('Order price unavailable.'); }
+                if ($cost->fresh($clock->now())) { continue; }
+                // A successful first quote survives a pacing deferral on the second read.
+                $key = 'domains.order-price.'.hash('sha256', OfferState::json([$name, $stamp, $cost->key()]));
+                $saved = Cache::get($key);
+                $fresh = is_array($saved) ? OfferState::cost($saved) : null;
+                if (!$fresh?->fresh($clock->now())) {
+                    $driver ??= $this->bindings->reader($b->serverId); $b->requireMatch($driver->binding());
+                    $q = new OrderQuery($name,
+                        Action::from($cost->action), $cost->term);
+                    $deadline = $clock->now()->modify('+'.min(10000, $batch->remainingMilliseconds()).' milliseconds');
+                    $context = new RequestContext($b,
+                        RequestOrigin::Interactive, $deadline,
+                        new RequestBudget(3), $clock, Runtime::limiter());
+                    $result = $driver instanceof AcquisitionPriceReader ? $driver->acquisitionQuote($q, $context) : $driver->quote($q, $context);
+                    $batch->remainingMilliseconds();
+                    $rate = CatalogueMapper::quote($result, $b, $q, $ending, $clock->now());
+                    if ($clock->now() >= $deadline) { throw new CheckoutRefreshTimeout; }
+                    $until = min($rate->freshUntil ?? $clock->now()->modify('+5 minutes'), $clock->now()->modify('+5 minutes'));
+                    $evidence = $result->evidence()->quote;
+                    $fresh = new Cost($cost->action, $cost->term, true, $evidence->cost->amount,
+                        $evidence->unit, $rate->source, $rate->observedAt, $until);
+                    Cache::put($key, OfferState::encodeCost($fresh), 300);
+                }
+                $costs[$cost->key()] = OfferState::encodeCost($fresh);
+                $retail[$cost->key()] = Retail::quote($fresh, $rule);
             }
-            $costs[$cost->key()] = OfferState::encodeCost($fresh);
-            $retail[$cost->key()] = Retail::quote($fresh, $rule);
+            $token = bin2hex(random_bytes(32));
+            Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
+                'native_retail' => $acquire->listedRetail()], 300);
+            $seed = new SaleSelection(...[...get_object_vars($seed), 'catalogue' => ['order_quote' => $token]]);
+            return $this->load([$seed], false, false)[0]['selection'];
         }
-        $token = bin2hex(random_bytes(32));
-        Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
-            'native_retail' => $acquire->listedRetail()], 300);
-        $seed = new SaleSelection(...[...get_object_vars($seed), 'catalogue' => ['order_quote' => $token]]);
-        try { return $this->load([$seed], false, false)[0]['selection']; }
         catch (\DomainException $e) {
-            $quoted = $costs[$acquire->observation()->key()] ?? null;
+            $quoted = $costs[$acquire->observation()?->key()] ?? null;
             throw $quoted === null ? $e : new OrderQuoteRefused($e, OfferState::cost($quoted));
         }
     }
