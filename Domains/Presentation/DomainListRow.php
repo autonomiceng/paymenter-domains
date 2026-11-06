@@ -62,8 +62,10 @@ final class DomainListRow
         $price = !$s->renewalInvoiceMissing && $s->renewalPrice && !($complimentary && str_starts_with(self::expires($s)['cause'] ?? '', 'Complimentary. '))
             ? $s->renewalPrice.($complimentary ? '' : '/yr') : null;
         // Under review is blue and says the customer has nothing to do, in the domain page's words: the check is ours.
-        return ['value' => 'On', 'note' => $s->renewalInvoicePaid ? 'Next invoice: Paid'.($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: Under review. '.DomainPage::NOTHING_TO_DO : $price),
-            'noteState' => $s->renewalInvoiceReview ? ['label' => 'Under review', 'tone' => 'info', 'note' => DomainPage::NOTHING_TO_DO] : null,
+        // A status that gives the customer a step (Expired: contact support) leaves the reassurance out, as the domain page does.
+        $nothing = $s->statusState !== null && DomainStatus::asksCustomer(DomainStatus::for($s->statusState)['label']) ? null : DomainPage::NOTHING_TO_DO;
+        return ['value' => 'On', 'note' => $s->renewalInvoicePaid ? 'Next invoice: Paid'.($s->renewalGoesAt ? '. '.RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES : '') : ($s->renewalInvoiceReview ? 'Next invoice: Under review'.($nothing ? '. '.$nothing : '') : $price),
+            'noteState' => $s->renewalInvoiceReview ? ['label' => 'Under review', 'tone' => 'info', 'note' => $nothing] : null,
             'at' => $s->renewalInvoicePaid ? $s->renewalGoesAt : null, 'invoiceMissing' => $s->renewalInvoiceMissing,
             'invoiceCause' => $s->renewalInvoiceMissing ? 'Not issued yet' : null, 'invoiceFix' => $s->renewalInvoiceMissing ? Missing::support($s->urls['support'] ?? null) : null];
     }

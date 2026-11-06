@@ -30,8 +30,10 @@ foreach(['processing','auto_pay_uncertain','pending','uncertain','retireable','c
     $expected=$case==='retireable'||str_starts_with($case,'cancelled_native')?'cancelled':'review';$unchanged=$ledger();
     foreach([1,2] as $pass){
         $label=$case.':'.$pass;$html=$page($d);
-        $expiryExpected[$label]=[['status'=>$expected],$expected==='cancelled'?1:0,$expected==='review'?1:0];
-        $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),substr_count($html,'>There’s nothing you need to do.<')];
+        // The domain has expired and the page asks the customer to contact support, so it never says there is nothing to do (review F1).
+        $expiryExpected[$label]=[['status'=>$expected],$expected==='cancelled'?1:0,1,0];
+        $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),
+            substr_count($html,'This domain has expired. Contact support to check whether it can still be renewed.'),substr_count($html,'nothing you need to do')];
         expect(!str_contains($html,'Pay invoice')&&!str_contains($html,'Continue to payment'),'Expired '.$label.' offers no billing action');
         same($unchanged,$ledger(),'Repeated expired '.$label.' presentation preserves all evidence');
     }

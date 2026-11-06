@@ -18,6 +18,9 @@ final class DomainPage
     /** True when the page notice already tells the customer there is nothing for them to do. */
     public static function noActionSaid(?array $notice): bool
     { return str_contains($notice['text'] ?? '', self::NOTHING_TO_DO) || str_contains($notice['text'] ?? '', Missing::NO_ACTION); }
+    /** True when the page may still say there is nothing to do: not said yet, and no step for the customer in the status or notice. */
+    private static function reassure(OwnedDomain $d, ?array $notice): bool
+    { return !self::noActionSaid($notice) && !DomainStatus::asksCustomer($d->status) && !in_array($notice['tone'] ?? null, ['warn', 'bad'], true); }
     public static function checkHeld(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['recordCheckHeld'] ?? false); }
     /** The one notice at the top of the page: text, tone and its one action, or null when nothing needs doing.
@@ -95,8 +98,9 @@ final class DomainPage
             $state === 'pending' => ['value' => $due ? ($d->earlyRenewal ? RequestStatus::earlyRenewal($due) : 'Due '.self::date($due)) : 'Due', 'action' => isset($d->renewNow['invoice']) ? ['label' => 'Pay invoice', 'url' => $d->renewNow['invoice']] : null],
             $state === 'paid' => ['value' => 'Paid', ...(($goes = $d->renewNow['goes'] ?? $d->renewalInvoice['goes'] ?? null) ? ['note' => RenewalRepeatWait::NOTHING.' '.RenewalRepeatWait::GOES, 'at' => $goes] : [])],
             $state === 'cancelled' => ['missing' => true, 'cause' => 'Invoice cancelled', 'fix' => $contact],
-            // Under review already says we are checking it. The row adds only that the customer has nothing to do, unless the page notice says so.
-            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => self::noActionSaid(self::notice($d, $support, $s)) ? null : self::NOTHING_TO_DO],
+            // Under review already says we are checking it. The row adds only that the customer has nothing to do,
+            // unless the page notice says so, or the status or notice gives them a step (an expired domain: contact support).
+            $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => self::reassure($d, self::notice($d, $support, $s)) ? self::NOTHING_TO_DO : null],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
             $s?->renewalIssueAt !== null => ['value' => self::date($s->renewalIssueAt)],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
