@@ -4,7 +4,6 @@ declare(strict_types=1);
 require_once __DIR__.'/Support/site-dns-default.php';
 
 require __DIR__.'/Support/managed-public.php';
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Models\{ManagedPublicConfig,ManagedPublicObservation,WatchAudit,WatchName,WatchSource,WatchDnsObservation};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicSignals,ManagedPublicWorkSchema,WatchDnsChecks};
@@ -12,15 +11,24 @@ extract(managedFixture(skipA3:true,beforeConfirm:static function(array $f):void{
     DB::table('domains_watch_profiles')->where('id',$f['profile']->id)->update(['nameservers'=>json_encode(['ns1.platform.example','ns2.platform.example'])]);
     siteDnsFixture($f['profile']->id);
 }));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+// Installation used wall time before this synthetic holding's clock was installed.
+// Align only the untouched local pool epoch; retain its capacity and consumption.
+same(0,(int)DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->value('used'),'Relink fixture starts without DNS consumption');
+DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->update(['window_at'=>$now]);
 same('active',$watch->fresh()->state,'A3 failed postcommit relink fixture');same(0,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'No A3 work after atomic failure');
 $counter=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW]);
 \Illuminate\Support\Facades\Auth::setUser($counter);
 same(1,\Paymenter\Extensions\Servers\Domains\Admin\Support\WatchFacts::usedBy($profile->id),'Pre-enrollment holding and its existing watch count once');
 $old=WatchDnsObservation::sole();$watchCount=WatchName::count();
-Schema::create('domains_watch_notices',function(Blueprint $t){$t->id();$t->unsignedBigInteger('watch_id');$t->string('state');$t->unsignedBigInteger('resolved_at')->nullable();});
-Schema::create('domains_watch_deliveries',function(Blueprint $t){$t->id();$t->unsignedBigInteger('notice_id');$t->string('state');$t->string('safe_code')->nullable();});
-$n=DB::table('domains_watch_notices')->insertGetId(['watch_id'=>$watch->id,'state'=>'open']);
-foreach(['reserved','render_failed','accepted','uncertain']as$state){DB::table('domains_watch_deliveries')->insert(['notice_id'=>$n,'state'=>$state]);}
+// The active fixture installed the real retained notice schema; seed its complete rows.
+\Paymenter\Extensions\Servers\Domains\Services\WatchNoticeSchema::verify();
+$scope=hash('sha256','relink-watch');
+$n=DB::table('domains_watch_notices')->insertGetId(['notice_key'=>hash('sha256','relink-notice'),'scope'=>$scope,
+    'target_kind'=>'watch','watch_id'=>$watch->id,'user_id'=>$uid,'kind'=>'dns','episode_key'=>hash('sha256','relink-episode'),
+    'family'=>'watch_dns','observation_id'=>$old->id,'state'=>'open','first_seen_at'=>$now,'last_seen_at'=>$now,'data'=>'{}']);
+foreach(['reserved','render_failed','accepted','uncertain']as$state){DB::table('domains_watch_deliveries')->insert([
+    'notice_id'=>$n,'user_id'=>$uid,'channel'=>'app','delivery_key'=>hash('sha256','relink-'.$state),'template_key'=>'dns',
+    'reserved_at'=>$now,'state'=>$state]);}
 $fail=true;WatchAudit::creating(static function($audit)use(&$fail){if($fail && $audit->event==='registration_managed'){throw new DomainException('Synthetic relink rollback');}});
 expect(!$signals->enqueue($id,$uid,$now),'Audit failure rolls relink transaction back');same('active',$watch->fresh()->state,'Watch not partly relinked');same('watch',$source->fresh()->state,'Source not partly relinked');
 same(0,ManagedPublicConfig::count(),'No partial configuration');same('reserved',DB::table('domains_watch_deliveries')->orderBy('id')->value('state'),'No partial suppression');
