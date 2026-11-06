@@ -62,9 +62,9 @@ final class DsState
             return ['state'=>'Under review','tone'=>$staff?'warning':'info','text'=>$staff?'The result is not confirmed. Check request #'.$op->id.' before sending another change.':'We could not confirm the result yet. Nothing to do yet.'];
         }
         if($op->state==='rejected'&&$resolved){return ['state'=>'Failed','tone'=>'danger','text'=>$staff?'Check request #'.$op->id.'.':'The registrar did not accept this change. Contact support.'];}
-        $sent=($op->attempt['seal']??null)==='sealed';
-        if(!$sent){return ['state'=>'Waiting','tone'=>'info','text'=>$staff?'Waiting for the registrar DS check. Nothing was sent. Check request #'.$op->id.'.':'Waiting for the DS check. Nothing was sent.'];}
+        $sealed=($op->attempt['seal']??null)==='sealed';
+        if(!$sealed){return ['state'=>'Waiting','tone'=>'info','text'=>$staff?'Waiting for the registrar DS check. Nothing was sent. Check request #'.$op->id.'.':'Waiting for the DS check. Nothing was sent.'];}
         $slow=$op->created_at&&$op->created_at->getTimestamp()<=now()->getTimestamp()-30;
-        return ['state'=>'Checking the result…','tone'=>'info','text'=>$staff?($slow?'This is taking longer than usual. We will keep checking. ':'The record has been sent. ').'Waiting for an independent registrar read. Check request #'.$op->id.'.':($slow?'This is taking longer than usual. We’re still checking. Nothing to do yet.':'Sent. We’re checking the result with the registrar.')];
+        return ['state'=>'Checking the result…','tone'=>'info','text'=>$staff?($slow?'This is taking longer than usual. We will keep checking. ':'Dispatch has not been confirmed. ').'Waiting for an independent registrar read. Check request #'.$op->id.'.':($slow?'This is taking longer than usual. We’re still checking. Nothing to do yet.':'We’re checking this change with the registrar. Nothing to do yet.')];
     }
 }
