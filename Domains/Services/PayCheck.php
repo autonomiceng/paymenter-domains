@@ -172,8 +172,9 @@ class PayCheck
             if(!self::answered($binding,$quote)){return self::UNKNOWN;}
             $cost=WriteMoney::cost($quote->evidence()->quote,$query,$started,$this->clock->now());
             if(!$cost){return self::UNKNOWN;}
-            // Compared with what the customer pays, not the catalogue cost: a stale catalogue would stop every sale with no new price to show.
-            return WriteMoney::compare($cost->amount,(string)$op->amount)>0?self::CHANGED:self::CLEAR;
+            // The live quote must fit both the issued debt and its frozen registrar spending authority.
+            return WriteMoney::compare($cost->amount,(string)$op->amount)>0
+                || WriteMoney::compare($cost->amount,$op->cost['estimated'])>0?self::CHANGED:self::CLEAR;
         }catch(\Throwable){return self::UNKNOWN;}
     }
     private static function answered(AccountBinding $binding,DriverResult $result): bool

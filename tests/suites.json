@@ -553,7 +553,8 @@
     "tests/registration-namesilo-authority-test.php",
     "tests/registration-namesilo-nexus-test.php",
     "tests/storefront-corruption-test.php",
-    "tests/storefront-queries-test.php"
+    "tests/storefront-queries-test.php",
+    "tests/payment-live-ceiling-test.php"
   ],
   "ui": [],
   "runner": [
