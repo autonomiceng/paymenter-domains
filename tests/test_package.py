@@ -208,6 +208,9 @@ class PackageTests(unittest.TestCase):
                 self.assertNotIn('Domains/Catalogue/UpgradeConversion.php', package.namelist())
                 for name in runtime_conversion:
                     self.assertIn('Domains/'+name, package.namelist())
+                for name in ['Catalogue/UpgradeConversion.php', 'Catalogue/UpgradeEvidence.php']:
+                    self.assertNotIn('Domains/'+name, package.namelist())
+                    self.assertFalse((ROOT/'Domains'/name).exists())
                 self.assertEqual(package.read('Domains/LICENSE'), (ROOT/'LICENSE').read_bytes())
             source = root/'Domains'
             shutil.copytree(ROOT/'Domains', source)
