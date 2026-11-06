@@ -42,6 +42,22 @@ same(['delegation','points'],array_column($sent,'kind'),'Both promised watch che
 expect(count(array_filter($sent,fn($h)=>($h['watch_id']??null)===$watch->id))===2,'Managed backlog does not consume the watch deadline turn');
 same(59,$now-$shown,'Shared-turn watch dispatch remains within the next minute');
 same(0,$work->tick(),'Shared-turn cap cannot be bypassed by repeated ticks');
+// Watches remain due across every owner turn: the oldest managed read must still make progress.
+$oldest=DB::table('domains_managed_public_work')->orderBy('due_at')->orderBy('id')->first();
+$managedAt=null;
+for($turn=1;$turn<=5;$turn++){
+    $sent=[];$now+=60;
+    same(2,$work->tick(),'Continuous watch backlog keeps the same two-hint owner cap');
+    $managedHints=array_values(array_filter($sent,fn($h)=>isset($h['domain_id'])));
+    if($managedHints){
+        same(1,count($managedHints),'Overdue managed escape keeps one slot for the due watch');
+        same([(int)$oldest->domain_id,$oldest->kind],[$managedHints[0]['domain_id'],$managedHints[0]['kind']],'Escape serves the oldest managed read');
+        same(1,count(array_filter($sent,fn($h)=>isset($h['watch_id']))),'Watch work remains due and receives the other owner slot');
+        $managedAt=$now;break;
+    }
+}
+expect($managedAt!==null,'Continuously due watches cannot starve the oldest managed read beyond five owner turns');
+same(900,$managedAt-(int)$oldest->due_at,'Oldest managed read receives its bounded overdue turn');
 // After those watch reads complete, their next pacing window leaves the existing managed backlog runnable.
 DB::table('domains_watch_work')->where('watch_id',$watch->id)->update(['due_at'=>$now+86400]);
 $sent=[];$now+=60;same(2,$work->tick(),'Managed work still receives the same bounded owner turn');
