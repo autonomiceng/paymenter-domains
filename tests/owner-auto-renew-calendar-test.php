@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native owner renewal preference scenarios.
 declare(strict_types=1);
+require_once __DIR__.'/Support/scenario-inventory.php';
+$scenarios=new NativeScenarioInventory(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-10-18','2027-10-19']);
 require __DIR__.'/Support/owner-auto-renew.php';
 use App\Helpers\ExtensionHelper;
 use App\Models\{Invoice,ServiceCancellation};
@@ -20,5 +22,7 @@ foreach(['2027-09-26','2027-09-27','2027-10-10','2027-10-11','2027-10-17','2027-
     else{try{$billing->invoice($calendar->id);expect(false,'Outside calendar refused');}catch(RuntimeIneligible $e){same(RuntimeReason::OutsideCalendar,$e->reason,'Exact calendar refusal '.$day);}}
     if($day>='2027-10-18'){same([],$owners->present($calendar->fresh())->renewNow,'Expired holding has no new manual request');}
     elseif($day>='2027-10-11'){same([1],$owners->present($calendar->fresh())->renewNow['terms']??null,'After due the same evidenced annual term is offered');}
+    $scenarios->completed($day);
 }
+$scenarios->finish();
 echo "Owner renewal scheduling calendar passed.\n";$nativeSuccessful=true;
