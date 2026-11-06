@@ -158,7 +158,7 @@ final class DomainSummaries
                                 // Informational zero receipts use their issue date and may later have an offset line.
                                 try { $receipt=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions]);$due=$receipt->due_at?->format('Y-m-d'); } catch (\Throwable) {}
                             } else {
-                            try { if ($inv && $item && (int)$item->invoice_id===(int)$inv->id && in_array($inv->status,['pending','paid'],true) && $inv->currency_code===$cycle->currency && $item->reference_id===null && $item->reference_type===null && (string)$item->quantity==='1' && PricingRule::minor((string)$item->price)===PricingRule::minor((string)$cycle->amount) && $inv->due_at?->format('Y-m-d')===($cycle->policy['calendar']['due']??null)) { $due=$inv->due_at->format('Y-m-d'); } } catch (\Throwable) {}
+                                try { if ($inv && $item && (int)$item->invoice_id===(int)$inv->id && in_array($inv->status,['pending','paid'],true) && $inv->currency_code===$cycle->currency && $item->reference_id===null && $item->reference_type===null && (string)$item->quantity==='1' && PricingRule::minor((string)$item->price)===PricingRule::minor((string)$cycle->amount) && $inv->due_at?->format('Y-m-d')===($cycle->policy['calendar']['due']??null)) { $due=$inv->due_at->format('Y-m-d'); } } catch (\Throwable) {}
                             }
                             $invoiceMissing=$due===null;
                             $invoicePaid=!$invoiceMissing && $inv?->status==='paid' && in_array($cycle->state,['awaiting_payment','queued','running','pending','succeeded'],true); }

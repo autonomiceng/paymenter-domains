@@ -25,7 +25,7 @@ final class DomainListRow
             'paid' => ['missing' => true, ...match ($order['next'] ?? null) {
                 'awaiting_code' => ['cause' => $basis.'Add the auth code to start the transfer.', 'fix' => null],
                 'setup_required' => ['cause' => $basis.'Finish setup to start the '.$word.'.', 'fix' => null],
-                default => ['cause' => Missing::fills(self::WAITS[$word]), 'fix' => null],
+                default => ['cause' => (($order['complimentary'] ?? false) ? $basis : '').Missing::fills(self::WAITS[$word]), 'fix' => null],
             }],
             'cancelled' => isset($order['credit']) ? ['missing' => false, 'tone' => null, 'note' => null] : ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
             'failed' => ['missing' => true, 'cause' => ucfirst($word).' did not finish', 'fix' => Missing::support($support)],
