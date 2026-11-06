@@ -192,6 +192,7 @@
     "tests/observation-test.php",
     "tests/observation-completion-test.php",
     "tests/observation-records-test.php",
+    "tests/dns-summary-readback-test.php",
     "tests/observation-namesilo-test.php",
     "tests/demo-c-c1-observation-test.php",
     "tests/storefront-test.php",
