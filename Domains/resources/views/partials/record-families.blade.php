@@ -5,11 +5,15 @@
 @if ($recordFamilies['at'])<p class="domains-hint">Last registrar update: @include('domains::partials.moment', ['at'=>$recordFamilies['at']])</p>@endif
 @if ($staff && $recordFamilies['failed_family'])<p class="domains-hint">Failed family: {{ $recordFamilies['failed_family'] }}. {{ $recordFamilies['staff_hold'] }} {{ $recordFamilies['resume'] ? 'Resume refresh, then sync this domain.' : 'Use Sync now.' }}</p>@endif
 @if ($staff)<p class="domains-hint">Last complete read: @if ($recordFamilies['last_complete_at'])@include('domains::partials.moment',['at'=>$recordFamilies['last_complete_at']])@else Unknown @endif</p>@endif
+@if ($recordFamilies['cancelled_without_records'] ?? false)
+<p class="domains-hint">Registration cancelled; no registrar records to check</p>
+@else
 <dl class="domains-card">
 @foreach ($recordFamilies['rows'] as $family)
-<div><dt>{{ $family['label'] }}</dt><dd><span data-record-family="{{ $family['kind'] }}">@if ($family['state'] === 'unknown'){{ $family['value'] }}@else @include('domains::partials.status-pill', ['pill'=>['label'=>$family['value'],'tone'=>match($family['state']){'complete'=>'ok','partial'=>$staff?'warn':'info',default=>'muted'}]])@endif</span><span class="domains-sub">{{ $family[$staff ? 'staff' : 'customer'] }}</span>@if ($family['last_good_at'] && $family['state'] !== 'complete')<span class="domains-sub">Last confirmed: @include('domains::partials.moment', ['at'=>$family['last_good_at']])</span>@endif</dd></div>
+<div><dt>{{ $family['label'] }}</dt><dd><span data-record-family="{{ $family['kind'] }}">@if ($family['state'] === 'unknown'){{ $family['value'] }}@else @include('domains::partials.status-pill', ['pill'=>['label'=>$family['value'],'tone'=>match($family['state']){'complete'=>'ok','partial'=>$staff?'warn':'info',default=>'muted'}]])@endif</span><span class="domains-sub">{{ $family[$staff ? 'staff' : 'customer'] }}@if ($family['kind'] === 'glue' && $family['at']) Checked @include('domains::partials.moment', ['at'=>$family['at']]).@endif</span>@if ($family['last_good_at'] && $family['state'] !== 'complete')<span class="domains-sub">Last confirmed: @include('domains::partials.moment', ['at'=>$family['last_good_at']])</span>@endif</dd></div>
 @endforeach
 </dl>
+@endif
 @if ($recordFamilies['caa'])
 <h3 class="domains-h3">CAA records</h3>
 @if ($recordFamilies['caa_at'])<p class="domains-hint">Last confirmed CAA: @include('domains::partials.moment', ['at'=>$recordFamilies['caa_at']]). These are historical records.</p>@endif<p class="domains-hint">Read only. Saving other DNS records keeps these records and their TTL unchanged.</p>

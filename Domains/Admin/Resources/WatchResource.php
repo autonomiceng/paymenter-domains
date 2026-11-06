@@ -34,7 +34,7 @@ class WatchResource extends WatchReadResource
     /** Last check and Expires, each without its sub-line: those go in Note. */
     private static function lastCheck($record,$livewire): array{return WatchFacts::lastCheck($record,$livewire->watchRow($record)['summary']);}
     private static function expires($record,$livewire): array
-    { $row=$livewire->watchRow($record);return in_array('watch.no_coverage',$row['keys'],true)?['value'=>'']:WatchFacts::expires($row['summary'],$row['keys'],$record->state==='active'); }
+    { $row=$livewire->watchRow($record);return in_array('watch.no_coverage',$row['keys'],true)?['value'=>'']:WatchFacts::expires($row['summary'],$row['keys'],$record->state==='active',$record); }
     /** The status reason first, then what the last check and the expiry date add. Each says once. */
     private static function note($record,$livewire): ?string
     {
