@@ -4,10 +4,10 @@ declare(strict_types=1);
 require_once dirname(__DIR__).'/native-app.php';
 require_once __DIR__.'/adoption-preview.php';
 require_once __DIR__.'/lifecycle-scenarios.php';
-function adoptionCommitFixture(\Paymenter\Extensions\Servers\Domains\Data\Environment $environment = \Paymenter\Extensions\Servers\Domains\Data\Environment::Live): array
+function adoptionCommitFixture(\Paymenter\Extensions\Servers\Domains\Data\Environment $environment = \Paymenter\Extensions\Servers\Domains\Data\Environment::Live, array $registrars = ['enom','namesilo']): array
 {
     config(['app.url' => 'https://domains-tests.invalid', 'domains.adoption.enabled' => true]);
-    $f = adoptionFixture($environment); extract($f);
+    $f = adoptionFixture($environment, $registrars); extract($f);
     foreach (['HoldingAdoptionSchema', 'HistoryLinkSchema', 'NativeIntentSchema', 'ObservationSchema', 'ReminderSchema', 'RuntimeSchema'] as $schema) {
         ('Paymenter\\Extensions\\Servers\\Domains\\Services\\'.$schema)::install();
     }
