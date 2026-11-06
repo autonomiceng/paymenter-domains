@@ -315,7 +315,19 @@ preg_match_all("/'([a-z][a-z0-9_]*)'\\s*=>/",explode('public static function sta
 $excluded['RenewalAutoPay.php']=$autoPay[1];
 foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname(__DIR__).'/Domains/Services')) as $file){
     if($file->getExtension()!=='php'){continue;}
-    foreach(array_diff($inventory(file_get_contents($file->getPathname())),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
+    $serviceSource=file_get_contents($file->getPathname());
+    if($file->getBasename()==='OwnedDomains.php'){
+        // This method emits a closed owner DTO state, not request reasons. Keep all other methods inventoried.
+        $method=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::class,'issuedState');
+        same(realpath($file->getPathname()),realpath($method->getFileName()),'Owner state inventory uses the actual service source');
+        $lines=file($file->getPathname());$start=$method->getStartLine()-1;$length=$method->getEndLine()-$method->getStartLine()+1;
+        $stateSource=implode('',array_slice($lines,$start,$length));
+        $states=$inventory('<?php class OwnerState {'.$stateSource.'}');sort($states);
+        same(['paid','pending','review'],$states,'Owner invoice state has its closed DTO vocabulary');
+        expect(!preg_match('/\b(?:safe_code|reason)\b/',$stateSource),'Owner state method emits no request reason fields');
+        array_splice($lines,$start,$length,array_fill(0,$length,"\n"));$serviceSource=implode('',$lines);
+    }
+    foreach(array_diff($inventory($serviceSource),$excluded[$file->getBasename()]??[]) as $code){$emitted[$code][]=$file->getBasename();}
 }
 // These services forward codes from closed vocabularies rather than emitting literals at the write.
 $dnsReason=new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Dns\DnsReading::class,'safeCode');
