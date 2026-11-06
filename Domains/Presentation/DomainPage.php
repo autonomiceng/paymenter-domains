@@ -65,7 +65,8 @@ final class DomainPage
     {
         if ($d->expiry === null) {
             if ($s?->abandoned) { return ['missing' => false, 'tone' => null, 'note' => null]; }
-            if ($order = DomainListRow::orderExpires($d->order, $support)) { return $order; }
+            $said = str_starts_with(self::notice($d, $support, $s)['text'] ?? '', 'Complimentary. ');
+            if ($order = DomainListRow::orderExpires($d->order, $support, funding: !$said)) { return $order; }
             if (self::checkHeld($d)) { return ['missing' => true, 'cause' => self::TEAM_CHECK, 'fix' => null]; }
             $list = $s ? DomainListRow::expires($s) : null;
             return ['missing' => true, 'cause' => $list['cause'] ?? Missing::fills('after the next sync'), 'fix' => isset($list['cause']) ? $list['fix'] : null];
