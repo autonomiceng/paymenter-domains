@@ -1,8 +1,6 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic identities and readers only.
 declare(strict_types=1);
-// Collect completed form graphs at account boundaries, without rescanning live forms.
-$automaticServerGc=gc_enabled();gc_disable();
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/installed.php';
 require __DIR__.'/Support/staff-panel.php';
@@ -62,11 +60,13 @@ app('router')->getRoutes()->refreshNameLookups();
 $writer=new StaffSettingsWrites(app(NativeCatalogue::class),app(SellerPolicies::class),$bindings,true);app()->instance(StaffSettingsWrites::class,$writer);
 $processingAction=static fn(Server $s)=>setupAction('processing',$s->id);
 $unconfigured=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$first->id])->assertActionDoesNotExist($processingAction($first))->assertDontSee('Resume orders');
+unset($unconfigured);gc_collect_cycles();gc_mem_caches();
 $configure=static function(Server $s,string $registrar,string $secret)use($staff):void {
     $name=setupAction('configure',$s->id);
     $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($name)->assertActionMounted($name);
     $data=['registrar'=>$registrar,'environment'=>'test','reason'=>'Verify the original synthetic account',...($registrar==='enom'?['uid'=>'synthetic-enom','token'=>$secret]:['api_key'=>$secret])];
     $page->setActionData($data)->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved');
+    unset($page);gc_collect_cycles();gc_mem_caches();
 };
 $configure($first,'enom','PRIVATE-ORIGINAL-ENOM');$configure($second,'namesilo','PRIVATE-ORIGINAL-NAMESILO');
 foreach([$first,$second] as $server){
@@ -99,6 +99,8 @@ foreach([$first,$second] as $server){
     // Internal keys are not declared native inputs; forged client state is not verified rotation.
     $edit->set('data.settings.domains_credentials','{"api_key":"PRIVATE-WRONG-PAYLOAD"}')->call('save')->assertHasNoFormErrors();
     same($rawBefore,DB::table('settings')->where('settingable_id',$server->id)->whereIn('key',['domains_credentials','domains_verified_credentials'])->orderBy('id')->get()->toJson(),'Native payload cannot persist undeclared credential settings');
+    // The native editor has finished all hydration/save assertions.
+    unset($edit);gc_collect_cycles();gc_mem_caches();
     $setting=$server->settings()->where('key','domains_credentials')->sole();
     $setting->value=json_encode($a->registrar_key==='enom'?['uid'=>'other-account','token'=>'PRIVATE-WRONG-ENOM']:['api_key'=>'PRIVATE-WRONG-NAMESILO']);$setting->save();
     $readerCalls=$io->readers;
@@ -111,6 +113,7 @@ foreach([$first,$second] as $server){
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>false]);
     $disabled=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionDoesNotExist($processingAction($server))->assertSee('Fix the API connection first.');
     DB::table('domains_accounts')->where('id',$a->id)->update(['processing_enabled'=>true]);
+    unset($pause,$disabled);gc_collect_cycles();gc_mem_caches();
     same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Could not load account settings'],RegistrarFacts::status($server->fresh(),$a->fresh()),'Hold covers credential and digest settings');
     // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
     Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Could not load account settings')->assertSee('Missing')
@@ -121,6 +124,7 @@ foreach([$first,$second] as $server){
             ->body('Check the account settings in the System checks.')->danger());}
     finally{DB::table(BalanceSchema::TABLE)->where('id',$balanceState['id'])->update($balanceState);}
     Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Connection failed')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
+    gc_collect_cycles();gc_mem_caches();
     // A positively verified different account still cannot repurpose the retained binding.
     serverSettingsReject(fn()=>$bindings->configure($server->id,$a->registrar_key,Environment::Test,$a->registrar_key==='enom'?['uid'=>'other-account','token'=>'PRIVATE-WRONG-ROTATION']:['api_key'=>'PRIVATE-WRONG-ROTATION']));
     same($binding->fingerprint,$a->fresh()->account_fingerprint,'Failed rotation retains B1 fingerprint key');
@@ -200,5 +204,4 @@ Livewire::actingAs($staff)->test(CreateServer::class)->fillForm(['name'=>'Legacy
 expect(!Server::where('name','Legacy must refuse')->exists(),'Installation refusal precedes native persistence');
 DB::table('settings')->where('id',$toggle->id)->update(['value'=>'0']);
 same(0,$io->readers,'All native forms, local health and cached balance facts make zero provider reads');
-if($automaticServerGc){gc_enable();}
 echo "Native server editor qualification without remaps/interception: creation, exposure, harmless saves, holds, balances, rotation, permissions and lifecycle passed.\n";$nativeSuccessful=true;
