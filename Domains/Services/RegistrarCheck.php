@@ -53,18 +53,35 @@ final class RegistrarCheck
         return match ($check['outcome'] ?? null) {
             'awaiting_answer' => self::answerWords($check),
             'checked' => ['title' => 'Registrar checked', 'body' => $completed ? 'The request is complete. Open the domain for its details.'
-                : 'The result is still unconfirmed. '.($next ? 'The next check is at '.$next.'.' : 'Contact support to review the original order.')],
+                : self::STILL.' '.self::checkedNext($check)],
             'deferred' => ['title' => 'Check delayed', 'body' => (($check['reason'] ?? null) === 'scheduled' ? 'The next status check is not due yet.' : (($check['reason'] ?? null) === 'send_guard' ? 'Our sending settings paused this check.' : 'Our check limit was reached.'))
                 .($next ? ' The next check is at '.$next.'.' : ' Contact support to restart checks.')],
             'scheduled' => ['title' => 'Status checks restarted', 'body' => 'The system will check again on its next turn.'],
             default => ['title' => 'Cannot check registrar', 'body' => 'We could not get an answer from the registrar. Support can check the original order.'],
         };
     }
+    private const STILL = 'The result is still unconfirmed.';
+    private static function checkedNext(array $check): string
+    { return isset($check['next_at']) ? 'The next check is at '.gmdate('M j, Y H:i', (int) $check['next_at']).' UTC.' : 'Contact support to review the original order.'; }
     private static function answerWords(array $check): array
     {
-        $registrar = ($check['registrar'] ?? null) === 'Enom' ? 'Enom' : 'NameSilo';
-        $after = self::answerAfter($check);
-        return ['title'=>$registrar.' has not answered yet','body'=>'Ask '.$registrar.' to check this attempt. You can record '.$registrar.'’s answer after '.$after.'.'];
+        $step = self::answerStep($check);
+        return ['title'=>self::answerRegistrar($check).' has not answered yet','body'=>$step['title'].' '.$step['body']];
+    }
+    private static function answerStep(array $check): array
+    {
+        $registrar = self::answerRegistrar($check);
+        return ['title'=>'Ask '.$registrar.' to check this attempt.','body'=>'You can record '.$registrar.'’s answer after '.self::answerAfter($check).'.'];
+    }
+    private static function answerRegistrar(array $check): string { return ($check['registrar'] ?? null) === 'Enom' ? 'Enom' : 'NameSilo'; }
+    /** The staff request notice, next step first. Staff History already says the result is unconfirmed, so this doesn't. Null with no check. */
+    public static function step(Operation $op): ?array
+    {
+        $check = self::status($op);
+        if ($check === null) { return null; }
+        if (($check['outcome'] ?? null) === 'awaiting_answer') { return self::answerStep($check); }
+        $words = self::words($check, $op->state === 'succeeded');
+        return ['title' => $words['title'].'.', 'body' => ($check['outcome'] ?? null) === 'checked' && $op->state !== 'succeeded' ? self::checkedNext($check) : $words['body']];
     }
     private static function answerAfter(array $check): string
     { return (new \DateTimeImmutable('@'.(int)($check['answer_after'] ?? 0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT'; }

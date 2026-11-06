@@ -17,7 +17,9 @@ $at=(new DateTimeImmutable($result->attempt['dispatch_attempted_at']))->modify('
 $words=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($result);
 same(['title'=>'Enom has not answered yet','body'=>"Ask Enom to check this attempt. You can record Enom’s answer after ".$at.'.'],$words,'Staff gets a real Pacific time and next step');
 $page=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$result->id]);
-$page->assertSee($words['title'])->assertSee($words['body'])->assertDontSee('Cannot check registrar')->assertDontSee('PRIVATE-REPLY');
+// ui-r20: History says the result is unconfirmed, so the notice leads with the step and its time, and says nothing else of it.
+$page->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after '.$at.'.')->assertDontSee($words['title'])->assertDontSee('has not confirmed this registration')
+    ->assertDontSee('Cannot check registrar')->assertDontSee('PRIVATE-REPLY');
 unset($page);gc_collect_cycles();gc_mem_caches();
 require __DIR__.'/Support/owner-pages.php';
 $customer=App\Models\User::findOrFail($result->domain->user_id);

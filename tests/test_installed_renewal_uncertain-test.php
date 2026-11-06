@@ -39,10 +39,12 @@ foreach (['unknown', 'lost'] as $reply) {
     same($before, $op->fresh()->getAttributes(), 'Reading the staff step writes no request state');
     same($reads, count($state->calls), 'Reading the staff step makes no registrar calls');
     Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class, ['record'=>$op->id])
-        ->assertSee('Ask Enom to check this attempt.')->assertSee($after)->assertDontSee('Cannot check registrar');
+        ->assertSee('Ask Enom to check this attempt.')->assertSee($after)->assertDontSee('Cannot check registrar')
+        // ui-r20: History says the renewal is unconfirmed; the notice says it no more (207).
+        ->assertDontSee('has not confirmed this renewal')->assertDontSee('has not answered yet');
     $noCheck = $op->fresh()->policy; unset($noCheck['status_check']); $op->fresh()->update(['policy'=>$noCheck]);
     Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class, ['record'=>$op->id])
-        ->assertSee('Ask Enom to check this attempt.')->assertSee($after);
+        ->assertSee('Ask Enom to check this attempt.')->assertSee($after)->assertDontSee('has not confirmed this renewal');
     expect(!str_contains(RegistrarCheck::forCustomer($op->fresh())['body'], 'record Enom'), 'Derived customer notice keeps staff-only instructions out');
 
     $result = $completion->run($op->id);

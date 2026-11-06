@@ -5,11 +5,13 @@ namespace Paymenter\Extensions\Servers\Domains\Admin\Support;
 use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus;
-use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
+use Paymenter\Extensions\Servers\Domains\Services\{BalanceRetries, EnomTestManagement, EnomTestRegistration, ManagementEvidence, ManagementProgress, OperationClaims, RegistrarCheck, RegistrationDns, RenewalCycles, RenewalReplacements, StaffOperationWrites, UnpaidAcquisitionProof, WriteHeld};
 /** Request page facts and its one notice. A null fact value is Missing and its "_sub" key names the cause. */
 final class RequestFacts
 {
     public const NO_TIME='No time recorded. No action needed.';
+    /** An unconfirmed request with no other step: Check status asks again. */
+    private const CHECK_STATUS='Use Check status to ask the registrar for the result.';
     private const ORDERS_OFF='Orders are off for this account.';
     /** The step after a queued request's reason while Orders are off. A reason that already says so needs only the step. */
     public static function ordersStep(string $reason): string
@@ -253,7 +255,13 @@ final class RequestFacts
         }
         if (isset($facts['outcome'])) {
             $recover=HistoryRecovery::offered($op);$tooOld=HistoryRecovery::tooOld($op);
-            return ['title'=>$facts['outcome'],'body'=>implode(' ',array_filter([$recover?HistoryRecovery::CAUSE:($tooOld?HistoryRecovery::TOO_OLD:null),\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::status($op)!==null?implode('. ',\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op)):null,$facts['auto_renew']??PaidUncertainty::holdSummary($op)])),'tone'=>'warning',
+            $step=RegistrarCheck::step($op);
+            // History already says the result is unconfirmed, so then the notice leads with what to do. The answer step already says to ask Enom.
+            $said=$op->started_at&&StaffReviewHistory::sendEvent($op)===RequestStatus::UNCONFIRMED;
+            $cause=$recover?HistoryRecovery::CAUSE:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='awaiting_answer'?HistoryRecovery::TOO_OLD:null);
+            $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
+            if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
+            return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',
                 'action'=>$recover?HistoryRecovery::NAME:($tooOld?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
