@@ -165,13 +165,15 @@ final class DomainSummaries
                     if (!$expiry) { $waits=$pending?'import':(['registration_pending'=>'registration','transfer_pending'=>'transfer'][$t->status]??null); }
                 }
                 $choices=$dnsChoices->get($id,collect());
-                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?$t->expected_dns:ManagedDnsSetup::expected($c->configs[$id]??null,$c->managedProfile($id),$t,...ManagedDnsSetup::choices($t,$choices));
+                $delegation=$rows->firstWhere('check_kind','delegation');$expected=$kind==='watch'?SiteDnsDefault::watchExpected($t,isset($c->defaults['site'])):ManagedDnsSetup::expected($c->configs[$id]??null,$c->managedProfile($id),$t,...ManagedDnsSetup::choices($t,$choices));
                 $scope=WatchNoticePreferences::scope($uid,$kind==='watch'?$t->canonical_name:$t->domain);$episode=$noticeStates[$scope]??null;if ($episode && (int)$episode->user_id!==$uid) { $episode=null; }
                 try { $episode=$episode?json_decode(Crypt::decryptString($episode->data),true,64,JSON_THROW_ON_ERROR):[]; if (!is_array($episode) || !is_array($episode['portal']??[]) || array_filter($episode['portal']??[],fn($v)=>!is_array($v) || array_filter($v,fn($key)=>!is_string($key)))) { $episode=[]; } } catch (\Throwable) { $episode=[]; }
-                $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];
+                $noticeKeys=($episode['target']??null)===[$kind,(int)$id]?array_values(array_unique(array_merge(...array_values($episode['portal']??[[]])))):[];$noticeDates=[];$dnsPreviouslyMatched=in_array('ns_changed',$noticeKeys,true) && ($episode['dns']['previously_matched']??false)===true;
                 if ($expected==='platform' && !$signals['dns']['stale'] && $signals['dns']['value']==='external') {
-                    $changed=in_array('ns_changed',$noticeKeys,true);$states[]=$changed?'watch.ns_changed':'watch.ns_pending';
-                    $noticeDates['dns']=(int)($changed?($episode['dns']['episode']??0):$delegation?->started_at);
+                    // A confirmed current observation is enough to describe the mismatch.
+                    // Portal facts must not wait for the separately admitted notice planner.
+                    $changed=in_array('ns_changed',$noticeKeys,true)||($delegation?->facts['ns_confirmed']??false)===true;$states[]=$changed?'watch.ns_changed':'watch.ns_pending';
+                    $noticeDates['dns']=(int)($episode['dns']['episode']??$delegation?->started_at);
                 }
                 if (array_filter($fresh,fn($f)=>$f['stale'])) { $states[]=array_filter($fresh,fn($f)=>$f['checkedAt']!==null)?'watch.stale':'watch.not_checked'; }
                 if (array_filter($fresh,fn($f)=>$f['partial'] && !$f['stale'])) { $states[]='watch.partial'; }
@@ -180,7 +182,7 @@ final class DomainSummaries
                 foreach ($c->related($kind,$id) as $s) { if (!$c->validSource($s)) { continue; }$h=$c->services[$s->service_id];$p=$c->products[$h->product_id];
                     $related[]=['id'=>(int)$h->id,'label'=>$p->name,'url'=>route('services.show',$h->id)];$hosts[]=$s->hostname; }
                 $out[$kind.':'.$id]=new DomainSummary($kind==='watch'?$t->canonical_name:$t->domain,$kind==='watch'?$t->display_name:null,$kind,$registration,$keys,$signals['website']['value'],$signals['email']['value'],array_values(array_unique($states)),DomainSummaryStrings::all(),$expiry,$precision,$source,$fresh,$due,$price,$related,array_values(array_unique($hosts)),['detail'=>$url,'preferences'=>($kind==='watch' && $t->state==='active' && $stamp)||($kind==='managed' && !$pending && isset($c->configs[$id]) && $c->services[$t->service_id]->status==='active' && $expiry>gmdate('Y-m-d',$now))?route('domains.checks.show',['kind'=>$kind,'id'=>$id]):null,'invoiceHistory'=>$kind==='managed' && $pending?route('invoices'):null,'compareTransfer'=>config('domains.watch_transfer.enabled',false) && $kind==='watch' && $t->state==='active' && $t->registration==='external' && $factsCurrent && WatchTransferPolicy::window(substr($expiry??'',0,10),$now) && !in_array('watch.redemption',$states,true) && array_filter($transferEndings,fn($ending)=>str_ends_with($t->canonical_name,'.'.$ending))?route('domains.watch.transfer',$id):null,'support'=>Missing::supportUrl()],$off,$lastKnown,max(0,count($c->related($kind,$id))-3),$noticeKeys,$noticeDates,$reminderOff,$projected,$kind==='managed' && in_array($t->server_id,$testServers),$nameserverFact?->toArray(),$status,$reason,DemoData::is($t),
-                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$issue,$order,$kind==='managed'&&$op&&UnpaidAcquisitionProof::terminal($op,$t)&&RequestFacts::neverPaid($op));
+                    $expiry?intdiv(strtotime(substr($expiry,0,10).' 00:00:00 UTC')-strtotime(gmdate('Y-m-d',$now).' 00:00:00 UTC'),86400):null,$invoiceMissing,$waits,$issue,$order,$kind==='managed'&&$op&&UnpaidAcquisitionProof::terminal($op,$t)&&RequestFacts::neverPaid($op),$dnsPreviouslyMatched);
             }
         }
         return $out;

@@ -20,7 +20,7 @@ class ListManagedDns extends ListRecords
     // These are managed domains, so the external-watch resource's columns and filters do not apply.
     protected function makeTable(): Table{return $this->makeBaseTable();}
     public function getTitle(): string{return 'DNS monitoring setup';}
-    public function getSubheading(): ?string{return 'Set a default DNS template on each registrar account. These domains will pick it up automatically. Their expiry monitoring continues.';}
+    public function getSubheading(): ?string{return 'Set the site DNS default in monitoring settings. These domains inherit it automatically. Their expiry monitoring continues.';}
     public function getSubNavigation(): array{return StaffTabs::monitoring('DNS monitoring setup');}
     protected function getHeaderActions(): array
     {return [Action::make('templates')->label('DNS templates')->url(RoutingProfileResource::getUrl())];}
@@ -31,10 +31,7 @@ class ListManagedDns extends ListRecords
             OneLine::apply(TextColumn::make('domain')->label('Domain')->searchable()->sortable()->fontFamily(FontFamily::Mono),OneLine::NAME),
             OneLine::apply(TextColumn::make('user.email')->label('Customer'),OneLine::SHORT),
             TextColumn::make('comparison')->label('DNS comparison')->state(fn()=>$this instanceof ListDnsFailures?'Retrying automatically':'Not configured'),
-        ])->recordActions([Action::make('accountTemplate')->label('Set account DNS template')
-            ->visible(fn()=>!($this instanceof ListDnsFailures) && Staff::can(StaffWatchWrites::MANAGE) && Staff::canEditDefaultDns())
-            ->url(fn(Domain $record)=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$record->server_id])),
-            Action::make('assignTemplate')->label('Assign template')->modalSubmitActionLabel('Assign template')
+        ])->recordActions([            Action::make('assignTemplate')->label('Assign template')->modalSubmitActionLabel('Assign template')
             ->visible(fn()=>!($this instanceof ListDnsFailures) && Staff::can(StaffWatchWrites::MANAGE) && WatchProfile::where('enabled',true)->get()->contains(fn($p)=>ManagedDnsSetup::usable($p)))
             ->modalDescription('The intended DNS could not be found automatically. Future checks compare against this template.')
             ->schema([Hidden::make('ticket')->default(fn(Domain $record)=>StaffManagedDnsSetup::ticket(Auth::user(),$record)),

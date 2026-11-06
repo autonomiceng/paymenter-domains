@@ -41,7 +41,7 @@ final class WatchNotices
                 $events=$p['notices'];
                 // Same episode, new target and new evidence; old channel keys remain target-independent.
                 if ($axis==='dns' && $kind==='managed' && isset($state['dns']['episode']) && $t['delegation'] && $t['delegation']['ns_confirmed'] && $t['delegation']['dns']==='external') {
-                    $events[]=['kind'=>'ns_changed','episode'=>$state['dns']['episode'],'threshold'=>null,'date'=>gmdate('Y-m-d',$t['delegation']['at']),'observation_id'=>$t['delegation']['id'],'priority'=>1];
+                    $events[]=['kind'=>'ns_changed','episode'=>$state['dns']['episode'],'threshold'=>null,'date'=>gmdate('Y-m-d',$t['delegation']['at']),'observation_id'=>$t['delegation']['id'],'priority'=>1,'previously_matched'=>$state['dns']['previously_matched']??false];
                 }
                 foreach($events as $event) { $this->record($scope,$t,$event,$now); }
                 // Deduplicated local staff signal. Recovery rearms only the next outage episode.
@@ -73,6 +73,6 @@ final class WatchNotices
         WatchNotice::create(['notice_key'=>$key,'scope'=>$scope,'target_kind'=>$t['kind'],'watch_id'=>$t['kind']==='watch'?$t['id']:null,
             'managed_domain_id'=>$t['kind']==='managed'?$t['id']:null,'user_id'=>$t['owner'],'kind'=>$event['kind'],'episode_key'=>$episode,'threshold'=>$event['threshold'],
             'family'=>$family,'observation_id'=>$event['observation_id'],'state'=>'open','first_seen_at'=>$now,'last_seen_at'=>$now,
-            'data'=>['domain'=>$t['name'],'date'=>$event['date'],'episode'=>$event['episode'],'lineage'=>$lineage,'priority'=>$event['priority'],'channels'=>$event['channels']??['mail','app']]]);
+            'data'=>['domain'=>$t['name'],'date'=>$event['date'],'episode'=>$event['episode'],'lineage'=>$lineage,'priority'=>$event['priority'],'previously_matched'=>$event['previously_matched']??false,'channels'=>$event['channels']??['mail','app']]]);
     }
 }

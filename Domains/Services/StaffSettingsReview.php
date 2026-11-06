@@ -15,7 +15,7 @@ final class StaffSettingsReview
     public const HISTORY_LIMIT=50;
     /** Stands in for a server id for business-wide pricing. */
     public const ALL_ACCOUNTS=0;
-    public const ACTIONS=['price_freshness'=>'Edit price freshness','call_limits'=>'Edit call limits','new_domain_dns'=>'Change new domain nameservers','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Enter Enom’s answer','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','default_pricing'=>'Edit default pricing','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
+    public const ACTIONS=['price_freshness'=>'Edit price freshness','call_limits'=>'Edit call limits','late_renewal'=>'Change late renewal','activate'=>'Activate live sales','enom_answer'=>'Enter Enom’s answer','live_transfer'=>'Change live transfers','live_management'=>'Change live DNS, nameservers and contacts','live_renewal'=>'Change live renewals','test_management'=>'Change test DNS, nameservers and contacts','test_renewal'=>'Change test renewals','test_transfer'=>'Change test transfers','renewal_billing'=>'Edit renewal schedule','unpaid_hold'=>'Edit unpaid hold','default_pricing'=>'Edit default pricing','card_fee'=>'Edit card fee','default_rule'=>'Edit default rule','override'=>'Save TLD override','remove_override'=>'Use default rule',
 
         'tld_settings'=>'Review TLD availability','seller'=>'Change registrar for new orders','publish'=>'Publish prices','import'=>'Sync TLD prices','acceptance'=>'Edit what you sell','history'=>'Check Enom order history','enroll_sandbox'=>'Connect NameSilo test account','configure'=>'Edit API credentials','probe'=>'Test connection','processing'=>'Pause or resume orders','delivery_review'=>'Review notification outcome','alert_review'=>'Review notification check'];
     private array $verified=[];
@@ -33,7 +33,7 @@ final class StaffSettingsReview
     public function __construct(public readonly int $actorId,public readonly int $serverId,public readonly ?int $tldId,
         public readonly string $action,private readonly string $ticket,public readonly string $reason,private readonly ?\Closure $current=null) {}
     /** Syncing prices, saving what you sell, DNS template selection and testing the connection ask no reason; the audit still records who, when and what. */
-    public const NO_REASON=['import','acceptance','new_domain_dns','probe'];
+    public const NO_REASON=['import','acceptance','probe'];
     /** Saving these publishes prices, so they also need the publish permission. */
     public const PUBLISHES=['override','remove_override','default_pricing'];
     /** Rights an action needs instead of its own. Staff who could edit the rule and the fee keep Default pricing, with no role changes. */
@@ -183,7 +183,7 @@ final class StaffSettingsReview
             try{$b=AccountBindings::binding($a);$live=['current'=>EnomLiveActivation::current($b),'registration'=>EnomLiveActivation::registrationAccepted($b),'renewal'=>EnomTestRenewal::accepted($b),'management'=>EnomTestManagement::accepted($b),'transfer'=>EnomTestTransfer::accepted($b)];}
             catch(\Throwable){$live='unavailable';}
         }
-        return [...($this->action==='new_domain_dns'?['dns_template'=>NewDomainDns::profile($server)?->id]:[]),'server_id'=>$server,'binding'=>$a?->account_fingerprint,'processing'=>$a?->processing_enabled,'tld_id'=>$tld,
+        return ['server_id'=>$server,'binding'=>$a?->account_fingerprint,'processing'=>$a?->processing_enabled,'tld_id'=>$tld,
             'rule'=>$rule,'tld'=>$t?array_intersect_key($t->getAttributes(),array_flip(['enabled','register_enabled','transfer_enabled','renew_enabled','use_default_rule','min_years','max_years'])):null,'offer'=>$t?['revision'=>$t->catalogue_revision,'intent'=>$t->catalogue_intent]:null,
             'history'=>array_map(function($action)use($a){try{$v=$a?HistoryAcceptances::load(AccountBindings::binding($a),$action):null;return $v?['timezone'=>$v->timezone,'lag'=>$v->lagSeconds,'retention'=>$v->retentionSeconds,'vocabulary'=>$v->vocabulary]:null;}catch(\Throwable){return 'unavailable';}},[\Paymenter\Extensions\Servers\Domains\Data\Action::Register,\Paymenter\Extensions\Servers\Domains\Data\Action::Renew,\Paymenter\Extensions\Servers\Domains\Data\Action::Transfer]),
             'sellers'=>SalesPolicy::when($t,fn($q)=>$q->where('tld',$t->tld))->limit($t?1:0)->lockForUpdate()->get()->map(fn($p)=>['tld'=>$p->tld,'server'=>$p->server_id,'revision'=>$p->revision,'register'=>$p->register_enabled,'transfer'=>$p->transfer_enabled])->all(),
@@ -206,7 +206,6 @@ final class StaffSettingsReview
         if(DB::transactionLevel()!==0){throw new \LogicException('Staff review owns its transaction.');}
         return DB::transaction(function()use($write,$phase){$this->lockActor();
             // Template edits lock the profile before its account settings; keep the same order before stamp().
-            if($this->action==='new_domain_dns'){\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::whereKey($this->input['dns_template']??0)->lockForUpdate()->first();}
             $this->lockAccounts();$this->check();
             $this->activating=$this->action==='activate';
             try{$v=$write();$this->record($phase);return $v;}finally{$this->activating=false;}
