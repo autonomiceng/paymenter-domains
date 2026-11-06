@@ -134,11 +134,15 @@
     document.addEventListener('keydown', event => { if (event.key === 'Escape') helps.forEach(help => help.close()); });
     document.addEventListener('click', event => helps.forEach(help => { if (!help.contains(event.target)) help.close(); }));
     document.querySelectorAll('[data-renewal-form]').forEach(form => {
-        form.querySelector('select').addEventListener('change', e => {
-            form.querySelector('[data-renewal-expiry]').textContent = e.target.selectedOptions[0].dataset.expiry || 'Confirmed at payment';
-            form.querySelector('[data-renewal-breakdown]').textContent = e.target.selectedOptions[0].dataset.breakdown || '';
-            form.querySelector('[data-renewal-total]').textContent = e.target.selectedOptions[0].dataset.total || 'Confirmed at payment';
-        });
+        form.querySelectorAll('[data-renewal-summary]').forEach(row => { row.hidden = false; });
+        const updateRenewal = () => {
+            const option = form.querySelector('select').selectedOptions[0];
+            form.querySelector('[data-renewal-expiry]').textContent = option.dataset.expiry || 'Confirmed at payment';
+            form.querySelector('[data-renewal-breakdown]').textContent = option.dataset.breakdown || '';
+            form.querySelector('[data-renewal-total]').textContent = option.dataset.total || 'Confirmed at payment';
+        };
+        form.querySelector('select').addEventListener('change', updateRenewal);
+        updateRenewal();
     });
     document.querySelectorAll('[data-domains-results]').forEach(list => {
         const summary = () => {
