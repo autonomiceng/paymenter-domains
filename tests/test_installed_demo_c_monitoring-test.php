@@ -31,6 +31,8 @@ $html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();e
 $html=Livewire\Livewire::test(WatchHistory::class,['record'=>$watch->id])->html();expect(str_contains($html,'Registrar read partial'),'Real monitoring history renders registrar reads');
 $html=Livewire\Livewire::test(Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\MonitoringSettings::class)->html();expect(str_contains($html,'Daily')&&str_contains($html,'Registrar read failures')&&str_contains($html,'No separate alert switch'),'Real settings shows daily reads and the unavailable alert switch');
 expect(str_contains($html,'Sync now')&&str_contains($html,'domain facts'),'Settings distinguishes daily facts from manual record sync');
+expect(str_contains($html,'where Resume sync restarts the stopped read')&&!str_contains($html,'beside Resume sync'),'Read failures say what Resume sync does, apart from Sync now');
+expect(str_contains($html,'Nameservers at least every 6 hours, records daily')&&!str_contains($html,'checked more often'),'Public DNS checks state one schedule');
 // Outdated saved answers remain evidence of a past check, never current IP answers.
 foreach(['expired','revision','failed'] as $case){
     $old=clone $public;
