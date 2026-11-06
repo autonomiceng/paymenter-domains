@@ -26,6 +26,9 @@ function serverSettingsReject(callable $call): void
 // Each registered entry runs one complete registrar scenario against fresh native schema.
 // Real Livewire credential hydration and model hooks cannot be covered by a unit fixture.
 expect(in_array($nativeServerSettingsRegistrar,['enom','namesilo'],true),'Explicit registrar scenario required');
+// Collect after completed renders, rather than repeatedly scanning live form graphs.
+$automaticServerGc=gc_enabled();gc_disable();
+register_shutdown_function(static function()use($automaticServerGc):void{if($automaticServerGc){gc_enable();}});
 $registry=new RegistrarRegistry;$io=(object)['verifications'=>0,'readers'=>0];
 $verifier=new class($io) implements AccountVerifier {
     public function __construct(private object $io) {}
@@ -52,6 +55,7 @@ Livewire::actingAs($noNative)->test(CreateServer::class)->assertForbidden();
 $serverName=$nativeServerSettingsRegistrar==='enom'?'Native first registrar':'Native second registrar';
 Livewire::actingAs($staff)->test(CreateServer::class)->fillForm(['name'=>$serverName,'extension'=>'Domains'])->call('create')->assertHasNoFormErrors();
 $server=Server::where('name',$serverName)->sole();
+gc_collect_cycles();gc_mem_caches();
 foreach(Installation::SCHEMAS as $schema){$schema::verify();}
 same(0,Account::count(),'Native creation installs retained schema without inventing account verification');
 same(0,$io->verifications,'Native Create Server does no provider verification');
@@ -74,6 +78,7 @@ $configure($server,$nativeServerSettingsRegistrar,$nativeServerSettingsRegistrar
 $a=Account::where('server_id',$server->id)->sole();$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 same(false,$a->processing_enabled,'Owned verified configuration starts paused');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertActionEnabled($processingAction($server));
+gc_collect_cycles();gc_mem_caches();
 $bindings->setProcessing($server->id,true,static fn()=>null);
 BalanceReads::record($binding,new Money('42.17','USD'),$clock->now(),'manual');
 expect($bindings->configurationAvailable($server->id),'Local configuration validated without constructing reader');
@@ -93,9 +98,11 @@ expect(str_contains(json_encode($edit->snapshot),$secret),'Accepted boundary: na
 expect(isset($settings['domains_verified_credentials']),'Native all-settings fill exposes the digest too');
 $rawBefore=DB::table('settings')->where('settingable_id',$server->id)->whereIn('key',['domains_credentials','domains_verified_credentials'])->orderBy('id')->get()->toJson();
 $edit->call('save')->assertHasNoFormErrors(); // Native hydration and unchanged save, no mount/hydrate interception.
+gc_collect_cycles();gc_mem_caches();
 same($rawBefore,DB::table('settings')->where('settingable_id',$server->id)->whereIn('key',['domains_credentials','domains_verified_credentials'])->orderBy('id')->get()->toJson(),'Unchanged native save leaves credential ciphertext unchanged');
 $bindings->requireProcessing($binding);
 $edit->fillForm(['name'=>'Renamed native account '.$server->id])->call('save')->assertHasNoFormErrors();
+gc_collect_cycles();gc_mem_caches();
 $bindings->requireProcessing($binding);
 // Internal keys are not declared native inputs; forged client state is not verified rotation.
 $edit->set('data.settings.domains_credentials','{"api_key":"PRIVATE-WRONG-PAYLOAD"}')->call('save')->assertHasNoFormErrors();
@@ -119,11 +126,13 @@ same(['label'=>'Connection failed','tone'=>'danger','reason'=>'Could not load ac
 // The account shows Connection failed with its cause; Balance is Missing with the same cause and Add funds stays available.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSee('Connection failed')->assertSee('Could not load account settings')->assertSee('Missing')
     ->assertSee('Add funds')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
+gc_collect_cycles();gc_mem_caches();
 $balanceState=(array)DB::table(BalanceSchema::TABLE)->where('server_id',$server->id)->sole();
 try{Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->call('checkBalance')
     ->assertNotified(\Filament\Notifications\Notification::make()->title("Couldn't check balance")
         ->body('Check the account settings in the System checks.')->danger());}
 finally{DB::table(BalanceSchema::TABLE)->where('id',$balanceState['id'])->update($balanceState);}
+gc_collect_cycles();gc_mem_caches();
 Livewire::actingAs($staff)->test(RegistrarSetup::class)->assertSee('Connection failed')->assertSeeHtml(RegistrarBalances::fundsUrl($a->registrar_key,'test'))->assertDontSee('PRIVATE-WRONG');
 gc_collect_cycles();gc_mem_caches();
 // A positively verified different account still cannot repurpose the retained binding.
@@ -148,6 +157,7 @@ $bindings->setProcessing($server->id,true,static fn()=>null);
 $retained=DB::table('settings')->where('settingable_id',$server->id)->orderBy('id')->get()->toJson();
 Livewire::actingAs($staff)->test(EditServer::class,['record'=>$server->id])->callAction('delete')
     ->assertSuccessful()->assertActionHalted('delete')->assertNotified('Server could not be deleted')->assertNotNotified('Deleted');
+gc_collect_cycles();gc_mem_caches();
 expect(Server::whereKey($server->id)->exists(),'Handled native delete retains server');
 same(false,$a->fresh()->processing_enabled,'Native before-delete hook still pauses processing');
 same($retained,DB::table('settings')->where('settingable_id',$server->id)->orderBy('id')->get()->toJson(),'Handled refusal retains encrypted settings');
@@ -156,7 +166,10 @@ serverSettingsReject(fn()=>$a->fresh()->delete());
 $owned=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id])->assertSuccessful()->assertSee('System checks')->assertSee('Balance');
 // A link that promises a switch lands on it: the row has its anchor, and only the one asked for is marked.
 expect(str_contains($owned->html(),'id="switch-orders"')&&!str_contains($owned->html(),'domains-row-target'),'The Orders row has its anchor and no mark unasked');
-$marked=static fn(string $switch)=>substr_count(Livewire::actingAs($staff)->withQueryParams(['switch'=>$switch])->test(RegistrarAccount::class,['account'=>$server->id])->html(),'domains-row-target');
+$marked=static function(string $switch)use($server):int {
+    $count=substr_count(Livewire::actingAs($staff)->withQueryParams(['switch'=>$switch])->test(RegistrarAccount::class,['account'=>$server->id])->html(),'domains-row-target');
+    gc_collect_cycles();gc_mem_caches();return $count;
+};
 same([1,0],[$marked('orders'),$marked('nothing')],'Only a known switch is marked');
 foreach([$secret,'PRIVATE-ROTATED-'.$a->registrar_key,$savedDigest,$a->account_fingerprint] as $private){expect(!str_contains($owned->html(),$private),'Owned setup excludes saved credentials, HMAC and fingerprints');}
 $audit=Review::historyRows($server->fresh());expect(count($audit)>=2,'Configuration and rotation retain audited review outcomes');
@@ -169,6 +182,7 @@ if($nativeServerSettingsRegistrar==='namesilo'){
     $control=Server::create(['type'=>'server','extension'=>'SyntheticHosting','name'=>'Unrelated hosting control','enabled'=>false]);
     Livewire::actingAs($staff)->test(EditServer::class,['record'=>$control->id])->callAction('delete')->assertSuccessful()->assertNotified('Deleted');
     expect(!Server::whereKey($control->id)->exists(),'Unrelated native server deletion continues');
+    gc_collect_cycles();gc_mem_caches();
     // Local site holds have different recovery from credential edits and never construct a reader.
     $live=Server::create(['type'=>'server','extension'=>'Domains','name'=>'Live site qualification','enabled'=>true]);
     $liveBinding=$bindings->configure($live->id,'namesilo',Environment::Live,['api_key'=>'PRIVATE-SITE-LIVE']);
@@ -206,4 +220,5 @@ if($nativeServerSettingsRegistrar==='namesilo'){
     DB::table('settings')->where('id',$toggle->id)->update(['value'=>'0']);
 }
 same(0,$io->readers,'All native forms, local health and cached balance facts make zero provider reads');
+if($automaticServerGc){gc_enable();}
 echo "Native server $nativeServerSettingsRegistrar qualification without remaps/interception: creation, exposure, harmless saves, holds, balances, rotation, permissions and lifecycle passed.\n";$nativeSuccessful=true;
