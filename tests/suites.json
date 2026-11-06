@@ -513,6 +513,7 @@
     "tests/customer-deferred-progress-test.php",
     "tests/customer-registration-history-test.php",
     "tests/cart-removal-checkout-test.php",
+    "tests/cart-removal-price-failure-test.php",
     "tests/native-autoload-path-test.php",
     "tests/cart-notice-render-test.php"
   ],

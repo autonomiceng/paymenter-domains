@@ -24,7 +24,7 @@ final class CartCheckoutRefresh
             catch (CartLinesRemoved $e) {
                 self::removed($component, $e);
                 $was = self::changedAmounts($held);
-                if ($was) { self::changed($component, self::cartTotal(), $was, $e); }
+                if ($was) { self::priceNotice($component, $was, $e); }
             }
             catch (\Throwable $e) { self::unavailable($component, $e); }
         });
@@ -95,9 +95,14 @@ final class CartCheckoutRefresh
     private static function shownKey(): string
     { return 'domains.cart_shown.'.NativeCart::get()->ulid; }
 
-    private static function changed(Cart $component, ?Price $total, array $was, ?CartLinesRemoved $removed = null): void
+    private static function changed(Cart $component, ?Price $total, array $was): void
     {
         self::show($component, $total);
+        self::priceNotice($component, $was);
+    }
+
+    private static function priceNotice(Cart $component, array $was, ?CartLinesRemoved $removed = null): void
+    {
         $text = ($removed ? $removed->getMessage().' ' : '').'Review the total, then check out again.';
         CartNotice::set($component, 'Your cart changed', $text,
             'Your cart changed. '.$text, 'warning', $removed?->names ?? [], $was);
