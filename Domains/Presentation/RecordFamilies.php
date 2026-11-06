@@ -16,7 +16,7 @@ final class RecordFamilies
             $section['family']=$family;
             // Missing inventory must not revoke controls already granted by the native management projection.
             if(!$facts['current_read']){$management[$key]=$section;continue;}
-            if($family['state']!=='complete'){$section['actions']=[];$section['family_only']=true;}
+            if($family['state']!=='complete'){$section['actions']=$key==='glue'?array_intersect_key($section['actions'],['glue_add'=>true]):[];$section['family_only']=$section['actions']===[];}
             if($key==='dns'){$section['inventory']=$facts['families']['dns']['records']??[];$section['caa']=$facts['caa'];$section['caa_at']=$facts['caa_at'];
                 $section['fixed']=[...array_values(array_filter($section['fixed']??[],fn($r)=>($r['type']??null)!=='CAA')),...array_map(fn($r)=>['name'=>$r['name'],'type'=>'CAA','address'=>$r['value'],'ttl'=>$r['ttl']],$facts['caa'])];}
             $management[$key]=$section;
