@@ -341,8 +341,17 @@ final class Writer implements Catalogue
             if ($new->observedAt > $now) { throw new \DomainException('Future facts observation.'); }
             if ($old && $old->observedAt > $new->observedAt) { return false; }
             if ($old && $old->observedAt == $new->observedAt) {
-                if (!OfferState::equivalent(OfferState::decode(OfferState::encodeFacts($old)), OfferState::decode(OfferState::encodeFacts($new)))) { throw new \DomainException('Conflicting facts observation.'); }
-                return false;
+                $before = OfferState::decode(OfferState::encodeFacts($old)); $after = OfferState::decode(OfferState::encodeFacts($new));
+                if (OfferState::equivalent($before, $after)) { return false; }
+                // Recover TEST rows whose optional evidence was stripped during reconstruction. Only the
+                // current bound protocol can restore it; ordinary facts and their observation age stay fixed.
+                unset($before['term_evidence'], $before['renewal_families'], $after['term_evidence'], $after['renewal_families']);
+                if ($old->expansion !== [] || $new->expansion === [] || !OfferState::equivalent($before, $after)
+                    || $command->binding()->registrarKey !== 'namesilo'
+                    || $command->binding()->environment !== \Paymenter\Extensions\Servers\Domains\Data\Environment::Test
+                    || !\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\TestCatalogueFacts::current($command->binding(), $command->tld(), $new, $this->clock)) {
+                    throw new \DomainException('Conflicting facts observation.');
+                }
             }
             $target->catalogue_facts = OfferState::encodeFacts($new); return true;
         }

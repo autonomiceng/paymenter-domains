@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/namesilo-test-activation-test.php';$nativeSuccessful=false;
 require __DIR__.'/Support/native-commerce.php';
+// Checklist and checkout both render the extension's scoped native views.
+app('view')->addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 require_once __DIR__.'/Support/FakeRegistrar.php';
 use App\Models\{Category,Currency,Setting};
 use Illuminate\Support\Facades\DB;
@@ -59,6 +61,9 @@ same([],$storefront->endings(),'Account prices alone cannot authorize a sale');
 $proof=['terms'=>['register'=>[1],'renew'=>[1],'transfer'=>[1]],'registry_fields'=>[],
     'renewal_safe'=>true,'requires_nameservers'=>false,'auto_renew_only'=>false,
     'observed_at'=>$now->format(DATE_ATOM),'fresh_until'=>$now->modify('+1 day')->format(DATE_ATOM)];
+// Native routing is needed to prove stored protocol equality and same-date refresh recovery.
+$proof['term_evidence']=['format'=>1,'entries'=>[]];
+$proof['renewal_families']=['format'=>1,'entries'=>[]];
 $evidence=['fingerprint'=>$binding->fingerprint,'credential_revision'=>$bindings->credentialRevision($binding),'facts'=>['com'=>$proof]];
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
 $refuses=static function(callable $work):void {try{$work();}catch(\Throwable){return;}throw new \RuntimeException('Expected refusal.');};
@@ -87,6 +92,22 @@ foreach([
 config(['domains.namesilo_test.accounts'=>[$account->stable_identity=>$evidence]]);
 
 $scheduler->requestFacts($binding,'com');$scheduler->tick(1);
+$storedFacts=static fn()=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::facts(Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts);
+same($proof['term_evidence'],$storedFacts()->expansion['term_evidence']??null,'Facts writer preserves TEST expansion evidence');
+expect(TestCatalogueFacts::current($binding,'com',$storedFacts(),$clock),'Stored expansion passes current TEST protocol equality');
+// A changed annual feed reconstructs facts as well; optional evidence must survive it.
+$cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'12.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,
+    'namesilo_account_annual',$clock->now(),$clock->now()->modify('+1 day'));
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$revision());
+expect(TestCatalogueFacts::current($binding,'com',$storedFacts(),$clock),'Changed price feed preserves expansion and protocol acceptance');
+// Reproduce a row stripped by the previous writer, retaining the protocol's immutable observation date.
+$stripped=json_decode(Tld::where('server_id',$binding->serverId)->where('tld','com')->sole()->catalogue_facts,true);
+unset($stripped['term_evidence'],$stripped['renewal_families']);
+DB::table('domains_tlds')->where('server_id',$binding->serverId)->where('tld','com')->update(['catalogue_facts'=>json_encode($stripped)]);
+expect(!TestCatalogueFacts::current($binding,'com',$storedFacts(),$clock),'Previously stripped facts fail current protocol equality');
+$ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,'com',
+    TestCatalogueFacts::read($binding,$bindings->credentialRevision($binding),'com',$clock)),$revision());
+expect(TestCatalogueFacts::current($binding,'com',$storedFacts(),$clock),'Facts refresh repairs stripped facts with the same observation date');
 $offer=$storefront->offer('com','register',1);
 same(['$13.00','$15.60'],[$offer['price'],$offer['renew']],'Installed public route prices annual registration and retained renewal');
 expect($storefront->hasTransferOffers(),'NameSilo annual transfers follow the same seller and price gates');
