@@ -699,7 +699,8 @@ class RunnerTests(unittest.TestCase):
                    'tests/order-payment-test.php', 'tests/staff-domain-hold-status-test.php',
                    'tests/owned-pages-test.php', 'tests/owner-renewal-test.php', 'tests/staff-watch-findings-test.php', 'tests/owner-renewal-retained-test.php', 'tests/owner-renewal-integrity-test.php', 'tests/owner-renewal-expiry-test.php', 'tests/owner-renewal-history-test.php', 'tests/owner-renewal-calendar-test.php']
         cases = [(1, [path], True) for path in focused]
-        cases += [(1, focused, True), (2, focused, False),
+        cases += [(1, focused[:4], True), (2, focused[:4], False),
+                  (1, focused, True), (2, focused, False),
                   (1, [focused[0], 'tests/offer-routing-test.php'], False)]
         for jobs, requested, shared in cases:
             with self.subTest(jobs=jobs, requested=requested), tempfile.TemporaryDirectory() as temp, \
@@ -712,7 +713,10 @@ class RunnerTests(unittest.TestCase):
                  mock.patch.object(runner, 'run', return_value=0), contextlib.redirect_stdout(io.StringIO()):
                 (Path(temp)/'runtime').mkdir()
                 self.assertEqual(runner.main(), 0)
-                native_prepare.assert_called_once_with('pristine', Path(temp)/'paymenter', share_vendor=shared)
+                options = {'share_vendor': shared}
+                if shared and all(path in focused[:4] for path in requested):
+                    options['retain_vendor_cache'] = True
+                native_prepare.assert_called_once_with('pristine', Path(temp)/'paymenter', **options)
 
     def test_only_unknown_paths_and_missing_native_source_refuse_before_preparing(self):
         for path, message in [('tests/unregistered-test.php', 'Unregistered'),

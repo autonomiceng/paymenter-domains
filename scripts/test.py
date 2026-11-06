@@ -639,7 +639,10 @@ def main():
             fixture = output/'paymenter'
             with timing("native_fixture", timings):
                 shared = test_fixtures.shared_vendor(args.jobs, requested)
-                snapshot = native.prepare(source, fixture, share_vendor=bool(shared))
+                options = {'share_vendor': bool(shared)}
+                if test_fixtures.retained_vendor(args.jobs, requested):
+                    options['retain_vendor_cache'] = True
+                snapshot = native.prepare(source, fixture, **options)
             dependency = (source, snapshot)
         binary = extension = None
         if selected != ['mariadb']:

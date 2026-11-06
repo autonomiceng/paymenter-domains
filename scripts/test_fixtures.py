@@ -3,12 +3,26 @@
 from pathlib import Path
 
 
+STAFF_READS = {
+    'tests/staff-operation-reads-test.php',
+    'tests/staff-operation-sync-test.php',
+    'tests/staff-operation-read-resume-test.php',
+    'tests/staff-operation-renewal-replacements-test.php',
+}
+
+
+def retained_vendor(jobs, requested):
+    # Only these bounded serial read-only cases retain pages until final verification.
+    return jobs == 1 and bool(requested) and set(requested).issubset(STAFF_READS)
+
+
 def shared_vendor(jobs, requested):
     return (
         jobs == 1
         and requested
         and all(
             Path(path).name.startswith("test_installed_")
+            or path in STAFF_READS
             or path in {
                 # Renewal fixtures only read dependencies; all source/vendor guards still run.
                 'tests/renewal-namesilo-test.php',
@@ -51,10 +65,6 @@ def shared_vendor(jobs, requested):
                 'tests/demo-c-terms-native-test.php', 'tests/enom-multiyear-native-test.php',
                 'tests/staff-domain-page-test.php',
                 'tests/staff-domain-status-test.php',
-                'tests/staff-operation-reads-test.php',
-                'tests/staff-operation-sync-test.php',
-                'tests/staff-operation-read-resume-test.php',
-                'tests/staff-operation-renewal-replacements-test.php',
                 'tests/staff-domains-test.php',
                 'tests/missing-next-step-test.php',
                 'tests/management-progress-test.php',
