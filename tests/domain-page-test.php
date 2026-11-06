@@ -194,7 +194,7 @@ same(0,$dom->query('//a[.="Renew now"]')->length,'No Renew now while an invoice 
 same('Paid Updates when the renewal completes',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Next invoice').' '.preg_replace('/^.*2027 /','',$card(storefrontDom($render($domain(['renewNow'=>['status'=>'paid']]))),'Expires')),'Paid invoice');
 same('Missing Contact support Invoice cancelled',$card(storefrontDom($render($d=$domain(['renewNow'=>['status'=>'cancelled']]),$summary($d))),'Next invoice'),'Cancelled invoice');
 $dom=storefrontDom($render($d=$domain(['renewal'=>'Off','renewNow'=>['status'=>'review']]),$summary($d)));
-same('Under review Renewal being checked. No action needed.',$card($dom,'Next invoice'),'Invoice under review shows even with auto-renew off');
+same('Under review There’s nothing you need to do.',$card($dom,'Next invoice'),'Invoice under review shows even with auto-renew off');
 // The review is ours to clear: blue Under review, never a red Missing with nothing for the customer to do.
 same(1,$dom->query('//dt[starts-with(normalize-space(.),"Next invoice")]/following-sibling::dd//span[contains(@class,"domains-tone-info") and .="Under review"]')->length,'Under review is blue');
 same(0,$dom->query('//dt[starts-with(normalize-space(.),"Next invoice")]/following-sibling::dd//*[contains(@class,"domains-missing")]')->length,'No Missing while we check the renewal');
@@ -263,7 +263,7 @@ same('Changes are on hold: DNS, nameservers and contacts are Off. Contact us to 
 same('Changes are on hold until we finish checking an earlier request. There’s nothing you need to do.',DomainPage::notice($domain(['changesUnavailable'=>true,'changesRefused'=>7]),'/tickets/create')['text']??null,'A request in the way says who acts');
 // The notice already says there is nothing to do, so the renewal row under review does not say it again (demo R18b).
 $dom=storefrontDom($render($d=$domain(['changesUnavailable'=>true,'changesRefused'=>7,'renewNow'=>['status'=>'review']]),$summary($d)));
-same('Under review Renewal being checked.',$card($dom,'Next invoice'),'Renewal under review leaves the no-action line to the notice');
+same('Under review',$card($dom,'Next invoice'),'Renewal under review leaves the no-action line to the notice');
 $text=$dom->document->textContent;same(1,substr_count($text,'nothing you need to do')+substr_count($text,'No action needed'),'No-action reassurance once per page');
 same('Changes to this domain are on hold right now. Try again later.',DomainPage::notice($domain(['changesUnavailable'=>true]),'/tickets/create')['text']??null,'No known cause stays general');
 $expired=DomainPage::notice($domain(['statusReason'=>\Paymenter\Extensions\Servers\Domains\Presentation\DomainStatus::LATE]),'/tickets/create');

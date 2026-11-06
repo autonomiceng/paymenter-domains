@@ -31,7 +31,7 @@ foreach(['missing_item','membership','currency','amount','due','missing_due','ba
     }
     if($case==='owner'){DB::table('invoices')->where('id',$invoice->id)->update(['user_id'=>$other->id]);}
     $unchanged=$ledger();same(['status'=>'review'],$owners->present($d->fresh())->renewNow,'Invalid retained invoice shows review: '.$case);
-    $html=$page($d);expect(str_contains($html,'Renewal being checked')&&!str_contains($html,'Pay invoice')&&!str_contains($html,'Continue to payment'),'Invalid retained page offers no billing action: '.$case);
+    $html=$page($d);expect(str_contains($html,'>There’s nothing you need to do.<')&&!str_contains($html,'Pay invoice')&&!str_contains($html,'Continue to payment'),'Invalid retained page offers no billing action: '.$case);
     $refused($d,['years'=>'2'],'This renewal is under review. Contact support if you need an update on this renewal.');same($unchanged,$ledger(),'Invalid retained data creates no debt: '.$case);
     DB::table('invoice_items')->where('id',999999)->delete();DB::table('invoice_items')->updateOrInsert(['id'=>$rawItem['id']],$rawItem);
     DB::table('invoices')->where('id',$invoice->id)->update($rawInvoice);DB::table('domains_operations')->where('id',$op->id)->update($rawOp);

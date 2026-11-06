@@ -91,7 +91,7 @@ foreach(['unpaid','refund'] as $replacementCase){
     $before=$debt();$dto=$owners->present($d->fresh());$html=$page();
     same([],$dto->renewalInvoice,'Adopted replaceable cycle does not suppress form: '.$replacementCase);
     expect(isset($dto->renewNow['url'])&&str_contains($html,'>Create invoice<'),'Adopted replacement request visible: '.$replacementCase);
-    expect(!str_contains($html,'Renewal being checked')&&!str_contains($html,'Invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);
+    expect(!str_contains($html,'>There’s nothing you need to do.<')&&!str_contains($html,'Invoice cancelled'),'Adopted replacement page has no stale cycle status: '.$replacementCase);
     same($before,$debt(),'Adopted replacement page is read-only: '.$replacementCase);
     $response=$post();$replacement=Operation::where('domain_id',$d->id)->where('action','renew')->orderByDesc('id')->firstOrFail();
     same($op->operation_key.':replacement:'.($replacementCase==='unpaid'?1:2),$replacement->operation_key,'Adopted replacement has its own cycle key: '.$replacementCase);
@@ -101,7 +101,7 @@ foreach(['unpaid','refund'] as $replacementCase){
     expect(str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted current debt replaces request form: '.$replacementCase);
     $item=App\Models\InvoiceItem::findOrFail($replacement->invoice_item_id);$rawItem=$item->getRawOriginal();
     DB::table('invoice_items')->where('id',$item->id)->update(['price'=>'0.01']);$html=$page();
-    expect(str_contains($html,'Renewal being checked')&&!str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted invalid retained item shows review: '.$replacementCase);
+    expect(str_contains($html,'>There’s nothing you need to do.<')&&!str_contains($html,'>Pay invoice</a>')&&!str_contains($html,'>Create invoice<'),'Adopted invalid retained item shows review: '.$replacementCase);
     DB::table('invoice_items')->where('id',$item->id)->update($rawItem);
 
     if($replacementCase==='refund'){break;}
