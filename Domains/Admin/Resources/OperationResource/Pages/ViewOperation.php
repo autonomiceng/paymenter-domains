@@ -100,8 +100,8 @@ class ViewOperation extends ViewRecord
             self::entry('Registrar account',$account['value'],sub:$account['sub'],url:$setup,demo:$account['account']&&DemoData::is($account['account'])),
             self::entry('Created',self::time($op->created_at),cause:RequestFacts::NO_TIME,at:$op->created_at),
         ];
-        // Sent to registrar is hidden while the request has not been sent.
-        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && ($sent=StaffReviewHistory::sendEvent($op))) { $rows[]=self::entry($sent,self::time($op->started_at),cause:RequestFacts::NO_TIME,at:$op->started_at); }
+        // Sent to registrar is hidden while the request has not been sent. An unsure send is History's to say, once.
+        if (($op->started_at || in_array($op->state,['running','pending','uncertain','succeeded'],true)) && StaffReviewHistory::sendEvent($op)===StaffReviewHistory::SENT) { $rows[]=self::entry(StaffReviewHistory::SENT,self::time($op->started_at),cause:RequestFacts::NO_TIME,at:$op->started_at); }
         if (!($facts['unreadable']??false)) {
             if (isset($facts['send_failure'])) { $rows[]=self::entry('Registrar reply',$facts['send_failure']); }
             if (array_key_exists('invoice',$facts)) { $rows[]=self::entry('Invoice',$facts['invoice'],sub:$facts['invoice_sub'],url:$op->invoice_id?self::invoiceUrl((int)$op->invoice_id):null); }
