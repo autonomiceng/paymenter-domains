@@ -250,7 +250,7 @@ final class AccountChecklist
             $paid['Paymenter payment events']!=='Available'=>self::row('Payment events',null,'danger','Service listeners are missing. Restart the queue worker.',null,self::PAYMENTS),
             $paid['Start after payment']!=='Available'=>self::row('Payment events','Delayed','warning',null,null,'Paid orders start on the next scheduled run. Restart the queue worker to fix it.'),
             default=>self::row('Payment events','OK',null,'Paid orders start right away.',null,self::PAYMENTS)}];
-        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning',self::creditsCause(),null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
+        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning',self::creditsCause(),null,'A refund may return to the original payment method when the gateway supports it; otherwise it is recorded as account credit. Turning Credits off hides the page; it does not mean a refund failed.');}
         $editor=NativeEditorNotice::missing();
         $checks[]=$editor===null?self::row('Domain editor','OK',null,'This Paymenter version works with it. Each registrar account has its own switch.',null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
         if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Update Paymenter or Domains. Until then, check each TLD is still for sale after a price change.',null,'Paymenter is missing '.$missing.'.'); }
@@ -264,7 +264,7 @@ final class AccountChecklist
     /** The way to Settings, for staff who can open it. */
     private static function creditsCause(): string|HtmlString
     {
-        $hidden='Refunds stay on the balance, but the Credits page is hidden.';
+        $hidden='Customer credits are off. Refunds issued as credit go to the customer account balance; the Credits page is hidden.';
         try { $url=Settings::canAccess()?Settings::getUrl():null; } catch (\Throwable) { $url=null; }
         return $url?new HtmlString(e($hidden).' <a class="fi-link domains-link" href="'.e($url).'">Turn on Credits in Settings</a>'):$hidden.' Turn on Credits in Settings.';
     }

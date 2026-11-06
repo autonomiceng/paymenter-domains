@@ -10,8 +10,9 @@ final class DriverResult implements \JsonSerializable
     private static ?\WeakMap $facts = null;
     public function __construct(public readonly AccountBinding $binding, public readonly Disposition $disposition, public readonly SendState $sendState,
         public readonly ResultReason $reason, #[\SensitiveParameter] Evidence $evidence = new Evidence,
-        array $discrepancies = [], public readonly ?RejectionBasis $rejectionBasis = null)
+        array $discrepancies = [], public readonly ?RejectionBasis $rejectionBasis = null, public readonly ?string $registrarCode = null)
     {
+        if($registrarCode!==null&&!preg_match('/^[0-9]{3,9}$/D',$registrarCode)){throw new \InvalidArgumentException('Invalid registrar diagnostic.');}
         $copy = [];
         foreach ($discrepancies as $item) {
             if (!$item instanceof Discrepancy) { throw new \InvalidArgumentException('Invalid discrepancy.'); }

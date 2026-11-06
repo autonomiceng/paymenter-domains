@@ -131,7 +131,10 @@ class Storefront
         }
         $driver->binding()->requireMatch($r->binding);
         $this->catalogue()?->validate($selection);
-        if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) { return [...$base, 'status' => 'error']; }
+        if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) {
+            \Illuminate\Support\Facades\Log::warning('Domains search failed.',CartHandoffFailure::context(new EligibilityUnconfirmed($r->registrarCode),'search'));
+            return [...$base, 'status' => 'error'];
+        }
         if ($r->evidence()->premium === true) { return $transferOnly ? $this->transferRefusal($base, 'premium') : [...$base, 'status' => 'premium']; }
         if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return [...$base, 'status' => 'error']; }
         if ($r->evidence()->available) {
