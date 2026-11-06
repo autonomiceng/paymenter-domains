@@ -59,7 +59,7 @@ $r10Check(str_contains($text,'Next annual renewal: $10.99 / year'),'Complimentar
 // A short preview must not evaluate every explicitly unsold catalogue entry.
 $priceQueries=0;DB::listen(static function($query)use(&$priceQueries):void{$priceQueries++;});
 Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);$smallQueries=$priceQueries;
-for($i=0;$i<110;$i++){$unsold=$t->replicate();$unsold->tld='unsold'.$i.'.example';$unsold->catalogue_facts=null;$unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();}
+for($i=0;$i<1100;$i++){$unsold=$t->replicate();$unsold->tld='unsold'.$i.'.example';$unsold->catalogue_facts=null;$unsold->catalogue_intent=OfferState::json(['sell'=>false]);$unsold->save();}
 $priceQueries=0;Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);
 $r10Check($priceQueries<=$smallQueries+4,'Ten-row preview skips offer evaluation for explicitly unsold catalogue entries ('.$smallQueries.' vs '.$priceQueries.' queries)');
 // Confirmed annual-only terms and missing facts are different states.

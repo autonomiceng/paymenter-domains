@@ -207,12 +207,21 @@ final class AccountChecklist
         $rows[]=self::renewEarly($server);
         try{$a=Account::where('server_id',$server)->sole();$binding=AccountBindings::binding($a);
             // Use the same effective sales projection as What you sell; don't fill the preview with unsold catalogue entries.
-            $sold=[];$rest=[];$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
-            \Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$server)->where('account_fingerprint',$binding->fingerprint)->orderBy('tld')->chunk(100,function($tlds)use($offers,&$sold,&$rest):void{
+            $sold=[];$defaultSell=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($a->catalogue_defaults)['defaultSell']??true;$offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
+            $query=\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$server)->where('account_fingerprint',$binding->fingerprint)->orderBy('tld');
+            $fallback=(clone $query)->limit(10)->get();
+            // An explicit selling stop cannot become an effective offer. Filter it before loading costs.
+            (clone $query)->where(function($q)use($defaultSell):void{
+                $q->where('catalogue_intent->sell',true);
+                if($defaultSell){$q->orWhereNull('catalogue_intent->sell');}
+            })->chunk(100,function($tlds)use($offers,&$sold):bool{
                 $states=$offers?->page($tlds)??[];
-                foreach($tlds as $t){$sales=$states[$t->id]['acquisition']??[];if(($sales['register']??false)||($sales['transfer']??false)){$sold[]=$t;}else{$rest[]=$t;}}
+                foreach($tlds as $t){$sales=$states[$t->id]['acquisition']??[];
+                    if((($sales['register']??false)||($sales['transfer']??false))&&count($sold)<10){$sold[]=$t;}
+                }
+                return count($sold)<10;
             });
-            foreach(array_slice([...$sold,...$rest],0,10) as $t){
+            foreach(collect($sold)->concat($fallback)->unique('id')->take(10) as $t){
                 $terms=self::termReadiness($binding,$t->tld)[0];$unknown=$terms[1]==='Missing';
                 $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::getUrl(['account'=>$server,'tld'=>$t->tld]))]];
             }
