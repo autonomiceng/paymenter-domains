@@ -676,7 +676,7 @@ def main():
                             'tests/test_client_scripts.py', 'tests/lost-reply-status-test.php',
                             'tests/namesilo-settings-test.php', 'tests/namesilo-settings-wording-test.php',
                             'tests/namesilo-rebind-test.php', 'tests/namesilo-runtime-read-test.php',
-                            'tests/namesilo-enrollment-test.php', 'tests/native-server-settings-test.php',
+                            'tests/namesilo-enrollment-test.php', 'tests/native-server-settings-test.php', 'tests/native-server-settings-namesilo-test.php',
                             'tests/staff-domain-edits-namesilo-test.php', 'tests/transfer-polling-test.php',
                             'tests/binding-test.php',
                             'tests/transfer-ceiling-test.php',

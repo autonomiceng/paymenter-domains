@@ -680,7 +680,7 @@ class RunnerTests(unittest.TestCase):
         focused = ['tests/namesilo-enrollment-test.php',
                    'tests/namesilo-runtime-read-test.php',
                    'tests/namesilo-settings-wording-test.php',
-                   'tests/native-server-settings-test.php',
+                   'tests/native-server-settings-test.php', 'tests/native-server-settings-namesilo-test.php',
                    'tests/transfer-polling-test.php', 'tests/lost-reply-status-test.php',
                    'tests/staff-domain-edits-namesilo-test.php', 'tests/binding-test.php',
                    'tests/watch-scheduler-test.php',
