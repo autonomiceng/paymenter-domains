@@ -22,7 +22,12 @@ $transport=nsWriteTransport($binding,$clock);
 $writer=new RenewalWriter($binding,$features,$accepted,fn()=>$engine,$transport->exchange());$writer->useReservation($transport->reservation);
 commerceReject(fn()=>$writer->useReservation($transport->reservation));
 $holding->service->product->server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-Price::where(['server_id'=>$binding->serverId,'action'=>'renew'])->sole()->update(['wholesale'=>'8.95','revision'=>2]);
+$observeRenewal=static function()use($clock,$ports,$binding):void {
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);
+    $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+    $cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.9500',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+    $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+};
 $mode='success';$GLOBALS['nsReply']=static function($cmd,$p)use(&$mode):string {
     if($cmd==='contactList'){return nameSiloDefaultContactReply();}
     same('renewDomain',$cmd,'Renewal owns one named mutation');same(['domain'=>'native-history-placeholder.com','years'=>'1','auto_renew'=>'0'],$p,'Exact annual, balance-funded mapping');
@@ -30,7 +35,7 @@ $mode='success';$GLOBALS['nsReply']=static function($cmd,$p)use(&$mode):string {
     return json_encode(['request'=>['operation'=>$cmd],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>$p['domain'],'order_amount'=>'8.95']]);
 };
 for($cycle=0;$cycle<2;$cycle++){
-    $year=2027+$cycle;$clock->instant=new \DateTimeImmutable($year.'-09-27T12:00:00Z');
+    $year=2027+$cycle;$clock->instant=new \DateTimeImmutable($year.'-09-27T12:00:00Z');$observeRenewal();
     $bill=$billing->invoice($holding->id,$user);$op=Operation::where('invoice_id',$bill->id)->sole();\App\Helpers\ExtensionHelper::addPayment($bill,null,$op->amount);
     $clock->instant=new \DateTimeImmutable($year.'-10-16T12:00:00Z');$GLOBALS['nsOperation']=$op->id;Cache::flush();
     foreach(['server_id','account_fingerprint'] as $field){
