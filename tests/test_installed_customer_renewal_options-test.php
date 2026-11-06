@@ -46,4 +46,18 @@ try{$bindings->requireProcessingLocked($server->fresh(),$account);expect(false,'
 catch(LogicException $e){same('Locked processing requires an outer transaction.',$e->getMessage(),'Writer guard preserved');}
 $invoice=$ownerBilling->invoice($d->id,$user,1);
 same(['paid',0.0],[$invoice->status,(float)$invoice->total],'Authorized complimentary renewal still uses the guarded invoice writer');
+// The zero informational receipt has its own issue date, not the standard unpaid-debt calendar.
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+expect(!$summary->renewalInvoiceMissing,'Funded complimentary renewal is not a missing invoice on the list');
+$row=Paymenter\Extensions\Servers\Domains\Presentation\DomainListRow::renewal($summary);
+same('Next invoice: Paid',$row['note'],'List and customer page agree on the issued renewal state');
+same('Paid',Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::nextInvoice($owners->present($d->fresh()),$summary,null)['value'],'Detail shows the same paid receipt');
+// An informational receipt cannot hide a changed/nonzero line or a foreign owner.
+$item=$invoice->items()->sole();$item->forceFill(['price'=>'1.00'])->saveQuietly();
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+expect($summary->renewalInvoiceMissing,'Changed complimentary receipt remains under review');
+$item->forceFill(['price'=>'0.00'])->saveQuietly();$invoice->forceFill(['user_id'=>$staff->id])->saveQuietly();
+$summary=(new Paymenter\Extensions\Servers\Domains\Services\DomainSummaries)->one($user,'managed',$d->id,$clock->now()->getTimestamp());
+expect($summary->renewalInvoiceMissing,'Foreign receipt cannot supply list payment state');
+$invoice->forceFill(['user_id'=>$user->id])->saveQuietly();
 $nativeSuccessful=true;echo "Native paid and complimentary customer renewal options passed.\n";
