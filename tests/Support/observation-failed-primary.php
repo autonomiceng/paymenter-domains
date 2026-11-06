@@ -12,7 +12,7 @@ foreach (['nameservers'=>['nameservers'=>$state->ns], 'glue_add'=>['host'=>'ns1.
 }
 $clock->instant=$clock->now()->modify('+61 seconds');
 same('refreshed',$observer->run($d->id,readRecords:true),'Seed complete inventory and successful fact timestamps');
-$failedWork=new ObservationWork($observer,$clock,$budget);$failedWork->enroll($d->server_id);
+$failedWork=fixtureObservationWork($observer,$clock);$failedWork->enroll($d->server_id);
 foreach (['malformed','transport'] as $failure) {
     $saved=$d->fresh();$prior=$saved->observation;
     same(ObservationRecords::identity($saved),$prior['records']['identity'],'Current inventory before '.$failure);
@@ -33,13 +33,13 @@ foreach (['malformed','transport'] as $failure) {
     if ($failure==='malformed') { $observation->fault='info_missing'; }
     else { $observation->during=static function():void { throw new RuntimeException('Synthetic primary transport failure'); }; }
     $failureCode=$failure==='malformed'?'read_no_evidence':'read_failed';
-    same($failureCode,$failedWork->tick(1)[$d->server_id]['holding'],'All-failed '.$failure.' observation reports failure');
+    same($failureCode,$failedWork->tick(2)[$d->server_id]['holding'],'All-failed '.$failure.' observation reports failure');
     $fresh=$d->fresh();$current=$fresh->observation;
     same($prior['records'],$current['records'],'All-failed '.$failure.' preserves exact inventory/time/watermark');
     same($prior['facts'],$current['facts'],'All-failed '.$failure.' preserves successful facts and timestamp');
     same($synced,$fresh->last_synced_at->format(DATE_ATOM),'All-failed read cannot advance last sync');
     same($prior['sections'],$current['sections'],'All-failed read preserves saved nameservers/section timestamps');
-    same($prior,[...array_diff_key($current,['record_hold'=>true,'record_failure'=>true])],'Only separate failure markers change observation');
+    same($prior,[...array_diff_key($current,['record_hold'=>true,'record_failure'=>true,'read_retry'=>true])],'Only separate failure and bounded retry markers change observation');
     same(['identity'=>ObservationRecords::identity($fresh),'at'=>$clock->now()->format(DATE_ATOM),'code'=>$failureCode],$current['record_failure'],'Current primary failure retained separately');
     same([...$current['record_failure'],'reason'=>$failureCode],$current['record_hold'],'Current failure holds record stage');
     same([ReadCommand::Info],$observation->calls,'First primary failure stops all later domain reads');
@@ -47,7 +47,7 @@ foreach (['malformed','transport'] as $failure) {
     same($operations,$fresh->operations->map->getAttributes()->all(),'All operation and financial evidence retained');
     $failedJob=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();
     same($failureCode,$failedJob->safe_code,'Scheduled work stops on failed primary read');
-    expect(ObservationRecords::stopped($fresh),'Current failed checks require explicit resume');
+    same($failure==='malformed',ObservationRecords::stopped($fresh),'Permanent failures stop; transient transport failure remains scheduled');
     $dom=storefrontDom($page());
     foreach ($stale as $kind=>$request) {
         same(0,$dom->query('//form[contains(@action,"/manage/'.$kind.'")]')->length,'Retained '.$kind.' cannot enable stale whole-list form');
@@ -56,7 +56,8 @@ foreach (['malformed','transport'] as $failure) {
     }
     same([],$state->calls,'Stale form attempts never write provider records');
     $clock->instant=$clock->now()->modify('+1 day');
-    same([$d->server_id=>'idle'],array_map(static fn($r)=>$r['holding'],$failedWork->tick(1)),'Stopped work never retries automatically');
+    if($failure==='malformed'){same('idle',$failedWork->tick(2)[$d->server_id]['holding'],'Permanent malformed-primary refusal never retries automatically');}
+    else {same('refreshed',$failedWork->tick(2)[$d->server_id]['holding'],'Transient transport failure recovers automatically');expect(!ObservationRecords::held($d->fresh()),'Automatic successful retry releases the record hold');expect(!isset($d->fresh()->observation['record_failure']),'Automatic full-family retry clears the primary failure');same(1,storefrontDom($page())->query('//form[contains(@action,"/manage/dns")]')->length,'Automatic full-family retry restores DNS edits');continue;}
     same([ReadCommand::Info],$observation->calls,'No later successful primary calls');
     $observation->fault='';$failedWork->resume($failedJob->id,'staff_primary_resume');
     expect(!ObservationRecords::held($d->fresh()),'Resume releases hold for one new record attempt');
@@ -67,8 +68,8 @@ foreach (['malformed','transport'] as $failure) {
         $controller->manage($post($kind,['records'=>$rows,'preimage_digest'=>ManagementPayload::digest($rows,$kind)]),$d->id,$kind);
         same($count,Operation::count(),'Stale '.$kind.' POST remains blocked before resumed check');
     }
-    same('refreshed',$failedWork->tick(1)[$d->server_id]['holding'],'Resumed daily primary read succeeds');
-    expect(isset($d->fresh()->observation['record_failure']),'Daily read does not claim to have refreshed records');
+    same('refreshed',$failedWork->tick(2)[$d->server_id]['holding'],'Resumed daily primary read succeeds');
+    expect(!isset($d->fresh()->observation['record_failure']),'The full-family resumed worker confirms current records');
     same('refreshed',$observer->run($d->id,readRecords:true),'Sync now confirms current inventory again');
     expect(!isset($d->fresh()->observation['record_failure']),'Successful inventory replaces failure marker');
     same(1,storefrontDom($page())->query('//form[contains(@action,"/manage/dns")]')->length,'Successful resumed observation restores edit form');
