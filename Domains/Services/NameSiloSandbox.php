@@ -65,7 +65,12 @@ final class NameSiloSandbox
     public static function validate(Account $a,#[\SensitiveParameter] array $facts,#[\SensitiveParameter] array $credentials): void
     {
         self::requireTest(Environment::from($a->environment));
-        if($a->registrar_key!=='namesilo'||($facts['contract']??null)!=='namesilo_ote_enrollment_v1'
+        self::validateRetained($a,$facts,$credentials);
+    }
+    /** Retained continuity is independent of the retired balance-only deployment opt-in. */
+    public static function validateRetained(Account $a,#[\SensitiveParameter] array $facts,#[\SensitiveParameter] array $credentials): void
+    {
+        if($a->registrar_key!=='namesilo'||$a->environment!==Environment::Test->value||($facts['contract']??null)!=='namesilo_ote_enrollment_v1'
             ||($facts['server_id']??null)!==(int)$a->server_id||($facts['provider_confirmed_account']??null)!==false
             ||($facts['authenticated_ote_key']??null)!==true||!hash_equals($a->stable_identity,self::identity($facts))
             ||!hash_equals($facts['key_fingerprint']??'',hash('sha256',$credentials['api_key']))){
