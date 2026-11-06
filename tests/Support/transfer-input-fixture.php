@@ -19,7 +19,7 @@ $server->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
 $rdap = new Rdap(fn () => throw new RuntimeException('Synthetic offline lookup'));
 $eligibility = activeFixtureEligibility($bindings,$clock,new TransferPrecheck($rdap));
 $adapter = activeFixtureAdmission($native,$sellers,$eligibility,$clock); $adapter->boot();
-(new InvoiceBinding($adapter,$native,$prices,$clock))->boot();
+$invoiceBinding=new InvoiceBinding($adapter,$native,$prices,$clock);app()->instance(InvoiceBinding::class,$invoiceBinding);$invoiceBinding->boot();
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 $user = commerceUser(); $other = commerceUser(); $product = $native->product($tlds[0],'transfer');
 $refunds = new Refunds($clock); $inputs = new TransferInputs($clock,$refunds);
