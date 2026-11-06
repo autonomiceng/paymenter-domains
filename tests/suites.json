@@ -574,7 +574,8 @@
     "tests/storefront-queries-test.php",
     "tests/transfer-completion-namesilo-refusals-test.php",
     "tests/transfer-completion-namesilo-finance-test.php",
-    "tests/test_installed_customer_renewal_options-test.php"
+    "tests/test_installed_customer_renewal_options-test.php",
+    "tests/test_installed_standard_renewal_summary-test.php"
   ],
   "ui": [],
   "runner": [
