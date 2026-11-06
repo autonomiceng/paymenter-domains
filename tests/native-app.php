@@ -20,6 +20,16 @@ foreach (['APP_ENV' => 'testing', 'APP_KEY' => 'base64:'.base64_encode(str_repea
     putenv($key.'='.$value); $_ENV[$key] = $_SERVER[$key] = $value;
 }
 $loader = require $fixture.'/vendor/autoload.php';
+// A shared optimized vendor class map wins over PSR-4. Rebind only verified App classes
+// in memory so native closures and models originate in this fixture, without mutating vendor.
+$fixtureClasses = [];
+foreach ($loader->getClassMap() as $class => $unused) {
+    if (str_starts_with($class, 'App\\')) {
+        $path = $fixture.'/app/'.str_replace('\\', '/', substr($class, 4)).'.php';
+        if (is_file($path)) { $fixtureClasses[$class] = $path; }
+    }
+}
+$loader->addClassMap($fixtureClasses);
 $loader->addPsr4('App\\', $fixture.'/app/', true);
 $loader->addPsr4('Paymenter\\Extensions\\Servers\\Domains\\', dirname(__DIR__).'/Domains/', true);
 $app = require $fixture.'/bootstrap/app.php';
