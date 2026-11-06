@@ -18,7 +18,7 @@ use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
-use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
+use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffSettingsReview};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 /** One registrar account (a Domains server): status, balance and setup. Reached from the Registrars list. */
@@ -54,7 +54,12 @@ class RegistrarAccount extends Page
         return new HtmlString(e($this->getTitle()).($test||($a&&DemoData::is($a))?DemoData::tag(inline:true,test:$test)->toHtml():''));
     }
     public function getSubheading(): string|Htmlable|null
-    { $status=$this->status();return StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$status['reason']); }
+    {
+        $status=$this->status();
+        // On Overview the API connection row says why the connection failed or is off, so the head names only the status.
+        $rowSays=!$this instanceof RegistrarHistory&&$this->record()&&in_array($status['label'],[AccountStatus::SET['connection_failed'][0],AccountStatus::SET['not_connected'][0]],true);
+        return StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$rowSays?null:$status['reason']);
+    }
     /** @return list<NavigationItem> */
     public function getSubNavigation(): array
     {
