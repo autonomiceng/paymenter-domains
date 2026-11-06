@@ -215,8 +215,9 @@ same('Missing Fills in by itself after the next sync',$card($dom,'Expires'),'Mis
 same('Missing Fills in by itself after the next sync',$card($dom,'Next invoice'),'Missing next invoice: one fix, then its cause');
 // Credited: one state, nothing to fix. No Missing and no Contact support, here or in the notice.
 $d=$domain(['status'=>'Cancelled','expiry'=>null,'renewal'=>'','renewNow'=>[],'autoRenew'=>[],'order'=>['state'=>'cancelled','kind'=>'registration','credit'=>true]]);$html=$render($d,$summary($d));$dom=storefrontDom($html);
-same('None',$card($dom,'Expires'),'Credited order: Expires None');expect(str_contains($html,'We added what you paid to account credit'),'Credited order: the notice stays');
-same('Renewal ExpiresNone',$norm($dom->query('//section[@id="renewal"]')->item(0)),'Credited order: the Renewal card holds only Expires None');
+expect(str_contains($html,'We added what you paid to account credit'),'Credited order: the notice stays');
+// r16: no registration means no date; the page leaves out Renewal rather than say Expires None.
+same([0,0],[$dom->query('//section[@id="renewal"]')->length,$dom->query('//dt[normalize-space(.)="Expires"]')->length],'Credited order: no Renewal card and no Expires None');
 same(0,$dom->query('//div[contains(@class,"domains-notice")]//a')->length,'Credited order: the notice asks for nothing');
 $d=$domain(['status'=>'Cancelled','expiry'=>null,'renewal'=>'','renewNow'=>[],'autoRenew'=>[],'order'=>['state'=>'cancelled','kind'=>'registration']]);
 same('Missing Contact support Order cancelled',$card(storefrontDom($render($d,$summary($d))),'Expires'),'A closed order with no credit still needs us');
