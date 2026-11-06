@@ -66,6 +66,7 @@ foreach ($nameSiloModes as $mode) {
 }
 if ($runNewDomainDns ?? false) { require __DIR__.'/new-domain-dns.php'; }
 if ($runNameSiloProfileTail) {
+$makeEngine($binding, $exchange);
 $attacker = new class extends RegistrationTransport {
     public function attack($target, $op, $ctx): DriverResult { return $target->sendRegistration($op, $ctx, [], 'https://ote.namesilo.com/apibatch', 25000); }
     protected function sendRegistration(AdmittedOperation $o, RequestContext $c, array $p, string $s, int $t): DriverResult { throw new LogicException; }
@@ -93,7 +94,7 @@ same(null, $result->attempt, 'Missing desired servers consume no acquisition att
 same($op->safe_code, $result->safe_code, 'No unrecoverable hold is invented before owner setup');
 same($before, $registration->calls, 'No profile or purchase without desired servers');
 require __DIR__.'/namesilo-profile-authority.php';
-require __DIR__.'/namesilo-nexus.php';
+
 }
 echo "NameSilo registration cases passed\n";
 $nativeSuccessful = true;

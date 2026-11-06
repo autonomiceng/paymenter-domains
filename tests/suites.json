@@ -564,7 +564,9 @@
     "tests/test_installed_comp_account_renewal-test.php",
     "tests/test_installed_comp_account_views-test.php",
     "tests/test_installed_comp_account_transfer-test.php",
-    "tests/test_installed_comp_account_recovery-test.php"
+    "tests/test_installed_comp_account_recovery-test.php",
+    "tests/registration-namesilo-authority-test.php",
+    "tests/registration-namesilo-nexus-test.php"
   ],
   "ui": [],
   "runner": [
