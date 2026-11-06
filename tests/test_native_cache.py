@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -95,6 +96,33 @@ class NativeCacheTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'shared vendor'):
                 native.prepare(Path(temp), Path(temp) / 'copy', retain_vendor_cache=True)
             verify.assert_not_called()
+
+    def test_complete_inventory_reads_overlap_with_at_most_four_open_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            expected = {}
+            for index in range(128):
+                payload = ('synthetic dependency ' + str(index)).encode()
+                (root / str(index)).write_bytes(payload)
+                expected[str(index)] = native.hashlib.sha256(payload).hexdigest()
+            digest = native.hashlib.file_digest
+            lock = threading.Lock(); together = threading.Barrier(2, timeout=5)
+            active = peak = entered = 0
+            def read(handle, algorithm):
+                nonlocal active, peak, entered
+                with lock:
+                    active += 1; peak = max(peak, active); entered += 1
+                    first_pair = entered <= 2
+                try:
+                    if first_pair: together.wait()
+                    return digest(handle, algorithm)
+                finally:
+                    with lock: active -= 1
+            with mock.patch.object(native.hashlib, 'file_digest', side_effect=read):
+                self.assertEqual(native.hashes(root), dict(sorted(expected.items())))
+            self.assertEqual(entered, 128)
+            self.assertGreaterEqual(peak, 2)
+            self.assertLessEqual(peak, 4)
 
     def test_ordinary_hashes_keep_the_callers_cache_policy(self):
         with tempfile.TemporaryDirectory() as temp:

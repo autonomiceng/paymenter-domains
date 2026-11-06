@@ -1,7 +1,9 @@
 """Verify a pinned read-only Paymenter dependency, then copy a disposable native fixture."""
 # Adapted from Enom tests/paymenter-test-app.php and tests/enom-native-app.php; MIT.
 # Copyright (c) 2026 Autonomic Engineering.
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
+from itertools import islice
 import io
 import json
 import os
@@ -15,29 +17,39 @@ LOCK_SHA256 = 'fd6bdeb5557b3af0976d5688d92081abc6f7c3235806a6c4b77f4b8bca9186be'
 
 
 def hashes(root, *, release_cache=False):
-    result = {}
+    def files():
+        pending = [(root, '')] if root.is_dir() else []
+        while pending:
+            directory, prefix = pending.pop()
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    name = prefix + entry.name
+                    if entry.is_symlink():
+                        raise ValueError('Dependency symlinks are not accepted.')
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append((entry.path, name+'/'))
+                    elif entry.is_file(follow_symlinks=False):
+                        yield name, entry.path
 
-    pending = [(root, '')] if root.is_dir() else []
-    while pending:
-        directory, prefix = pending.pop()
-        with os.scandir(directory) as entries:
-            for entry in entries:
-                name = prefix + entry.name
-                if entry.is_symlink():
-                    raise ValueError('Dependency symlinks are not accepted.')
-                if entry.is_dir(follow_symlinks=False):
-                    pending.append((entry.path, name+'/'))
-                elif entry.is_file(follow_symlinks=False):
-                    with open(entry.path, "rb") as handle:
-                        result[name] = hashlib.file_digest(handle, "sha256").hexdigest()
-                        if release_cache:
-                            # Verification streams the entire read-only vendor tree. Do not keep its
-                            # hundreds of MiB of file cache charged alongside the PHP fixture.
-                            try:
-                                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
-                            except OSError:
-                                pass  # Optional filesystem hint; every byte was still verified.
-    # Preserve relative Path component ordering without allocating Path objects.
+    def digest(file):
+        name, path = file
+        with open(path, "rb") as handle:
+            value = hashlib.file_digest(handle, "sha256").hexdigest()
+            if release_cache:
+                # Release only after hashing every byte, including on cold files.
+                try:
+                    os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+                except OSError:
+                    pass  # Optional hint; verification remains mandatory.
+        return name, value
+
+    result = {}
+    inventory = files()
+    # Bound both active streams and queued work; eager map over vendor's 27,000
+    # files would retain thousands of futures alongside the PHP fixture.
+    with ThreadPoolExecutor(max_workers=4) as readers:
+        while batch := list(islice(inventory, 64)):
+            result.update(readers.map(digest, batch))
     return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
 
 
