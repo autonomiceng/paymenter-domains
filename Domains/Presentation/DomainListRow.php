@@ -18,11 +18,13 @@ final class DomainListRow
     public static function orderExpires(array $order, ?string $support): ?array
     {
         $word = ($order['kind'] ?? null) === 'transfer' ? 'transfer' : 'registration';
+        // A complimentary order has nothing paid, so it says what it is, as the page notice and receipt do.
+        $basis = ($order['complimentary'] ?? false) ? 'Complimentary. ' : 'Paid. ';
         return match ($order['state'] ?? null) {
             'unpaid' => ['missing' => true, 'cause' => ucfirst($word).' starts after you pay', 'fix' => ['label' => 'Pay invoice', 'url' => $order['invoice'], 'button' => true]],
             'paid' => ['missing' => true, ...match ($order['next'] ?? null) {
-                'awaiting_code' => ['cause' => 'Paid. Add the auth code to start the transfer.', 'fix' => null],
-                'setup_required' => ['cause' => 'Paid. Finish setup to start the '.$word.'.', 'fix' => null],
+                'awaiting_code' => ['cause' => $basis.'Add the auth code to start the transfer.', 'fix' => null],
+                'setup_required' => ['cause' => $basis.'Finish setup to start the '.$word.'.', 'fix' => null],
                 default => ['cause' => Missing::fills(self::WAITS[$word]), 'fix' => null],
             }],
             'cancelled' => isset($order['credit']) ? ['missing' => false, 'tone' => null, 'note' => null] : ['missing' => true, 'cause' => 'Order cancelled', 'fix' => Missing::support($support)],
