@@ -20,6 +20,7 @@ function installedModuleRouting($bindings,$clock,$fixturePorts,$fixtureClock,$pr
                 ['type'=>'string','encrypted'=>true,'value'=>json_encode(['fingerprint'=>$binding->fingerprint,...$type::protocol($binding)])]);
         }
     }
+    installedFixtureRenewalReviews();
     foreach(['RuntimePorts','RuntimeWork','CheckoutEligibility','CartAdmission','InvoiceBinding','HolderPricing','OwnedDomains','NativePresenter'] as $type){app()->forgetInstance($namespace.$type);}
     \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
     (new \Paymenter\Extensions\Servers\Domains\Domains)->boot();
@@ -32,4 +33,19 @@ function installedRuntimePorts(): \Paymenter\Extensions\Servers\Domains\Services
     $ports=new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
     $ports->registerInitialManagedRecordObservations(\Paymenter\Extensions\Servers\Domains\Services\Runtime::initialManagedRecordObservations(...));
     return $ports;
+}
+
+/** Checkout includes annual renewal pricing, so its installed fixture reviews that switch explicitly. */
+function installedFixtureRenewalReviews(): void
+{
+    // A one-registrar wire composition does not enroll its unused synthetic neighbour.
+    if(!app(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class)->hasRegistrar('namesilo')){return;}
+    foreach(\Paymenter\Extensions\Servers\Domains\Models\Account::where('registrar_key','namesilo')->get() as $account){
+        $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($account);
+        $actor=\App\Models\User::where('email','fixture-enrollment@example.test')->sole();
+        $type=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;
+        $review=new $type($actor->id,$binding->serverId,null,'test_renewal',$type::ticket($actor->id,$binding->serverId,null,'test_renewal',$type::stamp($binding->serverId,null)),'Synthetic installed annual renewal review');
+        \Paymenter\Extensions\Servers\Domains\Services\NameSiloFeatureSettings::review($review,['accept'=>true,'verified'=>true],'renewal');
+        expect(\Paymenter\Extensions\Servers\Domains\Services\NameSiloFeatureSettings::accepted($binding,'renewal'),'Installed synthetic annual renewal acceptance is explicit');
+    }
 }

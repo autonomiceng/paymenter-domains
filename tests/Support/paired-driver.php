@@ -3,6 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/transfer-fixture.php';
 require __DIR__.'/lifecycle-scenarios.php';
+// This matrix dispatches its explicitly composed engines after each native payment.
+Illuminate\Support\Facades\Queue::fake();
 use Illuminate\Support\Facades\Cache;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainOperations, RegistrationPreflight, WriteFeatures};

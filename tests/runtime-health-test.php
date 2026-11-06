@@ -7,7 +7,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\RequestOrigin;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget};
 
-// Prepare an already installed C6 fixture; its legacy catalogue remains executable until operator activation.
+// Use the installed catalogue and its current retained offer worker.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();extract(commerceFixture(false,static fn()=>null));
 app()->instance(AccountBindings::class,$bindings);
@@ -30,9 +30,17 @@ foreach([RequestOrigin::Interactive,RequestOrigin::Background] as $index=>$origi
 // Broken retained identity must not stop other account turns or independent producers.
 $badAccount = \Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[0]->server_id)->sole();
 $retainedIdentity=$badAccount->getRawOriginal('stable_identity');
+// Fresh synthetic observations belong to this worker's clock.
+activeFixtureClock($bindings)->instant=$clock->now();
+activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$ports);
+activeCommerceCostObservations($clock->now(),$clock->now()->modify('+1 day'),$ports);
+app()->instance(Clock::class,$clock);
+// Resolve the complete installed adapters before isolating the local worker producer.
+Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
+require __DIR__.'/Support/runtime-health-publication.php';
 $batch=[];
 for($i=0;$i<24;$i++){
-    $t=$tlds[0]->replicate();$t->tld='batch'.$i.'.test';$t->save();$batch[]=$t;
+    $batch[]=$unpublished($tlds[0],'batch'.chr(97+intdiv($i,26)).chr(97+$i%26));
 }
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::class,$native);
 DB::table('domains_accounts')->where('id', $badAccount->id)->update(['stable_identity' => 'broken ciphertext']);
@@ -43,7 +51,7 @@ $failures = [];
     });
 $ports = new \Paymenter\Extensions\Servers\Domains\Services\RuntimePorts;
 $independent = 0;
-$ports->registerInitialManagedRecordObservations(static function () use (&$independent): void { $independent++; });
+$ports->registerInitialManagedRecordObservations(static function () use (&$independent,$publicationWorker): void { $independent++;$publicationWorker()->tick(); });
 $runtime = new \Paymenter\Extensions\Servers\Domains\Services\RuntimeWork($clock, $ports);
 $runtime->tick();
 foreach ($tlds as $tld) {
@@ -55,15 +63,15 @@ foreach (['registrar_balance', 'publication'] as $producer) {
     expect((bool) array_filter($failures, static fn ($f) => $f['producer'] === $producer && $f['row_id'] === (int) $badAccount->server_id),
         'Broken binding is recorded at its gate: '.$producer);
 }
-same(0,(int)DB::table('domains_runtime_turns')->where('server_id',$server)->value('tld_cursor'),'Failed publication gate retains the entire 25-row batch');
+same(0,$cursor(),'Failed publication gate retains the entire 25-row batch');
 DB::table('domains_accounts')->where('id',$badAccount->id)->update(['stable_identity'=>$retainedIdentity]);
 $clock->instant=$clock->now()->modify('+60 seconds');$runtime->tick();
-same((int)end($batch)->id,(int)DB::table('domains_runtime_turns')->where('server_id',$server)->value('tld_cursor'),'Repair advances the retained full batch');
+same((int)end($batch)->id,$cursor(),'Repair advances the retained full batch');
 foreach($batch as $t){expect($native->product($t,'register')!==null,'Repair publishes every retained TLD');}
 same(2,$independent,'Independent producer advances through repair');
 // A per-TLD publication failure remains eligible when the durable scan wraps.
 $next=[];
-for($i=0;$i<25;$i++){$t=$tlds[0]->replicate();$t->tld='retry'.$i.'.test';$t->save();$next[]=$t;}
+for($i=0;$i<25;$i++){$next[]=$unpublished($tlds[0],'retry'.chr(97+intdiv($i,26)).chr(97+$i%26));}
 $failed=$next[12];$rejectPublication=true;$rejected=0;
 \App\Models\Product::creating(static function($product)use($failed,&$rejectPublication,&$rejected):void{
     if($rejectPublication&&$product->slug===\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::slug($failed,'register')){$rejected++;throw new RuntimeException('Synthetic publication failure');}
@@ -81,7 +89,7 @@ for($i=0;$i<3;$i++){
 foreach($next as $t){expect($native->product($t,'register')!==null,'Retry publishes every TLD after the scan wraps');}
 // A persistent failure must not starve the next batch, even after a worker restart.
 $tail=[];
-for($i=0;$i<25;$i++){$t=$tlds[1]->replicate();$t->tld='persistent'.$i.'.test';$t->save();$tail[]=$t;}
+for($i=0;$i<25;$i++){$tail[]=$unpublished($tlds[1],'persistent'.chr(97+intdiv($i,26)).chr(97+$i%26));}
 $persistent=$tail[0];$persistentlyReject=true;$persistentAttempts=0;
 \App\Models\Product::creating(static function($product)use($persistent,&$persistentlyReject,&$persistentAttempts):void{
     if($persistentlyReject&&$product->slug===\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::slug($persistent,'register')){$persistentAttempts++;throw new RuntimeException('Synthetic persistent publication failure');}

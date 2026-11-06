@@ -145,7 +145,10 @@ final class StaffCatalogue
     {
         $out=[];
         foreach($this->snapshots(collect([$t]))[$t->id]['offers'] as $offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
-            $new=Retail::quote($cost,$rule);$under=$new!==null&&$cost->total!==null&&!PricingRule::covers($new,$cost->total);
+            $new=Retail::quote($cost,$rule);
+            // Publication preserves contractual annual renewal retail without a fresh positive quote.
+            if($d->action==='renew'&&$d->term===1&&($new===null||PricingRule::units($new,2)<1||!$cost->fresh($this->clock->now()))){$new=OfferState::money($t->catalogue_retained_annual_retail,2);}
+            $under=$new!==null&&$cost->total!==null&&!PricingRule::covers($new,$cost->total);
             $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$cost->total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($this->clock->now()),
                 'hold'=>$d->action==='renew'?null:($under?'below_cost':$d->reason),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
         }
@@ -242,23 +245,36 @@ final class StaffCatalogue
             try{$facts=OfferState::facts($t->catalogue_facts);}catch(\Throwable){$facts=null;}
             $out[$t->id]=['prices'=>$prices,'acquisition'=>['register'=>$register!==null,'transfer'=>$transfer?->decision->available??false],'sales'=>['label'=>$chosen?'For sale':'Not for sale','tone'=>$chosen?'success':'gray','reason'=>$chosen?null:$label],
                 'seller'=>isset($sellers[$t->tld])?(int)$sellers[$t->tld]:null,'holders'=>(int)($holders[$t->server_id.':'.$t->tld.':'.$t->account_fingerprint]->holders??0),
-                'demo'=>false,'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
+                'demo'=>\Paymenter\Extensions\Servers\Domains\Support\DemoData::is($accounts[$t->server_id]),'intent'=>array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])),'defaults'=>$this->publicDefaults($d,$grants->costs),
                 'unreadable'=>$unreadable,'own'=>$own,'pricing'=>!$own?'Default pricing':(($raw['pricing_rule']['mode']??$t->pricing_mode)==='fixed'?'Fixed price':'Custom markup'),'offers'=>$all,'facts'=>$facts];
         }
         return $out;
     }
     private function publicDefaults(array $d,bool $costs): array
     {unset($d['card_fee'],$d['pricing_rule']);if(!$costs){unset($d['maxAnnualCost']);}return $d;}
+    /** Shared settings are validated independently so a bad default cannot hide a valid own rule. */
+    private static function pricingState(): array
+    {
+        try{$fee=CardFee::read();}catch(\DomainException|\InvalidArgumentException){$fee=null;}
+        try{$default=(new PricingRules)->defaultRule(false,$fee??CardFee::NONE);}catch(\DomainException|\InvalidArgumentException){$default=null;}
+        return ['fee'=>$fee,'default'=>$default];
+    }
+    private static function pricingCause(Tld $t,array $state,bool $unreadable=false): ?string
+    {
+        if($state['fee']===null){return 'card_fee';}
+        if($unreadable){return 'custom_rule';}
+        try{$own=Pricing::hasOwn($t);if(!$own&&$state['default']===null){return 'default_rule';}
+            Pricing::rule($t,$state['default'],$state['fee']);return null;
+        }catch(\DomainException|\InvalidArgumentException){return 'custom_rule';}
+    }
     /** Omitted-price identities only: validate saved settings without loading every off-page offer and price. */
     public function omissions(Collection $tlds): array
     {
-        abort_unless(Staff::requireView()->costs,403);$out=[];$fee=CardFee::read();
-        $default=(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules)->defaultRule(false,$fee);
+        abort_unless(Staff::requireView()->costs,403);$out=[];$state=self::pricingState();
         foreach($tlds as $t){
-            try{$raw=OfferState::decode($t->catalogue_intent);new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));$own=Pricing::hasOwn($t);}
-            catch(\Throwable){$out[]=$t->server_id.':'.$t->tld;continue;}
-            try{Pricing::rule($t,$default,$fee);}
-            catch(\DomainException|\InvalidArgumentException $error){if(!$own){throw $error;}$out[]=$t->server_id.':'.$t->tld;}
+            try{$raw=OfferState::decode($t->catalogue_intent);new Intent(...array_intersect_key($raw,array_flip(['sell','longest','transfers','stops'])));$unreadable=false;}
+            catch(\Throwable){$unreadable=true;}
+            if(self::pricingCause($t,$state,$unreadable)!==null){$out[]=$t->server_id.':'.$t->tld;}
         }
         return $out;
     }
@@ -266,19 +282,20 @@ final class StaffCatalogue
     public function matrix(Collection $tlds,int $years,string $filter='all'): array
     {
         $grants=Staff::requireView();abort_unless($grants->costs,403);$rows=[];$accounts=[];$skipped=[];$warnings=[];
-        $fee=CardFee::read();$default=(new PricingRules)->defaultRule(false,$fee);
+        $state=self::pricingState();$fee=$state['fee'];$default=$state['default'];
         foreach($tlds->chunk(100) as $chunk){$page=$this->pageFor($chunk,$grants);$settings=[];
             foreach($chunk as $t){$s=$page[$t->id];$id=(int)$t->server_id;$own=$s['own'];
                 if($filter==='default'&&$own||$filter==='own'&&!$own){continue;}
                 if(!isset($settings[$id])){$a=Account::where('server_id',$id)->sole();$d=OfferState::decode($a->catalogue_defaults);$settings[$id]=[$d,Server::whereKey($id)->value('name')];}
                 [$d,$name]=$settings[$id];$accounts[$id]=$name;
                 $identity=['id'=>(int)$t->id,'tld'=>'.'.$t->tld,'server_id'=>$id,'account'=>$name,'years'=>$years,'pricing'=>$own?'Custom':'Default','currency'=>'USD'];
-                try{if($s['unreadable']){throw new \DomainException('Offer unreadable. Check the TLD settings.');}$rule=Pricing::rule($t,$default,$fee);}
-                catch(\DomainException|\InvalidArgumentException $error){
-                    if(!$own&&!$s['unreadable']){throw $error;}
-                    $skipped[]=[...$identity,'cause'=>'custom_rule'];
-                    $warnings[]=['server_id'=>$id,'account'=>$name,'cause'=>'custom_rule','tlds'=>['.'.$t->tld]];continue;
+                if(($cause=self::pricingCause($t,$state,$s['unreadable']))!==null){
+                    $skipped[]=[...$identity,'cause'=>$cause];$key=$cause==='custom_rule'?$id.':'.$t->tld:$cause;
+                    $warnings[$key]??=['server_id'=>$id,'account'=>$name,'cause'=>$cause,'tlds'=>[]];
+                    if(!in_array('.'.$t->tld,$warnings[$key]['tlds'],true)){$warnings[$key]['tlds'][]='.'. $t->tld;}
+                    continue;
                 }
+                $rule=Pricing::rule($t,$default,$fee);
                 $row=[...$identity,'prices'=>[],
                     'formula'=>'Price = '.PricingRule::describe($rule).($rule['mode']==='fixed'?', times years.':', per year, times years.'),'fee'=>$fee,'fee_in_price'=>$rule['mode']==='markup_fee_percent'];$below=$loss=false;
                 foreach(PriceList::ACTIONS as $action=>$unused){$offer=$s['offers'][$action.':'.$years]??null;$cost=$offer?->observation()?->total;$price=$offer?->staffRetail();
@@ -289,6 +306,6 @@ final class StaffCatalogue
                 if($filter==='below_cost'&&!$below||$filter==='loses_money'&&!$loss){continue;}$rows[]=$row;
             }
         }
-        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>$warnings,'accounts'=>$accounts,'years'=>$years,'explanations'=>PriceList::explain($rows)];
+        return ['rows'=>$rows,'skipped'=>$skipped,'warnings'=>array_values($warnings),'accounts'=>$accounts,'years'=>$years,'explanations'=>PriceList::explain($rows)];
     }
 }

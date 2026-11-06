@@ -18,4 +18,5 @@ same($expected,Labels::operationReason($op),'Staff request label matches the sha
 same($expected,RequestFacts::status($op,true,$d)['reason'],'Staff request status keeps the same next step');
 Livewire\Livewire::actingAs($actor)->test(ViewOperation::class,['record'=>$op->id])
     ->assertSee($expected)->assertDontSee('The customer can try again.');
+foreach(['acquisition_definitely_unsent','management_definitely_unsent'] as $code){same(\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::UNSENT,Labels::reason($code),'Established unsent words: '.$code);}
 $nativeSuccessful=true;echo "Staff nameserver refusal label gives one consistent next step.\n";

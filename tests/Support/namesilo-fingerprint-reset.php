@@ -6,7 +6,8 @@ use Paymenter\Extensions\Servers\Domains\Contracts\{AccountVerifier,ReadLimiter}
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,AccountReadBudget,NameSiloAccountGuard,RegistrarRegistry};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
-$f=commerceFixture();extract($f);tldPanel();Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
+// Default-contact reset belongs to retained provider-identity accounts, never local enrollment.
+$f=commerceFixture(nameSiloLocal:false);extract($f);tldPanel();Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $wire=new class implements NameSilo\Api\DeadlineTransport {
     public int $calls=0;
     public string $email='new@example.com';

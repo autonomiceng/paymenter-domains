@@ -15,6 +15,9 @@ ini_set('zend.exception_ignore_args','0');$GLOBALS['enrollmentCalls']=0;
 $empty=new RegistrarRegistry;config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);
 same(false,NameSiloSandbox::bootstrap($empty),'Enrollment defaults off');foreach(['true',1] as $truthy){config(['domains.namesilo_sandbox_enrollment.enabled'=>$truthy]);same(false,NameSiloSandbox::enabled(),'Only explicit boolean opt-in');}config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);same([],$empty->keys(),'No default reader');
 config(['domains.namesilo_sandbox_enrollment.enabled'=>true]);
+// Runtime services retain their injected clock: install and exercise them with one clock.
+$balanceClock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:00',new DateTimeZone('UTC')));
+app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$balanceClock);
 // Prepare retained C6 catalogue behavior before exercising the extension lifecycle.
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new Paymenter\Extensions\Servers\Domains\Domains)->installed();(new Paymenter\Extensions\Servers\Domains\Domains)->boot();
@@ -92,14 +95,12 @@ same(false,$facts['provider_confirmed_account'],'Stored ownership disclaimer');s
 same('matched',$bindings->configurationStatus($s->id),'Enrolled sandbox API connection remains matched');
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->assertSeeInOrder(['API connection','OK'])->assertDontSee('Verified')->assertDontSee('OTE only')->assertDontSee('NameSilo did not confirm which account this key belongs to.')->assertDontSee('synthetic-ote-key')->assertDontSee('9876.54');unset($page);gc_collect_cycles();
 $configurePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('configure',$s))->assertActionMounted($action('configure',$s));
-same("NameSilo accounts can't be connected with API credentials.",$configurePage->instance()->getMountedAction()->getModalDescription(),'NameSilo identity refusal remains unchanged');
+same('Checks the key with one balance read, then saves it. Orders stay paused. This does not confirm who owns the account.',$configurePage->instance()->getMountedAction()->getModalDescription(),'NameSilo connection description preserves the ownership disclaimer');
 $configurePage->setActionData(['registrar'=>'enom']);same(Paymenter\Extensions\Servers\Domains\Admin\Support\SettingsActions::description('configure'),$configurePage->instance()->getMountedAction()->getModalDescription(),'Changing registrar updates description');
 unset($configurePage);gc_collect_cycles();
 // A separate read works without processing or acceptance. It is not ownership proof.
 BalanceSchema::install();ObservationSchema::install();Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 $GLOBALS['enrollmentExpectedTimeout']=10000;
-app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,
-    new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:00',new DateTimeZone('UTC'))));
 $n=$GLOBALS['enrollmentCalls'];$probePage=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$s->id])->mountAction($action('probe',$s));
 $probePage->assertActionEnabled($action('probe',$s))->setActionData(['reason'=>'Check sandbox balance'])->callMountedAction()
     ->assertHasNoActionErrors()->assertNotified('Balance updated')->assertSet('mountedActions',[]);
@@ -111,8 +112,7 @@ same(Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\Outcome::Succe
     (new Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\ResponseParser)->parse($GLOBALS['enrollmentLastRead']['body']??'',Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\RegistrarRequest::balance(),'synthetic-ote-key')->outcome,
     'Separate balance reply shape');
 unset($probePage);gc_collect_cycles();
-$balanceClock=new Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-21 12:00:05',new DateTimeZone('UTC')));
-app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$balanceClock);
+$balanceClock->instant=$balanceClock->now()->modify('+5 seconds');
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,
     new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function():never {throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');}));
 $balanceService=new RegistrarBalances($bindings,$balanceClock,new AccountReadBudget($balanceClock));

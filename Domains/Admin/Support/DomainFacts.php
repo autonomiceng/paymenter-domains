@@ -144,7 +144,12 @@ final class DomainFacts
         $invoices=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)
             ->where('o.service_id',$d->service_id)->where('i.status','pending')->orderByDesc('i.id');
         // Reopened native debt does not restore a terminal or superseded renewal's authority.
-        $renewals=RenewalCycles::current($d,$d->operations()->where('action','renew')->whereNotIn('state',['succeeded','rejected','disposed'])->get())->pluck('id');
+        $renewalOperations=$d->operations()->where('action','renew')->whereNotIn('state',['succeeded','rejected','disposed'])->get();
+        // Missing expiry cannot establish a current cycle, but open native debt still needs staff review.
+        // This display fallback grants no renewal authority and retains the same binding and terminal exclusions.
+        $renewals=($d->provider_expires_at!==null?RenewalCycles::current($d,$renewalOperations):$renewalOperations->filter(
+            fn(Operation $op)=>$op->authority_generation===$d->authority_generation&&$op->account_fingerprint===$d->account_fingerprint
+                &&(int)$op->server_id===(int)$d->server_id&&$op->registrar_key===$d->registrar_key))->pluck('id');
         $renewalInvoice=(clone $invoices)->whereIn('o.id',$renewals)->first(['i.id','i.due_at']);
         $invoice=$renewalInvoice??$invoices->where('o.action','!=','renew')->first(['i.id','i.due_at']);
         if ($policy!==null&&!self::ended($d)) {

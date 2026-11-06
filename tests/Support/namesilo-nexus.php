@@ -50,21 +50,18 @@ catch (WriteHeld $error) { same('registry_details_unsupported',$error->reason,'P
 same($beforeCalls,$registration->calls,'Invalid nexus/privacy makes no profile or purchase call');
 commerceReject(fn()=>RegistryInputs::validate('namesilo','us',[['name'=>'unaccepted']],$payload['registry']));
 commerceReject(fn()=>RegistryInputs::validate('namesilo','com',[],$payload['registry']));
-// Prove the explicit mapped category/purpose crosses the actual preflight and protocol.
-$registration->mode='300';$registration->calls=[];
-$nexusExchange=static function($origin,$command,$parameters,$timeout)use($exchange):string{
-    if($command==='registerDomain'){
-        same(['usnc'=>'C12','usap'=>'P3'],array_intersect_key($parameters,array_flip(['usnc','usap'])),'Wire preserves the exact frozen nexus');
-        same(0,$parameters['private'],'.us wire forbids privacy');
-    }
-    return $exchange($origin,$command,$parameters,$timeout);
-};
-$makeEngine($binding,$nexusExchange);
-$result=$runRegistration($nexusOp->fresh());
-same('pending',$result->state,'Explicit accepted frozen nexus reaches one admitted registration');
-same(['contactAdd','contactList','registerDomain','getDomainInfo'],$registration->calls,'Nexus registration has one purchase and fresh readback');
-same([], $result->attempt['corrections'], 'Matching nexus readback needs no correction');
-same($payload['registry'],$result->payload['registry'],'Dispatch preserves the frozen nexus');
-$beforeCalls=$registration->calls;$engine->execute($result->id);same($beforeCalls,$registration->calls,'Nexus purchase never replays');
-expect(!RegistryInputs::supported('namesilo','us',[]),'Successful synthetic mapping still grants no .us publication');
-echo "Frozen NameSilo nexus validation, privacy refusal, exact admitted wire and closed publication passed\n";
+// Preparation preserves exact category/purpose, but cannot grant publication or a paid dispatch.
+$mapping=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\PurchaseMapping::register($name,1,false,'1',$payload['nameservers'],RegistryInputs::nameSiloNexus('us',$payload['registry']));
+same('registerDomain',$mapping->command,'Explicit nexus retains its exact registration mapping');
+same(['usnc'=>'C12','usap'=>'P3'],array_intersect_key($mapping->parameters(),array_flip(['usnc','usap'])),'Mapping preserves the exact frozen nexus');
+same(0,$mapping->parameters()['private'],'.us mapping forbids privacy');
+$registration->mode='300';$registration->calls=[];$makeEngine($binding,$exchange);
+$finance=nativeFinancialSnapshot($nexusOp);$result=$runRegistration($nexusOp->fresh());
+same('held',$result->state,'Prepared nexus cannot dispatch while .us publication remains unsupported');
+same([],$registration->calls,'Unsupported nexus sends no profile, purchase or follow-up request');
+expect(!isset($result->attempt['dispatch_attempted_at']),'Unsupported nexus creates no possible-send seal');
+same($finance,nativeFinancialSnapshot($result),'Unsupported nexus preserves native finance and holding state');
+same($payload['registry'],$result->payload['registry'],'Refusal preserves the exact frozen nexus');
+$beforeCalls=$registration->calls;$engine->execute($result->id);same($beforeCalls,$registration->calls,'Held unsupported nexus never retries a purchase');
+expect(!RegistryInputs::supported('namesilo','us',[]),'Synthetic mapping grants no .us publication');
+echo "Frozen NameSilo nexus validation, exact mapping and closed dispatch passed\n";

@@ -59,6 +59,8 @@ function assertInstalledUpgradeAudit(): void
     same('Synthetic retained archive review',$archive[0]['reason'],'Retained archive keeps its staff reason');
     same('2026-10-22T12:00:00+00:00',$archive[0]['at'],'Retained archive keeps its UTC time');
     $history=StaffSettingsReview::historyRows(App\Models\Server::findOrFail($row->server_id));
+    $history=array_values(array_filter($history,static fn($entry)=>in_array($entry['reason']??null,['Synthetic retained archive review','Synthetic retained upgrade review'],true)));
+    same(2,count($history),'Both retained upgrade audit rows survive alongside independent enrollment/sync history');
     same('synthetic-retained-upgrade',$history[0]['key'],'Upgraded staff history includes retained archive');
     same('Synthetic retained upgrade review',$history[1]['reason'],'Retained encrypted current audit batch decodes');
 }
@@ -88,11 +90,14 @@ function assertInstalledUpgradePages(): void
     if($archive){
         $server=App\Models\Server::findOrFail($archive->server_id);
         $history=StaffSettingsReview::historyRows($server);
-        $actor=App\Models\User::findOrFail($history[1]['actor_id']);
+        $retained=collect($history)->sole('key','synthetic-retained-upgrade');
+        $actor=App\Models\User::findOrFail($retained['actor_id']);
         $rows=Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($server->id);
         expect($rows!==null,'Retained audit normalizes for staff history');
+        $retainedRows=array_values(array_filter($rows,static fn($entry)=>($entry['reason']??null)==='Synthetic retained archive review'));
+        same(1,count($retainedRows),'Exactly one retained archive row is presented');
         same(['time'=>'2026-10-22T12:00:00+00:00','change'=>'Default pricing changed','reason'=>'Synthetic retained archive review','by'=>'Staff #'.$actor->id],
-            $rows[1],'Retained archive normalizes time, action and actor');
+            $retainedRows[0],'Retained archive normalizes time, action and actor');
         // Price history is the registrar account's History tab.
         Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarHistory::class,['account'=>$server->id])
             ->assertSuccessful()->assertSee('Synthetic retained archive review');

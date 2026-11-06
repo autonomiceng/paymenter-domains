@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, RequestBudget, RequestContext, RequestOrigin};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CardFee, EnomTestCallLimit, PricingRules, ReadDeferred, ReadFailure};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget, CardFee, EnomTestCallLimit, PricingRules, ReadDeferred, ReadFailure, RuntimeDiagnostics};
 
 /** Dormant account worker on the retained queue. No container binding, job or caller switch.
  * $feed supplies bound adapters using existing admitted transports (including daily wire caps).
@@ -157,7 +157,7 @@ final class OfferWork
                 $work['pending'] = []; $work['feed_due'] = $this->at(); $work['tries'] = 0;
                 $work['credential_revision'] = $credential; $work['upgrade_generation'] = $this->generation;
             }
-            $this->republish($writer, $b, $work);
+            $this->republish($writer, $b, $work, $guard);
             $t = $this->nextFacts($work);
             if (!empty($work['pending'])) {
                 if ($t) { $this->facts($writer, $b, $t, $work, $guard); }
@@ -289,7 +289,7 @@ final class OfferWork
         }
     }
 
-    private function republish(Writer $writer, AccountBinding $b, array &$work): void
+    private function republish(Writer $writer, AccountBinding $b, array &$work, \Closure $guard): void
     {
         $rows = Tld::where('server_id', $b->serverId)->where('id', '>', $work['local_cursor'] ?? 0)->orderBy('id')->limit(self::BATCH)->get();
         // Shared pricing failures still stop the account; only an unreadable own rule is skipped.
@@ -303,7 +303,12 @@ final class OfferWork
             $this->requestSoldFacts($b, $t->tld);
             $revision = $this->revision($b, $t->tld);
             if ($t->catalogue_published_revision === null || !OfferState::equivalent(OfferState::decode($t->catalogue_published_revision), get_object_vars($revision))) {
-                $writer->apply(Edit::republish($b, $t->tld), $revision);
+                try { $writer->apply(Edit::republish($b, $t->tld), $revision); }
+                catch (\Throwable $error) {
+                    // An obsolete account claim still stops the turn; one failed projection cannot pin the scan.
+                    $guard();
+                    (new RuntimeDiagnostics($this->clock))->attempt('publication', static fn () => throw $error, (int) $t->id);
+                }
             }
         }
         $work['local_cursor'] = $rows->count() === self::BATCH ? $rows->last()->id : 0;

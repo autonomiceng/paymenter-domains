@@ -2,6 +2,9 @@
 // NameSilo ordinary no-ID renewals and repeated final margin; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/reconciliation-namesilo-test.php'; $nativeSuccessful = false;
+// The installed catalogue scheduler is shared by billing and staff release in this explicit fixture composition.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock,48));
 require_once __DIR__.'/Support/namesilo-account-guard.php';
 nameSiloGuardExpected($binding,'expected@example.com');
 use Illuminate\Support\Facades\{Cache, Queue};
@@ -25,9 +28,15 @@ $writer = new RenewalWriter($binding,$features,$accepted,fn ()=>$engine,static f
 $completion = new RenewalCompletion($renewBindings,$clock);
 $server = $holding->service->product->server;
 $server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-Price::where(['server_id'=>$binding->serverId,'action'=>'renew'])->sole()->update(['wholesale'=>'8.95','revision'=>2]);
+$observeRenewal = static function () use ($clock,$ports,$binding): void {
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);
+    $q=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+    $cost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.9500',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+    $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+};
 for ($cycle=0;$cycle<2;$cycle++) {
     $year = 2027+$cycle; $clock->instant = new DateTimeImmutable($year.'-09-27T12:00:00Z');
+    $observeRenewal();
     $bill = $billing->invoice($holding->id,$user); $renewal = Operation::where('invoice_id',$bill->id)->sole();
     App\Helpers\ExtensionHelper::addPayment($bill,null,$renewal->amount); Cache::flush();
     $wire->commands=[]; $clock->instant = new DateTimeImmutable($year.'-10-16T12:00:00Z');
@@ -43,6 +52,11 @@ for ($cycle=0;$cycle<2;$cycle++) {
         same('held',$engine->run($renewal->id,$writer)->state,'NameSilo auto-renew refusal is held before dispatch');
         same('provider_auto_renew_unconfirmed',$renewal->fresh()->safe_code,'NameSilo included admission code');
         same([],($renewal->fresh()->attempt??[]),'NameSilo refusal has no attempt');same(0,$writes,'No premature NameSilo send');
+        $heldReads=$wire->calls;$heldFinance=nativeFinancialSnapshot($renewal);$heldBytes=$renewal->fresh()->getRawOriginal();
+        same('held',$engine->run($renewal->id,$writer)->state,'Held renewal is not retried automatically');
+        same([$heldReads,0],[$wire->calls,$writes],'Held renewal sends neither another read nor a paid request');
+        same($heldBytes,$renewal->fresh()->getRawOriginal(),'Held renewal replay preserves operation bytes');
+        same($heldFinance,nativeFinancialSnapshot($renewal),'Held renewal replay preserves native finance and holding state');
         app()->instance(Clock::class,$clock);
         expect(app(Clock::class)===$clock,'Release offer and writer share the existing fixture clock');
         $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($renewal->fresh());
@@ -61,13 +75,14 @@ for ($cycle=0;$cycle<2;$cycle++) {
         $settings=App\Models\Server::findOrFail($binding->serverId)->settings();
         $pin=$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal();
         $deferred=$engine->run($renewal->id,$writer);
-        same(5,$limiter->calls,'Four admission reads precede the limited default contact read');
-        same('queued',$deferred->state,'Renewal account limiter refusal remains retryable');
-        same('renewal_rate_limited',$deferred->safe_code,'Renewal reports local rate capacity');
+        same(5,$limiter->calls,'Four admission reads precede the limited first refresh read');
+        same('queued',$deferred->state,'Renewal refresh limiter refusal remains retryable');
+        same('renewal_reads_unavailable',$deferred->safe_code,'NameSilo refresh reports its unavailable required read');
+        same(4,count($wire->commands),'Limited fifth read makes no provider exchange after the four admission reads');
         expect(!isset($deferred->policy['renewal_admission']),'Renewal limiter refusal removes admission');
         same($attempt,$deferred->attempt,'Renewal limiter refusal creates no dispatch seal');
-        same($reads,$accountGuard->reads,'Renewal limiter refusal sends no guard exchange');same($paid,$writes,'Renewal limiter refusal sends no paid request');
-        same($pin,$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal(),'Renewal limiter refusal creates or changes no fingerprint');
+        same($reads,$accountGuard->reads,'Local enrollment limiter refusal sends no default-contact exchange');same($paid,$writes,'Renewal limiter refusal sends no paid request');
+        same($pin,$settings->where('key','domains_namesilo_default_contact_fingerprint')->first()?->getRawOriginal(),'Local enrollment never creates or changes a default-contact fingerprint');
         $limiter->remaining=100;$clock->instant=$clock->now()->modify('+26 seconds');$wire->commands=[];
         Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
         return $engine->run($renewal->id,$writer);
@@ -85,7 +100,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
     same(false,array_key_exists('registration_admission',$renewal->fresh()->attempt),'Original nonpremium evidence remains on registration only');
 }
 same(2,$writes,'Repeated cycles send once each');
-$clock->instant=new DateTimeImmutable('2029-09-27T12:00:00Z'); $bill=$billing->invoice($holding->id,$user);
+$clock->instant=new DateTimeImmutable('2029-09-27T12:00:00Z'); $observeRenewal(); $bill=$billing->invoice($holding->id,$user);
 $renewal=Operation::where('invoice_id',$bill->id)->sole(); App\Helpers\ExtensionHelper::addPayment($bill,null,$renewal->amount); Cache::flush();
 $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->during=static function () use ($wire) { $wire->status='Expired'; }; }; }; }; }; }; };
 same('held',$engine->run($renewal->id,$writer)->state,'Final exact Active recheck refuses changed status'); same(2,$writes,'Unsafe final status sends nothing');
