@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 // Native funding/authority locks and the real read adapter are needed to prove automatic completion without another purchase.
+// Collect completed checkout graphs between independent polling scenarios.
+$automaticPollingGc=gc_enabled();gc_disable();
 require __DIR__.'/Support/transfer-completion-namesilo-fixture.php';
 use Paymenter\Extensions\Servers\Domains\Services\{HistoryAcceptances,OperationReconciliation};
 use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
@@ -10,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Data\HistoryAcceptance;
 // future-dated observations in the next sale's fixture.
 $prepareOriginal=$prepare;
 $prepare=static function($label)use($prepareOriginal,$clock,$now,$prices){
+    gc_collect_cycles();gc_mem_caches();
     $clock->instant=$now;
     activeCommerceFacts($now,$now->modify('+1 day'),activeFixturePorts($prices));
     return $prepareOriginal($label);
@@ -126,4 +129,5 @@ same('Cannot check registrar',Paymenter\Extensions\Servers\Domains\Services\Regi
 same('unavailable',$r->policy['status_check']['outcome'],'No successful reply remains unavailable');
 same(null,$r->policy['status_check']['reason'],'A future reservation is not a scheduled deferral');
 expect($r->policy['reconciliation']['next_at']>$clock->now()->getTimestamp(),'Existing future retry remains reserved');
+if($automaticPollingGc){gc_enable();}
 echo "Automatic transfer pacing, held runtime dispatch, deadline, guard recovery, outages and late read-only completion passed.\n"; $nativeSuccessful=true;
