@@ -155,9 +155,11 @@ final class DomainSummaries
                     if (!$off && $expiry) {
                         if ($cycle && !RenewalCycles::closedEarly($cycle)) { $inv=$invoices[$cycle->invoice_id]??null;$item=$items[$cycle->invoice_item_id]??null;
                             // List and detail must validate the complete issued debt, including every invoice member.
-                            try { $inv=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions]);$due=$inv->due_at?->format('Y-m-d'); } catch (\Throwable) { $invoiceReview=true; }
+                            try { $inv=DomainBilling::existingInvoice($cycle,['domain'=>$t,'invoices'=>$invoices,'items'=>$items,'transactions'=>$transactions]);$due=$inv->due_at?->format('Y-m-d');
+                                // The page's verdict, so a paid renewal still being checked reads Under review here too. A cancelled invoice keeps the price line.
+                                $issued=OwnedDomains::issuedState($cycle,$inv);$invoiceReview=$issued==='review' && $inv->status!=='cancelled'; } catch (\Throwable) { $invoiceReview=true;$issued='review'; }
                             $invoiceMissing=$due===null && !$invoiceReview;
-                            $invoicePaid=!$invoiceReview && !$invoiceMissing && $inv?->status==='paid' && in_array($cycle->state,['awaiting_payment','queued','running','pending','succeeded'],true); }
+                            $invoicePaid=!$invoiceReview && !$invoiceMissing && $issued==='paid'; }
                         else { try { $projected=true;$timing=BillingCalendar::timing($servers[$t->server_id]->settings);$dates=BillingCalendar::dates($t->provider_expires_at->toDateTimeImmutable(),$timing['issue'],$timing['due']);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
                     }
                     $order=$pending||!$op?[]:OwnedDomains::order($t,$op,$invoices->get($op->invoice_id),OwnedDomains::closed($s->status,in_array($s->id,[...$cancels,...$intents],true)));

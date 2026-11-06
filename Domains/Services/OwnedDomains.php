@@ -347,6 +347,16 @@ final readonly class OwnedDomains
         if ($value===null && is_array($snapshot) && ObservationProjection::matches($d,$snapshot)) { $value=$snapshot[$fact]??null; }
         return is_bool($value)?$value:null;
     }
+    /** A checked renewal invoice as the owner reads it: pending (pay it), paid, or review while we check it.
+     * The domain page and the Domains list both read it, so they say the same thing. */
+    public static function issuedState(Operation $cycle, Invoice $invoice): string
+    {
+        return match (true) {
+            $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => 'pending',
+            $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => 'paid',
+            default => 'review',
+        };
+    }
     /** This cycle as billing sees it: null while a new request is possible, else its pending invoice or an owner status. */
     public static function renewalCycle(Domain $d, bool $retained = false, ?\DateTimeImmutable $now = null): ?array
     {
@@ -363,9 +373,9 @@ final readonly class OwnedDomains
             if ($invoice->status === 'pending' && RenewalCycles::expiredInvoice($cycle, $now ?? app(Clock::class)->now())) {
                 return ['status' => RenewalCycles::canRetireUnpaid($cycle, $l) ? 'cancelled' : 'review'];
             }
-            return match (true) {
-                $cycle->state === 'awaiting_payment' && $invoice->status === 'pending' => ['invoice' => route('invoices.show', $invoice)],
-                $invoice->status === 'paid' && in_array($cycle->state, ['awaiting_payment', 'queued', 'running', 'pending', 'succeeded'], true) => ['status' => 'paid'],
+            return match (self::issuedState($cycle, $invoice)) {
+                'pending' => ['invoice' => route('invoices.show', $invoice)],
+                'paid' => ['status' => 'paid'],
                 default => ['status' => 'review'] };
         }
         // A retired or refunded debt permits a replacement only when billing's cycle proof holds.
