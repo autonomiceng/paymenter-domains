@@ -645,12 +645,9 @@ def main():
                     and all(
                         Path(path).name.startswith("test_installed_")
                         or path in {
-                            'tests/management-namesilo-test.php',
-                            'tests/renewal-cycles-test.php',
-                            'tests/renewal-billing-test.php',
-                            'tests/observation-records-test.php',
-                            'tests/observation-namesilo-test.php',
-                            'tests/demo-c-c1-observation-test.php',
+                            'tests/management-namesilo-test.php', 'tests/renewal-cycles-test.php',
+                            'tests/renewal-billing-test.php', 'tests/observation-records-test.php',
+                            'tests/observation-namesilo-test.php', 'tests/demo-c-c1-observation-test.php',
                             'tests/demo-c-terms-native-test.php',
                             'tests/staff-domain-page-test.php',
                             'tests/staff-domain-status-test.php',
@@ -696,6 +693,9 @@ def main():
                             'tests/namesilo-dns-form-test.php', 'tests/managed-public-observer-test.php',
                             'tests/namesilo-dns-delete-form-test.php', 'tests/namesilo-dns-capability-form-test.php',
                             'tests/staff-watch-test.php', 'tests/payment-live-ceiling-test.php',
+                            'tests/staff-monitoring-actions-test.php', 'tests/staff-monitoring-poll-test.php',
+                            'tests/staff-monitoring-filters-test.php', 'tests/staff-monitoring-templates-test.php',
+                            'tests/staff-monitoring-expiry-test.php',
                             'tests/registrars-page-test.php',
                             'tests/namesilo-test-catalogue-test.php',
                             'tests/owner-records-test.php',
