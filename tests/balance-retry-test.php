@@ -2,6 +2,8 @@
 // Paid retries use native funding, the runtime queue and real preflight/seal/bridge. Offline edges only.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+// This registry exercises only Enom retries; keep unrelated registrar facts out of its refreshes.
+$fixtureRegistrars=['enom'];
 require __DIR__.'/Support/operation-fixture.php';
 require __DIR__.'/Support/staff-panel.php';staffPanel();
 use Illuminate\Support\Facades\{Cache,DB,Queue};
@@ -60,7 +62,7 @@ $transfer=new Transfer($binding,static function($origin,$command,$p,$timeout)use
 });
 App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::KEY],['encrypted'=>true,'type'=>'string','value'=>json_encode(['fingerprint'=>$binding->fingerprint,...Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::protocol()],JSON_THROW_ON_ERROR)]);
 $features=new WriteFeatures(registration:true,transfer:true);$accepted=new WriteAcceptance($binding,true,true,25,catalogue: $GLOBALS['caps']??null);
-$ports=new RuntimePorts;
+$offerPorts=$ports;$ports=new RuntimePorts;
 $ports->register($binding->fingerprint,static fn()=>RuntimeComposition::make($binding,$freshBindings,$clock,$features,$accepted,
     new RenewalAcceptance($binding,true,true,25),$precheck,$registration,$transfer,$offline,new Management($binding,$offline)));
 $worker=new RuntimeWork($clock,$ports);$dispatch=new RuntimeDispatch($clock);app()->instance(RuntimeDispatch::class,$dispatch);
@@ -75,6 +77,9 @@ $failures=[];
 foreach(['cutoff','funded','short','paused','two_ticks','transfer','read_cap','sealed_cap','sent_cap','price_drop'] as $case){
     $advance(61);$state->funds='1.00';$state->price='6.00';$noticeBefore=$notices();
     config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true,'domains.enom_writes.transfer'=>true]);
+    // Each case starts a fresh checkout after the preceding case's multi-day backoff.
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$offerPorts);
+    activeCommerceCostObservations($clock->now(),$clock->now()->modify('+30 days'),$offerPorts);
     $op=$new(placeholderComFixtureName('balance-'.str_replace('_','-',$case).'-placeholder.com'),true,true,$case==='transfer'?'transfer':'register');$state->query=OperationClaims::query($op,$op->domain);
     config(['domains.enom_writes.registration'=>false,'domains.enom_writes.transfer'=>false]);
     $worker->operation($op->id);$held=$op->fresh();

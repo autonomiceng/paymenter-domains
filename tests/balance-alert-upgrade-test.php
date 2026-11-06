@@ -4,7 +4,11 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{BalanceSchema,BalanceAlertSchema};
-// These unmodified migrations are the complete 9eb661b schema, before alert retry storage.
+// Keep genuine current lifecycle authority while arranging the retained alert-storage gap.
+(new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+Schema::drop(BalanceAlertSchema::TABLE);
+DB::table('migrations')->where('migration',BalanceAlertSchema::MIGRATION)->delete();
+// Replay the installed inventory without the additive alert migration; retired cutover paths are already recorded.
 $paths=array_filter(glob(dirname(__DIR__).'/Domains/database/migrations/*.php'),static fn($p)=>basename($p)!=='2026_10_26_000041_create_balance_alerts.php');
 app(Illuminate\Database\Migrations\Migrator::class)->run(array_values($paths),['force'=>true]);
 DB::table(BalanceSchema::TABLE)->insert([

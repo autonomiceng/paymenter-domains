@@ -15,6 +15,7 @@ same('adoption', DB::transaction(fn () => HoldingAnchor::resolve(HoldingLocks::t
 [$engine, $writer, $completion] = $compose($binding);
 foreach ([2027, 2028] as $year) {
     $clock->time = new DateTimeImmutable($year.'-09-29T12:00:00Z');
+    $observeRenewal();
     $invoice = $billing->invoice($domain->id, $owner); $op = Operation::where('invoice_id', $invoice->id)->sole();
     same('renew', $op->action, 'Only renewal obligation issued');
     same(null, $invoice->items()->sole()->reference_id, 'Renewal native line has no acquisition reference');
