@@ -73,7 +73,7 @@ final class RegistrarCheck
     {
         $check = $op->policy['status_check'] ?? null;
         if (($check['outcome'] ?? null) !== 'awaiting_answer') { return self::for($op); }
-        $kind = $op->action === 'transfer' ? 'transfer' : 'registration';
+        $kind = match ($op->action) { 'transfer' => 'transfer', 'renew' => 'renewal', default => 'registration' };
         return ['title'=>ucfirst($kind).' pending','body'=>'We’re confirming this '.$kind.' with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.self::answerAfter($check).'.','tone'=>'info'];
     }
     public static function for(Operation $op): array { return self::words($op->policy['status_check'] ?? null, $op->state === 'succeeded'); }
