@@ -207,6 +207,7 @@
         list.addEventListener('click', e => { if (e.target.closest('[data-domains-retry]')) check(e.target.closest('[data-domains-result]')); });
         list.addEventListener('change', e => {
             if (e.target.matches('select[name="term"]')) {
+                const option = e.target.selectedOptions[0];
                 e.target.closest('[data-domains-result]').querySelector('.domains-result__price strong').textContent = option.dataset.total;
             }
         });
