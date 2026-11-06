@@ -73,7 +73,7 @@ foreach([
 Auth::setUser($u);
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
-    'Price sync','Last successful refresh','Oct 18, 2026','Next due',
+    'Price sync','Last updated','Oct 18, 2026','Next update',
     'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History','Activity'] as $see){$page->assertSee($see);}
 $plain=$text($page->html());
 expect(!str_contains($plain,'grace')&&!str_contains($plain,'Redemption'),'The TLD page asks staff nothing about grace or redemption');
@@ -130,7 +130,7 @@ $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
     ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('Open Registrars');
 $clean($list->html(),'List sync failed');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('Refresh failed')->assertSee($cause)->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Last successful refresh')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
+    ->assertSee('Refresh failed')->assertSee($cause)->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Last updated')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
 $clean($page->html(),'TLD page sync failed');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Refresh failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['offer_feed_failure'=>'read_unavailable','offer_feed_failed_at'=>null]);
@@ -151,7 +151,7 @@ expect(str_contains($text($page->html()),'Registrar for new orders Missing Use M
 $page->assertSeeHtml('href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl()).'"');
 same(1,$accountLinks($page->html(),(int)$enom->server_id),'Missing goes to Registrars; the prices table still opens the account');
 $clean($page->html(),'TLD page no registrar');
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'No registrar selected; not for sale'],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'No registrar selected'],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
 $page->assertSee('Not for sale')->assertDontSee('For sale');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('No registrar selected')->assertDontSee('For sale');
 expect(!str_contains($text($list->html()),'new orders'),'List: no account takes new orders');
