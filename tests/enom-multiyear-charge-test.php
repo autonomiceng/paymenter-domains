@@ -1,6 +1,8 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Native financial matrix; no provider calls.
 declare(strict_types=1);
+// This Enom incurred-charge proof never reads or sends through NameSilo.
+$fixtureRegistrars = ['enom'];
 require __DIR__.'/Support/enom-multiyear.php';
 use Illuminate\Support\Facades\{Cache, DB};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, FeedObserved, OfferState, Query, TermSupport};
