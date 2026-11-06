@@ -560,9 +560,9 @@
     .domains .domains-sheet .domains-panel__h { padding-inline: 1rem; }
     .domains .domains-rows > .domains-row { grid-template-columns: minmax(0, 1fr) auto; padding: .5rem 1rem; }
     .domains .domains-row__l { grid-column: 1 / -1; }
-    /* As in the mock, a row's action sits beside its label, status and value. */
+    /* As in the mock, a row's action sits beside its label and status. Top-aligned, so a tall value (contacts, a nameserver list) doesn't pull it down. */
     .domains .domains-rows > .domains-row:has(> .domains-row__a) > .domains-row__l { grid-column: 1; }
-    .domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; }
+    .domains .domains-rows > .domains-row > .domains-row__a { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
     .domains .domains-sheet .domains-card > div { grid-template-columns: minmax(0, 1fr); padding: .5rem 1rem; }
     .domains .domains-sheet .domains-btn--block { width: calc(100% - 2rem); margin-inline: 1rem; }
     .domains .domains-row__a .domains-a { min-height: 2.75rem; }
