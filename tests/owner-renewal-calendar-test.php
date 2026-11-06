@@ -30,6 +30,7 @@ foreach ([true,false] as $autoRenew) {
     same(1,Operation::where('domain_id',$lastDay->id)->where('action','renew')->count(),'One late cycle invoice');
     $clock->instant=new DateTimeImmutable('2027-10-18T00:00:00Z');$before=$ledger();
     same(['status'=>'cancelled'],$owners->present($lastDay->fresh())->renewNow,'Expiry hides retained payment link before cancellation');
+    storefrontViews();app('view')->getFinder()->flush();
     $html=$page($lastDay);expect(!str_contains($html,route('invoices.show',$lastInvoice))&&!str_contains($html,'Pay invoice'),'Expiry page has no invoice link');
     expect(str_contains($html,'Invoice cancelled'),'Expiry page shows retained cancelled status');
     same('pending',$lastInvoice->fresh()->status,'Owner page leaves pending debt unchanged');
@@ -51,6 +52,7 @@ $clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');[$source]=$prepare
 $clock->instant=new DateTimeImmutable('2027-08-01T12:00:00Z');$closed=$billing->invoice($domain->id,$user,1);$op=Operation::where('invoice_id',$closed->id)->sole();DB::table('domains_operations')->where('id',$op->id)->update(['created_at'=>'2027-08-01 12:00:00']);
 $clock->instant=new DateTimeImmutable('2027-08-09T12:00:00Z');$retire->closeEarlyUnpaid($domain->id);same('cancelled',$closed->fresh()->status,'The week closes the invoice');
 App\Helpers\ExtensionHelper::addPayment($closed->id,null,'1.00');$refunds->creditRejected($op->id);
+storefrontViews();app('view')->getFinder()->flush();
 expect(str_contains($page($domain),'We added $1.00 to account credit. You can apply it on an invoice.'),'Customer page says where the money went');
 
 foreach([Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::class,App\Jobs\Server\CreateJob::class] as $job){Queue::assertNotPushed($job);}
