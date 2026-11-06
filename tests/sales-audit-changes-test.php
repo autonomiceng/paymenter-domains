@@ -39,8 +39,11 @@ same('', $history[0]['reason'], 'No-op invents no changed fields');
 // Saving identical normalized defaults is a no-op in account history, even though its revision moves.
 $rule = ['mode'=>'only', 'years'=>2, 'transfers'=>false, 'max_cost'=>'12.00'];
 $save(['rule'=>$rule]);
+// The public catalogue command accepts a valid two-decimal retained cost limit.
+$revision = $ports->readOffers(new Query($binding, ['com'], 'register'), Context::Staff)[0]->revision;
+$ports->apply(Edit::defaults($binding, 'com', new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(false, 2, false, '12.00')), $revision);
 $defaults = OfferState::decode(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
-unset($defaults['_revision']);
+unset($defaults['_revision']);$defaults['maxAnnualCost']='12.0000';
 $save(['rule'=>$rule]);
 $again = OfferState::decode(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);
 unset($again['_revision']);
