@@ -571,7 +571,9 @@
     "tests/registration-namesilo-authority-test.php",
     "tests/registration-namesilo-nexus-test.php",
     "tests/storefront-corruption-test.php",
-    "tests/storefront-queries-test.php"
+    "tests/storefront-queries-test.php",
+    "tests/transfer-completion-namesilo-refusals-test.php",
+    "tests/transfer-completion-namesilo-finance-test.php"
   ],
   "ui": [],
   "runner": [
