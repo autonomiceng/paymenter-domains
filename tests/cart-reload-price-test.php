@@ -13,7 +13,7 @@ extract($fixture=offerCommerceFixture());
 [$secondBinding,$second]=offerCommerceSecond($fixture);
 $user=commerceUser(); $com=$storefront->offer('com','register',3)['product'];
 $q=new Query($binding,['com'],'register',3);
-$rev=static fn()=>$ports->readOffers($q,Context::Staff)[0]->revision;
+$rev=static fn()=>offerCommerceAsStaff(static fn()=>$ports->readOffers($q,Context::Staff)[0]->revision);
 $cart=commerceCart($user); $line=commerceAdd($cart,$com,'reload-price-placeholder.com',3);
 commerceAdd($cart,$second['product'],'reload-removed-placeholder.net');
 $views=getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/reload-cart'; mkdir($views,0700,true);
@@ -34,7 +34,7 @@ foreach ([1,3] as $term) {
     same(0,$dom->query('//s')->length,'Own old term price is not struck');
 }
 $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,transfers:true),[...PricingRule::DEFAULT,'markup'=>'50.00']),$rev());
-$ports->apply(Edit::override($secondBinding,'net',new Intent(sell:false,transfers:true)),$ports->readOffers(new Query($secondBinding,['net'],'register'),Context::Staff)[0]->revision);
+$ports->apply(Edit::override($secondBinding,'net',new Intent(sell:false,transfers:true)),offerCommerceAsStaff(static fn()=>$ports->readOffers(new Query($secondBinding,['net'],'register'),Context::Staff)[0]->revision));
 $page=$open(); $dom=storefrontDom($page->html());
 same('Your cart changed',trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'Reload announces the changed cart even when another line was removed');
 expect(str_contains($page->html(),'reload-removed-placeholder.net'),'The notice still identifies the removed domain');

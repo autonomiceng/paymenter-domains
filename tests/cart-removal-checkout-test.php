@@ -7,7 +7,7 @@ extract($fixture=offerCommerceFixture());[$secondBinding,$second]=offerCommerceS
 $user=commerceUser();$cart=commerceCart($user);
 commerceAdd($cart,$storefront->offer('com','register',3)['product'],'removed-load-placeholder.com',3);
 commerceAdd($cart,$second['product'],'retained-load-placeholder.net');
-$ports->apply(Edit::override($binding,'com',new Intent(sell:false,longest:3,transfers:true)),$ports->readOffers(new Query($binding,['com'],'register',3),Context::Staff)[0]->revision);
+$ports->apply(Edit::override($binding,'com',new Intent(sell:false,longest:3,transfers:true)),offerCommerceAsStaff(static fn()=>$ports->readOffers(new Query($binding,['com'],'register',3),Context::Staff)[0]->revision));
 Illuminate\Support\Once::flush();
 $page=Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class);
 $page->assertDispatched('notify',static fn($event,$params)=>str_contains($params[0]['message'],'removed'));
