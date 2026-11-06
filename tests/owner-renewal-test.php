@@ -31,9 +31,12 @@ same($before,$ledger(),'Off request creates no invoice');
 $setting('domains_manual_renewals_enabled',true);$dto=$owners->present($d->fresh());
 same(['url'=>route('domains.domains.renew',$d->id),'terms'=>[1],'order_by'=>'2027-10-17'],$dto->renewNow,'Request offers horizon-bounded terms until the day before expiry');
 $html=$page($d);
-foreach(['Renew now','>Renew '.$d->domain.'<','>Years<','value="1"',
-    'Continue to payment','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
-foreach (range(2,10) as $years) { expect(!str_contains($html,'<option value="'.$years.'">'),'Unsupported longer term is not offered'); }
+foreach(['Renew now','>Renew domain<','>Domain<','>'.$d->domain.'<','>Years<',
+    'You can renew online until <time datetime="2027-10-17">Oct 17, 2027</time>.','Continue to payment','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
+$form=storefrontDom($html);$options=$form->query('//select[@id="renew-years"]/option');
+same(['1'],array_map(fn($option)=>$option->getAttribute('value'),iterator_to_array($options)),'Owner form offers exactly the supported annual term');
+same('1 year',trim((string)$options->item(0)?->textContent),'Owner form names the annual term');
+foreach (range(2,10) as $years) { same(0,$form->query('//select[@id="renew-years"]/option[@value="'.$years.'"]')->length,'Unsupported longer term is not offered'); }
 same(range(1,10),DomainBilling::terms(new DateTimeImmutable('2027-10-18'),new DateTimeImmutable('2027-10-18T00:00:00Z')),'Horizon admits ten years from expiry day');
 same([1,2],DomainBilling::terms(new DateTimeImmutable('2035-08-01'),new DateTimeImmutable('2027-09-01T12:00:00Z')),'Far expiry narrows the term list');
 same([],DomainBilling::terms(new DateTimeImmutable('2037-10-18'),new DateTimeImmutable('2027-09-01T12:00:00Z')),'Expiry past the horizon offers no term');
