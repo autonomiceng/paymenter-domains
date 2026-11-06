@@ -428,7 +428,7 @@ class SchedulingTests(unittest.TestCase):
             root = Path(temporary); (root/'Domains').mkdir()
             output = root/'output'; output.mkdir()
             ready, escaped, pidfile = root/'ready', root/'escaped', root/'pid'
-            orphan = ("import subprocess,sys,os; from pathlib import Path; "
+            orphan = ("import subprocess,sys,os,time; from pathlib import Path; "
                       f"subprocess.Popen([sys.executable,'-c',\"import os,time; from pathlib import Path; Path({str(pidfile)!r}).write_text(str(os.getpid())); time.sleep(2); Path({str(escaped)!r}).touch()\"],start_new_session=True); "
                        f"deadline=time.monotonic()+5\nwhile not Path({str(pidfile)!r}).exists() and time.monotonic()<deadline: time.sleep(.002)\nassert Path({str(pidfile)!r}).exists(); "
                       f"Path({str(ready)!r}).write_text(str(os.getpid()))")
@@ -442,6 +442,10 @@ class SchedulingTests(unittest.TestCase):
                 status = runner.run(commands, dict(os.environ), output, ['provider'], {}, jobs=2, fail_fast=True)
             self.assertEqual(status, 1)
             self.assertLess(time.monotonic()-started, 5)
+            receipt = json.loads((output/'receipt.json').read_text())
+            self.assertEqual(receipt['results'][1]['exit'], 7, 'The intentional failure must follow the parent exit, not a fixture error')
+            self.assertTrue(ready.exists(), 'The detached parent completed its readiness handshake')
+            self.assertFalse(Path('/proc/'+ready.read_text()).exists(), 'The detached parent did not exit')
             self.assertFalse(Path('/proc/'+pidfile.read_text()).exists(), 'Grandchild was not reaped')
             self.assertFalse(escaped.exists(), 'Detached child survived parent exit and cancellation')
 
