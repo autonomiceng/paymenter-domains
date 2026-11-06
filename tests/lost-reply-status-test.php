@@ -26,5 +26,8 @@ expect($notice!==null,'Customer sees the uncertain registration notice');
 expect(!str_contains($html,'Ask Enom')&&!str_contains($html,'You can record'),'Customer view has no staff registrar instruction');
 expect(str_contains($notice->textContent,'We’re confirming this registration with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.$at.'.'),'Customer sees the wait message and the real PT deadline');
 expect(str_contains($notice->getAttribute('class'),'domains-notice--info'),'Waiting for our registrar check asks no customer action');
+// A renewal waiting on the registrar's answer is called a renewal, not a registration (renewal-uncertain R1).
+$renewal=$result->replicate();$renewal->action='renew';$said=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::forCustomer($renewal);
+same(['Renewal pending','We’re confirming this renewal with the registrar. You don’t need to do anything. Contact support if it’s still pending after '.$at.'.'],[$said['title'],$said['body']],'A waiting renewal says renewal');
 same('uncertain',$result->state,'No fabricated completion');same(null,$result->attempt['execution'],'Attempt remains unchanged');
 $nativeSuccessful=true;echo "Native local status stop explains next step and real PT time.\n";
