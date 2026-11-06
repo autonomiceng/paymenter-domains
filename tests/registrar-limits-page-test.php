@@ -56,6 +56,10 @@ unset($capPage);gc_collect_cycles();gc_mem_caches();
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('NameSilo test account')->assertSee('Missing')->assertSee('Not checked yet')
     ->assertSee('Add funds')->assertSeeHtml('https://ote.namesilo.com/cart/add-funds')->assertDontSee('API calls, last 24 hours');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$off->id])->assertSee('Not connected')->assertSee('Off in Paymenter')->assertDontSee('Add funds');
+// ui-r17: with an account, the API connection row says why, so the Overview head names only the status.
+App\Models\Server::whereKey($silo->server_id)->update(['enabled'=>false]);
+same(1,substr_count(Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$silo->server_id])->assertSee('Not connected')->html(),'Off in Paymenter'),'The cause shows once on the account page');
+App\Models\Server::whereKey($silo->server_id)->update(['enabled'=>true]);
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$empty->id])->assertSee('Not connected')->assertDontSee('Check balance');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$demo->server_id])->assertSee('Demo NameSilo')->assertSee('Demo');
 // Orders paused: by staff, and by an unconfirmed paid request.
