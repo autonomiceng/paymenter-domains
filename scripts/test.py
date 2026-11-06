@@ -688,7 +688,7 @@ def main():
                             'tests/transfer-completion-namesilo-refusals-test.php',
                             'tests/transfer-completion-namesilo-finance-test.php',
                             'tests/watch-scheduler-test.php',
-                            'tests/runtime-records-test.php', 'tests/owner-management-test.php',
+                            'tests/runtime-records-test.php', 'tests/runtime-records-order-test.php', 'tests/owner-management-test.php',
                             'tests/owner-management-namesilo-test.php', 'tests/staff-monitoring-test.php',
                             'tests/namesilo-dns-form-test.php', 'tests/managed-public-observer-test.php',
                             'tests/namesilo-dns-delete-form-test.php', 'tests/namesilo-dns-capability-form-test.php',

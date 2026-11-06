@@ -266,6 +266,7 @@
     "tests/runtime-wire-management-test.php",
     "tests/runtime-lifecycle-test.php",
     "tests/runtime-records-test.php",
+    "tests/runtime-records-order-test.php",
     "tests/holding-provenance-test.php",
     "tests/conversion-test.php",
     "tests/conversion-evidence-test.php",
