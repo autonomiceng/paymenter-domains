@@ -91,6 +91,14 @@ $notice=DomainPage::notice($owned($paid),'/tickets/create');
 same('Paid. We’re finishing the registration. There’s nothing you need to do.',$notice['text'],'Paid notice says it plainly');
 // slop-sweep: a complimentary order was never paid, so its notice says Complimentary, as staff and the invoice do.
 same('Complimentary. We’re finishing the registration. There’s nothing you need to do.',DomainPage::notice($owned([...$paid,'complimentary'=>true]),'/tickets/create')['text'],'Complimentary notice');
+// ui-r17: Complimentary once. The page notice says it, so Expires doesn't; the list row has no notice, so its Expires says the notice's words.
+$comp=[...$paid,'complimentary'=>true];
+same([true,'Fills in by itself when the registration finishes'],[($e=DomainPage::expires($owned($comp),$summary($comp),'/tickets/create'))['missing'],$e['cause']],'The page Expires leaves Complimentary to the notice');
+same('Complimentary. We’re finishing the registration. There’s nothing you need to do.',DomainListRow::expires($summary($comp))['cause'],'The list row says registration is finishing and nothing is needed');
+$priced=static fn(array $order,string $price)=>new DomainSummary(...[...get_object_vars($summary($order)),'renewalPrice'=>$price]);
+same(null,DomainListRow::renewal($priced($comp,Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL))['note'],'A pending complimentary row says Complimentary once');
+same(['Complimentary','Complimentary'],[Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL,DomainListRow::renewal($priced(['state'=>'active'],Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL))['note']],'The list price says Complimentary in plain words, with no /yr');
+same('$10.99/yr',DomainListRow::renewal($priced(['state'=>'active'],'$10.99'))['note'],'A paid price keeps /yr');
 same(['label'=>'Contact support','url'=>'/tickets/create'],$notice['action'],'Paid notice says how to reach us');
 // Work that is ours reads blue; amber is for a step the customer owns. The Off switch is the reason we give first.
 $held=static fn(int|string|null $refused)=>new OwnedDomain('held.example','Active','good',null,'',null,['show'=>'/domains/1'],[],[],[],['contacts'=>['recordCheckHeld'=>true]],false,changesUnavailable:$refused!==null,changesRefused:$refused);

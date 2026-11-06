@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Domain;
 /** Append-only account authorization. The native user lock serializes checkout, billing and changes. */
 final class ComplimentaryAccounts
 {
-    public const LABEL='Complimentary (account setting)';
+    public const LABEL='Complimentary';
     public static function current(int $user):?array
     {
         if(!Schema::hasTable('domains_complimentary_accounts')){return null;}
