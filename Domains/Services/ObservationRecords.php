@@ -32,7 +32,7 @@ final class ObservationRecords
             $record+=['format'=>1,'capability_revision'=>$capabilities['revision']??null,'expected_families'=>$capabilities['families']??null];
             $record=RecordFormat::read($record,$d->registrar_key)??throw new \DomainException('Observation capabilities unavailable.');
             $record['settings']=RecordInventory::settings($families['settings']??[]);
-            $prior=self::current($d);
+            $prior=self::current($d,$now);
             foreach (['families','settings'] as $group) {
                 if (!isset($record[$group])) { continue; }
                 foreach ($record[$group] as $kind=>&$family) {
