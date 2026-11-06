@@ -22,7 +22,14 @@ DB::table(LiveReservationSchema::TABLE)->where('account',$rows[0]['account'])->u
 (new Installation)->install();
 same(7,(int)DB::table(LiveReservationSchema::TABLE)->where('account',$rows[0]['account'])->value('catalogue_used'),'Reinstall never resets the price-read count');
 $file=dirname(__DIR__).'/Domains/database/migrations/'.$migration.'.php';
-(require $file)->up();(require $file)->down();
+(require $file)->up();
+// A retained counter cannot be rolled back: Laravel must keep its migration record on refusal.
+try {
+    app(Illuminate\Database\Migrations\Migrator::class)->rollback([dirname($file)], ['step'=>1, 'force'=>true]);
+    throw new RuntimeException('Rollback must refuse before Laravel removes the counter migration record');
+} catch (LogicException) {}
+expect(DB::table('migrations')->where('migration',$migration)->exists(),'Refused rollback retains its migration record');
+(new Installation)->install();
 same(7,(int)DB::table(LiveReservationSchema::TABLE)->where('account',$rows[0]['account'])->value('catalogue_used'),'Repeated migration and down retain usage');
 DB::table('migrations')->where('migration',$migration)->delete();
 try{(new Installation)->install();throw new LogicException('Unrecorded column was adopted');}
