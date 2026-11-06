@@ -28,7 +28,7 @@
 @endphp
 @continue($section === null && !($cap === 'nameservers' && $domain->syncPaused))
 <li @class(['domains-row', 'domains-row--pending' => $section['progress']['pending'] ?? false]) id="{{ $cap }}">
-<span class="domains-row__l">{{ $label }}@if ($familyLabel)@include('domains::partials.record-family-status',['family'=>$section['family']])@endif@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif
+<span class="domains-row__l">{{ $label }}@if (array_key_exists($cap, \Paymenter\Extensions\Servers\Domains\Services\OwnerHelp::SECTIONS))@include('domains::partials.help', ['id' => $cap, 'label' => $label])@endif@if ($familyLabel)@include('domains::partials.record-family-status',['family'=>$section['family']])@endif
 @if (($section['progress'] ?? null) && !$section['progress']['pending'])<span class="domains-sub" role="status">{{ $section['progress']['text'] }}</span>@endif</span>
 @if (($section['family_only'] ?? false) && !($section['off'] ?? false) && !($section['progress']['pending'] ?? false))
 <span class="domains-row__v">@include('domains::partials.record-family-status',['family'=>$section['family']])@if ($cap==='dns')@include('domains::partials.dns-inventory')@endif</span>
