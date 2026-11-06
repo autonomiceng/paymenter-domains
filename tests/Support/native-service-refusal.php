@@ -1,22 +1,36 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Synthetic native page acceptance only.
 declare(strict_types=1);
-require_once dirname(__DIR__).'/native-app.php';
-// Native auditing defaults on; include CLI events for this isolated acceptance matrix.
-config(['audit.enabled'=>true,'audit.console'=>true]);
-require __DIR__.'/operation-fixture.php';
-require __DIR__.'/staff-panel.php';
 use App\Admin\Resources\ServiceResource\Pages\EditService;
 use App\Models\{Coupon,Currency,Order,Service};
 use Filament\Actions\Testing\TestAction;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\{DB,Queue};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Services\{HolderPricing,NativeDomainGuard,NativeIdentity,NativeServiceRefusal};
+use Paymenter\Extensions\Servers\Domains\Services\{HolderPricing,NativeDomainGuard,NativeIdentity,NativeServiceRefusal,PriceCatalogue,PricingRules};
+use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
+require_once dirname(__DIR__).'/native-app.php';
+// Native auditing defaults on; include CLI events for this isolated acceptance matrix.
+config(['audit.enabled'=>true,'audit.console'=>true]);
+// The installed fixture registers NativeIdentity during installation. Set up the alternate
+// observer order before installation rather than changing the refused-write expectations.
+if($guardFirst){
+    require_once __DIR__.'/FakeRegistrar.php';
+    $guard=new NativeDomainGuard(new HolderPricing(new PriceCatalogue(new PricingRules)),new FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));
+    $guard->boot();
+}
+require __DIR__.'/operation-fixture.php';
+require __DIR__.'/staff-panel.php';
 Queue::fake();
-$guard=new NativeDomainGuard(new HolderPricing($prices),$clock);
+$guard??=new NativeDomainGuard(new HolderPricing($prices),$clock);
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class,$invoiceBinding);
 if($guardFirst){$guard->boot();NativeIdentity::boot();}else{NativeIdentity::boot();$guard->boot();}
+$guardOrder=[];
+foreach(Service::getEventDispatcher()->getRawListeners()['eloquent.updating: App\\Models\\Service']??[] as $listener){
+    $source=basename((new ReflectionFunction($listener))->getFileName());
+    if(in_array($source,['NativeDomainGuard.php','NativeIdentity.php'],true)){$guardOrder[]=$source;}
+}
+same($guardFirst?['NativeDomainGuard.php','NativeIdentity.php']:['NativeIdentity.php','NativeDomainGuard.php'],$guardOrder,'Requested native guard order is actually registered');
 staffPanel();
 $staff=staffUser(['admin.domains.view','admin.services.viewAny','admin.services.view','admin.services.update','admin.services.delete']);
 $op=$new(placeholderComFixtureName('native-service-refusal-placeholder.com'));$service=$op->domain->service;
