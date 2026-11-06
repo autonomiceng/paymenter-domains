@@ -16,10 +16,16 @@ final class CartCheckoutRefresh
         Livewire::listen('mount', static function ($component) use ($admission): void {
             if ($component::class !== Cart::class) { return; }
             try {
-                $held = session()->get(self::shownKey(), []);
+                $held = session()->get(self::shownKey().'.lines', session()->get(self::shownKey(), []));
                 $admission->refresh();
                 $was = self::changedAmounts($held);
                 if ($was) { self::changed($component, self::cartTotal(), $was); }
+                else {
+                    $review = session()->get(self::shownKey().'.review');
+                    if (is_array($review) && ($review['shown'] ?? null) === self::snapshot(self::shown())) {
+                        CartNotice::restore($component, $review['notice'] ?? null);
+                    }
+                }
             }
             catch (CartLinesRemoved $e) {
                 self::removed($component, $e);
@@ -32,9 +38,15 @@ final class CartCheckoutRefresh
             if ($component::class !== Cart::class) { return; }
             \Livewire\store($component)->set('domains.offers', $memo['domains_offers'] ?? null);
             \Livewire\store($component)->set('domains.shown', $memo['domains_shown'] ?? null);
+            CartNotice::restore($component, $memo['domains_notice'] ?? null);
         });
         Livewire::listen('call', static function ($component, $method, $params, $context, $returnEarly) use ($admission): void {
-            if ($component::class !== Cart::class || $method !== 'checkout') { return; }
+            if ($component::class !== Cart::class) { return; }
+            if (in_array($method, ['applyCoupon', 'removeCoupon', 'updateQuantity', 'removeProduct'], true)) {
+                \Livewire\store($component)->set('domains.customer_edit', true);
+                CartNotice::clear($component);
+            }
+            if ($method !== 'checkout') { return; }
             OrderContact::clear();
             if (!\Illuminate\Support\Facades\Auth::check()) { return; }
             try {
@@ -53,6 +65,10 @@ final class CartCheckoutRefresh
                     foreach (self::shown() as $id => $now) { if (isset($held[$id]) && $held[$id] !== $now) { $was[$id] = $held[$id]; } }
                     self::changed($component, $total, $was);
                     OrderContact::clear(); $returnEarly();
+                } else {
+                    // This click accepts the quote that the page displayed, including a retained review notice.
+                    CartNotice::clear($component);
+                    session()->forget(self::shownKey().'.review');
                 }
             } catch (ContactValidation $e) {
                 foreach (OwnerFormValidation::contact($e)->messages('', registrar:$tld->registrar_key ?? 'enom') as $field => $message) { $component->addError($field, $message); }
@@ -63,8 +79,22 @@ final class CartCheckoutRefresh
             } catch (\Throwable $e) { OrderContact::clear(); self::unavailable($component, $e); $returnEarly(); }
         });
         // Themes without the notice include keep the toast, with the same words.
-        Livewire::listen('render', static function ($component) {
+        Livewire::listen('render', static function ($component) use ($admission) {
             if ($component::class !== Cart::class) { return null; }
+            // Native line prices are dynamic on every render, not just checkout. Never advance the
+            // signed/session shown amount silently when an unrelated Livewire update races publication.
+            $held = (array) \Livewire\store($component)->get('domains.shown');
+            if ($held && !\Livewire\store($component)->get('domains.customer_edit')) {
+                try {
+                    $was = self::changedShown($held);
+                    if ($was) {
+                        $admission->refresh();
+                        $was = self::changedShown($held);
+                        if ($was) { self::changed($component, self::cartTotal(), $was); }
+                    }
+                } catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
+                catch (\Throwable $e) { self::unavailable($component, $e); }
+            }
             return static function ($html) use ($component) {
                 $notice = CartNotice::get($component);
                 if ($notice && !preg_match('/<[a-z][^>]*\s'.CartNotice::MARKER.'(?=[\s=>])/i', $html)) { $component->notify($notice['toast'], $notice['type']); }
@@ -77,7 +107,15 @@ final class CartCheckoutRefresh
             $context->addMemo('domains_offers', $offers);
             try { $shown = self::shown(); } catch (\Throwable) { $shown = null; }
             $context->addMemo('domains_shown', $shown);
-            if ($shown !== null) { session()->put(self::shownKey(), self::snapshot($shown)); }
+            if ($shown !== null) {
+                $lines = self::snapshot($shown);
+                session()->put(self::shownKey().'.lines', $lines);
+                $notice = CartNotice::get($component);
+                $review = ($notice['title'] ?? null) === 'Your cart changed' ? ['notice' => $notice, 'shown' => $lines] : null;
+                $context->addMemo('domains_notice', $review['notice'] ?? null);
+                if ($review) { session()->put(self::shownKey().'.review', $review); }
+                else { session()->forget(self::shownKey().'.review'); }
+            }
             OrderContact::clear();
         });
     }
@@ -118,6 +156,15 @@ final class CartCheckoutRefresh
     private static function shown(): array
     {
         return NativeCart::items()->mapWithKeys(fn ($item) => [$item->id => number_format($item->price->total * $item->quantity, 2, '.', '')])->all();
+    }
+
+    private static function changedShown(array $held): array
+    {
+        $was = [];
+        foreach (self::shown() as $id => $amount) {
+            if (isset($held[$id]) && $held[$id] !== $amount) { $was[$id] = $held[$id]; }
+        }
+        return $was;
     }
 
     /** Session reloads may follow the customer's own Edit, which retains the line id. */
