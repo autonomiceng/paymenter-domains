@@ -75,6 +75,27 @@ class NativeCacheTests(unittest.TestCase):
             self.assertEqual(len(phases), 2)
             self.assertNotEqual(phases[0], phases[1])
 
+    def test_retained_shared_setup_releases_pages_in_the_final_complete_check(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / 'source'; source.mkdir()
+            git, lock = fixtures.NativeGuardTests().fixture(source)
+            count = len(native.hashes(source / 'vendor'))
+            with mock.patch.object(native, 'git', side_effect=git), \
+                    mock.patch.object(native, 'LOCK_SHA256', lock), \
+                    mock.patch.object(native.os, 'posix_fadvise') as release:
+                snapshot = native.prepare(source, Path(temp) / 'copy', share_vendor=True,
+                                          retain_vendor_cache=True)
+                release.assert_not_called()
+                self.assertEqual(native.verify(source)[1], snapshot)
+                self.assertEqual(release.call_count, count)
+
+    def test_retention_requires_shared_read_only_vendor(self):
+        with tempfile.TemporaryDirectory() as temp, \
+                mock.patch.object(native, 'verify') as verify:
+            with self.assertRaisesRegex(ValueError, 'shared vendor'):
+                native.prepare(Path(temp), Path(temp) / 'copy', retain_vendor_cache=True)
+            verify.assert_not_called()
+
     def test_ordinary_hashes_keep_the_callers_cache_policy(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

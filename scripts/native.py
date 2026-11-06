@@ -114,10 +114,13 @@ def verify(source, *, fixture_snapshot=None, release_vendor_cache=True):
     return members, snapshot
 
 
-def prepare(source, destination, *, share_vendor=False):
+def prepare(source, destination, *, share_vendor=False, retain_vendor_cache=False):
+    if retain_vendor_cache and not share_vendor:
+        raise ValueError('Retaining cache requires shared vendor.')
     # The two full setup checks bracket fixture creation. Shared vendor has no copy;
-    # keep its pages between those checks, then release them in the second check
-    # before PHP starts. Hash every byte both times, including intervening changes.
+    # keep pages between those checks. Bounded read-only callers may also keep
+    # them through PHP, until the runner's final full verification releases them.
+    # Hash every byte both times, including intervening changes.
     members, before = verify(source, release_vendor_cache=not share_vendor)
     destination.mkdir(mode=0o700)
     for name, payload in members.items():
@@ -146,6 +149,6 @@ def prepare(source, destination, *, share_vendor=False):
     (destination / ".domains-fixture.json").write_text(
         json.dumps({"commit": COMMIT, "composer_lock_sha256": LOCK_SHA256})
     )
-    if verify(source)[1] != before:
+    if verify(source, release_vendor_cache=not retain_vendor_cache)[1] != before:
         raise RuntimeError('Dependency changed while copying the fixture.')
     return before
