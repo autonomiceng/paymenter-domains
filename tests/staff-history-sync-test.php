@@ -28,4 +28,12 @@ DB::transaction(function()use($server,$now):void {
 $history=TldFacts::history($server->id,$t->id);
 expect(is_array($history)&&in_array('Keep this staff price edit',array_column($history,'reason'),true),'A staff price save stays in its TLD History after bulk sync archive rollover');
 Livewire\Livewire::actingAs($actor)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewTld::class,['record'=>$t->id])->assertSee('Keep this staff price edit');
+// Both clocks describe real instants; their offset spellings must not decide order.
+$entry=collect(Review::historyRows($server))->first(fn($row)=>$row['action']===Review::ACTIONS['override']);
+DB::transaction(function()use($server,$entry):void {
+    Review::append($server,[...$entry,'key'=>'offset-newer','at'=>'2026-11-05T03:00:00-07:00','reason'=>'Newer offset entry']);
+    Review::append($server,[...$entry,'key'=>'utc-older','at'=>'2026-11-05T09:00:00+00:00','reason'=>'Older UTC entry']);
+});
+$ordered=array_values(array_filter(TldFacts::history($server->id,$t->id),fn($row)=>in_array($row['reason'],['Newer offset entry','Older UTC entry'],true)));
+same(['Newer offset entry','Older UTC entry'],array_slice(array_column($ordered,'reason'),0,2),'History orders different offsets by their actual instants');
 $nativeSuccessful=true;echo "Staff edit survives syncs in History and Activity.\n";

@@ -119,7 +119,7 @@ final class StaffSettingsReview
     public static function historyRows(Server $s,bool $lock=false): array
     {
         $rows=[...self::historyWindow($s,self::KEY,'staff_settings',$lock),...self::historyWindow($s,self::SYNC_KEY,'catalogue_sync',$lock)];
-        usort($rows,static fn(array $a,array $b)=>strcmp($a['at'],$b['at']));
+        usort($rows,static fn(array $a,array $b)=>strtotime($a['at'])<=>strtotime($b['at']));
         return $rows;
     }
     private static function historyWindow(Server $s,string $key,string $family,bool $lock): array
