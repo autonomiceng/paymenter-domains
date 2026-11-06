@@ -15,10 +15,13 @@ DB::table('domains_domains')->where('id',$d->id)->update(['user_id'=>$owner->id]
 $planned=today()->addDays(120-21)->format('M j, Y');$due=today()->addDays(100);
 same($planned,DomainFacts::for($d->fresh())['Next invoice']['value'],'Without an issued invoice staff see the planned issue date');
 $invoice=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'pending','due_at'=>$due]));
-Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
+$renewal=Operation::create(['domain_id'=>$d->id,'service_id'=>$d->service_id,'server_id'=>$d->server_id,'registrar_key'=>$d->registrar_key,
     'account_fingerprint'=>$d->account_fingerprint,'authority_generation'=>$d->authority_generation,'operation_key'=>'staff-open-renewal',
     'invoice_id'=>$invoice->id,'action'=>'renew','term'=>1,'currency'=>'USD','amount'=>'10.99','state'=>'awaiting_payment',
     'base_expires_at'=>$d->provider_expires_at,'policy'=>['calendar'=>['due'=>$due->format('Y-m-d')]]]);
+// A later privacy bill must not replace the outstanding domain renewal facts.
+$privacy=Invoice::withoutEvents(fn()=>Invoice::create(['user_id'=>$d->user_id,'currency_code'=>'USD','status'=>'pending','due_at'=>$due->copy()->addDay()]));
+$privacyOp=$renewal->replicate();$privacyOp->fill(['operation_key'=>'staff-open-privacy','invoice_id'=>$privacy->id,'action'=>'privacy_renew']);$privacyOp->save();
 $line='Due '.$due->format('M j, Y');$facts=DomainFacts::for($d->fresh());
 same([$line,'Invoice #'.$invoice->id],[$facts['Next invoice']['value'],$facts['Open invoice']['value']],'An issued renewal invoice takes precedence over the future issue date');
 Livewire\Livewire::actingAs($actor)->test(ViewDomain::class,['record'=>$d->id])->assertSee($line)->assertDontSee($planned);

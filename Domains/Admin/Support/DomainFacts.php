@@ -141,8 +141,10 @@ final class DomainFacts
         $service=\App\Models\Service::find($d->service_id);
         $f['Service']=$service?self::fact($d->domain.' registration',sub:'Service #'.$service->id,
             url:self::url(fn()=>\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]))):self::fact(null,sub:'Service #'.$d->service_id.' not found. Check the Services page.');
-        $invoice=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)
-            ->where('o.service_id',$d->service_id)->where('i.status','pending')->orderByDesc('i.id')->first(['i.id','i.due_at','o.action']);
+        $invoices=DB::table('domains_operations as o')->join('invoices as i','i.id','=','o.invoice_id')->where('o.domain_id',$d->id)
+            ->where('o.service_id',$d->service_id)->where('i.status','pending')->orderByDesc('i.id');
+        $renewalInvoice=(clone $invoices)->where('o.action','renew')->first(['i.id','i.due_at']);
+        $invoice=$renewalInvoice??$invoices->first(['i.id','i.due_at']);
         if ($policy!==null&&!self::ended($d)) {
             try { $renewal=RenewalStop::read($d); } catch (\Throwable) { $renewal=null; }
             $cancel=$renewal&&$renewal['cancel']->contains('service_id',$d->service_id);
@@ -153,7 +155,7 @@ final class DomainFacts
             $f['Renewal price']=self::price($d,$service,$observation);
             $expired=$d->provider_expires_at&&$d->provider_expires_at->format('Y-m-d')<=gmdate('Y-m-d');
             // An issued renewal is due even when future automatic renewals have been stopped.
-            if ($invoice?->action==='renew') { $f['Next invoice']=self::fact($invoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($invoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
+            if ($renewalInvoice) { $f['Next invoice']=self::fact($renewalInvoice->due_at?'Due '.gmdate('M j, Y',strtotime(substr($renewalInvoice->due_at,0,10).' 00:00:00 UTC')):'Due'); }
             elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
         }
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
