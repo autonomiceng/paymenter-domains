@@ -11,11 +11,15 @@ use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{Environment, O
 /** Baseline management only. No default sender, purchases, profile updates or advanced tools. */
 class Management extends ManagementProtocol
 {
-    public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange)
+    public function observationCapabilities(): array
+    { return ['revision'=>'namesilo-records-1','families'=>['dns'=>'unsupported','srv'=>'unsupported','ds'=>'unsupported','glue'=>'supported']]; }
+    public function __construct(AccountBinding $binding, #[\SensitiveParameter] \Closure $exchange, private readonly array $dsFacts = [])
     {
         if ($binding->registrarKey !== 'namesilo') { throw new \InvalidArgumentException('Wrong management registrar.'); }
         parent::__construct($binding, $exchange);
     }
+    /** Deployment input is dormant until D supplies an explicit mutation policy and C1 wires it. */
+    public function dsRegistryFacts(\DateTimeImmutable $now): array { return DsFacts::read($this->dsFacts, $now); }
     public function capabilities(): Capabilities
     {
         return new Capabilities($this->binding, array_fill_keys(['nameservers','contacts','lock','privacy','auto_renew_off','auth_code_email','glue'], new Capability(Support::Supported))

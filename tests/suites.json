@@ -25,6 +25,8 @@
     "tests/namesilo-default-contact-test.php"
   ],
   "contracts": [
+    "tests/demo-c-record-readers-test.php",
+    "tests/demo-c-contracts-test.php",
     "tests/ote-reconciliation-test.php",
     "tests/ote-transport-cache-test.php",
     "tests/ote-normal-completion-test.php",
@@ -153,6 +155,7 @@
     "tests/transfer-ceiling-test.php",
     "tests/transfer-completion-test.php",
     "tests/transfer-completion-namesilo-test.php",
+    "tests/transfer-completion-namesilo-revoked-test.php",
     "tests/registrar-transfer-answer-test.php",
     "tests/registrar-purchase-answer-test.php",
     "tests/registrar-renewal-answer-test.php",
