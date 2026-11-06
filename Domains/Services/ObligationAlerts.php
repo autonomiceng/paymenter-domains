@@ -111,7 +111,7 @@ final class ObligationAlerts
         if(ManagementEvidence::recoverable($op)){return true;}
         $window=self::WAIT_DAYS*86400;
         if($op->action==='renew'){
-            return $op->state==='queued'&&in_array($op->safe_code,[RenewalCode::Rate->value,RenewalCode::Reads->value],true)
+            return $op->state==='queued'&&in_array($op->safe_code,[RenewalCode::Rate->value,RenewalCode::Repeat->value,RenewalCode::Reads->value],true)
                 &&$d->provider_expires_at?->getTimestamp()>$now+$window;
         }
         $review=$op->policy['reconciliation']??[];$read=$review['read_at']??TransferPolling::start($op);
