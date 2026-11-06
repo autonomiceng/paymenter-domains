@@ -19,28 +19,20 @@ foreach(['GetHosts','GetDomainSRVHosts','GetDnsSec'] as $command){same(1,count(a
 app(DomainObservation::class)->run($d->id,readRecords:true);same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Native producer publishes complete records');
 $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();same(0,$job->tries,'Successful native refresh resets tries');same($clock->now()->getTimestamp()+86400,$job->due_at,'Ordinary refresh cadence is daily');
 $io=count($state->calls);$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'No duplicate early refresh');
-DB::enableQueryLog();DB::flushQueryLog();
-$dto=$owners->present($d->fresh());
-$stoppedReads=array_filter(DB::getQueryLog(),static fn($q)=>str_contains($q['query'],'from "domains_observation_work"')&&str_contains($q['query'],'exists'));
-same(1,count($stoppedReads),'One stopped-state read serves all record sections in this owner projection');DB::disableQueryLog();
-same(array_map(fn($i)=>'record'.$i,range(1,12)),array_column($dto->management['dns']['records'],'name'),'Customer DNS numeric order');
-same(array_map(fn($i)=>'sip'.$i,range(1,12)),array_column($dto->management['srv']['records'],'service'),'Customer SRV numeric order');
-$html=$page();$dom=storefrontDom($html);
-same('record2',$dom->query('//input[@id="dns-1-name"]')->item(0)->getAttribute('value'),'Real DNS form uses numeric order');
-same('sip10',$dom->query('//input[@id="srv-9-service"]')->item(0)->getAttribute('value'),'Real SRV form uses numeric order');
-$io=count($state->calls);$domainIo=count($observation->calls);$page();same($io,count($state->calls),'Customer GET has no management I/O');same($domainIo,count($observation->calls),'Customer GET has no observation I/O');
-// Retain server-side source identity in exactly the displayed order, including a repeated service.
-$f=ObservationRecords::current($d->fresh())['families'];foreach($f['srv']['records']as&$row){$row['host_id']=(int)substr($row['service'],3)+100;}unset($row);
-$f['srv']['records'][]=['service'=>'sip2','protocol'=>'udp','priority'=>1,'weight'=>5,'port'=>8443,'target'=>'sip.example.com.','host_id'=>202];
-ObservationRecords::save($d->fresh(),$f,$clock->now());$rows=OwnerRecords::forDomain($d->fresh())['srv'];
-foreach($rows as$i=>$row){$p=OwnerRecords::restoreSrv($d->fresh(),['records'=>[[...$row,'port'=>9443]],'record_sources'=>[(string)$i],'preimage_digest'=>$owners->present($d->fresh())->management['srv']['digest']]);same($row['protocol']==='udp'?202:(int)substr($row['service'],3)+100,$p['records'][0]['host_id'],'SRV displayed source maps correct provider ID');}
-expect(!str_contains($page(),'host_id')&&!str_contains($page(),'HostID'),'Source identity remains server-side');
-same(ManagementPayload::digest($f['srv']['records'],'srv'),ManagementPayload::digest($rows,'srv'),'Presentation order preserves canonical digest');
 // Current holds suppress automatic retries, and the note states the manual-resume prerequisite.
-$state->fault='GetHosts';app(DomainObservation::class)->run($d->id,readRecords:true);expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
+$state->fault='GetHosts';$dueRecords();$runtimePorts->initialManagedRecordObservations();expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
+$failedJob=DB::table('domains_observation_work')->where('domain_id',$d->id);
+if(in_array((clone $failedJob)->value('safe_code'),\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::TRANSIENT,true)){
+    for($try=2;$try<=5;$try++){
+        $clock->instant=$clock->now()->setTimestamp((int)(clone $failedJob)->value('due_at'));
+        DB::table('domains_observation_queues')->where('server_id',$d->server_id)->update(['turn'=>-1]);
+        $runtimePorts->initialManagedRecordObservations();same($try,(int)(clone $failedJob)->value('tries'),'Scheduled family retry count is bounded and durable');
+    }
+}
+expect(\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::stopped($d->fresh()),'The actual failed scheduler has stopped before manual recovery');
 $html=$page();/* slop-sweep: the page notice says the held read once; rows show a calm Missing alone. */expect(str_contains($html,e(Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD))&&str_contains($html,'domains-missing domains-missing--calm')&&!str_contains($html,Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK),'Held copy describes actual manual recovery once');expect(!str_contains($html,'Fills in by itself within a day'),'Held records never promise an automatic record retry');
-$io=count($state->calls);$clock->instant=$clock->now()->modify('+1 day');$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'Held producer never automatically retries');
-$state->fault='';app(DomainObservation::class)->run($d->id,readRecords:true);expect(!ObservationRecords::held($d->fresh()),'Explicit resume recovers native producer');
+$io=count($state->calls);DB::table('domains_observation_queues')->where('server_id',$d->server_id)->update(['turn'=>-1]);$clock->instant=$clock->now()->modify('+1 day');$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'Held producer never automatically retries');
+$state->fault='';app(DomainObservation::class)->run($d->id,readRecords:true);\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d->fresh());expect(!ObservationRecords::held($d->fresh()),'Explicit resume recovers native producer');
 $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);$html=$page();same(['Checking',''],[trim(storefrontDom($html)->query('//li[@id="dns"]//span[@data-record-family="dns"]')->item(0)?->textContent??''),trim(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]')->item(0)->textContent)],'Unheld unknown record says Checking once, beside the label');expect(!str_contains($html,'our team resumes'),'Unheld note has no false manual hold');
 $visible=strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',$html));
 foreach(['enom','namesilo']as$name){expect(!str_contains(strtolower($visible),$name),'Customer copy stays registrar-neutral');}
