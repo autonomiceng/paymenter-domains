@@ -79,8 +79,18 @@ same(true, $store->endings()[0]['testEnvironment'], 'D7 public catalogue carries
 same('$7.80', $store->endings()[0]['register'], 'Selected Enom retail, not cost or other account');
 Illuminate\Support\Facades\DB::enableQueryLog(); Illuminate\Support\Facades\DB::flushQueryLog();
 $store->endings();
-// Every entry resolves the current cutover gate; cached display rows need no other reads.
-foreach(Illuminate\Support\Facades\DB::getQueryLog() as $query){expect(!preg_match('/\b(domains_tlds|domains_prices|products|plans|prices)\b/i',$query['query']),'Warm account fence avoids per-offer and native catalogue reads');}
+// One current gate read plus four account-fence reads; no per-offer or native catalogue reads on a warm hit.
+$selectedServer=(int)$tlds[0]->server_id;
+$warmQueries=array_map(static fn($q)=>array_intersect_key($q,array_flip(['query','bindings'])),DB::getQueryLog());
+same([
+    ['query'=>'select distinct "server_id" from "domains_sales_policies"','bindings'=>[]],
+    ['query'=>'select * from "domains_accounts" where "server_id" in (?) order by "id" asc','bindings'=>[$selectedServer]],
+    ['query'=>'select * from "extensions" where "id" in (?) order by "id" asc','bindings'=>[$selectedServer]],
+    ['query'=>'select * from "settings" where "settingable_type" = ? and "settingable_id" in (?) order by "id" asc',
+        'bindings'=>[(new App\Models\Server)->getMorphClass(),$selectedServer]],
+    ['query'=>'select * from "settings" where "settingable_type" is null and "settingable_id" is null and "key" = ?',
+        'bindings'=>['domains_offer_upgrade']],
+],$warmQueries,'Warm public projection reads exactly the current gate and selected-account fence: '.json_encode($warmQueries,JSON_THROW_ON_ERROR));
 Illuminate\Support\Facades\DB::disableQueryLog();
 $displayRows = $store->endings(); Illuminate\Support\Facades\Cache::flush();
 $slowRows = (new Paymenter\Extensions\Servers\Domains\Services\StorefrontCatalogueCache($clock))->remember(function () use ($clock, $now, $displayRows) {
