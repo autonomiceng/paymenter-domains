@@ -111,12 +111,6 @@ final class WatchFacts
         $lines=[];foreach(['Website'=>$s->website,'Email'=>$s->email] as $label=>$v){if($v!==null){$lines[]=$label.' '.($v?'points to '.WatchFindings::company():'points elsewhere');}}
         return self::fact($lines,tone:in_array(false,[$s->website,$s->email],true)?'warning':null);
     }
-    /** The one notice line for Problem found, e.g. "Nameservers changed: ns1.other.test, ns2.other.test." */
-    public static function notice(WatchName $w,array $status,array $facts): ?string
-    {
-        if($status['label']!=='Problem found'){return null;}$ns=$facts['Checks']['Nameservers']['value']??null;
-        return $status['reason'].($status['reason']==='Nameservers changed' && is_string($ns)?': '.$ns:'').'.';
-    }
     /** Staff changes, newest first; null when the saved notes can't be decrypted. */
     public static function history(WatchName $w): ?array
     {
