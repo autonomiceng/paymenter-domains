@@ -5,6 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
+require __DIR__.'/Support/renewal-initialized.php';
 use App\Models\{Invoice, Order};
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Edit, Intent, Query};
@@ -15,7 +16,7 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers;
 expect(is_file(dirname(__DIR__).'/Domains/Services/AcquisitionOffers.php'), 'Public and native checkout need a shared offer batch adapter');
-extract(commerceFixture(true, registrars: ['enom']));
+extract(commerceFixture(true, registrars: ['enom'], initialize: static fn () => initializedRenewalFixture()));
 $binding = Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(
     Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[0]->server_id)->sole());
 $eligibility = activeFixtureEligibility($bindings, $clock);
