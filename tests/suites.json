@@ -73,6 +73,7 @@
     "tests/what-you-sell-render-test.php",
     "tests/transfer-entry-test.php",
     "tests/enom-curl-test.php",
+    "tests/enom-nameserver-domains-test.php",
     "tests/enom-exchange-test.php",
     "tests/native-fixture-test.php",
     "tests/paymenter-upgrade-tripwire-test.php",
