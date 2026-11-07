@@ -111,6 +111,8 @@ def shared_vendor(jobs, requested):
                 'tests/sales-audit-changes-test.php',
                 # Checkout uses isolated app/SQLite state and only reads the guarded vendor tree.
                 'tests/registration-retail-test.php',
+                # All-term commerce only reads vendor; copying it exceeded the file wall cap.
+                'tests/offer-bulk-commerce-test.php',
                 # These price witnesses isolate app/DB state and only read verified vendor.
                 # The writer witness's copied vendor reached the 512 MiB scope cap.
                 'tests/offer-writer-test.php',
