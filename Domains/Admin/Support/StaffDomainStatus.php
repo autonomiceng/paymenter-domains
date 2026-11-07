@@ -75,7 +75,7 @@ final class StaffDomainStatus
             try { $ready=RequestFacts::readyMessage($op); }
             catch (\Throwable) { return [DomainFacts::UNREADABLE.self::check($op->id),true,$op->id]; }
             if ($ready!==null) {
-                if ($op->state==='queued'&&OperationQueries::ordersOff($op)) { $ready.=' Turn Orders on in Registrars.'; }
+                if ($op->state==='queued'&&OperationQueries::ordersOff($op)) { $ready.=RequestFacts::ordersStep($ready); }
                 return [$ready.self::check($op->id),true,$op->id];
             }
             if (in_array($op->state, ['held', 'uncertain'], true)) { return [self::stopped($op), true, $op->id]; }

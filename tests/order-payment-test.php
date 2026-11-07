@@ -84,6 +84,8 @@ same('This order isn’t paid yet. Pay the invoice to start the registration.',$
 same(['label'=>'Pay invoice','url'=>'/invoices/11','button'=>true],$notice['action'],'Unpaid notice carries the Pay button');
 same(['Paid. Finish setup to start the registration.',null],[($e=DomainListRow::orderExpires(['state'=>'paid','kind'=>'registration','next'=>'setup_required'],'/tickets/create'))['cause'],$e['fix']],'Expires names the owner\'s step');
 same('Paid. Add the auth code to start the transfer.',DomainListRow::orderExpires(['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code'],'/tickets/create')['cause'],'Expires asks for the code');
+// slop-sweep: a complimentary order says so, as its page notice does.
+same(['Complimentary. Finish setup to start the registration.','Complimentary. Add the auth code to start the transfer.'],[DomainListRow::orderExpires(['state'=>'paid','kind'=>'registration','next'=>'setup_required','complimentary'=>true],null)['cause'],DomainListRow::orderExpires(['state'=>'paid','kind'=>'transfer','next'=>'awaiting_code','complimentary'=>true],null)['cause']],'Complimentary Expires names no payment');
 same(null,DomainPage::notice($owned(['state'=>'paid','kind'=>'registration','next'=>'setup_required']),'/tickets/create'),'Never says nothing to do while a step is left');
 $notice=DomainPage::notice($owned($paid),'/tickets/create');
 same('Paid. We’re finishing the registration. There’s nothing you need to do.',$notice['text'],'Paid notice says it plainly');

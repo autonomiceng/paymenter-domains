@@ -32,7 +32,7 @@ if($free){ // Stopped reads never restart by themselves, so an unknown row names
     Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
     $stoppedRead=Illuminate\Support\Facades\DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable']);
     same([],$owners->present($d->fresh())->management['dns']['actions'],'This registrar has no record changes');
-    same('Missing Our team needs to check this domain. No action needed.',$lockRow(),'A stopped read names the step, not a time');
+    same('Missing',$lockRow(),'A stopped read promises no time; the page notice says it once'); // slop-sweep
     Illuminate\Support\Facades\DB::table('domains_observation_work')->where('id',$stoppedRead)->delete();
 }
 if($free){expect(!str_contains($html,'privacy_purchase'),'Free privacy offers no paid action');commerceReject(fn()=>$driver->validate('nameservers',['use_default'=>true,'nameservers'=>[]],$d->domain));}

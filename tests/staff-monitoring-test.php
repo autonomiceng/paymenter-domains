@@ -64,7 +64,10 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','mo
 $view=Livewire::actingAs($manager)->test(ViewWatch::class,['record'=>$id]);$page=$view->instance();$clean($view->html(),'monitored domain');
 expect(str_contains($page->getHeading()->toHtml(),'font-mono') && str_contains($page->getSubheading()->toHtml(),'Problem found'),'Mono name, then the status line');
 assertDomainNameWraps($page->getHeading()->toHtml(),$watch->canonical_name,'Monitored domain title','title');
-expect(str_contains($page->getSubheading()->toHtml(),'Expires in '.$days.' days'),'Reason under the heading');
+expect(str_contains($page->getSubheading()->toHtml(),'Nameservers changed'),'Observed mismatch leads the heading');
+// r16: the head says the problem and Latest checks lists the found nameservers; no notice repeats either.
+$seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',$view->html())),ENT_QUOTES|ENT_HTML5));
+same([1,0],[substr_count($seen,'Nameservers changed'),substr_count($seen,'Nameservers changed:')],'Nameservers changed shows once, with no notice repeating the found nameservers');
 same([WatchResource::getUrl()=>'Domain monitoring','example.com'],$page->getBreadcrumbs(),'Breadcrumb');
 foreach(['read'=>'Check now','pause'=>'Pause monitoring','profile'=>'Change DNS template','note'=>'Add note','retire'=>'Stop monitoring'] as $name=>$label){same($label,$page->getAction($name)?->getLabel(),'Action '.$name);}
 $view->assertActionHidden('resume');

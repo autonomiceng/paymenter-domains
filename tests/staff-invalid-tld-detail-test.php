@@ -17,6 +17,10 @@ try {
     Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])
         ->assertSee('.invalid')->assertSee('Prices by registrar account')->assertSee('Fixed price')->assertSee('Missing');
 } catch (Throwable $error) { throw new RuntimeException('Invalid saved fixed prices must render their TLD detail, not HTTP 500.',0,$error); }
+// r16: with no registrar for new orders either, the head says the invalid price rule and the Missing row says only what to do.
+DB::table('domains_sales_policies')->where('tld','invalid')->update(['server_id'=>null]);
+$seen=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(preg_replace('~<(script|style)\b.*?</\1>~si','',Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->html())),ENT_QUOTES|ENT_HTML5));
+same([1,1],[substr_count($seen,'Invalid fixed price rule'),substr_count($seen,'Registrar for new orders Missing Use More → Change registrar.')],'The invalid price cause shows once; the seller row says what to do');
 // Disabled feed entries and malformed rules coexist in saved native accounts.
 DB::table('domains_tlds')->where('id',$t->id)->update(['tld'=>'com']);
 foreach(DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld','com')->get() as $price){
@@ -38,4 +42,5 @@ foreach(['register','renew','transfer'] as $action){
     same(false,$state['missing'],'Ordinary disabled '.$action.' is not missing');same(null,$state['cause'],'Ordinary disabled '.$action.' has no repair warning');
     expect(str_contains($state['value'],'not offered by this registrar'),'Ordinary disabled '.$action.' keeps its label');
 }
+
 $nativeSuccessful=true;echo "Invalid saved pricing detail renders a repairable page.\n";

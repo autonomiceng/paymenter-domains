@@ -83,7 +83,7 @@ DB::table('domains_runtime_turns')->where('server_id',$enom->server_id)->delete(
 config(['settings.credits_enabled'=>false]);
 $credits=collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits');
 expect($credits!==null&&str_contains((string)$credits['cause'],'Turn on Credits in Settings.'),'Hidden Credits page warns with the setting to change');
-expect(str_contains((string)$credits['cause'],'Customer credits are off.') && str_contains((string)$credits['cause'],'account balance') && !str_contains((string)$credits['cause'],'Refunds stay'), 'Credits off explains the setting and refund destination without implying a refund failed');
+expect(str_contains((string)$credits['cause'],'Credit refunds still reach the customer’s balance') && !str_contains((string)$credits['cause'],'Refunds stay'), 'Credits off explains the setting and refund destination without implying a refund failed');
 config(['settings.credits_enabled'=>true]);
 same(null,collect(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system()['failing'])->firstWhere('label','Customer credits'),'Warning clears when customers can use Credits');
 
