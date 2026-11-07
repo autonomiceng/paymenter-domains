@@ -14,6 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{L
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,ComplimentaryCosts,OwnedDomains,OwnerPorts};
 require dirname(__DIR__).'/Domains/routes/owned.php';
+App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>'Example Hosting (test)']);
 config(['settings.company_name'=>'Example Hosting (test)']);
 staffPanel();app()->instance(Clock::class,$clock);ComplimentaryAccountSetting::boot();
 $staff=staffUser([Staff::VIEW,Staff::COSTS,'admin.domains.manage','admin.domains.fund','admin.users.viewAny','admin.users.view','admin.users.update']);
@@ -57,6 +58,7 @@ $show=Livewire::actingAs($user)->test(App\Livewire\Invoices\Show::class,['invoic
 $show->assertSee('Complimentary')->assertSee('$-8.00')->assertSee('$0.00')->assertSee('Paid');$invoiceHtml=$show->html();
 $beforePayments=App\Models\InvoiceTransaction::count();$show->set('selectedMethod','credit')->call('processPayment');same($beforePayments,App\Models\InvoiceTransaction::count(),'A paid zero receipt cannot start native payment');
 $pdfHtml=view('pdf.invoice',['invoice'=>$invoice->fresh()])->render();expect(str_contains($pdfHtml,'$-8.00')&&str_contains($pdfHtml,'$0.00')&&str_contains($pdfHtml,'Complimentary'),'Paymenter PDF view preserves the negative line and zero total');
+App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>'']);
 config(['settings.company_name'=>'','app.name'=>'']);Auth::login($staff);
 $domainPage->call('pollManagement')->assertSee('We cover registrar costs.')->mountAction('complimentary_renewal')->assertSee('We cover the $8.00 registrar renewal cost.')->unmountAction();
 expect(str_contains(ComplimentaryAccountSetting::render($user),'We pay for this customer'), 'Unnamed sites use neutral account funding copy');
