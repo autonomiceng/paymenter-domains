@@ -210,12 +210,14 @@ final class AcquisitionOffers
         foreach ($this->eligibleRows($endings) as $offer) {
             extract($offer);
             if (($mismatch = self::nativePriceMismatch($product, $plan, $price->retail)) !== null) {
-                $day = app(Clock::class)->now()->format('Y-m-d');
-                if (Cache::add('domains.price-mismatch.'.$name.'.'.$price->term.'.'.$day, true, 86400)) {
-                    logger()->warning('Domain acquisition price mismatch; term hidden.',
-                        ['tld' => $name, 'action' => $price->action, 'term' => $price->term,
-                            'catalogue' => $price->retail, 'plan' => $mismatch]);
-                }
+                try {
+                    $day = app(Clock::class)->now()->format('Y-m-d');
+                    if (Cache::add('domains.price-mismatch.'.$name.'.'.$price->term.'.'.$day, true, 86400)) {
+                        logger()->warning('Domain acquisition price mismatch; term hidden.',
+                            ['tld' => $name, 'action' => $price->action, 'term' => $price->term,
+                                'catalogue' => $price->retail, 'plan' => $mismatch]);
+                    }
+                } catch (\Throwable) { /* Diagnostics must not withdraw healthy sibling terms. */ }
                 continue;
             }
             $revision = $row->decision->revision;
