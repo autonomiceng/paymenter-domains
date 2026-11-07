@@ -29,6 +29,7 @@ class ViewTld extends ViewRecord
     /** Page names for the shared settings actions. Default pricing is edited in What you sell, and saving prices publishes them. */
     private const LABELS=['seller'=>'Change registrar','override'=>'Edit prices'];
     public const CHOOSE_SELLER='Use More → Change registrar.';
+    public const CHOOSE_SELLER_HEAD='Use Choose registrar above.';
     public function mount(int|string $record): void
     {parent::mount($record);$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$this->getRecord()->server_id,(int)$this->getRecord()->id);}
     protected function afterActionCalled(Action $action): void
@@ -52,10 +53,10 @@ class ViewTld extends ViewRecord
     /** The head: the sales state once, and the one action that makes the TLD sellable as the primary button. */
     protected function getHeaderActions(): array
     {
-        $actions=$this->settings();$start=$this->canStart();$fix=$start?null:$this->fix();
+        $actions=$this->settings();$fix=$this->headFix();
         $seller=$fix==='seller'?$actions['seller']->label($this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar')->color('primary'):null;
         // Every sales action is always registered; visibility picks the one that shows.
-        return array_values(array_filter([$this->startSellingAction(),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
+        return array_values(array_filter([$this->startSellingAction()->color($fix===null?'primary':'gray'),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
             ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))->label('More')->button()->color('gray')]));
     }
     /** @return array{label:string,tone:string,reason:?string,invalid:bool} */
@@ -65,6 +66,8 @@ class ViewTld extends ViewRecord
         return $this->sales;
     }
     private ?array $sales=null;
+    /** The fix that holds the primary spot: none while Start selling lifts a staff stop. */
+    private function headFix(): ?string {return $this->staffStop()?null:$this->fix();}
     /** Which head button fixes the reason a TLD is not for sale, when it is on this page. */
     private function fix(): ?string
     {
@@ -78,7 +81,7 @@ class ViewTld extends ViewRecord
     {
         $t=$this->getRecord();$s=$this->sales();$reason=$s['reason'];$step=null;
         if($s['label']==='For sale'){return StatusMark::line('success','For sale','tld-'.$t->id);}
-        if($this->canStart()){
+        if($this->staffStop()){
             $reason=$reason==='Stopped by staff'&&$this->offByDefault()?'Not sold by default':'Stopped by staff';
             return StatusMark::line('gray','Not for sale','tld-'.$t->id,$reason);
         }
@@ -100,6 +103,19 @@ class ViewTld extends ViewRecord
         catch(\Throwable){return false;}
         return ($raw['sell']??null)===null&&!($d['defaultSell']??true)&&($raw['stops']??[])===[];
     }
+    /** Not for sale because of a stop Start selling lifts: staff stopped it, or stopped its renewals. */
+    private function staffStop(): bool
+    {return in_array($this->sales()['reason'],['Stopped by staff','Check TLD settings'],true)&&$this->canStart();}
+    /** Transfers count only when this TLD sells them: its own choice, or the account's when it has none.
+     * A stop saves transfers as off too, so a stopped TLD follows the account. */
+    private function sellsTransfers(Tld $t): bool
+    {
+        try{$raw=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);
+            $d=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);}
+        catch(\Throwable){return false;}
+        $own=$raw['transfers']??null;
+        return (bool)($own===null||($own===false&&in_array('transfer',$raw['stops']??[],true))?($d['defaultTransfers']??false):$own);
+    }
     private function mayChangeSales(): bool
     {return Staff::can(Staff::POLICY)&&Staff::can(Review::permission('tld_settings'));}
     /** A stop that Start selling can lift, read once per request. */
@@ -118,16 +134,17 @@ class ViewTld extends ViewRecord
         $catalogue=StaffCatalogue::routed();
         $on=static fn(string $key):bool=>(bool)($catalogue?->setting($t,$key)??$t->{$key==='enabled'?'enabled':$key.'_enabled'});
         if(!$on('enabled')||!$on('renew')){return true;}
-        if($on('register')&&$on('transfer')){return false;}
+        $transfers=$this->sellsTransfers($t);
+        if($on('register')&&($on('transfer')||!$transfers)){return false;}
         // Only now read what the registrar terms allow: the heavier read.
         try{$accepted=$this->acceptedSales();}catch(\Throwable){return false;}
-        return (!$on('register')&&$accepted['register'])||(!$on('transfer')&&$accepted['transfer']);
+        return (!$on('register')&&$accepted['register'])||($transfers&&!$on('transfer')&&$accepted['transfer']);
     }
     private ?array $canStart=null;
-    /** @return array{register:bool,transfer:bool} what the saved registrar terms allow this account to sell */
+    /** @return array{register:bool,transfer:bool} what the saved registrar terms allow, and transfers only if this TLD sells them */
     private function acceptedSales(): array
     {
-        if(($catalogue=StaffCatalogue::routed())!==null){return $catalogue->restorable($this->getRecord());}
+        if(($catalogue=StaffCatalogue::routed())!==null){$t=$this->getRecord();$a=$catalogue->restorable($t);return ['register'=>$a['register'],'transfer'=>$a['transfer']&&$this->sellsTransfers($t)];}
         throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
     }
     /** Starts new registrations and transfers. A deliberate stop is never undone by price or term changes.
@@ -137,7 +154,7 @@ class ViewTld extends ViewRecord
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
         return Action::make('start_selling')->label('Start selling')->color('primary')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
-            ->modalDescription(fn()=>$this->salePrices()?'New registrations and transfers open at once, at these prices.':'New registrations and transfers open at once.')
+            ->modalDescription(fn()=>'New '.($this->opensTransfers()?'registrations and transfers':'registrations').' open at once'.($this->salePrices()?', at these prices.':'.'))
             ->modalContent(fn()=>$this->salePricesList())
             ->visible(fn():bool=>$this->canStart())
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)auth()->id(),$server,$id,'tld_settings',$this->reviewStamp))])
@@ -152,14 +169,15 @@ class ViewTld extends ViewRecord
                 }catch(\Throwable $error){Notification::make()->danger()->title('Change refused')->body(SettingsActions::refusal($error,'tld_settings',$input,$server,$id))->send();}
             });
     }
-    /** The confirm names the prices that go on sale. */
     /** Retail prices that go live, one year each. */
     private function salePrices(): array
     {
         $prices=collect(TldFacts::snapshot($this->getRecord())['prices']??[]);
         $price=static fn(string $action)=>$prices->first(fn($p)=>$p['action']===$action&&$p['term']===1)['retail']??null;
-        return array_filter(['Register'=>($r=$price('register'))?$r.' a year':null,'Transfer'=>$price('transfer'),'Renew'=>($r=$price('renew'))?$r.' a year':null]);
+        return array_filter(['Register'=>($r=$price('register'))?$r.' a year':null,'Transfer'=>$this->opensTransfers()?$price('transfer'):null,'Renew'=>($r=$price('renew'))?$r.' a year':null]);
     }
+    private function opensTransfers(): bool
+    {try{return $this->acceptedSales()['transfer'];}catch(\Throwable){return false;}}
     private function salePricesList(): ?HtmlString
     {
         $rows=$this->salePrices();
@@ -227,7 +245,7 @@ class ViewTld extends ViewRecord
         $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
         $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
         // The head says why the TLD is not for sale; a missing registrar row says only what to do.
-        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':self::CHOOSE_SELLER,color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
+        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':($this->headFix()==='seller'?self::CHOOSE_SELLER_HEAD:self::CHOOSE_SELLER),color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
             self::entry('Terms',$snapshot['unreadable']?null:TldFacts::terms($t),$snapshot['unreadable']?'Saved TLD terms unreadable. Use Edit prices to repair them.':null)];
         $refresh=$snapshot['refresh']??[];
         // One row: when prices last updated, and when they update next. Sync prices sits beside it.
