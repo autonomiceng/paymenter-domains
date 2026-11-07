@@ -41,7 +41,7 @@ final class DomainHistory
             $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
                 'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
         }
-        $sync=$domain->observation['sync_history']??[];
+        try { $sync=$domain->observation['sync_history']??[]; } catch (\Throwable) { $sync=[]; }
         $events=['Sync requested','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped'];
         foreach (is_array($sync)?array_slice($sync,-20):[] as $i=>$entry) {
             if (!is_array($entry)||!in_array($entry['event']??null,$events,true)) { continue; }

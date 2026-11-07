@@ -336,7 +336,7 @@ final class DomainFacts
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
         if (!self::ended($d)&&$read['read_code']==='domain_not_in_account') {
             return ['title'=>'Domain is not in the registrar account.','tone'=>'warning',
-                'body'=>'Check the assigned registrar account. Correct the account or complete the domain transfer there, then use Sync now.',
+                'body'=>'Check the assigned registrar account. Complete registration or transfer into that account. '.(self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.'),
                 'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
         }
         if (!self::ended($d)&&$read['read_review']) {
