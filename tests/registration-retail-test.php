@@ -82,8 +82,8 @@ $wire = new class implements \Paymenter\Extensions\Servers\Domains\Registrars\En
 $registry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
 $registry->register('enom', ['token'], new class implements \Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
     public function verify($environment, array $credentials): string { return $credentials['token']; }
-}, fn ($b) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
-    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, 'synthetic', 'synthetic', $wire), ['net']));
+}, fn ($b, $credentials) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
+    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, $credentials['token'], 'synthetic', $wire), ['net']));
 $quoted = new AcquisitionOffers($ports, new AccountBindings($registry), $native);
 $admission->fixtureOffers = $eligibility->fixtureOffers = $quoted;
 $expire = static function (array $keys) use ($clock, $binding): void {
@@ -107,7 +107,7 @@ $page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
 $refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.net'))->sole();
 same([2, '32.98', '18.0000', '32.98'], [(int) $refreshed->term, $refreshed->amount, $refreshed->cost['estimated'],
     InvoiceItem::findOrFail($refreshed->invoice_item_id)->price], 'Refreshed cart/invoice agree while selected wholesale and term stay separate');
-// Dependency revision drift must invalidate the saved longer-term quote.
+// Dependency observation drift must invalidate the saved longer-term quote.
 $selection = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$refreshed->policy['checkout']['catalogue']);
 $annual = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')->where('action', 'register')->where('term', 1)->sole();
 $changed = OfferState::decode($annual->catalogue_observation); $changed['total'] = '25.9900';
