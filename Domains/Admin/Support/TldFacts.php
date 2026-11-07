@@ -14,6 +14,7 @@ final class TldFacts
     public const AUDIT = \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::KEY;
     /** A sync read this term and the registrar has no cost for it, so it does not sell it. Nothing to do. */
     public const NOT_OFFERED='Not offered';
+    public const NO_SELLER='No registrar selected';
     /** Why a TLD is not for sale when no term has current prices. */
     public const NEEDS_SYNC='Registrar cost missing';
     public static function bound($query)
@@ -105,7 +106,7 @@ final class TldFacts
         $cause=match(true){
             $invalid=>self::ruleProblem($fact),
             $notOffered=>$name.' not offered by this registrar',
-            !$selected&&($fact['seller']??null)===null=>'No registrar selected',
+            !$selected&&($fact['seller']??null)===null=>self::NO_SELLER,
             !collect($fact['prices'])->contains(fn($p)=>$p['synced'])=>self::feedGap($fact),
             $value!==null=>self::costNote($row),
             default=>$name.($field==='cost'?' cost':' price').' missing. '.($field==='cost'?'The registrar feed must supply this exact term.':'Edit prices must supply a valid price.'),
@@ -156,7 +157,7 @@ final class TldFacts
             if($grants->costs){$cells.=self::cell($price('renew','cost'));}
             $cells.=self::cell(e((string)$fact['holders']));
             // Said in the page head: no registrar selected, or this TLD's own reason.
-            $causes=array_values(array_filter(array_unique($causes),fn(string $c)=>$c!=='No registrar selected'&&!($own&&$c===$said)));
+            $causes=array_values(array_filter(array_unique($causes),fn(string $c)=>$c!==self::NO_SELLER&&!($own&&$c===$said)));
             $note=implode(' ',array_map(fn(string $c)=>rtrim($c,'.').'.',$causes));
             // Another account's refresh is not on this page yet. The page's own account shows it in Price sync.
             if($gap&&!$own&&!($fact['invalid_rule']??false)){$note=trim($note.' '.self::refreshText($fact['refresh']??[]));}
@@ -173,7 +174,7 @@ final class TldFacts
     /** Saving What you sell records how orders are sent. Older saves catch up with one save, only where orders are offered. */
 
     /** The one fix for each reason a TLD with a saved price is not for sale. */
-    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.','No registrar selected'=>'Open the TLD and use Change registrar.'];
+    public const FIXES=['Cost out of date'=>'See the next refresh on this TLD.','Cost missing'=>'The registrar price feed must supply the exact cost.','Prices not published'=>'Open Edit prices and save.','Below cost'=>'Raise the price in Edit prices.','Price missing'=>'Open Edit prices and save.','Prices need checking'=>'Check the registrar account and the last refresh failure.',self::NO_SELLER=>'Open the TLD and use Change registrar.'];
     /** For sale or Not for sale, with the reason it is not for sale. */
     public static function salesState(Tld $t, ?StaffGrants $grants = null): array
     {return self::snapshot($t,$grants)['sales'];}
