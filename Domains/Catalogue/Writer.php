@@ -345,10 +345,10 @@ final class Writer implements Catalogue
     private function mutate(Command $command, Tld $target, $prices, \DateTimeImmutable $now): bool
     {
         if ($command instanceof Edit) {
-            if ($command->kind === 'override') {
+            if ($command->kind === 'override' || $command->kind === 'seller' && $command->intent !== null) {
                 $old = OfferState::decode($target->catalogue_intent);
                 foreach (['sell', 'longest', 'transfers', 'stops'] as $key) { $old[$key] = $command->intent->{$key}; }
-                $target->catalogue_intent = OfferState::json([...$old, 'pricing_rule' => $command->rule]);
+                $target->catalogue_intent = OfferState::json($command->kind === 'override' ? [...$old, 'pricing_rule' => $command->rule] : $old);
             }
             if ($command->kind === 'retail') { $target->catalogue_retained_annual_retail = $command->retail; }
             return true;
