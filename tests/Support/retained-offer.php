@@ -28,18 +28,37 @@ function retainedOfferDatabase(): array
     return $saved;
 }
 
-/** Rows that neither catalogue upgrades nor schema cleanup may alter. */
-function retainedOfferObligations(): string
+/** Rows that neither catalogue upgrades nor schema cleanup may alter. A retail upgrade republishes native plan
+ * amounts, so its callers pass $nativeAmounts=false and check them with retainedNativeRetailMismatches(). */
+function retainedOfferObligations(bool $nativeAmounts=true): string
 {
     $rows=[];
     foreach(['domains_domains','domains_operations','services','orders','invoices','invoice_items','invoice_transactions',
         'credits','products','plans','prices','users','roles'] as $table){
         $rows[$table]=DB::table($table)->orderBy('id')->get()->map(static fn($row)=>(array)$row)->all();
     }
+    if(!$nativeAmounts){$rows['prices']=array_map(static function(array $row):array{unset($row['price']);return $row;},$rows['prices']);}
     $rows['accounts']=DB::table('domains_accounts')->orderBy('id')->get(['id','server_id','registrar_key','account_fingerprint','stable_identity'])->all();
     $rows['offers']=DB::table('domains_tlds')->orderBy('id')->get(['id','server_id','account_fingerprint','tld','catalogue_intent','catalogue_retained_annual_retail'])->all();
     $rows['sellers']=DB::table('domains_sales_policies')->orderBy('id')->get()->all();
     return serialize($rows);
+}
+
+/** Native plan prices that differ from the published Domains retail of their TLD, action and term. */
+function retainedNativeRetailMismatches(): array
+{
+    $setting=static fn(int $product,string $key)=>DB::table('settings')->where('settingable_type',App\Models\Product::class)
+        ->where('settingable_id',$product)->where('key',$key)->value('value');
+    $wrong=[];
+    foreach(DB::table('prices')->join('plans','plans.id','=','prices.plan_id')->orderBy('prices.id')
+        ->get(['prices.id','prices.price','plans.priceable_id','plans.billing_period','plans.billing_unit']) as $row){
+        same('year',$row->billing_unit,'Domain plans bill in years');
+        $tld=DB::table('domains_tlds')->find((int)$setting((int)$row->priceable_id,'domains_tld_id'));
+        $retail=DB::table('domains_prices')->where('server_id',$tld->server_id)->where('tld',$tld->tld)
+            ->where('action',$setting((int)$row->priceable_id,'domains_action'))->where('term',$row->billing_period)->value('retail');
+        if($retail===null||round((float)$retail,2)!==round((float)$row->price,2)){$wrong[$row->id]=[$row->price,$retail];}
+    }
+    return $wrong;
 }
 
 /** Test-only exact database snapshot, independent of retired upgrade comparison policy. */
