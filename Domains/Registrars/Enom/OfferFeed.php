@@ -10,23 +10,17 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 /** Five account reads. Bucket membership is evidence, never interpolation from an annual price. */
 final class OfferFeed implements PricedFeed
 {
-    public const BUCKETS = [1, 2, 5, 10];
-    /** Enom API Command Catalogue pp. 474–476 (PE_GetRetailPricing), p. 464 (PE_GetProductPrice):
-     * Years is the bracket start, not an individual term; Years=2 explicitly covers 2–4.
-     * https://cp.enom.com/download/APICommandCatalogEnom.pdf#page=474 */
-    private const DOCUMENTED_TERMS = [1 => [1], 2 => [2, 3, 4], 5 => [5, 6, 7, 8, 9], 10 => [10]];
     private array $observations = [];
     public function __construct(private readonly Driver $reader,
         private readonly ?CatalogueFreshness $freshness = null,
-        private readonly array $terms = self::DOCUMENTED_TERMS,
+        private readonly array $terms = Pricing::BRACKET_TERMS,
         /** Reviewed NS17 term/family evidence keyed by suffix; first-pass suffixes only, default none. */
         private readonly array $expansion = [])
     {
         foreach ($terms as $bucket => $years) {
-            if (!in_array($bucket, self::BUCKETS, true) || !is_array($years)) { throw new \InvalidArgumentException('Invalid bucket evidence.'); }
+            if (!isset(Pricing::BRACKET_TERMS[$bucket]) || !is_array($years)) { throw new \InvalidArgumentException('Invalid bucket evidence.'); }
             foreach ($years as $term) {
-                if (!is_int($term) || $term < $bucket || $term > 10
-                    || max(array_filter(self::BUCKETS, static fn ($b) => $b <= $term)) !== $bucket) {
+                if (!is_int($term) || !in_array($term, Pricing::BRACKET_TERMS[$bucket], true)) {
                     throw new \InvalidArgumentException('Invalid bucket evidence.');
                 }
             }
@@ -34,7 +28,7 @@ final class OfferFeed implements PricedFeed
         }
     }
     public function factsReads(): int { return 2; }
-    public function priceReads(): int { return count(self::BUCKETS) + 1; }
+    public function priceReads(): int { return count(Pricing::BRACKET_TERMS) + 1; }
     private function read(ReadResult $read, RequestContext $context): array
     {
         $this->reader->binding()->requireMatch($context->binding);
@@ -48,7 +42,7 @@ final class OfferFeed implements PricedFeed
         if ($context->budget->remaining() < $this->priceReads()) { throw new \DomainException('Offer feed capacity unavailable.'); }
         $at = $context->now(); $until = $at->modify('+'.($this->freshness ?? CatalogueFreshness::forAccount($context->binding->serverId))->maxAge().' seconds'); $rows = [];
         // Buffer the whole run: a failed later bucket/list must expose no earlier commands.
-        foreach (self::BUCKETS as $bucket) {
+        foreach (array_keys(Pricing::BRACKET_TERMS) as $bucket) {
             $read = $this->read($this->reader->bulkPricing(false, $bucket, $context), $context);
             foreach ($read['rows'] as $tld => $row) {
                 try { Catalogue::tld((string) $tld); } catch (\InvalidArgumentException) { continue; }

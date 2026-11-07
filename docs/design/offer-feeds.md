@@ -8,7 +8,9 @@ Enom reads reseller pricing for Years 1/2/5/10 and the suffix list once: **five 
 Its [API Command Catalogue pp. 474–476](https://cp.enom.com/download/APICommandCatalogEnom.pdf#page=474)
 defines Years as the bracket start (explicitly, Years=2 covers years 2–4); [p. 464](https://cp.enom.com/download/APICommandCatalogEnom.pdf#page=464)
 gives the same contract for product pricing. The existing bucket-evidence map therefore defaults
-to **1; 2–4; 5–9; 10**. Independent registry term bounds and staff limits still decide which years
+to **1; 2–4; 5–9; 10**. `Enom/Pricing::BRACKET_TERMS` is the shared map for the
+feed and single-product checkout refresh; wire requests select the bracket, while quotes keep
+the exact selected years and total. Independent registry term bounds and staff limits still decide which years
 can sell; a price bracket alone grants neither registry support nor permission. Only registration
 uses multiyear brackets; renewal/transfer remain annual. Annual input becomes an integer-calculated
 exact-term total. Retail fields are ignored. Both envelope and indexed/XML row currency reject
