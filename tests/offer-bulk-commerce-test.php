@@ -42,7 +42,7 @@ $wire = new class implements Transport {
         return $header.'<pricestructure><tld><tld>com</tld><resellerpricereg>'.$cost.'</resellerpricereg><registerenabled>true</registerenabled><resellerpricerenew>8.00</resellerpricerenew><renewenabled>true</renewenabled><resellerpricetran>7.00</resellerpricetran><transferenabled>true</transferenabled></tld></pricestructure></interface-response>';
     }
 };
-$feed = new OfferFeed(new Driver(new Client($binding, 'synthetic', 'placeholder', $wire), ['com']));
+$feed = new OfferFeed(new Driver(new Client($binding, 'account-enom', 'placeholder', $wire), ['com']));
 $context = static fn (int $calls) => new RequestContext($binding, RequestOrigin::Background,
     $clock->now()->modify('+130 seconds'), new RequestBudget($calls), $clock);
 $annualQuery = new Query($binding, ['com'], 'register');
