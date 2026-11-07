@@ -13,7 +13,10 @@ STAFF_READS = {
 
 def retained_vendor(jobs, requested):
     # Only these bounded serial read-only cases retain pages until final verification.
-    return jobs == 1 and bool(requested) and set(requested).issubset(STAFF_READS)
+    # The all-term checkout's full guards reached 65.328s after its assertions passed.
+    return jobs == 1 and bool(requested) and set(requested).issubset(
+        STAFF_READS | {'tests/offer-bulk-commerce-test.php'}
+    )
 
 
 def shared_vendor(jobs, requested):
