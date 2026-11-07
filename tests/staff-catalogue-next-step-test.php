@@ -12,7 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{SellTable,Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,OfferWork,StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget;
-extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
+// One native seller covers the queue and rendered cells; cart hooks and a second account are unrelated.
+extract(commerceFixture(true,active:true,registrars:['enom']));tldPanel();pinStaffClock($now);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint,'offer_feed_run'=>1]);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $calls=0;$readable=true;
 $work=new OfferWork($ports->writer(),$clock,new AccountReadBudget($clock,25),static function()use(&$calls){$calls++;throw new LogicException('Rendering must not resolve a provider');},static fn()=>0);
