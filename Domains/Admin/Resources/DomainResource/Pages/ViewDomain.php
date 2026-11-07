@@ -115,7 +115,7 @@ class ViewDomain extends ViewRecord
     private function syncNow(): Action
     {
         // Record reads use registrar calls; Sync now lets staff request them only when needed.
-        return Action::make('sync_now')->label('Sync now')->color('gray')->visible(fn()=>DomainFacts::syncNow($this->getRecord()))
+        return Action::make('sync_now')->label('Sync now')->color('gray')->disabled(fn()=>\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()))->visible(fn()=>DomainFacts::syncNow($this->getRecord()))
             ->action(function():void {
                 if (!Staff::can('admin.domains.manage')) { abort(403); }
                 try {

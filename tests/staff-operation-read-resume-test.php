@@ -44,7 +44,9 @@ same($before,[$resume->fresh()->attempt,$resume->fresh()->funding,$resume->domai
 // The existing request status check must finish registration before record sync resumes.
 $run($resume->fresh(),'recheck');
 same('succeeded',$resume->fresh()->state,'Supported request check completes the original registration');
-DB::table('domains_observation_work')->where('id',$job)->update(['phase'=>hash('sha256',$resume->operation_key)]);
+DB::table('domains_observation_work')->where('id',$job)->delete();
+$job=DB::table('domains_observation_work')->where('domain_id',$resume->domain_id)->where('phase',hash('sha256',$resume->operation_key))->sole()->id;
+DB::table('domains_observation_work')->where('id',$job)->update(['safe_code'=>'read_unavailable','tries'=>5]);
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$resume->domain_id])->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$job)->value('resumes'),'Scheduled read resume counted');
 // Selection shares the same binding/generation/phase scope as stopped-state detection.

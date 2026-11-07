@@ -67,7 +67,8 @@ $noRow->assertActionVisible('sync_now');
 unset($noRow);gc_collect_cycles();
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionHidden('resume_observation');
 // Any domain can stop syncing. One with no request resumes on its own page, through the same writer, audited in its history.
-[$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$soloDomain=$solo->domain;DB::table('domains_operations')->where('id',$solo->id)->delete();
+[$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$run($solo,'recheck');$soloDomain=$solo->domain->fresh();
+DB::table('domains_observation_work')->where('domain_id',$soloDomain->id)->delete();DB::table('domains_operations')->where('id',$solo->id)->delete();
 $soloWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$soloDomain->server_id,'account_fingerprint'=>$soloDomain->account_fingerprint,'domain_id'=>$soloDomain->id,
     'generation'=>$soloDomain->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
 $soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Resume sync below.')->assertDontSeeHtml('fi-callout');
