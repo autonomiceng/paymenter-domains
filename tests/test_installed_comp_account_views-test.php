@@ -14,6 +14,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{L
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Services\{ComplimentaryAccounts,ComplimentaryCosts,OwnedDomains,OwnerPorts};
 require dirname(__DIR__).'/Domains/routes/owned.php';
+config(['settings.company_name'=>'Example Hosting (test)']);
 staffPanel();app()->instance(Clock::class,$clock);ComplimentaryAccountSetting::boot();
 $staff=staffUser([Staff::VIEW,Staff::COSTS,'admin.domains.manage','admin.domains.fund','admin.users.viewAny','admin.users.view','admin.users.update']);
 $report=new class extends App\Admin\Widgets\Revenue {public function chart():array{return $this->getData();}};
@@ -44,10 +45,11 @@ $policy=$op->fresh()->policy;unset($policy['complimentary_cost_review']);$op->re
 $runRenewal($op,$binding);[$engine,$writer,$completion]=$compose($binding);$state->expiry='2028-10-18';$state->after='2028-10-18';$state->charge='8.00';
 same('succeeded',$completion->run($op->id)->state,'Real confirmed renewal charge supplies the customer receipt');$invoice=$invoice->fresh();
 same($before,$report->chart()['datasets'],'Complimentary positive and negative lines do not create reported revenue');
-$editor=Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id]);$editor->assertSee('Domains are complimentary')->assertSee('Reason');
+$editor=Livewire::actingAs($staff)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id]);$editor->assertSee('Domains are complimentary')->assertSee('Reason')->assertSee('Example Hosting pays for this customer');
 $staffHtml=$editor->html();
 $plain=staffUser(['admin.users.viewAny','admin.users.view','admin.users.update']);Livewire::actingAs($plain)->test(App\Admin\Resources\UserResource\Pages\EditUser::class,['record'=>$user->id])->assertDontSee('Domains are complimentary');
-Auth::login($staff);$domainPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);$domainPage->assertSee(ComplimentaryAccounts::LABEL)->assertSee('Standard renewal price USD 10.40 / year, complimentary')->assertSee('Beco covers registrar costs.');$domainHtml=$domainPage->html();
+Auth::login($staff);$domainPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id]);$domainPage->assertSee(ComplimentaryAccounts::LABEL)->assertSee('Standard renewal price USD 10.40 / year, complimentary')->assertSee('Example Hosting covers registrar costs.');$domainHtml=$domainPage->html();
+$domainPage->assertActionVisible('complimentary_renewal')->mountAction('complimentary_renewal')->assertSee('Example Hosting covers the $8.00 registrar renewal cost.')->unmountAction();
 $list=Livewire::actingAs($staff)->test(ListDomains::class)->filterTable('price_mode','complimentary');$list->assertCanSeeTableRecords([$d]);
 Auth::login($user);$owner=(new OwnedDomains($clock,new OwnerPorts))->present($d->fresh());same(ComplimentaryAccounts::LABEL,$owner->renewalPrice,'Customer receives account complimentary label');
 $ownerHtml=view('domains::partials.owner-renew',['domain'=>$owner,'support'=>null,'keys'=>array_fill_keys(['auto-renew','renew'],'synthetic-review-key')])->render();expect(str_contains($ownerHtml,ComplimentaryAccounts::LABEL),'Customer domain renders the label');expect(!str_contains($ownerHtml,'We send you an invoice and you pay it'),'Complimentary customer is never asked to pay');
@@ -55,6 +57,9 @@ $show=Livewire::actingAs($user)->test(App\Livewire\Invoices\Show::class,['invoic
 $show->assertSee('Complimentary')->assertSee('$-8.00')->assertSee('$0.00')->assertSee('Paid');$invoiceHtml=$show->html();
 $beforePayments=App\Models\InvoiceTransaction::count();$show->set('selectedMethod','credit')->call('processPayment');same($beforePayments,App\Models\InvoiceTransaction::count(),'A paid zero receipt cannot start native payment');
 $pdfHtml=view('pdf.invoice',['invoice'=>$invoice->fresh()])->render();expect(str_contains($pdfHtml,'$-8.00')&&str_contains($pdfHtml,'$0.00')&&str_contains($pdfHtml,'Complimentary'),'Paymenter PDF view preserves the negative line and zero total');
+config(['settings.company_name'=>'','app.name'=>'']);Auth::login($staff);
+$domainPage->call('pollManagement')->assertSee('We cover registrar costs.')->mountAction('complimentary_renewal')->assertSee('We cover the $8.00 registrar renewal cost.')->unmountAction();
+expect(str_contains(ComplimentaryAccountSetting::render($user),'We pay for this customer'), 'Unnamed sites use neutral account funding copy');
 $out=getenv('COMP_ACCOUNT_RENDER_DIR');
 if($out){
     expect(is_dir($out),'Existing review artifact directory required');
