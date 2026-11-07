@@ -22,6 +22,8 @@ final class WatchNoticeTemplates
         ],'name'=>'Domain checks: ','names'=>['expiring'=>'expiry approaching','expired'=>'registry expiry reached','ns_changed'=>'nameservers changed','ns_restored'=>'nameserver change resolved'],
         'preference'=>'Public domain check notices','link'=>'View domain checks','footer'=>'You receive this because public domain check notices are enabled in your account. This notice is not a bill.',
         'after'=>'To pause notices about this domain, or turn them off for all domains, use the link above.'];
+    private const MISMATCH_BODY='As of {{ $date }}, {{ $domain }} {{ $previously_matched ? \'no longer uses\' : \'does not use\' }} {{ $nameservers }}. If you didn’t expect this, contact support.';
+    private const PREVIOUS_MISMATCH_BODY='As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @else does not use @endif{{ $nameservers }}. If you didn’t expect this, contact support.';
     private const TEXT=['name','edit_preference_message','subject','in_app_title','in_app_body','body'];
     public static function ensure(): void
     {
@@ -29,7 +31,9 @@ final class WatchNoticeTemplates
         foreach ($v2 as &$fields) { foreach (self::TEXT as $field) { $fields[$field]=str_replace('{{ $nameservers }}','{{ $company }} nameservers',$fields[$field]); } }
         unset($fields);
         $columns=array_flip(Schema::getColumnListing('notification_templates'));$previous=self::templates(self::V1);
-        DB::transaction(function()use($columns,$previous,$v2,$terms):void {
+        $recent=self::definitions();
+        foreach(self::TEXT as $field){$recent['domains_watch_ns_changed'][$field]=str_replace(self::MISMATCH_BODY,self::PREVIOUS_MISMATCH_BODY,$recent['domains_watch_ns_changed'][$field]);}
+        DB::transaction(function()use($columns,$previous,$v2,$terms,$recent):void {
             foreach(self::definitions() as $key=>$template) {
                 $stored=NotificationTemplate::where('key',$key)->lockForUpdate()->first();
                 if (!$stored) { (new NotificationTemplate())->forceFill(array_intersect_key(['key'=>$key,...$template],$columns))->save(); continue; }
@@ -38,7 +42,7 @@ final class WatchNoticeTemplates
                     // Match the earlier default name by digest so only that exact stored value is upgraded.
                     $oldName=$key==='domains_watch_ns_restored' && $field==='name' && is_string($value)
                         && hash('sha256',$value)==='078ddbdde621a7eac58d2297b01e9cf4f10ce3a69b16fb6634ff8f2b0ea236cc';
-                    if (isset($columns[$field]) && ($value===$previous[$key][$field] || $value===$v2[$key][$field] || $value===$terms[$key][$field] || $oldName)) { $stored->setAttribute($field,$template[$field]); }
+                    if (isset($columns[$field]) && ($value===$previous[$key][$field] || $value===$v2[$key][$field] || $value===$terms[$key][$field] || $value===$recent[$key][$field] || $oldName)) { $stored->setAttribute($field,$template[$field]); }
                 }
                 if ($stored->isDirty()) { $stored->save(); }
             }
@@ -50,7 +54,7 @@ final class WatchNoticeTemplates
         $w['names']['ns_changed']='nameservers not in use';
         $w['copy']['ns_changed']=[
             '@if($previously_matched)Nameservers changed for {{ $domain }}@else{{ $domain }} does not use {{ $nameservers }}@endif',
-            'As of {{ $date }}, {{ $domain }} @if($previously_matched)no longer uses @else does not use @endif{{ $nameservers }}. If you didn’t expect this, contact support.',
+            self::MISMATCH_BODY,
         ];
         return self::templates($w);
     }
