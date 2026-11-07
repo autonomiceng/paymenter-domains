@@ -21,6 +21,19 @@ same('28.60', number_format((float) $registration->plans()->where('billing_perio
 $annual = $native->annualPlan($registration);
 same(1, $annual->billing_period, 'Holding plan is annual on same product');
 same($registration->id, $annual->priceable_id, 'Annual transition preserves product');
+// Checkout choices use the same public catalogue as search, even when native rows survive closure.
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, activeFixtureEligibility($bindings, $clock), $clock);
+$closedPlan = $registration->plans()->create(['name' => '2 years', 'type' => 'recurring', 'billing_unit' => 'year', 'billing_period' => 2, 'sort' => 2]);
+$closedPrice = $closedPlan->prices()->create(['currency_code' => 'USD', 'price' => 39.97, 'setup_fee' => 0]);
+same([1, 3], $store->checkoutPlans($registration)->pluck('billing_period')->all(), 'Retained closed native price is not a checkout choice');
+same([1], $store->checkoutPlans($transfer)->pluck('billing_period')->all(), 'Transfer choices remain annual');
+$offeredPlan = $registration->plans()->where('billing_period', 3)->sole();
+$offeredPrice = $offeredPlan->prices()->sole(); $originalPrice = $offeredPrice->price;
+$offeredPrice->update(['price' => 39.97]);
+same([1], $store->checkoutPlans($registration)->pluck('billing_period')->all(), 'Native price mismatch is hidden just as in search');
+$offeredPrice->update(['price' => $originalPrice]);
+same([1, 3], $store->checkoutPlans($registration)->pluck('billing_period')->all(), 'A matching native price restores the choice');
+same('39.97', (string) $closedPrice->fresh()->price, 'Filtering preserves retained native money');
 $ids = Product::orderBy('id')->pluck('id')->all(); $planIds = Plan::orderBy('id')->pluck('id')->all();
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $namesilo->server_id, true, true, $now);
 activeFixtureRepublish($native,$enom->id, $now); activeFixtureRepublish($native,$namesilo->id, $now);
@@ -32,11 +45,13 @@ commerceReject(static fn () => DB::transaction(static fn () => activeFixtureRepu
 // Retained native rows are invoice identities, not permission to buy a closed offer.
 // Restore this account as seller so the refusal below must come from withdrawal.
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $enom->server_id, true, true, $now);
+same([], $store->checkoutPlans($native->product($namesilo, 'register'))->all(), 'Old seller product cannot show the selected seller plans');
 $selection = $sellers->selection('com', 'register', 3, $now);
 $nativeRows = static fn () => [DB::table('plans')->orderBy('id')->get()->toJson(), DB::table('prices')->orderBy('id')->get()->toJson()];
 $retained = $nativeRows();
 activeFixtureStops($native,$enom,['register','renew','transfer']); activeFixtureRepublish($native,$enom->id, $now);
 expect($registration->fresh()->stock === null, 'Disabled TLD keeps unlimited stock');
+same([], $store->checkoutPlans($registration)->all(), 'Withdrawn catalogue has no checkout choices');
 same($retained, $nativeRows(), 'Withdrawal preserves every native plan and price identity, amount and sort');
 commerceReject(static fn () => $sellers->selection('com', 'register', 3, $now));
 commerceReject(static fn () => DB::transaction(static fn () => $sellers->admit([$selection], $now)));

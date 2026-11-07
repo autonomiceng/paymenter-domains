@@ -49,6 +49,21 @@ class Storefront
         return false;
     }
 
+    /** Display-only native plans for the current seller, using the same exact prices as search.
+     * Retained native rows alone never make a term sellable; admission still rechecks the choice. */
+    public function checkoutPlans(\App\Models\Product $product): \Illuminate\Support\Collection
+    {
+        try {
+            $mapping = $this->native->mapping($product);
+            if ($mapping === null) { return collect(); }
+            $ending = $mapping['tld']->tld;
+            $offers = $this->catalogue()?->display([$ending]) ?? [];
+            return collect($offers[$ending] ?? [])
+                ->filter(static fn ($offer) => $offer['product']->id === $product->id)
+                ->pluck('plan')->sortBy('billing_period')->values();
+        } catch (\Throwable) { return collect(); }
+    }
+
     /** Current public transfer offers, bounded to the candidate suffixes of these names. */
     public function offeredTransferEndings(array $names): array
     {
