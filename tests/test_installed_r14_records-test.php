@@ -32,7 +32,7 @@ foreach(['Last sync','DNS records']as$label){$text=json_encode($facts[$label]);
 $d->update(['provider_expires_at'=>null]);$facts=DomainFacts::for($d->fresh());
 expect(!str_contains($facts['Contacts']['sub']??'','Next automatic retry:'),'Missing Contacts retain their own repair instruction');
 expect(!str_contains($facts['Expires']['sub']??'','Next automatic retry:'),'Missing confirmed expiry does not promise an observation confirmation');
-expect(str_contains($facts['Nameservers']['sub']??'','Next automatic retry:'),'Unread nameservers retain automatic read guidance');
+same([null,null],[$facts['Nameservers']['value'],$facts['Nameservers']['sub']],'Unread nameservers stay Missing; Last sync names the automatic retry once');
 expect($errors===[],implode('; ',$errors));
 expect(str_contains($top,'The registrar read failed.')&&str_contains($top,'Next automatic retry:'),'Native top rows render the actual failed read and due time');
 // ui-r15 R4: a registrar read can return contacts while the domain has none saved here (an import). The moved Contacts row

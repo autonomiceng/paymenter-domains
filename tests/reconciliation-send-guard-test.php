@@ -24,6 +24,10 @@ $observation->fault='info_missing';
 $result=$reconcile->run($op->id);
 same('reconciliation_required',$result->safe_code,'An inconclusive admitted read clears the paused-switch code');
 expect(Labels::operationReason($result)!=='Status check paused: Enom sends are off','Staff is no longer told sends are off after a real read');
+// An admitted but ambiguous order read also supersedes the earlier switch refusal.
+$observation->fault='send_guard';$reconcile->run($op->id);
+$observation->fault='multiple';$result=$reconcile->run($op->id);
+same(['pending','reconciliation_required',null],[$result->state,$result->safe_code,$result->cost['actual']??null],'Ambiguous provider evidence clears only the obsolete refusal, without completing the purchase');
 // A real cap remains a distinct refusal at admission and still never repeats Purchase.
 app()->instance(Runtime::class,new stdClass);
 $limiter=new WireLimit(1);$limiter->onAcquire=static function():void{throw new EnomTestCallLimit('over_limit');};
