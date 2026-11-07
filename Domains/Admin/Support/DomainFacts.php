@@ -131,7 +131,7 @@ final class DomainFacts
         // An ended domain won't sync again, so it keeps its last read and shows no row without one.
         if (($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
             $paused=>self::fact('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
-            $sync==='failed'=>self::fact('Sync failed',sub:(int)$job->tries.' attempt'.((int)$job->tries===1?'':'s').'. Stopped until resumed.',tone:'danger'),
+            $sync==='failed'=>self::fact('Read stopped',sub:self::readCause($d),tone:'danger'),
             default=>['at'=>$d->last_synced_at?->getTimestamp(),...self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
                 sub:$job&&$job->claim!==null&&$job->lease_until>time()?($d->last_synced_at?'Syncing now':Missing::fills('when this sync finishes')):($d->last_synced_at?null:Missing::fills('within a day')))],
         }; }
@@ -166,6 +166,13 @@ final class DomainFacts
             elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
         }
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
+        // The older top rows must describe the same failed read as the family inventory.
+        if($registered && ($problem=self::readProblem($d))!==null){
+            foreach(['Expires','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
+                if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=$problem;}
+            }
+            if(isset($f['Last sync'])){$f['Last sync']['sub']=$problem;}
+        }
         return self::alerts($d,$f);
     }
     /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. */
@@ -344,12 +351,17 @@ final class DomainFacts
         }
         return null;
     }
+    private static function readCause(Domain $d): string
+    {
+        $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+        return trim(($read['read_cause']??'Registrar read stopped.').' '.($read['read_code']?'Cause: '.$read['read_code'].'. ':'').'Fix the cause, then use Resume sync.');
+    }
     public static function recordHold(Domain $d): ?string
     {
         Staff::requireView();
         try {
             if (!ObservationRecords::stopped($d)) { return null; }
-            if (!ObservationRecords::held($d)) { return 'Sync stopped after a failed check.'; }
+            if (!ObservationRecords::held($d)) { return self::readCause($d); }
             return ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
                 'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
@@ -370,6 +382,16 @@ final class DomainFacts
     {
         return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync failed. '.(self::canResume()?'Use Resume sync.':self::ASK_RESUME),
             default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
+    }
+    /** One safe failure cause and the actual automatic retry, or the stopped-read next step. */
+    private static function readProblem(Domain $d): ?string
+    {
+        try{$read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);}
+        catch(\Illuminate\Contracts\Encryption\DecryptException){return self::UNREADABLE;}
+        if(!$read['read_code']){return null;}
+        return $read['read_cause'].' '.($read['read_stopped']?self::restart($d):($read['next_read']!==null
+            ?'Next automatic retry: '.gmdate('M j, Y H:i',$read['next_read']).' UTC.'
+            :'No registrar read is queued. Check the background worker.'));
     }
     private const ASK_RESUME='Ask staff who can resume sync.';
     /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */

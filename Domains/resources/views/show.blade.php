@@ -20,7 +20,7 @@
 @include('domains::partials.owner-renew')
 @if ($settings)
 <section class="domains-panel" aria-labelledby="heading-settings"><div class="domains-panel__h"><h2 id="heading-settings" class="domains-h2">{{ ($recordFamilies ?? null) ? 'Registrar records' : 'Settings' }}</h2></div>
-@if (($recordFamilies ?? null) && $recordFamilies['stale'])<p class="domains-hint">These records are waiting for an update. We’re checking them.</p>@endif
+@if (($recordFamilies ?? null) && $recordFamilies['stale'])<p class="domains-hint">Registrar records are waiting for an update. Last confirmed data is retained.</p>@endif
 <ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul></section>
 @endif
 </div>

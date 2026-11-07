@@ -16,7 +16,8 @@ final readonly class NativePresenter
         if(count($ids)>250){throw new \InvalidArgumentException('At most 250 services per batch.');}
         $result=[];
         foreach(Domain::whereIn('service_id',$ids)->where('user_id',$owner->id)->whereHas('service',fn($q)=>$q->where('user_id',$owner->id))
-            ->with(['service.cancellation','service.user'])->get() as $d){$result[(int)$d->service_id]=$this->owned->present($d,false);}
+            ->with(['service.cancellation','service.user'])->get() as $d){$dto=$this->owned->present($d,false);
+                $result[(int)$d->service_id]=new OwnedDomain(...[...get_object_vars($dto),'serviceStatus'=>$d->service->status==='cancelled'?'Cancelled':null]);}
         return $result;
     }
     /** Neutral watch/managed summaries for hosting rows; preserve the original domain-only adapter. */

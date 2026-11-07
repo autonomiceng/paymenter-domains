@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
 use Filament\Resources\Resource;
 use Filament\Support\Enums\FontFamily;
-use Filament\Tables\{Columns\TextColumn,Filters\SelectFilter,Table};
+use Filament\Tables\{Columns\TextColumn,Filters\Filter,Filters\SelectFilter,Table};
 use Illuminate\Database\Eloquent\{Builder,Model};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{OneLine,Staff,StatusMark,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\{ListTlds,PriceList,ViewTld};
@@ -50,26 +50,27 @@ class TldResource extends Resource
         $isDemo=static function(Tld $t)use(&$demo):bool {
             return $demo[$t->server_id]??=DemoData::is(Account::where('server_id',$t->server_id)->first());
         };
-        $renewal=static fn(Tld $t,mixed $livewire)=>TldFacts::renewal($row($t,$livewire)['prices']);
         return $table->columns([
             TextColumn::make('tld')->label('TLD')->prefix('.')->fontFamily(FontFamily::Mono)->searchable()->sortable()->extraAttributes(['class'=>'domains-nowrap']),
             TextColumn::make('account')->label('Registrar account')->state(fn(Tld $record)=>$record->server->name)
                 ->suffix(fn(Tld $record)=>$isDemo($record)?new \Illuminate\Support\HtmlString(' '.DemoData::tag(inline:true)->toHtml()):null)
                 ->description(fn(Tld $record,$livewire)=>TldFacts::registrar($record->registrar_key) .', '.strtolower($row($record,$livewire)['pricing'])
                     .($row($record,$livewire)['seller']===(int)$record->server_id?', new orders':'')),
-            TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['retail']??Missing::LABEL)
-                ->color(fn($state)=>$state===Missing::LABEL?Missing::COLOR:null)->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
-                ->description(fn($state)=>$state===Missing::LABEL?'Use Sync prices.':null)->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
-            TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record,$livewire)=>$renewal($record,$livewire)['cost']??Missing::LABEL)
-                ->color(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL||TldFacts::costNote($renewal($record,$livewire))?Missing::COLOR:null)
-                ->icon(fn($state)=>$state===Missing::LABEL?Missing::icon():null)
-                ->description(fn($state,Tld $record,$livewire)=>$state===Missing::LABEL?'Use Sync prices.':TldFacts::costNote($renewal($record,$livewire)))->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
+            TextColumn::make('renewal')->label('Renewal price')->state(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['value'])
+                ->color(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['tone'])
+                ->icon(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['missing']?Missing::icon():null)
+                ->description(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire))['cause'])->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
+            TextColumn::make('cost')->label('Cost')->visible($grants->costs)->state(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['value'])
+                ->color(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['tone'])
+                ->icon(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['missing']?Missing::icon():null)
+                ->description(fn(Tld $record,$livewire)=>TldFacts::priceState($row($record,$livewire),'renew','cost')['cause'])->alignEnd()->extraAttributes(['class'=>'domains-money domains-nowrap']),
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
                 ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->extraAttributes(fn(Tld $record,$livewire)=>StatusMark::attributes($row($record,$livewire)['sales']['tone'],'tld-'.$record->id)),
             OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?trim($reason.'. '.(TldFacts::FIXES[$reason]??'')):null)),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
-            SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all())])
+            SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all()),
+            Filter::make('needs_attention')->label('Terms need attention')->query(fn(Builder $query)=>$query->whereIn('domains_tlds.id',\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::summary()['attention']))])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search TLD')
             ->emptyStateHeading('No TLDs yet')->emptyStateDescription('Choose what you sell on a registrar account.')
             ->emptyStateActions([\Filament\Actions\Action::make('choose_what_you_sell')->label('Choose what you sell')->url(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl())]);

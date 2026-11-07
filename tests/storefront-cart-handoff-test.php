@@ -64,7 +64,9 @@ same(1, count($GLOBALS['enomWire']['forms']), 'Exactly one physical fresh Check,
 $unconfirmed = 'We couldn’t confirm this name right now. Try again.';
 $generic = 'We couldn’t add that name to your cart. Check the latest results below and try again.';
 same($unconfirmed, $session->get('domains_notice'), 'An unconfirmed name says so in plain words');
-same(['Domains cart handoff failed.', ['exception_class' => DomainException::class, 'exception_message_key' => 'eligibility_unconfirmed']], end($logger->warnings), 'Fixed key identifies the refusal without raw exception text');
+same('eligibility_unconfirmed', end($logger->warnings)[1]['exception_message_key'], 'Fixed key identifies the refusal without raw exception text');
+same('eligibility_unconfirmed', end($logger->warnings)[1]['cause'] ?? null, 'Cart logs retain a structured safe cause');
+same('cart_handoff', end($logger->warnings)[1]['phase'] ?? null, 'Cart logs identify the failed phase');
 try { FormKeys::verify($used, 'order:'.$name); expect(false, 'Failed handoff key cannot replay'); }
 catch (Symfony\Component\HttpKernel\Exception\HttpException $error) { same(419, $error->getStatusCode(), 'Retry needs fresh search intent'); }
 foreach (['missing_flag', 'wrong_name', 'late_success'] as $mode) {
@@ -91,10 +93,11 @@ Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSecon
 $order($name, '01'); same('invalid_action_or_term', end($logger->warnings)[1]['exception_message_key'], 'Bare DomainException is distinguished');
 same($generic, $session->get('domains_notice'), 'Other refusals keep the general notice');
 same([], $GLOBALS['enomWire']['forms'], 'Invalid term never reads provider');
-$product = $native->product($tlds[0], 'register'); DB::table('products')->where('id',$product->id)->update(['stock'=>0]);
+$product = $native->product($tlds[0], 'register'); // Retained invalid stock bypasses today's guard so the real handoff refusal remains covered.
+Illuminate\Support\Facades\DB::table('products')->where('id',$product->id)->update(['stock'=>0]);
 $order($name); same('offer_unavailable', end($logger->warnings)[1]['exception_message_key'], 'Withdrawn offer is distinct');
 same($generic, $session->get('domains_notice'), 'A withdrawn offer keeps the general notice');
-DB::table('products')->where('id',$product->id)->update(['stock'=>null]);
+Illuminate\Support\Facades\DB::table('products')->where('id',$product->id)->update(['stock'=>null]);
 resetWire(['reply' => $reply]); [$response] = $order($name);
 same(route('cart'), $response->getTargetUrl(), 'Fresh user retry succeeds without widening any limits');
 same(1, $cart->items()->count(), 'Retry adds exactly one native item');
@@ -111,11 +114,31 @@ foreach ([new DomainException($secret), new DomainException('Domain already in c
     new DomainException($secret, previous: new DomainException('Domain already in cart.'))] as $error) {
     same('unclassified', CartHandoffFailure::key($error), 'Unknown text/class/previous cause cannot enter diagnostics');
 }
+resetWire(['reply'=>static fn()=>'<interface-response><Command>Check</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode></interface-response>']);
+same('error',$store->check('registrar-code-placeholder.com')['status'],'Rejected registrar read remains an error');
+same('545',end($logger->warnings)[1]['registrar_code']??null,'Real Enom parser code reaches the search log');
+// Exercise all three real catch boundaries with typed safe causes; raw messages and nested errors stay private.
+$faultStore=new class extends Storefront {
+    public Throwable $fault;
+    public function __construct() {}
+    public function check(string $input,bool $transferOnly=false): array { throw $this->fault; }
+};
+$failureController=new StorefrontController($faultStore);
+foreach([new \Paymenter\Extensions\Servers\Domains\Services\WriteHeld('registrar_read_failed'),new \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred($secret),new \Paymenter\Extensions\Servers\Domains\Services\EligibilityUnconfirmed('115')] as $failure){
+ $faultStore->fault=$failure;$req=$request(['domain'=>'diagnostic-placeholder.com']);$req->request->set('_request_key',FormKeys::issue($req,'search'));$failureController->check($req);
+ $context=end($logger->warnings)[1];same('search',$context['phase'],'Search failure carries its phase');
+ $expected=$failure instanceof \Paymenter\Extensions\Servers\Domains\Services\WriteHeld?'registrar_read_failed':($failure instanceof \Paymenter\Extensions\Servers\Domains\Services\ReadDeferred?'read_deferred':'eligibility_unconfirmed');
+ same($expected,$context['cause'],'Search logs keep structured safe cause');expect(!str_contains(json_encode($context),$secret),'Search logs contain no arbitrary message');
+ $component=new App\Livewire\Cart;
+ (new ReflectionMethod(\Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::class,'unavailable'))->invoke(null,$component,$failure);
+ same($expected,end($logger->warnings)[1]['cause'],'Checkout failure keeps its structured cause');same('checkout_check',end($logger->warnings)[1]['phase'],'Checkout log names its phase');
+ if($failure instanceof \Paymenter\Extensions\Servers\Domains\Services\EligibilityUnconfirmed){same('115',end($logger->warnings)[1]['registrar_code'],'Validated registrar code survives checkout logging');}
+}
 Illuminate\Support\Facades\Event::listen(App\Events\CartItem\Creating::class, static function () use ($secret): never {
     throw new DomainException($secret, previous: new RuntimeException($secret));
 });
 resetWire(['reply' => $reply]); $order('private-placeholder.com');
-same(['Domains cart handoff failed.', ['exception_class' => DomainException::class, 'exception_message_key' => 'unclassified']], end($logger->warnings), 'Actual catch path withholds raw message and nested cause');
+same(['Domains cart handoff failed.', ['exception_class' => DomainException::class, 'exception_message_key' => 'unclassified', 'phase'=>'cart_handoff', 'cause'=>'unclassified', 'disposition'=>'refused']], end($logger->warnings), 'Actual catch path withholds raw message and nested cause');
 same(1, $cart->items()->count(), 'Unknown failure cannot create a second cart item');
 Illuminate\Support\Carbon::setTestNow();
 echo "Storefront handoff transport, strict evidence, timing and retry checks passed.\n";

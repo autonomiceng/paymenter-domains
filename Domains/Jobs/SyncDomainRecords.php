@@ -64,6 +64,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 $result=$observer->run($this->domain,$this->generation,$this->fingerprint,readRecords:true);
                 if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
+                if(!$failed&&$result==='refreshed'){\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d);}
                 $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'Refresh the domain page to see the saved records.');
             } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }
         } finally { Cache::forget($this->pendingKey()); }
