@@ -221,8 +221,10 @@ final class OfferWork
             throw $error;
         } finally {
             if ($touched) {
-                CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers::class)
-                    ?->warnPriceMismatches(array_keys($touched), $b->serverId);
+                try {
+                    CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers::class)
+                        ?->warnPriceMismatches(array_keys($touched), $b->serverId);
+                } catch (\Throwable) { /* Diagnostics must not replace the work result or its original failure. */ }
             }
         }
     }
