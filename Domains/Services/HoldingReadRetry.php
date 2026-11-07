@@ -15,10 +15,9 @@ final class HoldingReadRetry
     public const STOPPED=['read_unavailable','budget_exhausted','superseded','records_incomplete',...ReadFailure::CODES];
     public static function stoppedQuery(Builder $q): Builder
     {
-        return $q->where(fn($q)=>$q->whereIn('safe_code',array_values(array_diff(self::STOPPED,self::TRANSIENT)))
-            ->orWhere(fn($q)=>$q->whereIn('safe_code',self::TRANSIENT)->where('tries','>=',self::LIMIT)));
+        return $q->whereIn('safe_code',array_values(array_diff(self::STOPPED,self::TRANSIENT)));
     }
-    public static function delay(int $tries): int { return min(3600,60*(2**min(6,max(0,$tries-1)))); }
+    public static function delay(int $tries): int { return $tries>=self::LIMIT?86400:min(3600,60*(2**min(6,max(0,$tries-1)))); }
     /** A successful staff retry restores only idle current read work, never a live lease or financial job. */
     public static function completedManually(Domain $seed): void
     {
@@ -38,7 +37,7 @@ final class HoldingReadRetry
         $stopped=$job&&self::stoppedQuery(HoldingObservationWork::current($d,true))->exists();
         $code=$job&&in_array($job->safe_code,self::STOPPED,true)?$job->safe_code:null;
         $now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
-        return ['read_review'=>$eligible&&$code!==null&&in_array($code,['read_failed','read_deadline','read_no_evidence'],true)&&($stopped||($job->resumes??0)>0),
+        return ['read_review'=>$eligible&&$code!==null&&in_array($code,['read_failed','read_deadline','read_no_evidence'],true)&&($stopped||($job->tries??0)>=self::LIMIT||($job->resumes??0)>0),
             'records_paused'=>$job?->safe_code==='records_disabled',
             'read_overdue'=>$eligible&&$job&&!$stopped&&$job->due_at+self::OVERDUE_GRACE_SECONDS<$now->getTimestamp()&&$job->lease_until<=$now->getTimestamp(),
             'next_read'=>$eligible&&$job&&!$stopped?(int)$job->due_at:null,'read_stopped'=>(bool)$stopped,

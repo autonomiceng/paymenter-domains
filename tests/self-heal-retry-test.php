@@ -17,8 +17,19 @@ $clock->instant=$clock->now()->modify('+60 seconds');same('refreshed',$worker->t
 expect(!ObservationRecords::held($d->fresh()),'Successful full-family retry clears stale failure hold');
 // A family failure is retried even though the primary facts succeeded.
 $q=$failFamilies();
-expect(HoldingObservationWork::stopped($d->fresh()),'Five failures stop with their exact cause');$assertFamily('Missing',cause:'The registrar read failed.',kind:'srv',stopped:true);same('The registrar read failed.',\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh())['read_cause'],'The page notice names the exact cause');$assertFamily('Complete');$calls=count($state->calls);$clock->instant=$clock->now()->modify('+2 days');
-same('idle',$worker->turn($queue,$guard),'Exhausted current work stays stopped');same($calls,count($state->calls),'Exhaustion does not loop');
+expect(!HoldingObservationWork::stopped($d->fresh()),'Five transient failures retain automatic recovery');$assertFamily('Missing',cause:'The registrar read failed.',kind:'srv');same('The registrar read failed.',\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh())['read_cause'],'The page notice names the exact cause');$assertFamily('Complete');$calls=count($state->calls);$job=(clone $q)->sole();
+same(86400,$job->due_at-$clock->now()->getTimestamp(),'Five fast attempts back off for one day');
+same((int)$job->due_at,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh())['next_read'],'The page exposes the daily recovery time');
+$clock->instant=$clock->now()->modify('+86399 seconds');
+same('idle',$worker->turn($queue,$guard),'Daily recovery never retries early');same($calls,count($state->calls),'Backoff sends no early registrar reads');
+$clock->instant=$clock->now()->modify('+1 second');
+same('read_failed',$worker->turn($queue,$guard),'A persistent failure retries on the next day');
+same(86400,(clone $q)->sole()->due_at-$clock->now()->getTimestamp(),'Persistent failure keeps the slow daily backoff');
+$state->fault='';$clock->instant=$clock->now()->modify('+1 day');
+same('refreshed',$worker->turn($queue,$guard),'Daily recovery succeeds without staff intervention');
+expect(!ObservationRecords::held($d->fresh()),'Automatic recovery clears the failed record hold');
+same(0,(int)(clone $q)->sole()->tries,'Successful daily recovery restores the normal retry budget');
+$q=$failFamilies();
 // Persistent failures need an account check, not another identical resume loop.
 require_once __DIR__.'/Support/staff-panel.php';staffPanel();
 Illuminate\Support\Facades\Route::get('/admin/registrar-account/{account}',fn()=>null)->name('filament.admin.pages.registrar-account');

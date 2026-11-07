@@ -20,8 +20,8 @@ final class DomainHistory
             try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }
             if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
             foreach ($history as $i=>$action) {
-                if (!is_array($action)||!in_array($action['action']??null,['hold','release'],true)||($action['phase']??null)!=='completed') { continue; }
-                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>$action['action']==='hold'?'Put on hold':'Hold released',
+                if (!is_array($action)||!in_array($action['action']??null,['hold','release','resume_observation'],true)||($action['phase']??null)!=='completed') { continue; }
+                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed'},
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
             }
         }
