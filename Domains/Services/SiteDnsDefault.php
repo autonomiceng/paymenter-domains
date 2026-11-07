@@ -116,7 +116,7 @@ final class SiteDnsDefault
         if(!Schema::hasTable(PublicDnsQuota::TABLE) || !Schema::hasTable('domains_watch_schedule')){return;}
         PublicDnsQuota::seed(time());
         DB::table(PublicDnsQuota::TABLE)->where('id',1)->update(['sweep_due_at'=>0,'sweep_cursor'=>0]);
-        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>0,'data'=>json_encode(['refresh_dns'=>true])]);
+        DB::table('domains_watch_schedule')->updateOrInsert(['scope'=>'enrollment'],['cursor'=>0,'data'=>json_encode(['refresh_dns'=>true,'restart'=>bin2hex(random_bytes(16))])]);
         DB::afterCommit(static fn()=>app(WatchWork::class)->reconcileDefaults());
     }
 }
