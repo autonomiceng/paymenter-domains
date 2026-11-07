@@ -129,7 +129,7 @@ class ViewDomain extends ViewRecord
     public function infolist(Schema $schema): Schema
     {
         $this->cacheHoldingActions();
-        $d=$this->getRecord(); $facts=$this->facts(); $edits=$this->edits();
+        $d=$this->getRecord(); $facts=DomainFacts::besideHead($this->facts(),$this->said()); $edits=$this->edits();
         // WHOIS privacy stays stored and read, but the page does not show it (PrivacyVisibility).
         if (!\Paymenter\Extensions\Servers\Domains\Presentation\PrivacyVisibility::SHOWN) { unset($facts['WHOIS privacy']); }
         // Reminder issues sit on Renewal invoices, then on Open alerts, which they open when neither row exists.
@@ -215,13 +215,15 @@ class ViewDomain extends ViewRecord
         if (!($family['state']==='unknown'&&$fact['value']===null)) { $entry->aboveContent($status); }
         return Sheet::row($entry,$side,pending:$fact['progress']['waiting']??false,key:'fact_'.md5($family['label']));
     }
+    /** The head's step as plain text, so rows and Activity can leave out what it already says. */
+    private function said(): ?string
+    { $step=$this->head()['step']; return $step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5); }
     /** The rail: the newest history, with the tab holding the rest. */
     private function activity(Domain $d): Section
     {
         $entries=DomainHistory::entries($d);
         $url=DomainResource::getUrl('view',['record'=>$d->id,'relation'=>'0']);
-        $step=$this->head()['step']; $said=$step===null?null:html_entity_decode(strip_tags($step instanceof Htmlable?$step->toHtml():$step),ENT_QUOTES|ENT_HTML5);
-        $steps=DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request']),$said);
+        $steps=DomainHistory::steps($d,array_slice($entries,0,Sheet::RAIL_STEPS),DomainFacts::headRequest($d,$this->status(),$this->edits()['request']),$this->said());
         return Sheet::section('Activity',[$entries===[]?Text::make('No history yet'):Sheet::trace($steps)],
             after:$entries===[]?[]:[Sheet::link('view_history','View all '.count($entries),$url)]);
     }

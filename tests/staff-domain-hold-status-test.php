@@ -47,7 +47,8 @@ foreach([false,true] as $ordersOn){
         // The header says the cause once; the request's Activity entry keeps its status.
         $check(str_contains($request,'Under review')&&!str_contains($request,'Orders are off for this account.'),'Paused request activity does not repeat the header: '.$request);
         $page36=$text($xpath->query('//body')->item(0));
-        $check(substr_count($page36,'Orders are off for this account.')===1,'Orders are off is said once on the page');
+        // The Registrar row names the account, and leaves Orders off to the header.
+        $check(substr_count($page36,'Orders are off for this account.')===1&&!str_contains(strtolower($page36),'orders paused'),'Orders are off is said once on the page, in one term: '.$page36);
         // Not active: no Sync now button and nothing confirmed yet.
         $check(!str_contains($page36,'Sync this domain')&&!str_contains($page36,'Use Sync now'),'No row asks for a sync the page cannot start');
         $check(!str_contains($page36,'Last confirmed data is retained'),'Nothing confirmed means nothing retained');
