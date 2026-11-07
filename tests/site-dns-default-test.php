@@ -15,7 +15,14 @@ same(['ns1.deployment.test','ns2.deployment.test'],$default->nameservers,'Deploy
 same($default->id,NewDomainDns::profile($server->id)->id,'Site default works independently of registrar account');
 same([],NewDomainDns::capture($server->id,'transfer'),'Site DNS default never supplies transfer nameservers');
 same('site_default',NewDomainDns::capture($server->id,'register')['nameservers_origin']['source'],'Registration freezes site-default provenance');
+$legacy='domains_new_domain_dns_template';$legacyServers=[];
+foreach(['',(string)$profile->id]as$value){$accountServer=\App\Models\Server::create(['name'=>'Retired account DNS','extension'=>'Domains','type'=>'server','enabled'=>true]);$legacyServers[]=$accountServer;
+ $accountServer->settings()->create(['key'=>$legacy,'type'=>'string','encrypted'=>false,'value'=>$value]);}
+$reading=false;$legacyRead=false;DB::listen(static function($query)use(&$reading,&$legacyRead,$legacy):void{if($reading&&str_starts_with($query->sql,'select')&&in_array($legacy,$query->bindings,true)){$legacyRead=true;}});
+$reading=true;foreach($legacyServers as$accountServer){same($default->id,NewDomainDns::profile($accountServer->id)->id,'Neither retired None nor a retired account template affects site DNS');}$reading=false;
+expect(!$legacyRead,'Registration never reads the retired account setting');
 $entry->upgraded();same($default->id,SiteDnsDefault::profile()->id,'Upgrade keeps one stable default reference');
+same(0,\App\Models\Setting::where('key',$legacy)->count(),'Site-default upgrade deletes retired account DNS settings');
 same(1,WatchProfile::where('name','Beco DNS')->count(),'Upgrade does not duplicate the deployment template');
 // Null watch choices inherit the site reference without storing a per-watch assignment.
 DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>null,'profile_revision'=>0,'expected_dns'=>null]);

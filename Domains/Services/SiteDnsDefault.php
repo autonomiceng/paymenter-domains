@@ -36,6 +36,8 @@ final class SiteDnsDefault
         Cache::lock('domains-site-dns-default',30)->block(5,static function():void {
             DB::transaction(static function():void {
                 Setting::orderBy('id')->lockForUpdate()->get();
+                Setting::where('settingable_type',(new \App\Models\Server)->getMorphClass())->where('key','domains_new_domain_dns_template')
+                    ->whereIn('settingable_id',\App\Models\Server::where('extension','Domains')->select('id'))->delete();
                 if(self::query()->exists()){return;} // Deployment changes never move a saved choice.
                 $names=config('domains.site_dns_default.nameservers');
                 if(!is_array($names) || !$names){return;}

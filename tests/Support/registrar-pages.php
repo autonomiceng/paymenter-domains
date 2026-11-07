@@ -510,7 +510,7 @@ unset($page,$offRows);gc_collect_cycles();gc_mem_caches();
 if ($registrarsPart === 'dns') {
 // Real Livewire actions prove permissions, reviewed settings persistence and audit together.
 
-// Account registration defaults are local, audited and shared across providers.
+// Retired account defaults have no field; the site owns new-domain DNS.
 // The full fixture installation already owns the DNS-template schemas.
 // Global pricing saves reload Paymenter settings; keep this branding fixture in the same persisted source.
 App\Models\Setting::updateOrCreate(['key'=>'company_name','settingable_type'=>null,'settingable_id'=>null],['type'=>'string','encrypted'=>false,'value'=>'Example Hosting']);
@@ -518,9 +518,10 @@ config(['settings.company_name'=>'Example Hosting','app.name'=>'Generic app']);
 $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\WatchProfile::create(['name'=>'Shared registration DNS','enabled'=>true,
     'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
+App\Models\Server::findOrFail($enom->server_id)->settings()->create(['key'=>'domains_new_domain_dns_template','type'=>'string','encrypted'=>false,'value'=>'']);
 $action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action);
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action)->assertDontSee('New domains use');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action)->assertDontSee('New domains use')->assertDontSee('None: keep registrar defaults');
 
 }
 

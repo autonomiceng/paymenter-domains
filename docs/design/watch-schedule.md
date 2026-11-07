@@ -127,7 +127,9 @@ Deployment supplies `domains.site_dns_default.nameservers`. Native install/upgra
 `Beco DNS` template and saves its ID in the global native setting `domains_site_dns_template`.
 No Beco hosts live in the generic extension. Missing or invalid deployment names remain Missing.
 System seeding uses actor 0 on the template and a system audit with no staff actor; later edits use
-normal staff attribution. There is no schema migration. Existing account settings are retained but ignored.
+normal staff attribution. There is no schema migration. The same install/upgrade transaction deletes the retired
+`domains_new_domain_dns_template` values on Domains registrar accounts, including saved None choices.
+The account form and all setting readers are removed; only the site default selector remains.
 
 Domain monitoring > Settings is the sole default selector, retaining the policy and existing
 `admin.domains.settings.new_domain_dns` grants. Unassigned domains and watches resolve the
