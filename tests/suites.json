@@ -566,6 +566,7 @@
     "tests/test_installed_demo_c_selection_conversion-test.php",
     "tests/self-heal-records-test.php",
     "tests/self-heal-retry-test.php",
+    "tests/local-demo-records-test.php",
     "tests/self-heal-queue-test.php",
     "tests/self-heal-recovery-test.php",
     "tests/site-dns-default-test.php",

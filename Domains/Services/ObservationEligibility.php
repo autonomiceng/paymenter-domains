@@ -9,6 +9,7 @@ final class ObservationEligibility
 {
     public static function allows(Domain $d, ?Collection $operations=null): bool
     {
+        if (\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($d)) { return false; }
         if (!in_array($d->status,['registration_pending','transfer_pending'],true)
             || $d->provider_domain_id!==null || $d->provider_order_id!==null || $d->provider_expires_at!==null) { return true; }
         $facts=$d->observation['facts']??null;

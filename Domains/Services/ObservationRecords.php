@@ -82,7 +82,7 @@ final class ObservationRecords
     }
     /** Staff recovery is needed for either a record hold or stopped current scheduled reads. */
     public static function stopped(Domain $d): bool
-    { return ObservationWork::stopped($d)||(self::held($d)&&HoldingReadRetry::status($d)['next_read']===null); }
+    { return !\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($d)&&(ObservationWork::stopped($d)||(self::held($d)&&HoldingReadRetry::status($d)['next_read']===null)); }
     public static function held(Domain $d): bool
     { return ($d->observation['record_hold']['identity']??null)===self::identity($d); }
     /** Shared by the staff inbox, sync notice and Missing DNS row. */

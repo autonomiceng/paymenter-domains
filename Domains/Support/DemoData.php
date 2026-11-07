@@ -21,13 +21,21 @@ final class DemoData
     public static function is(mixed $model): bool
     {
         return match (true) {
-            $model instanceof Domain => ($model->snapshot[self::MARKER] ?? null) === true,
+            $model instanceof Domain => self::local($model) || ($model->snapshot[self::MARKER] ?? null) === true,
             $model instanceof Operation => ($model->policy[self::MARKER] ?? null) === true || $model->funding_basis === self::MARKER,
             $model instanceof ManagedPublicConfig => $model->reason === self::MARKER,
             $model instanceof Account => self::account($model),
             $model instanceof WatchName => ($model->registry?->facts[self::MARKER] ?? null) === true,
             default => false,
         };
+    }
+    /** Deployment-owned markers identify local examples attached to a real test account. */
+    public static function local(Domain $domain): bool
+    {
+        foreach(config('domains.local_demo_markers',[]) as $marker){
+            if(is_string($marker)&&isset($domain->snapshot[$marker])){return true;}
+        }
+        return false;
     }
     private static function account(Account $account): bool
     {
