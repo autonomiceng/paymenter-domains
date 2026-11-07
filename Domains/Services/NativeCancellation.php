@@ -11,7 +11,7 @@ final class NativeCancellation
 {
     private static ?\WeakMap $adoptions = null;
     private static ?\WeakMap $intentTables = null;
-    public const MESSAGE="This domain can't be cancelled or suspended while its registration or transfer is still being processed. Check its status on the Domains page.";
+    public const MESSAGE="The registration or transfer result has not been verified. Check the domain's requests on the Domains page before cancelling or suspending it.";
     public static function boot(): void
     {
         if(!HookRegistration::claim(Service::getEventDispatcher(),self::class)){return;}

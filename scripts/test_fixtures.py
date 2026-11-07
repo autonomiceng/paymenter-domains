@@ -27,6 +27,8 @@ def shared_vendor(jobs, requested):
             Path(path).name.startswith("test_installed_")
             or path in STAFF_READS
             or path in {
+                # Cancellation regression only reads verified Composer dependencies.
+                'tests/native-cancellation-reason-test.php',
                 # Renewal fixtures only read dependencies; all source/vendor guards still run.
                 'tests/namesilo-legacy-account-guard-test.php',
                 'tests/staff-holding-modals-test.php',

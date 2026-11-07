@@ -186,7 +186,13 @@ final class DomainFacts
             [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code);
             // The row sends staff to the same place the head would.
             $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
-            if ($request!==null) { $cause=str_replace('Check the request','Check request #'.$request,$cause); }
+            if ($request!==null) {
+                $cause=str_replace('Check the request','Check request #'.$request,$cause);
+                $failed=Operation::whereKey($request)->where('domain_id',$d->id)->where('state','rejected')->first();
+                if ($code==='operation_review'&&$failed&&!\Paymenter\Extensions\Servers\Domains\Presentation\RequestStatus::closed($failed->state,$failed->safe_code)) {
+                    $cause='Request failed. Check request #'.$request.'.';
+                }
+            }
             if (!isset($f[$row])) {
                 $notice=$f['Open alerts']??self::fact([],tone:$tone);
                 $notice['value']=array_values(array_unique([...$notice['value'],$cause]));
