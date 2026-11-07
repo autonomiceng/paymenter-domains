@@ -116,6 +116,8 @@ def shared_vendor(jobs, requested):
                 'tests/staff-hidden-tld-link-test.php',
                 'tests/management-runtime-recovery-test.php',
                 'tests/staff-sync-worker-test.php',
+                # Browser requests mutate only disposable application and SQLite state.
+                'tests/test_staff_sync_browser.py',
                 'tests/storefront-busy-test.php',
                 # Cart ownership witnesses only read vendor; app and SQLite state stay isolated.
                 'tests/storefront-cart-owner-test.php',

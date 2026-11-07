@@ -631,7 +631,9 @@
     "tests/tld-sales-one-state-test.php",
     "tests/native-cancellation-reason-test.php"
   ],
-  "ui": [],
+  "ui": [
+    "tests/test_staff_sync_browser.py"
+  ],
   "runner": [
     "tests/runner-test.php",
     "tests/fixture-policy-test.php",

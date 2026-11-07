@@ -1,5 +1,14 @@
 # Verification
 
+## Explicit offline staff sync check
+
+With the pinned native/PHP fixture and existing Playwright setup below, run:
+`NODE_PATH=/path/to/installed/node_modules python3 scripts/test.py --jobs 1 --only tests/test_staff_sync_browser.py`.
+
+Chromium runs real Filament and Livewire against one disposable app. One Sync now click must update
+completion and Activity without reload, including hidden-tab polling. Outside requests are blocked;
+no provider calls or demo writes occur. Missing browser dependencies fail this explicit UI test.
+
 ## Explicit offline pricing filter check
 
 Using the pinned native environment and existing Playwright setup below, render real Blade and run Chromium:
@@ -50,7 +59,7 @@ See [scheduling and fail-fast receipts](test-scheduling.md) for concurrency, mem
 All `*-test.php` and `test_*.py` paths must exist and be registered exactly once; `*-test.cjs`
 files are refused until a JavaScript runner exists. Lint covers every runtime/test PHP file.
 Unknown, missing or explicitly unimplemented suites fail. Default runs execute all implemented
-categories, omitting native without a dependency. Empty categories are unimplemented; no UI suite exists.
+categories, omitting native without a dependency. Empty categories are unimplemented. The UI suite is explicit and requires the pinned native fixture, Node.js, an existing Playwright installation and Chromium; it is omitted from default runs.
 `--suite` selects categories and receipts disclose omissions. Synthetic tests do not prove provider acceptance.
 Native `test_client_scripts.py` needs Node.js on PATH, renders the shared client script and every
 including view with real Blade, then checks each inline script with `node --check`.

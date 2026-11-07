@@ -483,7 +483,7 @@ class RunnerTests(unittest.TestCase):
     def test_mariadb_is_always_explicit_opt_in(self):
         for source in ['', '/synthetic/dependency']:
             with mock.patch.dict(os.environ, {'PAYMENTER_TEST_APP': source}):
-                self.assertNotIn('mariadb', runner.default_suites())
+                self.assertTrue({'mariadb','ui'}.isdisjoint(runner.default_suites()))
                 self.assertEqual('native' in runner.default_suites(), bool(source))
         self.assertIn('mariadb', runner.CATEGORIES)
 
@@ -590,7 +590,7 @@ class RunnerTests(unittest.TestCase):
                 runner.manifest()
 
     def test_explicit_unimplemented_suite_is_not_green(self):
-        with mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'ui']), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
+        with mock.patch.object(runner, 'manifest', return_value={'ui': []}), mock.patch.object(runner.sys, 'argv', ['test.py', '--suite', 'ui']), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(ValueError):
             runner.main()
 
     def test_manifest_failure_has_setup_receipt(self):
@@ -648,7 +648,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_only_paths_keep_manifest_cases_and_native_fixture_requirements(self):
         suites = runner.manifest()
-        cases = [(['tests/test_package.py'], ['package']),
+        cases = [(['tests/test_package.py'], ['package']), (['tests/test_staff_sync_browser.py'], ['ui']),
                  (['tests/test_schema_mariadb.py'], ['mariadb']),
                  (['tests/test_package.py', 'tests/test_installed_package_previous.py', 'tests/test_package.py'],
                   ['native', 'package'])]
@@ -669,10 +669,10 @@ class RunnerTests(unittest.TestCase):
                 if selected == ['mariadb']:
                     php_prepare.assert_not_called()
                 else:
-                    php_prepare.assert_called_once_with(native='native' in selected)
-                self.assertEqual(native_prepare.call_count, int('native' in selected))
+                    php_prepare.assert_called_once_with(native=bool({'native','ui'}.intersection(selected)))
+                self.assertEqual(native_prepare.call_count, int(bool({'native','ui'}.intersection(selected))))
                 self.assertEqual(run.call_args.kwargs['only'], requested)
-                if 'native' in selected:
+                if {'native','ui'}.intersection(selected):
                     self.assertEqual(run.call_args.args[1]['PAYMENTER_TEST_FIXTURE'], str(Path(temp)/'paymenter'))
                     self.assertEqual(run.call_args.args[5], ('pristine', {'source': 'digest'}))
 
@@ -770,7 +770,7 @@ class RunnerTests(unittest.TestCase):
             (Path(temp)/'runtime').mkdir()
             self.assertEqual(runner.main(), 0)
         commands = run.call_args.args[0]
-        expected = [(kind, path) for kind, paths in suites.items() if kind != 'mariadb' for path in paths]
+        expected = [(kind, path) for kind, paths in suites.items() if kind not in {'mariadb','ui'} for path in paths]
         expected.sort(key=lambda item: runner.ORDER.index(item[0]))
         self.assertEqual([(kind, argv[-1]) for kind, argv in commands if kind != 'lint'], expected)
         lint = [[str(ROOT/'scripts/php-test'), '-l', str(path.relative_to(ROOT))]
