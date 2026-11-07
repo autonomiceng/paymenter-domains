@@ -56,6 +56,8 @@ foreach (['markup_percent', 'fixed'] as $mode) {
             return $totals;
         };
         same($oldTotals, $nativeTotals(), 'Upgrade starts with actual old native plan amounts');
+        $nativeIds = $product->plans()->orderBy('id')->pluck('id')->all();
+        $priceIds = DB::table('prices')->whereIn('plan_id', $nativeIds)->orderBy('id')->pluck('id')->all();
         $published = OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);
         unset($published['retailRule']); // Legacy publications have only offer/defaults/selection.
         DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
@@ -73,11 +75,48 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         // Check before synthetic fixture ports or a later edit can repair the installed publication.
         Illuminate\Support\Once::flush();
         same($expected, $nativeTotals(), 'Upgrade republishes the native amounts the storefront compares: '.json_encode($nativeTotals()));
+        foreach ($expected as $years => $total) {
+            same($total, number_format((float) DB::table('domains_prices')->where('server_id', $binding->serverId)
+                ->where('tld', 'net')->where('action', 'register')->where('term', $years)->sole()->retail, 2, '.', ''), 'Upgrade publishes matching Domains retail '.$years);
+        }
+        same($nativeIds, $product->plans()->orderBy('id')->pluck('id')->all(), 'Upgrade preserves native plan identities');
+        same($priceIds, DB::table('prices')->whereIn('plan_id', $nativeIds)->orderBy('id')->pluck('id')->all(), 'Upgrade preserves native price identities');
         same($evidence, DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all(), 'Upgrade preserves saved cost evidence and its age');
         same($readsBefore, $reads->calls, 'Upgrade republication never resolves a provider');
         $priceRows = DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
+        $nativeRows = DB::table('prices')->orderBy('id')->get()->toJson();
         (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
         same($priceRows, DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), 'Already-current installation does not republish');
+        same($nativeRows, DB::table('prices')->orderBy('id')->get()->toJson(), 'Already-current installation leaves native prices untouched');
+        $installedOffers = \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class);
+        commerceReject(fn () => $installedOffers->offer('net', 'register', 2));
+        // A native failure must roll back Domains rows and the publication marker too, allowing retry.
+        DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
+        $twoYearPrice = $product->plans()->where('billing_period', 2)->sole()->prices()->where('currency_code', 'USD')->sole();
+        DB::table('prices')->where('id', $twoYearPrice->id)->update(['price' => $oldTotals[2]]);
+        $publication = static fn () => [DB::table('domains_prices')->orderBy('id')->get()->toJson(),
+            DB::table('domains_tlds')->orderBy('id')->get()->toJson(), DB::table('prices')->orderBy('id')->get()->toJson()];
+        $beforeFailure = $publication();
+        DB::statement('CREATE TRIGGER refuse_retail_projection BEFORE UPDATE ON prices WHEN OLD.id = '.$twoYearPrice->id." BEGIN SELECT RAISE(ABORT, 'synthetic retail projection refusal'); END");
+        try { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install(); expect(false, 'Upgrade must reach the native projection'); }
+        catch (Illuminate\Database\QueryException $error) { expect(str_contains($error->getMessage(), 'synthetic retail projection refusal'), 'Expected native projection fault'); }
+        DB::statement('DROP TRIGGER refuse_retail_projection');
+        same($beforeFailure, $publication(), 'Native projection failure rolls back Domains publication and native prices together');
+        (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+        Illuminate\Support\Once::flush();
+        same($expected, $nativeTotals(), 'Upgrade retry projects every native amount');
+        config(['domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true]);
+        $installedStore = new \Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+        Cache::flush();
+        $installedSearch = $installedStore->check('installed-upgrade.net');
+        same('available', $installedSearch['status'], 'Installed search reopens through normal admission');
+        same(array_map(fn ($v) => '$'.$v, $expected), $installedSearch['terms'], 'Installed search offers all upgraded terms');
+        $upgradeUser = commerceUser(); $upgradeCart = commerceCart($upgradeUser);
+        $upgradeItem = commerceAdd($upgradeCart, $installedOffers->offer('net', 'register', 2)['product'], 'upgrade-cart.net', 2);
+        $upgradePage = Livewire\Livewire::actingAs($upgradeUser)->withCookies(['cart' => $upgradeCart->ulid])
+            ->test(App\Livewire\Cart::class)->set('use_credits', false);
+        same('28.98', number_format((float) $upgradeItem->fresh()->price->total, 2, '.', ''), 'Upgraded two-year cart line');
+        same('28.98', number_format((float) $upgradePage->get('total')->total, 2, '.', ''), 'Upgraded two-year native cart total matches its line');
         config(['domains' => $deployment]);
     }
     Cache::flush();
