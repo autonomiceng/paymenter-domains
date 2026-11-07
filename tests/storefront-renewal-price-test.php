@@ -2,7 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';require __DIR__.'/Support/storefront.php';require __DIR__.'/Support/storefront-catalogue.php';
-extract(commerceFixture(true));
+extract(commerceFixture(true,registrars:['enom']));
 extract(storefrontCatalogueFixture(compact('bindings','prices','sellers','native','now','reads'),['net','org'],[1]));
 storefrontFixtureRule($native,$catalogueTlds['net'],'17.99','10.99','10.99');
 storefrontFixtureRule($native,$catalogueTlds['org'],'20.99','21.99','21.99');

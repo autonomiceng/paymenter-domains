@@ -229,6 +229,7 @@
     "tests/domain-page-test.php",
     "tests/customer-initial-read-test.php",
     "tests/customer-activation-read-test.php",
+    "tests/customer-nameserver-mismatch-test.php",
     "tests/native-activation-information-test.php",
     "tests/storefront-renewal-price-test.php",
     "tests/test_domain_page_artifact.py",
