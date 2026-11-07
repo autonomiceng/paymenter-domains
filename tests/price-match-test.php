@@ -118,9 +118,14 @@ same($calls, $reads->calls, 'End-of-publication check makes no provider calls');
 same(0, $feedCalls, 'Buffered publication and its check never resolve another provider feed');
 same('0.01', number_format((float) $orgPrice->fresh()->price, 2, '.', ''), 'Untouched ending remains unchanged');
 // A real touched publication must retain its result and saved queue state when its warning fails.
+$clock->instant = $now->modify('+1 minute');
+$publicationCosts = array_map(static fn ($cost) => [...$cost,
+    'observed_at' => $clock->now()->format(DATE_ATOM),
+    'total' => $cost['action'] === 'register' && $cost['term'] === 3 ? '19.0000' : $cost['total']], $costs);
+$beforePublication = $tlds[0]->fresh()->catalogue_revision;
 $queue = DB::table('domains_observation_queues')->where('server_id', $b->serverId);
-$work = OfferState::decode($queue->value('offer_work'));
-$work['pending'] = [['tld' => 'net', 'costs' => $costs]];
+$work = OfferState::decode((clone $queue)->value('offer_work'));
+$work['pending'] = [['tld' => 'net', 'costs' => $publicationCosts]];
 $queue->update(['offer_work' => OfferState::json($work)]);
 DB::table('prices')->where('id', $longPrice->id)->update(['price' => '0.02']);
 $diagnosticLog = Mockery::mock(Psr\Log\LoggerInterface::class);
@@ -138,7 +143,10 @@ same($work['feed_due'], $savedWork['feed_due'], 'Publication logger failure pres
 same(null, $saved->offer_claim, 'Publication logger failure preserves the released claim');
 same(0, (int) $saved->offer_lease, 'Publication logger failure preserves the released lease');
 expect(!isset($savedWork['local_failure']), 'Publication logger failure does not record a feed failure');
-same(number_format((float) $longPrice->price, 2, '.', ''),
+expect($tlds[0]->fresh()->catalogue_revision > $beforePublication, 'A new feed observation was really committed');
+$publishedRetail = DB::table('domains_prices')->where(['server_id' => $b->serverId, 'tld' => 'net',
+    'action' => 'register', 'term' => 3])->value('retail');
+same(number_format((float) $publishedRetail, 2, '.', ''),
     number_format((float) $longPrice->fresh()->price, 2, '.', ''), 'The touched native price was really published');
 same(0, $feedCalls, 'Publication logger failure never starts another provider feed');
 DB::statement('DROP TRIGGER drift_native_price');
