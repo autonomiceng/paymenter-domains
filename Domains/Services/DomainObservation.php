@@ -98,6 +98,7 @@ final class DomainObservation
                 ObservationRecords::hold($l['domain'],$recordOverflow?'child_host_limit':($snapshot?->owned===false?'ownership_drift':(($records['glue']['read_failed']??false)&&$failedFamily==='glue'?'glue_unavailable':(($records['dns']['caa']??false)&&$failedFamily==='dns'?'caa_unsupported':'records_unavailable'))),$this->clock->now(),$failureCode,$failedFamily);
             }
             if ($failed) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),$failureCode); return $failureCode; }
+            if ($snapshot?->owned===false) { ObservationRecords::failPrimary($l['domain'],$this->clock->now(),'domain_not_in_account'); return 'domain_not_in_account'; }
             if ($deferred) { return 'read_deferred'; }
             $baseCode=$l['domain']->status==='transfer_pending'&&$transfer===TransferStatus::Pending?'healthy_pending':($l['domain']->status==='active'&&!($l['domain']->observation['drift']??true)?'refreshed':'unresolved');
             // A record gate must never hide drift, pending status or another unresolved core result.

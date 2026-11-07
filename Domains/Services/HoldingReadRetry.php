@@ -36,6 +36,8 @@ final class HoldingReadRetry
         $eligible=$d->status==='active'&&!$d->adoptionPending()&&ObservationEligibility::allows($d);
         $stopped=$job&&self::stoppedQuery(HoldingObservationWork::current($d,true))->exists();
         $code=$job&&in_array($job->safe_code,self::STOPPED,true)?$job->safe_code:null;
+        $failure=$d->observation['record_failure']??[];
+        if (($failure['identity']??null)===ObservationRecords::identity($d)&&($failure['code']??null)==='domain_not_in_account') { $code='domain_not_in_account'; $stopped=true; }
         $now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
         return ['read_review'=>$eligible&&$code!==null&&in_array($code,['read_failed','read_deadline','read_no_evidence'],true)&&($stopped||($job->tries??0)>=self::LIMIT||($job->resumes??0)>0),
             'records_paused'=>$job?->safe_code==='records_disabled',
@@ -47,6 +49,7 @@ final class HoldingReadRetry
                 'binding_mismatch','read_identity_changed'=>'The registrar account or domain identity changed.',
                 'encryption_unavailable'=>'Saved registrar data could not be decrypted.',
                 'records_incomplete'=>'The registrar did not return a complete supported record family.',
+                'domain_not_in_account'=>'Domain is not in the registrar account.',
                 null=>null,default=>'The registrar read stopped.'}];
     }
 }

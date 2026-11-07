@@ -334,6 +334,11 @@ final class DomainFacts
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+        if (!self::ended($d)&&$read['read_code']==='domain_not_in_account') {
+            return ['title'=>'Domain is not in the registrar account.','tone'=>'warning',
+                'body'=>'Check the assigned registrar account. Correct the account or complete the domain transfer there, then use Sync now.',
+                'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
+        }
         if (!self::ended($d)&&$read['read_review']) {
             return ['title'=>'Registrar reads keep failing. Check that this domain is in the right registrar account.','tone'=>'warning',
                 'body'=>self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.','action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
@@ -422,6 +427,7 @@ final class DomainFacts
     /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */
     private static function restart(Domain $d): string
     {
+        if (self::syncNow($d)) { return 'Use Sync now.'; }
         if (ObservationWork::currentId($d)!==null) { return self::canResume()?'Use Resume sync below.':self::ASK_RESUME; }
         return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';
     }

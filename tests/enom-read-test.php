@@ -381,3 +381,23 @@ foreach (['-bad','bad-','-bad.com','com.bad-','bad.-label','bad.label-'] as $end
 }
 $wire->payloads['Tlds']='<TLDList><TLD>com</TLD><TLD>xn--3ds443g</TLD><TLD>123</TLD><TLD>a.123</TLD></TLDList>';
 same(['com'],$driver->catalogue($context())->facts()['tlds'],'Hostname-shaped unsupported endings remain skippable');
+// A missing account holding is a diagnostic, never permission to repeat a purchase.
+$wire->rejectCommand=ReadCommand::Info;
+$wire->payloads['Info']='<Errors><Err1>Domain name not found</Err1></Errors>';
+$before=count($wire->calls);$failure=null;
+try{$driver->readDomain('example.com',new RequestContext($binding,RequestOrigin::Background,new DateTimeImmutable('+1 hour'),new RequestBudget(20),stopOnReadFailure:true));}
+catch(Throwable $error){$failure=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error);}
+same('domain_not_in_account',$failure,'An explicit missing domain identifies the account problem instead of a transient failure');
+same($before+1,count($wire->calls),'A missing domain stops before more registrar reads');
+$ordinary=$driver->readDomain('example.com',$context());
+same([Disposition::Unknown,null],[$ordinary->disposition,$ordinary->evidence()->domain],'A missing read never supplies ownership or financial evidence');
+foreach(['<Errors><Err1>Bad User name or Password</Err1></Errors>',
+ '<Errors><Err1>Domain name not found</Err1><Err2>Another failure</Err2></Errors>',
+ '<Errors><Err1>Domain name not found</Err1></Errors>'.$info,
+ '<Errors><Err1>Domain name not found PRIVATE</Err1></Errors>'] as $ambiguous){
+ $wire->payloads['Info']=$ambiguous;$failure=null;
+ try{$driver->readDomain('example.com',new RequestContext($binding,RequestOrigin::Background,new DateTimeImmutable('+1 hour'),new RequestBudget(20),stopOnReadFailure:true));}
+ catch(Throwable $error){$failure=\Paymenter\Extensions\Servers\Domains\Services\ReadFailure::code($error);}
+ same('read_failed',$failure,'Unknown or contradictory refusals do not claim the domain is missing');
+}
+$wire->rejectCommand=null;

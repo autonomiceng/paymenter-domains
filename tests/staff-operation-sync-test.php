@@ -38,6 +38,11 @@ $stoppedPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$chec
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){if($action!=='resume_observation'){commerceReject(fn()=>$run($check->fresh(),$action));}}
 $stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed')->assertSee('Sync resumed')->assertDontSee('Stopped after 5 attempts.');
+expect(str_contains($stoppedPage->html(),'wire:poll.2s="pollManagement"'),'An open page follows the resumed scheduler read');
+DB::table('domains_observation_work')->where('id',$stopped)->update(['safe_code'=>'refreshed']);
+$stoppedPage->call('pollManagement');
+expect(!str_contains($stoppedPage->html(),'wire:poll.'),'Completed scheduled read stops polling');
+DB::table('domains_observation_work')->where('id',$stopped)->update(['safe_code'=>null]);
 same(1,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped domain work remains resumable after purchase completion');
 unset($stoppedPage);gc_collect_cycles();
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
@@ -63,7 +68,7 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id]
 [$solo]=$prepare(placeholderComFixtureName('staff-solo-placeholder.com'));$soloDomain=$solo->domain;DB::table('domains_operations')->where('id',$solo->id)->delete();
 $soloWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$soloDomain->server_id,'account_fingerprint'=>$soloDomain->account_fingerprint,'domain_id'=>$soloDomain->id,
     'generation'=>$soloDomain->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
-$soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Resume sync below.')->assertDontSeeHtml('fi-callout');
+$soloPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$soloDomain->id])->assertActionVisible('resume_observation')->assertSee('Use Sync now.')->assertDontSeeHtml('fi-callout');
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id,(int)$soloDomain->id,'stale',StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 commerceReject(fn()=>app(ObservationWork::class)->resume($soloWork,'staff_review',new StaffSyncReview((int)$staff->id+1,(int)$soloDomain->id,StaffSyncReview::stamp($soloDomain->fresh()),StaffOperationReview::ACTIONS['resume_observation'],$clock)));
 same(0,(int)DB::table('domains_observation_work')->where('id',$soloWork)->value('resumes'),'A stale or foreign review resumes nothing');

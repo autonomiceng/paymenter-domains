@@ -41,6 +41,12 @@ final class DomainHistory
             $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
                 'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
         }
+        $sync=$domain->observation['sync_history']??[];
+        $events=['Sync requested','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped'];
+        foreach (is_array($sync)?array_slice($sync,-20):[] as $i=>$entry) {
+            if (!is_array($entry)||!in_array($entry['event']??null,$events,true)) { continue; }
+            $rows[]=['__key'=>'sync-'.$i,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,'by'=>'Staff'];
+        }
         $at=fn(Operation|array $r)=>($r instanceof Operation?$r->created_at:$r['time'])?->getTimestamp()??PHP_INT_MIN;
         usort($rows,fn($a,$b)=>$at($b)<=>$at($a));
         return $rows;

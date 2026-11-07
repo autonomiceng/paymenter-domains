@@ -21,8 +21,16 @@ class ViewDomain extends ViewRecord
 {
     public function getHeader(): ?\Illuminate\Contracts\View\View { return view('domains::staff.domain-header'); }
     public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); $this->edits=$this->facts=$this->domainStatus=$this->families=null; }
+    #[\Livewire\Attributes\Locked]
+    public ?int $resumeStarted=null;
     public function syncPending(): bool
-    { return \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()); }
+    {
+        $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
+        if ($this->resumeStarted!==null&&$now<$this->resumeStarted+900) {
+            $job=\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($this->getRecord(),true)->first();
+            if ($job&&($job->safe_code===null||$job->lease_until>$now)) { return true; }
+        }
+        return \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()); }
     public function managementProgress(): array
     { return \Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::for($this->getRecord()); }
 
@@ -61,6 +69,7 @@ class ViewDomain extends ViewRecord
     protected function afterActionCalled(Action $action): void
     {
         parent::afterActionCalled($action);
+        if ($action->getName()==='resume_observation') { $this->resumeStarted=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp(); }
         $this->pollManagement();
         $this->cacheSchema('infolist');
     }
@@ -115,7 +124,7 @@ class ViewDomain extends ViewRecord
                         \Filament\Notifications\Notification::make()->info()->title("A sync was already requested. If nothing changes in {$minutes} minutes, press Sync now again. If it still doesn't run, check the queue worker.")->send();
                         return;
                     }
-                    \Filament\Notifications\Notification::make()->success()->title('Sync queued')->body('You will get a notification when it finishes. Refresh this page to see the records.')->send();
+                    \Filament\Notifications\Notification::make()->success()->title('Sync queued')->body('You will get a notification when it finishes. This page updates when it finishes.')->send();
                 } catch (\DomainException $error) { \Filament\Notifications\Notification::make()->warning()->title($error->getMessage())->send(); }
                 catch (\Throwable) { \Filament\Notifications\Notification::make()->warning()->title("Couldn't queue sync. Ask your site admin to check the queue worker, then try again.")->send(); }
             });
@@ -197,7 +206,7 @@ class ViewDomain extends ViewRecord
         }
         foreach (array_diff_key($own,array_flip($shown)) as $label=>$fact) { $rows[]=$this->row($label,$fact,$label==='DS records'?[]:$this->side($label,$fact,$edits,null)); }
         $rows[]=$view('tail');
-        return Sheet::section('Registrar records',$rows,$note,after:$state['resume']&&$resume?->isVisible()?[$resume]:[]);
+        return Sheet::section('Registrar records',$rows,$note,after:!DomainFacts::syncNow($d)&&$state['resume']&&$resume?->isVisible()?[$resume]:[]);
     }
     /** One registrar records read per render, shared by the records section and the Last sync row. */
     private ?array $families=null;
@@ -239,7 +248,7 @@ class ViewDomain extends ViewRecord
         }
         if ($label==='Open alerts') { return $review?Html::make(Sheet::buttons([$review])):[]; }
         // One Resume sync per page: the Registrar records head draws it when the records show the stop.
-        if ($label==='Last sync') { $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
+        if ($label==='Last sync') { if (DomainFacts::syncNow($d)) { return []; } $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
         if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::blocked('held_'.md5($label),self::blockedLabel($label,$fact),$label,$edits['held']); }
         if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }

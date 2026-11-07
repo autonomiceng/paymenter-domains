@@ -47,4 +47,14 @@ Illuminate\Support\Facades\Auth::login($viewer);
 expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::syncNow($d->fresh()),'View-only staff have no Sync now control');
 $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
 same('Ask staff who can sync this domain.',$notice['body'],'View-only staff get a step they can take');
+// A proven account mismatch needs an account correction, not daily retries.
+$observation->fault='owner';$clock->instant=$clock->now()->modify('+1 day');
+same('domain_not_in_account',$worker->turn($queue,$guard),'A domain outside the assigned account retains the actual cause');
+same(true,HoldingObservationWork::stopped($d->fresh()),'A missing account holding stops automatic reads');
+$notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
+same('Domain is not in the registrar account.',$notice['title'],'A missing account holding has a specific staff explanation');
+expect(str_contains($notice['body'],'complete the domain transfer'),'The next step fixes the registrar account instead of repeating sync');
+$calls=count($observation->calls);$clock->instant=$clock->now()->modify('+30 days');
+same('idle',$worker->turn($queue,$guard),'A missing account holding does not loop after daily backoff');
+same($calls,count($observation->calls),'No further registrar reads before the account is corrected');
 $nativeSuccessful=true;echo "Bounded automatic read retries passed.\n";

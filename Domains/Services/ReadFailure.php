@@ -5,7 +5,7 @@ namespace Paymenter\Extensions\Servers\Domains\Services;
 /** Closed read diagnostics. Exception messages, account secrets and provider bodies are never stored. */
 final class ReadFailure
 {
-    public const CODES=['read_failed','read_exception','read_deadline','read_no_evidence','read_identity_changed',
+    public const CODES=['domain_not_in_account','read_failed','read_exception','read_deadline','read_no_evidence','read_identity_changed',
         'account_unavailable','binding_mismatch','configuration_unverified','encryption_unavailable','storage_unavailable',
         'catalogue_reader_unavailable','catalogue_acceptance_unavailable','catalogue_acceptance_changed',
         'catalogue_call_capacity','catalogue_evidence_missing','catalogue_evidence_invalid','catalogue_import_failed','catalogue_interrupted'];
@@ -20,6 +20,7 @@ final class ReadFailure
         if ($error instanceof \Paymenter\Extensions\Servers\Domains\Data\AccountBindingMismatch) { return 'binding_mismatch'; }
         // Match only known local messages; arbitrary exception text cannot become a diagnostic code.
         return match ($error->getMessage()) {
+            'Domain is not in registrar account.'=>'domain_not_in_account',
             'Registrar read failed.', 'Catalogue batch read failed.', 'Catalogue read failed.', 'Enom price read failed.',
             'Management transport unavailable.', 'Management response unavailable.'=>'read_failed',
             'Registrar request deadline reached.', 'Observation deadline reached.'=>'read_deadline',
