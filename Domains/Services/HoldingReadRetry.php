@@ -28,7 +28,7 @@ final class HoldingReadRetry
             if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)||ObservationRecords::held($d)){return;}
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
             HoldingObservationWork::current($d)->where('lease_until','<=',$now)
-                ->update(['tries'=>0,'claim'=>null,'safe_code'=>'refreshed','due_at'=>$now+86400]);
+                ->update(['tries'=>0,'claim'=>null,'safe_code'=>'refreshed','due_at'=>$now+(($d->observation['followup']['state']??null)==='pending'?300:86400)]);
         });
     }
     public static function status(Domain $d, ?\DateTimeImmutable $now=null): array

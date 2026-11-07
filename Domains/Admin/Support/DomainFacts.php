@@ -168,7 +168,7 @@ final class DomainFacts
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
         // The older top rows must describe the same failed read as the family inventory.
         if($registered && ($problem=self::readProblem($d))!==null){
-            foreach(['Expires','In registrar account','Contacts','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
+            foreach(['In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
                 if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=$problem;}
             }
             if(isset($f['Last sync'])){$f['Last sync']['sub']=$problem;}

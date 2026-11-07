@@ -116,6 +116,7 @@ final class Installation
             if ($dnsRecorded) { WatchDnsSchema::verify(); }
             app(Migrator::class)->run([dirname(__DIR__).'/database/migrations'],['force'=>true]);
             $this->verify(); // Required even when every migration was skipped.
+            SalesPolicySchema::checkpointSelections();
             ReminderTemplates::ensure();WatchNoticeTemplates::ensure();
         });
         SiteDnsDefault::ensure();

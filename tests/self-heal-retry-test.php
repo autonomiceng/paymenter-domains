@@ -89,4 +89,8 @@ $actor=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIE
 (new \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords($actor->id,$d->id,$d->authority_generation,$d->account_fingerprint))->handle(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports));
 expect(!HoldingObservationWork::stopped($d->fresh()),'Successful optional staff retry restores daily read work');
 same('refreshed',(clone $q)->value('safe_code'),'Manual read success does not leave a stale stopped heading');
+foreach(['pending'=>300,'observed'=>86400]as$followState=>$delay){
+ $current=$d->fresh();$p=$current->observation;$p['followup']=[...($p['followup']??[]),'state'=>$followState];$current->update(['observation'=>$p]);
+ \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($current);
+ same($clock->now()->getTimestamp()+$delay,(int)HoldingObservationWork::current($current)->sole()->due_at,$followState.' manual read keeps automatic follow-up cadence');}
 $nativeSuccessful=true;echo "Bounded automatic read recovery passed\n";

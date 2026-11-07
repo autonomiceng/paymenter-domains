@@ -27,6 +27,10 @@ foreach($xp->query('//span[@data-record-family]//svg')as$icon){if((int)$icon->ge
 foreach(['Last sync','DNS records']as$label){$text=json_encode($facts[$label]);
  if(!str_contains($text,'The registrar read failed.')){$errors[]=$label.' does not explain the failed read';}
  if(str_contains($text,'Fills in by itself')||str_contains($text,'Use Sync now')){$errors[]=$label.' promises a day or asks for a manual sync';}}
+$d->update(['provider_expires_at'=>null]);$facts=DomainFacts::for($d->fresh());
+expect(!str_contains($facts['Contacts']['sub']??'','Next automatic retry:'),'Missing Contacts retain their own repair instruction');
+expect(!str_contains($facts['Expires']['sub']??'','Next automatic retry:'),'Missing confirmed expiry does not promise an observation confirmation');
+expect(str_contains($facts['Nameservers']['sub']??'','Next automatic retry:'),'Unread nameservers retain automatic read guidance');
 expect($errors===[],implode('; ',$errors));
 expect(str_contains($top,'The registrar read failed.')&&str_contains($top,'Next automatic retry:'),'Native top rows render the actual failed read and due time');
 $nativeSuccessful=true;echo "Compact native staff Missing and consistent failed-read guidance passed.\n";

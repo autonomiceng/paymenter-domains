@@ -18,7 +18,7 @@ final class WatchFacts
     /** @return array{Domain:array<string,array>,Checks:array<string,array>} */
     public static function for(WatchName $w,?array $row=null): array
     {
-        self::gate();$active=$w->state==='active';$missing=self::missingCause($w);
+        self::gate();$active=$w->state==='active';$missing=self::missingCause($w,'points');
         // Paused and stopped names keep their last saved results on this page; the list reads only active names.
         if(!$row){$s=$active?null:((new \Paymenter\Extensions\Servers\Domains\Services\DomainSummaries())->staffWatches([(int)$w->id])['watch:'.$w->id]??null);$row=$s?['keys'=>WatchFindings::keys($s),'summary'=>$s]:WatchFindings::summaries([$w])[$w->id];}
         $s=$row['summary'];$keys=$row['keys'];
@@ -26,13 +26,13 @@ final class WatchFacts
         $domain=['Customer'=>self::fact($c['label'],$c['email'],null,$c['url']),
             'Expected nameservers'=>self::fact(WatchFindings::who(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w)),cause:'Choose it in Change DNS template'),
             'DNS template'=>self::fact($profile?->name,url:$profile?RoutingProfileResource::getUrl('view',['record'=>$profile->id]):null,cause:'Choose one in Change DNS template'),
-            'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:$missing)];
+            'Registrar'=>self::fact(WatchFindings::who($w->registration),cause:self::missingCause($w,'expiry'))];
         // Hidden when the registry does not publish an expiry date.
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active,$w);}
         $sid=$w->sources()->where('user_id',$w->user_id)->where('state','watch')->orderBy('id')->value('service_id');$service=$sid?\App\Models\Service::with('product')->find($sid):null;
         if($service){$domain['Hosting service']=self::fact($service->product?->name??'Service #'.$service->id,'Service #'.$service->id,url:Staff::can('admin.services.update')?\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]):null);}
         $checks=['Evidence'=>self::fact('Public DNS and registry checks',\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE),'Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active,$missing)];
-        if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:$missing);}
+        if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:self::missingCause($w,'expiry'));}
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
         if($active){$checks['Next check']=self::nextCheck($w);}
         $p=WatchNoticePreferences::read((int)$w->user_id,$w->canonical_name);$on=$p['account']['enabled']&&$p['target']['enabled'];
@@ -55,18 +55,18 @@ final class WatchFacts
         $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){$at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($key==='public'&&$e['public_stale']?'Historical answers. ':'').'Checked '.self::date(is_int($at)?$at:strtotime($at)):'No saved observation.');}
         return ['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence];
     }
-    public static function missingCause(WatchName $w): string
+    public static function missingCause(WatchName $w,?string $kind=null): string
     {
         if($w->state==='paused'){return 'Paused';}
         if($w->state!=='active'){return 'Monitoring stopped; no further checks';}
-        return $w->work->contains(fn($row)=>$row->due_at!==null||$row->lease_until>time())
+        return $w->work->contains(fn($row)=>($kind===null||$row->kind===$kind)&&($row->due_at!==null||$row->lease_until>time()))
             ?Missing::fills('after the next check'):'No check scheduled. Check the background worker.';
     }
     /** The latest check across nameservers, records and registry. Only failed checks are red; waiting or old evidence explains its next step. */
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
     {
         $fresh=$s?->freshness??[];$at=max([0,...array_map(fn($f)=>(int)$f['checkedAt'],$fresh)]);
-        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return [...self::fact($at?self::date($at):($w->state==='active'?null:''),cause:self::DECRYPT),'at'=>$at];}
+        if(!$s){$at=max((int)$w->delegation?->started_at,(int)$w->registry?->started_at);return [...self::fact($at?self::date($at):($w->state==='active'?null:''),cause:'No monitoring summary saved. Check the customer and domain records.'),'at'=>$at];}
         if(!$at){return self::fact(null,cause:self::missingCause($w));}
         $failed=$w->work->firstWhere('kind','expiry')?->safe_code;$failed=$failed!==null && !in_array($failed,['ready','rotation','no_coverage','not_registered','rate_limited','budget_exhausted','target_changed'],true);
         // A paused or stopped name reads as stale in every summary, so its saved failure still counts and it has no next check.
@@ -80,7 +80,7 @@ final class WatchFacts
     public static function expires(?DomainSummary $s,array $keys,bool $active,?WatchName $watch=null): array
     {
         if($s?->expiry){$soon=in_array('staff.expiring',$keys,true)||in_array('watch.expired',$keys,true);return self::fact(\Carbon\CarbonImmutable::parse($s->expiry)->format('M j, Y'),$soon?WatchFindings::expires($s->expiry):null,$soon?'warning':null);}
-        return self::fact($active?null:'',cause:$watch?self::missingCause($watch):'No expiry result saved. Check the monitoring schedule.',check:$active);
+        return self::fact($active?null:'',cause:$watch?self::missingCause($watch,'expiry'):'No expiry result saved. Check the monitoring schedule.',check:$active);
     }
     private static function nextCheck(WatchName $w): array
     {
@@ -90,7 +90,7 @@ final class WatchFacts
     /** The nameservers the last delegation check found, compared with the expected ones. */
     private static function nameservers(WatchName $w): array
     {
-        $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:self::missingCause($w));}
+        $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:self::missingCause($w,'delegation'));}
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
         $expected=\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchExpected($w);
         if(!\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::usable(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::watchProfile($w)) || !$expected){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}

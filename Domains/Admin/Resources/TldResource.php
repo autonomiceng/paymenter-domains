@@ -72,7 +72,7 @@ class TldResource extends Resource
             OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?trim($reason.'. '.(TldFacts::FIXES[$reason]??'')):null)),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all()),
-            Filter::make('needs_attention')->label('Terms need attention')->query(fn(Builder $query)=>$query->whereIn('domains_tlds.id',\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::summary()['attention']))])
+            Filter::make('needs_attention')->label('Terms need attention')->query(fn(Builder $query,$livewire)=>$query->whereIn('domains_tlds.id',\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::summary(filter_var($livewire->getTableFilterState('server_id')['value']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]])?:null)['attention']))])
             ->recordUrl(fn($record)=>self::getUrl('view',['record'=>$record]))->defaultSort('tld')->paginated([25,50,100])->defaultPaginationPageOption(25)->searchPlaceholder('Search TLD')
             ->emptyStateHeading(fn($livewire)=>$attention($livewire)?'No TLD terms need attention':($narrowed($livewire)?'No TLDs match':'No TLDs yet'))
             ->emptyStateDescription(fn($livewire)=>$narrowed($livewire)?\Paymenter\Extensions\Servers\Domains\Admin\Support\EmptyTable::CLEAR:'Choose what you sell on a registrar account.')

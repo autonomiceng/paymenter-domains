@@ -72,11 +72,12 @@ class CheckoutEligibility
             $batch?->remainingMilliseconds();
             $token = Cache::get($key);
             if (is_string($token) && $this->reusable($token, $name, $selection, $identity)) { return $token; }
+            if (is_array($token)&&($token['refusal']??null)==='eligibility_unconfirmed') { throw new EligibilityUnconfirmed($token['registrar_code']??null); }
             if ($token === false) { throw new \DomainException('Domain eligibility could not be confirmed.'); }
             try { $token = $this->observeFresh($name, $selection, $identity, batch: $batch); }
             catch (\DomainException $e) {
                 // Coalesce failed reads briefly too; retain every other guard's typed refusal.
-                if (in_array($e::class,[\DomainException::class,EligibilityUnconfirmed::class],true) && $e->getMessage() === 'Domain eligibility could not be confirmed.') { Cache::put($key, false, 10); }
+                if (in_array($e::class,[\DomainException::class,EligibilityUnconfirmed::class],true) && $e->getMessage() === 'Domain eligibility could not be confirmed.') { Cache::put($key, $e instanceof EligibilityUnconfirmed?['refusal'=>'eligibility_unconfirmed','registrar_code'=>$e->registrarCode]:false, 10); }
                 throw $e;
             }
             Cache::put($key, $token, 300);

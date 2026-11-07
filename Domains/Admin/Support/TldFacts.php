@@ -84,10 +84,12 @@ final class TldFacts
             default=>'Invalid pricing rule. Use Edit prices to repair it.',
         };
     }
+    public static function feedConfirmed(array $refresh): bool
+    { return ($refresh['selected_at']??null)!==null&&($refresh['succeeded_at']??0)>$refresh['selected_at']; }
     private static function feedGap(array $fact): string
     {
-        $r=$fact['refresh']??[];$selected=$r['selected_at']??null;
-        if(($r['succeeded_at']??0)>0&&($selected===null||$r['succeeded_at']>$selected)){return "Not in the registrar's price feed; not for sale";}
+        $r=$fact['refresh']??[];
+        if(self::feedConfirmed($r)){return "Not in the registrar's price feed; not for sale";}
         $cause=isset($r['failure'])?self::syncCause($r['failure']):(($fact['sales']['reason']??null)==='Check registrar account'?'Check registrar account.':
             (($r['succeeded_at']??null)?'No successful refresh after this TLD was selected is recorded.':'No successful refresh recorded for this account.'));
         return 'Price feed not read yet: '.$cause;
@@ -145,7 +147,7 @@ final class TldFacts
                 }
                 return $html;
             };
-            $transfer=$first('transfer');$catalogue=self::catalogue();$transfer=!($fact['unreadable']??false)&&!$catalogue->setting($row,'transfer')&&($transfer['retail']??null)===null?'Off':$price('transfer');
+            $transfer=$first('transfer');$catalogue=self::catalogue();$transfer=!($fact['unreadable']??false)&&!($fact['invalid_rule']??false)&&!$catalogue->setting($row,'transfer')&&($transfer['retail']??null)===null?'Off':$price('transfer');
             $name=(string)$row->server?->name;
             $account=(RegistrarFacts::accountLink((int)$row->server_id,$name)?->toHtml()??e($name)).($fact['demo']?' '.DemoData::tag(inline:true)->toHtml():'')
                 .($fact['seller']===(int)$row->server_id?' <span class="domains-table-tag">New orders</span>':'');

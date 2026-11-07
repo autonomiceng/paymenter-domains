@@ -704,7 +704,10 @@
     "tests/test_installed_r14_records-test.php",
     "tests/test_installed_r14_terms-test.php",
     "tests/test_installed_dns_seed-test.php",
-    "tests/test_installed_dns_connection-test.php"
+    "tests/test_installed_dns_connection-test.php",
+    "tests/staff-tld-review-test.php",
+    "tests/watch-guidance-review-test.php",
+    "tests/eligibility-refusal-cache-test.php"
   ],
   "ui": [],
   "runner": [

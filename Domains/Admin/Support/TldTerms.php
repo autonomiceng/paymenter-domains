@@ -16,11 +16,13 @@ final class TldTerms
             ->whereColumn('p.registrar_key','domains_tlds.registrar_key')->whereColumn('p.account_fingerprint','domains_tlds.account_fingerprint')
             ->where(fn($q)=>$q->where('p.register_enabled',true)->orWhere('p.transfer_enabled',true)));
     }
+    public static function matches(Tld $t,array $policy): bool
+    { return (int)($policy['server_id']??0)===(int)$t->server_id&&($policy['registrar_key']??null)===$t->registrar_key&&($policy['account_fingerprint']??null)===$t->account_fingerprint; }
     /** Uses the same saved choice as What you sell; never infer intent from successful prices. */
     public static function chosen(Tld $t,array $policy,array $defaults): bool
     {
         $i=OfferState::decode($t->catalogue_intent);$stops=$i['stops']??[];
-        return ($i['sell']??$defaults['defaultSell']??true)&&!in_array('renew',$stops,true)
+        return self::matches($t,$policy)&&($i['sell']??$defaults['defaultSell']??true)&&!in_array('renew',$stops,true)
             &&(($policy['register_enabled']??false)&&!in_array('register',$stops,true)
                 ||($policy['transfer_enabled']??false)&&($i['transfers']??$defaults['defaultTransfers']??false)&&!in_array('transfer',$stops,true));
     }
@@ -37,6 +39,7 @@ final class TldTerms
         self::selected(TldFacts::bound(Tld::query()))->when($server!==null,fn($q)=>$q->where('domains_tlds.server_id',$server))->chunkById(100,function($rows)use($accounts,&$read,&$attention):void{
             $policies=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::whereIn('tld',$rows->pluck('tld'))->get()->keyBy('tld');
             foreach($rows as $t){
+                if(!self::matches($t,($policies[$t->tld]??null)?->getAttributes()??[])){continue;}
                 try{$defaults=OfferState::decode($accounts[$t->server_id]->catalogue_defaults);$chosen=self::chosen($t,$policies[$t->tld]->getAttributes(),$defaults);}
                 catch(\Throwable){$chosen=true;}
                 if(!$chosen){continue;}
