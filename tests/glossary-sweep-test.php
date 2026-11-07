@@ -16,7 +16,7 @@ $source=static fn(string $class):string=>(string)file_get_contents((new Reflecti
 
 // Help: the auth code and WHOIS privacy headings keep their old anchors, so old links still land on them.
 same(['nameservers'=>'Nameservers','glue-records'=>'Glue records','dns-records'=>'DNS records','dnssec'=>'DNSSEC','transfer-lock'=>'Transfer lock',
-    'transfer-code'=>'Auth code','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auto-renew'=>'Renewal invoices'],OwnerHelp::ANCHORS,'Help headings use the glossary terms');
+    'transfer-code'=>'Auth code','privacy'=>'WHOIS privacy','contacts'=>'Contacts','auto-renew'=>'Renewal'],OwnerHelp::ANCHORS,'Help headings use the glossary terms');
 same('Also called an EPP code. Treat it like a password.',OwnerHelp::SUMMARIES['transfer-code'],'Auth code popover: the help page names transfer code once');
 $md=file_get_contents(OwnerHelp::path());
 expect(str_contains($md,"How each setting on a domain page works. Changes show in History once the registrar confirms them."),'Help intro');
