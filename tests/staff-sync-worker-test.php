@@ -44,4 +44,20 @@ same("Couldn't sync domain",App\Models\Notification::where('user_id',$actor->id)
 same($last,$d->fresh()->last_synced_at->format(DATE_ATOM),'A failed read preserves the last successful sync time');
 $page->call('pollManagement')->assertSee("Couldn't sync domain")->assertSee('Check the registrar account, then try Sync now again.');
 expect(!str_contains($page->html(),'wire:poll.'),'Failed sync stops polling');
+// Manual Sync now parks only idle scheduled reads when the domain is outside this account.
+DB::table('extensions')->where('id',$d->server_id)->update(['enabled'=>true]);
+$work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
+    'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d->fresh()),
+    'safe_code'=>'refreshed','due_at'=>$clock->now()->getTimestamp()+86400]);
+$observation->fault='owner';$clock->instant=$clock->now()->modify('+61 seconds');
+$page->callAction('sync_now')->assertNotified('Sync queued');
+Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
+$page->call('pollManagement')->assertSee('Domain is not in the registrar account.');
+same('domain_not_in_account',DB::table('domains_observation_work')->where('id',$work)->value('safe_code'),'Manual missing-account read stops idle scheduled work');
+DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'refreshed','lease_until'=>$clock->now()->getTimestamp()+300]);
+$clock->instant=$clock->now()->modify('+61 seconds');
+$page->callAction('sync_now')->assertNotified('Sync queued');
+Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
+same('refreshed',DB::table('domains_observation_work')->where('id',$work)->value('safe_code'),'Manual result leaves a live scheduler lease with its owner');
+same(0,DB::table('failed_jobs')->count(),'Missing-account reads finish without failed queue jobs');
 $nativeSuccessful=true;echo "Native database worker refreshes saved facts and the open staff page.\n";

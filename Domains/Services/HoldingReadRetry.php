@@ -18,16 +18,18 @@ final class HoldingReadRetry
         return $q->whereIn('safe_code',array_values(array_diff(self::STOPPED,self::TRANSIENT)));
     }
     public static function delay(int $tries): int { return $tries>=self::LIMIT?86400:min(3600,60*(2**min(6,max(0,$tries-1)))); }
-    /** A successful staff retry restores only idle current read work, never a live lease or financial job. */
-    public static function completedManually(Domain $seed): void
+    /** A completed staff read settles only idle current read work, never a live lease or financial job. */
+    public static function completedManually(Domain $seed, string $code='refreshed'): void
     {
+        if(!in_array($code,['refreshed','domain_not_in_account'],true)){throw new \InvalidArgumentException('Invalid manual read result.');}
         if(!\Illuminate\Support\Facades\Schema::hasTable('domains_observation_work')){return;}
-        \Illuminate\Support\Facades\DB::transaction(function()use($seed):void {
+        \Illuminate\Support\Facades\DB::transaction(function()use($seed,$code):void {
             $locked=HoldingLocks::take($seed);$d=$locked['domain'];
-            if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)||ObservationRecords::held($d)){return;}
+            if(ObservationRecords::identity($seed)!==ObservationRecords::identity($d)||($code==='refreshed'&&ObservationRecords::held($d))){return;}
+            if($code==='domain_not_in_account'&&(($d->observation['record_failure']['identity']??null)!==ObservationRecords::identity($d)||($d->observation['record_failure']['code']??null)!==$code)){return;}
             $now=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp();
             HoldingObservationWork::current($d)->where('lease_until','<=',$now)
-                ->update(['tries'=>0,'claim'=>null,'safe_code'=>'refreshed','due_at'=>$now+86400]);
+                ->update(['tries'=>0,'claim'=>null,'safe_code'=>$code,'due_at'=>$now+86400]);
         });
     }
     public static function status(Domain $d, ?\DateTimeImmutable $now=null): array

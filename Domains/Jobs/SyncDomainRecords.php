@@ -65,7 +65,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
                 if(!$failed&&$result==='refreshed'){\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d);}
-                if ($result==='domain_not_in_account') { $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
+                if ($result==='domain_not_in_account') { \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d,$result); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
                 $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'The saved records are up to date.');
             } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }
         } finally { Cache::forget($this->pendingKey()); }
@@ -82,11 +82,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
             $p['sync_history']=array_slice([...$history,['event'=>$event,'actor_id'=>$this->actor,
                 'at'=>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->format(DATE_ATOM)]],-20);
             $d->update(['observation'=>$p]);
-            if (($p['record_failure']['identity']??null)===ObservationRecords::identity($d)&&($p['record_failure']['code']??null)==='domain_not_in_account') {
-                \Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::current($d)
-                    ->where('lease_until','<=',app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->getTimestamp())
-                    ->update(['safe_code'=>'domain_not_in_account']);
-            }
+
         });
     }
     private function notice(string $title,string $body): void
