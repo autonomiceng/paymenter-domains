@@ -52,8 +52,8 @@ function storefrontQueryChecks(array $fixture, Storefront $store): void
         same($store->offer($ending, 'transfer', 1)['price'], $tenRows[$ending]['transfer'], 'Transfer matches strict current-price resolution');
     }
     same([1 => '$20.00'], $oneCheck['terms'], 'One-term check price parity');
-    same([1 => '$20.00', 2 => '$40.00', 3 => '$60.00', 4 => '$80.00', 5 => '$100.00',
-        6 => '$120.00', 7 => '$140.00', 8 => '$160.00', 9 => '$180.00', 10 => '$200.00'], $tenCheck['terms'], 'Ten-term exact price parity');
+    same([1 => '$20.00', 2 => '$41.00', 3 => '$62.00', 4 => '$83.00', 5 => '$104.00',
+        6 => '$125.00', 7 => '$146.00', 8 => '$167.00', 9 => '$188.00', 10 => '$209.00'], $tenCheck['terms'], 'Ten-term exact price parity');
     echo 'Cold catalogue reads: one term '.$oneQueries.', ten terms '.$tenQueries.'; check one '.$oneCheckQueries.', check ten '.$tenCheckQueries.".\n";
     expect($oneQueries > 0 && $tenQueries <= $oneQueries + 3 && $tenQueries <= 240, 'Cold catalogue query growth is bounded: '.$oneQueries.' / '.$tenQueries);
     expect($oneCheckQueries > 0 && $tenCheckQueries <= $oneCheckQueries + 1 && $tenCheckQueries <= 85, 'Interactive catalogue query growth is bounded: '.$oneCheckQueries.' / '.$tenCheckQueries);

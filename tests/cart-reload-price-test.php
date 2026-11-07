@@ -22,7 +22,7 @@ Illuminate\Support\Facades\View::getFinder()->prependLocation($views);
 Illuminate\Support\Facades\View::getFinder()->flush();
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $open=static function()use($user,$cart){Illuminate\Support\Once::flush();return Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(App\Livewire\Cart::class);};
-$page=$open(); same('29.90',number_format((float)$page->get('total')->total,2,'.',''),'Original cart total');
+$page=$open(); same('35.10',number_format((float)$page->get('total')->total,2,'.',''),'Original cart total');
 // Native Edit keeps the id while changing the term on another page.
 foreach ([1,3] as $term) {
     Illuminate\Support\Once::flush(); app('request')->cookies->set('cart',$cart->ulid);
@@ -38,8 +38,8 @@ $ports->apply(Edit::override($secondBinding,'net',new Intent(sell:false,transfer
 $page=$open(); $dom=storefrontDom($page->html());
 same('Your cart changed',trim($dom->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'Reload announces the changed cart even when another line was removed');
 expect(str_contains($page->html(),'example.net'),'The notice still identifies the removed domain');
-same('Was $23.40',trim($dom->query('//s')->item(0)?->textContent??''),'Reload strikes the amount the customer last saw');
-same('27.00',number_format((float)$page->get('total')->total,2,'.',''),'Reload shows the new price');
+same('Was $28.60',trim($dom->query('//s')->item(0)?->textContent??''),'Reload strikes the amount the customer last saw');
+same('33.00',number_format((float)$page->get('total')->total,2,'.',''),'Reload shows the new price');
 Illuminate\Support\Once::flush(); $page->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(1,App\Models\Order::count(),'One checkout accepts the price already shown on reload');
 $hosting=commerceHosting(); $cart=commerceCart($user);

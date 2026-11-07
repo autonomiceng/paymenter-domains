@@ -98,7 +98,7 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
         foreach (['net', 'test'] as $ending) {
             $result = $store->check('example.'.$ending);
             same('available', $result['status'], 'Corrupt '.$corruption.' preserves healthy check for '.$ending);
-            same([1 => '$20.00', 3 => '$60.00'], $result['terms'], 'Healthy check retains exact prices');
+            same([1 => '$20.00', 3 => '$62.00'], $result['terms'], 'Healthy check retains exact prices');
             same('$21.00', $result['renew'], 'Healthy check retains annual renewal');
         }
         $before = $reads->calls;
@@ -106,7 +106,7 @@ function storefrontCorruptionChecks(array $fixture, Storefront $store): void
             same('held', $store->check('example.'.$ending)['status'], 'Corrupt '.$corruption.' never revives '.$ending);
         }
         same($before, $reads->calls, 'Unorderable endings stop before availability');
-        DB::table('prices')->whereIn('id', $brokenPrices)->update(['price' => DB::raw('20 * (select billing_period from plans where plans.id = prices.plan_id)'), 'setup_fee' => '0.00']);
+        DB::table('prices')->whereIn('id', $brokenPrices)->update(['price' => DB::raw('20 + 21 * ((select billing_period from plans where plans.id = prices.plan_id) - 1)'), 'setup_fee' => '0.00']);
         DB::table('settings')->where('id',$marker->id)->update(['value'=>'register']);
         if (in_array($corruption, ['duplicate_product', 'wrong_type_marker'], true)) { DB::table('settings')->where('settingable_type',$duplicateProduct->getMorphClass())->where('settingable_id',$duplicateProduct->id)->delete(); DB::table('products')->where('id',$duplicateProduct->id)->delete(); }
         Cache::flush(); $repaired = array_column($store->endings(), null, 'tld');

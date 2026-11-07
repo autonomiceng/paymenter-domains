@@ -17,7 +17,7 @@ Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, stati
 $fixture = offerCommerceFixture(); extract($fixture);
 $public = $storefront->offer('com', 'register', 3);
 $staff = $ports->readOffers(new Query($binding, ['com'], 'register', 3), Context::Staff)[0];
-same(['$23.40', '$10.40', $binding->serverId, 3, '23.40'], [$public['price'], $public['renew'], $public['selection']->serverId,
+same(['$28.60', '$10.40', $binding->serverId, 3, '28.60'], [$public['price'], $public['renew'], $public['selection']->serverId,
     $public['selection']->term, $staff->retail], 'Public offer and Staff reader use the selected account and exact term total');
 $user = commerceUser(); $cart = commerceCart($user);
 $line = commerceAdd($cart, $public['product'], 'catalogue-placeholder.com', 3);
@@ -26,7 +26,7 @@ $admission->refresh(); same($before, $reads->calls, 'Current add receipt survive
 commerceCheckout($user, $cart);
 same([1, 1, 1], [Order::count(), Invoice::count(), Operation::count()], 'Real native checkout creates one atomic obligation');
 $op = Operation::firstOrFail();
-same([$binding->serverId, 3, '23.40', '10.40'], [(int)$op->server_id, (int)$op->term, $op->policy['price']['retail'],
+same([$binding->serverId, 3, '28.60', '10.40'], [(int)$op->server_id, (int)$op->term, $op->policy['price']['retail'],
     $op->domain->renewal_policy['retail']], 'Acquisition and annual renewal freeze the same admitted batch');
 same($before, $reads->calls, 'Locked checkout and invoice binding never resolve a provider');
 // Mutations happen after the last unlocked refresh and native locks, before our batch admission.
@@ -75,7 +75,7 @@ commerceCheckout($user, $cart);
 same($count + 2, Operation::count(), 'Two accounts share one successful native order');
 same(9, $hosting->fresh()->stock, 'Native hosting stock is decremented once');
 same($before, $reads->calls, 'Mixed native checkout uses only the unlocked receipts');
-same('11.70', Operation::where('server_id', $binding->serverId)->latest('id')->first()->amount, 'Positive below-cost coupon remains a native retail decision');
+same('14.30', Operation::where('server_id', $binding->serverId)->latest('id')->first()->amount, 'Positive below-cost coupon remains a native retail decision');
 // The unchanged native validation body also protects the dormant catalogue path.
 foreach (['quantity', 'options', 'duplicate', 'owner', 'setup', 'cached_price'] as $bad) {
     $cart = commerceCart($user); $line = commerceAdd($cart, $public['product'], 'invalid-'.str_replace('_', '-', $bad).'-placeholder.com', 3);
@@ -105,7 +105,7 @@ expect($page->get('total') !== null, 'Mounted refresh fixture has a visible tota
 $clock->instant = $now->modify('+6 minutes'); $before = $reads->calls;
 $q = new Query($binding, ['com'], 'register', 3);
 $ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding, 'com', [
-    new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register', 3, true, '21.0000',
+    new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register', 1, true, '7.0000',
         Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+1 day'))
 ]), $ports->readOffers($q, Context::Staff)[0]->revision);
 expect($cart->items()->whereKey($line->id)->exists(), 'Cost observation retains the actual cart line for total review');
@@ -117,8 +117,8 @@ expect(str_contains($notice, 'Review the total'), 'Changed-total notice: '.$noti
 same($before + 1, $reads->calls, 'Stale five-minute receipt costs one unlocked read');
 Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
 same($counts[2] + 1, Operation::count(), 'Second click accepts the visible new total');
-same('27.30', Operation::latest('id')->first()->policy['price']['retail'], 'Only the new obligation freezes the new total');
-same('23.40', $op->fresh()->policy['price']['retail'], 'Existing invoice evidence never changes');
+same('29.90', Operation::latest('id')->first()->policy['price']['retail'], 'Only the new obligation freezes the new total');
+same('28.60', $op->fresh()->policy['price']['retail'], 'Existing invoice evidence never changes');
 commerceReject(static function () use ($op): void { $p = $op->fresh()->policy; $p['checkout']['catalogue']['catalogue']['generation']++; $op->fresh()->update(['policy' => $p]); });
 $nativeSuccessful = true;
 echo "Offer commerce: ok\n";

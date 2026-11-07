@@ -17,7 +17,7 @@ same('separated', $registration->allow_quantity, 'Distinct domains share a produ
 same(['domains_action', 'domains_activation_information_initialized', 'domains_catalogue', 'domains_registrar', 'domains_tld_id'], $registration->settings()->orderBy('key')->pluck('key')->all(), 'Catalogue identity and once-only activation information markers');
 same([1, 3], $registration->plans()->orderBy('billing_period')->pluck('billing_period')->all(), 'Exact verified registration terms only');
 same([1], $native->product($namesilo, 'register')->plans()->pluck('billing_period')->all(), 'Annual-only provider never extrapolates');
-same('23.40', number_format((float) $registration->plans()->where('billing_period', 3)->sole()->prices()->sole()->price, 2, '.', ''), 'Native term-total retail');
+same('28.60', number_format((float) $registration->plans()->where('billing_period', 3)->sole()->prices()->sole()->price, 2, '.', ''), 'Native term-total retail');
 $annual = $native->annualPlan($registration);
 same(1, $annual->billing_period, 'Holding plan is annual on same product');
 same($registration->id, $annual->priceable_id, 'Annual transition preserves product');

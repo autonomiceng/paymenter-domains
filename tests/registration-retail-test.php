@@ -93,7 +93,7 @@ $expire = static function (array $keys) use ($clock, $binding): void {
         DB::table('domains_prices')->where('id', $row->id)->update(['catalogue_observation' => OfferState::json($raw)]);
     }
 };
-$expire(['register:1']);
+$expire(['register:1']); app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $admission->refresh();
 same([[10, 1]], $wire->calls, 'Only the stale first registration year is read');
 same('30.98', number_format((float) App\Classes\Cart::get()->items->sole()->price->total, 2, '.', ''), 'Cart uses refreshed first year plus current renewal');
@@ -113,7 +113,7 @@ DB::table('domains_prices')->where('id', $annual->id)->increment('revision');
 commerceReject(fn () => $quoted->validate($selection));
 DB::table('domains_prices')->where('id', $annual->id)->update(['revision' => $annual->revision]);
 // The mixed retail must still cover the independently quoted selected term's wholesale cost.
-$clock->instant = $now->modify('+2 minutes');
+$clock->instant = $clock->now()->modify('+1 minute');
 $ports->apply(new FeedObserved($binding, 'net', [new Cost('register', 10, true, '200.0000', CostUnit::TermTotal,
     'synthetic', $clock->now(), $now->modify('+1 day'))]), $revision());
 same('below_cost', $ports->readOffers(new Query($binding, ['net'], 'register', 10), Context::Staff)[0]->reason, 'Selected-term below-cost guard remains authoritative');
