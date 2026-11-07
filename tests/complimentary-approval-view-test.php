@@ -29,7 +29,7 @@ $check('Stale approval feedback',static function()use($staff,$d,$stale):void {
     $page=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->mountAction('approveComplimentaryCost')->setActionData(['reason'=>'Approve shown quote']);
     $change=true;
     DB::listen(static function($q)use(&$change,$stale):void {
-        if($change&&DB::transactionLevel()>0&&str_starts_with($q->sql,'select * from "domains_domains"')){
+        if($change&&DB::transactionLevel()===0&&str_starts_with($q->sql,'select * from "domains_operations" where "domains_operations"."id" =')){
             $change=false;DB::table('domains_operations')->where('id',$stale->id)->update(['safe_code'=>'staff_review_required']);
         }
     });

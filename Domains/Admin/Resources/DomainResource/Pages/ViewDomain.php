@@ -74,12 +74,23 @@ class ViewDomain extends ViewRecord
     }
     private function approveComplimentaryCost(Domain $d):Action
     {
-        $op=$d->operations()->where('state','held')->latest('id')->get()->first(fn($op)=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op)!==null);
+        $op=null;$message=null;
+        if(Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage')){
+            foreach($d->operations()->where('state','held')->where('safe_code','registrar_price_increased')->latest('id')->get() as $candidate){
+                try{$message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($candidate,true);}
+                catch(\Throwable){continue;}
+                if($message!==null){$op=$candidate;break;}
+            }
+        }
         return Action::make('approveComplimentaryCost')->label('Approve registrar cost')->color('danger')
-            ->visible(fn()=>$op&&Staff::can('admin.domains.fund')&&Staff::can('admin.domains.manage'))
-            ->modalHeading('Approve registrar cost')->modalDescription($op?\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,true):null)
+            ->visible($op!==null)->modalHeading('Approve registrar cost')->modalDescription($message)
             ->schema([\Filament\Forms\Components\TextInput::make('reason')->label('Reason')->required()->maxLength(500)])
-            ->action(fn(array $data)=>\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::approve($op->id,Auth::user(),$op->policy['complimentary_cost_review']['amount'],$data['reason'],app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)));
+            ->action(function(array $data)use($op):void {
+                try{
+                    \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::approve($op->id,Auth::user(),$op->policy['complimentary_cost_review']['amount'],$data['reason'],app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class));
+                    \Filament\Notifications\Notification::make()->success()->title('Registrar cost approved')->send();
+                }catch(\Throwable){\Filament\Notifications\Notification::make()->danger()->title('Could not approve registrar cost')->body('Reload the domain and check the current registrar cost and hold.')->send();}
+            });
     }
     /** Named as on the Users page, so a skin that records impersonation sees this one too. */
     private function customerView(Domain $d): Action
@@ -154,7 +165,8 @@ class ViewDomain extends ViewRecord
     {
         $out=[];
         if(Staff::can('admin.domains.fund')){foreach($d->operations()->where('state','held')->get() as $op){
-            if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can('admin.domains.manage'))){$out[]=Callout::make($message)->status('danger')->columnSpanFull();}
+            try{if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can('admin.domains.manage'))){$out[]=Callout::make($message)->status('danger')->columnSpanFull();}}
+            catch(\Throwable){$out[]=Callout::make('Registrar cost details are unavailable.')->status('warning')->columnSpanFull();}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
         if($sync!==null&&$sync['title']!=='Domain synced'){
