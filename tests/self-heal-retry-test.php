@@ -30,4 +30,10 @@ same('Registrar reads keep failing. Check that this domain is in the right regis
 same('Open registrar account',$notice['action']['label'],'Persistent reads offer the account check');
 expect(str_ends_with($notice['action']['url']??'','/admin/registrar-account/'.$d->server_id),'The action opens this domain’s own account');
 expect(!($notice['resume']??false),'The failed page does not lead with another resume');
+same('Then use Sync now.',$notice['body'],'Managing staff get their available sync step');
+$viewer=staffUser(['admin.domains.view']);
+Illuminate\Support\Facades\Auth::login($viewer);
+expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::syncNow($d->fresh()),'View-only staff have no Sync now control');
+$notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
+same('Ask staff who can sync this domain.',$notice['body'],'View-only staff get a step they can take');
 $nativeSuccessful=true;echo "Bounded automatic read retries passed.\n";
