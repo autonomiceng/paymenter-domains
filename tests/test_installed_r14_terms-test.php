@@ -11,9 +11,11 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting,StaffCatalogue
 extract(commerceFixture());tldPanel();pinStaffClock($now);$actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$t=$tlds[0];
 $probe=new ReflectionProperty(CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>new StaffCatalogue($ports,$clock),Capabilities::class=>$caps]);
 DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_feed_succeeded_at'=>$now->getTimestamp(),'offer_work'=>json_encode(['feed_due'=>$now->getTimestamp()+86400])]);
-// A retained term total whose feed freshness expired must remain Missing.
+// Missing totals have no saved retail or registrar cost; expired saved totals remain visible.
 $stale=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',3,true,'18.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now->modify('-2 days'),$now->modify('-1 day'));
-DB::table('domains_prices')->where('server_id',$t->server_id)->where('action','register')->where('term',3)->update(['catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($stale))]);
+$termPrice=DB::table('domains_prices')->where('server_id',$t->server_id)->where('action','register')->where('term',3)->first();
+$missing=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',3,false,null,\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+1 day'));
+DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>null,'catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($missing))]);
 $offer=(new StaffCatalogue($ports,$clock))->rows([\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole())],$t->tld)->sole();
 // Mounting the actual native bulk action is required: the old test rendered the price partial alone.
 $page=Livewire::actingAs($actor)->test(WhatYouSell::class);$key=$page->instance()->getTableRecordKey($offer);
@@ -21,6 +23,12 @@ $page->mountTableBulkAction('edit',[$key])->call('$refresh');$modal=$page->effec
 expect(str_contains($modal,'Missing'),'Fixture includes unpriced registrar term totals');$errors=[];
 foreach(['No saved registrar total for these terms.','Last successful refresh:','Next due:','Sync prices is an optional retry.']as$text){if(!str_contains($modal,$text)){$errors[]='Terms dialog lacks '.$text;}}
 if(str_contains($modal,'Sync prices to read these term totals')){$errors[]='Terms still requires a sync';}
+// Restore the saved amount with an expired cost and render the same native action again.
+DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>$termPrice->retail,'catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($stale))]);
+$stalePage=Livewire::actingAs($actor)->test(WhatYouSell::class);
+$stalePage->mountTableBulkAction('edit',[$key])->call('$refresh');$staleModal=$stalePage->effects['partials']['action-modals.0']??'';
+foreach(['Customer total $'.number_format((float)$termPrice->retail,2,'.',''),'Registrar cost $18.00','Out of date.']as$text){if(!str_contains($staleModal,$text)){$errors[]='Expired saved total lacks '.$text;}}
+
 // Three selected endings with fresh term facts, and no ending needing attention.
 $policy=\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',$t->tld)->sole()->getAttributes();unset($policy['id']);
 foreach(['net','org']as$ending){$copy=$t->replicate();$copy->tld=$ending;$copy->save();DB::table('domains_sales_policies')->insert([...$policy,'tld'=>$ending]);}
