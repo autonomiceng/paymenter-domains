@@ -105,6 +105,9 @@ def shared_vendor(jobs, requested):
                 'tests/management-runtime-recovery-test.php',
                 'tests/self-heal-retry-test.php',
                 'tests/offer-staff-reads-test.php',
+                # Sales page cases isolate app/DB state and only read verified vendor.
+                'tests/tld-stop-keeps-transfers-test.php',
+                'tests/tld-sales-transfers-off-test.php',
                 'tests/default-pricing-unreadable-test.php',
                 'tests/pricing-editor-notice-test.php',
                 'tests/staff-tld-page-test.php',
