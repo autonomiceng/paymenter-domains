@@ -57,7 +57,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
     public function handle(DomainObservation $observer): void
     {
         try {
-            if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { return; }
+            if (!Staff::allows(User::find($this->actor),'admin.domains.manage')) { $this->notice('Sync stopped','The staff permission to sync this domain was removed.'); return; }
             $d=Domain::find($this->domain);
             if (!$d||$d->status!=='active'||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { $this->notice('Sync stopped','Domain changed. Reload its page before trying Sync now again.'); return; }
             try {
@@ -66,6 +66,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
                 if(!$failed&&$result==='refreshed'){\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d);}
                 if ($result==='domain_not_in_account') { \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d,$result); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
+                if (!$failed&&$result!=='refreshed') { $this->notice('Sync needs a check','The registrar read finished, but its facts differ from the saved domain. Check the domain and its open request.'); return; }
                 $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'The saved records are up to date.');
             } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }
         } finally { Cache::forget($this->pendingKey()); }

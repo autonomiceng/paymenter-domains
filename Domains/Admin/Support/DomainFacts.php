@@ -308,7 +308,7 @@ final class DomainFacts
     public static function headRequest(Domain $d, array $status, ?int $held=null, ?array $notice=null): ?int
     {
         $notice??=self::notice($d);
-        return $notice===null||($notice['resume']??false)?$held??$status['request']:null;
+        return $notice===null||($notice['resume']??false)?$held??$status['request']??(ObservationWork::resumeBlocked($d)!==null?$d->latestAcquisition?->id:null):null;
     }
     /** A notice in the head line: its words, then its links. */
     private static function noticeHtml(array $notice, bool $mark): HtmlString
@@ -439,6 +439,7 @@ final class DomainFacts
     /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */
     private static function restart(Domain $d): string
     {
+        if ($reason=ObservationWork::resumeBlocked($d)) { return $reason; }
         if (self::syncNow($d)) { return 'Use Sync now.'; }
         if (ObservationWork::currentId($d)!==null) { return self::canResume()?'Use Resume sync below.':self::ASK_RESUME; }
         return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';

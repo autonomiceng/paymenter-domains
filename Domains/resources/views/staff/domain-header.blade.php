@@ -1,5 +1,6 @@
 <x-filament-panels::header :actions="$this->getCachedHeaderActions()" :actions-alignment="$this->getHeaderActionsAlignment()" :breadcrumbs="$this->getBreadcrumbs()" :heading="$this->getHeading()" :subheading="$this->getSubheading()" />
 @php($pending = array_filter($this->managementProgress(), fn ($row) => $row['pending']))
+@if ($this->syncPending())<p role="status" class="domains-hint">Sync in progress. This page updates when the read finishes.</p>@endif
 @if ($pending || $this->syncPending())
 {{-- Follow queued completion even when staff switch tabs; pending state bounds this poll. --}}
 @if (array_filter($pending, fn ($row) => $row['slow']))<div wire:key="management-poll-slow" wire:poll.10s.keep-alive="pollManagement"></div>

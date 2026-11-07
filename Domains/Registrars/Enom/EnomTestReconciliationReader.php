@@ -22,8 +22,9 @@ final readonly class EnomTestReconciliationReader implements \Paymenter\Extensio
         $transfer=$attempt->query->action===Action::Transfer&&(\Paymenter\Extensions\Servers\Domains\Services\EnomTestTransfer::enabled($this->binding())||\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding(),'catalogue'))&&is_string($attempt->transferReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->transferReference);
         $captured=is_string($attempt->providerReference)&&preg_match('/^[1-9][0-9]{0,19}$/D',$attempt->providerReference)&&$attempt->executionFacts;
         $history=($attempt->query->action===Action::Register||$renewal)&&$attempt->historyAcceptance?->covers($attempt,$c->now());
+        $observation=$attempt->seal===\Paymenter\Extensions\Servers\Domains\Data\DispatchSeal::Sealed&&$attempt->sendState!==\Paymenter\Extensions\Servers\Domains\Data\SendState::DefinitelyUnsent;
         if($attempt->binding->registrarKey!=='enom'||($attempt->binding->environment!==Environment::Test&&!\Paymenter\Extensions\Servers\Domains\Services\EnomLive::enabled($this->binding(),'catalogue'))
-            ||!($attempt->query->action===Action::Register||$renewal||$transfer)||!($captured||$history||$transfer)){
+            ||!($attempt->query->action===Action::Register||$renewal||$transfer)||!($captured||$history||$transfer||$observation)){
             throw new \DomainException($renewal?'Captured TEST order or accepted renewal history is required.':'Captured TEST Purchase OrderID is required.');
         }
         $attempt->executionFacts?->requireAttempt($attempt);

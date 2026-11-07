@@ -36,8 +36,9 @@ final class OperationReconciliation
                 if ($op->action !== 'transfer' && $attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
-                    return null;
+                    if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
+                $check->capture($op);
                 if (($op->policy['reconciliation']['polls'] ?? 0) >= self::POLL_LIMIT && !TransferPolling::expected($op) && !$manual && !($watch&&TransferPolling::expired($op,$now))) { return null; }
                 if($watch){TransferPolling::reserve($op,$now);$op->refresh();}
                 $requestedNameservers = null;
@@ -79,6 +80,7 @@ final class OperationReconciliation
                 // One Enom charge can be a failed fee. It proves neither finality nor a settled refund.
                 if ($attempt->query->action->value === 'transfer' && $transfer !== \Paymenter\Extensions\Servers\Domains\Data\TransferStatus::Unknown) { $covered = true; }
                 $proof = ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) {
             $check->deferred = 'read_limit';

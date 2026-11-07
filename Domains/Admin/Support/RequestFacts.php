@@ -262,7 +262,7 @@ final class RequestFacts
             $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
             if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
             return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',
-                'action'=>$recover?HistoryRecovery::NAME:($tooOld?null:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck'))];
+                'action'=>$recover?HistoryRecovery::NAME:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck')];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {
             $ordersLink=!ManagementEvidence::retryable($op)||!self::account($op)['account']?->processing_enabled;
