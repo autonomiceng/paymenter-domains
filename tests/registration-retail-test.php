@@ -61,10 +61,11 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
         $evidence = DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all();
         $readsBefore = $reads->calls;
-        // Exercise the installed projection with explicit synthetic TEST sales/renewal acceptance.
+        // Installation may run while deployment sends are off. Publishing retail must still project
+        // retained plans; sale admission remains independently closed until acceptance returns.
         $deployment = config('domains');
         config(['domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true,
-            'domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true]);
+            'domains.enom_writes.registration' => false, 'domains.enom_writes.renewal' => false]);
         $renewal = \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::class;
         App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key' => $renewal::KEY],
             ['type' => 'string', 'encrypted' => true, 'value' => json_encode(['fingerprint' => $binding->fingerprint, ...$renewal::protocol($binding)])]);
