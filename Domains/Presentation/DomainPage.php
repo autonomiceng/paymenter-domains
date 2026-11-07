@@ -8,10 +8,10 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, RenewalRepe
 /** The client domain page: its one notice and the Renewal card rows, from the page DTOs alone. */
 final class DomainPage
 {
-    /** The cause on each value while reads are stopped. The page notice carries the one fix, so the rows stay calm. */
     public const INITIAL_READ = 'Checking with the registrar. This usually takes a few minutes.';
     public static function initialRead(OwnedDomain $d): bool
     { return collect($d->management)->contains(fn ($section) => $section['family']['initial_read_pending'] ?? false); }
+    /** The cause on each value while reads are stopped. The page notice carries the one fix, so the rows stay calm. */
     public const TEAM_CHECK = 'Our team needs to check this domain. '.Missing::NO_ACTION;
     public const NOTHING_TO_DO = 'There’s nothing you need to do.';
     /** The page notice while reads are stopped. When it shows, the rows need not repeat it. */
