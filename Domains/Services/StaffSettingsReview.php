@@ -26,7 +26,7 @@ final class StaffSettingsReview
     private ?string $synced=null;
     private ?\Closure $catalogueStamp=null;
     public function input(array $data): void
-    { $this->input=array_intersect_key($data,array_flip(['hours','dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','retained_annual_retail','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
+    { $this->input=array_intersect_key($data,array_flip(['hours','dns_template','registration','renewal','management','operation_id','attempt_hash','outcome','case_reference','ending','endings','changes','rule','rule_changed','counts','rows','only','history_action','delivery_id','alert_id','fee_percent','fee_fixed','retained_annual_retail','mode','markup','round_up','fixed_register','fixed_renew','fixed_transfer','seller','register','transfer','renew','enabled','sales','min_years','max_years','accept','terms','registry','verified','timezone','lag','retention','scheduled','manual','issue_days','due_days'])); }
     /** Actual accepted intent changes, captured under the writer locks. */
     public function salesRows(array $rows): void
     { $this->input['rows']=$rows; $this->input['changes']=array_fill_keys(array_keys($rows),true); }

@@ -37,7 +37,7 @@ class ViewTld extends ViewRecord
         parent::afterActionCalled($action);
         // Writers load their own models. Rebuild the page so the next change needs no reload.
         $t=$this->getRecord()->refresh();$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$t->server_id,(int)$t->id);
-        unset($this->cachedSchemas['infolist']);$this->sales=null;$this->canStart=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
+        unset($this->cachedSchemas['infolist']);$this->sales=null;$this->start=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
         $this->cacheInteractsWithHeaderActions();$this->forceRender();
     }
     /** @return array<string,Action> */
@@ -81,11 +81,9 @@ class ViewTld extends ViewRecord
     {
         $t=$this->getRecord();$s=$this->sales();$reason=$s['reason'];$step=null;
         if($s['label']==='For sale'){return StatusMark::line('success','For sale','tld-'.$t->id);}
-        if($this->staffStop()){
-            $reason=$reason==='Stopped by staff'&&$this->offByDefault()?'Not sold by default':'Stopped by staff';
-            return StatusMark::line('gray','Not for sale','tld-'.$t->id,$reason);
-        }
-        $tone=match(true){$s['invalid']=>'warning',in_array($reason,['Not offered by this registrar','Over the cost limit','Stopped by staff'],true)=>'gray',
+        // The TLD list reads the same reason, so both say one state.
+        if($this->staffStop()){return StatusMark::line('gray','Not for sale','tld-'.$t->id,$reason);}
+        $tone=match(true){$s['invalid']=>'warning',in_array($reason,['Not offered by this registrar','Over the cost limit',...self::STAFF_STOPS],true)=>'gray',
             in_array($reason,['Checking registrar terms'],true)=>'info',default=>'warning'};
         $link=static fn(?string $url,string $label)=>$url?new HtmlString(e($reason).'. <a class="domains-link" href="'.e($url).'">'.e($label).'</a>'):$reason;
         $step=match($reason){
@@ -95,75 +93,53 @@ class ViewTld extends ViewRecord
             default=>$reason};
         return StatusMark::line($tone,'Not for sale','tld-'.$t->id,$step);
     }
-    /** Sell is unset and this account only sells TLDs set to Sell. */
-    private function offByDefault(): bool
-    {
-        try{$raw=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($this->getRecord()->catalogue_intent);
-            $d=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(Account::where('server_id',$this->getRecord()->server_id)->sole()->catalogue_defaults);}
-        catch(\Throwable){return false;}
-        return ($raw['sell']??null)===null&&!($d['defaultSell']??true)&&($raw['stops']??[])===[];
-    }
-    /** Not for sale because of a stop Start selling lifts: staff stopped it, or stopped its renewals. */
+    /** Sales reasons for a stop that Start selling lifts. */
+    private const STAFF_STOPS=['Stopped by staff','Not sold by default'];
+    /** Not for sale because of a stop Start selling lifts: staff stopped it or its renewals, or it isn't sold by
+     * default. */
     private function staffStop(): bool
-    {return in_array($this->sales()['reason'],['Stopped by staff','Check TLD settings'],true)&&$this->canStart();}
-    /** Transfers count only when this TLD sells them: its own choice, or the account's when it has none.
-     * A stop saves transfers as off too, so a stopped TLD follows the account. */
-    private function sellsTransfers(Tld $t): bool
-    {
-        try{$raw=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);
-            $d=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode(Account::where('server_id',$t->server_id)->sole()->catalogue_defaults);}
-        catch(\Throwable){return false;}
-        $own=$raw['transfers']??null;
-        return (bool)($own===null||($own===false&&in_array('transfer',$raw['stops']??[],true))?($d['defaultTransfers']??false):$own);
-    }
+    {return in_array($this->sales()['reason'],self::STAFF_STOPS,true)&&$this->canStart();}
     private function mayChangeSales(): bool
     {return Staff::can(Staff::POLICY)&&Staff::can(Review::permission('tld_settings'));}
-    /** A stop that Start selling can lift, read once per request. */
-    private function canStart(): bool
+    /** A stop that Start selling can lift. */
+    private function canStart(): bool {return $this->mayChangeSales()&&($this->start()['can']??false);}
+    /** What Start selling saves (StaffCatalogue::start), and whether something it lifts is stopped. Read once per
+     * saved sales state, so a refreshed record reads again. An unreadable TLD can't start. */
+    private function start(): array
     {
-        $t=$this->getRecord();
-        if(!$this->mayChangeSales()){return false;}
-        // Keyed by the saved sales state, so a refreshed record reads again.
-        $key=md5((string)$t->catalogue_intent.'|'.(string)$t->catalogue_facts);
-        if(($this->canStart[0]??null)===$key){return $this->canStart[1];}
-        $this->canStart=[$key,$this->readCanStart($t)];
-        return $this->canStart[1];
+        $t=$this->getRecord();$key=md5((string)$t->catalogue_intent.'|'.(string)$t->catalogue_facts);
+        if(($this->start[0]??null)!==$key){
+            try{
+                $catalogue=StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
+                $start=$catalogue->start($t);$on=static fn(string $key):bool=>(bool)$catalogue->setting($t,$key);
+                $stopped=!$on('enabled')||!$on('renew')||!$on('register')||$start['transfers']&&!$on('transfer');
+                $start['can']=$stopped&&$start['block']===null;
+            }catch(\Throwable){$start=['can'=>false,'transfers'=>false,'checking'=>false];}
+            $this->start=[$key,$start];
+        }
+        return $this->start[1];
     }
-    private function readCanStart(Tld $t): bool
-    {
-        $catalogue=StaffCatalogue::routed();
-        $on=static fn(string $key):bool=>(bool)($catalogue?->setting($t,$key)??$t->{$key==='enabled'?'enabled':$key.'_enabled'});
-        if(!$on('enabled')||!$on('renew')){return true;}
-        $transfers=$this->sellsTransfers($t);
-        if($on('register')&&($on('transfer')||!$transfers)){return false;}
-        // Only now read what the registrar terms allow: the heavier read.
-        try{$accepted=$this->acceptedSales();}catch(\Throwable){return false;}
-        return (!$on('register')&&$accepted['register'])||($transfers&&!$on('transfer')&&$accepted['transfer']);
-    }
-    private ?array $canStart=null;
-    /** @return array{register:bool,transfer:bool} what the saved registrar terms allow, and transfers only if this TLD sells them */
-    private function acceptedSales(): array
-    {
-        if(($catalogue=StaffCatalogue::routed())!==null){$t=$this->getRecord();$a=$catalogue->restorable($t);return ['register'=>$a['register'],'transfer'=>$a['transfer']&&$this->sellsTransfers($t)];}
-        throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE);
-    }
-    /** Starts new registrations and transfers. A deliberate stop is never undone by price or term changes.
-     * The TLD's own renewal stop clears too, since a TLD can't be sold without renewals. Account renewal settings stay. */
+    private ?array $start=null;
+    /** Starts new registrations, and transfers when the TLD sells them. A deliberate stop is never undone by price or
+     * term changes. The TLD's own renewal stop clears too, since a TLD can't be sold without renewals. Account renewal
+     * settings stay. When the account sells only TLDs set to Sell, this sets the TLD to Sell. */
     public function startSellingAction(): Action
     {
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
         return Action::make('start_selling')->label('Start selling')->color('primary')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
-            ->modalDescription(fn()=>'New '.($this->opensTransfers()?'registrations and transfers':'registrations').' open at once'.($this->salePrices()?', at these prices.':'.'))
+            ->modalDescription(fn()=>'New '.($this->opensTransfers()?'registrations and transfers':'registrations')
+                .($this->start()['checking']?' open once the registrar terms are checked':' open at once').($this->salePrices()?', at these prices.':'.'))
             ->modalContent(fn()=>$this->salePricesList())
             ->visible(fn():bool=>$this->canStart())
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)auth()->id(),$server,$id,'tld_settings',$this->reviewStamp))])
             ->action(function(array $data)use($server,$id):void {
                 $input=[];
                 try{
-                    $t=$this->getRecord()->fresh();$catalogue=StaffCatalogue::routed();
-                    $input=['min_years'=>$catalogue?->setting($t,'min_years')??$t->min_years,'max_years'=>$catalogue?->setting($t,'max_years')??$t->max_years,'enabled'=>true,'renew'=>true,...$this->acceptedSales(),'verified'=>true];
-                    if(!$input['register']&&!$input['transfer']){throw new \DomainException('Acquisition acceptance unavailable.');}
+                    $t=$this->getRecord()->fresh();
+                    $start=(StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->start($t);
+                    if($start['block']!==null){throw new \DomainException('Explicit verified widening required.');}
+                    $input=['min_years'=>1,'max_years'=>$start['years'],'sales'=>'start','verified'=>true];
                     app(StaffSettingsWrites::class)->run(new Review((int)auth()->id(),$server,$id,'tld_settings',(string)($data['review_key']??''),'Started selling from the TLD page.'),$input);
                     Notification::make()->success()->title('Change recorded')->send();
                 }catch(\Throwable $error){Notification::make()->danger()->title('Change refused')->body(SettingsActions::refusal($error,'tld_settings',$input,$server,$id))->send();}
@@ -176,14 +152,14 @@ class ViewTld extends ViewRecord
         $price=static fn(string $action)=>$prices->first(fn($p)=>$p['action']===$action&&$p['term']===1)['retail']??null;
         return array_filter(['Register'=>($r=$price('register'))?$r.' a year':null,'Transfer'=>$this->opensTransfers()?$price('transfer'):null,'Renew'=>($r=$price('renew'))?$r.' a year':null]);
     }
-    private function opensTransfers(): bool
-    {try{return $this->acceptedSales()['transfer'];}catch(\Throwable){return false;}}
+    private function opensTransfers(): bool {return (bool)$this->start()['transfers'];}
     private function salePricesList(): ?HtmlString
     {
         $rows=$this->salePrices();
         return $rows?new HtmlString('<dl class="domains-sale-prices">'.implode('',array_map(fn($k,$v)=>'<div><dt>'.e($k).'</dt><dd>'.e($v).'</dd></div>',array_keys($rows),$rows)).'</dl>'):null;
     }
-    /** Stops new registrations and transfers. Domains customers already have keep renewing. */
+    /** Stops new registrations and transfers. Domains customers already have keep renewing. Only the stops change,
+     * so the TLD's transfer and term choices wait for Start selling. */
     public function stopSellingAction(): Action
     {
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
@@ -198,9 +174,7 @@ class ViewTld extends ViewRecord
             ->action(function(array $data)use($server,$id):void {
                 $input=[];
                 try{
-                    $t=$this->getRecord()->fresh();$catalogue=StaffCatalogue::routed();
-                    $input=['min_years'=>$catalogue?->setting($t,'min_years')??$t->min_years,'max_years'=>$catalogue?->setting($t,'max_years')??$t->max_years,
-                        'enabled'=>true,'register'=>false,'transfer'=>false,'renew'=>(bool)($catalogue?->setting($t,'renew')??$t->renew_enabled),'verified'=>true];
+                    $input=['min_years'=>1,'sales'=>'stop','verified'=>true];
                     app(StaffSettingsWrites::class)->run(new Review((int)auth()->id(),$server,$id,'tld_settings',(string)($data['review_key']??''),'Stopped selling from the TLD page.'),$input);
                     Notification::make()->success()->title('Change recorded')->send();
                 }catch(\Throwable $error){Notification::make()->danger()->title('Change refused')->body(SettingsActions::refusal($error,'tld_settings',$input,$server,$id))->send();}
