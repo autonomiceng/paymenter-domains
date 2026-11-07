@@ -11,7 +11,7 @@ final readonly class RegistrationRefusal
     {
         return is_array($facts)&&array_keys($facts)===['err_count','rrp_code','text','order_id','done']
             &&is_int($facts['err_count'])&&$facts['err_count']>=1&&$facts['err_count']<=100
-            &&is_string($facts['rrp_code'])&&preg_match('/^5[0-9]{2}$/D',$facts['rrp_code'])
+            &&is_string($facts['rrp_code'])&&$facts['rrp_code']==='541'
             &&in_array($facts['text'],['Validation error. Failed to create order.','Validation error; failed to add; order(s)'],true)
             &&$facts['order_id']===null&&$facts['done']===true?$facts:null;
     }

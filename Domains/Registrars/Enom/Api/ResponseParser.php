@@ -101,7 +101,7 @@ final class ResponseParser
     /** The observed order-creation refusal only. A registry error without this text is still uncertain. */
     private function purchaseRefused(#[\SensitiveParameter] array $data): bool
     {
-        if((int)$data['errcount']>100||!is_string($data['rrpcode']??null)||!preg_match('/^5[0-9]{2}$/D',$data['rrpcode'])
+        if((int)$data['errcount']>100||!is_string($data['rrpcode']??null)||$data['rrpcode']!=='541'
             ||isset($data['responsecode'])||!$this->noPurchaseFacts($data)){return false;}
         $metadata=['rrpcode','rrptext','command','apitype','language','errcount','responsecount','minperiod','maxperiod',
             'server','site','islockable','isrealtimetld','timedifference','exectime','done','trackingkey','requestdatetime','debug'];
