@@ -9,6 +9,10 @@ require __DIR__.'/Support/native-invoice-attachment.php';
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
+use Paymenter\Extensions\Servers\Domains\Data\{RequestBudget,RequestContext,RequestOrigin};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\{CataloguePreview,EnomTestReconciliationReader};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand;
+use Paymenter\Extensions\Servers\Domains\Services\ReconciliationEvidence;
 \Paymenter\Extensions\Servers\Domains\Services\RuntimeSchema::install();
 // Native re-check calls the existing read-only reconciliation engine; actual proof alone can complete.
 [$check]=$prepare(placeholderComFixtureName('staff-recheck-placeholder.com'));$calls=count($observation->calls);
@@ -37,7 +41,7 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->i
     ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom')->assertDontSee('Status checked');
 same('awaiting_answer',$uncheckable->fresh()->policy['status_check']['outcome'],'Lost reply retains the registrar answer state');
 same((new \DateTimeImmutable($uncheckable->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp(),$uncheckable->fresh()->policy['status_check']['answer_after'],'Staff answer waits 24 hours from this dispatch');
-same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
+expect(in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Info,$observation->calls,true),'A lost reply still reads supported registrar facts before asking for a case');
 [$transportFailure]=$prepare(placeholderComFixtureName('staff-failed-read-placeholder.com'),'captured');
 $observation->fault='transport';
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$transportFailure->id])->callAction('recheck')
@@ -46,5 +50,41 @@ Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$transportFailu
 $policy=$lastPoll->policy;$policy['reconciliation']['polls']=4;$lastPoll->update(['policy'=>$policy]);$observation->fault='wrong-charge';
 $reconcile->run($lastPoll->id);
 same(null,$lastPoll->fresh()->policy['status_check']['next_at'],'Exhausted reads promise no automatic retry');
+[$op,$binding]=$prepare(placeholderComFixtureName('staff-lost-read-placeholder.com'),'absent');
+$clock->instant=$clock->now()->modify('+25 hours');
+DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>false]);
+$before=[$op->attempt,$op->funding,$op->domain->reservation_name,$credit(),$writer->calls];
+$reconcile->run($op->id);
+expect(in_array(ReadCommand::Info,$observation->calls,true),'Automatic recovery reads supported registrar facts before asking for a case');
+expect(!in_array(ReadCommand::Order,$observation->calls,true)&&!in_array(ReadCommand::Orders,$observation->calls,true),'Missing order identity and unaccepted history never authorize an order search');
+$op->refresh();
+same(['owned'=>true,'expiry'=>'2027-10-18','expiry_precision'=>'date','charge_confirmed'=>false],$op->policy['status_check']['facts'],'Partial facts are recorded without inventing an original charge');
+same('awaiting_answer',$op->policy['status_check']['outcome'],'Unknown original charge still needs registrar evidence');
+same('uncertain',$op->state,'An observed holding cannot settle a lost purchase');
+same(null,$op->cost['actual']??null,'Unknown charge stays unknown');
+same($before,[$op->attempt,$op->funding,$op->domain->fresh()->reservation_name,$credit(),$writer->calls],'Reads preserve original attempt, spending reservation and payment');
+// The deployed wrapper must permit the same sealed-attempt facts, with its history gate closed.
+$driver=$readBindings->reader($op->server_id);
+$reader=new EnomTestReconciliationReader(new CataloguePreview($driver),$driver);
+$attempt=ReconciliationEvidence::attempt($op,$op->domain->fresh(),$binding);
+$context=new RequestContext($binding,RequestOrigin::Background,$clock->now()->modify('+250 seconds'),new RequestBudget(25),$clock);
+same(true,$reader->reconcile($attempt,$context)->result()->evidence()->domain?->owned,'Installed reader permits bounded facts through a paid-changes hold');
+// A failed read records no affirmative ownership or charge.
+$observation->fault='transport';$reconcile->run($op->id);
+same([], $op->fresh()->policy['status_check']['facts'],'Failed reads cannot repeat prior positive evidence as current');
+same(null,$op->fresh()->cost['actual']??null,'Read failure cannot settle the fee');
+// Old renewal history can be outside its accepted window, but its holding remains readable.
+DB::table('domains_accounts')->where('server_id',$op->server_id)->update(['processing_enabled'=>true]);
+[$renew,$domain,$binding]=$makeRenewal(placeholderComFixtureName('staff-lost-renewal-placeholder.com'));
+$state->lost=true;$runRenewal($renew,$binding);$renew->refresh();$state->calls=[];
+$clock->instant=$clock->now()->modify('+25 hours');
+DB::table('domains_accounts')->where('server_id',$renew->server_id)->update(['processing_enabled'=>false]);
+$before=[$renew->attempt,$renew->funding,$domain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes];
+(new \Paymenter\Extensions\Servers\Domains\Services\RenewalCompletion($renewBindings,$clock))->run($renew->id);
+expect(in_array(ReadCommand::Info,$state->calls,true),'Automatic renewal recovery reads before the support fallback');
+same(false,$renew->fresh()->policy['status_check']['facts']['charge_confirmed'],'A later expiry is not proof of this renewal charge');
+same($before,[$renew->fresh()->attempt,$renew->fresh()->funding,$domain->fresh()->provider_expires_at->format('Y-m-d'),$credit(),$state->writes],'Unknown renewal cost retains its original authority and money');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$renew->id])->assertActionVisible('recheck')->assertSee('Check status');
+
 echo "Native staff-operation-reads passed.\n";
 $nativeSuccessful=true;

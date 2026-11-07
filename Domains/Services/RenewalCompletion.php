@@ -31,8 +31,9 @@ final readonly class RenewalCompletion
                 if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $this->clock->now())) {
                     $check->awaitingAnswer = $attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo';
                     $check->answerAfter = (new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp();
-                    return null;
+                    if ($attempt->binding->registrarKey !== 'enom') { return null; }
                 }
+                $check->capture($op);
                 if (($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT) { return null; }
                 return [$attempt, HoldingLocks::take($l['domain'])['stamp']];
             } catch (\Throwable) { return null; }
@@ -52,6 +53,7 @@ final readonly class RenewalCompletion
                         || $facts->domain->providerAutoRenew !== false);
                 $autoRenewConfirmed = $attempt->binding->registrarKey === 'namesilo' && !$autoRenewUnconfirmed;
                 $proof = $autoRenewUnconfirmed ? null : ReconciliationEvidence::completion($attempt, $facts, $this->clock->now());
+                $check->observe($attempt,$facts,$proof!==null);
             }
         } catch (ReadDeferred) { $check->deferred = 'read_limit';
         } catch (EnomTestCallLimit $error) { $check->deferred = $error->reason === 'send_guard' ? 'send_guard' : 'send_limit';

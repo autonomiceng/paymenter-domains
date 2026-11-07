@@ -63,6 +63,7 @@ foreach (['generation'=>$current->generation+1,'phase'=>'old-phase'] as $field=>
     $row=(array)$current;unset($row['id']);$row[$field]=$value;
     $id=DB::table('domains_observation_work')->insertGetId($row);$foreign[]=$id;
     $before=DB::table('domains_observation_work')->where('id',$job)->value('resumes');
+    DB::table('domains_observation_work')->where('id',$job)->update(['safe_code'=>'read_unavailable']);
     $run($resume->fresh(),'resume_observation');
     same($before+1,DB::table('domains_observation_work')->where('id',$job)->value('resumes'),'Staff resumes the current job despite newer historical work');
     same(1,DB::table('domains_observation_work')->where('id',$id)->value('resumes'),'Historical saved work stays unchanged');

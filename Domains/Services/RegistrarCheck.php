@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\RequestContext;
+use Paymenter\Extensions\Servers\Domains\Data\{AttemptEvidence,Evidence,RequestContext};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** One bounded read result, shared by background work, staff feedback and customer notices. */
 final class RegistrarCheck
@@ -14,13 +14,32 @@ final class RegistrarCheck
     public ?string $awaitingAnswer = null;
     public ?int $answerAfter = null;
     public function __construct(private readonly Clock $clock) {}
+    private ?string $identity = null;
+    private array $facts = [];
+    public function capture(Operation $op): void { $this->identity=RegistrarAnswers::identity($op); }
+    /** Observations do not grant completion, payment return or another send. */
+    public function observe(AttemptEvidence $attempt, Evidence $facts, bool $chargeConfirmed): void
+    {
+        $domain=$facts->domain;
+        if ($domain && $domain->binding->matches($attempt->binding) && $domain->name===$attempt->query->name) {
+            $this->facts=['owned'=>$domain->owned,'expiry'=>$domain->expiry?->value,'expiry_precision'=>$domain->expiry?->precision->value,'charge_confirmed'=>$chargeConfirmed];
+        }
+    }
     public function finish(Operation $result): Operation
     {
         return DB::transaction(function () use ($result): Operation {
             Domain::whereKey($result->domain_id)->lockForUpdate()->firstOrFail();
             $op = Operation::whereKey($result->id)->lockForUpdate()->firstOrFail();
+            if ($this->identity!==null && !hash_equals($this->identity,RegistrarAnswers::identity($op))) { return $op; }
             $now = $this->clock->now()->getTimestamp();
+            if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
             $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
+            if ($this->awaitingAnswer!==null && ($this->context?->completedReads()??0)>0) {
+                $policy=$op->policy;
+                if ($op->action==='renew') { $policy['renewal_polls']=($policy['renewal_polls']??0)+1; }
+                else { $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1; }
+                $op->policy=$policy;
+            }
             $next = null;
             $watch = TransferPolling::applies($op);
             $stopped = $op->action === 'renew' ? ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
@@ -34,7 +53,7 @@ final class RegistrarCheck
                     DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next]);
                 }
             }
-            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
+            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->identity!==null?['attempt_identity'=>$this->identity,'facts'=>$this->facts]:[]), ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
             return $op;
         });
     }
@@ -71,7 +90,7 @@ final class RegistrarCheck
     private static function answerStep(array $check): array
     {
         $registrar = self::answerRegistrar($check);
-        return ['title'=>'Ask '.$registrar.' to check this attempt.','body'=>'You can record '.$registrar.'’s answer after '.self::answerAfter($check).'.'];
+        return ['title'=>'Ask '.$registrar.' to check this attempt.','body'=>(($check['facts']['owned']??null)===true?'The domain was found in this registrar account. The original charge is still unconfirmed. ':'').'You can record '.$registrar.'’s answer after '.self::answerAfter($check).'.'];
     }
     private static function answerRegistrar(array $check): string { return ($check['registrar'] ?? null) === 'Enom' ? 'Enom' : 'NameSilo'; }
     /** The staff request notice, next step first. Staff History already says the result is unconfirmed, so this doesn't. Null with no check. */
@@ -100,7 +119,7 @@ final class RegistrarCheck
                 || $op->authority_generation !== $domain->authority_generation) { return $check; }
             $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account));
             if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $now)) {
-                return ['outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
+                return [...($check??[]),'outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
                     'answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
             }
         } catch (\Throwable) {}
