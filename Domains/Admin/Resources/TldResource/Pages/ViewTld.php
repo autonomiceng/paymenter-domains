@@ -52,10 +52,11 @@ class ViewTld extends ViewRecord
     /** The head: the sales state once, and the one action that makes the TLD sellable as the primary button. */
     protected function getHeaderActions(): array
     {
-        $actions=$this->settings();$start=$this->startSellingAction();$fix=$this->fix();
-        if($start->isVisible()){return [$start->color('primary'),$actions['override']->color('gray'),ActionGroup::make([$actions['seller']])->label('More')->button()->color('gray')];}
-        if($fix==='seller'){return [$actions['seller']->label($this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar')->color('primary'),$actions['override']->color('gray')];}
-        return [$actions['override']->color($fix==='override'?'primary':'gray'),ActionGroup::make([$actions['seller'],$this->stopSellingAction()])->label('More')->button()->color('gray')];
+        $actions=$this->settings();$start=$this->canStart();$fix=$start?null:$this->fix();
+        $seller=$fix==='seller'?$actions['seller']->label($this->sales()['reason']==='No registrar selected'?'Choose registrar':'Change registrar')->color('primary'):null;
+        // Every sales action is always registered; visibility picks the one that shows.
+        return array_values(array_filter([$this->startSellingAction(),$seller,$actions['override']->color($fix==='override'?'primary':'gray'),
+            ActionGroup::make(array_values(array_filter([$seller?null:$actions['seller'],$this->stopSellingAction()])))->label('More')->button()->color('gray')]));
     }
     /** @return array{label:string,tone:string,reason:?string,invalid:bool} */
     private function sales(): array
@@ -134,7 +135,7 @@ class ViewTld extends ViewRecord
     public function startSellingAction(): Action
     {
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
-        return Action::make('start_selling')->label('Start selling')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
+        return Action::make('start_selling')->label('Start selling')->color('primary')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
             ->modalDescription(fn()=>$this->startDescription())
             ->visible(fn():bool=>$this->canStart())
