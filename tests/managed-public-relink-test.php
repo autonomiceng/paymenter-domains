@@ -12,6 +12,10 @@ extract(managedFixture(skipA3:true,beforeConfirm:static function(array $f):void{
     DB::table('domains_watch_profiles')->where('id',$f['profile']->id)->update(['nameservers'=>json_encode(['ns1.platform.example','ns2.platform.example'])]);
     siteDnsFixture($f['profile']->id);
 }));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
+// Site-default installation seeds quota before this scenario adopts its synthetic clock.
+$pool=DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->where('id',1);
+same([0,[]],[(int)(clone $pool)->value('used'),json_decode((clone $pool)->value('active'),true)],'Fixture has no reserved DNS calls before its clock starts');
+$pool->update(['window_at'=>$now]);
 same('active',$watch->fresh()->state,'A3 failed postcommit relink fixture');same(0,DB::table(ManagedPublicWorkSchema::TABLE)->count(),'No A3 work after atomic failure');
 $counter=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW,\Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites::VIEW]);
 \Illuminate\Support\Facades\Auth::setUser($counter);
