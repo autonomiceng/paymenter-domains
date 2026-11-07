@@ -77,7 +77,7 @@ for ($cycle=0;$cycle<2;$cycle++) {
         $deferred=$engine->run($renewal->id,$writer);
         same(5,$limiter->calls,'Four admission reads precede the limited first refresh read');
         same('queued',$deferred->state,'Renewal refresh limiter refusal remains retryable');
-        same('renewal_reads_unavailable',$deferred->safe_code,'NameSilo refresh reports its unavailable required read');
+        same('renewal_rate_limited',$deferred->safe_code,'NameSilo refresh preserves the local request-limit reason');
         same(4,count($wire->commands),'Limited fifth read makes no provider exchange after the four admission reads');
         expect(!isset($deferred->policy['renewal_admission']),'Renewal limiter refusal removes admission');
         same($attempt,$deferred->attempt,'Renewal limiter refusal creates no dispatch seal');
