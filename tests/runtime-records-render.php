@@ -49,7 +49,11 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
             // slop-sweep: a held read is said once in the page notice, so its row shows a calm Missing alone.
             $expected=$stateName==='unknown'?'Checking':'Missing';
             expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName.': '.trim(preg_replace('/\s+/u',' ',$rows->item(0)->textContent)));
-            if($stateName==='unknown'){same(1,substr_count($html,'Registrar read queued for'),'The queued read explains both missing record families once');}
+            if($stateName==='unknown'){
+                same(true,$recordFamilies['initial_read_pending'],'Unknown inventory is awaiting its first complete registrar read');
+                same(1,substr_count($html,\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::INITIAL_READ),'The initial read explains both checking record families once');
+                same(0,substr_count($html,'Registrar read queued for'),'Initial customer inventory omits the staff queue sentence');
+            }
         }
         preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
         writeRenderArtifact($out.'/customer-'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));
