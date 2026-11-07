@@ -87,11 +87,11 @@ $worker = new Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->w
     new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock, 25),
     static fn () => throw new LogicException('No additional provider reads allowed.'), static fn () => 0);
 same('worked', $worker->accountTurn($b->serverId), 'Existing account job finishes its buffered publication');
-Log::shouldHaveReceived('warning')->once()->with('Domain acquisition price mismatch after catalogue publication.',
-    Mockery::on(fn ($row) => $row['tld'] === 'net' && $row['term'] === 3 && $row['mismatch'] !== null));
+same(2, count(array_filter($offers->priceMatches(), fn ($r) => $r['mismatch'] !== null)), 'Full check still detects touched and untouched drift');
+Log::shouldHaveReceived('warning')->with('Domain acquisition price mismatch after catalogue publication.',
+    Mockery::on(fn ($row) => $row['tld'] === 'net' && $row['term'] === 3 && $row['mismatch'] !== null))->once();
 same($calls, $reads->calls, 'End-of-publication check makes no provider calls');
 same('0.01', number_format((float) $orgPrice->fresh()->price, 2, '.', ''), 'Untouched ending remains unchanged');
-same(2, count(array_filter($offers->priceMatches(), fn ($r) => $r['mismatch'] !== null)), 'Full check still detects touched and untouched drift');
 DB::statement('DROP TRIGGER drift_native_price');
 DB::table('prices')->where('id', $longPrice->id)->update(['setup_fee' => '0.00']);
 DB::table('prices')->where('id', $orgPrice->id)->update(['price' => $orgPrice->price]);
