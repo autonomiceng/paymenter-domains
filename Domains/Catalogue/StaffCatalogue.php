@@ -45,7 +45,7 @@ final class StaffCatalogue
         if(!$offers){return $missing('Check saved settings on .'.$t->tld.'.');}
         if($reason==='account_unavailable'){return $missing('Check account setup on Registrar account.','account');}
         try{$rule=self::ruleOnce($t,$once);}catch(\DomainException|\InvalidArgumentException){return $missing('Fix the pricing rule in Edit prices on .'.$t->tld.'.');}
-        if(in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)){return $step('off','Stopped in What you sell.');}
+        if(in_array($reason,['staff_stopped','staff_term_stopped','renewal_stopped'],true)){return $step('off','Use Start selling on .'.$t->tld.'.','tld');}
         // Account reads and queue hints are per account, so the rows of one page share them.
         $server=(int)$t->server_id;
         $binding=static function()use($server,&$once){return $once['binding'][$server]??=AccountBindings::binding(Account::where('server_id',$server)->sole());};

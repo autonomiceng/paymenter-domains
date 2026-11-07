@@ -616,7 +616,10 @@
     "tests/refund-renewal-reversals-test.php",
     "tests/renewal-completion-races-test.php",
     "tests/refund-renewal-replacement-test.php",
-    "tests/renewal-initialized-fixture-test.php"
+    "tests/renewal-initialized-fixture-test.php",
+    "tests/tld-registrar-options-test.php",
+    "tests/tld-registrar-sales-test.php",
+    "tests/registrar-orders-readiness-test.php"
   ],
   "ui": [],
   "runner": [

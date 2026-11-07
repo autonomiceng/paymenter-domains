@@ -78,11 +78,13 @@ final class StaffCommands
                     'acceptance'=>$this->row($binding,$t,$raw,$sell,$rule),
                     'tld_settings'=>isset($data['retained_annual_retail'])?Edit::retainRenewal($binding,$t->tld,$data['retained_annual_retail']):$this->settings($binding,$t,$raw,$data,$rule),
                     default=>throw new \DomainException('Unsupported catalogue action.')};
-                $target=$command->binding()->serverId===$t->server_id?$t:Tld::where('server_id',$command->binding()->serverId)->where('tld',$t->tld)->sole();
+                $target=$command->binding()->serverId===$t->server_id?$t:Tld::where('server_id',$command->binding()->serverId)->where('tld',$t->tld)->first();
+                if(!$target){throw new \DomainException('Seller offer missing.');}
                 $targetDefaults=OfferState::decode(Account::where('server_id',$target->server_id)->sole()->catalogue_defaults);
                 $entries[]=[$command,$this->revision($target,$targetDefaults)];
             }catch(\DomainException|\InvalidArgumentException $e){$failed[$t->tld]=$e->getMessage();}
         }}
+        if($entries===[]&&count($failed)===1&&$review->action!=='acceptance'){throw new \DomainException(reset($failed));}
         if(count($entries)>25||$entries===[]){throw new \DomainException('Review 1 to 25 valid commands.');}
         if($review->action==='import'&&$this->sync===null){throw new \LogicException('Offer sync composition required.');}
         $review->input([...$data,...($sell===[]?[]:['changes'=>[],'rule'=>$sell['rule']??null,'rule_changed'=>$defaults,'rows'=>[]])]);
@@ -117,8 +119,9 @@ final class StaffCommands
     private function settings($binding,Tld $t,array $raw,array $data,?array $rule): Edit
     {
         if(($data['min_years']??1)!=1){throw new \DomainException('Offer terms start at one year.');}
-        if(($data['enabled']??false)&&(($data['register']??false)||($data['transfer']??false))&&($raw['sell']??null)!==true){
+        if(($data['enabled']??false)&&(($data['register']??false)||($data['transfer']??false))){
             $defaults=OfferState::decode(Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
+            $raw=[...$raw,...get_object_vars($this->intent($raw)->allowSales(array_keys(array_filter(['register'=>$data['register']??false,'transfer'=>$data['transfer']??false]))))];
             $raw['sell']=($defaults['defaultSell']??true)?null:true;
         }
         $raw['longest']=(int)($data['max_years']??1);$raw['transfers']=(bool)($data['transfer']??false);$raw['stops']=[];
@@ -131,7 +134,11 @@ final class StaffCommands
     private function seller(Tld $t,array $data): Edit
     {
         $id=($data['seller']??'')===''?(int)$t->server_id:(int)$data['seller'];
-        $b=AccountBindings::binding(Account::where('server_id',$id)->sole());
-        return Edit::seller($b,$t->tld,($data['seller']??'')===''?[]:array_keys(array_filter(['register'=>(bool)($data['register']??false),'transfer'=>(bool)($data['transfer']??false)])));
+        $account=Account::where('server_id',$id)->first()??throw new \DomainException('Seller account missing.');
+        $b=AccountBindings::binding($account);
+        $actions=($data['seller']??'')===''?[]:array_keys(array_filter(['register'=>(bool)($data['register']??false),'transfer'=>(bool)($data['transfer']??false)]));
+        $target=Tld::where('server_id',$id)->where('tld',$t->tld)->first()??throw new \DomainException('Seller offer missing.');
+        if($actions!==[]&&!SellerAvailability::hasPrices($account,$target)){throw new \DomainException('Seller price missing.');}
+        return Edit::seller($b,$t->tld,$actions,$actions===[]?null:$this->intent(OfferState::decode($target->catalogue_intent))->allowSales($actions));
     }
 }

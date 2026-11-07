@@ -176,7 +176,12 @@ final class SettingsActions
             }
             if($name==='seller'){
                 $policy=self::cached(static fn()=>\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld',Tld::findOrFail($tld)->tld)->first());
-                $fields[]=Select::make('seller')->label('Registrar for new orders')->options(fn()=>\App\Models\Server::whereIn('id',Account::pluck('server_id'))->orderBy('id')->pluck('name','id')->all())->placeholder('None')->default(fn()=>$policy()?->server_id);
+                $choices=self::cached(static fn()=>TldRegistrar::choices($tld));
+                $fields[]=Select::make('seller')->label('Registrar for new orders')
+                    ->options(fn()=>array_map(static fn($row)=>$row['label'],$choices()))
+                    ->disableOptionWhen(fn($value)=>$choices()[(int)$value]['disabled']??true)
+                    ->helperText(fn()=>new \Illuminate\Support\HtmlString(implode('<br>',array_map(static fn($row)=>e($row['label'].': '.$row['reason']),array_filter($choices(),static fn($row)=>$row['reason']!==null)))))
+                    ->placeholder('None')->default(fn()=>$policy()?->server_id);
                 $fields[]=Checkbox::make('register')->label('Allow registrations')->default(fn()=>$policy()?->register_enabled??false);$fields[]=Checkbox::make('transfer')->label('Allow transfers')->default(fn()=>$policy()?->transfer_enabled??false);
             }
             if($name==='renewal_billing'){
@@ -464,6 +469,7 @@ final class SettingsActions
     /** Staff text for a refused settings change; never echoes unrecognized exception text. */
     public static function refusal(\Throwable $error,string $name,array $data=[],int $server=0,?int $tld=null): string
     {
+        if($name==='seller'&&($message=TldRegistrar::refusal($error,$data,$tld))!==null){return $message;}
         if($name==='tld_settings'&&$error instanceof \DomainException&&($text=self::termsRefusal($error->getMessage(),$data,$server,$tld))!==null){return $text;}
         if($name==='acceptance'&&$error->getMessage()==='Audit entry too large. Changes held.'){return 'That is too many changes for one save. Save fewer at a time. Nothing was saved.';}
         if($error instanceof EnomTestCallLimit&&(Account::where('server_id',$server)->value('environment')??($data['environment']??null))==='live'){return 'We stopped this before it reached Enom. Earlier reads may have been sent. Check API calls on the account page.';}
@@ -474,7 +480,7 @@ final class SettingsActions
                 'Acceptance exceeds encrypted settings capacity.','Invalid catalogue acceptance.'=>'That is more TLDs than one account can save. Turn some off. Nothing was saved.',
                 'Settings changed. Reload this page.'=>$name==='enroll_sandbox'?'This expired, or someone else changed this account. '.self::NO_KEY_CHECK.' Try again.':'Someone else changed this. Nothing was saved. Try again.',
                 'Current staff permissions required.'=>$name==='enroll_sandbox'?'Your permissions changed. '.self::NO_KEY_CHECK:'Your permissions changed. Nothing was saved.',
-                'Runtime acceptance and shared workers are required.'=>'Orders can’t resume yet. See System checks on this page.',
+                'Runtime acceptance and shared workers are required.'=>($account=Account::where('server_id',$server)->first())?StaffSettingsWrites::processingBlocker($account)??'Orders setup changed. Reopen Orders and try again.':'This registrar account was removed. Choose another registrar.',
                 'Pause processing on every legacy Enom server before installing or enabling Domains.'=>'Pause orders on the old Enom accounts first.',
                 'TEST catalogue reads are unavailable.'=>'Sync prices is off for this account on this site. '.self::NOT_SENT,
                 'Catalogue ending is not accepted.'=>'Add this TLD under What you sell first. '.self::NOT_SENT,
@@ -517,6 +523,6 @@ final class SettingsActions
                 'TEST renewal deployment is unavailable.'=>'Test renewals are off for this account or site. Check the Renewals row on the account page. Nothing was saved.',
                 'Enom TEST acquisition route acceptance is unavailable.'=>self::ADMIN_ORDERS,
                 'Enom TEST Purchase route acceptance is unavailable.'=>self::ADMIN_ORDERS,
-                default=>$name==='enroll_sandbox'?self::GENERIC_OUTCOME_UNKNOWN:'Check this page, then try again. If it fails again, open System checks on the registrar account.'};
+                default=>match($name){'enroll_sandbox'=>self::GENERIC_OUTCOME_UNKNOWN,'seller'=>'The registrar change could not be saved. Reopen Change registrar and try again.',default=>'Check this page, then try again. If it fails again, open System checks on the registrar account.'}};
     }
 }

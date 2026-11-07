@@ -8,6 +8,18 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 /** Typed defaults plus nullable per-offer overrides and explicit staff action stops. */
 final readonly class Intent
 {
+    /** One explicit per-TLD start, shared by the registrar dialog and the TLD sales action.
+     * Account defaults, term limits and pricing stay as they were. Independent evidence still gates sales. */
+    public function allowSales(array $actions): self
+    {
+        if ($actions === [] || array_diff($actions, ['register', 'transfer']) !== []) {
+            throw new \InvalidArgumentException('Acquisition actions required.');
+        }
+        return new self($this->defaultSell, $this->defaultLongest, $this->defaultTransfers, $this->maxAnnualCost,
+            true, $this->longest, in_array('transfer', $actions, true) ? true : $this->transfers,
+            array_values(array_diff($this->stops, ['renew', ...$actions])));
+    }
+
     /** Translate the existing staff form without storing a second policy. */
     public static function fromRule(array $rule): self
     {
