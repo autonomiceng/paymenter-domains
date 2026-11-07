@@ -33,6 +33,8 @@ same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_A
 $page->call('pollManagement')->assertSee('0 records')->assertDontSee('Not read yet')->assertSee('Domain synced');
 expect(str_contains($queuedHtml,'wire:poll.2s="pollManagement"'),'An open staff page must poll while its sync is queued');
 expect(!str_contains($page->html(),'wire:poll.'),'Completed sync stops polling');
+$syncEvents=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
+same('Domain synced',$syncEvents[0]['event']??null,'Same-second completion is newer than its request in Activity');
 // A pre-read failure used to disappear into the notification inbox, leaving old facts with no page explanation.
 $last=$d->fresh()->last_synced_at->format(DATE_ATOM);
 DB::table('extensions')->where('id',$d->server_id)->update(['enabled'=>false]);
