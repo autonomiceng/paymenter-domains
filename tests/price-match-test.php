@@ -5,7 +5,7 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/renewal-initialized.php';
-use Illuminate\Support\Facades\{DB, Log};
+use Illuminate\Support\Facades\{Cache, DB, Log};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{CallerRouting, Context, Edit, FactsObserved, FeedObserved, OfferState, Query};
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, EnomTestRenewal};
@@ -48,6 +48,27 @@ Log::shouldHaveReceived('warning')->times(4);
 $clock->instant = $now;
 DB::table('prices')->where('id', $annualPrice->id)->update(['price' => $annualPrice->price]);
 DB::table('prices')->where('id', $longPrice->id)->update(['setup_fee' => '0.00']);
+// Diagnostic failures must still hide drift while returning the healthy sibling term.
+DB::table('prices')->where('id', $longPrice->id)->update(['price' => '0.01']);
+$cache = Cache::getFacadeRoot(); $log = Log::getFacadeRoot();
+foreach (['cache', 'logger'] as $failure) {
+    $diagnosticCache = Mockery::mock();
+    $add = $diagnosticCache->shouldReceive('add')->once();
+    if ($failure === 'cache') { $add->andThrow(new RuntimeException('Synthetic warning cache failure.')); }
+    else { $add->andReturn(true); }
+    Cache::swap($diagnosticCache);
+    $diagnosticLog = Mockery::mock();
+    if ($failure === 'logger') {
+        $diagnosticLog->shouldReceive('warning')->once()->andThrow(new RuntimeException('Synthetic warning logger failure.'));
+    }
+    Log::swap($diagnosticLog);
+    try {
+        $display = $offers->display(['net']);
+        same(['register:1'], array_keys($display['net']), $failure.' failure preserves the healthy term and hides drift');
+        same(1, $tester->execute([]), $failure.' failure does not change the command mismatch exit');
+    } finally { Cache::swap($cache); Log::swap($log); }
+}
+DB::table('prices')->where('id', $longPrice->id)->update(['price' => $longPrice->price]);
 // Missing/duplicate plans and missing/duplicate USD rows must not disappear from the checked set.
 foreach (['missing-plan', 'duplicate-plan', 'missing-price', 'duplicate-price', 'invalid-plan'] as $bad) {
     if ($bad === 'missing-plan') { DB::table('plans')->where('id', $long->id)->delete(); }

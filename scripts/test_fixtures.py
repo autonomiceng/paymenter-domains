@@ -34,6 +34,7 @@ def shared_vendor(jobs, requested):
                 'tests/renewal-completion-races-test.php',
                 'tests/refund-renewal-replacement-test.php',
                 'tests/renewal-initialized-fixture-test.php',
+                'tests/price-match-test.php',
                 'tests/renewal-funds-boundary-test.php',
                 'tests/renewal-cycle-late-test.php',
                 'tests/renewal-cycle-late-replacement-test.php',
