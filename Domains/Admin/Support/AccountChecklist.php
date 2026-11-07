@@ -138,7 +138,8 @@ final class AccountChecklist
         $top=array_reduce($paused,fn(?array $carry,array $row)=>$carry===null||$row['paused']['count']>$carry['count']?$row['paused']:$carry);
         ['count'=>$count,'domain'=>$domain,'server'=>$server]=$top;
         $labels=array_column($paused,'label');$last=array_pop($labels);
-        $off=($labels?implode(', ',$labels).' and ':'').$last.' '.(count($paused)===1?'is':'are').' off.';
+        // Switch names are plural (Orders, Renewals) except Late renewal.
+        $off=($labels?implode(', ',$labels).' and ':'').$last.' '.(!$labels&&$last==='Late renewal'?'is':'are').' off.';
         try{$url=$domain!==null?DomainResource::getUrl('view',['record'=>$domain]):DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server]]]);}catch(\Throwable){$url=null;}
         return [[...self::row('Managed domains waiting',(string)$count,'warning',$off,null,'Managed domains on this account that wait until these switches are on.'),
             'buttons'=>[Action::make('paused_domains')->label($domain!==null?'Open domain':'View domains')->link()->size('sm')->url($url)->visible($url!==null)]]];
