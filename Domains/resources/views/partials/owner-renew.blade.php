@@ -1,4 +1,4 @@
-{{-- MIT, Copyright (c) 2026 Autonomic Engineering. The Renewal section: expiry, renewal invoices, Auto Pay, price, next invoice, auth code and Renew now. --}}
+{{-- MIT, Copyright (c) 2026 Autonomic Engineering. The Renewal section: expiry, renewal setting, Auto Pay, price, next invoice, auth code and Renew now. --}}
 @php
     $page = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::class;
     $expires = $page::expires($domain, $summary ?? null, $support);
@@ -9,6 +9,8 @@
     // A domain that ended without a registration (closed unpaid, or cancelled and credited) has no date: the row is left out, not None.
     $showExpires = $expires['missing'] || $domain->expiry !== null;
     $renewalRows = $domain->renewal !== '' && !$domain->setupPending;
+    // Renew now leads only once expiry is near (the Expires date turns amber within 30 days) or the renewal is late.
+    $renewSoon = ($expires['tone'] ?? null) !== null || ($domain->renewNow['late'] ?? false);
 @endphp
 @if ($showExpires || $renewalRows || $invoice || $authCode || isset($domain->renewNow['url']))
 <section class="domains-panel" id="renewal" aria-labelledby="heading-renewal"><div class="domains-panel__h"><h2 id="heading-renewal" class="domains-h2">Renewal</h2></div><div class="domains-panel__b">
@@ -17,7 +19,7 @@
 <div><dt>Expires</dt><dd>@if ($expires['missing'])@include('domains::partials.missing', ['cause' => $expires['cause'], 'fix' => $expires['fix'], 'stack' => true])@else<span class="domains-date domains-card__v{{ $expires['tone'] ? ' domains-tone-text-'.$expires['tone'] : '' }}">@include('domains::partials.date', ['date' => $domain->expiry, 'fallback' => 'None'])</span>@if ($expires['note']) <span class="domains-sub">{{ $expires['note'] }}</span>@endif @endif</dd></div>
 @endif
 @if ($renewalRows)
-<div><dt>Renewal invoices @include('domains::partials.help', ['id' => 'auto-renew', 'label' => 'Renewal invoices'])</dt><dd><span class="domains-card__v">{{ $domain->autoRenew ? ($domain->autoRenew['enabled'] ? 'On' : 'Off') : $domain->renewal }}</span>@if ($domain->autoRenew) <span class="domains-row__a domains-card__a"><button type="submit" form="form-auto-renew" class="domains-a domains-linkbtn">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button></span>@elseif ($domain->renewal === 'Off' && $support) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $support }}">Contact support</a></span>@endif</dd></div>
+<div><dt>Renewal @include('domains::partials.help', ['id' => 'auto-renew', 'label' => 'Renewal'])</dt><dd><span class="domains-card__v">{{ $domain->autoRenew ? ($domain->autoRenew['enabled'] ? 'On' : 'Off') : $domain->renewal }}</span>@if ($domain->autoRenew) <span class="domains-row__a domains-card__a"><button type="submit" form="form-auto-renew" class="domains-a domains-linkbtn">{{ $domain->autoRenew['enabled'] ? 'Turn off' : 'Turn on' }}</button></span>@elseif ($domain->renewal === 'Off' && $support) <span class="domains-row__a domains-card__a"><a class="domains-a" href="{{ $support }}">Contact support</a></span>@endif</dd></div>
 @if ($domain->renewal === 'On' && $domain->renewalPrice !== \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts::LABEL)
 <div><dt>Auto Pay</dt><dd><span class="domains-card__v">{{ $domain->autoPay ? 'On' : 'Off' }}</span>@if (!$domain->autoPay && isset($domain->actions['autoPay'])) <span class="domains-card__a"><a class="domains-a" href="{{ $domain->actions['autoPay'] }}">Manage Auto Pay</a></span>@endif<span class="domains-sub">{{ $domain->autoPay ? 'We charge your saved payment method for each renewal invoice.' : 'We send you an invoice and you pay it to renew.' }}</span></dd></div>
 @endif
@@ -34,7 +36,7 @@
 </dl>
 @include('domains::partials.owner-auto-renew')
 @if (isset($domain->renewNow['url']) && !$domain->renewalInvoice)
-<a class="domains-btn domains-btn--primary domains-btn--block" data-dialog-open href="{{ $show }}?edit=renew#edit-renew">Renew now</a>
+<a class="{{ $renewSoon ? 'domains-btn domains-btn--primary domains-btn--block' : 'domains-btn domains-btn--secondary' }}" data-dialog-open href="{{ $show }}?edit=renew#edit-renew">Renew now</a>
 @php $breakdown=static fn($line)=>isset($line['first_year'],$line['renewal'])?'$'.$line['first_year'].' for the first year'.($line['years']>1?' + $'.$line['renewal'].($line['years']===2?' for the next year.':' / year for the next '.($line['years']-1).' years.') : '.'):''; @endphp
 <dialog id="edit-renew" class="domains-confirm domains-edit domains-dialog-sheet" aria-labelledby="edit-renew-title" @if ($renewOpen) open @endif>
 <h3 id="edit-renew-title" class="domains-h3">Renew domain</h3>
