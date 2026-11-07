@@ -16,10 +16,11 @@ $t=$tlds[0];$account=Account::where('server_id',$t->server_id)->sole();$binding=
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $offer=static fn(string $action)=>$ports->readOffers(new Query($binding,['com'],$action),Context::Staff)[0];
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1,3],'renew'=>[1],'transfer'=>[1]],[],true,false,false,'synthetic',$now,$now->modify('+1 day'))),$offer('register')->revision);
-$ports->apply(Edit::override($binding,'com',new Intent(sell:false,stops:['register','transfer'])),$offer('register')->revision);
 $catalogue=Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class,['account'=>$t->server_id])->assertSuccessful();
-expect(!$catalogue->instance()->getTableRecords()->contains('tld','com'),'What you sell initially excludes a TLD that is not for sale');
+expect($catalogue->instance()->getTableRecords()->contains('tld','com'),'The default sale list keeps a purchasable TLD');
+$ports->apply(Edit::override($binding,'com',new Intent(sell:false,stops:['register','transfer'])),$offer('register')->revision);
+$catalogue->call('$refresh')->assertSuccessful();
+expect(!$catalogue->instance()->getTableRecords()->contains('tld','com'),'What you sell excludes a TLD when sales stop');
 $catalogue->filterTable('for_sale',false);
-$catalogue->set('tableDeferredFilters',$catalogue->get('tableFilters'))->call('applyTableFilters')->assertSuccessful();
 expect($catalogue->instance()->getTableRecords()->contains('tld','com'),'Clearing For sale lets staff configure stopped TLDs');
 $nativeSuccessful=true; echo "What you sell defaults to sale offers.\n";
