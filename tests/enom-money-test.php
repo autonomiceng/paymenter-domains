@@ -31,7 +31,17 @@ $quote = $driver->quote($query, $context());
 same('26.8650', $quote->evidence()->quote?->cost?->amount, 'Selected-term annual rate multiplied exactly without rounding');
 same(CostUnit::TermTotal, $quote->evidence()->quote?->unit, 'Neutral quote total has exact units');
 same(null, $quote->evidence()->premium, 'Catalogue cost never proves ordinary-name eligibility');
-same(['TLD' => 'com', 'ProductType' => 10, 'Years' => 3], end($wire->calls)[1], 'Exact selected term sent');
+same(['TLD' => 'com', 'ProductType' => 10, 'Years' => 2], end($wire->calls)[1], 'Product price requests the documented 2–4-year bracket');
+foreach (range(1, 10) as $years) {
+    $selected = new Query('example.com', Action::Register, $years);
+    $before = count($wire->calls);
+    $termQuote = $driver->acquisitionQuote($selected, $context(1))->evidence()->quote;
+    $bracket = $years === 1 ? 1 : ($years < 5 ? 2 : ($years < 10 ? 5 : 10));
+    same($bracket, end($wire->calls)[1]['Years'], 'Stale-price refresh requests the documented bracket '.$years);
+    same([$years, Paymenter\Extensions\Servers\Domains\Services\PricingRule::decimal(89550 * $years, 4)],
+        [$termQuote?->query->years, $termQuote?->cost?->amount], 'Quote retains exact selected term and total '.$years);
+    same($before + 1, count($wire->calls), 'Each selected-term quote still needs only one read');
+}
 $rate = Pricing::catalogue($quote, $binding, $query, $clock->now());
 same('8.9550', $rate->perYear, 'Quote maps back to exact per-year selected-term rate');
 same('2026-10-18T12:05:00+00:00', $rate->freshUntil?->format(DATE_ATOM), 'Explicit local five-minute freshness');
