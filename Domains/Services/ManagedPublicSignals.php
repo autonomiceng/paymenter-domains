@@ -101,7 +101,7 @@ final class ManagedPublicSignals
                 $q->update($this->failure($w,$id,$ticket->kind,$ticket->startedAt,$now,$now<$ticket->startedAt?'clock_reversal':'deadline'));return false;
             }
             if ($ticket->sourceOverflow) { $reading=$reading->withOmittedHosts(); }
-            $complete=$reading->result()==='complete';$code=$reading->safeCode();
+            $complete=$reading->result()==='complete';$code=$reading->safeCode();$checked=$complete || $code==='nameservers_missing';
             if($complete && $ticket->kind==='delegation'){
                 foreach($reading->queries as $answer){
                     if($answer['name']!==$t['domain']->domain || $answer['type']!=='NS' || $answer['state']!=='rrset'){continue;}
@@ -120,9 +120,9 @@ final class ManagedPublicSignals
                 'result'=>$reading->result(),'dns'=>$reading->dns,'website'=>$reading->website,'email'=>$reading->email,'mixed'=>$reading->mixed,'partial'=>!$complete,
                 'ns_confirmed'=>$confirmed,'safe_code'=>$code,'facts'=>[...$reading->facts(),'presentation_stamp'=>$ticket->presentationStamp,'glue'=>GlueDrift::current($t['domain'],$glue)],'digest'=>$reading->digest()]);
             $budget=$saturated || in_array($code,['budget_exhausted','rotation'],true);
-            $values=$complete?['attempts'=>0,'due_at'=>$now+$delay,'backoff_until'=>null]:($budget?
+            $values=$checked?['attempts'=>0,'due_at'=>$now+$delay,'backoff_until'=>null]:($budget?
                 ['attempts'=>$w->attempts,'due_at'=>$now+($saturated?60:($code==='rotation'?$ticket->interval:60)),'backoff_until'=>null]:$this->failure($w,$id,$ticket->kind,$ticket->startedAt,$now,$code));
-            $q->update([...$values,'claim'=>null,'lease_until'=>null,'safe_code'=>$code??'ready','last_success_at'=>$complete?$ticket->startedAt:$w->last_success_at,
+            $q->update([...$values,'claim'=>null,'lease_until'=>null,'safe_code'=>$code??'ready','last_success_at'=>$checked?$ticket->startedAt:$w->last_success_at,
                 'cursor'=>$cursor,'source_cursor'=>$sourceCursor??$ticket->sourceCursor]);
             if ($earlyPoints) { DB::table(ManagedPublicWorkSchema::TABLE)->where('domain_id',$id)->where('generation',$ticket->target->generation)->where('kind','points')
                 ->where(fn($q)=>$q->whereNull('lease_until')->orWhere('lease_until','<=',$now))->where('due_at','>',$now)->update(['due_at'=>$now]); }

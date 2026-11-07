@@ -169,6 +169,7 @@ final class Labels
             'render_failed'=>'Alert template failed',
             'read_deferred'=>'Check delayed. It runs again later.','clock_reversal'=>'Server clock problem. Try again.',
             'profile_unavailable'=>"Couldn't load the check settings",'dns_not_configured'=>'DNS comparison not set up. Choose a DNS template.',
+            'nameservers_missing'=>'No public nameservers found.',
             'no_hosting'=>'No hosting service. DNS record checks do not apply.',
             'rotation'=>'Check not finished. It continues on the next run.',
             'resolver_failed'=>'DNS resolver failed','invalid_answer'=>'DNS answer invalid','ambiguous_empty'=>'DNS answer incomplete',

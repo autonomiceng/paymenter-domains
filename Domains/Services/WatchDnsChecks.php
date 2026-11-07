@@ -79,7 +79,7 @@ final class WatchDnsChecks
             if ($complete && $ticket->kind==='delegation') { [$confirmed,$confirmedDelay,$early]=$this->confirmation($ticket,$reading,$now); }
             $facts['ns_confirmed']=$confirmed;
             $facts['presentation_stamp']=$ticket->presentationStamp;
-            $code = $reading->safeCode(); $rotation = $code === 'rotation'; $budget = $rotation || $code === 'budget_exhausted';
+            $code = $reading->safeCode(); $checked = $complete || $code === 'nameservers_missing'; $rotation = $code === 'rotation'; $budget = $rotation || $code === 'budget_exhausted';
             $valid = $result === 'unknown' ? null : $ticket->startedAt + 2 * $ticket->interval;
             $row = WatchDnsObservation::create(['watch_id' => $ticket->watchId, 'user_id' => $ticket->userId,
                 'watch_revision' => $ticket->watchRevision, 'profile_id' => $ticket->profileId, 'profile_revision' => $ticket->profileRevision,
@@ -88,12 +88,12 @@ final class WatchDnsChecks
                 'dns' => $reading->dns, 'website' => $reading->website, 'email' => $reading->email, 'mixed' => $reading->mixed,
                 'partial' => $result !== 'complete', 'safe_code' => $code, 'facts' => $facts,
                 'digest' => $reading->digest()]);
-            $attempts = $complete ? 0 : ($budget ? (int) $work->attempts : min(30, (int) $work->attempts + 1));
-            $delay = ($complete || $rotation) ? $confirmedDelay : ($budget ? 60 : [900, 3600, 21600, 86400][min(3, $attempts - 1)]);
-            $jitter = ($complete || $budget) ? 0 : (int) (hexdec(substr(hash('sha256', $ticket->watchId.'|'.$ticket->kind.'|'.$attempts), 0, 6)) % (intdiv($delay, 10) + 1));
+            $attempts = $checked ? 0 : ($budget ? (int) $work->attempts : min(30, (int) $work->attempts + 1));
+            $delay = ($checked || $rotation) ? $confirmedDelay : ($budget ? 60 : [900, 3600, 21600, 86400][min(3, $attempts - 1)]);
+            $jitter = ($checked || $budget) ? 0 : (int) (hexdec(substr(hash('sha256', $ticket->watchId.'|'.$ticket->kind.'|'.$attempts), 0, 6)) % (intdiv($delay, 10) + 1));
             $q->update(['claim' => null, 'lease_until' => null, 'attempts' => $attempts, 'due_at' => $now + $delay + $jitter,
-                'backoff_until' => ($complete || $budget) ? null : $now + $delay + $jitter, 'safe_code' => $code,
-                'last_success_at' => $complete ? $ticket->startedAt : $work->last_success_at, 'cursor' => $nextCursor, 'source_cursor' => $nextSourceCursor ?? $ticket->sourceCursor]);
+                'backoff_until' => ($checked || $budget) ? null : $now + $delay + $jitter, 'safe_code' => $code,
+                'last_success_at' => $checked ? $ticket->startedAt : $work->last_success_at, 'cursor' => $nextCursor, 'source_cursor' => $nextSourceCursor ?? $ticket->sourceCursor]);
             if ($early) { DB::table('domains_watch_work')->where('watch_id',$ticket->watchId)->where('kind','points')->whereNull('claim')->update(['due_at'=>$now]); }
             // Projection pointer changes do not alter watch configuration/revision or freshness.
             DB::table('domains_watch_names')->where('id', $ticket->watchId)->update(['last_observation_id' => $row->id]);
