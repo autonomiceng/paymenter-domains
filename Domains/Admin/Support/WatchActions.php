@@ -7,6 +7,7 @@ use Filament\Actions\{Action,ActionGroup};
 use Filament\Forms\Components\{Select,Textarea,TextInput};
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Fieldset;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\Facades\Auth;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\{RoutingProfileResource,WatchResource};
 use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProductMap,WatchProfile};
@@ -17,6 +18,8 @@ final class WatchActions
     /** Audit reasons for writes that ask no question; the history shows the event once. */
     private const REASONS=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed','read'=>'Check requested','profile'=>'DNS template changed'];
     private const DONE=['pause'=>'Monitoring paused','resume'=>'Monitoring resumed'];
+    /** The DNS template form says this once, for every box. */
+    public const ONE_PER_LINE='Enter one value per line.';
     public static function action(string $kind,int $id,int $revision,string $action,string $label,array $fields=[]): Action
     {
         $a=Action::make($action)->label($label)->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
@@ -100,12 +103,13 @@ final class WatchActions
     public static function configuration(?WatchProfile $row,int $revision=0): Action
     {
         if($row&&$row->readProfile()===null){return self::action('profile',(int)$row->id,$revision,'save','Edit')->color('gray')->disabled()->tooltip(WatchFacts::TEMPLATE_UNAVAILABLE);}
-        $lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->helperText('One per line.')->maxLength(8192)->rows(2);
+        // A short form: one note says one value per line, and the record groups are headed, not boxed.
+        $lines=fn(string $name,string $label,array $value)=>Textarea::make($name)->label($label)->default(implode("\n",$value))->maxLength(8192)->rows(2);
         $fields=[TextInput::make('name')->label('Name')->default($row?->name)->required()->maxLength(128),$lines('nameservers','Nameservers',$row?->nameservers??[])];
         foreach(['website_endpoints'=>'Website','email_endpoints'=>'Email'] as $key=>$label){$value=$row?->$key??[];
-            $fields[]=Fieldset::make($label.' records')->columns(1)->schema([$lines($key,$label.' hostnames',$value['exact']??[]),$lines($key.'_suffix',$label.' hostname suffixes',$value['suffix']??[]),$lines($key.'_ips',$label.' IP addresses',$value['ips']??[])]);}
-        $note='Future checks use these records. Monitoring stays on if this template is on.';
-        $action=self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields)->modalSubmitActionLabel('Save');
-        return $row?$action->color('gray')->modalDescription($note):$action;
+            $fields[]=Fieldset::make($label.' records')->contained(false)->columns(1)->schema([$lines($key,'Hostnames',$value['exact']??[]),$lines($key.'_suffix','Hostname suffixes',$value['suffix']??[]),$lines($key.'_ips','IP addresses',$value['ips']??[])]);}
+        $note=($row?'Future checks use these records. Monitoring stays on if this template is on. ':'').self::ONE_PER_LINE;
+        return self::action('profile',(int)($row?->id??0),$row?$revision:0,'save',$row?'Edit':'Add DNS template',$fields)->modalHeading($row?'Edit DNS template':'Add DNS template')
+            ->modalDescription($note)->modalWidth(Width::Medium)->modalSubmitActionLabel('Save')->color($row?'gray':'primary');
     }
 }
