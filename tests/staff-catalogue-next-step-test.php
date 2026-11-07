@@ -12,7 +12,10 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{SellTable,Staff};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{OfferState,OfferWork,StaffCatalogue};
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget;
-extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
+// One native seller covers the queue and rendered cells; cart hooks and a second account are unrelated.
+extract(commerceFixture(true,active:true,registrars:['enom']));tldPanel();pinStaffClock($now);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
+DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint,'offer_feed_run'=>1]);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $calls=0;$readable=true;
 $work=new OfferWork($ports->writer(),$clock,new AccountReadBudget($clock,25),static function()use(&$calls){$calls++;throw new LogicException('Rendering must not resolve a provider');},static fn()=>0);
@@ -44,23 +47,26 @@ class NextStepStaffPage extends \Paymenter\Extensions\Servers\Domains\Admin\Page
     public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBinding {return \Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$this->account)->sole());}
 }
 \Livewire\Livewire::component('next-step-staff-page',NextStepStaffPage::class);
-$failures=[];
+$failures=[];$retry=$now->getTimestamp()+120;
+// Retained fact work is scoped to the reviewed term authority, as requestFacts writes it.
+$authority=hash('sha256',OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::evidence($binding,'com')));
+$nextCheck=static fn(int $at)=>'Next check '.gmdate('M j, Y, g:i A',$at).' UTC.';
 try {
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
 DB::table('domains_prices')->where('server_id',$binding->serverId)->where('tld','com')->where('action','register')->update(['retail'=>null]);
 [$table,$row]=nextTable();$cell=$table->cell($row,'register','price');
 same('Checking',$cell['text'],'Missing facts queue their own read rather than asking staff to sync');
 same('gray',$cell['tone'],'Automatic work is a waiting state');
-same('Next check '.SellTable::time($now->getTimestamp()).'.',$cell['next'],'Waiting shows when the queued check is due');
+same($nextCheck($now->getTimestamp()),$cell['next'],'Waiting shows when the queued check is due');
 same('queued',$work->status($binding,'com')['state'],'The existing lazy-facts queue receives the hint');
 $queued=DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->value('offer_work');
 [$again,$row]=nextTable();$again->cell($row,'register','cost');$again->cell($row,'register','price');$again->status($row);
 same($queued,DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->value('offer_work'),'Repeated page and cell reads coalesce into one queue entry');
 same(0,$calls,'Staff rendering never resolves a provider or sends a request');
 // Existing retry dates survive repeated hints, so staff do not bypass the read budget/backoff.
-$retry=$now->getTimestamp()+120;
-$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['due_at'=>$retry,'tries'=>2,'failure'=>'read_failed']]])]);
-[$table,$row]=nextTable();same('Next check '.SellTable::time($retry).'.',$table->cell($row,'register','price')['next'],'Fact retry uses its existing due time');
+$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['authority'=>$authority,'due_at'=>$retry,'tries'=>2,'failure'=>'read_failed']]])]);
+[$table,$row]=nextTable();same($nextCheck($retry),$table->cell($row,'register','price')['next'],'Fact retry uses its existing due time');
+same(2,$work->status($binding,'com')['tries'],'Repeated facts hints preserve the failed attempt count');
 
 } catch (Throwable $error) {$failures[]='Case 1: '.$error->getMessage();}
 try {
@@ -70,7 +76,7 @@ same($now->getTimestamp(),$work->status($binding)['due_at'],'A missing price que
 same('background',OfferState::decode($queue->value('offer_work'))['origin'],'Automatic price hints use the background allowance');
 $queued=$queue->value('offer_work');[$table,$row]=nextTable();$table->cell($row,'register','price');same($queued,$queue->value('offer_work'),'Price hints queue only once');
 $queue->update(['offer_work'=>OfferState::json(['feed_due'=>$retry,'tries'=>2])]);
-[$table,$row]=nextTable();same('Next check '.SellTable::time($retry).'.',$table->cell($row,'register','price')['next'],'Price hints preserve failure backoff');
+[$table,$row]=nextTable();same($nextCheck($retry),$table->cell($row,'register','price')['next'],'Price hints preserve failure backoff');
 
 } catch (Throwable $error) {$failures[]='Case 2: '.$error->getMessage();}
 try {
@@ -129,7 +135,7 @@ $beforeQueue=$queue->value('offer_work');
 try {
 $reset();$clearPrice();
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
-$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'due_at'=>null]]])]);
+$queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['authority'=>$authority,'unsupported'=>true,'due_at'=>null]]])]);
 [$table,$row]=nextTable();same('Checking',$table->cell($row,'register','price')['text'],'Even without a facts reader, the system fills prices before asking staff');
 foreach($priceRows as $price){DB::table('domains_prices')->where('id',$price->id)->update((array)$price);}
 [$table,$row]=nextTable();same('Ask the registrar to confirm terms for .com.',$table->status($row)['next'],'A missing facts reader gives a specific human step after prices are filled');
@@ -239,7 +245,7 @@ case 'registrar cost':
     $next='Ask the registrar for a 1-year registration cost for .com.';break;
 case 'registrar terms':
     DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
-    $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['unsupported'=>true,'due_at'=>null]]])]);
+    $queue->update(['offer_work'=>OfferState::json(['facts'=>['com'=>['authority'=>$authority,'unsupported'=>true,'due_at'=>null]]])]);
     $next='Ask the registrar to confirm terms for .com.';break;
 case 'registrar requirements':
     $facts=OfferState::decode($original['catalogue_facts']);$facts['requiresNameservers']=true;DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>OfferState::json($facts)]);

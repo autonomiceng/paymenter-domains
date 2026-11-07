@@ -11,7 +11,16 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{StaffCatalogue,StaffCommands
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue,StaffSettingsReview as Review,StaffSettingsWrites};
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/StaffCommands.php'),'Reverse staff edits need reviewed offer commands');
-require __DIR__.'/Support/offer-commerce.php';extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
+require __DIR__.'/Support/offer-commerce.php';
+// These settings cases need one seller and no cart hooks. Install it once through the existing native fixture.
+extract(commerceFixture(true,active:true,registrars:['enom']));tldPanel();pinStaffClock($now);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
+$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::defaults($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(defaultSell:false)),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+$eligibility=activeFixtureEligibility($bindings,$clock);
+$storefront=new class($sellers,$prices,$native,$bindings,$eligibility,$clock) extends \Paymenter\Extensions\Servers\Domains\Services\Storefront {use OfferCommerceRoute;};$storefront->fixtureOffers=$offers;
+Server::find($binding->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
+DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint,'offer_feed_run'=>1]);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$id=$tlds[0]->id;$wake=$sync=0;
 $writer=new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true);
 $work=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($writer,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),static fn()=>throw new RuntimeException('Staff save must not resolve feed'),static fn()=>0);
@@ -60,10 +69,14 @@ $routed->publish($id,$now);same('$20.00',$storefront->offer('com','register',1)[
 same(1,count($result['rows']),'Only valid batch row applies');
 $before=StaffCommands::stamp($binding->serverId);commerceReject(fn()=>$run('acceptance',['sell'=>['choices'=>array_fill_keys(array_map(static fn($i)=>'ending'.$i,range(1,26)),'skip')]]));same($before,StaffCommands::stamp($binding->serverId),'Oversized batch writes nothing');
 config(['domains.hidden_endings'=>['com']]);commerceReject(fn()=>$run('acceptance',['sell'=>['choices'=>['com'=>'sell']]]));config(['domains.hidden_endings'=>[]]);
-// A checkbox cannot manufacture missing terms/registry facts when restoring a staff stop.
+// Restoring sales records pending intent; it cannot manufacture independent registrar facts or a public sale.
 $run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>false,'renew'=>true,'transfer'=>false],$id);
 $facts=Tld::find($id)->catalogue_facts;DB::table('domains_tlds')->where('id',$id)->update(['catalogue_facts'=>null]);$before=StaffCommands::stamp($binding->serverId);
-commerceReject(fn()=>$run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>true,'renew'=>true,'transfer'=>false,'verified'=>true],$id));same($before,StaffCommands::stamp($binding->serverId),'Verified checkbox cannot invent independently dated facts');
+$run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>true,'renew'=>true,'transfer'=>false,'verified'=>true],$id);
+expect($before!==StaffCommands::stamp($binding->serverId),'Restore saves pending staff intent');
+same(['transfer'],OfferState::decode(Tld::find($id)->catalogue_intent)['stops'],'Restore clears the registration stop and keeps transfers stopped');
+same(null,Tld::find($id)->catalogue_facts,'Verified checkbox cannot invent independently dated facts');
+commerceReject(fn()=>$storefront->offer('com','register',1));
 DB::table('domains_tlds')->where('id',$id)->update(['catalogue_facts'=>$facts]);
 expect($source->restorable(Tld::find($id))['register'],'TLD restore presenter reads independent facts');
 $run('tld_settings',['enabled'=>true,'max_years'=>3,'register'=>true,'renew'=>true,'transfer'=>false,'verified'=>true],$id);
@@ -78,10 +91,10 @@ $copy=Tld::find($id)->getRawOriginal();unset($copy['id']);DB::table('domains_tld
 $audits=count(Review::historyRows(Server::find($binding->serverId)));$batch=$run('acceptance',['sell'=>['choices'=>['com'=>'skip','org'=>'skip']]]);
 same(2,count($batch['rows']),'One batch applies both valid identities');same($audits+1,count(Review::historyRows(Server::find($binding->serverId))),'Batch consumes one review/audit');
 $org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();
-// Existing rows: fresh .com can widen while expired .org is returned as a business refusal.
+// Existing rows: fresh .com can widen while fresh, unsupported .org is a business refusal.
 $run('seller',['seller'=>(string)$binding->serverId,'register'=>true,'transfer'=>true],$id);
-$f=OfferState::facts($org->catalogue_facts);$expired=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($f->terms,$f->registryFields,$f->renewalSafe,$f->requiresNameservers,$f->autoRenewOnly,$f->source,$now->modify('-2 days'),$now->modify('-1 day'));
-DB::table('domains_tlds')->where('id',$org->id)->update(['catalogue_facts'=>OfferState::encodeFacts($expired)]);
+$f=OfferState::facts($org->catalogue_facts);$unsupported=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts([...$f->terms,'register'=>[]],$f->registryFields,$f->renewalSafe,$f->requiresNameservers,$f->autoRenewOnly,$f->source,$now,$now->modify('+1 day'));
+DB::table('domains_tlds')->where('id',$org->id)->update(['catalogue_facts'=>OfferState::encodeFacts($unsupported)]);
 $audits=count(Review::historyRows(Server::find($binding->serverId)));$batch=$run('acceptance',['sell'=>['choices'=>['com'=>'sell','org'=>'sell']]]);
 same(['com'],array_keys($batch['rows']),'Valid existing sibling still applies');same(['.org'],$batch['failed'],'Refused existing ending is returned');same('Explicit verified widening required.',$batch['failures']['org'],'Business refusal includes its reason');
 same(false,OfferState::decode($org->fresh()->catalogue_intent)['sell'],'Refused existing row keeps its saved choice');expect($storefront->offer('com','register',1)!==null,'Fresh sibling reaches the public offer');same($audits+1,count(Review::historyRows(Server::find($binding->serverId))),'Partial business result consumes one reviewed audit');
