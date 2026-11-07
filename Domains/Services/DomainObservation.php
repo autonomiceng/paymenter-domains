@@ -15,7 +15,6 @@ final class DomainObservation
     public function run(int $id, ?int $generation=null, ?string $fingerprint=null, bool $readRecords=true, ?\Closure $current=null, ?\Closure $completion=null): string
     {
         OperationClaims::outside(); if($current){$current();} $seed=Domain::findOrFail($id);
-        if (\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($seed)) { return 'local_demo'; }
         if (($generation!==null&&$seed->authority_generation!==$generation)||($fingerprint!==null&&$seed->account_fingerprint!==$fingerprint)) { throw new ReadDeferred('Stale observation work.'); }
         [$binding,$stamp,$attempt,$seed,$knownGlue,$recordOverflow,$recordEnabled,$recordProtected]=DB::transaction(function () use ($seed,$readRecords,$current): array {
             $l=HoldingLocks::take($seed,beforeCatalogue:$current); $this->available($l); $this->bindings->requireReadableLocked($l['server'],$l['account']);

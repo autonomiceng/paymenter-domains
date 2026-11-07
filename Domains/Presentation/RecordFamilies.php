@@ -39,8 +39,6 @@ final class RecordFamilies
             $ops=$d->operations;
             $cancelled=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::terminal($ops->first(),$d);
         }
-        $local=\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($d);
-        if($local){$status=[...$status,'next_read'=>null,'read_checking'=>false,'read_stopped'=>false,'read_code'=>null,'records_paused'=>false,'read_cause'=>null,'resume'=>false,'stale'=>false];}
         // Reuse the editor's identity-checked, sequence-ordered readback projection.
         if($currentRead){$dns=ObservationProjection::sections($d)['dns']??null;
             if(isset($dns['facts']['records'],$dns['at'])&&$dns['at']>=($status['families']['dns']['at']??'')){
@@ -82,6 +80,6 @@ final class RecordFamilies
         if($cancelled){$status['stale']=false;}
         // Only a family the registrar once confirmed has last confirmed data to keep.
         $status['retained']=collect($rows)->contains(fn($row)=>$row['last_good_at']!==null||in_array($row['state'],['complete','partial'],true));
-        return [...$status,'local_demo'=>$local,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
+        return [...$status,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
     }
 }

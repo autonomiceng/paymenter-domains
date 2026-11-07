@@ -32,7 +32,6 @@ final class DomainManagement
     {
         if (!$actions) { return []; }
         try {
-            if (\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($seed)) { return []; }
             return (function()use($actor,$seed,$driver,$actions,&$refused):array {
                 $l=HoldingLocks::take($seed,(int)$actor->id,true);
                 if($this->testManagement&&!EnomTestManagement::accepted(AccountBindings::binding($l['account']))){$refused=self::SWITCH_OFF;return [];}
@@ -58,9 +57,7 @@ final class DomainManagement
     {
         OperationClaims::outside(); self::capability($action);
         if (!preg_match('/^[a-f0-9]{64}$/D', $nonce) || !in_array($reason,['owner_request','staff_correction'],true)) { throw new \DomainException('Invalid management request identity.'); }
-        $seed = Domain::findOrFail($id);
-        if (\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($seed)) { throw new \DomainException('Local demo domains have no registrar records to change.'); }
-        $paid = in_array($action, ['privacy_purchase', 'privacy_renew'], true); $terms = null; $initial = null;
+        $seed = Domain::findOrFail($id); $paid = in_array($action, ['privacy_purchase', 'privacy_renew'], true); $terms = null; $initial = null;
         if ($paid) {
             [$request, $initial, $existing] = DB::transaction(function () use ($seed, $actor, $action, $nonce, $driver) {
                 $l = HoldingLocks::take($seed, (int) $actor->id); $this->authority($l, (int) $actor->id, $action, $driver);
@@ -154,7 +151,6 @@ final class DomainManagement
     }
     public function run(int $id, ManagementProtocol $driver, RequestOrigin $origin = RequestOrigin::Interactive, int $interactiveSeconds = EntryDeadline::INTERACTIVE_SECONDS): Operation
     {
-        if (\Paymenter\Extensions\Servers\Domains\Support\DemoData::local(Operation::findOrFail($id)->domain)) { return Operation::findOrFail($id); }
         if (!ManagementSequence::prepare($id, $this, $driver, $origin, $this->clock->now(), $interactiveSeconds)) { return Operation::findOrFail($id); }
         $work=fn()=>$driver->withinReservation(Operation::findOrFail($id),fn()=>EntryDeadline::run($this->clock, fn ($deadline) => $this->runEntered($id, $driver, $origin, $deadline),
             $origin === RequestOrigin::Background ? EntryDeadline::BACKGROUND_SECONDS : max(1,min(EntryDeadline::INTERACTIVE_SECONDS,$interactiveSeconds))));
