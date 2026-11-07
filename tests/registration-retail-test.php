@@ -52,12 +52,20 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
         $evidence = DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all();
         $readsBefore = $reads->calls;
+        // Exercise the installed projection with explicit synthetic TEST sales/renewal acceptance.
+        $deployment = config('domains');
+        config(['domains.enom_identity.environment' => 'test', 'domains.enom_catalogue.enabled' => true,
+            'domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true]);
+        $renewal = \Paymenter\Extensions\Servers\Domains\Services\EnomTestRenewal::class;
+        App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key' => $renewal::KEY],
+            ['type' => 'string', 'encrypted' => true, 'value' => json_encode(['fingerprint' => $binding->fingerprint, ...$renewal::protocol($binding)])]);
         (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
         same($evidence, DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all(), 'Upgrade preserves saved cost evidence and its age');
         same($readsBefore, $reads->calls, 'Upgrade republication never resolves a provider');
         $priceRows = DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
         (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
         same($priceRows, DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), 'Already-current installation does not republish');
+        config(['domains' => $deployment]);
     }
     Cache::flush();
     $search = $store->check('search-'.$label.'.net');
@@ -68,6 +76,13 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         $offer = $offers->offer('net', 'register', $years);
         $item = commerceAdd($cart, $offer['product'], $label.'-'.$years.'.net', $years);
         same($total, number_format((float) $item->price->total, 2, '.', ''), $mode.': cart total '.$years);
+        // Landing's breakdown reads this native annual plan and this same-account holder renewal.
+        $first = $item->product->availablePlans()->first(fn ($plan) => $plan->billing_unit === 'year' && $plan->billing_period === 1)->price('USD');
+        $annual = (new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices, $caps))->renewal(
+            new \Paymenter\Extensions\Servers\Domains\Models\Domain(['server_id' => $binding->serverId, 'registrar_key' => $binding->registrarKey,
+                'account_fingerprint' => $binding->fingerprint, 'tld' => 'net']), 'USD', $clock->now());
+        $breakdown = \Paymenter\Extensions\Servers\Domains\Catalogue\TermSupport::lines(number_format((float) $first->total, 2, '.', ''), $annual->retail, $years);
+        same($total, $breakdown['total'], $mode.': Landing breakdown agrees with native line total '.$years);
     }
     $page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
     same(count($issued) + 1, Order::count(), $mode.': one native order');
