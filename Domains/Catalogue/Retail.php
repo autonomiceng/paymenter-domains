@@ -9,10 +9,25 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
  * Rational numerators use decimal integers throughout, avoiding overflow and floating point. */
 final class Retail
 {
-    public static function quote(Cost $cost, array $rule): ?string
+    /** Prices needed for an acquisition, including the annual inputs of a longer registration. */
+    public static function terms(string $action, int $term): array
+    {
+        return [[$action, $term], ...($action === 'renew' && $term === 1 ? [] : [['renew', 1]]),
+            ...($action === 'register' && $term > 1 ? [['register', 1]] : [])];
+    }
+
+    public static function quote(Cost $cost, array $rule, array $costs = []): ?string
     {
         if (!$cost->enabled) { return null; }
         $rule = PricingRule::validate($rule); $term = $cost->term;
+        if ($cost->action === 'register' && $term > 1) {
+            $first = $costs['register:1'] ?? null; $renew = $costs['renew:1'] ?? null;
+            if (!$first?->enabled || !$renew?->enabled) { return null; }
+            $firstPrice = self::quote($first, $rule); $renewPrice = self::quote($renew, $rule);
+            $total = PricingRule::units($firstPrice, 2) + PricingRule::units($renewPrice, 2) * ($term - 1);
+            if ($total > 999999999999) { throw new \InvalidArgumentException('The calculated price is too large.'); }
+            return PricingRule::decimal($total);
+        }
         if ($rule['mode'] === 'fixed') { return PricingRule::total($rule['fixed'][$cost->action], $term); }
         $units = (string) PricingRule::units($cost->total); $markup = (string) PricingRule::units($rule['markup'], 2);
         $n = $units; $d = (string) ($term * 100); $ceil = false;

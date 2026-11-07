@@ -66,13 +66,15 @@ final class StaffCatalogue
         if($facts?->fresh($now)&&!in_array($term,$facts->terms[$action]??[],true)){return $step('off','Not offered by this registrar for this term.');}
         if($facts?->fresh($now)&&!in_array(1,$facts->terms['renew']??[],true)){return $step('off','This registrar does not offer annual renewal for this TLD.');}
         if($reason==='unsupported_facts'){$human=$missing('Ask the registrar to confirm renewal and nameserver requirements for .'.$t->tld.'.',null);}
-        foreach(array_unique(['renew:1',$action.':'.$term]) as $key){
+        $costs=[];foreach($offers as $offer){if($c=$offer->observation()){$costs[$c->key()]=$c;}}
+        foreach(Retail::terms($action,$term) as [$needed,$years]){
+            $key=$needed.':'.$years;
             $cost=$offers[$key]??null;$observation=$cost?->observation();
             if($observation&&!$observation->enabled){return $step('off','Not offered by this registrar for this term.');}
             if(!$observation||!$observation->fresh($now)||$cost->staffRetail()===null
                 ||$key==='renew:1'&&OfferState::money($t->catalogue_retained_annual_retail,2)===null){
                 if($observation?->fresh($now)){
-                    $quote=Retail::quote($observation,$rule);
+                    $quote=Retail::quote($observation,$rule,$costs);
                     if($quote===null||PricingRule::units($quote,2)<1){return $missing('Set a positive '.$names[$observation->action].' price in Edit prices on .'.$t->tld.'.');}
                 }
                 if(!$this->work||!$readable($b=$binding())){return $missing('Check account setup on Registrar account.','account');}
@@ -115,9 +117,10 @@ final class StaffCatalogue
     /** Form preview uses the same Staff evidence, never legacy wholesale or acceptance. */
     public function preview(Tld $t,array $rule): array
     {
-        $out=[];
-        foreach($this->snapshots(collect([$t]))[$t->id]['offers'] as $offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
-            $new=Retail::quote($cost,$rule);$under=$new!==null&&$cost->total!==null&&!PricingRule::covers($new,$cost->total);
+        $out=[];$offers=$this->snapshots(collect([$t]))[$t->id]['offers'];$costs=[];
+        foreach($offers as $offer){if($cost=$offer->observation()){$costs[$cost->key()]=$cost;}}
+        foreach($offers as $offer){$d=$offer->decision;$cost=$offer->observation();if($cost===null){continue;}
+            $new=Retail::quote($cost,$rule,$costs);$under=$new!==null&&$cost->total!==null&&!PricingRule::covers($new,$cost->total);
             $out[]=['action'=>$d->action,'term'=>$d->term,'cost'=>$cost->total,'current'=>$offer->staffRetail(),'new'=>$new,'synced'=>$cost->fresh($this->clock->now()),
                 'hold'=>$d->action==='renew'?null:($under?'below_cost':$d->reason),'alert'=>$d->action==='renew'&&$under?'below_cost':null];
         }

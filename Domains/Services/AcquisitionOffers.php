@@ -47,22 +47,26 @@ final class AcquisitionOffers
         if ($b->serverId !== $serverId || $b->fingerprint !== $fingerprint
             || $policy->account_fingerprint !== $b->fingerprint || $policy->registrar_key !== $b->registrarKey) { throw new \DomainException('Seller changed.'); }
         $seed = new SaleSelection($ending, $b->serverId, $b->registrarKey, $b->fingerprint, $policy->revision, $action, $term, 'USD', 0, 0);
-        $rows = $this->ports->loadBatch([new Query($b, [$ending], $action, $term), new Query($b, [$ending], 'renew')], Context::Public);
-        [$acquire, $renew] = [$rows[0][0], $rows[1][0]];
+        $rows = array_map(static fn ($batch) => $batch[0], $this->ports->loadBatch(array_map(
+            static fn ($input) => new Query($b, [$ending], ...$input), Retail::terms($action, $term)), Context::Public));
+        [$acquire, $renew] = $rows;
 
         $clock = app(Clock::class);
-        if ($acquire->observation()?->fresh($clock->now()) && $renew->observation()?->fresh($clock->now())) {
+        $current = true;
+        foreach ($rows as $row) { if (!$row->observation()?->fresh($clock->now())) { $current = false; } }
+        if ($current) {
             return $this->selection($ending, $action, $term);
         }
         $tld = Tld::where(['server_id' => $b->serverId, 'tld' => $ending])->sole();
         $rule = Pricing::rule($tld);
         $stamp = ['binding' => [$b->serverId, $b->registrarKey, $b->fingerprint, $ending, $action, $term],
             'generation' => UpgradeGate::generation(), 'credential' => $this->bindings->offerCredentialRevision($b),
-            'revision' => get_object_vars($acquire->decision->revision), 'prices' => [$acquire->identity(), $renew->identity()], 'rule' => $rule];
-        $costs = $retail = []; $driver = null;
-        foreach ([$acquire, $renew] as $row) {
+            'revision' => get_object_vars($acquire->decision->revision), 'prices' => array_map(static fn ($row) => $row->identity(), $rows), 'rule' => $rule];
+        $costs = $retail = $observations = []; $driver = null;
+        foreach ($rows as $row) {
             $cost = $row->observation();
             if (!$cost?->enabled) { throw new \DomainException('Order price unavailable.'); }
+            $observations[$cost->key()] = $cost;
             if ($cost->fresh($clock->now())) { continue; }
             // A successful first quote survives a pacing deferral on the second read.
             $key = 'domains.order-price.'.hash('sha256', OfferState::json([$name, $stamp, $cost->key()]));
@@ -87,8 +91,10 @@ final class AcquisitionOffers
                 Cache::put($key, OfferState::encodeCost($fresh), 300);
             }
             $costs[$cost->key()] = OfferState::encodeCost($fresh);
-            $retail[$cost->key()] = Retail::quote($fresh, $rule);
+            $observations[$cost->key()] = $fresh;
         }
+        // A refreshed annual input changes longer retail even when its selected-term cost is still fresh.
+        foreach ($observations as $key => $cost) { $retail[$key] = Retail::quote($cost, $rule, $observations); }
         $token = bin2hex(random_bytes(32));
         Cache::put('domains.order-quote.'.$token, [...$stamp, 'name' => $name, 'costs' => $costs, 'retail' => $retail,
             'native_retail' => $acquire->listedRetail()], 300);
@@ -245,13 +251,14 @@ final class AcquisitionOffers
     private function load(array $selections, bool $locked, bool $expected): array
     {
         if (!$selections || count($selections) > 250) { throw new \DomainException('Invalid acquisition batch.'); }
-        $queries = []; $bindings = [];
+        $queries = []; $bindings = []; $starts = [];
         foreach ($selections as $s) {
             $a = Account::where('server_id', $s->serverId)->sole(); $b = AccountBindings::binding($a);
             if ($b->fingerprint !== $s->fingerprint || $b->registrarKey !== $s->registrar) { throw new \DomainException('Offer binding changed.'); }
             $bindings[] = $b;
             $revision = $expected ? new Revision(...($s->catalogue['revision'] ?? throw new \DomainException('Refresh the domain offer.'))) : null;
-            foreach ([[$s->action, $s->term], ['renew', 1]] as [$action, $term]) {
+            $starts[] = count($queries);
+            foreach (Retail::terms($s->action, $s->term) as [$action, $term]) {
                 $queries[] = new Query($b, [$s->tld], $action, $term, $s->currency, $revision ? [$s->tld => $revision] : []);
             }
         }
@@ -259,13 +266,14 @@ final class AcquisitionOffers
         // All servers/accounts are now locked in batch order, including other cart accounts.
         $generation = UpgradeGate::generation(); $result = [];
         foreach ($selections as $i => $s) {
-            $acquire = $loaded[2*$i][0]; $renew = $loaded[2*$i+1][0];
+            $rows = array_map(static fn ($batch) => $batch[0], array_slice($loaded, $starts[$i], count(Retail::terms($s->action, $s->term))));
+            [$acquire, $renew] = $rows;
             $quote = isset($s->catalogue['order_quote']) ? $this->orderQuote($s) : null;
             if ($quote !== null) {
                 $tld = Tld::where(['server_id' => $s->serverId, 'tld' => $s->tld])->sole();
                 if ($quote['generation'] !== $generation || $quote['credential'] !== $this->bindings->offerCredentialRevision($bindings[$i])
                     || $quote['revision'] !== get_object_vars($acquire->decision->revision)
-                    || $quote['prices'] !== [$acquire->identity(), $renew->identity()]
+                    || $quote['prices'] !== array_map(static fn ($row) => $row->identity(), $rows)
                     || $quote['rule'] !== Pricing::rule($tld)) {
                     throw new \DomainException('Order quote authority changed.');
                 }

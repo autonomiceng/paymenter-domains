@@ -125,7 +125,7 @@ final class PricingRule
         $rule = self::validate($rule);
         $money = static fn (string $amount): string => '$'.$amount;
         if ($rule['mode'] === 'fixed') {
-            return $money($rule['fixed']['register']).' a year to register, '.$money($rule['fixed']['renew']).' to renew and '.$money($rule['fixed']['transfer']).' to transfer';
+            return $money($rule['fixed']['register']).' for the first registration year, '.$money($rule['fixed']['renew']).' to renew and '.$money($rule['fixed']['transfer']).' to transfer';
         }
         $markup = $rule['mode'] === 'markup_amount' ? $money($rule['markup']) : rtrim(rtrim($rule['markup'], '0'), '.').'%';
         $round = ['none' => '', 'whole' => ', rounded up to the next whole dollar', 'half' => ', rounded up to the next $0.50', 'ending_99' => ', rounded up to the next .99'][$rule['round_up']];

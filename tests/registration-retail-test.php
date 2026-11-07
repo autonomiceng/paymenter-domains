@@ -41,7 +41,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
     Cache::flush();
     $search = $store->check('search-'.$label.'.net');
     same('available', $search['status'], $mode.': searchable');
-    same(array_map(fn ($v) => '$'.$v, $expected), $search['terms'], $mode.': search includes the first registration year');
+    same(array_map(fn ($v) => '$'.$v, $expected), $search['terms'], $mode.': search includes the first registration year: '.json_encode($search['terms']));
     $user = commerceUser(); $cart = commerceCart($user);
     foreach ($expected as $years => $total) {
         $offer = $offers->offer('net', 'register', $years);
@@ -64,6 +64,54 @@ $ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10
     [...PricingRule::DEFAULT, 'mode' => 'fixed', 'fixed' => ['register' => '19.99', 'renew' => '12.99', 'transfer' => '12.00']]), $revision());
 same($issued[1], DB::table('invoice_items')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), 'Issued invoices never reprice');
 same('28.98', Operation::whereHas('domain', fn ($q) => $q->where('domain', 'fixed-2.net'))->sole()->amount, 'Issued operation amount remains frozen');
+// The order path must refresh annual pricing inputs even while the selected-term cost is current.
+$ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true),
+    [...PricingRule::DEFAULT, 'markup' => '0.00']), $revision());
+$user = commerceUser(); $cart = commerceCart($user);
+commerceAdd($cart, $native->product($tlds[0], 'register'), 'refresh-price.net', 2);
+$wire = new class implements \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Transport {
+    public array $calls = [];
+    public function send($environment, $command, array $parameters, string $uid, string $token, int $timeoutMs): string
+    {
+        same(0, DB::transactionLevel(), 'Price reads remain outside native locks');
+        $this->calls[] = [$parameters['ProductType'], $parameters['Years']];
+        $price = $parameters['ProductType'] === 16 ? '12.99' : ($parameters['Years'] === 1 ? '19.99' : '9.00');
+        return '<interface-response><Command>'.$command->value.'</Command><ErrCount>0</ErrCount><Done>true</Done><ProductPrice><ProductEnabled>true</ProductEnabled><Price>'.$price.'</Price></ProductPrice></interface-response>';
+    }
+};
+$registry = new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+$registry->register('enom', ['token'], new class implements \Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier {
+    public function verify($environment, array $credentials): string { return $credentials['token']; }
+}, fn ($b) => new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(
+    new \Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b, 'synthetic', 'synthetic', $wire), ['net']));
+$quoted = new AcquisitionOffers($ports, new AccountBindings($registry), $native);
+$admission->fixtureOffers = $eligibility->fixtureOffers = $quoted;
+$expire = static function (array $keys) use ($clock, $binding): void {
+    foreach (DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')->get() as $row) {
+        if (!in_array($row->action.':'.$row->term, $keys, true)) { continue; }
+        $raw = OfferState::decode($row->catalogue_observation); $raw['fresh_until'] = $clock->now()->format(DATE_ATOM);
+        DB::table('domains_prices')->where('id', $row->id)->update(['catalogue_observation' => OfferState::json($raw)]);
+    }
+};
+$expire(['register:1']);
+Illuminate\Support\Once::flush(); $admission->refresh();
+same([[10, 1]], $wire->calls, 'Only the stale first registration year is read');
+same('30.98', number_format((float) App\Classes\Cart::get()->items->sole()->price->total, 2, '.', ''), 'Cart uses refreshed first year plus current renewal');
+$clock->instant = $clock->now()->modify('+6 minutes');
+$expire(['register:2', 'renew:1']); Cache::flush();
+Illuminate\Support\Once::flush(); $admission->refresh();
+same([[10, 1], [10, 2], [16, 1], [10, 1]], $wire->calls, 'Full refresh quotes selected cost and both annual inputs');
+same('32.98', number_format((float) App\Classes\Cart::get()->items->sole()->price->total, 2, '.', ''), 'Cart combines both refreshed annual sell prices');
+$page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
+$refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.net'))->sole();
+same([2, '32.98', '18.0000', '32.98'], [(int) $refreshed->term, $refreshed->amount, $refreshed->cost['estimated'],
+    InvoiceItem::findOrFail($refreshed->invoice_item_id)->price], 'Refreshed cart/invoice agree while selected wholesale and term stay separate');
+// Dependency revision drift must invalidate the saved longer-term quote.
+$selection = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$refreshed->policy['checkout']['catalogue']);
+$annual = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')->where('action', 'register')->where('term', 1)->sole();
+DB::table('domains_prices')->where('id', $annual->id)->increment('revision');
+commerceReject(fn () => $quoted->validate($selection));
+DB::table('domains_prices')->where('id', $annual->id)->update(['revision' => $annual->revision]);
 // The mixed retail must still cover the independently quoted selected term's wholesale cost.
 $clock->instant = $now->modify('+2 minutes');
 $ports->apply(new FeedObserved($binding, 'net', [new Cost('register', 10, true, '200.0000', CostUnit::TermTotal,

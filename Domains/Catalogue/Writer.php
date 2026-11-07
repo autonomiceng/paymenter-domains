@@ -400,10 +400,17 @@ final class Writer implements Catalogue
         }
         $freshness = \Paymenter\Extensions\Servers\Domains\Data\CatalogueFreshness::forAccount((int) $tld->server_id);
         $prices = OfferState::query('domains_prices')->where('server_id', $tld->server_id)->where('tld', $tld->tld)->where('currency', 'USD')->orderBy('id')->get();
+        $costs = [];
+        foreach ($prices as $p) {
+            if ($p->catalogue_observation !== null) {
+                $cost = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
+                $costs[$cost->key()] = $cost;
+            }
+        }
         foreach ($prices as $p) {
             if ($p->catalogue_observation === null) { continue; }
-            $cost = $freshness->cost(OfferState::cost(OfferState::decode($p->catalogue_observation)));
-            try { $retail = Retail::quote($cost, $rule); }
+            $cost = $costs[$p->action.':'.$p->term];
+            try { $retail = Retail::quote($cost, $rule, $costs); }
             catch (\InvalidArgumentException) { $retail = null; }
             // Only the annual renewal feeds retained holder retail; an exact longer renewal keeps its own price.
             if ($cost->action === 'renew' && $cost->term === 1) {

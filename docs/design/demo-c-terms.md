@@ -4,6 +4,17 @@ Annual renewals keep their existing authority. Longer terms require current ordi
 current facts with `renew: [1]`, a fresh `renew:N` cost in `term_total` units, a frozen debt rule and a sufficient
 saved cost ceiling. The registry horizon stays ten years. Grace and redemption remain separate.
 
+## Registration retail
+
+For every sold registration term, customer retail is the one-year registration sell price plus the current
+annual renewal sell price × (years − 1). The shared retail calculation applies the saved rule and rounding to
+each annual input first, in fixed and markup modes alike. Both annual observations must be current; a missing,
+disabled or stale input cannot supply a longer public offer. Checkout refreshes stale inputs automatically and
+fences all three price rows. Registrar wholesale remains the independently observed selected-term registration
+cost; below-cost admission still compares the complete customer total against that exact wholesale cost.
+Native plan prices, search, cart and invoice admission share this total. Issued invoices and operation terms
+remain frozen, and the registrar still receives one registration for the purchased number of years.
+
 ## Enom TEST approval (2026-11-05)
 
 `TermSupport::EXACT_QUOTES` admits Enom's per-year renewal cost × years. `REVIEWED_EVIDENCE['enom']['com']`
