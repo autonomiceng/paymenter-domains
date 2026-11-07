@@ -22,8 +22,8 @@ $check('Turn off and delete an unused On template',function()use($make,$write,$m
     $row=$make('Unused template');
     $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$row->id]);
     $page->assertActionVisible('disable');
-    expect($page->instance()->getAction('disable')->isModalConfirmationRequired(),'Turn off needs confirmation');
-    expect($page->instance()->getAction('delete')->isModalConfirmationRequired(),'Delete needs confirmation');
+    expect($page->instance()->getAction('disable')->isConfirmationRequired(),'Turn off needs confirmation');
+    expect($page->instance()->getAction('delete')->isConfirmationRequired(),'Delete needs confirmation');
     $page->callAction('disable')->assertNotified('DNS template turned off')->assertNoRedirect();
     same(false,$row->fresh()->enabled,'Turn off persists');
     $page->assertActionVisible('enable')->assertActionHidden('disable');
@@ -61,6 +61,8 @@ $check('Dependencies refuse turn off and delete with a reason',function()use($pr
             $error=null;try{$write($row,$action);}catch(DomainException $e){$error=$e->getMessage();}
             expect($error!==null && str_contains($error,'assigned'),'Assignment refuses '.$action.' for '.$table);
             same(true,$row->fresh()->enabled,'Assigned template stays on');
+            $error=null;try{DB::transaction(fn()=>$row->fresh()->update(['enabled'=>false,'revision'=>$row->revision+1]));}catch(DomainException $e){$error=$e->getMessage();}
+            expect($error!==null && str_contains($error,'assigned'),'Model save keeps the same dependency guard');
         }
         if($table==='domains_managed_public_config'){DB::table($table)->where($key,$id)->delete();}
         else{DB::table($table)->where($key,$id)->update([$field=>null]);}
@@ -76,8 +78,8 @@ $check('One New domains use choice is shown',function()use($profile,$make,$manag
     $other=$make('Other enabled template');siteDnsFixture($profile->id);
     $list=Livewire::actingAs($manager)->test(ListConfiguration::class)->assertSee('New domains use')->assertSee($profile->name);
     $column=$list->instance()->getTable()->getColumn('name');
-    same('Used for new domains',$column->record($profile)->getDescription(),'Chosen template marked');
-    same(null,$column->record($other)->getDescription(),'Other On template is not marked');
+    same('Used for new domains',$column->record($profile)->getDescriptionBelow(),'Chosen template marked');
+    same(null,$column->record($other)->getDescriptionBelow(),'Other On template is not marked');
     $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$other->id])->assertSee('New domains use')->assertSee($profile->name)->assertDontSee('Site DNS default');
 });
 $check('Add and edit show done messages without losing page state',function()use($make,$manager):void{
