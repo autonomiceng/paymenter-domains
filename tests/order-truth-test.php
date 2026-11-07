@@ -5,7 +5,7 @@ $ownerFixtureNames=['owner-calendar-20270926'];
 require __DIR__.'/Support/owner-auto-renew.php';
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedDomainController;
 use Paymenter\Extensions\Servers\Domains\Presentation\DomainPage;
-use Paymenter\Extensions\Servers\Domains\Services\{DomainSummaries,DomainBilling};
+use Paymenter\Extensions\Servers\Domains\Services\DomainSummaries;
 $controller=new OwnedDomainController($owners);
 [$op]=$prepare(placeholderComFixtureName('owner-calendar-20270926-placeholder.com'));
 $d=$op->domain()->firstOrFail();
@@ -13,6 +13,7 @@ $status=fn($actor=null)=>$controller->orderStatus($req($d,[],$actor),$d->id);
 $pending=$status()->getData(true);
 same(true,$pending['pending'],'Registration status polls while pending');
 expect(str_contains($page($d),'data-domain-order-poll'),'Pending domain page starts its status reader');
+expect(str_contains($page($d),$pending['state']),'Page and status reader use the same state fingerprint');
 try{$status($other);expect(false,'Another customer cannot read order status');}catch(\Illuminate\Database\Eloquent\ModelNotFoundException $e){same(\Paymenter\Extensions\Servers\Domains\Models\Domain::class,$e->getModel(),'Order status is owner scoped');}
 same('succeeded',$reconcile->run($op->id)->state,'Local registration fixture completes');
 $complete=$status()->getData(true);
