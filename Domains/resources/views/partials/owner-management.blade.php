@@ -1,5 +1,5 @@
 {{-- MIT, Copyright (c) 2026 Autonomic Engineering. Page rows for $caps: label with help, current value, one action. Editors open in a dialog; risky toggles confirm in one. --}}
-@php $show = $domain->actions['show']; @endphp
+@php $show = $domain->actions['show']; $initial = \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::initialRead($domain); @endphp
 @php $fills = \Paymenter\Extensions\Servers\Domains\Presentation\Missing::fills(...); @endphp
 {{-- The page hint already gives the read time; a row says As of only when its own time differs. --}}
 @php $instant = static fn ($at) => $at === null ? null : ($at instanceof \DateTimeInterface ? $at->getTimestamp() : (is_numeric($at) ? (int) $at : strtotime((string) $at))); $asOf = static fn ($at) => $at && $instant($at) !== $instant($readAt ?? null); @endphp
@@ -45,7 +45,7 @@
 @if ($paused)
 <span class="domains-row__v">@include('domains::partials.missing', ['cause' => $fills('when sync resumes'), 'fix' => null, 'stack' => true])</span>
 @elseif ($cap === 'nameservers')
-<span class="domains-row__v">@if (!($section['current'] ?? []))@include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@else @include('domains::partials.nameserver-list', ['servers' => $section['current']])@endif</span>
+<span class="domains-row__v">@if (!($section['current'] ?? []))@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@else @include('domains::partials.nameserver-list', ['servers' => $section['current']])@endif</span>
 @if ($section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}" aria-label="Edit nameservers">Edit</a></span>
 @php $useDefault = $confirmStep === 'nameservers' && ($retry['values']['use_default'] ?? '') === '1'; @endphp
@@ -73,19 +73,19 @@
 <span class="domains-row__v">@if ($total === null)<span class="domains-muted">Not available</span>@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($asOf($section['asOf'] ?? null))<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif @endif <span class="domains-sub">{{ \Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::DNS_OFF }}</span></span>
 @elseif (in_array($cap, ['dns', 'srv']))
 @php $total = $records === null ? 0 : count($records) + count($section['fixed'] ?? []); @endphp
-<span class="domains-row__v">@if ($records === null && $familyState === 'unknown')@elseif ($records === null && ($section['family']['state'] ?? null) === 'unknown')<span class="domains-muted">Checking records</span>@elseif ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@elseif ($familyState === 'complete')@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($asOf($section['asOf'] ?? null))<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif@endif</span>
+<span class="domains-row__v">@if ($records === null && $familyState === 'unknown')@elseif ($records === null && ($section['family']['state'] ?? null) === 'unknown')<span class="domains-muted">Checking records</span>@elseif ($records === null)@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@elseif ($familyState === 'complete')@else{{ $total }} {{ $total === 1 ? 'record' : 'records' }}@if ($asOf($section['asOf'] ?? null))<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif@endif</span>
 @if ($records !== null && $section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}" aria-label="Edit {{ $label }}">Edit</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-dns')@endcomponent
 @endif
 @elseif (in_array($cap, ['glue', 'ds']))
-<span class="domains-row__v">@if ($records === null && $familyState === 'unknown')@elseif ($records === null && ($section['family']['state'] ?? null) === 'unknown')<span class="domains-muted">Checking records</span>@elseif ($records === null)@include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@elseif ($cap === 'glue' && $records)@include('domains::partials.nameserver-list', ['servers' => array_column($records, 'host')])@if ($asOf($section['asOf'] ?? null))<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif @elseif ($cap === 'glue')@if ($familyState !== 'complete')<span class="domains-muted">No glue records known here</span>@endif @elseif (!$records)<span class="domains-muted">Off</span>@else On · key tag {{ $records[0]['key_tag'] }}@endif@foreach ($section['warnings'] ?? [] as $warning)<span class="domains-sub domains-tone-warn">{{ $warning }}</span>@endforeach</span>
+<span class="domains-row__v">@if ($records === null && $familyState === 'unknown')@elseif ($records === null && ($section['family']['state'] ?? null) === 'unknown')<span class="domains-muted">Checking records</span>@elseif ($records === null)@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@elseif ($cap === 'glue' && $records)@include('domains::partials.nameserver-list', ['servers' => array_column($records, 'host')])@if ($asOf($section['asOf'] ?? null))<span class="domains-sub">As of @include('domains::partials.moment', ['at' => $section['asOf']])</span>@endif @elseif ($cap === 'glue')@if ($familyState !== 'complete')<span class="domains-muted">No glue records known here</span>@endif @elseif (!$records)<span class="domains-muted">Off</span>@else On · key tag {{ $records[0]['key_tag'] }}@endif@foreach ($section['warnings'] ?? [] as $warning)<span class="domains-sub domains-tone-warn">{{ $warning }}</span>@endforeach</span>
 @if ($section['actions'] ?? [])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">{{ $cap === 'glue' ? 'Manage' : ($records && isset($section['actions']['ds_delete']) ? 'Remove' : 'Add DS record') }}</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])@include('domains::partials.owner-'.$cap)@endcomponent
 @endif
 @elseif ($cap === 'lock')
-<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@else{{ $state ? 'On' : 'Off' }}@endif</span>
+<span class="domains-row__v">@if ($state === null)@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@else{{ $state ? 'On' : 'Off' }}@endif</span>
 @if ($section['actions'])
 @if ($state === null)
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}">Change</a></span>
@@ -119,12 +119,12 @@
         default => $section['actions'],
     };
 @endphp
-<span class="domains-row__v">@if ($state === null)@include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@else{{ $state ? 'On' : 'Off' }}@endif</span>
+<span class="domains-row__v">@if ($state === null)@if ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => $waits, 'calm' => $waits === null, 'fix' => null, 'stack' => true])@endif@else{{ $state ? 'On' : 'Off' }}@endif</span>
 @if ($privacyActions)
 <span class="domains-row__a">@foreach ($privacyActions as $action => $url)<form method="POST" action="{{ $url }}" class="domains-owner-form domains-inline">@include('domains::partials.form-key')<button class="domains-a domains-linkbtn" type="submit">{{ $labels[$action] }}</button></form>@endforeach</span>
 @endif
 @elseif ($cap === 'contacts')
-<span class="domains-row__v">@if ($domain->owner){{ $domain->owner['name'] }} <span class="domains-sub">{{ $domain->owner['email'] }}</span>@else @include('domains::partials.missing', ['cause' => 'Add them with Edit', 'fix' => null, 'stack' => true])@endif</span>
+<span class="domains-row__v">@if ($domain->owner){{ $domain->owner['name'] }} <span class="domains-sub">{{ $domain->owner['email'] }}</span>@elseif ($initial)@include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])@else @include('domains::partials.missing', ['cause' => 'Add them with Edit', 'fix' => null, 'stack' => true])@endif</span>
 @if ($section['actions'])
 <span class="domains-row__a"><a class="domains-a" data-dialog-open href="{{ $editUrl }}" aria-label="Edit contacts">Edit</a></span>
 @component('domains::partials.owner-edit', ['id' => $cap, 'title' => $label, 'open' => $editOpen, 'cancel' => $show])

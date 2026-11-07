@@ -43,7 +43,7 @@
             @if ($error || $errors->has('domain'))<p id="domains-name-error" class="domains-error" role="alert">{{ $error ?? $errors->first('domain') }}</p>@endif
             <p class="domains-endings" aria-label="First-year prices">
                 @foreach ($endings as $ending)
-                    <span><b>.{{ $ending['tld'] }}</b>@if ($ending['price']) {{ $ending['price'] }}/yr @endif</span>
+                    <span><b>.{{ $ending['tld'] }}</b>@if ($ending['price']) {{ $ending['price'] }} first year @endif</span>
                 @endforeach
                 <a class="domains-a" href="{{ route('domains.domains.pricing') }}">All prices</a>
             </p>

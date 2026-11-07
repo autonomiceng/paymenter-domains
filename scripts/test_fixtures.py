@@ -207,6 +207,9 @@ def shared_vendor(jobs, requested):
                 # Entry rendering only reads vendor; keep app and SQLite state isolated.
                 'tests/transfer-entry-test.php',
                 'tests/storefront-test.php',
+                # These focused views only read guarded Composer dependencies.
+                'tests/storefront-renewal-price-test.php',
+                'tests/customer-nameserver-mismatch-test.php',
                 'tests/storefront-transfer-reason-test.php',
                 'tests/storefront-corruption-test.php',
                 'tests/storefront-queries-test.php',

@@ -20,10 +20,9 @@ final class RegistrationDns
             || !in_array('nameservers',self::corrections($op,$op->policy['reconciliation']['observed_corrections']??[]),true)){return false;}
         try{
             $actual=ObservationProjection::nameservers($d);
-            if($actual?->state==='observed'){
-                $desired=$op->payload['nameservers']??[];$current=$actual->nameservers;sort($desired);sort($current);
-                if($desired===$current){return false;}
-            }
+            if($actual?->state!=='observed'||empty($op->payload['nameservers'])){return false;}
+            $desired=$op->payload['nameservers'];$current=$actual->nameservers;sort($desired);sort($current);
+            if($desired===$current){return false;}
         }catch(\Illuminate\Contracts\Encryption\DecryptException){return false;}
         // A later explicit customer or staff choice replaces the original registration's DNS intent.
         return !$d->operations()->where('id','>',$op->id)->where('action','nameservers')->where('state','succeeded')
