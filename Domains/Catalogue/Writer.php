@@ -222,14 +222,21 @@ final class Writer implements Catalogue
             || array_diff($old['stops'] ?? [], $new->stops) !== [];
         if ($sell && \Paymenter\Extensions\Servers\Domains\Services\EndingChoices::hidden($t->tld)) { return 'This TLD is hidden.'; }
         if (!$widen) { return null; }
-        $facts = OfferState::facts($t->catalogue_facts);
-        // Unknown/expired metadata queues the selected sold set after this review. Intent grants no sale.
-        if (!$facts || !$facts->fresh($this->clock->now())) { return null; }
-        if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($edit->binding()->registrarKey,$t->tld,$facts->registryFields) || $facts->renewalSafe !== true
-            || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false
-            || !in_array(1, $facts->terms['renew'] ?? [], true)
+        return self::termsBlock(OfferState::facts($t->catalogue_facts), $edit->binding()->registrarKey, $t->tld, $sell, $longest, $transfer, $this->clock->now()) === null
+            ? null : 'Explicit verified widening required.';
+    }
+
+    /** Why fresh registrar terms rule out a sale: 'unsupported_facts', 'unsupported_term', or null. Staff pages ask
+     * this too, so they offer only what this writer saves. Unknown or expired terms never block: the review queues a
+     * read of the sold set, and the evaluator holds the sale until it lands. */
+    public static function termsBlock(?Facts $facts, string $registrarKey, string $tld, bool $sell, int $longest, bool $transfer, \DateTimeImmutable $now): ?string
+    {
+        if (!$facts || !$facts->fresh($now)) { return null; }
+        if (!\Paymenter\Extensions\Servers\Domains\Services\RegistryInputs::supported($registrarKey, $tld, $facts->registryFields) || $facts->renewalSafe !== true
+            || $facts->requiresNameservers !== false || $facts->autoRenewOnly !== false) { return 'unsupported_facts'; }
+        if (!in_array(1, $facts->terms['renew'] ?? [], true)
             || $sell && !in_array($longest, $facts->terms['register'] ?? [], true)
-            || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'Explicit verified widening required.'; }
+            || $transfer && !in_array(1, $facts->terms['transfer'] ?? [], true)) { return 'unsupported_term'; }
         return null;
     }
 

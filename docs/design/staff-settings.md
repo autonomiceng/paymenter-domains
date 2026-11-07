@@ -54,9 +54,13 @@ ordinary nor late renewal admits them. There is no restore writer.
 
 ## TLD prices
 
-The TLD page head says whether the TLD is for sale and why not. Its one blue button is the action that makes it
-sellable: **Start selling** when staff stopped it, or the fix (**Edit prices**, **Choose registrar**). For sale, there is
-no blue button and **More** holds **Change registrar** and **Stop selling**; existing domains keep renewing. **Edit prices**
+The TLD page head says whether the TLD is for sale and why not, in the same words as the TLD list. Its one blue button
+is the action that makes it sellable: **Start selling** when staff stopped it or the account doesn't sell it by
+default, or the fix (**Edit prices**, **Choose registrar**). Start selling sets the TLD to Sell when needed. If the
+registrar terms are missing or old, sales wait for the next read. If fresh terms rule the sale out, Start selling is
+not offered and the head names that block. For sale, there is no blue button and **More** holds **Change registrar**
+and **Stop selling**; existing domains keep renewing. Stop and Start change only the stops, so the TLD's transfer and
+term choices come back as they were. **Edit prices**
 offers Default pricing or prices for that TLD only, shows the formula in words
 
 and previews register, renew and transfer for each sold term (cost, current price,
