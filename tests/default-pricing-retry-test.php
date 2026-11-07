@@ -31,5 +31,17 @@ same('8.40',$prices->current($target->server_id,$target->account_fingerprint,'co
 $before=$state($target);
 same(['published'=>0,'failed'=>[],'skipped'=>[]],$save(),'A fully caught-up repeated save publishes nothing');
 same($before,$state($target),'A caught-up repeated save preserves the target exactly');same($siblingBefore,$state($sibling),'A repeated save preserves its sibling exactly');
+// Local default and seller revisions can move without changing the offer component.
+foreach(['defaults','selection'] as $component){
+    if($component==='defaults'){
+        $account=\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$target->server_id)->sole();
+        $defaults=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($account->catalogue_defaults);$defaults['_revision']=($defaults['_revision']??0)+1;
+        DB::table('domains_accounts')->where('server_id',$target->server_id)->update(['catalogue_defaults'=>json_encode($defaults,JSON_THROW_ON_ERROR)]);
+    }else{DB::table('domains_sales_policies')->where('tld',$target->tld)->increment('revision');}
+    $before=$state($target);
+    same(['published'=>$component==='defaults'?2:1,'failed'=>[],'skipped'=>[]],$save(),'The same pricing retries a stale '.$component.' publication revision');
+    expect($before[2]!==$target->fresh()->catalogue_published_revision,'The stale '.$component.' marker is replaced');
+    same(['published'=>0,'failed'=>[],'skipped'=>[]],$save(),'The repaired '.$component.' revision is current on the next save');
+}
 same(0,$reads->calls,'Publication retries use only local evidence');
 $nativeSuccessful=true;echo "Default pricing retries missed publications once without republishing current siblings.\n";

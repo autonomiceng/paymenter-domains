@@ -77,7 +77,11 @@ final class Writer implements Catalogue
                 catch(\DomainException|\InvalidArgumentException){continue;}
                 if($own!==null&&$own['mode']!=='markup_fee_percent'){continue;}
                 // Discovery invalidates the offer revision before publication. A failed turn remains pending.
-                try{$pending=$t->catalogue_published_revision===null||(OfferState::decode($t->catalogue_published_revision)['offer']??null)!==(int)$t->catalogue_revision;}
+                try{
+                    $published=OfferState::decode($t->catalogue_published_revision);
+                    $revision=OfferState::revision($t,OfferState::decode($a->catalogue_defaults),DB::table('domains_sales_policies')->where('tld',$t->tld)->first());
+                    $pending=($published['offer']??null)!==$revision->offer||($published['defaults']??null)!==$revision->defaults||($published['selection']??null)!==$revision->selection;
+                }
                 catch(\JsonException|\TypeError){$pending=true;}
                 $feeMode=($own??$rule)['mode']==='markup_fee_percent';
                 if(!$pending&&!($own===null&&$ruleChanged)&&!($feeMode&&$feeChanged)){continue;}
