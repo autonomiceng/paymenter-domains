@@ -11,6 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,EnomTestSen
 $sends=static fn():int=>DB::table(EnomTestSendLimitSchema::SENDS)->count();
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Api\{CurlTransport as NsTransport,Environment as NsEnvironment,RequestContext as NsContext,RegistrarRequest};
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
+$purchaseResponse=static fn(array $form):string=>$form['Command']==='Purchase'
+    ?'<interface-response><Command>Purchase</Command><ErrCount>0</ErrCount><Done>true</Done><RRPCode>200</RRPCode><OrderID>1234</OrderID></interface-response>'
+    :'xml';
 same(1,\Paymenter\Extensions\Servers\Domains\Services\ProviderSendGuard::CONTRACT,'Deployment capability contract');
 $warnings=[];$logThrows=false;
 \Illuminate\Support\Facades\Log::listen(static function($event)use(&$warnings,&$logThrows):void {
@@ -57,7 +60,7 @@ foreach([\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,\Paymenter
 foreach(['registration'=>['Purchase','ModifyNS','GetDNS'],'transfer'=>['TP_CreateOrder'],'renewal'=>['Extend','UpdateExpiredDomains'],
     'management'=>array_merge(array_map(fn($c)=>$c->value,ManagementCommand::cases()),['GetDomainInfo','GetDNS','GetContacts','GetRegLock','GetWPPSInfo','GetRenew','GetHosts','GetDomainSRVHosts','GetDnsSec','CheckNSStatus','GetBalance','GetOrderDetail'])] as $role=>$commands){
     foreach($commands as $command){
-        resetWire();$events=[];$exchange($wire,$role)($origin,$command,[],25000);
+        resetWire(['reply'=>$purchaseResponse]);$events=[];$exchange($wire,$role)($origin,$command,[],25000);
         same([['enom','test',$command]],$events,'Every runtime role and command invokes guard once');
         same(1,count($GLOBALS['enomWire']['forms']),'Allowed runtime exchange sends once');
     }
@@ -158,7 +161,7 @@ foreach(['renewal'=>'Extend','management'=>'SetRegLock'] as $role=>$command){
 $warnings=[];
 foreach(['read'=>fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',1000),
     'runtime'=>fn()=>$exchange($wire,'registration')($origin,'Purchase',[],1000)] as $path=>$send){
-    resetWire();$events=[];
+    resetWire(['reply'=>$purchaseResponse]);$events=[];
     config(['domains.provider_send_guard'=>static function()use(&$events):void {$events[]='allowed';$GLOBALS['enomWire']['nanoseconds']+=250000000;}]);
     $send();same(['allowed'],$events,$path.' partial-budget guard ran');
     same([750,750],[$GLOBALS['enomWire']['options'][CURLOPT_CONNECTTIMEOUT_MS],$GLOBALS['enomWire']['options'][CURLOPT_TIMEOUT_MS]],$path.' guard time shortens both Enom timeouts');
@@ -174,7 +177,7 @@ foreach(['read'=>fn()=>(new CurlTransport)->send(\Paymenter\Extensions\Servers\D
     }
 }
 same([],$warnings,'Enom deadline failures outside the guard do not warn');
-config(['domains.provider_send_guard'=>null]);resetWire();$before=$sends();
+config(['domains.provider_send_guard'=>null]);resetWire(['reply'=>$purchaseResponse]);$before=$sends();
 (new CurlTransport)->send(\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,ReadCommand::Balance,[],'synthetic-uid','SYNTHETIC-TOKEN',25000);
 $exchange($wire,'registration')($origin,'Purchase',[],25000);
 $GLOBALS['nsGuardSends']=0;(new NsTransport)->send(NsEnvironment::Sandbox,NsContext::Background,RegistrarRequest::balance(),'SYNTHETIC-KEY');
