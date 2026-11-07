@@ -87,7 +87,15 @@ foreach ([Environment::Test, Environment::Live] as $environment) {
     }
     same('20.0020', $rows['co.uk']->costs['register:2']->total, 'Compound suffix and annual-to-term exact total');
     same('100.0100', $rows['com']->costs['register:10']->total, 'No float rounding on ten-year totals');
-    same(false, isset($rows['com']->costs['register:3']), 'Unproven bucket membership stays unknown');
+    same(range(1, 10), array_values(array_map(static fn ($cost) => $cost->term,
+        array_filter($rows['com']->costs, static fn ($cost) => $cost->action === 'register'))),
+        'Documented Enom brackets supply every exact registration term without extra reads');
+    foreach (range(1, 10) as $term) {
+        $bucket = $term === 1 ? 1 : ($term < 5 ? 2 : ($term < 10 ? 5 : 10));
+        same('enom_bulk_bucket_'.$bucket, $rows['com']->costs['register:'.$term]->source, 'Term retains its actual price bracket '.$term);
+        same(100010 * $term, \Paymenter\Extensions\Servers\Domains\Services\PricingRule::units($rows['com']->costs['register:'.$term]->total),
+            'Each bracket annual amount becomes its exact term total '.$term);
+    }
     same(false, $rows['com']->costs['transfer:1']->enabled, 'Explicit disabled differs from absent');
     same(null, $rows['com']->costs['transfer:1']->total, 'Disabled is not zero-priced');
     same([], $rows['org']->costs, 'Listed but unpriced ending is discovery only');
