@@ -17,15 +17,16 @@ final class CartCheckoutRefresh
             if ($component::class !== Cart::class) { return; }
             try {
                 $held = session()->get(self::shownKey().'.lines', session()->get(self::shownKey(), []));
+                $review = session()->get(self::shownKey().'.review');
                 $admission->refresh();
+                // A new price may extend the review; the customer's own term/quantity edit invalidates it.
+                $choices = static fn (array $lines) => array_map(static fn (array $line) => [$line['plan_id'], $line['quantity']], $lines);
+                if (is_array($review) && ($review['shown'] ?? null) === $held
+                    && $choices($held) === $choices(self::snapshot(self::shown()))) {
+                    CartNotice::restore($component, $review['notice'] ?? null);
+                }
                 $was = self::changedAmounts($held);
                 if ($was) { self::changed($component, self::cartTotal(), $was); }
-                else {
-                    $review = session()->get(self::shownKey().'.review');
-                    if (is_array($review) && ($review['shown'] ?? null) === self::snapshot(self::shown())) {
-                        CartNotice::restore($component, $review['notice'] ?? null);
-                    }
-                }
             }
             catch (CartLinesRemoved $e) {
                 self::removed($component, $e);
@@ -141,6 +142,11 @@ final class CartCheckoutRefresh
 
     private static function priceNotice(Cart $component, array $was, ?CartLinesRemoved $removed = null): void
     {
+        $previous = CartNotice::get($component);
+        if (($previous['title'] ?? null) === 'Your cart changed') {
+            // Keep pending details for unchanged lines; a new change replaces that line's old amount.
+            $was = array_replace(array_intersect_key($previous['was'] ?? [], self::shown()), $was);
+        }
         $text = ($removed ? $removed->getMessage().' ' : '').'Review the total, then check out again.';
         CartNotice::set($component, 'Your cart changed', $text,
             'Your cart changed. '.$text, 'warning', $removed?->names ?? [], $was);
