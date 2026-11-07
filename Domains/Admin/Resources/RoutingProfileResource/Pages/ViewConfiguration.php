@@ -40,9 +40,9 @@ class ViewConfiguration extends ViewRecord
         $r=$this->getRecord();$profile=$r->readProfile();
         $row=fn(string $label,mixed $value)=>Sheet::row(TextEntry::make('fact_'.md5($label))->label($label)->state($value)->listWithLineBreaks()->extraAttributes(['class'=>'domains-wrap']));
         $nameservers=Sheet::row(TextEntry::make('nameservers_list')->label('Nameservers')->state($profile?->nameservers??Missing::LABEL)->listWithLineBreaks()->fontFamily($profile?FontFamily::Mono:null)->extraAttributes(['class'=>'domains-wrap']));
-        return $schema->components([Sheet::split([
+        return $schema->components([Sheet::single([
             Sheet::section('Records',[$nameservers,$row('Website records',$profile?self::records($profile->website):Missing::LABEL),$row('Email records',$profile?self::records($profile->email):Missing::LABEL)]),
             Sheet::section('Used by',[$row('Site DNS default',SiteDnsDefault::uses((int)$r->id)?'Yes':'No'),$row('Monitored domains',(string)WatchFacts::usedBy((int)$r->id))]),
-        ],[])]);
+        ])]);
     }
 }

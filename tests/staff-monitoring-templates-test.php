@@ -21,7 +21,9 @@ same(null,$column($templates,'revision'),'No revision column');same('On',$column
 // Status is a mark, never a switch that does nothing: templates can't be turned off, and Turn on is on the template page.
 expect(!str_contains($templates->html(),'role="switch"'),'Template list shows no switch');expect(preg_match('~data-beco-tone="ok"[^>]*data-beco-record="template-'.$profile->id.'"~',$templates->html())===1,'Template list marks On');
 $template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['On','Records','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
-expect(!str_contains($template->html(),'role="switch"'),'Template page shows no switch');expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-beco-tone="ok"'),'Template page head marks On');
+expect(!str_contains($template->html(),'role="switch"'),'Template page shows no switch');
+// Nothing goes beside the sheet, so it is one column with no empty rail.
+expect(str_contains($template->html(),'domains-split-single') && !str_contains($template->html(),'domains-rail'),'Template page is a single-column sheet');expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-beco-tone="ok"'),'Template page head marks On');
 same('Synthetic defaults',$template->instance()->getTitle(),'Template title');same('Edit',$template->instance()->getAction('save')->getLabel(),'Edit template');
 same([RoutingProfileResource::getUrl()=>'DNS templates','Synthetic defaults'],$template->instance()->getBreadcrumbs(),'Template breadcrumb');
 $off=DB::transaction(fn()=>WatchProfile::create(['name'=>'Spare template','nameservers'=>['ns1.spare.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic spare']));
