@@ -15,13 +15,13 @@ use Paymenter\Extensions\Servers\Domains\Services\StaffWatchWrites as Writes;
 $templates=Livewire::actingAs($manager)->test(ListTemplates::class)->assertCanSeeTableRecords([$profile])->assertActionVisible('save');$clean($templates->html(),'DNS templates');staffRowsStandard($templates);
 $ns=$templates->instance()->getTable()->getColumn('nameservers');same([true,2],[$ns->canWrap(),$ns->getLineClamp()],'Nameservers wrap to 2 lines');
 same(['No DNS templates','Add one with Add DNS template.'],[$templates->instance()->getTable()->getEmptyStateHeading(),$templates->instance()->getTable()->getEmptyStateDescription()],'No templates says how to add one');
-same('DNS templates',$templates->instance()->getTitle(),'Templates title');same('A DNS template sets the nameservers for new domains and is what monitoring checks them against.',$templates->instance()->getSubheading(),'Templates say what they are for');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
+same('DNS templates',$templates->instance()->getTitle(),'Templates title');expect(str_contains($templates->instance()->getSubheading(),'New domains use:'),'Templates identify the new-domain choice');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
 same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');
-// Status is a mark, never a switch that does nothing: templates can't be turned off, and Turn on is on the template page.
+// The list retains status marks; the detail page has a reversible monitoring switch.
 expect(!str_contains($templates->html(),'role="switch"'),'Template list shows no switch');expect(preg_match('~data-beco-tone="ok"[^>]*data-beco-record="template-'.$profile->id.'"~',$templates->html())===1,'Template list marks On');
 $template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['On','Records','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
-expect(!str_contains($template->html(),'role="switch"'),'Template page shows no switch');
+expect(str_contains($template->html(),'role="switch"'),'Template page has a monitoring switch');
 // Nothing goes beside the sheet, so it is one column with no empty rail.
 expect(str_contains($template->html(),'domains-split-single') && !str_contains($template->html(),'domains-rail'),'Template page is a single-column sheet');expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-beco-tone="ok"'),'Template page head marks On');
 same('Synthetic defaults',$template->instance()->getTitle(),'Template title');same('Edit',$template->instance()->getAction('save')->getLabel(),'Edit template');
@@ -34,7 +34,7 @@ same('Future checks use these records. Monitoring stays on if this template is o
 $add=$templates->instance()->getAction('save');same(['Add DNS template','Enter one value per line.',\Filament\Support\Enums\Width::Medium],[$add->getModalHeading(),$add->getModalDescription(),$add->getModalWidth()],'Add form head and width');
 $form=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$off->id])->mountAction('save');same('Edit DNS template',$form->instance()->getMountedAction()->getModalHeading(),'Edit form heading');
 $html=$form->html().implode('',array_values($form->effects['partials']??[]));expect(!str_contains($html,'One per line.'),'No note under each box');expect(substr_count($html,'fi-fieldset-not-contained')===2,'Record groups are not boxed');
-$spare->callAction('enable')->assertNotified('Saved');expect(WatchProfile::find($off->id)->enabled,'Turn on saves');
+$spare->callAction('enable')->assertNotified('DNS template turned on');expect(WatchProfile::find($off->id)->enabled,'Turn on saves');
 
 DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['enabled'=>false]);
 // Expiry wording past and on the date; a paused name shows no Missing DNS records.

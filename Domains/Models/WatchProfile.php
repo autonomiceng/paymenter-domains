@@ -18,6 +18,8 @@ final class WatchProfile extends WatchRecord
             throw new \DomainException('A profile name, actor and reason are required.');
         }
         $profile = $this->profile();
+        if($this->exists && $this->isDirty('enabled') && !$this->enabled
+            && ($refusal=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$this->id))){throw new \DomainException($refusal);}
         if(\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$this->id)){
             if(!$this->enabled){throw new \DomainException('Choose another site DNS default before turning this template off.');}
             \Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::validateRegistrars($profile->nameservers);

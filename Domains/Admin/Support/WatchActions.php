@@ -27,7 +27,7 @@ final class WatchActions
         if($action==='read'){$a->tooltip('Monitoring uses 0 registrar reads per domain per day.');}
         return $a->action(function(array $data,array $arguments,$livewire)use($kind,$id,$revision,$action):void {
                 $id=(int)($arguments['map']??$id);$revision=(int)($arguments['revision']??$revision);
-                $reason=match($action){'note'=>(string)($data['note']??''),'retire'=>(string)($data['reason']??''),'save'=>$kind==='mapping'?'Domain field chosen':'DNS template saved','enable'=>'DNS template turned on',default=>self::REASONS[$action]};
+                $reason=match($action){'note'=>(string)($data['note']??''),'retire'=>(string)($data['reason']??''),'save'=>$kind==='mapping'?'Domain field chosen':'DNS template saved','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted',default=>self::REASONS[$action]};
                 try{(new Writes())->run(Auth::user(),$kind,$id,$action,Writes::ticket((int)Auth::id(),$kind,$id,$revision,$action),$reason,$data+$arguments);}
                 catch(\DomainException|\InvalidArgumentException|\Illuminate\Database\QueryException|\Illuminate\Database\Eloquent\ModelNotFoundException $e){
                     if($action==='read' && $e instanceof \DomainException && $e->getMessage()==='A check was recently requested. Try again later.'){$livewire->waitForCheck();}
@@ -39,8 +39,13 @@ final class WatchActions
                         ->body('This takes up to about six minutes. This page updates by itself.')->persistent()->send();
                     return;
                 }
-                Notification::make()->success()->title(self::DONE[$action]??'Saved')->send();
-                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>$id?RoutingProfileResource::getUrl('view',['record'=>$id]):RoutingProfileResource::getUrl(),default=>WatchResource::getUrl()});
+                $done=$kind==='profile'?match($action){'save'=>$id?'DNS template saved':'DNS template added','enable'=>'DNS template turned on','disable'=>'DNS template turned off','delete'=>'DNS template deleted'}:(self::DONE[$action]??'Saved');
+                Notification::make()->success()->title($done)->send();
+                if($kind==='profile' && $action!=='delete'){
+                    if($id){$livewire->refreshTemplate();}
+                    return;
+                }
+                $livewire->redirect(match($kind){'watch'=>WatchResource::getUrl('view',['record'=>$id]),'profile'=>RoutingProfileResource::getUrl(),default=>WatchResource::getUrl()});
             });
     }
     /** Write errors in page words. */
@@ -77,9 +82,31 @@ final class WatchActions
     {return self::action('watch',(int)$w->id,$revision,'read','Check now')->name('check')->visible(fn()=>$w->state==='active' && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
     public static function enable(WatchProfile $row,int $revision): Action
     {
-        return self::action('profile',(int)$row->id,$revision,'enable','Turn on')->modalSubmitActionLabel('Turn on')
-            ->disabled($row->readProfile()===null)->tooltip($row->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null)
+        return self::action('profile',(int)$row->id,$revision,'enable','Turn on')->view('domains::admin.template-switch')
+            ->arguments(['on'=>false])->requiresConfirmation()->modalHeading('Turn on DNS template?')
+            ->modalDescription('Monitoring can check domains against these records. New domains keep their current template.')
+            ->modalSubmitActionLabel('Turn on')->disabled($row->readProfile()===null)
             ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
+    }
+    /** Blocked controls stay focusable; the sheet says the shared dependency reason once. */
+    private static function templateGuard(Action $action,?string $reason): Action
+    {
+        return $reason?$action->livewireClickHandlerEnabled(false)->extraAttributes(['aria-disabled'=>'true']):$action;
+    }
+    public static function disable(WatchProfile $row,int $revision): Action
+    {
+        $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id);
+        return self::templateGuard(self::action('profile',(int)$row->id,$revision,'disable','Turn off')->view('domains::admin.template-switch')
+            ->arguments(['on'=>true,'blocked'=>$reason!==null])->requiresConfirmation()->modalHeading('Turn off DNS template?')
+            ->modalDescription('Monitoring will no longer use this template. Saved records stay here.')
+            ->modalSubmitActionLabel('Turn off')->visible(fn()=>$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE)),$reason);
+    }
+    public static function deleteTemplate(WatchProfile $row,int $revision): Action
+    {
+        $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id);
+        return self::templateGuard(self::action('profile',(int)$row->id,$revision,'delete','Delete')->color('danger')->outlined()
+            ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers and records will be deleted. This cannot be undone.')
+            ->modalSubmitActionLabel('Delete'),$reason);
     }
     /** The one control on a hosting product line. The revision is the one the page loaded, so a stale page changes nothing. */
     public static function productSwitch(): Action

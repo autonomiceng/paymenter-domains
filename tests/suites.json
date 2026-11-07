@@ -636,7 +636,8 @@
     "tests/tld-stop-keeps-transfers-test.php",
     "tests/tld-sales-one-state-test.php",
     "tests/native-cancellation-reason-test.php",
-    "tests/order-truth-test.php"
+    "tests/order-truth-test.php",
+    "tests/staff-dns-template-controls-test.php"
   ],
   "ui": [
     "tests/test_staff_sync_browser.py"

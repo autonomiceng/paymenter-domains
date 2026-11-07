@@ -20,8 +20,8 @@ class RoutingProfileResource extends WatchReadResource
     public static function table(Table $table): Table
     {
         // Long text: nameservers wrap to 2 lines (table standard). The full list is on hover and on the template.
-        // Status is a mark, not a switch: there is no way to turn a template off, and Turn on is on the template page.
-        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->wrap()->lineClamp(2)->fontFamily(FontFamily::Mono)
+        // The detail page has the monitoring switch. Only the single site choice supplies new registrations.
+        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')->description(fn($record)=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::uses((int)$record->id)?'Used for new domains':null)),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->wrap()->lineClamp(2)->fontFamily(FontFamily::Mono)
                 ->tooltip(fn($record)=>implode(', ',(array)$record->nameservers)?:null),
             TextColumn::make('enabled')->label('Status')->badge()->state(fn($record)=>self::status($record)['label'])->color(fn($record)=>self::status($record)['tone'])
                 ->extraAttributes(fn($record)=>StatusMark::attributes(self::status($record)['tone'],'template-'.$record->id))])

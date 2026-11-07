@@ -2,6 +2,7 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Schema;
 use Filament\Infolists\Components\TextEntry;
@@ -11,7 +12,7 @@ use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{Sheet,StatusMark,WatchActions,WatchFacts};
 use Paymenter\Extensions\Servers\Domains\Presentation\Missing;
-use Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault;
+use Paymenter\Extensions\Servers\Domains\Services\{DnsTemplateUsage,SiteDnsDefault};
 class ViewConfiguration extends ViewRecord
 {
     protected static string $resource=RoutingProfileResource::class;
@@ -28,7 +29,14 @@ class ViewConfiguration extends ViewRecord
         return StatusMark::line($status['tone'],$status['label'],'template-'.$r->id,$r->readProfile()===null?WatchFacts::TEMPLATE_UNAVAILABLE:null);
     }
     public function getBreadcrumbs(): array{return [RoutingProfileResource::getUrl()=>'DNS templates',$this->getTitle()];}
-    protected function getHeaderActions(): array{return [WatchActions::enable($this->getRecord(),$this->revision),WatchActions::configuration($this->getRecord(),$this->revision)];}
+    protected function getHeaderActions(): array{return [WatchActions::configuration($this->getRecord(),$this->revision),WatchActions::deleteTemplate($this->getRecord(),$this->revision)];}
+    public function refreshTemplate(): void
+    {
+        $this->record=$this->getRecord()->fresh();$this->revision=(int)$this->record->revision;
+        unset($this->cachedSchemas['infolist'],$this->cachedSchemas['content']);$this->cachedActions=[];$this->cachedHeaderActions=[];$this->cacheInteractsWithHeaderActions();
+    }
+    public function enableAction(): Action{return WatchActions::enable($this->getRecord(),$this->revision);}
+    public function disableAction(): Action{return WatchActions::disable($this->getRecord(),$this->revision);}
     /** One line per kind of record; kinds with no values are left out. */
     private static function records(array $r): array
     {
@@ -42,7 +50,13 @@ class ViewConfiguration extends ViewRecord
         $nameservers=Sheet::row(TextEntry::make('nameservers_list')->label('Nameservers')->state($profile?->nameservers??Missing::LABEL)->listWithLineBreaks()->fontFamily($profile?FontFamily::Mono:null)->extraAttributes(['class'=>'domains-wrap']));
         return $schema->components([Sheet::single([
             Sheet::section('Records',[$nameservers,$row('Website records',$profile?self::records($profile->website):Missing::LABEL),$row('Email records',$profile?self::records($profile->email):Missing::LABEL)]),
-            Sheet::section('Used by',[$row('Site DNS default',SiteDnsDefault::uses((int)$r->id)?'Yes':'No'),$row('Monitored domains',(string)WatchFacts::usedBy((int)$r->id))]),
+            Sheet::section('Used by',[
+                Sheet::row(TextEntry::make('new_domains_use')->label('New domains use')->state(SiteDnsDefault::profile()?->name??Missing::LABEL)),
+                $row('Monitored domains',(string)WatchFacts::usedBy((int)$r->id)),
+                Sheet::row(TextEntry::make('monitoring')->label('Monitoring')->state($r->enabled?'On':'Off')
+                    ->belowContent(DnsTemplateUsage::refusal((int)$r->id)??($profile===null?WatchFacts::TEMPLATE_UNAVAILABLE:'Monitoring checks domains against this template.')),
+                    [$this->enableAction(),$this->disableAction()]),
+            ]),
         ])]);
     }
 }
