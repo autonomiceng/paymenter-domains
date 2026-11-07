@@ -88,10 +88,11 @@ final class WatchActions
             ->modalSubmitActionLabel('Turn on')->disabled($row->readProfile()===null)
             ->visible(fn()=>!$row->enabled && Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));
     }
-    /** Blocked controls stay focusable; the sheet says the shared dependency reason once. */
+    /** Blocked switches keep the same dimming and reason as the shared blocked button. */
     private static function templateGuard(Action $action,?string $reason): Action
     {
-        return $reason?$action->livewireClickHandlerEnabled(false)->extraAttributes(['aria-disabled'=>'true']):$action;
+        return $reason?$action->tooltip($reason)->livewireClickHandlerEnabled(false)
+            ->extraAttributes(['aria-disabled'=>'true','aria-label'=>'Monitoring. '.$reason,'class'=>'domains-blocked']):$action;
     }
     public static function disable(WatchProfile $row,int $revision): Action
     {
@@ -104,9 +105,11 @@ final class WatchActions
     public static function deleteTemplate(WatchProfile $row,int $revision): Action
     {
         $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id);
-        return self::templateGuard(self::action('profile',(int)$row->id,$revision,'delete','Delete')->color('danger')->outlined()
+        if($reason){return Sheet::blocked('delete','Delete','DNS template',$reason)->color('danger')
+            ->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
+        return self::action('profile',(int)$row->id,$revision,'delete','Delete')->color('danger')->outlined()
             ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers and records will be deleted. This cannot be undone.')
-            ->modalSubmitActionLabel('Delete'),$reason);
+            ->modalSubmitActionLabel('Delete');
     }
     /** The one control on a hosting product line. The revision is the one the page loaded, so a stale page changes nothing. */
     public static function productSwitch(): Action

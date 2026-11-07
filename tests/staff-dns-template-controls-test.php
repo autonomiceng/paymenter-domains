@@ -51,7 +51,20 @@ $check('Dependencies refuse turn off and delete with a reason',function()use($pr
     }
     $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$row->id]);
     foreach(['disable','delete']as$action){$page->assertActionVisible($action);same('true',$page->instance()->getAction($action)->getExtraAttributes()['aria-disabled']??null,'Blocked control stays visible');}
-    $page->assertSee('Choose another template for new domains first.');
+    $reason='Choose another template for new domains first.';
+    $page->assertSee($reason);
+    $dom=new DOMDocument();@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
+    $buttons=$xpath->query('//button[normalize-space(.)="Delete"]');
+    same(1,$buttons->length,'One blocked Delete stays visible');$button=$buttons->item(0);
+    expect($button instanceof DOMElement,'Blocked Delete is a rendered button');
+    expect(str_contains(' '.$button->getAttribute('class').' ',' domains-blocked '),'Blocked Delete is visibly dimmed');
+    same('true',$button->getAttribute('aria-disabled'),'Blocked Delete says it cannot run');
+    expect(str_contains($button->getAttribute('x-tooltip'),$reason),'Blocked Delete explains the reason in its tooltip');
+    expect(str_contains($button->getAttribute('aria-label'),$reason),'Blocked Delete gives screen readers the reason');
+    expect(!$button->hasAttribute('disabled')&&!$button->hasAttribute('wire:click'),'Blocked Delete stays focusable without a silent write handler');
+    same($reason,$page->instance()->getAction('delete')->getTooltip(),'Delete uses the shared blocked-control tooltip');
+    $switch=$xpath->query('//button[@role="switch"]')->item(0);
+    expect($switch instanceof DOMElement && str_contains(' '.$switch->getAttribute('class').' ',' domains-blocked '),'The blocked monitoring switch is also dimmed');
     siteDnsFixture(null);
     // Existing watch, managed-domain and product assignments each block independently.
     $cases=[['domains_watch_names','ns_profile_id','id',$watch->id],['domains_managed_public_config','profile_id','domain_id',900001],['domains_watch_product_maps','expected_ns_profile_id','id',$map->id]];
