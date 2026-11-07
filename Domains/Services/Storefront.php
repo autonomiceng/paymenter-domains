@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Services;
 
 use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Data\{Action, CanonicalName, Disposition, Query, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, SalesPolicy, Tld};
+use Paymenter\Extensions\Servers\Domains\Data\{Action, CanonicalName, Disposition, Query, RequestBudget, RequestContext, RequestOrigin, SaleSelection};
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation, SalesPolicy, Tld};
 
 /** Explicit customer projection. No model, seller, cost, provider text or read evidence reaches Blade. */
 class Storefront
@@ -110,7 +110,7 @@ class Storefront
         return $ids->filter(static fn ($id) => ($environments[$id] ?? null) === 'test')->keys()->all();
     }
 
-    /** Safe public result only. Any reservation has the SAME response regardless of owner or lifecycle. */
+    /** Safe public result only. Reserved transfers use public facts, never private owner or lifecycle details. */
     public function check(string $input, bool $transferOnly = false): array
     {
         $name = CanonicalName::normalize($input);
@@ -118,7 +118,9 @@ class Storefront
         $base = ['domain' => $name, 'sld' => substr($name, 0, -strlen($ending)-1), 'tld' => $ending, 'status' => 'taken',
             'testEnvironment' => $this->testEndings([['tld' => $ending]]) !== []];
         if ($transferOnly) { $base['transferPage'] = true; }
-        if (Domain::where('reservation_name', $name)->exists()) { return $transferOnly ? $this->transferRefusal($base) : $base; }
+        $holding = Domain::where('reservation_name', $name)->first();
+        $reserved = $holding !== null;
+        if ($reserved && !$transferOnly) { return $base; }
         $offers = []; $read = $this->reader();
         foreach (range(1, 10) as $term) {
             try { $offers[$term] = $read->offer($ending, 'register', $term); } catch (\Throwable) {}
@@ -127,6 +129,7 @@ class Storefront
         try { $transfer = $read->offer($ending, 'transfer', 1); } catch (\Throwable) {}
         if (!$offers && !$transfer) { return $transferOnly ? $this->transferRefusal($base, 'ending') : [...$base, 'status' => 'held']; }
         if ($transferOnly && !$transfer) { return $this->transferRefusal($base, 'ending'); }
+        if ($transferOnly && $holding && ($recent = $this->recentAcquisition($holding, $transfer['selection'], $base))) { return $recent; }
         $selection = ($offers ? reset($offers) : $transfer)['selection'];
         $driver = $this->bindings->reader($selection->serverId);
         if ($driver->binding()->fingerprint !== $selection->fingerprint) { throw new \DomainException('Search account changed.'); }
@@ -147,12 +150,12 @@ class Storefront
         $this->catalogue()?->validate($selection);
         if ($r->disposition !== Disposition::Accepted || $context->now() >= $context->deadline) {
             \Illuminate\Support\Facades\Log::warning('Domains search failed.',CartHandoffFailure::context(new EligibilityUnconfirmed($r->registrarCode),'search'));
-            return [...$base, 'status' => 'error'];
+            return $transferOnly ? $this->transferRefusal($base) : [...$base, 'status' => 'error'];
         }
         if ($r->evidence()->premium === true) { return $transferOnly ? $this->transferRefusal($base, 'premium') : [...$base, 'status' => 'premium']; }
-        if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return [...$base, 'status' => 'error']; }
+        if ($r->evidence()->premium !== false || $r->evidence()->available === null) { return $transferOnly ? $this->transferRefusal($base) : [...$base, 'status' => 'error']; }
         if ($r->evidence()->available) {
-            if ($transferOnly) { return $this->transferRefusal($base, 'transfer_not_registered'); }
+            if ($transferOnly) { return $this->transferRefusal($base, $reserved ? null : 'transfer_not_registered'); }
             if (!$offers) { return [...$base, 'status' => 'held']; }
             $first = reset($offers);
             return [...$base, 'status' => 'available', 'price' => $first['price'], 'renew' => $first['renew'],
@@ -161,39 +164,69 @@ class Storefront
         if ($transfer) {
             try {
                 $this->eligibility->observe($name, $transfer['selection'], ['storefront']);
+                if ($reserved) { return $this->transferRefusal($base); }
                 return [...$base, 'status' => 'transferable', 'price' => $transfer['price'], 'renew' => $transfer['renew'], 'term' => 1];
             } catch (\Throwable $error) {
                 if ($transferOnly) {
                     // Only known local reason codes can reach customers, never exception/provider text.
-                    $reason = $error instanceof WriteHeld ? $error->reason : ($error::class === \DomainException::class ? $error->getMessage() : null);
+                    $reason = $error instanceof WriteHeld ? $error->reason : ($error instanceof TransferRestriction || $error::class === \DomainException::class ? $error->getMessage() : null);
+                    if ($reserved && $reason === 'transfer_not_registered') { $reason = null; }
                     $days = [60, 60];
                     if (in_array($reason, ['transfer_creation_lock', 'transfer_previous_lock'], true)) {
                         try { $days = TransferPrecheck::rules($transfer['selection']); } catch (\Throwable) { $reason = null; }
                     }
-                    return $this->transferRefusal($base, $reason, $days);
+                    return $this->transferRefusal($base, $reason, $days, $error instanceof TransferRestriction ? $error->retryAt : null);
                 }
             }
         }
         return $base;
     }
 
-    /** Fixed public wording; an unknown refusal remains unknown and offers a safe next step. */
-    private function transferRefusal(array $base, ?string $reason = null, array $days = [60, 60]): array
+    /** A completed acquisition bounds a recent registration/transfer even when TEST names have no public RDAP record. */
+    private function recentAcquisition(Domain $domain, SaleSelection $selection, array $base): ?array
     {
+        try {
+            $days = TransferPrecheck::rules($selection);
+            $op = Operation::where('domain_id', $domain->id)->where('service_id', $domain->service_id)
+                ->where('server_id', $domain->server_id)->where('registrar_key', $domain->registrar_key)
+                ->where('account_fingerprint', $domain->account_fingerprint)->where('authority_generation', $domain->authority_generation)
+                ->whereIn('action', ['register', 'transfer'])->where('state', 'succeeded')->whereNotNull('confirmed_expires_at')
+                ->whereNotNull('started_at')->whereNotNull('completed_at')->orderByDesc('completed_at')->first();
+            if (!$op) { return null; }
+            $now = $this->clock->now(); $count = $days[$op->action === 'register' ? 0 : 1];
+            // Reservation creation is not registration. Both bounds must put the actual acquisition inside the window.
+            if ($op->completed_at > $now || $op->started_at > $op->completed_at || $op->started_at <= $now->modify('-'.$count.' days')) { return null; }
+            // Completion is the safe upper bound, not a claim about the registry's exact lock-end instant.
+            $retryAt = \DateTimeImmutable::createFromInterface($op->completed_at)->setTimezone(new \DateTimeZone('UTC'))->modify('+'.$count.' days');
+            return $this->transferRefusal($base, $op->action === 'register' ? 'transfer_creation_lock' : 'transfer_previous_lock', $days, $retryAt);
+        } catch (\Throwable) { return null; }
+    }
+
+    /** Fixed public wording; an unknown refusal remains unknown and offers a safe next step. */
+    private function transferRefusal(array $base, ?string $reason = null, array $days = [60, 60], ?\DateTimeImmutable $retryAt = null): array
+    {
+        $until = $retryAt ? ' Try transferring it after '.$retryAt->setTimezone(new \DateTimeZone('UTC'))->format('M j, Y \a\t H:i').' UTC.' : ' Wait for the transfer lock to end.';
         $message = match ($reason) {
             'transfer_locked' => 'This domain is locked. Unlock this domain at your current registrar, then try again.',
-            'transfer_creation_lock' => 'This domain was registered less than '.$days[0].' days ago. Wait until the '.$days[0].'-day transfer lock ends, then try again.',
-            'transfer_previous_lock' => 'This domain was transferred less than '.$days[1].' days ago. Wait until the '.$days[1].'-day transfer lock ends, then try again.',
-            'transfer_not_registered' => 'This domain isn’t registered. Register it first, or check the spelling.',
-            'ending', 'Transfer ending is not accepted.' => 'We don’t offer transfers for this ending. Contact support for help transferring this domain.',
+            'transfer_creation_lock' => 'This domain was registered less than '.$days[0].' days ago.'.$until,
+            'transfer_previous_lock' => 'This domain was transferred less than '.$days[1].' days ago.'.$until,
+            'transfer_not_registered' => 'This domain isn’t registered. Check the spelling, or register it here.',
+            'ending', 'Transfer ending is not accepted.' => 'We don’t offer transfers for this ending.',
             'transfer_pending' => 'A transfer is already in progress. Wait for it to finish, then try again.',
             'transfer_redemption' => 'This domain is in redemption. Restore it at your current registrar before transferring it.',
             'transfer_pending_delete' => 'This domain is pending deletion. Contact your current registrar about recovery before transferring it.',
-            'transfer_maximum_term' => 'A transfer would exceed this domain’s maximum registration term. Contact support for help.',
-            'premium', 'premium_name' => 'We don’t offer transfers for premium domains. Contact support for help.',
-            default => 'We couldn’t confirm that this domain can be transferred. Try again, or contact support if this continues.',
+            'transfer_maximum_term' => 'A transfer would exceed this domain’s maximum registration term.',
+            'premium', 'premium_name' => 'We don’t offer transfers for premium domains.',
+            default => 'We couldn’t check this transfer right now. Try again in a few minutes.',
         };
-        return [...$base, 'status' => 'transfer_refused', 'message' => $message];
+        $known = in_array($reason, ['transfer_locked', 'transfer_creation_lock', 'transfer_previous_lock', 'transfer_not_registered',
+            'ending', 'Transfer ending is not accepted.', 'transfer_pending', 'transfer_redemption', 'transfer_pending_delete',
+            'transfer_maximum_term', 'premium', 'premium_name'], true);
+        $wait = in_array($reason, ['transfer_creation_lock', 'transfer_previous_lock', 'transfer_pending'], true);
+        $action = in_array($reason, ['transfer_locked', 'transfer_redemption', 'transfer_pending_delete'], true);
+        return [...$base, 'status' => !$known ? 'transfer_unconfirmed' : ($wait ? 'transfer_wait' : 'transfer_refused'),
+            'refusalTone' => $reason === 'transfer_pending' ? 'info' : (($action || $wait) ? 'warn' : 'muted'), 'message' => $message, 'register' => $reason === 'transfer_not_registered',
+            'support' => !$known || in_array($reason, ['ending', 'Transfer ending is not accepted.', 'transfer_maximum_term', 'premium', 'premium_name'], true)];
     }
 
     /** Small grace period for an in-flight background read; no provider call or lock is held. */

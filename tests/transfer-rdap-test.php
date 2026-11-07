@@ -59,6 +59,18 @@ foreach (['registration' => 'transfer_creation_lock', 'transfer' => 'transfer_pr
         }
     }
 }
+$candidate = $body; $candidate['status'] = ['clientTransferProhibited'];
+$candidate['events'][0]['eventDate'] = $now->modify('-30 minutes')->format(DATE_ATOM);
+$recent = lookup($candidate);
+verify($recent['code'] === 'transfer_creation_lock', 'Known registration window takes precedence over an undated registrar lock.');
+verify(($recent['retry_at'] ?? null) === $now->modify('-30 minutes')->modify('+60 days')->format(DATE_ATOM), 'Registration lock retains its exact end.');
+$candidate['status'] = ['redemptionPeriod'];
+verify(lookup($candidate)['code'] === 'transfer_redemption', 'Recovery takes precedence over waiting for a dated lock.');
+$candidate['status'] = ['clientTransferProhibited'];
+unset($candidate['events'][1]);
+verify(lookup($candidate)['code'] === 'transfer_creation_lock', 'A known creation lock needs no expiry date.');
+$candidate['events'][0]['eventDate'] = '2020-01-01T00:00:00Z'; $candidate['status'] = ['active'];
+verify(lookup($candidate)['warning'] !== null, 'Missing expiry never becomes positive registry proof.');
 $candidate = $body; $candidate['events'][0]['eventDate'] = $now->format(DATE_ATOM);
 verify(lookup($candidate, $now, 0, 0)['allowed'], 'Zero-day creation window refused.');
 foreach (['2035-10-16T00:00:00Z' => true, '2035-10-17T23:59:59Z' => true, '2035-10-18T00:00:00Z' => false] as $expiry => $allowed) {

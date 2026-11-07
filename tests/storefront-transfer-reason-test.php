@@ -58,15 +58,35 @@ $assertRefusal = static function (array $result, string $reason) : void {
     expect(!str_contains($result['html'], '>Taken<'), 'Transfer refusal does not say Taken');
 };
 $assertRefusal($check(), 'Unlock this domain at your current registrar, then try again.');
+// A negative registrar flag must not hide a known public registration lock.
+$state->transferable = 'false';
+$public->created = $now->modify('-30 minutes')->format(DATE_ATOM);
+$recent = $check();
+$assertRefusal($recent, 'registered less than 60 days ago');
+expect(str_contains($recent['html'], $now->modify('-30 minutes')->modify('+60 days')->format('M j, Y \a\t H:i').' UTC'), 'Known lock shows its exact end in UTC');
+$dom = storefrontDom($recent['html']);
+same('Wait to transfer', trim($dom->query('//*[contains(@class,"domains-result__status")]')->item(0)->textContent), 'Date restriction is a wait');
+same(1, $dom->query('//*[contains(@class,"domains-status") and contains(@class,"domains-tone-warn")]')->length, 'A dated wait has an amber hexagon and its reason');
+$public->status = 503;
+$unknown = $check();
+$assertRefusal($unknown, 'couldn’t check this transfer right now. Try again in a few minutes.');
+expect(!str_contains($unknown['html'], 'Can’t transfer'), 'Unconfirmed lookup is not a hard no');
+$dom = storefrontDom($unknown['html']);
+same('Couldn’t check', trim($dom->query('//*[contains(@class,"domains-result__status")]')->item(0)->textContent), 'Unknown status uses neutral words');
+same(1, $dom->query('//a[@href="'.route('tickets.create').'"]')->length, 'Support is a real link for guests too');
+$public->status = 200; $public->created = '2020-01-01T00:00:00Z'; $state->transferable = 'true';
+
 same('taken', $check(false)['status'], 'Registration search keeps its Taken result');
 $public->states = ['active']; $public->created = $now->modify('-30 days')->format(DATE_ATOM);
 $assertRefusal($check(), 'registered less than 60 days ago');
 $public->created = '2020-01-01T00:00:00Z'; $public->transferred = $now->modify('-30 days')->format(DATE_ATOM);
 $assertRefusal($check(), 'transferred less than 60 days ago');
 $public->transferred = null; $public->status = 404;
-$assertRefusal($check(), 'isn’t registered. Register it first');
+$notRegistered = $check();
+$assertRefusal($notRegistered, 'isn’t registered.');
+same(1, storefrontDom($notRegistered['html'])->query('//a[@href="'.route('domains.domains.search', ['name' => 'transfer-placeholder.com']).'"]')->length, 'Register link keeps the complete domain name');
 $public->status = 200; $setting->update(['value' => 'net']);
-$assertRefusal($check(), 'We don’t offer transfers for this ending. Contact support');
+$assertRefusal($check(), 'We don’t offer transfers for this ending.');
 $setting->update(['value' => 'com']);
 $result = $check();
 same('transferable', $result['status'], 'Eligible name offers a transfer');
@@ -75,6 +95,14 @@ $public->states = ['pending transfer'];
 $assertRefusal($check(), 'already in progress');
 $page = (new OwnedTransferController($store))->show($req(['name' => 'transfer-placeholder.com'], 'GET'))->render();
 expect(str_contains($page, 'data-mode="transfer"'), 'Transfer page requests transfer results');
+foreach (['' => 'Enter a domain name.', 'bad name!' => 'Use letters, numbers and hyphens only.'] as $name => $message) {
+    $invalid = (new OwnedTransferController($store))->show($req(['name' => $name], 'GET'))->render();
+    $form = storefrontDom($invalid);
+    same(1, $form->query('//form[@role="search" and @novalidate]')->length, 'Name validation uses one server response');
+    same(1, $form->query('//*[@id="domains-transfer-error"]')->length, 'One error appears below the name controls');
+    same($message, $form->query('//*[@id="domains-transfer-error"]')->item(0)->textContent, 'Name error covers the whole rule');
+    same(0, $form->query('//*[@data-domains-results]')->length, 'Invalid names never start a lookup');
+}
 // The eligible guest result uses the same neutral POST and real native admission as Register.
 $public->states = ['active'];
 $key = FormKeys::issue($req(), 'search');
@@ -102,6 +130,43 @@ $before = $state->calls;
 app('request')->cookies->set('cart', $cart->ulid); \Illuminate\Support\Once::flush();
 same('in_cart', $check()['status'], 'Guest sees the existing cart line instead of a duplicate action');
 same($before, $state->calls, 'Already-in-cart result makes no registrar reads');
+// Existing holdings must receive the same public restriction without becoming a purchase offer.
+$owner = commerceUser(); $product = $native->product($tlds[0], 'register');
+// Static retained fixture bypasses checkout events, as does its existing service row.
+$orderId = Illuminate\Support\Facades\DB::table('orders')->insertGetId(['user_id' => $owner->id, 'currency_code' => 'USD']);
+$serviceId = Illuminate\Support\Facades\DB::table('services')->insertGetId(['order_id' => $orderId, 'user_id' => $owner->id,
+    'product_id' => $product->id, 'plan_id' => $product->plans()->where('billing_period', 1)->sole()->id,
+    'price' => 10, 'quantity' => 1, 'currency_code' => 'USD', 'status' => 'pending']);
+$holding = Paymenter\Extensions\Servers\Domains\Models\Domain::create(['domain' => 'transfer-placeholder.com', 'sld' => 'transfer-placeholder', 'tld' => 'com',
+    'user_id' => $owner->id, 'service_id' => $serviceId, 'server_id' => $tlds[0]->server_id, 'registrar_key' => 'enom',
+    'account_fingerprint' => $tlds[0]->account_fingerprint, 'authority_generation' => 1, 'status' => 'needs_review']);
+$public->created = $now->modify('-30 minutes')->format(DATE_ATOM); $state->transferable = 'false';
+$reserved = $store->check('transfer-placeholder.com', true);
+same('transfer_wait', $reserved['status'], 'A reserved recent name keeps the public dated restriction');
+expect(str_contains($reserved['message'], 'registered less than 60 days ago'), 'Existing holding is not an unexplained refusal');
+$holding->update(['status' => 'active']);
+same($reserved, $store->check('transfer-placeholder.com', true), 'Private lifecycle cannot change the public reason');
+$public->created = '2020-01-01T00:00:00Z'; $state->transferable = 'true';
+same('transfer_unconfirmed', $store->check('transfer-placeholder.com', true)['status'], 'Public eligibility cannot offer a reserved holding for purchase');
+// Only a completed acquisition, bound to this holding, can supply a local age.
+$public->status = 503; $state->transferable = 'false';
+same('transfer_unconfirmed', $store->check('transfer-placeholder.com', true)['status'], 'A recent reservation alone does not prove a recent registration');
+$operationId = Illuminate\Support\Facades\DB::table('domains_operations')->insertGetId([
+    'domain_id' => $holding->id, 'service_id' => $serviceId, 'server_id' => $holding->server_id,
+    'registrar_key' => $holding->registrar_key, 'account_fingerprint' => $holding->account_fingerprint,
+    'authority_generation' => $holding->authority_generation, 'operation_key' => 'synthetic-recent-registration',
+    'action' => 'register', 'state' => 'succeeded', 'currency' => 'USD', 'confirmed_expires_at' => '2027-10-18',
+    'started_at' => $now->modify('-31 minutes')->format('Y-m-d H:i:s'), 'completed_at' => $now->modify('-30 minutes')->format('Y-m-d H:i:s'),
+]);
+$local = $store->check('transfer-placeholder.com', true);
+same('transfer_wait', $local['status'], 'A confirmed recent registration is explained even when RDAP cannot answer');
+expect(str_contains($local['message'], 'registered less than 60 days ago'), 'Local completion supplies the known reason');
+expect(str_contains($local['message'], $now->modify('-30 minutes')->modify('+60 days')->format('M j, Y \a\t H:i').' UTC'), 'Local completion supplies a safe retry date');
+Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $operationId)->update(['action' => 'transfer']);
+expect(str_contains($store->check('transfer-placeholder.com', true)['message'], 'transferred less than 60 days ago'), 'Confirmed transfers use the transfer age rule');
+Illuminate\Support\Facades\DB::table('domains_operations')->where('id', $operationId)->update(['authority_generation' => $holding->authority_generation + 1]);
+same('transfer_unconfirmed', $store->check('transfer-placeholder.com', true)['status'], 'Another holding generation cannot supply an age');
+$before = $state->calls;
 $ipKey = 'domains.search.ip:'.hash('sha256', '192.0.2.77');
 for ($i = 0; $i < 30; $i++) { \Illuminate\Support\Facades\RateLimiter::hit($ipKey, 60); }
 $limited = $controller->check($req(['domain' => 'transfer-placeholder.com', '_request_key' => $key, 'mode' => 'transfer']));
