@@ -309,7 +309,7 @@ $ended=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),
 same('gray',$ended['tone'],'An ended domain keeps its own tone');
 expect(!str_contains((string)$ended['step'],'Sync'),'An ended domain has no sync step');
 expect($value($active,'Last sync')!=='Read stopped','An ended domain does not ask for a resume');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed');
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertDontSee('Resume sync')->assertDontSee('Stopped until resumed')->assertDontSee('Next registrar read:')->assertDontSee('No read queued.');
 same(null,DomainFacts::sync($active->fresh()),'The list reads the same');
 DB::table('domains_domains')->where('id',$active->id)->update(['status'=>'active']);
 DB::table('domains_obligation_alerts')->where('domain_id',$active->id)->delete();
