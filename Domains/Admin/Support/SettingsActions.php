@@ -103,7 +103,7 @@ final class SettingsActions
                         if($t){$kind='pricing';$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->catalogue_intent);$kind=!\Paymenter\Extensions\Servers\Domains\Catalogue\Pricing::hasOwn($t)?'default':match($intent['pricing_rule']['mode']??$t->pricing_mode){'fixed'=>'fixed','markup_percent','markup_amount','markup_fee_percent'=>'markup',default=>'pricing'};}
                         $rule=$t?(StaffCatalogue::routed()?->pricing($server,$t)??(new PricingRules)->rule($t)):(new PricingRules)->defaultRule(fee:CardFee::NONE);
                         return ['rule'=>$rule,'error'=>null];
-                    }catch(\Throwable){return ['rule'=>PricingRule::DEFAULT,'error'=>match($kind){'fixed'=>'Invalid fixed price rule','markup'=>'Invalid markup rule','default'=>'Invalid default pricing rule',default=>'Invalid pricing rule'}];}
+                    }catch(\Throwable){return ['rule'=>null,'error'=>match($kind){'fixed'=>'Invalid fixed price rule','markup'=>'Invalid markup rule','default'=>'Invalid default pricing rule',default=>'Invalid pricing rule'}];}
                 });
                 $rule=static fn()=>$savedRule()['rule'];
                 $fields[]=\Filament\Schemas\Components\Text::make(fn()=>'Missing: '.$savedRule()['error'].'. Enter valid prices below or choose Default pricing.')
@@ -118,12 +118,12 @@ final class SettingsActions
                             fn($key)=>self::canSee(Review::permission($key==='default'?'remove_override':'override')),ARRAY_FILTER_USE_KEY))
                         ->default(fn()=>((StaffCatalogue::routed()!==null?!StaffCatalogue::routed()->own(Tld::findOrFail($tld)):(Tld::find($tld)?->use_default_rule??true))&&self::canSee(Review::permission('remove_override')))||!self::canSee(Review::permission('override'))?'default':'custom');
                 }
-                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost','fixed'=>'Set my own price'])->required()->live()->default(fn()=>$rule()['mode'])->visible($own);
-                $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup'])->required()->maxLength(12)->live(debounce:500)
+                $fields[]=Select::make('mode')->label('Pricing')->options(['markup_percent'=>'Add a percentage to cost','markup_fee_percent'=>'Add a percentage to cost and card fee','markup_amount'=>'Add an amount to cost','fixed'=>'Set my own price'])->required()->live()->default(fn()=>$rule()['mode']??null)->visible($own);
+                $fields[]=TextInput::make('markup')->label(fn($get)=>$get('mode')==='markup_amount'?'Amount to add (USD)':'Percentage to add')->default(fn()=>$rule()['markup']??null)->required()->maxLength(12)->live(debounce:500)
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up'])->required()->live()
+                $fields[]=Select::make('round_up')->label('Round up')->options(PricingRule::ROUNDING_LABELS)->default(fn()=>$rule()['round_up']??null)->required()->live()
                     ->visible(fn($get)=>$own($get)&&$get('mode')!=='fixed');
-                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key])->maxLength(14)->live(debounce:500)
+                foreach(['register'=>'Register','renew'=>'Renew','transfer'=>'Transfer'] as $key=>$label){$fields[]=TextInput::make('fixed_'.$key)->label($label.' price per year (USD)')->default(fn()=>$rule()['fixed'][$key]??null)->maxLength(14)->live(debounce:500)
                     ->visible(fn($get)=>$own($get)&&$get('mode')==='fixed');}
                 $saved=self::cached(static function():?array{try{return CardFee::read();}catch(\Throwable){return null;}});
                 if($name==='default_pricing'){
