@@ -414,7 +414,15 @@ try {
     $reservedSync=$syncConnection->pop();expect($reservedSync!==null,'Staff A has a real reserved sync job');
     $syncJob=unserialize($reservedSync->payload()['data']['command']);
     same([$importer->id,$active->id,$active->authority_generation,$active->account_fingerprint],[$syncJob->actor,$syncJob->domain,$syncJob->generation,$syncJob->fingerprint],'Queued sync binds actor and current holding');
-    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors();
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])
+        ->assertSee('Sync in progress')->assertActionDisabled('sync_now')->callAction('sync_now')->assertHasNoActionErrors();
+    $pendingNotices=new \Filament\Notifications\Livewire\Notifications;$pendingNotices->mount();
+    same([],$pendingNotices->notifications->all(),'A disabled pending sync sends no new notice');
+    same(1,$syncConnection->size(),'The disabled action keeps the reserved job');
+    // The worker clears the page marker before the queue releases its unique lock.
+    \Illuminate\Support\Facades\Cache::forget($syncJob->uniqueId().':pending');
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])
+        ->assertActionEnabled('sync_now')->callAction('sync_now')->assertHasNoActionErrors();
     $syncNotices=new \Filament\Notifications\Livewire\Notifications;$syncNotices->mount();
     $syncTitles=$syncNotices->notifications->map(fn($notice)=>$notice->getTitle())->values()->all();
     expect(!in_array('Sync queued',$syncTitles,true),'Second staff is not promised a silently dropped sync');
