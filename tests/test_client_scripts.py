@@ -104,6 +104,12 @@ def main():
         checked = subprocess.run([node, str(ROOT/'tests/Support/management-poll.js')],
                                  input=pending.scripts[-1], capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr
+        registration = InlineScripts()
+        registration.feed((Path(temporary)/'show-registration-pending.html').read_text())
+        checked = subprocess.run([node, str(ROOT/'tests/Support/order-poll.js')],
+                                 input=registration.scripts[-1], capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        print(checked.stdout.strip())
         records = RecordForms()
         records.feed((Path(temporary)/'show-records.html').read_text())
         assert len(records.forms) == 2, 'Both DNS and SRV forms must render'
