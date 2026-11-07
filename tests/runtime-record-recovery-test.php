@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\{DB,Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime,RuntimeWork,ObservationWork,ObservationRecords,OwnerRecords,ManagementPayload,ReadDeferred,DomainObservation};
 // Current holds suppress automatic retries, and the note states the manual-resume prerequisite.
-$state->fault='GetHosts';$dueRecords();$runtimePorts->initialManagedRecordObservations();expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
+$state->fault='GetHosts';DB::table('domains_observation_work')->where('id',$job->id)->update(['tries'=>4]);$dueRecords();$runtimePorts->initialManagedRecordObservations();expect(ObservationRecords::held($d->fresh()),'Failed native discovery creates current hold');
 $html=$page();same(1,substr_count($html,e(Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::READ_HELD)),'Held notice describes manual recovery once');expect(!str_contains($html,Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::TEAM_CHECK),'Record rows do not repeat the held notice');expect(!str_contains($html,'Fills in by itself within a day'),'Held records never promise an automatic record retry');
 $io=count($state->calls);$clock->instant=$clock->now()->modify('+1 day');$runtimePorts->initialManagedRecordObservations();same($io,count($state->calls),'Held producer never automatically retries');
 $state->fault='';$resumed=app(DomainObservation::class)->run($d->id,readRecords:true);expect(!ObservationRecords::held($d->fresh()),'Explicit resume recovers native producer: '.json_encode(['result'=>$resumed,'hold'=>$d->fresh()->observation['record_hold']??null,'records'=>ObservationRecords::current($d->fresh())]));
