@@ -26,4 +26,11 @@ foreach([[],[['transfer'=>null]], [['transfer'=>null],['transfer'=>'$0.00']]] as
     $empty=storefrontDom(view('domains::index',['domains'=>new \Illuminate\Pagination\LengthAwarePaginator([],0,25),'transfersOffered'=>$expected===1])->render());
     same($expected,$empty->query('//a[@href="'.route('domains.domains.transfer').'"]')->length,'Empty list has only its offered transfer entry');
 }
+// Register and Transfer are two tabs at the top of both pages; each page marks its own.
+$data=storefrontData();$data['endings']=[[...$data['endings'][0],'transfer'=>'$9.00']];
+foreach(['search'=>['Register',view('domains::search',$data)],'transfer'=>['Transfer',view('domains::transfer',[...$data,'results'=>[]])]] as $page=>[$current,$view]){
+    $tabs=storefrontDom($view->render())->query('//nav[@aria-label="Get a domain"]/a');
+    same(['Register','Transfer'],array_map(fn($a)=>trim($a->textContent),iterator_to_array($tabs)),'Register and Transfer tabs on '.$page);
+    same([$current],array_map(fn($a)=>trim($a->textContent),array_values(array_filter(iterator_to_array($tabs),fn($a)=>$a->getAttribute('aria-current')==='true'))),$page.' marks its own tab');
+}
 $nativeSuccessful=true;echo "Transfer entry links follow the public offer.\n";
