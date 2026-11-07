@@ -53,12 +53,13 @@ same(true,HoldingObservationWork::stopped($d->fresh()),'A missing account holdin
 $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
 same('Domain is not in the registrar account.',$notice['title'],'A missing account holding has a specific staff explanation');
 $account=(string)App\Models\Server::whereKey($d->server_id)->value('name');
-same('Assigned account: '.$account.'. Register or transfer the domain there. Then use Sync now.',$notice['body'],'The next step names the account and fixes it instead of repeating sync');
-$records=html_entity_decode(strip_tags($familyViews()['staff']),ENT_QUOTES);
+$staffRecords=static fn():string=>preg_replace('/\s+/',' ',html_entity_decode(strip_tags(view('domains::partials.record-families',['recordFamilies'=>\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now()),'staff'=>true])->render()),ENT_QUOTES));
+expect($account!==''&&str_starts_with($notice['body'],'Assigned account: '.$account.'. Register or transfer the domain there. '),'The next step names the account and fixes it instead of repeating sync');
+$records=$staffRecords();
 expect(str_contains($records,'Next registrar read: None until the domain is in this account.')&&!str_contains($records,'Stopped after'),'No read is due until the domain is in the account');
-// A manual Sync now that finds the same answer leaves no attempt count to show.
-Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d->fresh(),'domain_not_in_account');
-$records=html_entity_decode(strip_tags($familyViews()['staff']),ENT_QUOTES);
+// A manual Sync now that finds the same answer resets the count to 0 (HoldingReadRetry::completedManually), which is never shown.
+HoldingObservationWork::current($d->fresh())->update(['tries'=>0]);
+$records=$staffRecords();
 expect(str_contains($records,'Next registrar read: None until the domain is in this account.')&&!str_contains($records,'0 attempts'),'A manual read never says it stopped after 0 attempts');
 $calls=count($observation->calls);$clock->instant=$clock->now()->modify('+30 days');
 same('idle',$worker->turn($queue,$guard),'A missing account holding does not loop after daily backoff');

@@ -274,7 +274,8 @@ Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->ass
 // The count is a real number of reads: one attempt is singular, and none says only that the read stopped.
 foreach([1=>'Next registrar read: Stopped after 1 attempt. Cause: read_unavailable.',0=>'Next registrar read: Stopped. Cause: read_unavailable.'] as $tries=>$line){
     DB::table('domains_observation_work')->where('id',$work)->update(['tries'=>$tries]);
-    Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee($line)->assertDontSee('1 attempts')->assertDontSee('after 0 attempts');
+    $text=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->html()),ENT_QUOTES));
+    expect(str_contains($text,$line)&&!str_contains($text,'1 attempts')&&!str_contains($text,'after 0 attempts'),'Records head attempt count: '.$line);
 }
 DB::table('domains_observation_work')->where('id',$work)->update(['tries'=>5]);
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));

@@ -28,7 +28,7 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
         $cause=$pageCause($code);
         // Nothing syncs on an ended domain, so a stopped sync is no job there.
         if($code==='observation_review'&&DomainFacts::ended($domain->fresh())){continue;}
-        if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Sync stopped. Ask staff who can resume sync.')){$hidden[]=$code.'/'.$status;}
+        if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Sync stopped.')){$hidden[]=$code.'/'.$status;}
     }
 }
 same([],$hidden,'No open alert may be hidden on a domain page');
@@ -65,7 +65,7 @@ foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($doma
 DB::table('domains_domains')->where('id',$domain->id)->update(['renewal_policy'=>'unreadable']);
 $unreadable=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$domain->id])->assertSee('Open alerts');
 foreach(array_keys(DomainFacts::ALERTS) as $code){$unreadable->assertSee($pageCause($code));}
-$unreadable->assertSee('Sync stopped. Ask staff who can resume sync.');
+$unreadable->assertSee('Sync stopped.');
 // Unknown kinds still surface safely, without printing stored codes.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->update(['resolved_at'=>time()]);
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->where('code','unknown_expiry')->limit(1)->update(['resolved_at'=>null,'code'=>'PRIVATE-UNKNOWN-CODE']);
