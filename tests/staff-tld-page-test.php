@@ -148,14 +148,14 @@ DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$e
 activeCommerceFacts($now,$now->modify('+30 days'));
 $clock->instant=$now->modify('+2 days');app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 Carbon\Carbon::setTestNow($clock->now());
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status: '.json_encode(TldFacts::salesState($enom->fresh())));
+same(['label'=>'Not for sale','tone'=>'danger','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status: '.json_encode(TldFacts::salesState($enom->fresh())));
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Cost out of date')->assertSee('Sync prices');
 $clock->instant=$now;Carbon\Carbon::setTestNow($now);
 
 // Below cost: red Cost with its reason, and the TLD is not for sale.
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],static fn($ending)=>activeFixtureRepublish($prices,$ending));
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
+same(['label'=>'Not for sale','tone'=>'danger','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost')->assertSee('USD 1.00');
 $clean($list->html(),'List below cost');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost');
