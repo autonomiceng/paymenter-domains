@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,Staff};
 use Paymenter\Extensions\Servers\Domains\Contracts\AccountVerifier;
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Environment};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AccountReadBudget, BalanceSchema, IdentityRefused, NameSiloSandbox, ObservationSchema, RegistrarBalances, RegistrarFactories, RegistrarRegistry, RuntimePorts, StaffSettingsReview as Review, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, BalanceSchema, IdentityRefused, NameSiloSandbox, ObservationSchema, RegistrarBalances, RegistrarFactories, RegistrarRegistry, RuntimePorts, StaffSettingsReview as Review, StaffSettingsWrites};
 require_once __DIR__.'/staff-tlds.php';
 ini_set('zend.exception_ignore_args','0');$GLOBALS['enrollmentCalls']=0;
 $empty=new RegistrarRegistry;config(['domains.namesilo_sandbox_enrollment.enabled'=>false]);
@@ -115,7 +115,7 @@ unset($probePage);gc_collect_cycles();
 $balanceClock->instant=$balanceClock->now()->modify('+5 seconds');
 app()->instance(Paymenter\Extensions\Servers\Domains\Services\PslTransport::class,
     new Paymenter\Extensions\Servers\Domains\Services\PslTransport(static function():never {throw new Paymenter\Extensions\Servers\Domains\Services\PslFailure('transport_failed');}));
-$balanceService=new RegistrarBalances($bindings,$balanceClock,new AccountReadBudget($balanceClock));
+$balanceService=new RegistrarBalances($bindings,$balanceClock,app(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class));
 $GLOBALS['enrollmentExpectedContext']='apibatch';
 $GLOBALS['enrollmentExpectedTimeout']=25000;
 Log::shouldNotHaveReceived('warning');Log::shouldNotHaveReceived('error');
