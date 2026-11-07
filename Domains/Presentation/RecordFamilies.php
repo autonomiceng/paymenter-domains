@@ -43,9 +43,9 @@ final class RecordFamilies
             $cancelled=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::terminal($ops->first(),$d);
         }
         // A registration or transfer that has not finished has nothing at the registrar to read yet. Staff read that once, not a Missing per family.
-        // A read that failed or stopped keeps its own lines, since staff may need to act on it.
+        // Registration failures belong to the acquisition request; active domains keep their read recovery lines.
         $notYet=$readable&&!$cancelled&&in_array($d->status,['registration_pending','transfer_pending'],true)&&empty($d->observation['records'])
-            &&$status['at']===null&&$status['last_complete_at']===null&&!$status['read_code']&&!$status['read_stopped']?($d->status==='transfer_pending'?'transfer':'registration'):null;
+            &&$status['at']===null&&$status['last_complete_at']===null&&($d->status==='registration_pending'||!$status['read_code']&&!$status['read_stopped'])?($d->status==='transfer_pending'?'transfer':'registration'):null;
         // Reuse the editor's identity-checked, sequence-ordered readback projection.
         if($currentRead){$dns=ObservationProjection::sections($d)['dns']??null;
             if(isset($dns['facts']['records'],$dns['at'])&&$dns['at']>=($status['families']['dns']['at']??'')){

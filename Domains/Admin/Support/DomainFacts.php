@@ -129,7 +129,7 @@ final class DomainFacts
         }
         $job=!Schema::hasTable('domains_observation_work')||($id=ObservationWork::currentId($d))===null?null:DB::table('domains_observation_work')->find($id);
         // An ended domain won't sync again, so it keeps its last read and shows no row without one.
-        if (($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
+        if (!self::unconfirmedRegistration($d)&&($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
             $paused=>self::fact('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
             $sync==='failed'=>self::fact('Read stopped',tone:'danger'),
             default=>['at'=>$d->last_synced_at?->getTimestamp(),...self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
@@ -182,7 +182,7 @@ final class DomainFacts
         $rows=array_filter($inputs['alerts'],fn(array $a)=>!(in_array($a['code'],['operation_review','held_obligation'],true)&&$named!==null&&($a['request']===$named||$named===$status['request'])));
         foreach (array_unique(array_column($rows,'code')) as $code) {
             // Late payment already has a status reason and says so in the head.
-            if ($code==='acquisition_late_money') { continue; }
+            if ($code==='acquisition_late_money'||$code==='observation_review'&&self::unconfirmedRegistration($d)) { continue; }
             [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code,$d);
             // The row sends staff to the same place the head would.
             $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
@@ -333,6 +333,12 @@ final class DomainFacts
     {
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
+        $op=$d->latestAcquisition;
+        if(self::unconfirmedRegistration($d)&&$op){
+            $facts=RequestFacts::for($op);
+            return ['title'=>'Registration not confirmed by the registrar.','body'=>$facts['registrar_reply']??null,'tone'=>'warning',
+                'action'=>['label'=>'Check request #'.$op->id,'url'=>self::url(fn()=>OperationResource::getUrl('view',['record'=>$op->id]))]];
+        }
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
         if (!self::ended($d)&&$read['read_code']==='domain_not_in_account') {
             $name=\App\Models\Server::whereKey($d->server_id)->value('name');
@@ -381,6 +387,9 @@ final class DomainFacts
         }
         return null;
     }
+    /** The acquisition request owns recovery until this registration has been confirmed. */
+    private static function unconfirmedRegistration(Domain $d): bool
+    { return $d->status==='registration_pending'&&$d->latestAcquisition?->action==='register'&&in_array($d->latestAcquisition->state,['pending','uncertain'],true); }
     private static function readCause(Domain $d): string
     {
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);

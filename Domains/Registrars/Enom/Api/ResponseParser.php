@@ -39,29 +39,32 @@ final class ResponseParser
                 || ($data['responses']['response']['responsenumber'] ?? null) === '304155')) {
             return new ProtocolResult('rejected', 'identity_credentials_refused');
         }
-        if ($command === ReadCommand::Info && $data['errcount'] === '1'
-            && ($data['errors']??null) === ['err1'=>'Domain name not found']
-            && empty($data['rrpcode']) && empty($data['responsecode'])
-            && !array_diff(array_keys($data), ['command','errcount','done','errors','rrpcode','rrptext','responsecode','responsecount',
-                'server','site','language','islockable','isrealtimetld','timedifference','exectime','requestdatetime','debug','minperiod','maxperiod'])) {
-            return new ProtocolResult('rejected','domain_not_in_account');
-        }
+        if ($command === ReadCommand::Info && $this->domainNotFound($data)) { return new ProtocolResult('rejected','domain_not_in_account'); }
         $code = $data['rrpcode'] ?? $data['responsecode'] ?? null;
         $code = is_string($code) && preg_match('/^[0-9]{1,6}$/D', $code) ? $code : null;
         if ($command === ReadCommand::HostStatus && $data['errcount'] === '1' && ($data['errors']??null) === ['err1'=>'Error 545 - Name server does not exist']
             && !array_key_exists('nschecksuccess',$data) && !array_key_exists('checknsstatus',$data)
             && $code === '545' && !isset($data['responsecode']) && !array_filter(array_keys($data),fn($k)=>preg_match('/^err[0-9]+$/D',$k))) { return new ProtocolResult('success',$code,['host_absent'=>true]); }
-        if (trim($data['errcount'], '0') !== '') { return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data) ? 'rejected' : 'unknown', $code); }
-        if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
+        $reply=null;
+        if($command===RegistrationCommand::Purchase){
+            $number=$data['responses']['response']['responsenumber']??null; $replyCode=$code;
+            if($replyCode===null&&is_string($number)&&preg_match('/^[0-9]{1,6}$/D',$number)){$replyCode=$number;}
+            $reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::capture($replyCode,
+                $data['errors']['err1']??$data['err1']??$data['responses']['response']['responsestring']??null);
+        }
+        if (trim($data['errcount'], '0') !== '') {
+            return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data) ? 'rejected' : 'unknown', $code, registrarReply:$reply);
+        }
+        if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors', registrarReply:$reply); }
         foreach ($data as $key => $value) {
-            if (preg_match('/^err[0-9]+$/D', $key) && $value !== '') { return new ProtocolResult('unknown', 'contradictory_errors'); }
+            if (preg_match('/^err[0-9]+$/D', $key) && $value !== '') { return new ProtocolResult('unknown', 'contradictory_errors', registrarReply:$reply); }
         }
         if (isset($data['responsecode']) && (!is_string($data['responsecode']) || !preg_match('/^1[0-9]{5}$/D', $data['responsecode']))) {
-            return new ProtocolResult('unknown', $code);
+            return new ProtocolResult('unknown', $code, registrarReply:$reply);
         }
         $codes = $command === ReadCommand::Check ? ['200', '210', '211'] : ($command instanceof RegistrationCommand && in_array($command, [RegistrationCommand::Purchase, RegistrationCommand::Renew, RegistrationCommand::GraceRenew], true) ? ['200', '1300'] : ['200']);
         if (isset($data['rrpcode']) && !in_array($data['rrpcode'], $codes, true)) {
-            return new ProtocolResult('unknown', $code);
+            return new ProtocolResult('unknown', $code, registrarReply:$reply);
         }
         if (in_array($command, [ReadCommand::Orders, ReadCommand::Order], true)) {
             $payload = $command === ReadCommand::Orders ? ['orderlist', 'ordercount'] : ['order'];
@@ -69,6 +72,27 @@ final class ResponseParser
         }
         // Payload-specific validation belongs to each named read normalizer, never to acknowledgement alone.
         return new ProtocolResult('success', $code, $data, strlen($body));
+    }
+
+    /** Only the observed not-found envelope, with scalar metadata and one matching error response. */
+    private function domainNotFound(#[\SensitiveParameter] array $data): bool
+    {
+        if($data['errcount']!=='1'||($data['errors']??null)!==['err1'=>'Domain name not found']
+            ||!empty($data['rrpcode'])||!empty($data['responsecode'])){return false;}
+        $metadata=['command','errcount','done','rrpcode','rrptext','responsecode','responsecount','server','site','language',
+            'islockable','isrealtimetld','timedifference','exectime','requestdatetime','debug','minperiod','maxperiod','nazca','apitype','trackingkey'];
+        if(array_diff(array_keys($data),[...$metadata,'errors','responses'])){return false;}
+        foreach($metadata as $key){if(isset($data[$key])&&(!is_string($data[$key])||strlen($data[$key])>512)){return false;}}
+        if(isset($data['rrptext'])&&!in_array($data['rrptext'],['','Domain name not found'],true)){return false;}
+        if(isset($data['responsecount'])&&$data['responsecount']!=='1'){return false;}
+        if(isset($data['responses'])&&$data['responses']!==''){
+            $responses=$data['responses']; $response=is_array($responses)?($responses['response']??null):null;
+            if(!is_array($responses)||array_keys($responses)!==['response']||!is_array($response)
+                ||array_diff(array_keys($response),['responsenumber','responsestring'])
+                ||!is_string($response['responsenumber']??null)||!preg_match('/^[347][0-9]{5}$/D',$response['responsenumber'])
+                ||($response['responsestring']??null)!=='Domain name not found'){return false;}
+        }
+        return true;
     }
 
     /** Indexed Text rows use the same internal shape as the documented XML products. */

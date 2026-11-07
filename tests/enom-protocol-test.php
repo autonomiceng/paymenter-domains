@@ -4,7 +4,7 @@
 declare(strict_types=1);
 require __DIR__.'/bootstrap.php';
 use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding, Disposition, Environment, RequestBudget, RequestContext, RequestOrigin};
-use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, ResponseParser, Transport};
+use Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\{Client, ProtocolResult, ReadCommand, RegistrationCommand, ResponseParser, Transport};
 ini_set('zend.exception_ignore_args', '0');
 function envelope(string $command, string $payload = ''): string
 {
@@ -44,6 +44,55 @@ same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names
     'A list with no supported ending stays unavailable');
 same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names($parser->parse(ReadCommand::Tlds, envelope('GetTLDList', '<tldlist><tld><tld>com</tld></tld><tld><tld>bad ending</tld></tld></tldlist>'))),
     'A non-hostname entry still voids the whole list');
+
+// Synthetic values in the complete GetDomainInfo not-found envelope observed in TEST on 2026-11-07.
+$missing='<interface-response><nazca>synthetic</nazca><Command>GETDOMAININFO</Command><APIType>API.NET</APIType><Language>eng</Language>'
+    .'<ErrCount>1</ErrCount><errors><Err1>Domain name not found</Err1></errors><ResponseCount>1</ResponseCount>'
+    .'<responses><response><ResponseNumber>316153</ResponseNumber><ResponseString>Domain name not found</ResponseString></response></responses>'
+    .'<MinPeriod>1</MinPeriod><MaxPeriod>10</MaxPeriod><Server>TEST</Server><Site>Enom</Site><IsLockable>True</IsLockable>'
+    .'<IsRealTimeTLD>True</IsRealTimeTLD><TimeDifference>+00.00</TimeDifference><ExecTime>0.01</ExecTime><Done>true</Done>'
+    .'<TrackingKey>synthetic-tracking</TrackingKey><RequestDateTime>11/7/2026 6:27:28 AM</RequestDateTime><debug/></interface-response>';
+same(['rejected','domain_not_in_account'],(fn($r)=>[$r->status,$r->code])($parser->parse(ReadCommand::Info,$missing)),
+    'Real not-found metadata must retain the typed account absence');
+foreach (['<OrderID>1234</OrderID>','<GetDomainInfo><DomainName>example.com</DomainName></GetDomainInfo>',
+    '<Owned>true</Owned>','<RRPCode>200</RRPCode>','<ResponseCode>100000</ResponseCode>'] as $contradiction) {
+    expect($parser->parse(ReadCommand::Info,str_replace('</interface-response>',$contradiction.'</interface-response>',$missing))->code!=='domain_not_in_account',
+        'Contradictory ownership/order/success stays a generic read failure');
+}
+foreach (['<TrackingKey><OrderID>1234</OrderID></TrackingKey>','<responses><response><OrderID>1234</OrderID></response></responses>'] as $metadata) {
+    $bad=preg_replace('~<(TrackingKey|responses)>.*?</\\1>~s','',$missing);
+    same(null,$parser->parse(ReadCommand::Info,str_replace('</interface-response>',$metadata.'</interface-response>',$bad))->code,
+        'Metadata cannot hide contradictory nested provider data');
+}
+
+// The reply retains fixed error wording only, never private suffixes or arbitrary error content.
+foreach ([['Error 545 - Name server does not exist; PW=PRIVATE-TOKEN','Error 545 - Name server does not exist'],
+    [str_repeat('PRIVATE-TOKEN',400),null],['owner@example.test PRIVATE-ACCOUNT',null],['<private>PRIVATE-TOKEN</private>',null]] as [$text,$expected]) {
+    $body='<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode>'
+        .'<errors><Err1>'.htmlspecialchars($text,ENT_XML1).'</Err1></errors><debug>PRIVATE-TOKEN</debug></interface-response>';
+    $reply=$parser->parse(RegistrationCommand::Purchase,$body);
+    same(['code'=>'545','text'=>$expected],get_object_vars($reply->registrarReply()),'Bounded sanitized diagnostic');
+    same('unknown',$reply->status,'Diagnostic never makes the refusal terminal');
+    expect(!str_contains(json_encode($reply->registrarReply()),'PRIVATE-'),'No private error values survive');
+    same(null,$reply->value('errors'),'Non-success still discards all raw protocol data');
+}
+$reply=$parser->parse(RegistrationCommand::Purchase,'<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done>'
+    .'<errors><Err1>Invalid nameserver information</Err1></errors><responses><response><ResponseNumber>316153</ResponseNumber>'
+    .'</response></responses></interface-response>');
+same(['code'=>'316153','text'=>'Invalid nameserver information'],get_object_vars($reply->registrarReply()),'Nested eNom response number survives');
+same(null,\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray(['code'=>'545','text'=>'PRIVATE-TOKEN']),
+    'Malformed saved diagnostics cannot expose arbitrary text');
+
+foreach (['<RRPCode>545</RRPCode>','<RRPCode>200</RRPCode><Err1>Invalid nameserver information</Err1>'] as $unconfirmed) {
+    $reply=$parser->parse(RegistrationCommand::Purchase,envelope('Purchase',$unconfirmed));
+    same('unknown',$reply->status,'A contradictory or unsuccessful acknowledgement stays uncertain');
+    expect($reply->registrarReply()!==null,'Numeric Purchase evidence survives outside the ErrCount failure branch');
+}
+
+$reply=$parser->parse(RegistrationCommand::Purchase,envelope('Purchase','<responses><response><ResponseNumber>1300</ResponseNumber></response></responses>'));
+same(['success',null,null],[$reply->status,$reply->code,$reply->registrarReply()],
+    'A diagnostic response number cannot change an incomplete acknowledgement into pending acceptance');
+
 $binding = new AccountBinding('enom', 1, Environment::Test, 'synthetic-uid');
 $transport = new class implements Transport {
     public int $calls = 0;

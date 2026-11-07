@@ -55,6 +55,7 @@ final class RequestFacts
             }
             $p=$op->policy??[]; $a=$op->attempt??[]; $f=$op->funding??[];
             if ($grants->metadata && ($failure=\Paymenter\Extensions\Servers\Domains\Data\SendFailure::words($a['send_failure']??null))) { $out['send_failure']=$failure; }
+            if ($grants->metadata && ($reply=\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply::fromArray($a['evidence']['registrarReply']??null))) { $out['registrar_reply']=$reply->words(); }
             $paid=$op->invoice_id||in_array($op->action,self::PAID_ACTIONS,true);
             if ($paid) {
                 $out['invoice']=$op->invoice_id ? 'Invoice #'.$op->invoice_id : null;

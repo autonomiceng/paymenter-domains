@@ -31,7 +31,8 @@ final class Registration extends RegistrationProtocol
         $parser = new ResponseParser;
         $submittedAt = $ctx->now();
         $purchase = $parser->parse(RegistrationCommand::Purchase, $this->request($op, $ctx, $origin, 'Purchase', $parameters));
-        if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved); }
+        if ($purchase->status !== 'success') { return new DriverResult($op->binding, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unresolved,
+            new Evidence(registrarReply:$purchase->registrarReply())); }
         $reference = $purchase->value('orderid');
         $reference = is_string($reference) && preg_match('/^[1-9][0-9]{0,19}$/D', $reference) ? $reference : null;
         $expiry = Expiry::read($purchase, $expiryIssue); $status = $purchase->value('orderstatus');
