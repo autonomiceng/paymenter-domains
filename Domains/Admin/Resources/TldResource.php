@@ -71,7 +71,7 @@ class TldResource extends Resource
             TextColumn::make('holders')->label('Domains')->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['holders']),
             TextColumn::make('status')->label('Status')->badge()->state(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['label'])
                 ->color(fn(Tld $record,$livewire)=>$row($record,$livewire)['sales']['tone'])->extraAttributes(fn(Tld $record,$livewire)=>StatusMark::attributes($row($record,$livewire)['sales']['tone'],'tld-'.$record->id)),
-            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?trim($reason.'. '.(TldFacts::FIXES[$reason]??'')):null)),
+            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn(Tld $record,$livewire)=>($reason=$row($record,$livewire)['sales']['reason'])?($reason==='No registrar selected'?'Choose a registrar for new orders.':trim($reason.'. '.(TldFacts::FIXES[$reason]??''))):null)),
         ])->filters([SelectFilter::make('registrar_key')->label('Registrar')->options(['enom'=>'Enom','namesilo'=>'NameSilo']),
             SelectFilter::make('server_id')->label('Registrar account')->options(fn()=>\App\Models\Server::where('extension','Domains')->pluck('name','id')->all()),
             Filter::make('needs_attention')->label('Terms need attention')->query(fn(Builder $query)=>$query->whereIn('domains_tlds.id',\Paymenter\Extensions\Servers\Domains\Admin\Support\TldTerms::summary()['attention']))])

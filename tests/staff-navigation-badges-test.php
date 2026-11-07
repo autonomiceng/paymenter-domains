@@ -22,7 +22,7 @@ $op($long)->update(['state'=>'uncertain']);$advance();
 same('2',OperationResource::getNavigationBadge(),'Under review counts too');
 // Awaiting payment waits on the customer, and a request left behind by an older registration is not on the list.
 $op($long)->update(['state'=>'awaiting_payment']);$op($held)->update(['authority_generation'=>2]);
-same('2',OperationResource::getNavigationBadge(),'Changed requests wait for the minute cache');
+same(null,OperationResource::getNavigationBadge(),'Changed requests update the badge immediately');
 $advance();
 same(null,OperationResource::getNavigationBadge(),'Nothing to act on: no count');
 
@@ -30,20 +30,20 @@ same(null,OperationResource::getNavigationBadge(),'Nothing to act on: no count')
 ObligationAlerts::record($done,'unknown_expiry',time());ObligationAlerts::record($done,'missing_obligation',time());
 $advance();
 same('1',DomainResource::getNavigationBadge(),'One domain with open alerts');
-same(null,OperationResource::getNavigationBadge(),'Quiet requests are cached too');
+same(null,OperationResource::getNavigationBadge(),'Quiet requests have no count');
 DB::table('domains_obligation_alerts')->where('domain_id',$done->id)->update(['resolved_at'=>time()]);
-same('1',DomainResource::getNavigationBadge(),'Resolved alerts wait for the minute cache');
+same(null,DomainResource::getNavigationBadge(),'Resolved alerts update the badge immediately');
 $advance();
 same(null,DomainResource::getNavigationBadge(),'Resolved alerts leave the count');
 
-// Install keys do not reuse another site's warm count.
+// Each call reads its current install.
 $op($held)->update(['authority_generation'=>1]);
 config(['app.url'=>'http://another-install.invalid']);
 same('1',OperationResource::getNavigationBadge(),'Each install has its own cache key');
 // Without staff access there is no count to read.
 Auth::setUser(staffUser([]));
 same([null,null],$badges(),'No count without access');
-// A broken count is omitted, logged once and cannot break the sidebar.
+// A broken count is omitted, logged once per request and cannot break the sidebar.
 Auth::setUser(staffUser([Staff::VIEW]));$advance();Log::spy();
 DB::connection()->beforeExecuting(function($sql):void {
     if(str_contains($sql,'domains_obligation_alerts')){throw new \RuntimeException('Synthetic count failure');}

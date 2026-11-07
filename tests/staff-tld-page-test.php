@@ -142,31 +142,31 @@ DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->up
 
 // No registrar for new orders.
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>null]);
-$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('No registrar selected')->assertSee('Choose registrar');
+$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Choose a registrar for new orders')->assertSee('Choose registrar');
 expect(str_contains($text($page->html()),'Registrar for new orders Missing'),'No registrar for new orders is Missing');
-same(1,substr_count($text($page->html()),'No registrar selected'),'The head says No registrar selected once');
+same(1,substr_count($text($page->html()),'Choose a registrar for new orders'),'The head names the next step once');
 expect(str_contains($text($page->html()),'Registrar for new orders Missing Use Choose registrar above.'),'The Missing row points to the head button, not the head reason again');
 $page->assertSeeHtml('href="'.e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarSetup::getUrl()).'"');
 same(1,$accountLinks($page->html(),(int)$enom->server_id),'Missing goes to Registrars; the prices table still opens the account');
 $clean($page->html(),'TLD page no registrar');
 same(['label'=>'Not for sale','tone'=>'gray','reason'=>'No registrar selected'],TldFacts::salesState($enom->fresh()),'No registrar for new orders is not for sale');
 $page->assertSee('Not for sale')->assertDontSee('For sale');
-$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('No registrar selected')->assertDontSee('For sale');
-expect(!str_contains($text($list->html()),'new orders'),'List: no account takes new orders');
+$list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Choose a registrar for new orders')->assertDontSee('For sale');
+expect(str_contains($text($list->html()),'Choose a registrar for new orders'),'List: the note names the new-order registrar choice');
 $clean($list->html(),'List no registrar');
 DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$enom->server_id]);
 
 // Expired costs stop sales locally and tell staff how to resume.
 $savedFacts=$enom->fresh()->catalogue_facts;$freshFacts=json_decode($savedFacts,true);$freshFacts['freshUntil']=$now->modify('+3 days')->format(DATE_ATOM);DB::table('domains_tlds')->where('id',$enom->id)->update(['catalogue_facts'=>json_encode($freshFacts,JSON_THROW_ON_ERROR)]);
 $clock->instant=$now->modify('+2 days');Carbon\Carbon::setTestNow($clock->instant);
-same(['label'=>'Not for sale','tone'=>'danger','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Cost out of date')->assertSee('Sync prices');
 $clock->instant=$now;Carbon\Carbon::setTestNow($now);DB::table('domains_tlds')->where('id',$enom->id)->update(['catalogue_facts'=>$savedFacts]);
 
 // Below cost: red Cost with its reason, and the TLD is not for sale.
 $rules=new \Paymenter\Extensions\Servers\Domains\Services\PricingRules;
 saveDefaultRule(['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>array_fill_keys(['register','renew','transfer'],'1.00')],static fn($ending)=>activeFixtureRepublish($prices,$ending));
-same(['label'=>'Not for sale','tone'=>'danger','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Below cost'],TldFacts::salesState($enom->fresh()),'Below cost is not for sale');
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost')->assertSee('USD 1.00');
 $clean($list->html(),'List below cost');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Not for sale')->assertSee('Below cost');

@@ -47,6 +47,7 @@ class DomainResource extends Resource
         if (!Staff::can()) { return null; }
         return NavigationCount::read('domains',fn()=>DomainQueries::openAlertCount(Domain::query()));
     }
+    public static function getNavigationBadgeTooltip(): ?string { return 'Domains with open alerts across all registrar accounts'; }
     public static function getNavigationBadgeColor(): string { return 'warning'; }
     public static function table(Table $table): Table
     {

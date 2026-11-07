@@ -65,7 +65,7 @@ public function binding():?\Paymenter\Extensions\Servers\Domains\Data\AccountBin
 $last=Tld::where('server_id',$binding->serverId)->where('tld','like','scale%')->orderByDesc('tld')->take(2)->get();
 DB::table('domains_tlds')->where('id',$last[0]->id)->update(['catalogue_intent'=>'{"sell":']);
 DB::table('domains_tlds')->where('id',$last[1]->id)->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(['sell'=>true,'pricing_rule'=>['mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed'=>['register'=>'42.00','renew'=>'43.00','transfer'=>'44.00']]])]);
-$component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertSee('12.00');
+$component=\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->filterTable('for_sale',false)->assertSee('12.00');
 same(599,$component->instance()->getTableRecords()->total(),'Real rendered table preserves paginator');
 $component->assertSee('No price for .')->assertSee('It is on another page of this list.');
 same([],array_column($component->instance()->savedPrices()['skipped'],'id'),'Saved prices remain limited to the current page');
@@ -94,7 +94,7 @@ same(null,$plain->rows('com')->first()->register_cost,'SQL presentation rows omi
 // A table reads rights once per build: one built after the revoke shows no cost cell or saved price.
 $fresh=new SellTable([$binding->serverId=>$binding],1,true,static fn()=>$page,false,$source);
 same(null,$fresh->cell($page[0],'register','price')['text'],'A table built after revocation reads rights afresh');same([],$fresh->saved()['rows'],'Saved prices need the current costs permission');
-\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->assertDontSee('USD 6.00')->assertActionHidden('csv');
+\Livewire\Livewire::actingAs($actor)->test(OfferStaffPage::class)->filterTable('for_sale',false)->assertDontSee('USD 6.00')->assertActionHidden('csv');
 try{$list->csv();expect(false,'CSV requires current costs permission');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'CSV permission is fresh');}
 echo 'Staff page queries: '.$count."\n";
 $nativeSuccessful=true;echo "Offer staff reads: ok\n";

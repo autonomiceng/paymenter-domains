@@ -29,7 +29,7 @@ $u=staffUser([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('accepta
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 foreach([1,3] as $years){
-    $test=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();
+    $test=Livewire::actingAs($u)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful();
     // Resolve the sidebar's original request during the initial GET, before a test-only Livewire update.
     same('GET',\Filament\Support\original_request()->method(),'Static layout retains a GET request');
     $test->set('account',$first->server_id)->set('years',$years);

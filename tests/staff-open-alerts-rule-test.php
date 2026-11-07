@@ -39,12 +39,9 @@ foreach ([$released, $unreleased] as $d) {
 $actual=[$badge,$filtered,$details];
 same(['1',[$unreleased->id],[false,true]],$actual,
     'A released queued review counts nowhere; an unreleased review appears in the badge, filter and detail: '.json_encode($actual));
-// The read rule preserves the alert history, and the existing minute cache still avoids repeated count queries.
+// Read paths retain history, and a resolved alert leaves the badge immediately.
 same(2,DB::table('domains_obligation_alerts')->whereNull('resolved_at')->count(),'Read paths retain both alert rows');
-DB::connection()->flushQueryLog(); DB::connection()->enableQueryLog();
-same('1',DomainResource::getNavigationBadge(),'Warm badge retains the visible count');
-$domainReads=array_filter(DB::connection()->getQueryLog(),fn(array $q)=>str_contains($q['query'],'domains_'));
-same([],$domainReads,'Warm badge performs no domain-data reads');
-DB::connection()->disableQueryLog();
+DB::table('domains_obligation_alerts')->where('domain_id',$unreleased->id)->update(['resolved_at'=>now()->getTimestamp()]);
+same(null,DomainResource::getNavigationBadge(),'Resolved alerts leave navigation without waiting for a cache');
 Carbon::setTestNow();
 $nativeSuccessful=true; echo "Open alerts agree across navigation, filter and detail.\n";

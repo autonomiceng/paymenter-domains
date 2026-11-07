@@ -636,7 +636,10 @@
     "tests/tld-stop-keeps-transfers-test.php",
     "tests/tld-sales-one-state-test.php",
     "tests/native-cancellation-reason-test.php",
-    "tests/order-truth-test.php"
+    "tests/order-truth-test.php",
+    "tests/staff-tld-sale-state-test.php",
+    "tests/staff-sales-list-test.php",
+    "tests/staff-alert-counts-test.php"
   ],
   "ui": [
     "tests/test_staff_sync_browser.py"

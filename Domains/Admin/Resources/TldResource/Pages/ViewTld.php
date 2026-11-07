@@ -83,13 +83,13 @@ class ViewTld extends ViewRecord
         if($s['label']==='For sale'){return StatusMark::line('success','For sale','tld-'.$t->id);}
         // The TLD list reads the same reason, so both say one state.
         if($this->staffStop()){return StatusMark::line('gray','Not for sale','tld-'.$t->id,$reason);}
-        $tone=match(true){$s['invalid']=>'warning',in_array($reason,['Not offered by this registrar','Over the cost limit',...self::STAFF_STOPS],true)=>'gray',
-            in_array($reason,['Checking registrar terms'],true)=>'info',default=>'warning'};
+        $tone='gray';
         $link=static fn(?string $url,string $label)=>$url?new HtmlString(e($reason).'. <a class="domains-link" href="'.e($url).'">'.e($label).'</a>'):$reason;
         $step=match($reason){
             'Cost missing','Cost out of date'=>$reason.'. Use Sync prices below.',
             'Check registrar account'=>$link(RegistrarFacts::accountUrl((int)$t->server_id),'Open the registrar account'),
             'Over the cost limit'=>$link(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::getUrl(['account'=>$t->server_id]),'Change it in What you sell'),
+            'No registrar selected'=>'Choose a registrar for new orders.',
             default=>$reason};
         return StatusMark::line($tone,'Not for sale','tld-'.$t->id,$step);
     }
@@ -131,12 +131,16 @@ class ViewTld extends ViewRecord
             ->modalDescription(fn()=>'New '.($this->opensTransfers()?'registrations and transfers':'registrations')
                 .($this->start()['checking']?' open once the registrar terms are checked':' open at once').($this->salePrices()?', at these prices.':'.'))
             ->modalContent(fn()=>$this->salePricesList())
-            ->visible(fn():bool=>$this->canStart())
+            // A saved price account is not a registrar choice. Staff must choose where new orders go.
+            ->disabled(fn():bool=>$this->sales()['reason']==='No registrar selected')
+            ->extraAttributes(fn():array=>$this->sales()['reason']==='No registrar selected'?['aria-disabled'=>'true']:[])
+            ->visible(fn():bool=>$this->canStart()||$this->mayChangeSales()&&$this->sales()['reason']==='No registrar selected')
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)auth()->id(),$server,$id,'tld_settings',$this->reviewStamp))])
             ->action(function(array $data)use($server,$id):void {
                 $input=[];
                 try{
                     $t=$this->getRecord()->fresh();
+                    if((TldFacts::snapshot($t)['seller']??null)===null){Notification::make()->warning()->title('Choose a registrar for new orders.')->send();return;}
                     $start=(StaffCatalogue::routed()??throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE))->start($t);
                     if($start['block']!==null){throw new \DomainException('Explicit verified widening required.');}
                     $input=['min_years'=>1,'max_years'=>$start['years'],'sales'=>'start','verified'=>true];
@@ -198,12 +202,15 @@ class ViewTld extends ViewRecord
     public function getBreadcrumbs(): array {return [$this->getResourceUrl()=>'TLDs & pricing',$this->getTitle()];}
     private function button(?Action $action, string $label): ?HtmlString
     {return $action?->isVisible()?new HtmlString($action->label($label)->link()->size('sm')->toHtml()):null;}
-    private static function entry(string $label, ?string $value, string|HtmlString|null $sub = null, ?string $color = null, ?string $url = null, ?int $at = null, ?HtmlString $suffix = null, array|Html $side = []): Flex
+    private static function entry(string $label, ?string $value, string|HtmlString|null $sub = null, ?string $color = null, ?string $url = null, ?int $at = null, ?HtmlString $suffix = null, array|Html $side = [], ?string $missingTone = null): Flex
     {
         $entry=TextEntry::make('fact_'.md5($label))->label($label)->state($value)->url($url)->suffix($suffix);
         if($value!==null&&$sub!==null){$entry->belowContent($sub);}
         if($at!==null){$entry->formatStateUsing(fn()=>Sheet::moment($at));}
-        return Sheet::row(MissingEntry::apply($entry,cause:$value===null&&is_string($sub)?$sub:null,color:$color),$side,key:'fact_'.md5($label));
+        if($value===null&&$missingTone!==null){
+            $entry->default(\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL)->badge()->color($missingTone)->extraAttributes(StatusMark::attributes($missingTone,'tld-missing-'.md5($label)))->belowContent($sub);
+        }else{$entry=MissingEntry::apply($entry,cause:$value===null&&is_string($sub)?$sub:null,color:$color);}
+        return Sheet::row($entry,$side,key:'fact_'.md5($label));
     }
     /** The rail: the newest changes, with the tab holding the rest. */
     private function activity(): Section
@@ -219,7 +226,7 @@ class ViewTld extends ViewRecord
         $grants=Staff::requireView();$t=$this->getRecord();$snapshot=TldFacts::snapshot($t,$grants);
         $sellerId=TldFacts::sellerId($t->tld);$seller=$sellerId===null?null:Account::where('server_id',$sellerId)->first();
         // The head says why the TLD is not for sale; a missing registrar row says only what to do.
-        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':($this->headFix()==='seller'?self::CHOOSE_SELLER_HEAD:self::CHOOSE_SELLER),color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null),
+        $sales=[self::entry('Registrar for new orders',$seller?(string)\App\Models\Server::whereKey($sellerId)->value('name'):null,$seller?'Existing domains stay with their registrar':($this->headFix()==='seller'?self::CHOOSE_SELLER_HEAD:self::CHOOSE_SELLER),color:'primary',url:RegistrarFacts::accountUrl($sellerId),suffix:$seller&&DemoData::is($seller)?DemoData::tag(inline:true):null,missingTone:'warning'),
             self::entry('Terms',$snapshot['unreadable']?null:TldFacts::terms($t),$snapshot['unreadable']?'Saved TLD terms unreadable. Use Edit prices to repair them.':null)];
         $refresh=$snapshot['refresh']??[];
         // One row: when prices last updated, and when they update next. Sync prices sits beside it.

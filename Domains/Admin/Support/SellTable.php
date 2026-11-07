@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{EndingChoices,PriceList};
 final class SellTable
 {
     private array $rules=[];
+    private ?array $forSaleIds=null;
     private array $steps=[];
     private ?array $saleFacts=null;
     private array $rowTlds=[];
@@ -33,6 +34,17 @@ final class SellTable
     { return $this->catalogue ?? \Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()
         ?? throw new \DomainException(\Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE); }
     public function rows(?string $focus): Builder { return $this->source()->rows($this->bindings,$focus); }
+    /** Use the same sale decision as the TLD status, in bounded pages, before table pagination. */
+    public function forSale(Builder $query): Builder
+    {
+        if($this->forSaleIds===null){
+            $this->forSaleIds=[];
+            $this->tlds($this->source()->rows($this->bindings,null)->get(['server_id','tld'])->all())->chunk(25)->each(function($page):void {
+                foreach($this->source()->page($page) as $id=>$fact){if($fact['sales']['label']==='For sale'){$this->forSaleIds[]=$id;}}
+            });
+        }
+        return $query->whereIntegerInRaw('id',$this->forSaleIds);
+    }
     /** The viewer's rights, read once for this table build: a cell or a saved-price read never asks again. */
     private function grants(): StaffGrants { return $this->grants??=Staff::requireView(); }
     /** @return array<int,list<string>> accepted TLDs with no sales row yet, by server. Only a projected read shows them; one account's view saves them first. */

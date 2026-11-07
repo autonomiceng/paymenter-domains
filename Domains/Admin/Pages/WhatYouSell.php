@@ -265,7 +265,7 @@ class WhatYouSell extends Page implements HasTable
     private function focused(): bool {return $this->tld!==null&&$this->getTableSearch()===$this->tld;}
     private function switchedOn(string $filter): bool {return (bool)($this->getTableFilterState($filter)['isActive']??false);}
     /** A search or filter is why rows are gone, so the way back is to clear it, not to read prices again. */
-    private function narrowed(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost');}
+    private function narrowed(): bool {return $this->hasTableSearch()||$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale');}
     /** Cost, Price and Profit for one sale. Renew and Transfer start off so the page stays one screen wide. */
     private function moneyGroup(string $action): ColumnGroup
     {
@@ -308,11 +308,12 @@ class WhatYouSell extends Page implements HasTable
             ->emptyStateDescription(fn()=>$this->focused()
                 ?'This TLD has no prices here yet. To load them, use Sync prices.'
                 :($this->narrowed()?null:($this->readerNeedsAttention()?'Check the registrar account to read prices.':'The first read runs by itself. To get prices now, use Sync prices.')))
-            ->emptyStateActions([Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')?'Clear filters':'Clear search')->color('gray')
+            ->emptyStateActions([Action::make('clear')->label(fn()=>$this->show()!==null||$this->switchedOn('country')||$this->switchedOn('no_cost')||$this->switchedOn('for_sale')?'Clear filters':'Clear search')->color('gray')
                 ->visible(fn()=>$this->narrowed()&&!$this->focused())->action(function():void {$this->removeTableFilters();$this->resetTableSearch();})])
             // Merged, so the panel skin's table class stays and this head matches every other table.
             ->extraAttributes(['class'=>'domains-sell-table'],merge:true)
             ->filters([
+                Filter::make('for_sale')->label('For sale')->default(fn()=>$this->tld===null)->query(fn($query)=>$this->reads()->forSale($query)),
                 Filter::make('country')->label('Country TLDs')->query(fn($query)=>$query->where(fn($q)=>$q->where('tld','like','__')->orWhere('tld','like','%.__'))),
                 Filter::make('no_cost')->label('No cost yet')->query(fn($query)=>$query->whereNull('register_cost')),
                 SelectFilter::make('show')->label('Show')->placeholder(PriceList::FILTERS['all'])->visible($costs)->options(array_diff_key(PriceList::FILTERS,['all'=>true]))

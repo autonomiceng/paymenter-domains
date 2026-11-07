@@ -22,7 +22,7 @@ $assertWarning=static function($page)use($warning):void{
     $dom=new DOMDocument;@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
     same($warning,$xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Unreadable TLD keeps its name and fix line');
 };
-$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL);
+$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->set('account',WhatYouSell::ALL);
 $assertWarning($page);
 $page->mountAction('default_pricing')->assertActionMounted('default_pricing');
 $assertWarning($page);
@@ -32,12 +32,12 @@ same('markup_amount',(new PricingRules)->defaultRule()['mode'],'Default rule sav
 same('2.00',(new PricingRules)->defaultRule()['markup'],'Entered default markup saves');
 foreach($tlds as $tld){same('8.00',$prices->current($tld->server_id,$tld->account_fingerprint,'com','register',1,'USD',$now)->retail,'Healthy default followers publish');}
 $assertWarning($page);
-$assertWarning(Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL));
+$assertWarning(Livewire::actingAs($staff)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->set('account',WhatYouSell::ALL));
 same($savedTld,$broken->fresh()->getRawOriginal(),'Unreadable own rule is never replaced by a guessed rule');
 same($before,$savedPrices(),'Unreadable TLD keeps every saved price and revision');
 // An unreadable fee-mode override must not block the shared save's own-rule fee preflight either.
 $bad=json_decode($broken->fresh()->catalogue_intent,true);$bad['pricing_rule']=['mode'=>'markup_fee_percent','markup'=>'-1.00','round_up'=>'none','fixed'=>['register'=>null,'renew'=>null,'transfer'=>null]];$broken->fresh()->update(['catalogue_intent'=>json_encode($bad,JSON_THROW_ON_ERROR)]);$savedTld=$broken->fresh()->getRawOriginal();
-$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL);
+$page=Livewire::actingAs($staff)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->set('account',WhatYouSell::ALL);
 $page->mountAction('default_pricing')->assertActionMounted('default_pricing')
     ->setActionData(['markup'=>'3.00','fee_percent'=>'3.10','reason'=>'Keep malformed own fee pricing on its repair path'])
     ->callMountedAction()->assertHasNoActionErrors()->assertNotified('Saved')->assertSet('mountedActions',[]);

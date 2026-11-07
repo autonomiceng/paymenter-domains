@@ -93,7 +93,7 @@ expect($money!==[]&&array_filter($money,fn($node)=>$node->closest('.fi-ta-cell')
 expect(preg_match('/(^|})\.domains-money\{[^}]*text-align/m',file_get_contents(dirname(__DIR__).'/Domains/resources/views/partials/staff-styles.blade.php'))===0,'Money right-aligns only in table cells, so the Balance stays by its label');
 unset($sheet,$money);gc_collect_cycles();gc_mem_caches();
 DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'succeeded']);
-same(['open'=>0,'staff'=>['on_hold'=>0,'under_review'=>0]],Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::requests($silo->server_id),'Finished requests leave the count');
+same(['open'=>0,'staff'=>['on_hold'=>0,'under_review'=>0],'statuses'=>array_fill_keys(Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::OPEN_REQUESTS,0)],Paymenter\Extensions\Servers\Domains\Admin\Support\RegistrarFacts::requests($silo->server_id),'Finished requests leave the count');
 DB::table('domains_operations')->where('id',$held->id)->update(['state'=>'uncertain']);
 // Check balance: a failed read and the one-minute wait use the new toasts.
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->callAction('checkBalance')->assertNotified("Couldn't check balance");

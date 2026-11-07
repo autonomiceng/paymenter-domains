@@ -59,12 +59,13 @@ final class RegistrarFacts
     /** Registrar requests list words that are still open: all but Completed, Failed and Cancelled. */
     public const OPEN_REQUESTS=['awaiting_payment','action_required','in_progress','on_hold','under_review'];
     /** Requests on this account, counted with the Registrar requests list's own query and Status filter, so each count's link opens exactly
-     * those rows. 'staff': On hold and Under review, the statuses that wait on staff (the menu count), by status.
-     * @return array{open:int,staff:array<string,int>} */
+     * those rows. Every open status is in the breakdown; 'staff' is the On hold and Under review subset (the menu count).
+     * @return array{open:int,staff:array<string,int>,statuses:array<string,int>} */
     public static function requests(int $server): array
     {
         $count=fn(array $keys)=>OperationQueries::status(OperationResource::getEloquentQuery()->where('server_id',$server),$keys)->count();
-        return ['open'=>$count(self::OPEN_REQUESTS),'staff'=>array_combine(OperationResource::NEEDS_STAFF,array_map(fn(string $key)=>$count([$key]),OperationResource::NEEDS_STAFF))];
+        $statuses=array_combine(self::OPEN_REQUESTS,array_map(fn(string $key)=>$count([$key]),self::OPEN_REQUESTS));
+        return ['open'=>array_sum($statuses),'staff'=>array_intersect_key($statuses,array_flip(OperationResource::NEEDS_STAFF)),'statuses'=>$statuses];
     }
     /** The Registrar requests list for this account with these statuses ticked in its Status filter. Null without access. */
     public static function requestsUrl(int $server,array $statuses): ?string

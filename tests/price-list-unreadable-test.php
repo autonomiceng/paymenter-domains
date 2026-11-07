@@ -27,7 +27,7 @@ $setting=static function(string $key,mixed $value,bool $encrypted):void{
 $rawSettings=static fn():string=>DB::table('settings')->orderBy('id')->get()->toJson();
 $csvRows=static fn(string $csv):array=>array_map(static fn($line)=>str_getcsv($line,',','"',''),preg_split('/\r?\n/',trim($csv)));
 // The page adds missing sales rows on its first read. After that, reads write nothing.
-Livewire::actingAs($u)->test(WhatYouSell::class)->set('account',WhatYouSell::ALL);
+Livewire::actingAs($u)->test(WhatYouSell::class)->filterTable('for_sale',false)->set('account',WhatYouSell::ALL);
 $cases=[
     ['domains_pricing_default_rule',[...PricingRule::DEFAULT,'markup'=>[]],'default_rule',[$t->id,$healthy->id,$second->id],"Default pricing can't be read",null],
     [CardFee::KEY,['percent'=>[],'fixed'=>'0'],'card_fee',[$t->id,$healthy->id,$second->id,$custom->id],"Card fee can't be read",null],
@@ -71,7 +71,7 @@ foreach($cases as $case){
         foreach([5,9,13] as $offset){same(['Left out','Left out','Left out','Left out: '.lcfirst($reason)],array_slice($record,$offset,4),'Omitted amounts never invent saved prices');}
         same(['Left out','Left out'],array_slice($record,17),'Unreadable formula and fee are explicit');
     }
-    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee('Left out')->assertSee('left out:')->assertDontSee('Some TLDs are left out')->assertSee('To fix, use Default pricing at the top of this page.');
+    $page=Livewire::actingAs($u)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee('Left out')->assertSee('left out:')->assertDontSee('Some TLDs are left out')->assertSee('To fix, use Default pricing at the top of this page.');
     $html=$page->html();
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
     $warningText=$xpath->evaluate('normalize-space(//*[@data-price-omission])');
@@ -91,9 +91,9 @@ foreach($cases as $case){
 $custom->update(['pricing_mode'=>'unknown']);$watch=true;
 $matrix=$service->read();same([$custom->id],array_column($matrix['skipped'],'id'),'Only the malformed custom TLD is skipped');
 // One left-out TLD among readable rows is not why an amount filter is empty.
-Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$custom->server_id)->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('see above')->assertDontSee('use Sync prices');
+Livewire::actingAs($u)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->set('account',$custom->server_id)->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('see above')->assertDontSee('use Sync prices');
 same('custom_rule',$matrix['skipped'][0]['cause'],'Custom failure retains its own repair cause');
-$page=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
+$page=Livewire::actingAs($u)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->set('account',WhatYouSell::ALL)->assertSee("custom pricing can't be read.",false)->assertSee('To fix, open the .org TLD page and use Edit prices.');
 $dom=new DOMDocument;@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
 same('Open .org',$xpath->evaluate('normalize-space(//a[@href="'.\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource::getUrl('view',['record'=>$custom->id]).'"][ancestor::*[contains(@class,"fi-sc-callout")]])'),'Single-TLD omission alert opens its saved TLD');
 $record=collect($page->instance()->getTableRecords()->items())->firstWhere('tld','org');
@@ -102,9 +102,9 @@ $records=$csvRows($service->csv());same("Left out: custom pricing can't be read"
 $watch=false;
 // This account has one saved TLD; its unreadable global card fee has no account editor.
 // As above, let the page prepare this account before watching read-only rendering.
-Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id]);
+Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id])->filterTable('for_sale',false);
 $setting(CardFee::KEY,[],false);$watch=true;
-$feePage=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id])->assertSuccessful();
+$feePage=Livewire::actingAs($u)->test(WhatYouSell::class,['account'=>$healthy->server_id])->filterTable('for_sale',false)->assertSuccessful();
 $dom=new DOMDocument;@$dom->loadHTML($feePage->html());$xpath=new DOMXPath($dom);
 $links=$xpath->query('//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ")]//a');
 same(['tlds'=>['.com'],'links'=>[]],
@@ -118,5 +118,5 @@ same(0,$reads->calls,'No provider calls');
 // Permission checks remain in force even when settings cannot be read.
 $u->role->update(['permissions'=>[Staff::VIEW]]);
 foreach([fn()=>$service->read(),fn()=>$service->csv()] as $call){try{$call();expect(false,'Costs permission required');}catch(Symfony\Component\HttpKernel\Exception\HttpException $e){same(403,$e->getStatusCode(),'Unreadable settings do not bypass permissions');}}
-Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->assertDontSee('Some TLDs are left out');
+Livewire::actingAs($u)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful()->assertDontSee('Some TLDs are left out');
 echo "Unreadable settings are reported with explicit page/export omissions and no writes.\n";$nativeSuccessful=true;

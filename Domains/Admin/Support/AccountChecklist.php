@@ -289,7 +289,7 @@ final class AccountChecklist
     {
         // The same rule as the list's Open alerts filter it links to, so the count matches the rows.
         $count=Schema::hasTable('domains_obligation_alerts')?DomainQueries::openAlertCount(Domain::where('server_id',$a->server_id)):0;
-        $help='Domains on this account with a problem that needs a person.';
+        $help='Domains on this registrar account with open alerts. The sidebar counts all registrar accounts.';
         if ($count===0) { return self::row('Domain alerts','OK','success',null,null,$help); }
         try { $url=DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$a->server_id],'alerts'=>['isActive'=>true]]]); } catch (\Throwable) { $url=null; }
         return [...self::row('Domain alerts',(string)$count,'warning',null,null,$help),
