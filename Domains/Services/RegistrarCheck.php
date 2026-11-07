@@ -62,7 +62,7 @@ final class RegistrarCheck
     public static function attempted(Operation $op): bool
     {
         $check=$op->policy['status_check']??[];
-        return ($check['read_attempted']??false)===true&&isset($check['attempt_identity'])&&hash_equals(RegistrarAnswers::identity($op),$check['attempt_identity']);
+        return ($check['read_attempted']??false)===true&&is_string($check['attempt_identity']??null)&&hash_equals(RegistrarAnswers::identity($op),$check['attempt_identity']);
     }
     /** Plain words used everywhere this result appears. No provider payload enters the policy or UI. */
     public static function words(?array $check, bool $completed = false): array
@@ -74,7 +74,7 @@ final class RegistrarCheck
                 : self::STILL.' '.self::checkedNext($check)],
             'deferred' => ['title' => 'Check delayed', 'body' => (($check['reason'] ?? null) === 'scheduled' ? 'The next status check is not due yet.' : (($check['reason'] ?? null) === 'send_guard' ? 'Our sending settings paused this check.' : 'Our check limit was reached.'))
                 .($next ? ' The next check is at '.$next.'.' : ' Contact support to restart checks.')],
-            'not_checked' => ['title'=>'Registrar check pending','body'=>'The system will check the original attempt on its next turn.'],
+            'not_checked' => ['title'=>'Registrar check pending','body'=>'Use Check status to check the original attempt.'],
             'scheduled' => ['title' => 'Status checks restarted', 'body' => 'The system will check again on its next turn.'],
             default => ['title' => 'Cannot check registrar', 'body' => 'We could not get an answer from the registrar. Support can check the original order.'],
         };
