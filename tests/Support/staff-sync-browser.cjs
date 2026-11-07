@@ -62,7 +62,9 @@ async function main() {
         assert.equal(await page.getByRole('button', {name: 'Sync now', exact: true}).count(), 1);
         await page.getByRole('button', {name: 'Sync now', exact: true}).click();
         await page.getByText('Sync requested', {exact: true}).waitFor();
-        console.error('Browser action shows Sync requested');
+        await page.getByRole('status').filter({hasText: 'Sync in progress'}).waitFor();
+        assert.equal(await page.getByRole('button', {name: 'Sync now', exact: true}).isDisabled(), true);
+        console.error('Browser action shows pending progress and disables duplicate sync');
         // The real job can take minutes. Poll while it is still pending before finishing it.
         const isPollResponse = response => response.request().method() === 'POST' &&
             response.request().postDataJSON()?.components?.some(c => c.calls.some(call => call.method === 'pollManagement'));
@@ -85,6 +87,8 @@ async function main() {
         assert.equal(await page.getByText('Sync requested', {exact: true}).count(), 1);
         await page.locator('.domains-trace-title').filter({hasText: "Couldn't read all records"}).waitFor({timeout: 8000});
         assert.equal(await page.locator('[wire\\:key="management-poll-fast"]').count(), 0, 'Completion stops polling');
+        assert.equal(await page.getByRole('status').filter({hasText: 'Sync in progress'}).count(), 0, 'Completion removes running state');
+        assert.equal(await page.getByRole('button', {name: 'Sync now', exact: true}).isEnabled(), true);
         assert.deepEqual(errors, [], 'No browser script errors');
         process.stdout.write(JSON.stringify({type: 'passed', detail: 'Chromium Sync now updates completion notice and Activity in the same document via real Livewire polling.'}) + '\n');
     } finally { await browser.close(); input.close(); }

@@ -68,7 +68,8 @@ foreach (['no-acceptance', 'window', 'zero', 'multiple'] as $fault) {
     same($calls, [$preflight->calls, $writer->calls], 'Refused history and execution never replay a write: '.$fault);
     same($money, $nativeMoney(), 'Refused history leaves native money unchanged: '.$fault);
     same(in_array($fault, ['zero', 'multiple'], true), in_array(ReadCommand::Orders, $observation->calls, true), 'Only accepted covering history reaches discovery: '.$fault);
-    if (in_array($fault, ['no-acceptance', 'window'], true)) { same([], $observation->calls, 'Unaccepted history makes no provider reads: '.$fault); }
+    if (in_array($fault, ['no-acceptance', 'window'], true)) { expect(in_array(ReadCommand::Info,$observation->calls,true), 'Closed history still permits holding facts: '.$fault);
+        expect(!in_array(ReadCommand::Order,$observation->calls,true), 'No original order is invented: '.$fault); }
 }
 [$op] = $prepare(reservedFixtureName('timestamp-boundary.example.com'));
 $beforeUpdate = Illuminate\Support\Carbon::parse($op->getRawOriginal('updated_at'));

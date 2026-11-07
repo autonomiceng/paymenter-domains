@@ -33,18 +33,17 @@ foreach (['unknown', 'lost'] as $reply) {
     $op->fresh()->update(['policy'=>$policy]);
     $before = $op->fresh()->getAttributes();
     $legacyWords = RegistrarCheck::for($op->fresh());
-    expect(str_contains($legacyWords['body'], 'Ask Enom to check this attempt.'), 'Older unavailable renewal shows the registrar-answer step on read');
+    same('Registrar check pending',$legacyWords['title'],'Older unavailable renewal waits for the supported read before asking for support');
     $after = (new DateTimeImmutable($attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT';
-    expect(str_contains($legacyWords['body'], $after), 'Older unavailable renewal shows its original dispatch plus 24 hours');
     same($before, $op->fresh()->getAttributes(), 'Reading the staff step writes no request state');
     same($reads, count($state->calls), 'Reading the staff step makes no registrar calls');
     Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class, ['record'=>$op->id])
-        ->assertSee('Ask Enom to check this attempt.')->assertSee($after)->assertDontSee('Cannot check registrar')
+        ->assertSee('Registrar check pending')->assertDontSee('Ask Enom to check this attempt.')->assertDontSee('Cannot check registrar')
         // ui-r20: History says the renewal is unconfirmed; the notice says it no more (207).
         ->assertDontSee('has not confirmed this renewal')->assertDontSee('has not answered yet');
     $noCheck = $op->fresh()->policy; unset($noCheck['status_check']); $op->fresh()->update(['policy'=>$noCheck]);
     Livewire\Livewire::actingAs($staff)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class, ['record'=>$op->id])
-        ->assertSee('Ask Enom to check this attempt.')->assertSee($after)->assertDontSee('has not confirmed this renewal');
+        ->assertSee('Registrar check pending')->assertDontSee('Ask Enom to check this attempt.')->assertDontSee('has not confirmed this renewal');
     expect(!str_contains(RegistrarCheck::forCustomer($op->fresh())['body'], 'record Enom'), 'Derived customer notice keeps staff-only instructions out');
 
     $result = $completion->run($op->id);
@@ -57,7 +56,8 @@ foreach (['unknown', 'lost'] as $reply) {
     same('uncertain', $result->state, 'Missing reply is not a failure proof');
     same($attempt, $result->attempt, 'Read checks preserve original attempt evidence');
     same($money, nativeFinancialSnapshot($result), 'Read checks preserve customer money and issued debt');
-    same($reads, count($state->calls), 'No unaccepted history or speculative order reads');
+    expect(count($state->calls)>$reads,'Supported holding facts are read before asking for support');
+    expect(!in_array(\Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\ReadCommand::Order,array_slice($state->calls,$reads),true),'No speculative order is read');
     same(null, app(Refunds::class)->creditRejected($op->id), 'Unknown renewal cannot return customer money');
     $engine->run($op->id, $writer);
     same($writes, $state->writes, 'Unknown original renewal never sends a second Extend');

@@ -34,12 +34,6 @@ final class RegistrarCheck
             $now = $this->clock->now()->getTimestamp();
             if ($op->state==='succeeded') { $this->awaitingAnswer=null; }
             $outcome = $this->awaitingAnswer !== null ? 'awaiting_answer' : ($this->deferred !== null ? 'deferred' : (($this->context?->completedReads() ?? 0) > 0 ? 'checked' : 'unavailable'));
-            if ($this->awaitingAnswer!==null && ($this->context?->completedReads()??0)>0) {
-                $policy=$op->policy;
-                if ($op->action==='renew') { $policy['renewal_polls']=($policy['renewal_polls']??0)+1; }
-                else { $policy['reconciliation']['polls']=($policy['reconciliation']['polls']??0)+1; }
-                $op->policy=$policy;
-            }
             $next = null;
             $watch = TransferPolling::applies($op);
             $stopped = $op->action === 'renew' ? ($op->policy['renewal_polls'] ?? 0) >= OperationReconciliation::POLL_LIMIT
@@ -53,7 +47,7 @@ final class RegistrarCheck
                     DB::table('domains_runtime_operations')->updateOrInsert(['operation_id' => $op->id], ['due_at' => $next]);
                 }
             }
-            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->identity!==null?['attempt_identity'=>$this->identity,'facts'=>$this->facts]:[]), ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
+            $op->update(['policy' => [...($op->policy ?? []), 'status_check' => ['outcome' => $outcome, 'at' => $now, 'next_at' => $next, 'reason' => $this->deferred, ...($this->identity!==null?['attempt_identity'=>$this->identity,'read_attempted'=>$this->context!==null,'facts'=>$this->facts]:[]), ...($this->awaitingAnswer !== null ? ['registrar'=>$this->awaitingAnswer,'answer_after'=>$this->answerAfter] : [])]]]);
             return $op;
         });
     }
@@ -68,7 +62,7 @@ final class RegistrarCheck
     public static function attempted(Operation $op): bool
     {
         $check=$op->policy['status_check']??[];
-        return isset($check['attempt_identity'])&&hash_equals(RegistrarAnswers::identity($op),$check['attempt_identity']);
+        return ($check['read_attempted']??false)===true&&isset($check['attempt_identity'])&&hash_equals(RegistrarAnswers::identity($op),$check['attempt_identity']);
     }
     /** Plain words used everywhere this result appears. No provider payload enters the policy or UI. */
     public static function words(?array $check, bool $completed = false): array
