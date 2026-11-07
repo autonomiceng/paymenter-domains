@@ -109,15 +109,15 @@ $glueRow=static function(Domain $domain)use($owned,$now):string{
     $html=view('domains::partials.owner-management',['domain'=>RecordFamilies::owner($owned,RecordFamilies::read($domain,$now)),'caps'=>['glue'],'readAt'=>'2026-11-04T09:00:00+00:00'])->render();
     return trim(preg_replace('/\s+/',' ',storefrontDom($html)->query('//li[@id="glue"]/span[contains(@class,"domains-row__v")]')->item(0)?->textContent??''));
 };
-$enomSays="Enom can't return a full list, so only the ones we know are shown.";
+$enomSays="Enom can’t return a full list, so only the ones we know are shown.";
 $same($enomSays,$g['customer'],'Enom glue customer wording');
 $same('No glue records known here Partial '.$enomSays.' Need a change? Contact support.',$glueRow($enom),'Enom glue empty state and support path');
 $known=clone $enom;$rk=$r;$rk['families']['glue']['records']=['ns1.orbit-example.com'=>'192.0.2.10'];$known->observation=['records'=>$rk];
 $same('ns1.orbit-example.com Partial '.$enomSays.' Need a change? Contact support.',$glueRow($known),'Enom glue row lists the known host');
 $unchecked=clone $enom;$r0=$r;$r0['families']['glue']['candidates']=[];$unchecked->observation=['records'=>$r0];
 $g0=array_column(RecordFamilies::read($unchecked,$now)['rows'],null,'kind')['glue'];
-$check(str_starts_with($g0['staff'],'No known child hosts to check.')&&!str_contains($g0['staff'].$g0['customer'],'Known glue checked'),'No hosts checked never reads as Known glue checked');
-foreach([[['ns1.orbit-example.com'=>'192.0.2.10','ns2.orbit-example.com'=>'192.0.2.11'],'2 registered nameservers.'],[[],'No registered nameservers.']] as [$hosts,$says]){
+$check(str_starts_with($g0['staff'],'No known child hosts to check.')&&!str_contains($g0['staff'].$g0['customer'],'Known glue checked')&&!str_contains($g0['staff'],'0 known child hosts'),'No hosts checked never reads as Known glue checked or counts zero hosts');
+foreach([[['ns1.orbit-example.com'=>'192.0.2.10','ns2.orbit-example.com'=>'192.0.2.11'],''],[[],'No glue records.']] as [$hosts,$says]){
     $listed=clone $d;$rl=$record;$rl['families']['glue']=['state'=>'complete','records'=>$hosts];$listed->observation=['records'=>$rl];
     $same($says,array_column(RecordFamilies::read($listed,$now)['rows'],null,'kind')['glue']['customer'],'NameSilo full glue list: '.$says);
 }

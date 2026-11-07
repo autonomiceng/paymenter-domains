@@ -94,7 +94,7 @@ storefrontViews();require dirname(__DIR__).'/Domains/routes/web.php';require dir
 $domain=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'orbit-example.com',status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,renewNow:['url'=>'/domains/1/renew','terms'=>[1,2]]);
 $choices=['lines'=>[1=>['years'=>1,'first_year'=>'14.00','renewal'=>'14.00','total'=>'14.00','expiry'=>'2028-11-20'],2=>['years'=>2,'first_year'=>'14.00','renewal'=>'14.00','total'=>'28.00','expiry'=>'2029-11-20']],'next_annual'=>'14.00'];
 $html=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'support'=>null,'keys'=>['renew'=>str_repeat('a',64)],'renewalChoices'=>$choices])->render();
-foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Continue to payment','Nov 20, 2028','data-total="$28.00"','>1 year - $14.00</option>','>2 years - $28.00</option>','for the first year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
+foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Continue to payment','Nov 20, 2028','data-total="$28.00"','>1 year · $14.00</option>','>2 years · $28.00</option>','for the first year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
 expect(str_contains($html,'2 years: $28.00; new expiry Nov 20, 2029'),'No-script renewal shows every term total and expiry');
 expect(strpos($html,'>Cancel</button>')<strpos($html,'>Continue to payment</button>'),'Cancel is a button before payment');
 expect(str_contains($html,'domains-total'),'Customer renewal total has shared prominent money treatment');
@@ -108,7 +108,7 @@ foreach([null,[],['lines'=>[]]] as $missingChoices){
 }
 $result=storefrontData()['results'][0];$result['term']=1;$result['price']='$12.00';
 $html=view('domains::partials.result',['result'=>$result])->render();
-$x=storefrontDom($html);same(['1 year - $12.00','3 years - $30.00','10 years - $1,234.00'],array_map(fn($o)=>$o->textContent,iterator_to_array($x->query('//select/option'))),'Years select shows each term with its total');
+$x=storefrontDom($html);same(['1 year · $12.00','3 years · $30.00','10 years · $1,234.00'],array_map(fn($o)=>$o->textContent,iterator_to_array($x->query('//select/option'))),'Years select shows each term with its total');
 expect(str_contains($html,'data-total="$30.00"'),'Search retains each exact total for selection');
 $x=storefrontDom($html);same('Years',trim($x->query('//label')->item(0)->textContent),'Search labels Years');
 expect(str_contains($html,'>Total<')&&str_contains($html,'>Annual renewal<')&&str_contains($html,'>Add to cart</button>'),'Search total and annual renewal are labeled beside the choice');
