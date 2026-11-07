@@ -260,7 +260,7 @@ final class StaffCatalogue
             if($queue&&$queue->account_fingerprint!==$t->account_fingerprint){$queue=null;}
             $work=$queue?OfferState::decode($queue->offer_work):[];
             // Only seller-policy writes establish selection time; pricing revisions do not.
-            $selectedAt=$policy?->updated_at??$policy?->created_at;
+            $selectedAt=$policy?->updated_at;
             try{$selectedAt=$selectedAt?\Carbon\CarbonImmutable::parse($selectedAt)->getTimestamp():null;}catch(\Throwable){$selectedAt=null;}
             $refreshed=['succeeded_at'=>$queue->offer_feed_succeeded_at??null,'due_at'=>$work['feed_due']??null,
                 'failure'=>$queue->offer_feed_failure??null,'selected_at'=>$selectedAt];

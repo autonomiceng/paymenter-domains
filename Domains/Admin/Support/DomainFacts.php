@@ -80,7 +80,7 @@ final class DomainFacts
         if ($registered) {
             $expiry=$d->provider_expires_at?->format('Y-m-d');
             if ($pending) { $expiry??=is_string($policy['conversion_source_expiry']??null)?$policy['conversion_source_expiry']:null; }
-            $f['Expires']=self::fact($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$expiry?null:self::unread($d,$sync),
+            $f['Expires']=self::fact($expiry?gmdate('M j, Y',strtotime($expiry.' 00:00:00 UTC')):null,sub:$expiry?null:($pending?self::unread($d,$sync):'No confirmed expiry saved. Check the domain at the registrar.'),
                 help:$pending&&$expiry?'From the old record. Not synced yet.':null);
         }
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;

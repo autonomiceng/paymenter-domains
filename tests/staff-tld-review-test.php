@@ -18,7 +18,7 @@ $selected=$now->modify('-1 hour')->format('Y-m-d H:i:s');DB::table('domains_sale
 DB::table('domains_tlds')->where('id',$t->id)->update(['updated_at'=>$now->modify('+1 hour')->format('Y-m-d H:i:s')]);
 DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_feed_succeeded_at'=>$now->getTimestamp()]);
 $fact=$c->page(collect([$t->fresh()]))[$t->id];$check($fact['refresh']['selected_at']===$now->modify('-1 hour')->getTimestamp(),'Pricing-only TLD writes do not move selection time');
-foreach([null,'not-a-date']as$undated){DB::table('domains_sales_policies')->where('id',$p['id'])->update(['updated_at'=>$undated,'created_at'=>$undated]);
+foreach([null,'not-a-date']as$undated){DB::table('domains_sales_policies')->where('id',$p['id'])->update(['updated_at'=>$undated]);
  $fact=$c->page(collect([$t->fresh()]))[$t->id];$fact['prices']=[];$fact['selected']=true;
  $check(!str_contains(TldFacts::priceState($fact)['cause']??'',"Not in the registrar's price feed"),'Undated selection does not accept historical feed success');}
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();$checkpoint=strtotime((string)DB::table('domains_sales_policies')->where('id',$p['id'])->value('updated_at'));
