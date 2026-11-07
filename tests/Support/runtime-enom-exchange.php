@@ -51,6 +51,9 @@ app()->instance(RuntimePorts::class,$ports);$limiter=new AccountReadBudget($cloc
 $inputs=new TransferInputs($clock,new Refunds($clock));
 $new=static function(string $name,string $action='register')use($user,$native,$tlds,$clock,$state,$inputs):Operation {
     Carbon\Carbon::setTestNow($clock->now());Carbon\CarbonImmutable::setTestNow($clock->now());
+    // Resuming processing advances the offer revision. Publish through the
+    // installed writer before creating each independent paid checkout.
+    $native->publish($tlds[0]->id,$clock->now());
     $state->query=new Paymenter\Extensions\Servers\Domains\Data\Query($name,Paymenter\Extensions\Servers\Domains\Data\Action::from($action),1);
     $cart=commerceCart($user);commerceAdd($cart,$native->product($tlds[0],$action),$name);commerceCheckout($user,$cart)->assertHasNoErrors();
     $op=Domain::where('domain',$name)->sole()->operations()->sole();DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
