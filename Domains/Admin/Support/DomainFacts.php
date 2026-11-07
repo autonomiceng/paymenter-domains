@@ -340,6 +340,10 @@ final class DomainFacts
                 'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
         }
         if (!self::ended($d)&&$read['read_review']) {
+            if (!$read['read_stopped']&&$read['next_read']!==null) {
+                return ['title'=>'Registrar reads keep failing. Automatic retries continue.','tone'=>'warning',
+                    'body'=>self::syncNow($d)?'Use Sync now to retry sooner.':null];
+            }
             return ['title'=>'Registrar reads keep failing. Check that this domain is in the right registrar account.','tone'=>'warning',
                 'body'=>self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.','action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
         }
