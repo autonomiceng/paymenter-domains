@@ -47,6 +47,7 @@
     "tests/render-artifacts-test.php",
     "tests/ui-docs-test.php",
     "tests/test_staff_docs.py",
+    "tests/test_gitleaks_policy.py",
     "tests/ote-order-window-test.php",
     "tests/ote-collection-shapes-test.php",
     "tests/owned-style-test.php",
