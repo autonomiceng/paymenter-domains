@@ -2,8 +2,9 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Admin\Resources;
+use Filament\Support\Enums\FontFamily;
 use Filament\Tables\{Table,Columns\TextColumn};
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,OneLine,OnOffSwitch,WatchReadResource};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{EmptyTable,OneLine,StatusMark,WatchReadResource};
 use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\RoutingProfileResource\Pages\{ListConfiguration,ViewConfiguration};
 class RoutingProfileResource extends WatchReadResource
@@ -19,11 +20,15 @@ class RoutingProfileResource extends WatchReadResource
     public static function table(Table $table): Table
     {
         // Long text: nameservers wrap to 2 lines (table standard). The full list is on hover and on the template.
-        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->wrap()->lineClamp(2)
+        // Status is a mark, not a switch: there is no way to turn a template off, and Turn on is on the template page.
+        $table=$table->columns([OneLine::apply(TextColumn::make('name')->label('Template')),TextColumn::make('nameservers')->label('Nameservers')->separator(', ')->wrap()->lineClamp(2)->fontFamily(FontFamily::Mono)
                 ->tooltip(fn($record)=>implode(', ',(array)$record->nameservers)?:null),
-            TextColumn::make('enabled')->label('Status')->state(fn($record)=>$record->enabled?'On':'Off')->formatStateUsing(fn(string $state)=>OnOffSwitch::html($state==='On'))])
+            TextColumn::make('enabled')->label('Status')->badge()->state(fn($record)=>self::status($record)['label'])->color(fn($record)=>self::status($record)['tone'])
+                ->extraAttributes(fn($record)=>StatusMark::attributes(self::status($record)['tone'],'template-'.$record->id))])
             ->recordUrl(fn($record)=>static::getUrl('view',['record'=>$record]))->paginated([25,50,100])->defaultPaginationPageOption(25);
         return EmptyTable::apply($table,'No DNS templates','Add one with Add DNS template.','No DNS templates match');
     }
+    /** On or Off, with its mark tone. Off is gray: a template is off until staff turn it on. @return array{label:string,tone:string} */
+    public static function status(WatchProfile $record): array{return $record->enabled?['label'=>'On','tone'=>'success']:['label'=>'Off','tone'=>'gray'];}
     public static function getPages(): array{return ['index'=>ListConfiguration::route('/'),'view'=>ViewConfiguration::route('/{record}')];}
 }

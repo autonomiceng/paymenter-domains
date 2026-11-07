@@ -18,12 +18,22 @@ same(['No DNS templates','Add one with Add DNS template.'],[$templates->instance
 same('DNS templates',$templates->instance()->getTitle(),'Templates title');same('A DNS template sets the nameservers for new domains and is what monitoring checks them against.',$templates->instance()->getSubheading(),'Templates say what they are for');same('Add DNS template',$templates->instance()->getAction('save')->getLabel(),'Add template');
 foreach(['name'=>'Template','nameservers'=>'Nameservers','enabled'=>'Status'] as $name=>$label){same($label,$column($templates,$name)->getLabel(),'Template column '.$name);}
 same(null,$column($templates,'revision'),'No revision column');same('On',$column($templates,'enabled')->record($profile)->getState(),'Status On');same(null,$column($templates,'used_by'),'No Used by column');
-$template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['Records','Status','On','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
+// Status is a mark, never a switch that does nothing: templates can't be turned off, and Turn on is on the template page.
+expect(!str_contains($templates->html(),'role="switch"'),'Template list shows no switch');expect(preg_match('~data-beco-tone="ok"[^>]*data-beco-record="template-'.$profile->id.'"~',$templates->html())===1,'Template list marks On');
+$template=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$profile->id])->assertSeeInOrder(['On','Records','Nameservers','Website records','Email records','Used by','Monitored domains'])->assertActionHidden('enable');$clean($template->html(),'DNS template');
+expect(!str_contains($template->html(),'role="switch"'),'Template page shows no switch');
+// Nothing goes beside the sheet, so it is one column with no empty rail.
+expect(str_contains($template->html(),'domains-split-single') && !str_contains($template->html(),'domains-rail'),'Template page is a single-column sheet');expect(str_contains((string)$template->instance()->getSubheading()?->toHtml(),'data-beco-tone="ok"'),'Template page head marks On');
 same('Synthetic defaults',$template->instance()->getTitle(),'Template title');same('Edit',$template->instance()->getAction('save')->getLabel(),'Edit template');
 same([RoutingProfileResource::getUrl()=>'DNS templates','Synthetic defaults'],$template->instance()->getBreadcrumbs(),'Template breadcrumb');
 $off=DB::transaction(fn()=>WatchProfile::create(['name'=>'Spare template','nameservers'=>['ns1.spare.test'],'website_endpoints'=>[],'email_endpoints'=>[],'edited_by'=>$manager->id,'reason'=>'Synthetic spare']));
 $spare=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$off->id]);same('Turn on',$spare->instance()->getAction('enable')->getLabel(),'Turn on template');
-same('Future checks use these records. Monitoring stays on if this template is on.',$spare->instance()->getAction('save')->getModalDescription(),'Edit body');
+expect(str_contains((string)$spare->instance()->getSubheading()?->toHtml(),'data-beco-tone="off"'),'Off template head marks Off');
+same('Future checks use these records. Monitoring stays on if this template is on. Enter one value per line.',$spare->instance()->getAction('save')->getModalDescription(),'Edit body');
+// The form is short: one note for every box, record groups headed and not boxed.
+$add=$templates->instance()->getAction('save');same(['Add DNS template','Enter one value per line.',\Filament\Support\Enums\Width::Medium],[$add->getModalHeading(),$add->getModalDescription(),$add->getModalWidth()],'Add form head and width');
+$form=Livewire::actingAs($manager)->test(ViewTemplate::class,['record'=>$off->id])->mountAction('save');same('Edit DNS template',$form->instance()->getMountedAction()->getModalHeading(),'Edit form heading');
+$html=$form->html().implode('',array_values($form->effects['partials']??[]));expect(!str_contains($html,'One per line.'),'No note under each box');expect(substr_count($html,'fi-fieldset-not-contained')===2,'Record groups are not boxed');
 $spare->callAction('enable')->assertNotified('Saved');expect(WatchProfile::find($off->id)->enabled,'Turn on saves');
 
 DB::table('domains_watch_product_maps')->where('id',$map->id)->update(['enabled'=>false]);
