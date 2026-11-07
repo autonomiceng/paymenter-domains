@@ -3,6 +3,10 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
+require __DIR__.'/Support/staff-panel.php';
+use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation;
 use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
 use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,AdmittedRegistrarDriver};
 use Paymenter\Extensions\Servers\Domains\Data\{DriverResult,Disposition,SendState,ResultReason,Evidence};
@@ -12,7 +16,7 @@ app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bin
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Complimentary closure','permissions'=>[
     'admin.domains.view','admin.domains.manage','admin.domains.fund','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.invoices.update','admin.domains.operations.credit']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Audited closure account',$clock);
-$settings=new StaffSettingsWrites($native,$sellers,$bindings);
+staffPanel();$settings=new StaffSettingsWrites($native,$sellers,$bindings);
 $supportWriter=new class($writer) implements AdmittedRegistrarDriver {
     public function __construct(private $inner){}
     public function register($op,$context):DriverResult{return $this->inner->register($op,$context);}
@@ -37,7 +41,23 @@ foreach(['register','transfer']as$action){
     $input=['operation_id'=>$op->id,'attempt_hash'=>RegistrarAnswers::identity($op),'outcome'=>$action==='register'?'not_processed':'transfer_rejected',
         'order_reference'=>$action==='register'?'':'9001','case_reference'=>'synthetic-complimentary-case','evidence'=>'Registrar confirmed this account and original attempt cannot complete.',
         'confirmed'=>true,'final_confirmed'=>true,'charge'=>'0.00','registrar_refund'=>'0.00'];
-    $settings->run($review,$input,$clock->now());$op->refresh();
+    // Fail the native service projection after the final answer commits, once only.
+    $failService=(int)$op->service_id;
+    DB::listen(static function($q)use(&$failService):void {
+        if($failService&&str_starts_with($q->sql,'update "services"')&&in_array('cancelled',$q->bindings,true)&&(int)end($q->bindings)===$failService){
+            $failService=0;throw new RuntimeException('Synthetic transient closure failure');
+        }
+    });
+    $failure=null;try{$settings->run($review,$input,$clock->now());}catch(RuntimeException $e){$failure=$e;}
+    expect($failService===0&&$failure?->getMessage()==='Synthetic transient closure failure','The final answer reaches a transient native closure failure');
+    $op->refresh();same('rejected',$op->state,'Final answer remains committed');
+    expect(RegistrarAnswers::answer($op,$op->domain)!==null,'Retry uses the retained exact final answer');
+    expect(Service::findOrFail($op->service_id)->status!=='cancelled','Failed closure has not cancelled the native service');
+    same($money,$nativeMoney(),'Failed complimentary closure moves no money');
+    $page=Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$op->id]);
+    $page->assertActionVisible('credit')->callAction('credit',['reason'=>'Complete retained complimentary order closure'])->assertHasNoActionErrors()->assertNotified('Order closed')->assertActionHidden('credit');
+    $op->refresh();
+    same(0,DB::table('domains_obligation_alerts')->where('operation_id',$op->id)->where('code','refund_repair')->whereNull('resolved_at')->count(),'Successful staff retry clears its failed-closure alert');
     same(['rejected',$action==='register'?'registration_rejected':'transfer_rejected','cancelled'],[$op->state,$op->domain->status,Service::findOrFail($op->service_id)->status],'The final answer closes the operation, domain and native service');
     same($attempt,$op->attempt,'Support closure preserves the original sealed attempt');
     same('paid',Invoice::findOrFail($op->invoice_id)->status,'The zero receipt stays Paid');
