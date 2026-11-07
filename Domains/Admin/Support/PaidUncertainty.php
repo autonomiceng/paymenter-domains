@@ -20,10 +20,27 @@ final class PaidUncertainty
     {
         $grants ??= Staff::requireView();
         if (!AccountSpendingHolds::matches($op)) { return null; }
+        return 'Paid domain changes on this '.self::registrar($op).' account wait until the result is known'.self::age($op).'. Registrations and renewals still check the balance before sending.';
+    }
+    private static function age(Operation $op): string
+    {
         $at=$op->started_at??$op->created_at;
         $hours=$at ? max(0,(int)floor((time()-$at->getTimestamp())/3600)) : null;
-        $age=match($hours){null=>'',0=>' (under 1 hour so far)',1=>' (1 hour so far)',default=>' ('.$hours.' hours so far)'};
-        return 'Paid domain changes on this '.self::registrar($op).' account wait until the result is known'.$age.'. Registrations and renewals still check the balance before sending.';
+        return match($hours){null=>'',0=>' (under 1 hour so far)',1=>' (1 hour so far)',default=>' ('.$hours.' hours so far)'};
+    }
+    /** The same account-wide hold, said where staff look first: the Domains list and the registrar account page. One line per account, naming its oldest request. Null with none. */
+    public static function accounts(?int $server=null): ?\Illuminate\Support\HtmlString
+    {
+        Staff::requireView();
+        $ops=AccountSpendingHolds::query(Operation::query())->when($server!==null,fn($q)=>$q->where('server_id',$server))->orderBy('id')->limit(100)->get();
+        $lines=[];
+        foreach ($ops->groupBy('account_fingerprint') as $held) {
+            $op=$held->first(); $count=$held->count();
+            $name=\App\Models\Server::whereKey($op->server_id)->value('name') ?: self::registrar($op);
+            $words='Paid domain changes on '.$name.' wait on '.($count===1?'an unconfirmed request':$count.' unconfirmed requests').self::age($op).'. Check request #'.$op->id.'.';
+            $lines[]=DomainFacts::linkRequest($words,(int)$op->id);
+        }
+        return $lines?new \Illuminate\Support\HtmlString(implode('<br>',array_map(fn($line)=>$line instanceof \Illuminate\Support\HtmlString?$line->toHtml():e($line),$lines))):null;
     }
     public static function title(Operation $op): string
     { return self::registrar($op).' has not confirmed this '.(['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]??'change').'.'; }

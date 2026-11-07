@@ -67,7 +67,7 @@ final class RegistrarCheck
     /** Plain words used everywhere this result appears. No provider payload enters the policy or UI. */
     public static function words(?array $check, bool $completed = false): array
     {
-        $next = isset($check['next_at']) ? gmdate('M j, Y H:i', (int) $check['next_at']).' UTC' : null;
+        $next = isset($check['next_at']) ? self::at((int) $check['next_at']) : null;
         return match ($check['outcome'] ?? null) {
             'awaiting_answer' => self::answerWords($check),
             'checked' => ['title' => 'Registrar checked', 'body' => $completed ? 'The request is complete. Open the domain for its details.'
@@ -81,7 +81,7 @@ final class RegistrarCheck
     }
     private const STILL = 'The result is still unconfirmed.';
     private static function checkedNext(array $check): string
-    { return isset($check['next_at']) ? 'The next check is at '.gmdate('M j, Y H:i', (int) $check['next_at']).' UTC.' : 'Contact support to review the original order.'; }
+    { return isset($check['next_at']) ? 'The next check is at '.self::at((int) $check['next_at']).'.' : 'Contact support to review the original order.'; }
     private static function answerWords(array $check): array
     {
         $step = self::answerStep($check);
@@ -90,7 +90,9 @@ final class RegistrarCheck
     private static function answerStep(array $check): array
     {
         $registrar = self::answerRegistrar($check);
-        return ['title'=>'Ask '.$registrar.' to check this attempt.','body'=>(($check['facts']['owned']??null)===true?'The domain was found in this registrar account. The original charge is still unconfirmed. ':'').'You can record '.$registrar.'’s answer after '.self::answerAfter($check).'.'];
+        // Once the wait is over the button is live, so the line says so instead of naming a past time.
+        $after=(int)($check['answer_after']??0)>app(Clock::class)->now()->getTimestamp()?' after '.self::answerAfter($check):' now';
+        return ['title'=>'Ask '.$registrar.' to check this attempt.','body'=>(($check['facts']['owned']??null)===true?'The domain was found in this registrar account. The original charge is still unconfirmed. ':'').'You can record '.$registrar.'’s answer'.$after.'.'];
     }
     private static function answerRegistrar(array $check): string { return ($check['registrar'] ?? null) === 'Enom' ? 'Enom' : 'NameSilo'; }
     /** The staff request notice, next step first. Staff History already says the result is unconfirmed, so this doesn't. Null with no check. */
@@ -103,7 +105,10 @@ final class RegistrarCheck
         return ['title' => $words['title'].'.', 'body' => ($check['outcome'] ?? null) === 'checked' && $op->state !== 'succeeded' ? self::checkedNext($check) : $words['body']];
     }
     private static function answerAfter(array $check): string
-    { return (new \DateTimeImmutable('@'.(int)($check['answer_after'] ?? 0)))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, g:i A').' PT'; }
+    { return self::at((int)($check['answer_after'] ?? 0)); }
+    /** The one date format these lines use, the staff pages' own: Nov 4, 2026, 1:53 PM PST. */
+    private static function at(int $at): string
+    { return (new \DateTimeImmutable('@'.$at))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, Y, g:i A T'); }
     /** Older lost replies need no worker turn to expose their existing answer step. Read only. */
     public static function status(Operation $op): ?array
     {

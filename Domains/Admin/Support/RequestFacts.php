@@ -153,10 +153,15 @@ final class RequestFacts
     /** A request's status, in the customer's words. Orders off stop all queued work, so a queued request whose account has them off is held
      * for staff: it reads as held (RequestStatus::READS_AS), the same word as its domain and the Status filter. With its domain (passed, or loaded with the row) a change reads as
      * customer History does (ManagementProgress::statusKey), on the rail, the list and the request page. Lists pass $ordersOff as for reason(). */
-    /** Staff alone name a registration stopped here On hold; setup still waits on the customer. */
+    /** Staff alone name a registration stopped here, or a transfer staff held, On hold: one word for one hold. Setup still waits on the customer. */
     public const STATUSES = [...RequestStatus::SET, 'on_hold'=>['On hold','warning']];
-    public static function heldRegistration(Operation $op, bool $ordersOff=false): bool
-    { return $op->action==='register' && RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'; }
+    /** A transfer reads On hold only when staff held it; a transfer waiting on its old registrar keeps its own word. */
+    public const HELD_TRANSFER_CODE = 'staff_review_required';
+    public static function heldAcquisition(Operation $op, bool $ordersOff=false): bool
+    {
+        return RequestStatus::readsAs($op->state,$op->safe_code,$ordersOff)==='held'
+            && ($op->action==='register' || ($op->action==='transfer' && $op->state==='held' && $op->safe_code===self::HELD_TRANSFER_CODE));
+    }
     public static function status(Operation $op, bool $ordersOff=true, ?Domain $d=null): array
     {
         $d??=$op->relationLoaded('domain')?$op->domain:null;
@@ -164,7 +169,7 @@ final class RequestFacts
         $status=[...Labels::requestStatus($op,$off),'reason'=>self::reason($op,$ordersOff)];
         try { $key=$d?ManagementProgress::statusKey($op,$d,$off):null; } catch (\Throwable) { $key=null; }
         if ($key!==null) { [$status['label'],$status['tone']]=RequestStatus::SET[$key]; }
-        return self::heldRegistration($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
+        return self::heldAcquisition($op,$off) ? [...$status,'label'=>'On hold','tone'=>'warning'] : $status;
     }
     /** Local readiness shared by request pages and domain lists. It never releases a hold. */
     public static function readyMessage(Operation $op): ?string
@@ -298,7 +303,9 @@ final class RequestFacts
             if (($ready=self::readyMessage($op))!==null) { $reason=$ready;$fix=$account->processing_enabled?($op->safe_code==='registrar_balance_insufficient'?'Go to balance':null):self::ORDERS_SWITCH; }
             if(in_array($op->safe_code,BalanceRetries::READ_CODES,true)&&!BalanceRetries::pending($op)&&OperationActions::relevant('release',$op)){$body??=BalanceRetries::READ_STOPPED;}
             if(BalanceRetries::legacyHold($op)){$fix=null;if(OperationActions::relevant('release',$op)){$body??='Release to check this order again.';}}
-            $next=$sends ? 'Release hold sends the '.self::sendWords($op,$account).' to Enom.' : null;
+            // Release hold puts paid work back in the queue, so the button says what it starts before staff press it.
+            $queues=!$sends&&$open&&$account?->processing_enabled&&in_array($op->action,['register','transfer','renew'],true)&&OperationActions::relevant('release',$op);
+            $next=$sends ? 'Release hold sends the '.self::sendWords($op,$account).' to Enom.' : ($queues ? 'Release hold queues the '.self::queueWords($op,$account).' to send to '.PaidUncertainty::registrar($op).'.' : null);
             if ($next!==null) { $body=$body===null?$next:$next.' '.$body; }
             if (($try=self::nextTry($op))!==null) { $body=$body===null?$try:$body.' '.$try; }
             return ['title'=>rtrim($reason??Labels::reason(null),'.').'.','body'=>$body,'tone'=>'warning','action'=>in_array($op->safe_code,WriteHeld::FINAL_REFUSALS,true)&&OperationActions::relevant('refund',$op)?'refund':(OperationActions::relevant('release',$op)?'release':null),
@@ -317,6 +324,9 @@ final class RequestFacts
     /** What release sends, in the words staff see. */
     public static function sendWords(Operation $op, Account $account): string
     { return ($account->environment==='live'?'':'test ').($op->action==='transfer'?'transfer':'purchase'); }
+    /** What release queues: the request type, marked test on a test account. */
+    private static function queueWords(Operation $op, Account $account): string
+    { return ($account->environment==='live'?'':'test ').['register'=>'registration','transfer'=>'transfer','renew'=>'renewal'][$op->action]; }
     /** A closed unpaid order: no payment arrived, before or after it closed. */
     public static function neverPaid(Operation $op): bool
     {

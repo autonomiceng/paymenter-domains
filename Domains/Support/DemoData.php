@@ -9,7 +9,8 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, ManagedPublicC
 final class DemoData
 {
     public const TOOLTIP = 'Demo data. Seeded for testing. Nothing is sent to a registrar and no money moves.';
-    public const TEST_TOOLTIP = 'Test registration. Made in the registrar\'s test environment. It is not a real domain and no money moves.';
+    /** Shared by domains of every request type and by test registrar accounts, so it names no operation. */
+    public const TEST_TOOLTIP = 'Registrar test environment. Nothing here is real and no money moves.';
     public const BANNER = 'Test system. Records tagged Demo are seeded examples.';
     public const ACCOUNTS = ['enom' => 'demo-enom', 'namesilo' => 'demo-namesilo'];
     // Exact prior identities remain readable; new seeds use ACCOUNTS.

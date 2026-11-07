@@ -42,6 +42,10 @@ final class RecordFamilies
             $ops=$d->operations;
             $cancelled=$ops->count()===1&&\Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::terminal($ops->first(),$d);
         }
+        // A registration or transfer that has not finished has nothing at the registrar to read yet. Staff read that once, not a Missing per family.
+        // A read that failed or stopped keeps its own lines, since staff may need to act on it.
+        $notYet=$readable&&!$cancelled&&in_array($d->status,['registration_pending','transfer_pending'],true)&&empty($d->observation['records'])
+            &&$status['at']===null&&$status['last_complete_at']===null&&!$status['read_code']&&!$status['read_stopped']?($d->status==='transfer_pending'?'transfer':'registration'):null;
         // Reuse the editor's identity-checked, sequence-ordered readback projection.
         if($currentRead){$dns=ObservationProjection::sections($d)['dns']??null;
             if(isset($dns['facts']['records'],$dns['at'])&&$dns['at']>=($status['families']['dns']['at']??'')){
@@ -89,6 +93,6 @@ final class RecordFamilies
         if($cancelled){$status['stale']=false;}
         // Only a family the registrar once confirmed has last confirmed data to keep.
         $status['retained']=collect($rows)->contains(fn($row)=>$row['last_good_at']!==null||in_array($row['state'],['complete','partial'],true));
-        return [...$status,'initial_read_pending'=>$initial,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
+        return [...$status,'initial_read_pending'=>$initial,'registrar_key'=>$d->registrar_key,'cancelled_without_records'=>$cancelled,'not_at_registrar'=>$notYet,'current_read'=>$currentRead,'rows'=>$rows,'caa'=>$caa,'caa_at'=>$caaAt,'staff_hold'=>match($hold){'budget_exhausted','call_cap'=>'Account call limit reached.','caa_unsupported'=>'CAA records cannot be read from Enom here. Manage DNS at Enom.',default=>null}];
     }
 }

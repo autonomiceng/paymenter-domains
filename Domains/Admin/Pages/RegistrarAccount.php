@@ -16,7 +16,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Livewire\Attributes\Locked;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
-use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
+use Paymenter\Extensions\Servers\Domains\Admin\Support\{CatalogueSalesNotice,AccountChecklist,BalanceCheck,HelpHint,LiveActivationAction,MissingEntry,OnOffSwitch,PaidUncertainty,PslActions,RegistrarFacts,RequestFacts,SettingsActions,Sheet,Staff,TldFacts,StatusMark};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,StaffSettingsReview};
@@ -58,7 +58,10 @@ class RegistrarAccount extends Page
         $status=$this->status();
         // On Overview the API connection row says why the connection failed or is off, so the head names only the status.
         $rowSays=!$this instanceof RegistrarHistory&&$this->record()&&in_array($status['label'],[AccountStatus::SET['connection_failed'][0],AccountStatus::SET['not_connected'][0]],true);
-        return StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$rowSays?null:$status['reason']);
+        $line=StatusMark::line($status['tone'],$status['label'],'registrar-'.$this->account,$rowSays?null:$status['reason']);
+        // The account-wide hold on paid changes, as the Domains list says it.
+        $held=PaidUncertainty::accounts($this->account);
+        return $held?new HtmlString($line->toHtml().'<br>'.$held->toHtml()):$line;
     }
     /** @return list<NavigationItem> */
     public function getSubNavigation(): array

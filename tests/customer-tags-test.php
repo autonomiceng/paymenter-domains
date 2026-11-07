@@ -47,7 +47,8 @@ foreach(['none'=>[false,false],'Test'=>[false,true],'Demo'=>[true,false],'Demo a
         same($demo?DemoData::TOOLTIP:DemoData::TEST_TOOLTIP,$node?->getAttribute('title'),'Tooltip explains the tag: '.$case);
     }
 }
-same('Test registration. Made in the registrar\'s test environment. It is not a real domain and no money moves.',DemoData::TEST_TOOLTIP,'Test tooltip');
+// A4: the tooltip shows on transfers and renewals too, so it names no operation.
+same('Registrar test environment. Nothing here is real and no money moves.',DemoData::TEST_TOOLTIP,'Test tooltip');
 
 // Hosting domains: the related list tags seeded watches (domain-portal-test covers their details and hosting pages). Watches never use a registrar test mode.
 $strings=DomainSummaryStrings::all();

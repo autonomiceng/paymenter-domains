@@ -51,6 +51,10 @@ $d=$row('registration_pending','register','held','nameservers_required');
 $cases['nameservers hold']=[$d,'action_required','Action required','Finish setup. Not sent: nameservers missing. '.$req($d)];
 $d=$row('transfer_pending','transfer','held','transfer_needs_action');
 $cases['held transfer']=[$d,'under_review','Under review','Old registrar needs approval. '.$req($d)];
+// J6 domain 43: a transfer a staff member held reads one word for one hold, and names who held it.
+$d=$row('transfer_pending','transfer','held','staff_review_required',120,['operation_review']);
+$d->latestAcquisition->forceFill(['policy'=>['staff_actions'=>[['action'=>'hold','phase'=>'completed','actor_name'=>'Alex Admin','at'=>date(DATE_ATOM,time()-60)]]]])->saveQuietly();
+$cases['transfer held by staff']=[$d->fresh(),'on_hold','On hold','Put on hold by Alex Admin. '.$req($d)];
 $d=$row('registration_pending','register','uncertain');
 $cases['unconfirmed registration']=[$d,'pending_registration','Pending registration','Registrar has not confirmed the result. '.$req($d)];
 $cases['queued registration']=[$row('registration_pending','register','queued'),'pending_registration','Pending registration','Registration in progress. Nothing to do yet.'];
@@ -314,7 +318,27 @@ foreach ([$offTransfer,$offChange] as $d) {
 $pol=$row('registration_pending','register','held','staff_review_required'); $polOp=$pol->operations()->sole();
 same(['On hold','warning'],array_values(array_intersect_key(RequestFacts::status($polOp),array_flip(['label','tone']))),'Staff request is On hold in amber');
 same(['On hold','warning'],[DomainFacts::status($pol)['label'],DomainFacts::status($pol)['tone']],'Staff domain is On hold in amber');
+$staffTransfer=$cases['transfer held by staff'][0]->latestAcquisition;
+same(['On hold','warning'],array_values(array_intersect_key(RequestFacts::status($staffTransfer),array_flip(['label','tone']))),'A staff-held transfer request is On hold in amber, as its domain is');
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($staffTransfer->id)->exists(),'Staff On hold filter includes a staff-held transfer');
+expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($staffTransfer->id)->exists(),'Staff Under review filter excludes a staff-held transfer');
+$waitingTransfer=$cases['held transfer'][0]->latestAcquisition;
+expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($waitingTransfer->id)->exists(),'A transfer waiting on its old registrar stays Under review');
 same(['Under review','info'],array_slice(array_values(\Paymenter\Extensions\Servers\Domains\Presentation\StatusPill::of('registration_held')),0,2),'Customer domain stays Under review in blue');
 expect(\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['on_hold'])->whereKey($polOp->id)->exists(),'Staff On hold filter includes registration hold');
 expect(!\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status(Operation::query(),['under_review'])->whereKey($polOp->id)->exists(),'Staff Under review filter excludes registration hold');
+// U-C: a paid request with no registrar answer holds paid changes on its whole account, so the Domains list says so, not only that request.
+$paid=$row('registration_pending','register','uncertain'); $paidOp=$paid->latestAcquisition;
+DB::table('domains_operations')->where('id',$paidOp->id)->update(['funding_basis'=>'paid_invoice','started_at'=>now()->subHours(3)]);
+$oldest=\Paymenter\Extensions\Servers\Domains\Services\AccountSpendingHolds::query(Operation::where('account_fingerprint',$paidOp->account_fingerprint))->orderBy('id')->value('id');
+$listHead=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful()->instance()->getSubheading();
+$listLine=preg_replace('/\s+/',' ',strip_tags((string)$listHead?->toHtml()));
+expect(str_contains($listLine,'Paid domain changes on ')&&str_contains($listLine,'Check request #'.$oldest.'.'),'The Domains list names the account-wide paid hold and its oldest request: '.$listLine);
+expect(str_contains((string)$listHead?->toHtml(),'href="'.e(OperationResource::getUrl('view',['record'=>$oldest])).'"'),'The list line links to that request');
+// P2: a domain not at the registrar yet says so once, not a red Missing for every record family.
+foreach (['transfer_pending'=>['transfer','transfer finishes'],'registration_pending'=>['register','registration is confirmed']] as $status=>[$action,$until]) {
+    $fresh=$row($status,$action,'queued'); DB::table('domains_domains')->where('id',$fresh->id)->update(['observation'=>null,'provider_expires_at'=>null]);
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$fresh->id])->assertSuccessful()
+        ->assertSee('No registrar records yet. They are read once the '.$until.'.')->assertDontSee('Glue records')->assertDontSee('Next registrar read');
+}
 $nativeSuccessful=true; echo "Staff domain status: customer words and one next step per row.\n";
