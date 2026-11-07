@@ -13,6 +13,7 @@ $staff=staffUser(['admin.domains.view','admin.domains.manage','admin.invoices.up
 $service=new Paymenter\Extensions\Servers\Domains\Services\OperationReconciliation($claims,$freshBindings,$clock);
 $result=$service->run($result->id)->fresh();
 same('awaiting_answer',$result->policy['status_check']['outcome'],'A local rule is not a failed registrar read');
+config(['domains.time_zone'=>'America/Los_Angeles']);// The host app passes the staff zone; this fixture's staff member is in Pacific time.
 $at=(new DateTimeImmutable($result->attempt['dispatch_attempted_at']))->modify('+24 hours')->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j, Y, g:i A T');
 $words=Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($result);
 same(['title'=>'Enom has not answered yet','body'=>"Ask Enom to check this attempt. You can record Enom’s answer after ".$at.'.'],$words,'Staff gets a real Pacific time and next step');
