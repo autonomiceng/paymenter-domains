@@ -1,13 +1,13 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-// The native fixture reaches all three callers: cached navigation, Filament's filter and the rendered detail page.
+// The native fixture reaches navigation, Filament's filter and the rendered detail page.
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\{Auth, Cache, DB};
 use Livewire\Livewire;
-use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource;
+use Paymenter\Extensions\Servers\Domains\Admin\Resources\{DomainResource,OperationResource};
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\{ListDomains, ViewDomain};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts, Staff};
 use Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts;
@@ -29,12 +29,13 @@ $badge=DomainResource::getNavigationBadge();
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->filterTable('alerts',true);
 $page->set('tableDeferredFilters',$page->get('tableFilters'))->call('applyTableFilters')->assertSuccessful();
 $filtered=$page->instance()->getTableRecords()->pluck('id')->sort()->values()->all();
-$cause=DomainFacts::alertCause('operation_review');
 $details=[];
 foreach ([$released, $unreleased] as $d) {
     $html=Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$d->id])->assertSuccessful()->html();
     // The page names the request the alert points to, as in the approved domain mock.
-    $details[]=str_contains(html_entity_decode(strip_tags($html),ENT_QUOTES),str_replace('Check the request','Check request #'.$d->operations()->sole()->id,$cause));
+    $request=(int)$d->operations()->sole()->id;
+    $details[]=str_contains(html_entity_decode(strip_tags($html),ENT_QUOTES),'Check request #'.$request)
+        &&str_contains($html,'href="'.e(OperationResource::getUrl('view',['record'=>$request])).'"');
 }
 $actual=[$badge,$filtered,$details];
 same(['1',[$unreleased->id],[false,true]],$actual,
