@@ -28,7 +28,7 @@ final class Projection
         return [$category, $products];
     }
 
-    public function write(Tld $tld, Snapshot $snapshot, \DateTimeImmutable $now, array $locked): void
+    public function write(Tld $tld, Snapshot $snapshot, \DateTimeImmutable $now, array $locked, bool $retailUpgrade = false): void
     {
         [$category, $products] = $locked; $byAction = [];
         foreach ($products as $product) {
@@ -62,20 +62,23 @@ final class Projection
             foreach (array_unique([1, ...array_keys($available), ...$product->plans()->pluck('billing_period')->all()]) as $term) {
                 $plans = $product->plans()->where('billing_period', $term)->get();
                 if ($plans->count() > 1) { throw new \DomainException('Duplicate domain plan.'); }
-                $plan = $plans->first() ?? $product->plans()->create(['name' => $term.' '.($term === 1 ? 'year' : 'years'),
+                $plan = $plans->first(); $retained = $plan !== null;
+                $plan ??= $product->plans()->create(['name' => $term.' '.($term === 1 ? 'year' : 'years'),
                     'type' => 'recurring', 'billing_period' => $term, 'billing_unit' => 'year']);
                 $this->native->mapping($product, $plan);
-                // Closure is enforced by offer admission. Preserve retained native price IDs and amounts.
-                if (!isset($available[$term])) { continue; }
+                // Rule upgrades project published retail into existing identities even while sales are
+                // paused. This grants no sale or new term; admission still uses the normal evaluator.
+                $retail = $available[$term] ?? ($retailUpgrade && $retained ? ($snapshot->retail[$action.':'.$term] ?? null) : null);
+                if ($retail === null) { continue; }
                 $plan->sort = $term;
                 if ($plan->isDirty()) { $plan->save(); }
                 $rows = $plan->prices()->select('*')->selectRaw('CAST(price AS CHAR) AS price, CAST(setup_fee AS CHAR) AS setup_fee')->where('currency_code', 'USD')->get();
                 if ($rows->count() > 1) { throw new \DomainException('Duplicate domain price.'); }
                 $price = $rows->first() ?? $plan->prices()->make(['currency_code' => 'USD']);
                 // Native decimal casts may have different scale. Compare exact cents before assigning.
-                if (!$price->exists || PricingRule::minor($price->getRawOriginal('price')) !== PricingRule::units($available[$term], 2)
+                if (!$price->exists || PricingRule::minor($price->getRawOriginal('price')) !== PricingRule::units($retail, 2)
                     || PricingRule::minor($price->getRawOriginal('setup_fee')) !== 0) {
-                    $price->fill(['price' => $available[$term], 'setup_fee' => '0.00'])->save();
+                    $price->fill(['price' => $retail, 'setup_fee' => '0.00'])->save();
                 }
             }
             $product->stock = null;

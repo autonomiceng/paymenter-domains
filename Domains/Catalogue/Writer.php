@@ -310,6 +310,8 @@ final class Writer implements Catalogue
             foreach ($seller ? $offers : [$target] as $offer) {
                 $id = (int) $offer->server_id; $account = $accounts[$id]; $b = AccountBindings::binding($account);
                 $d = OfferState::decode($account->catalogue_defaults);
+                $retailUpgrade = $command instanceof Edit && $command->kind === 'republish'
+                    && (OfferState::decode($offer->catalogue_published_revision)['retailRule'] ?? 0) !== Retail::VERSION;
                 $offer->catalogue_revision = (int) $offer->catalogue_revision + 1;
                 $annual = $offer->catalogue_retained_annual_retail;
                 $published = true;
@@ -319,7 +321,7 @@ final class Writer implements Catalogue
                 if ($preserveRetained) { $offer->catalogue_retained_annual_retail = $annual; }
                 $prices = OfferState::query('domains_prices')->where('server_id', $id)->where('tld', $name)->get();
                 $snapshot = OfferState::snapshot($b, $offer, $d, $policy, $prices, $servers[$id]->enabled && ($this->ready)($b, $servers[$id], $account), $published);
-                $this->projection->write($offer, $snapshot, $now, $native);
+                $this->projection->write($offer, $snapshot, $now, $native, $published && $retailUpgrade);
                 $offer->catalogue_published_revision = $published ? OfferState::json($snapshot->revision) : null;
                 // Raw update: dormant staging does not invoke active legacy model observers.
                 DB::table('domains_tlds')->where('id', $offer->id)->update([
