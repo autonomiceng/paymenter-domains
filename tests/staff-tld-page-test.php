@@ -148,7 +148,7 @@ DB::table('domains_sales_policies')->where('tld','com')->update(['server_id'=>$e
 activeCommerceFacts($now,$now->modify('+30 days'));
 $clock->instant=$now->modify('+2 days');app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
 Carbon\Carbon::setTestNow($clock->now());
-same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status');
+same(['label'=>'Not for sale','tone'=>'gray','reason'=>'Cost out of date'],TldFacts::salesState($enom->fresh()),'The saved-cost age cap has a recoverable staff sales status: '.json_encode(TldFacts::salesState($enom->fresh())));
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()->assertSee('Cost out of date')->assertSee('Sync prices');
 $clock->instant=$now;Carbon\Carbon::setTestNow($now);
 
