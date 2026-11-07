@@ -4,6 +4,7 @@ declare(strict_types=1);
 $fixtureEnding='example.com';
 require __DIR__.'/Support/reconciliation-fixture.php';
 require __DIR__.'/Support/WireLimit.php';
+require __DIR__.'/Support/staff-panel.php';
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Labels;
 use Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter;
 use Paymenter\Extensions\Servers\Domains\Services\{EnomTestCallLimit,RegistrarCheck,Runtime};
@@ -16,6 +17,10 @@ same(['pending','enom_test_reconciliation_send_guard',0,'send_guard'],[$result->
     $result->policy['reconciliation']['polls']??0,$result->policy['status_check']['reason']],'Paused reads retain their real cause without consuming evidence polls');
 same('Status check paused: Enom sends are off',Labels::operationReason($result),'Staff sees the sending switch, not an exhausted cap or an unsent purchase');
 expect(str_contains(RegistrarCheck::for($result)['body'],'Our sending settings paused this check.'),'Status check notice explains the same cause');
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);staffPanel();
+$viewer=staffUser([\Paymenter\Extensions\Servers\Domains\Admin\Support\Staff::VIEW]);
+\Livewire\Livewire::actingAs($viewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$op->id])
+    ->assertSee('Our sending settings paused this check.')->assertDontSee('Our check limit was reached.');
 $legacy=clone $result;$legacy->safe_code='enom_test_reconciliation_call_cap';
 same('Status check paused: Enom sends are off',Labels::operationReason($legacy),'Already retained cap codes display the saved sending-switch cause');
 same([[],$attempt,$money,$writes],[$observation->calls,$result->attempt,$nativeMoney(),$writer->calls],'The switch refusal retains the sealed purchase and money without a physical read or resend');
