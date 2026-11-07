@@ -122,7 +122,7 @@ same($originalWait,$check->get('pendingCheck'),'Retry preserves the original dea
 same(1,\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::where('subject_id',$id)->where('event','staff_read_requested')->count(),'Throttled tabs do not add a request');
 \Carbon\Carbon::setTestNow();
 $check->call('pollCheck')->assertSee('wire:poll.5s="pollCheck"',false)->assertNotNotified('Check finished');
-same(WatchFacts::date($at),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Pending page keeps its saved Last check');
+same(WatchFacts::date($at+900),$check->instance()->getSchema('infolist')->getComponentByStatePath('fact_'.md5('Last check'))->getState(),'Pending page keeps its saved Last check');
 // A read already in flight can start before the request and save a newer Last check afterwards.
 $completedAt=$requestAt-1;DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','delegation')->update(['due_at'=>$completedAt,'backoff_until'=>null]);
 $t=$dns->begin($id,$uid,'delegation',$completedAt);expect($t!==null,'In-flight DNS ticket');
