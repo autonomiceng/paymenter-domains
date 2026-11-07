@@ -123,7 +123,7 @@ final class StaffDomainStatus
     {
         $cause = RequestFacts::reason($op);
         // A cost approval already names its one step, the Approve registrar cost button on the domain page.
-        if ($cause !== null && \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op) !== null && str_starts_with($cause, 'Needs approval:')) { return $cause; }
+        if ($cause !== null && str_starts_with($cause, 'Needs approval:') && \Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::need($op) !== null) { return $cause; }
         return self::sentence($cause ?? ($op->state === 'held' ? 'Not sent' : RequestStatus::UNCONFIRMED)).self::check($op->id);
     }
     private static function check(int $id): string { return ' Check request #'.$id.'.'; }
