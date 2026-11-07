@@ -111,7 +111,7 @@ $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
     ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('New sales stop when registrar costs are out of date.')->assertSee('Open Registrars');
 $clean($list->html(),'List sync failed');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('Refresh failed')->assertSee($cause)->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Last updated')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
+    ->assertSee('Refresh failed')->assertSee($cause)->assertSee('Sync prices')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Last updated')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
 $clean($page->html(),'TLD page sync failed');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Sync failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>'read_unavailable','catalogue_audit'=>'[]']);
