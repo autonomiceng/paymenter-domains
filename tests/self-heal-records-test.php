@@ -71,19 +71,27 @@ $recordPage=view('domains::partials.record-families',['recordFamilies'=>\Payment
 expect(str_contains($recordPage,'Last registrar read:')&&str_contains($recordPage,'Next registrar read:'),'Existing record rows show last and next reads');
 // The real closed gate must not replace an ownership-drift result with a healthy daily receipt.
 $readBindings->setProcessing($d->server_id,false);$observation->fault='owner';$q->update(['due_at'=>0]);$state->calls=[];
-for($try=1;$try<=5;$try++){
- $result=$worker->turn($queue,$guard);$job=(clone $q)->sole();
- $check($result===($try===5?'budget_exhausted':'unresolved'),'Closed-gate drift preserves unresolved retry/exhaustion at attempt '.$try);
- $check((int)$job->tries===$try,'Closed-gate drift keeps its failure count at attempt '.$try);
- $clock->instant=$clock->now()->setTimestamp((int)$job->due_at);
-}
+$coreCalls=count($observation->calls);$result=$worker->turn($queue,$guard);$job=(clone $q)->sole();
+$check($result==='domain_not_in_account','Positive foreign ownership keeps its terminal result despite the closed record gate');
+$check($job->safe_code==='domain_not_in_account','Stopped work retains the positive account-mismatch cause');
+$check((int)$job->tries===1,'Positive foreign ownership stops after its first attempt');
+$check(($d->fresh()->observation['facts']['owned']??null)===false,'The parser saved explicit foreign-owner evidence');
+$check(count($observation->calls)>$coreCalls,'The terminal result follows a real core ownership read');
 $check(($d->fresh()->observation['drift']??false)===true,'Drift facts remain visible');
-$check(HoldingObservationWork::stopped($d->fresh()),'Closed-gate drift stops after bounded retries');
+$check(HoldingObservationWork::stopped($d->fresh()),'Positive foreign ownership immediately stops scheduled reads');
+$coreCalls=count($observation->calls);
+for($day=1;$day<=4;$day++){
+ $clock->instant=$clock->now()->modify('+1 day');
+ $check($worker->turn($queue,$guard)==='idle','Terminal ownership drift stays idle on later day '.$day);
+ $job=(clone $q)->sole();
+ $check((int)$job->tries===1&&$job->safe_code==='domain_not_in_account','Later scheduler turns preserve the stopped cause and attempt count');
+ $check(count($observation->calls)===$coreCalls,'Terminal ownership drift makes no further core reads');
+}
 \Paymenter\Extensions\Servers\Domains\Services\ReminderSchema::install();
 \Paymenter\Extensions\Servers\Domains\Services\ObligationAlerts::retained(['domain'=>$d->fresh(),'operations'=>$d->operations()->get()],$clock->now()->getTimestamp());
 $check(DB::table('domains_obligation_alerts')->where('domain_id',$d->id)->where('code','observation_review')->whereNull('resolved_at')->exists(),'Closed-gate drift raises the staff Sync stopped alert');
 same([],$state->calls,'Drifted closed gate still sends no family calls');
-same($before,$original->fresh()->getAttributes(),'Drift retries preserve the original registration evidence');same($money,$nativeMoney(),'Drift retries create no financial writes');
+same($before,$original->fresh()->getAttributes(),'Stopped ownership reads preserve the original registration evidence');same($money,$nativeMoney(),'Stopped ownership reads create no financial writes');
 DB::table('services')->where('id',$d->service_id)->update(['status'=>'cancelled']);
 $dto=(new \Paymenter\Extensions\Servers\Domains\Services\NativePresenter($owners,$native,new \Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices)))->service($user,(int)$d->service_id);
 same('Cancelled',$dto->serviceStatus,'Presenter carries the native cancellation separately');
