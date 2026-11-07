@@ -50,6 +50,24 @@ final class Writer implements Catalogue
         });
     }
 
+    /** Install/upgrade recalculates old-rule publications locally, through the normal native-first writer.
+     * The saved observation timestamps and issued invoices are never changed. Safe to retry after interruption. */
+    public function republishRetailRule(): void
+    {
+        if (DB::transactionLevel() !== 0) { throw new \LogicException('Retail upgrade requires unlocked reads.'); }
+        Tld::where('catalogue_converted', true)->orderBy('id')->chunkById(100, function ($rows): void {
+            foreach ($rows as $tld) {
+                $published = OfferState::decode($tld->catalogue_published_revision);
+                if (($published['retailRule'] ?? 0) === Retail::VERSION) { continue; }
+                $account = Account::where('server_id', $tld->server_id)->sole();
+                $binding = AccountBindings::binding($account);
+                $revision = OfferState::revision($tld, OfferState::decode($account->catalogue_defaults),
+                    DB::table('domains_sales_policies')->where('tld', $tld->tld)->first());
+                $this->apply(Edit::republish($binding, $tld->tld), $revision);
+            }
+        });
+    }
+
     /** One global review saves once; each account then publishes independently, matching the legacy F51 result. */
     public function defaultPricing(StaffSettingsReview $review, array $rule, array $fee): array
     {

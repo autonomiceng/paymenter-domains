@@ -9,6 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
  * Rational numerators use decimal integers throughout, avoiding overflow and floating point. */
 final class Retail
 {
+    /** Advance whenever the retail calculation changes; cost observations remain reusable. */
+    public const VERSION = 1;
+
     /** Prices needed for an acquisition, including the annual inputs of a longer registration. */
     public static function terms(string $action, int $term): array
     {
