@@ -16,7 +16,7 @@ use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\HtmlString;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\{DomainFacts,MissingEntry,RegistrarFacts,Sheet,Staff,StatusMark,TldFacts,SettingsActions};
-use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Models\{Account,Tld};
 use Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue;
 use Paymenter\Extensions\Servers\Domains\Services\{StaffSettingsReview as Review,StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Support\DemoData;
@@ -36,7 +36,7 @@ class ViewTld extends ViewRecord
         parent::afterActionCalled($action);
         // Writers load their own models. Rebuild the page so the next change needs no reload.
         $t=$this->getRecord()->refresh();$this->reviewStamp=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::stamp((int)$t->server_id,(int)$t->id);
-        unset($this->cachedSchemas['infolist']);$this->sales=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
+        unset($this->cachedSchemas['infolist']);$this->sales=null;$this->canStart=null;$this->cachedActions=[];$this->cachedHeaderActions=[];
         $this->cacheInteractsWithHeaderActions();$this->forceRender();
     }
     /** @return array<string,Action> */
@@ -77,7 +77,7 @@ class ViewTld extends ViewRecord
     {
         $t=$this->getRecord();$s=$this->sales();$reason=$s['reason'];$step=null;
         if($s['label']==='For sale'){return StatusMark::line('success','For sale','tld-'.$t->id);}
-        if($this->startSellingAction()->isVisible()){
+        if($this->canStart()){
             $reason=$reason==='Stopped by staff'&&$this->offByDefault()?'Not sold by default':'Stopped by staff';
             return StatusMark::line('gray','Not for sale','tld-'.$t->id,$reason);
         }
@@ -101,6 +101,28 @@ class ViewTld extends ViewRecord
     }
     private function mayChangeSales(): bool
     {return Staff::can(Staff::POLICY)&&Staff::can(Review::permission('tld_settings'));}
+    /** A stop that Start selling can lift, read once per request. */
+    private function canStart(): bool
+    {
+        $t=$this->getRecord();
+        if(!$this->mayChangeSales()){return false;}
+        // Keyed by the saved sales state, so a refreshed record reads again.
+        $key=md5((string)$t->catalogue_intent.'|'.(string)$t->catalogue_facts);
+        if(($this->canStart[0]??null)===$key){return $this->canStart[1];}
+        $this->canStart=[$key,$this->readCanStart($t)];
+        return $this->canStart[1];
+    }
+    private function readCanStart(Tld $t): bool
+    {
+        $catalogue=StaffCatalogue::routed();
+        $on=static fn(string $key):bool=>(bool)($catalogue?->setting($t,$key)??$t->{$key==='enabled'?'enabled':$key.'_enabled'});
+        if(!$on('enabled')||!$on('renew')){return true;}
+        if($on('register')&&$on('transfer')){return false;}
+        // Only now read what the registrar terms allow: the heavier read.
+        try{$accepted=$this->acceptedSales();}catch(\Throwable){return false;}
+        return (!$on('register')&&$accepted['register'])||(!$on('transfer')&&$accepted['transfer']);
+    }
+    private ?array $canStart=null;
     /** @return array{register:bool,transfer:bool} what the saved registrar terms allow this account to sell */
     private function acceptedSales(): array
     {
@@ -115,12 +137,7 @@ class ViewTld extends ViewRecord
         return Action::make('start_selling')->label('Start selling')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
             ->modalDescription(fn()=>$this->startDescription())
-            ->visible(function()use($t):bool {
-                if(!$this->mayChangeSales()){return false;}
-                try{$accepted=$this->acceptedSales();}catch(\Throwable){$accepted=['register'=>false,'transfer'=>false];}
-                if(($catalogue=StaffCatalogue::routed())!==null){return !$catalogue->setting($t,'enabled')||!$catalogue->setting($t,'renew')||(!$catalogue->setting($t,'register')&&$accepted['register'])||(!$catalogue->setting($t,'transfer')&&$accepted['transfer']);}
-                return !$t->enabled||!$t->renew_enabled||(!$t->register_enabled&&$accepted['register'])||(!$t->transfer_enabled&&$accepted['transfer']);
-            })
+            ->visible(fn():bool=>$this->canStart())
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)auth()->id(),$server,$id,'tld_settings',$this->reviewStamp))])
             ->action(function(array $data)use($server,$id):void {
                 $input=[];
