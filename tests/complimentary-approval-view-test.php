@@ -18,7 +18,14 @@ $hold=static function(string $name)use($makeRenewal,$user,$staff,$clock):array {
     return [$op,$d];
 };
 $failures=[];
-$check=static function(string $name,Closure $test)use(&$failures):void {try{$test();}catch(Throwable $e){$root=$e;while($root->getPrevious()){$root=$root->getPrevious();}$frames=array_filter($root->getTrace(),static fn($f)=>str_contains($f['file']??'', '/Domains/'));$paths=array_map(static fn($f)=>basename($f['file']).':'.$f['line'],$frames);$failures[]=$name.': '.$e->getMessage().' '.implode(', ',$paths);}};
+$check=static function(string $name,Closure $test)use(&$failures):void {
+    try{$test();}catch(Throwable $e){
+        $root=$e;while($root->getPrevious()){$root=$root->getPrevious();}
+        $frames=array_filter($root->getTrace(),static fn($f)=>str_contains($f['file']??'', '/Domains/'));
+        $paths=array_map(static fn($f)=>basename($f['file']).':'.$f['line'],$frames);
+        $failures[]=$name.': '.$e->getMessage().' '.implode(', ',$paths);
+    }
+};
 [$op,$d]=$hold('approval-success-placeholder.com');
 $check('Approval feedback',static function()use($staff,$d,$op):void {
     Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->callAction('approveComplimentaryCost',['reason'=>'Approved exact registrar quote'])->assertHasNoActionErrors()->assertNotified('Registrar cost approved');
