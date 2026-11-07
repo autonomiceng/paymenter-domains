@@ -10,7 +10,7 @@
 @if (!$endings)
 <div class="domains-notice domains-notice--warn" role="status">Domain transfers aren't open yet. @php($support = \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl())@if ($support) <a class="domains-a" href="{{ $support }}">{{ config('settings.tickets_disabled', false) ? 'Contact support' : 'Open a ticket' }}</a>@endif</div>
 @else
-<form method="GET" action="{{ route('domains.domains.transfer') }}" role="search">
+<form method="GET" action="{{ route('domains.domains.transfer') }}" role="search" novalidate>
 <div class="domains-searchbar">
 <label for="domains-transfer-name" class="domains-sr">Domain name</label>
 <input id="domains-transfer-name" name="name" type="text" value="{{ $sld ?? $name }}" placeholder="yourbusiness" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="253" required @if ($error) aria-invalid="true" aria-describedby="domains-transfer-error" @endif>
@@ -19,7 +19,7 @@
 @if ($error)<p id="domains-transfer-error" class="domains-error" role="alert">{{ $error }}</p>@endif
 </form>
 @if ($results)
-<ul class="domains-results" data-mode="transfer" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}">@foreach ($results as $result)@include('domains::partials.result', ['first' => true])@endforeach</ul>
+<ul class="domains-results" data-mode="transfer" data-support-url="{{ \Paymenter\Extensions\Servers\Domains\Presentation\Missing::supportUrl() }}" data-domains-results="{{ route('domains.domains.check') }}" data-request-key="{{ $checkKey }}">@foreach ($results as $result)@include('domains::partials.result', ['first' => true])@endforeach</ul>
 @endif
 <div class="domains-panel"><section class="domains-section" aria-labelledby="domains-before-heading">
 <h2 id="domains-before-heading" class="domains-h2">Before you start</h2><p>Do these at your current registrar.</p>

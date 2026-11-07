@@ -64,16 +64,23 @@ final class Rdap
             $created = $dates['registration'] ?? null;
             $expiry = $dates['expiration'] ?? null;
             $transferred = $dates['transfer'] ?? null;
-            if (!$created || !$expiry || $created > $today || $expiry <= $created
-                || $transferred && ($transferred > $today || $transferred < $created || $transferred >= $expiry)) { return $unknown; }
-            $result = ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => $expiry->format('Y-m-d'),
+            if (!$created || $created > $today || $expiry && $expiry <= $created
+                || $transferred && ($transferred > $today || $transferred < $created || $expiry && $transferred >= $expiry)) { return $unknown; }
+            $result = ['allowed' => true, 'code' => null, 'warning' => null, 'expires_at' => $expiry?->format('Y-m-d'),
                 'comparison_allowed' => !array_diff($statuses, ['ok', 'active', 'clientdeleteprohibited', 'clientupdateprohibited', 'serverdeleteprohibited', 'serverupdateprohibited'])];
-            foreach (['clienttransferprohibited' => 'transfer_locked', 'servertransferprohibited' => 'transfer_locked',
-                'redemptionperiod' => 'transfer_redemption', 'pendingdelete' => 'transfer_pending_delete', 'pendingtransfer' => 'transfer_pending'] as $status => $code) {
+            foreach (['redemptionperiod' => 'transfer_redemption', 'pendingdelete' => 'transfer_pending_delete', 'pendingtransfer' => 'transfer_pending'] as $status => $code) {
                 if (in_array($status, $statuses, true)) { return array_replace($result, ['allowed' => false, 'code' => $code]); }
             }
-            if ($today < $created->modify('+'.$creationDays.' days')) { return array_replace($result, ['allowed' => false, 'code' => 'transfer_creation_lock']); }
-            if ($transferred && $today < $transferred->modify('+'.$transferDays.' days')) { return array_replace($result, ['allowed' => false, 'code' => 'transfer_previous_lock']); }
+            // A dated window explains when waiting can end, even if the registrar also reports a lock.
+            $until = $created->modify('+'.$creationDays.' days'); $code = 'transfer_creation_lock';
+            if ($transferred && $transferred->modify('+'.$transferDays.' days') > $until) {
+                $until = $transferred->modify('+'.$transferDays.' days'); $code = 'transfer_previous_lock';
+            }
+            if ($today < $until) { return array_replace($result, ['allowed' => false, 'code' => $code, 'retry_at' => $until->format(DATE_ATOM)]); }
+            foreach (['clienttransferprohibited' => 'transfer_locked', 'servertransferprohibited' => 'transfer_locked'] as $status => $code) {
+                if (in_array($status, $statuses, true)) { return array_replace($result, ['allowed' => false, 'code' => $code]); }
+            }
+            if (!$expiry) { return $unknown; }
             if (self::addYears($expiry, 1)->setTime(0, 0) > self::addYears($today, 10)->setTime(0, 0)) {
                 return array_replace($result, ['allowed' => false, 'code' => 'transfer_maximum_term']);
             }

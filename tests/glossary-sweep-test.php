@@ -124,7 +124,7 @@ foreach (['com', 'net', 'co.uk'] as $tld) {
 $supported = $transferPage('example.org')->getData();
 same(null, $supported['error'], 'Supported transfer has no refusal');
 same('example.org', $supported['results'][0]['domain'], 'Supported transfer keeps the requested domain');
-same('Domain names can’t contain spaces.', $transferPage('bad name.com')->getData()['error'], 'Malformed names retain their validation message');
+same('Use letters, numbers and hyphens only.', $transferPage('bad name.com')->getData()['error'], 'Malformed names retain their validation message');
 $line=static fn(?string $price)=>$plain(view('domains::checkout-line',['domain'=>['name'=>'example.com','action'=>'Registration','years'=>1,'renewalPrice'=>$price,'editUrl'=>'/cart/1']])->render());
 expect(str_contains($line('$14.00'),'Renews at $14.00/yr'),'Cart line renewal price');
 expect(str_contains($line(null),'Renewal price: Missing Contact support before you buy'),'Cart line: Missing with its cause');

@@ -173,18 +173,17 @@ final class StorefrontController extends Controller
         $value = preg_replace('#[/?\#].*\z#s', '', $value);
         $value = rtrim(preg_replace('/\Awww\./', '', $value), '.');
         if ($value === '') {
-            return ['sld' => null, 'ending' => null, 'error' => 'Enter a name to search for.'];
+            return ['sld' => null, 'ending' => null, 'error' => 'Enter a domain name.'];
         }
         if (preg_match('/[^\x21-\x7e]/', $value)) {
-            return ['sld' => null, 'ending' => null, 'error' => preg_match('/\s/', $value)
-                ? 'Domain names can’t contain spaces.' : 'Use only letters a–z, numbers and hyphens. International characters aren’t supported.'];
+            return ['sld' => null, 'ending' => null, 'error' => 'Use letters, numbers and hyphens only.'];
         }
         [$sld, $ending] = array_pad(explode('.', $value, 2), 2, null);
         if (strlen($sld) > 63) {
             return ['sld' => null, 'ending' => null, 'error' => 'The name can be at most 63 characters.'];
         }
         if (!preg_match('/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/', $sld) || substr($sld, 2, 2) === '--') {
-            return ['sld' => null, 'ending' => null, 'error' => 'Use only letters a–z, numbers and hyphens, without a hyphen at the start or end.'];
+            return ['sld' => null, 'ending' => null, 'error' => 'Use letters, numbers and hyphens only, without a hyphen at the start or end.'];
         }
         if ($ending !== null && !preg_match('/\A[a-z0-9]+(?:\.[a-z0-9]+)*\z/', $ending)) {
             return ['sld' => $sld, 'ending' => null, 'error' => 'Check the TLD after the dot, for example '.$sld.'.com.'];

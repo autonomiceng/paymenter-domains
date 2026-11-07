@@ -234,6 +234,10 @@
 .domains .domains-result { display: grid; grid-template-columns: minmax(12rem, 1fr) max-content 12rem 9.5rem; align-items: center; gap: .5rem 1.25rem; padding: 1rem 1.25rem; }
 .domains .domains-result + .domains-result { border-top: 1px solid var(--e-line); }
 .domains .domains-result__name { min-width: 0; overflow-wrap: anywhere; font-size: 1.0625rem; font-weight: 700; letter-spacing: -.01em; }
+/* Refusals have no price or purchase action to fill the two right columns. */
+.domains [data-state="transfer_refused"] .domains-result__status,
+.domains [data-state="transfer_wait"] .domains-result__status { grid-column: 2 / -1; justify-self: end; }
+.domains :is([data-state="transfer_refused"], [data-state="transfer_wait"]) :is(.domains-result__price, .domains-result__action) { display: none; }
 .domains .domains-result__note { grid-column: 1 / -1; max-width: 96ch; margin: 0; line-height: 1.5; }
 .domains .domains-result__note:empty { display: none; }
 .domains .domains-result__name .domains-tld { color: var(--e-accent); }
