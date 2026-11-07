@@ -2,6 +2,8 @@
 // Staff edits on the domain page: the owner's form path and checks, credited to the staff member.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+require_once __DIR__.'/Support/renewal-initialized.php';
+$fixtureInitialization=initializedRenewalFixture(...);
 require __DIR__.'/Support/management.php';
 require __DIR__.'/Support/owner-pages.php';
 require __DIR__.'/Support/staff-panel.php';

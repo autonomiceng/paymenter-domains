@@ -40,12 +40,25 @@ $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($
 same('Registrar reads keep failing. Automatic retries continue.',$notice['title'],'Persistent transient failures explain their automatic recovery');
 expect(!isset($notice['action']),'Automatic recovery requires no account action');
 expect(!($notice['resume']??false),'The failed page does not lead with another resume');
-same('Use Sync now to retry sooner.',$notice['body'],'Managing staff can retry sooner without being required to do so');
+$account=(string)App\Models\Server::whereKey($d->server_id)->value('name');
+$possible='The domain may not be in the assigned account: '.$account.'. Check the account.';
+expect($account!=='','Persistent failure fixture has a named assigned account');
+same($possible.' Use Sync now to retry sooner.',$notice['body'],'Ambiguous persistent failures name the account without claiming absence');
+same('read_failed',(clone $q)->sole()->safe_code,'An ambiguous failure remains eligible for daily recovery');
 $viewer=staffUser(['admin.domains.view']);
 Illuminate\Support\Facades\Auth::login($viewer);
 expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::syncNow($d->fresh()),'View-only staff have no Sync now control');
 $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
-same(null,$notice['body'],'View-only staff are not asked to find someone for an automatic retry');
+same($possible,$notice['body'],'View-only staff see the possible account cause without a manual sync instruction');
+// A genuinely stopped ambiguous read needs the same cautious account explanation.
+$q->update(['safe_code'=>'read_no_evidence']);
+Illuminate\Support\Facades\Auth::login($staff);
+$notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
+same($possible.' Then use Sync now.',$notice['body'],'Stopped ambiguous reads name the assigned account and the next step');
+Illuminate\Support\Facades\Auth::login($viewer);
+$notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
+same($possible.' Ask staff who can sync this domain.',$notice['body'],'Stopped view-only guidance respects permissions');
+$q->update(['safe_code'=>'read_failed']);
 // A proven account mismatch needs an account correction, not daily retries.
 $observation->fault='owner';$clock->instant=$clock->now()->modify('+1 day');
 same('domain_not_in_account',$worker->turn($queue,$guard),'A domain outside the assigned account retains the actual cause');

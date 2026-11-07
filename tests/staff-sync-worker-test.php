@@ -31,7 +31,7 @@ same(0,DB::table('failed_jobs')->count(),'No failed queue job');
 same('Domain synced',App\Models\Notification::where('user_id',$actor->id)->latest('id')->value('title'),'Worker completes a registrar read');
 same($clock->now()->format(DATE_ATOM),$d->fresh()->last_synced_at->format(DATE_ATOM),'Worker advances saved domain facts');
 $page->call('pollManagement')->assertSee('0 records')->assertDontSee('Not read yet')->assertSee('Domain synced');
-expect(str_contains($queuedHtml,'wire:poll.2s="pollManagement"'),'An open staff page must poll while its sync is queued');
+expect(str_contains($queuedHtml,'wire:poll.2s.keep-alive="pollManagement"'),'An open staff page must poll while its sync is queued');
 expect(!str_contains($page->html(),'wire:poll.'),'Completed sync stops polling');
 $syncEvents=array_values(array_filter(\Paymenter\Extensions\Servers\Domains\Admin\Support\DomainHistory::entries($d->fresh()),fn($entry)=>is_array($entry)&&in_array($entry['event']??null,['Sync requested','Domain synced'],true)));
 same('Domain synced',$syncEvents[0]['event']??null,'Same-second completion is newer than its request in Activity');

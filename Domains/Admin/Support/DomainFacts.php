@@ -342,12 +342,15 @@ final class DomainFacts
                 'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
         }
         if (!self::ended($d)&&$read['read_review']) {
+            $name=trim((string)\App\Models\Server::whereKey($d->server_id)->value('name'));
+            // A failed read is not ownership proof. Name the possible cause without stopping recovery.
+            $account='The domain may not be in '.($name!==''?'the assigned account: '.$name.'.':'its assigned registrar account.').' Check the account.';
             if (!$read['read_stopped']&&$read['next_read']!==null) {
                 return ['title'=>'Registrar reads keep failing. Automatic retries continue.','tone'=>'warning',
-                    'body'=>self::syncNow($d)?'Use Sync now to retry sooner.':null];
+                    'body'=>$account.(self::syncNow($d)?' Use Sync now to retry sooner.':'')];
             }
-            return ['title'=>'Registrar reads keep failing. Check that this domain is in the right registrar account.','tone'=>'warning',
-                'body'=>self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.','action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
+            return ['title'=>'Registrar reads keep failing.','tone'=>'warning',
+                'body'=>$account.(self::syncNow($d)?' Then use Sync now.':' Ask staff who can sync this domain.'),'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
         }
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {

@@ -567,7 +567,7 @@ def positive_integer(value):
 
 
 def default_suites():
-    return [s for s in CATEGORIES if s != 'mariadb' and (s != 'native' or os.environ.get('PAYMENTER_TEST_APP'))]
+    return [s for s in CATEGORIES if s not in {'mariadb', 'ui'} and (s != 'native' or os.environ.get('PAYMENTER_TEST_APP'))]
 
 
 def lint_files(base=None):
@@ -632,7 +632,8 @@ def main():
                 print('Not implemented: '+name, flush=True)
         dependency = None
         php_files = lint_files(args.lint_base) if 'lint' in selected else []
-        if 'native' in selected:
+        needs_native=bool({'native','ui'}.intersection(selected))
+        if needs_native:
             source = os.environ.get('PAYMENTER_TEST_APP')
             if not source:
                 raise ValueError('Native suite requires PAYMENTER_TEST_APP.')
@@ -647,9 +648,14 @@ def main():
         binary = extension = None
         if selected != ['mariadb']:
             with timing('php_runtime', timings):
-                runtime, binary, extension = prepare(native='native' in selected)
+                runtime, binary, extension = prepare(native=needs_native)
         env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                'PHPRC': '', 'PHP_INI_SCAN_DIR': '', 'TMPDIR': str(output), 'PYTHONDONTWRITEBYTECODE': '1'}
+        # The offline Chromium witness uses an existing browser installation, never an install.
+        if 'ui' in selected:
+            for name in ['NODE_PATH', 'CHROME_BIN', 'PLAYWRIGHT_BROWSERS_PATH']:
+                if name in os.environ:
+                    env[name] = os.environ[name]
         if 'DOMAINS_UPGRADE_FROM' in os.environ:
             env['DOMAINS_UPGRADE_FROM'] = os.environ['DOMAINS_UPGRADE_FROM']
         if binary:
