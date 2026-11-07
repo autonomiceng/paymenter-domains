@@ -77,11 +77,13 @@ final class HoldingObservationWork
                 ->where('lease_until','>',$this->clock->now()->getTimestamp());
             if(!(DB::transactionLevel()>0?$q->lockForUpdate():$q)->exists()){throw new ReadDeferred('Stale observation work.');}
         };
+        $credential=null;
         try{return $this->observer->run((int)$job->domain_id,(int)$job->generation,$job->account_fingerprint,readRecords:true,current:$current,
-            completion:fn(string $code,?\Closure $credentials):string=>$this->finish($job,$code,$current,$credentials));}
+            completion:function(string $code,?\Closure $credentials)use($job,$current,&$credential):string{return $this->finish($job,$code,$current,$credentials,$credential);},
+            attempted:static function(?string $revision)use(&$credential):void{$credential=$revision;});}
         catch(ReadDeferred|EnomTestCallLimit){$code='read_deferred';}
         catch(\Throwable $error){$code=ReadFailure::code($error);}
-        return $this->finish($job,$code,$current);
+        return $this->finish($job,$code,$current,credential:$credential);
     }
     private function discover(object $queue, \Closure $guard): void
     {
@@ -110,7 +112,7 @@ final class HoldingObservationWork
             $q->update(['cursor'=>$rows->count()===25?$rows->last()->id:0]);
         });
     }
-    /** Repaired configuration wakes legacy stopped reads once; a new failure records today's credential fence. */
+    /** Repaired configuration wakes stopped reads once per attempted credential revision. */
     private function recover(Domain $d): void
     {
         $job=self::current($d)->lockForUpdate()->first();$now=$this->clock->now()->getTimestamp();
@@ -145,19 +147,19 @@ final class HoldingObservationWork
             return $job;
         });
     }
-    private function finish(object $job, string $code, \Closure $guard, ?\Closure $credentials=null): string
+    private function finish(object $job, string $code, \Closure $guard, ?\Closure $credentials=null, ?string $credential=null): string
     {
-        return DB::transaction(function()use($job,$code,$guard,$credentials):string {
+        return DB::transaction(function()use($job,$code,$guard,$credentials,$credential):string {
             try { $guard(); if($credentials){$credentials();} }
             catch (\DomainException) {
                 // Draining a stopped generation may release only its own lease, never reschedule it.
                 DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)
                     ->update(['claim'=>null,'lease_until'=>0]); return 'read_deferred';
             }
-            $this->finishCurrent($job,$code); return $code==='read_deferred'?$code:(DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code')??$code);
+            $this->finishCurrent($job,$code,$credential); return $code==='read_deferred'?$code:(DB::table('domains_observation_work')->where('id',$job->id)->value('safe_code')??$code);
         });
     }
-    private function finishCurrent(object $job, string $code): void
+    private function finishCurrent(object $job, string $code, ?string $credential): void
     {
         $now=$this->clock->now()->getTimestamp();
         if ($code==='read_deferred') {
@@ -170,8 +172,7 @@ final class HoldingObservationWork
             $code=in_array($held['code']??null,ReadFailure::CODES,true)?$held['code']:'records_incomplete';
         }
         if(in_array($code,HoldingReadRetry::RECOVERABLE,true)){
-            $p=$d->observation??[];$prior=$p['read_retry']??[];$credential=null;
-            try{$a=Account::where('server_id',$d->server_id)->sole();$credential=app(AccountBindings::class)->holdingCredentialRevision(AccountBindings::binding($a));}catch(\Throwable){}
+            $p=$d->observation??[];$prior=$p['read_retry']??[];
             $p['read_retry']=['work_id'=>(int)$job->id,'credential'=>$credential,'at'=>$this->clock->now()->format(DATE_ATOM),
                 'auto_resumed'=>($prior['work_id']??null)===$job->id?($prior['auto_resumed']??false):false];
             $d->update(['observation'=>$p]);

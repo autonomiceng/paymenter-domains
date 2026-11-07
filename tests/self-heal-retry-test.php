@@ -80,6 +80,28 @@ same('idle',$worker->turn($queue,$guard),'Exhausted current work stays stopped')
 // Legacy stopped work has no retry receipt. A repaired, verified account gets one recovery only.
 $p=$d->fresh()->observation;unset($p['read_retry']);$d->fresh()->update(['observation'=>$p]);$q->update(['safe_code'=>'configuration_unverified','tries'=>5]);$state->fault='';
 same('refreshed',$worker->turn($queue,$guard),'Legacy stop automatically resumes after configuration matches');
+// Repair verification after the failed read transaction, before the worker saves its receipt.
+// Native rollback events and encrypted settings reproduce the persistence race without wire I/O.
+$verified=$d->server->settings()->where('key','domains_verified_credentials')->sole();$valid=$verified->value;
+$verified->value='';$verified->save();$repaired=false;
+\Illuminate\Support\Facades\Event::listen(\Illuminate\Database\Events\TransactionRolledBack::class,static function()use($verified,$valid,&$repaired):void {
+    if($repaired){return;}$repaired=true;$verified->value=$valid;$verified->save();
+});
+$q->update(['safe_code'=>null,'tries'=>0,'due_at'=>0]);$before=count($observation->calls);
+same('configuration_unverified',$worker->turn($queue,$guard),'Pre-read verification failure is retained');
+expect($repaired,'Verification was repaired between failure and persistence');same($before,count($observation->calls),'Unverified configuration sent no read');
+$resumes=(int)(clone $q)->value('resumes');
+same('refreshed',$worker->turn($queue,$guard),'Repair before failure persistence automatically resumes');
+same($resumes+1,(int)(clone $q)->value('resumes'),'Repair uses one bounded automatic resume');
+same('idle',$worker->turn($queue,$guard),'Successful recovery keeps the normal schedule');
+// A refusal on unchanged verified credentials must not become an automatic retry loop.
+$q->update(['safe_code'=>null,'tries'=>0,'due_at'=>0]);$clock->instant=$clock->now()->modify('+61 seconds');
+$refusedWorker=new HoldingObservationWork(new DomainObservation($readBindings,$clock,new AccountReadBudget($clock),$ports,
+    observationReader:static fn()=>throw new DomainException('Registrar configuration could not be verified.')),$clock);
+same('configuration_unverified',$refusedWorker->turn($queue,$guard),'Reader verification refusal is retained');
+$before=count($observation->calls);same('idle',$worker->turn($queue,$guard),'Unchanged failed configuration stays stopped');
+same($before,count($observation->calls),'Stopped verification refusal sends no repeated read');
+same($resumes+1,(int)(clone $q)->value('resumes'),'Unchanged failure consumes no extra resume');
 $q->update(['safe_code'=>'binding_mismatch','tries'=>1,'due_at'=>0]);$calls=count($state->calls);
 same('idle',$worker->turn($queue,$guard),'Permanent binding refusal stays stopped');same($calls,count($state->calls),'Permanent refusal sends no wire');
 require_once __DIR__.'/Support/staff-panel.php';

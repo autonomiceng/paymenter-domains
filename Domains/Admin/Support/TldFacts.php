@@ -111,7 +111,7 @@ final class TldFacts
         $missing=$invalid||($value===null&&!$notOffered&&$selected);
         if($value===null&&!$notOffered){$cause=rtrim($cause,'.').'. '.self::refreshText($fact['refresh']??[]);}
         return ['value'=>$invalid?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:($notOffered?$cause:($value??($missing?\Paymenter\Extensions\Servers\Domains\Presentation\Missing::LABEL:'Not for sale'))),
-            'cause'=>$notOffered?null:$cause,'tone'=>$missing||($value!==null&&self::costNote($row))?'danger':null,'missing'=>$missing];
+            'cause'=>$notOffered&&!$invalid?null:$cause,'tone'=>$missing||($value!==null&&self::costNote($row))?'danger':null,'missing'=>$missing];
     }
     private const DANGER='fi-color fi-color-danger fi-text-color-600 dark:fi-text-color-400';
     private static function missing(string $cause): string

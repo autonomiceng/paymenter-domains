@@ -17,4 +17,25 @@ try {
     Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])
         ->assertSee('.invalid')->assertSee('Prices by registrar account')->assertSee('Fixed price')->assertSee('Missing');
 } catch (Throwable $error) { throw new RuntimeException('Invalid saved fixed prices must render their TLD detail, not HTTP 500.',0,$error); }
+// Disabled feed entries and malformed rules coexist in saved native accounts.
+DB::table('domains_tlds')->where('id',$t->id)->update(['tld'=>'com']);
+foreach(DB::table('domains_prices')->where('server_id',$t->server_id)->where('tld','com')->get() as $price){
+    $cost=json_decode($price->catalogue_observation,true,flags:JSON_THROW_ON_ERROR);
+    $cost['enabled']=false;$cost['total']=null;
+    DB::table('domains_prices')->where('id',$price->id)->update(['catalogue_observation'=>json_encode($cost,JSON_THROW_ON_ERROR)]);
+}
+$problem='Invalid fixed price rule. Use Edit prices to enter all three positive prices.';
+Livewire\Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertSee($problem);
+Livewire\Livewire::actingAs($actor)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ListTlds::class)->assertSee($problem);
+$fact=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::snapshot($t->fresh());
+foreach(['register','renew','transfer'] as $action){
+    foreach(['retail','cost'] as $field){
+        $state=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::priceState($fact,$action,$field);
+        same(true,$state['missing'],$action.' '.$field.' needs repair');same($problem,$state['cause'],$action.' '.$field.' keeps repair guidance');
+    }
+    $ordinary=$fact;$ordinary['invalid_rule']=false;
+    $state=\Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::priceState($ordinary,$action);
+    same(false,$state['missing'],'Ordinary disabled '.$action.' is not missing');same(null,$state['cause'],'Ordinary disabled '.$action.' has no repair warning');
+    expect(str_contains($state['value'],'not offered by this registrar'),'Ordinary disabled '.$action.' keeps its label');
+}
 $nativeSuccessful=true;echo "Invalid saved pricing detail renders a repairable page.\n";
