@@ -554,7 +554,8 @@
     "tests/cart-session-price-test.php",
     "tests/cart-review-lines-test.php",
     "tests/test_installed_demo_c_dialogs-test.php",
-    "tests/default-pricing-marker-test.php"
+    "tests/default-pricing-marker-test.php",
+    "tests/default-pricing-switched-missing-cost-test.php"
   ],
   "ui": [],
   "runner": [

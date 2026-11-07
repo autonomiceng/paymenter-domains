@@ -113,6 +113,11 @@ final class Writer implements Catalogue
                     })->apply(Edit::republish($b,$t->tld),OfferState::revision($t,OfferState::decode($a->catalogue_defaults),DB::table('domains_sales_policies')->where('tld',$t->tld)->first()));
                     $summary['published']++;
                 }catch(\Throwable $error){
+                    // Cost preflight can fail before the locked check; a switched rule is no longer this save's target.
+                    if(!$pricingChanged){
+                        try{$pricingChanged=Pricing::own(Tld::findOrFail($id),\Paymenter\Extensions\Servers\Domains\Services\CardFee::NONE)!==$target['own'];}
+                        catch(\Throwable){/* Preserve the original publication failure when current pricing cannot be read. */}
+                    }
                     if($pricingChanged){continue;}
                     $summary['failed'][$name.' #'.$a->server_id][]='.'.$t->tld;
                     if(!$error instanceof \DomainException){\Illuminate\Support\Facades\Log::warning('Domains default pricing publish failed.',['tld'=>$t->tld,'exception_class'=>$error::class]);}
