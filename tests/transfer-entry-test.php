@@ -1,21 +1,26 @@
 <?php
 // MIT, Copyright (c) 2026 Autonomic Engineering. Public entry links follow the displayed catalogue.
 declare(strict_types=1);
+// Native controllers and real Blade need the native fixture; one seller covers entry visibility.
+$transferRegistrars=['enom'];
 require __DIR__.'/Support/owned.php';
 use Illuminate\Http\Request;
 use Paymenter\Extensions\Servers\Domains\Http\Controllers\{OwnedDomainController,StorefrontController};
-use Paymenter\Extensions\Servers\Domains\Services\{Storefront,CheckoutEligibility};
-$store=new Storefront($sellers,$prices,$native,$bindings,activeFixtureEligibility($bindings,$clock),$clock);
+use Paymenter\Extensions\Servers\Domains\Services\Storefront;
+$store=activeFixtureStorefront($sellers,$prices,$native,$bindings,activeFixtureEligibility($bindings,$clock),$clock);
 app()->instance(Storefront::class,$store);
 $controller=new OwnedDomainController($owners);$search=new StorefrontController($store);
 $request=Request::create('/domains','GET');$request->setUserResolver(fn()=>$user);$request->setLaravelSession(app('request')->session());
 $newTransfer('entry-placeholder.com',0,false,false);storefrontViews();
 foreach([false,true,false] as $enabled){
-    $tlds[0]->update(['transfer_enabled'=>$enabled]);activeFixtureRepublish($native,$tlds[0]->id,$clock->now());
-    $rows=$store->endings();same($enabled,$rows[0]['transfer']!==null,'Displayed transfer offer follows publication');
+    // Staff catalogue commands own publication; the legacy TLD flag is no longer authoritative.
+    activeFixtureStops($native,$tlds[0],$enabled?[]:['transfer']);
+    $rows=$store->endings();same(1,count($rows),'Registration keeps the ending visible while transfers change');same($enabled,$rows[0]['transfer']!==null,'Displayed transfer offer follows publication');
     $pricing=storefrontDom(view('domains::pricing',['rows'=>$rows,'guest'=>false,'testEnvironment'=>false])->render());
     same($enabled?$rows[0]['transfer']:'Transfers off',trim($pricing->query('//td[@data-label="Transfer"]')->item(0)->textContent),'Price list is the offer source');
-    foreach(['list'=>$controller->index($request)->render(),'search'=>$search->search($request)->render()] as $page=>$html){
+    $list=$controller->index($request)->render();
+    expect(str_contains($list,'entry-placeholder.com'),'Transfer entry is checked on a populated owner list');
+    foreach(['list'=>$list,'search'=>$search->search($request)->render()] as $page=>$html){
         same($enabled?1:0,storefrontDom($html)->query('//a[@href="'.route('domains.domains.transfer').'"]')->length,'Transfer entry follows price list: '.$page);
     }
 }

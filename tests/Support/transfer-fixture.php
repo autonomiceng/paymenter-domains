@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmission, CheckoutEligibility, ContactProfileSchema, DomainOperations, InvoiceBinding, OperationClaims, Rdap, Refunds, RegistrarRegistry, RegistrationProfiles, TransferInputs, TransferPrecheck, TransferPreflight, WriteAcceptance, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock, FakeRegistrar};
 if (($transferEnvironment??Environment::Test)===Environment::Live) { config(['app.url'=>'https://domains-tests.invalid']); }
-extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test,active:$activeCommerceFixture??true)); $clock ??= new FakeClock($now);
+extract(commerceFixture(true,environment:$transferEnvironment??Environment::Test,active:$activeCommerceFixture??true,registrars:$transferRegistrars??['enom','namesilo'])); $clock ??= new FakeClock($now);
 $guard=new Paymenter\Extensions\Servers\Domains\Services\NativeDomainGuard(new Paymenter\Extensions\Servers\Domains\Services\HolderPricing($prices),$clock); $guard->boot();
 Carbon\Carbon::setTestNow($now); Carbon\CarbonImmutable::setTestNow($now); ContactProfileSchema::install(); Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $state = (object) ['query'=>null,'calls'=>[],'reads'=>0,'readers'=>[],'premium'=>false,'available'=>true,'funds'=>'100.00','mode'=>'','profile'=>[], 'id'=>100,'during'=>null,'rdap'=>0,'rdapUnknown'=>false,'rdap404'=>false,'createShape'=>'nested','enomOrigin'=>($transferEnvironment??Environment::Test)===Environment::Live?'https://reseller.enom.com/interface.asp':'https://resellertest.enom.com/interface.asp'];
