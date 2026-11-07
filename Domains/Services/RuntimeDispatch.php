@@ -20,6 +20,12 @@ final readonly class RuntimeDispatch
     {
         $op=Operation::findOrFail($id);$balance=BalanceRetries::pending($op);
         if(!$this->current($op)){if($balance){app(OperationClaims::class)->readmitBalance($id);}return;}
+        if(ManagementEvidence::exhausted($op)){
+            DB::transaction(function()use($op):void {
+                $l=HoldingLocks::take($op->domain);$locked=$l['operations']->firstWhere('id',$op->id);
+                if($locked){ManagementEvidence::finishExhausted($locked,$this->clock->now());}
+            });return;
+        }
         if(OperationClaims::ordersOffHold($op)){app(OperationClaims::class)->readmitOrdersOff($id);$op=$op->fresh();}
         if($op->state==='held'&&!ManagementEvidence::recoverable($op)&&!RenewalRetries::candidate($op)&&!TransferPolling::applies($op)&&(!$balance||!Account::where('server_id',$op->server_id)->value('processing_enabled'))){return;}
         $now=$this->clock->now()->getTimestamp();

@@ -2,6 +2,9 @@
 // Native engine attempts and the real scheduler admission are required; wire calls are synthetic.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
+$fixtureRegistrars=['enom'];
+require_once __DIR__.'/Support/renewal-initialized.php';
+$fixtureInitialization=static fn()=>initializedRenewalFixture();
 require __DIR__.'/Support/management.php';
 require_once __DIR__.'/Support/staff-panel.php';
 use Illuminate\Support\Facades\{Cache,DB,Queue};
@@ -32,4 +35,23 @@ same('succeeded',$op->state,'The retained failed preparation settles after the n
 same(1,count(array_filter($state->calls,fn($call)=>$call[0]==='SetRegLock')),'Exactly one toggle, after preparation recovers');
 same(false,ManagementProgress::for($d)['lock']['pending'],'Customer returns to a completed state');
 same(true,ManagementEvidence::resolved($op,$d->fresh()),'Confirmed readback releases the toggle');
+// Exhausted preparation is final, including legacy held rows discovered by the scheduler.
+[$d,$driver]=$holding(placeholderComFixtureName('exhausted-preparation-placeholder.com'));
+$ended=$submit($d,$driver,'lock',['locked'=>false]);$state->fault='GetDomainInfo';
+for($try=0;$try<=5;$try++){$management->run($ended->id,$driver);$clock->instant=$clock->now()->modify('+16 minutes');}
+$ended->refresh();
+same('rejected',$ended->state,'A request that will never retry must be final');
+expect($ended->completed_at!==null,'Exhaustion records its completion time');
+same('failed',ManagementProgress::statusKey($ended,$d->fresh()),'The final request reads Failed');
+same('Failed',Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::status($ended)['label'],'The staff request page reads Failed');
+same('Not sent. Nothing changed at the registrar.',Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::reason($ended,false),'The final staff reason keeps the unsent outcome');
+same(6,count($state->calls),'Only the bounded preparation reads ran');
+same([],array_values(array_filter($state->calls,fn($call)=>$call[0]==='SetRegLock')),'Exhaustion sends no change');
+$attempt=$ended->attempt;
+DB::table('domains_operations')->where('id',$ended->id)->update(['state'=>'held','safe_code'=>'management_unconfirmed','completed_at'=>null]);
+(new RuntimeDispatch($clock))->enqueue($ended->id);
+$ended->refresh();
+same('rejected',$ended->state,'Scheduler repairs retained exhausted unsent requests without a provider');
+same($attempt,$ended->attempt,'Repair retains all send and deferral evidence');
+same(6,count($state->calls),'Repair performs no provider reads or writes');
 $nativeSuccessful=true;echo "Unsent lock preparation retries and settles once.\n";

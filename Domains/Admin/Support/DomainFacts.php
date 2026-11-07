@@ -327,6 +327,12 @@ final class DomainFacts
     {
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
+        if (DemoData::local($d)) { return ['title'=>'Local demo data. This domain was not registered. No sync is needed.','tone'=>'info']; }
+        $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+        if (!self::ended($d)&&$read['read_review']) {
+            return ['title'=>'Registrar reads keep failing. Check that this domain is in the right registrar account.','tone'=>'warning',
+                'body'=>'Then use Sync now.','action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
+        }
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {
             return ['title'=>'Imported without purchase records. Check open invoices.','tone'=>'warning'];
@@ -394,12 +400,14 @@ final class DomainFacts
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string
     {
+        if(DemoData::local($d)){return 'Local demo data has no registrar records. No sync is needed.';}
         return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync failed. '.(self::canResume()?'Use Resume sync.':self::ASK_RESUME),
             default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
     }
     /** One safe failure cause and the actual automatic retry, or the stopped-read next step. */
     private static function readProblem(Domain $d): ?string
     {
+        if(DemoData::local($d)){return null;}
         try{$read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);}
         catch(\Illuminate\Contracts\Encryption\DecryptException){return self::UNREADABLE;}
         if(!$read['read_code']){return null;}
@@ -423,7 +431,7 @@ final class DomainFacts
     /** The domain sits on a registrar's test account. */
     public static function test(Domain $d): bool { return self::account($d)?->environment==='test'; }
     /** Whether the page shows Sync now, so a row may tell staff to use it. */
-    public static function syncNow(Domain $d): bool { return Staff::can('admin.domains.manage')&&$d->status==='active'; }
+    public static function syncNow(Domain $d): bool { return Staff::can('admin.domains.manage')&&$d->status==='active'&&!DemoData::local($d); }
     private static function account(Domain $d): ?Account
     {
         return Account::where('server_id',$d->server_id)->where('registrar_key',$d->registrar_key)->where('account_fingerprint',$d->account_fingerprint)->first();

@@ -31,7 +31,10 @@ final class DomainEditActions
     public static function for(Domain $d): array
     {
         if (!Staff::can('admin.domains.manage')) { return ['rows'=>[],'authCode'=>false,'held'=>null,'note'=>null,'request'=>null]; }
-        try { $page=app(OwnedDomains::class)->present($d); }
+        try {
+            if(\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($d)){return ['rows'=>[],'authCode'=>false,'held'=>null,'note'=>null,'request'=>null];}
+            $page=app(OwnedDomains::class)->present($d);
+        }
         catch (\Throwable $error) { Log::warning('Domains staff edit forms failed.',['domain_id'=>$d->id,'exception_class'=>$error::class]);
             $held="Changes can't load right now. Reload this page. If it keeps happening, check the alerts on this page."; return ['rows'=>[],'authCode'=>false,'held'=>$held,'note'=>$held,'request'=>null]; }
         $m=$page->management; $rows=[];

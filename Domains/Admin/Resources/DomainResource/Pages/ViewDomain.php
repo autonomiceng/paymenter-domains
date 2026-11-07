@@ -164,7 +164,7 @@ class ViewDomain extends ViewRecord
             if($message=\Paymenter\Extensions\Servers\Domains\Services\ComplimentaryCosts::message($op,Staff::can('admin.domains.manage'))){$out[]=Callout::make($message)->status('danger')->columnSpanFull();}
         }}
         $sync=\Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::result($d);
-        if($sync!==null&&$sync['title']!=='Domain synced'){
+        if($sync!==null&&$sync['title']!=='Domain synced'&&!\Paymenter\Extensions\Servers\Domains\Support\DemoData::local($d)){
             $out[]=Callout::make($sync['title'])->description($sync['body'])->status('warning')->columnSpanFull();
         }
         if(\Paymenter\Extensions\Servers\Domains\Services\ManagedDnsSetup::affected(time())->whereKey($d->id)->exists()){
@@ -189,6 +189,10 @@ class ViewDomain extends ViewRecord
         $resume=$this->getAction('resume_observation',false);
         $view=fn(string $part)=>Html::make(view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true,'part'=>$part,'readScheduling'=>!DomainFacts::ended($d)]));
         $own=array_intersect_key($facts,array_flip(DomainFacts::SECTIONS[self::HELD_SECTION]));$own['DS records']=\Paymenter\Extensions\Servers\Domains\Presentation\DsState::staff($d);
+        if($state['local_demo']??false){
+            // The shared note explains Missing once; local examples have no sync step.
+            foreach($own as &$fact){if($fact['value']===null||in_array($fact['value'],['Not read yet','Unknown'],true)){$fact['value']=null;$fact['sub']=null;}}unset($fact);
+        }
         $rows=[$view('head')];$shown=[];
         foreach (($state['cancelled_without_records']??false)?[]:$state['rows'] as $family) {
             $label=$family['label'];$fact=$own[$label]??null;$shown[]=$label;

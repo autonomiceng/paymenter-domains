@@ -38,7 +38,8 @@ final class HoldingReadRetry
         $stopped=$job&&self::stoppedQuery(HoldingObservationWork::current($d,true))->exists();
         $code=$job&&in_array($job->safe_code,self::STOPPED,true)?$job->safe_code:null;
         $now??=app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now();
-        return ['records_paused'=>$job?->safe_code==='records_disabled',
+        return ['read_review'=>$code!==null&&in_array($code,['read_failed','read_deadline','read_no_evidence'],true)&&($stopped||($job->resumes??0)>0),
+            'records_paused'=>$job?->safe_code==='records_disabled',
             'read_overdue'=>$eligible&&$job&&!$stopped&&$job->due_at+self::OVERDUE_GRACE_SECONDS<$now->getTimestamp()&&$job->lease_until<=$now->getTimestamp(),
             'next_read'=>$eligible&&$job&&!$stopped?(int)$job->due_at:null,'read_stopped'=>(bool)$stopped,
             'read_code'=>$code,'read_failed_at'=>$code?($d->observation['read_retry']['at']??$d->observation['record_failure']['at']??null):null,'read_attempts'=>(int)($job->tries??0),
