@@ -103,7 +103,14 @@ $expire(['register:2', 'renew:1']); Cache::flush();
 Illuminate\Support\Once::flush(); $admission->refresh();
 same([[10, 1], [10, 2], [16, 1], [10, 1]], $wire->calls, 'Full refresh quotes selected cost and both annual inputs');
 same('32.98', number_format((float) App\Classes\Cart::get()->items->sole()->price->total, 2, '.', ''), 'Cart combines both refreshed annual sell prices');
+// Native mount can already have cached its daily total; review must precede the refreshed charge.
+$orders = Order::count();
 $page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
+same($orders, Order::count(), 'A changed native total must stop checkout before creating an invoice');
+$notice = collect($page->effects['dispatches'] ?? [])->firstWhere('name', 'notify')['params'][0]['message'] ?? '';
+expect(str_contains($notice, 'Review the total'), 'Refreshed invoice requires the visible new total: '.$notice);
+Illuminate\Support\Once::flush(); $page->call('checkout', ['contact' => commerceOrderContact($user), 'save_account' => false]);
+$page->assertHasNoErrors();
 $refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.net'))->sole();
 same([2, '32.98', '18.0000', '32.98', '32.98'], [(int) $refreshed->term, $refreshed->amount, $refreshed->cost['estimated'],
     InvoiceItem::findOrFail($refreshed->invoice_item_id)->price, $refreshed->policy['price']['retail']], 'Refreshed cart/invoice agree while selected wholesale and term stay separate: '.json_encode([$refreshed->term, $refreshed->amount, $refreshed->cost, InvoiceItem::findOrFail($refreshed->invoice_item_id)->price]));
