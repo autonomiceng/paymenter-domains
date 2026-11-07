@@ -96,6 +96,10 @@ def shared_vendor(jobs, requested):
                 'tests/missing-next-step-test.php',
                 'tests/management-progress-test.php',
                 'tests/offer-staff-reads-test.php',
+                # Staff catalogue cases isolate app/DB state and only read verified vendor.
+                'tests/offer-staff-policy-test.php',
+                'tests/staff-catalogue-next-step-test.php',
+                'tests/staff-transfer-keep-off-test.php',
                 'tests/default-pricing-unreadable-test.php',
                 'tests/pricing-editor-notice-test.php',
                 'tests/staff-tld-page-test.php',
