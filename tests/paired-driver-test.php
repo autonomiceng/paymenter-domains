@@ -63,8 +63,10 @@ foreach ([0, 1] as $i) {
     same($money, scenarioMoney(), 'Cart refusal creates no native finance');
 }
 // Retained holder retail is per account even when another, cheaper account sells.
-$tlds[1]->update(['use_default_rule' => false, 'pricing_mode' => 'markup_percent', 'markup' => '30.00', 'round_up' => 'none']);
-activeFixtureRepublish($prices,$tlds[1]);
+$b=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[1]->server_id)->sole());
+$q=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,['com'],'register');
+$ports->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::override($b,'com',new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1,transfers:true),
+    Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT),$ports->readOffers($q,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 saveDefaultRule(['mode' => 'fixed', 'markup' => '0', 'round_up' => 'none',
     'fixed' => ['register' => '100.00', 'renew' => '40.00', 'transfer' => '100.00']], static fn($ending)=>activeFixtureRepublish($prices,$ending));
 scenarioSwitch($sellers, $clock, $tlds[1]->server_id);

@@ -47,11 +47,11 @@
     "tests/render-artifacts-test.php",
     "tests/ui-docs-test.php",
     "tests/test_staff_docs.py",
-    "tests/test_gitleaks_policy.py",
     "tests/ote-order-window-test.php",
     "tests/ote-collection-shapes-test.php",
     "tests/owned-style-test.php",
-    "tests/renewal-ready-copy-test.php"
+    "tests/renewal-ready-copy-test.php",
+    "tests/test_gitleaks_policy.py"
   ],
   "native": [
     "tests/offer-queued-trigger-test.php",
@@ -537,15 +537,25 @@
     "tests/management-runtime-recovery-test.php",
     "tests/staff-sync-worker-test.php",
     "tests/test_installed_demo_c_terms-test.php",
-    "tests/renewal-dialog-cancel-test.php",
     "tests/test_installed_demo_c_ds-test.php",
     "tests/test_installed_demo_c_records-test.php",
     "tests/test_installed_demo_c_monitoring-test.php",
     "tests/test_installed_demo_c_activation-test.php",
     "tests/test_installed_demo_c_r10_layout-test.php",
+    "tests/card-fee-ordinary-fanout-test.php",
+    "tests/owner-renewal-preview-lock-test.php",
+    "tests/price-list-shared-settings-test.php",
+    "tests/offer-local-publication-guard-test.php",
+    "tests/staff-catalogue-demo-tag-test.php",
+    "tests/default-pricing-switched-target-test.php",
+    "tests/default-pricing-retry-test.php",
+    "tests/default-pricing-switched-fee-target-test.php",
+    "tests/renewal-dialog-cancel-test.php",
     "tests/cart-session-price-test.php",
     "tests/cart-review-lines-test.php",
-    "tests/test_installed_demo_c_dialogs-test.php"
+    "tests/test_installed_demo_c_dialogs-test.php",
+    "tests/default-pricing-marker-test.php",
+    "tests/default-pricing-switched-missing-cost-test.php"
   ],
   "ui": [],
   "runner": [

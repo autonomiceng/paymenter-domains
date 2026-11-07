@@ -41,6 +41,56 @@ def hashes(root, *, release_cache=False):
     return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
 
 
+# Admission lives only in this runner process, never in a caller-supplied disk cache.
+# Full inventory walks still reject links/additions/removals. Linux ctime changes on
+# writes even when a test restores mtime; inode/device also detect replacement.
+_VENDOR_ADMISSIONS = {}
+
+
+def admitted_vendor_hashes(root):
+    root = Path(root)
+    if root.is_symlink():
+        raise ValueError('Dependency symlinks are not accepted.')
+    previous = _VENDOR_ADMISSIONS.get(str(root), {})
+    admitted = {}
+    result = {}
+    pending = [(root, '')] if root.is_dir() else []
+
+    def identity(st):
+        return (st.st_dev, st.st_ino, st.st_mode, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+    while pending:
+        directory, prefix = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                name = prefix + entry.name
+                if entry.is_symlink():
+                    raise ValueError('Dependency symlinks are not accepted.')
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append((entry.path, name+'/'))
+                elif entry.is_file(follow_symlinks=False):
+                    stamp = identity(entry.stat(follow_symlinks=False))
+                    cached = previous.get(name)
+                    if cached is not None and cached[0] == stamp:
+                        digest = cached[1]
+                    else:
+                        with open(entry.path, 'rb') as handle:
+                            if identity(os.fstat(handle.fileno())) != stamp:
+                                raise ValueError('Dependency changed during admission.')
+                            digest = hashlib.file_digest(handle, 'sha256').hexdigest()
+                            if identity(os.fstat(handle.fileno())) != stamp:
+                                raise ValueError('Dependency changed during admission.')
+                            try:
+                                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
+                            except OSError:
+                                pass
+                    admitted[name] = (stamp, digest)
+                    result[name] = digest
+    # Publish only after a complete successful inventory; no partial admission is trusted.
+    _VENDOR_ADMISSIONS[str(root)] = admitted
+    return dict(sorted(result.items(), key=lambda item: item[0].split('/')))
+
+
 def git(source, *args):
     return subprocess.check_output(['git', '-C', str(source), *args], stderr=subprocess.PIPE)
 
@@ -65,7 +115,7 @@ def verify(source, *, fixture_snapshot=None):
                 raise ValueError('Fixture dependency path is linked.')
             if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
                 raise ValueError('Fixture dependency changed: '+name)
-        vendor = {'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=True).items()}
+        vendor = {'vendor/'+name: digest for name, digest in admitted_vendor_hashes(source/'vendor').items()}
         if vendor != {name: digest for name, digest in fixture_snapshot.items() if name.startswith('vendor/')}:
             raise ValueError('Fixture vendor inventory changed.')
         return {}, fixture_snapshot
@@ -110,7 +160,7 @@ def verify(source, *, fixture_snapshot=None):
     ):
         raise ValueError('Installed dependencies do not match the pinned lock.')
     snapshot = {name: hashlib.sha256((source/name).read_bytes()).hexdigest() for name in members}
-    snapshot.update({'vendor/'+name: digest for name, digest in hashes(source/'vendor', release_cache=True).items()})
+    snapshot.update({'vendor/'+name: digest for name, digest in admitted_vendor_hashes(source/'vendor').items()})
     return members, snapshot
 
 

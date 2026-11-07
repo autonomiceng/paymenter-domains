@@ -62,9 +62,9 @@ function activeFixtureAdmission($native,$sellers,$eligibility,$clock): \Paymente
 function activeFixtureStops(object $owner,Tld $t,array $stops): void
 {
     $ports=activeFixturePorts($owner);$b=AccountBindings::binding(Account::where('server_id',$t->server_id)->sole());
-    $raw=array_intersect_key(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent),get_object_vars(new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent));$raw['stops']=$stops;
+    $saved=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($t->fresh()->catalogue_intent);$raw=array_intersect_key($saved,get_object_vars(new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent));$raw['stops']=$stops;
     $q=new Query($b,[$t->tld],'register');
-    $ports->apply(Edit::override($b,$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(...$raw)),$ports->readOffers($q,Context::Staff)[0]->revision);
+    $ports->apply(Edit::override($b,$t->tld,new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(...$raw),$saved['pricing_rule']??null),$ports->readOffers($q,Context::Staff)[0]->revision);
 }
 
 /** Arrange provider observations through the real Writer, never a saved acceptance setting. */
@@ -87,7 +87,7 @@ function fixtureObserveOfferFacts($binding,array $endings): void
         $row=$endings[$name]??[];$q=new Query($binding,[$name],'register');
         $facts=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts(
             ['register'=>$row['register']??[],'renew'=>$row['renew']??[],'transfer'=>$row['transfer']??[]],
-            ($row['registry']??false)?[]:null,$row['renewal_safe']??false,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'));
+            $row['registry_fields']??(($row['registry']??false)?[]:null),$row['renewal_safe']??false,false,false,'synthetic',$clock->now(),$clock->now()->modify('+1 day'));
         $facts=fixtureNameSiloFacts($binding,$name,$facts);
         $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FactsObserved($binding,$name,$facts),$ports->readOffers($q,Context::Staff)[0]->revision);
     }
@@ -121,6 +121,7 @@ function fixtureNameSiloFacts($binding,string $ending,\Paymenter\Extensions\Serv
 {
     if($binding->registrarKey!=='namesilo'||$binding->environment!==\Paymenter\Extensions\Servers\Domains\Data\Environment::Test){return $facts;}
     $account=Account::where('server_id',$binding->serverId)->sole();
+    if(!\Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::enrolled($account)){return $facts;}
     $copy=new \Paymenter\Extensions\Servers\Domains\Catalogue\Facts($facts->terms,$facts->registryFields,$facts->renewalSafe,
         $facts->requiresNameservers,$facts->autoRenewOnly,'namesilo_test_protocol',$facts->observedAt,$facts->freshUntil);
     $rows=config('domains.namesilo_test.accounts',[]);$row=$rows[$account->stable_identity]??[];

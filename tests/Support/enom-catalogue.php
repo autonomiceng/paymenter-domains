@@ -35,18 +35,24 @@ $write=static fn(string $action,array $data=[],?int $id=null)=>$settings->run($r
 $write('configure',['registrar'=>'enom','environment'=>'test','uid'=>'catalogue-uid','token'=>'catalogue-token']);
 $write('probe');$binding=AccountBindings::binding(Account::where('server_id',$server->id)->sole());
 $write('test_renewal',['accept'=>true,'verified'=>true]);
-$GLOBALS['catalogueBulk']=static fn(int $years)=>['com'=>['10.0000','10.0000',null],'net'=>['11.0000','11.0000',null]];
+$GLOBALS['catalogueBulk']=static fn(int $years)=>['com'=>['10.0000','10.0000',null],'net'=>['11.0000','0.0000',null]];
 $before=count($GLOBALS['catalogueCalls']);$scheduler=OfferScheduler::routed();$scheduler->sync($binding);
 same($before,count($GLOBALS['catalogueCalls']),'Requesting account sync only queues local work');
 \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::class)->accountTurn($server->id);
 same(['PE_GetRetailPricing','PE_GetRetailPricing','PE_GetRetailPricing','PE_GetRetailPricing','GetTLDList'],array_column(array_slice($GLOBALS['catalogueCalls'],$before),'Command'),'Installed active feed uses bounded bulk reads');
 $tld=Tld::where('server_id',$server->id)->where('tld','com')->sole();
 same(null,$tld->catalogue_facts,'Bulk prices invent no provider support facts');
-$scheduler->requestFacts($binding,'com');\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::class)->accountTurn($server->id);
+// Explicit cold-facts fixture: production scheduler hints intentionally require an already sold ending.
+\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::class)->requestFacts($binding,'com');\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::class)->accountTurn($server->id);
 $facts=OfferState::facts($tld->fresh()->catalogue_facts);
 same([1],$facts->terms['register'],'Cold registry reads prove only returned registration terms');
-same([], $facts->terms['renew']??[],'Price and registry responses cannot invent annual renewal support');
-same([],app(Storefront::class)->endings(),'Unknown renewal support keeps public sales closed');
+same([1],$facts->terms['renew']??[],'Normalized positive bulk renewal proves exactly one annual term');
+// The second ending has registration prices but no positive annual renewal row. Registry metadata alone cannot fill that gap.
+\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::class)->requestFacts($binding,'net');
+\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork::class)->accountTurn($server->id);
+$unknown=OfferState::facts(Tld::where('server_id',$server->id)->where('tld','net')->sole()->catalogue_facts);
+same([], $unknown->terms['renew']??[],'Registration prices and registry metadata cannot invent absent annual renewal support');
+same([],app(Storefront::class)->endings(),'Unknown renewal support and paused spending keep public sales closed');
 // Independently declared fixture support, then real staff intent/publication. Never copy price data into facts.
 $clock->at=$clock->now()->modify('+1 second');$at=$clock->now();$ports=CallerPorts::routed();
 $ports->apply(new FactsObserved($binding,'com',new Facts(['register'=>[1],'renew'=>[1],'transfer'=>[]],[],true,false,false,'independent_synthetic_support',$at,$at->modify('+1 day'))),

@@ -46,12 +46,23 @@ $user=commerceUser();$cart=commerceCart($user);$cartName=reservedFixtureName('de
 commerceReject(fn()=>commerceAdd($cart,$product,$cartName));
 App\Models\CartItem::withoutEvents(fn()=>commerceAdd($cart,$product,$cartName));
 same(1,$cart->items()->count(),'Adversarial cart contains a real native line');
-// Pre-checkout refresh refuses corrupt stock or an unaccepted offer before native ordering.
-$checkoutUnavailable='We couldn’t check this domain. Try checkout again, or edit or remove it from your cart.';
-commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>$checkoutUnavailable,'type'=>'error']);
+// MAIN removes a closed sale at page load, before stock validation or a checkout click.
+$assertRemoved=static function($cart)use($user,$cartName):void {
+    \Illuminate\Support\Once::flush();
+    $page=\Livewire\Livewire::actingAs($user)->withCookies(['cart'=>$cart->ulid])->test(\App\Livewire\Cart::class);
+    $removed=$cartName.' is no longer for sale, so we removed it from your cart. Search again to find another domain.';
+    same(['title'=>'Domain removed','text'=>$removed,'toast'=>$removed,'type'=>'warning','names'=>[$cartName],'was'=>[]],\Paymenter\Extensions\Servers\Domains\Services\CartNotice::get($page->instance()),'The closed line has one exact reviewed cart notice');
+    if(str_contains($page->html(),'data-domains-cart-notice')){$page->assertSee($removed);}else{$page->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>$removed,'type'=>'warning']);}
+    same(0,$cart->items()->count(),'MAIN removes the closed line while notifying the customer');
+    $page->set('use_credits',false)->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
+};
+$assertRemoved($cart);
 same(0,App\Models\Order::count(),'Finite corruption cannot create an order');same(10,$product->fresh()->stock,'Native finite save rolled back');
 DB::table('products')->where('id',$product->id)->update(['stock'=>null]);
-commerceCheckout($user,$cart)->assertDispatched('notify',fn($event,$params)=>$params[0]===['message'=>$checkoutUnavailable,'type'=>'error']);
+// The first refusal removed its line; this separate case owns a fresh adversarial cart.
+$cart=commerceCart($user);App\Models\CartItem::withoutEvents(fn()=>commerceAdd($cart,$product,$cartName));
+same(1,$cart->items()->count(),'Withdrawn offer refusal starts with its own real native line');
+$assertRemoved($cart);
 same(0,App\Models\Order::count(),'Held checkout rolls back the native order');same(0,DB::transactionLevel(),'Held checkout closes its transaction');
 same(0,Operation::count(),'Held checkout creates no registration');
 same(0,App\Models\Service::count(),'Held checkout creates no service');same(0,App\Models\Invoice::count(),'Held checkout creates no debt');
