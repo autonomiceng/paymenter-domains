@@ -190,7 +190,7 @@ foreach (['off'=>[false,'Off',true],'on'=>[true,'On',false],'unknown'=>[null,nul
 }
 $active->fresh()->update(['observation'=>$autoRenew]);
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
-same([null,'Fills in by itself within a day',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes');
+same([null,'Fills in by itself within a day',null,'Fills in by itself after the expiry date syncs'],[$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')],'Active without expiry shows Missing with causes: '.json_encode([$value($active,'Expires'),$sub($active,'Expires'),$value($active,'Next invoice'),$sub($active,'Next invoice')]));
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Expiry missing')->assertSee('Fills in by itself within a day');
 same('Under review',DomainFacts::status($active->fresh())['label'],'Active without expiry is under review');
 same('Expiry missing. Check the domain.',DomainFacts::statusLine(DomainFacts::status($active->fresh())),'Expiry missing step');

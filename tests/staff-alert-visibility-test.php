@@ -31,7 +31,7 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
         if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Sync failed')){$hidden[]=$code.'/'.$status;}
     }
 }
-same([],$hidden,'No open alert may be hidden on a domain page');
+same([],$hidden,'No open alert may be hidden on a domain page: '.implode(', ',$hidden));
 echo "All alert kinds visible in every domain state.\n";
 // The account-filtered list must explain why a pending domain has an open alert.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->delete();
