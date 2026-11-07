@@ -86,7 +86,7 @@ final class DomainFacts
         $registrar=['enom'=>'Enom','namesilo'=>'NameSilo'][$d->registrar_key]??null;
         $f['Registrar']=$account&&$registrar ? self::fact(\App\Models\Server::whereKey($d->server_id)->value('name')??$registrar,
             sub:implode(', ',array_filter([$registrar,['test'=>'Test','live'=>'Live'][$account->environment]??null,
-                !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?'orders paused':null])),
+                !self::ended($d)&&($paused||!$account->processing_enabled||($policy['automatic_spend_paused']??false))?self::ORDERS_PAUSED:null])),
             url:self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id)),
             demo:DemoData::is($account)) : self::fact(null,sub:$account?'Unknown registrar. Check Registrars.':self::NO_ACCOUNT);
         if ($registered && $observation!==null) {
@@ -284,6 +284,18 @@ final class DomainFacts
     public static function whileHeld(array $facts, ?string $first): array
     {
         if (($facts['Contacts']['sub']??null)===self::ADD_CONTACTS) { $facts['Contacts']['sub']=($first??'Wait until changes are back on').', then add them with Edit.'; }
+        return $facts;
+    }
+    private const ORDERS_PAUSED='orders paused';
+    /** Words a head uses for Orders off (RequestFacts, DomainEditActions, Labels). */
+    private const ORDERS_OFF_WORDS=['orders are off','turn orders on','orders paused'];
+    /** When the head already says Orders are off, the Registrar row names only the account. $said: the head's plain text. */
+    public static function besideHead(array $facts, ?string $said): array
+    {
+        $said=strtolower((string)$said);
+        if (isset($facts['Registrar']['sub'])&&array_filter(self::ORDERS_OFF_WORDS,fn(string $w)=>str_contains($said,$w))!==[]) {
+            $facts['Registrar']['sub']=str_replace(', '.self::ORDERS_PAUSED,'',$facts['Registrar']['sub']);
+        }
         return $facts;
     }
     /** The one request the head names, or null. A notice names one only beside Resume sync. Rows name no other (withProgress). */
