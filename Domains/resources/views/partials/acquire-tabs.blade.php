@@ -1,0 +1,2 @@
+{{-- Register and Transfer are separate flows (a transfer needs an auth code and has its own price and checks), shown as two tabs. --}}
+<nav class="domains-tabs domains-acquire-tabs" aria-label="Get a domain"><a class="domains-tab" href="{{ route('domains.domains.search') }}" @if ($current === 'register') aria-current="true" @endif>Register</a><a class="domains-tab" href="{{ route('domains.domains.transfer') }}" @if ($current === 'transfer') aria-current="true" @endif>Transfer</a></nav>

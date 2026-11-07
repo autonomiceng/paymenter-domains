@@ -97,7 +97,7 @@ final class AccountChecklist
         return self::paused($a,match(true){$on=>self::row($label,'On','success',$key==='transfer'?self::transferCause(true):null,$action,$help),
             $live&&!EnomLiveActivation::current(AccountBindings::binding($a))=>self::row($label,'Off',null,'Paused until setup is approved. Use Activate to see what is missing.',null,$help),
             $key==='renewal'&&RenewalBillingSettings::read((int)$a->server_id)['issue_days']===null=>self::row($label,'Off',null,'Renewal billing is paused. Fix the invoice days first.',null,$help),
-            default=>self::row($label,'Off',null,match($key){'transfer'=>self::transferCause(false),'renewal'=>'Renewals are paused until you approve billing and sending. Check setup, then turn on Renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
+            default=>self::row($label,'Off',null,match($key){'transfer'=>self::transferCause(false),'renewal'=>'Turn on to bill and send renewals.','management'=>'Changes are paused until you approve them. Check setup, then turn on DNS, nameservers and contacts.',default=>null},$action,$help)});
     }
     private static function billingHelp(int $server,string $help): string
     {
@@ -115,17 +115,33 @@ final class AccountChecklist
             $status==='matched'=>$a->registrar_key==='namesilo'?(\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsWrites::processingBlocker($a)??'Ready. Turn on Orders.'):'Check setup, then turn on Orders.',default=>'Fix the API connection first.'};
         return self::paused($a,self::row('Orders',$on?'On':'Off',$on?'success':null,$on?null:$cause,'processing','Lets this account send requests to the registrar. Off stops everything: new orders, renewals and changes. They wait and go out when it is back on.'));
     }
-    /** An Off feature needs attention when this account already manages domains. No settings change here. */
+    /** An Off feature needs attention when this account already manages domains. The row keeps its one line;
+     * pausedChecks() lists the domains in System checks. No settings change here. */
     private static function paused(Account $a,array $row): array
     {
         if($row['value']!=='Off'||in_array($row['label'],[self::TRANSFER_LABEL],true)){return $row;}
         $domains=Domain::where('server_id',$a->server_id)->where('billing_managed',true);
         if($row['label']==='Late renewal'){
             $now=app(Clock::class)->now();
-            $count=$domains->select('provider_expires_at')->cursor()->filter(fn(Domain $domain)=>DomainBilling::expired($domain,$now))->count();
-        }else{$count=$domains->count();}
-        if($count>0){$row['tone']='warning';$row['cause'].=' '.$count.' managed domain'.($count===1?' needs':'s need').' attention while this is off.';}
+            $ids=$domains->select(['id','provider_expires_at'])->cursor()->filter(fn(Domain $domain)=>DomainBilling::expired($domain,$now))->pluck('id');
+            $count=$ids->count();$first=$ids->first();
+        }else{$count=$domains->count();$first=$count===1?$domains->value('id'):null;}
+        if($count>0){$row['paused']=['count'=>$count,'domain'=>$count===1?(int)$first:null,'server'=>(int)$a->server_id];}
         return $row;
+    }
+    /** One System checks row for managed domains that wait on Off switches, linked to the domain or the account's list.
+     * Each count is a subset of the account's managed domains, so the largest is the total. @return list<array> */
+    public static function pausedChecks(array $rows): array
+    {
+        $paused=array_values(array_filter($rows,fn(array $row)=>isset($row['paused'])));
+        if(!$paused){return [];}
+        $top=array_reduce($paused,fn(?array $carry,array $row)=>$carry===null||$row['paused']['count']>$carry['count']?$row['paused']:$carry);
+        ['count'=>$count,'domain'=>$domain,'server'=>$server]=$top;
+        $labels=array_column($paused,'label');$last=array_pop($labels);
+        $off=($labels?implode(', ',$labels).' and ':'').$last.' '.(count($paused)===1?'is':'are').' off.';
+        try{$url=$domain!==null?DomainResource::getUrl('view',['record'=>$domain]):DomainResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server]]]);}catch(\Throwable){$url=null;}
+        return [[...self::row('Managed domains waiting',(string)$count,'warning',$off,null,'Managed domains on this account that wait until these switches are on.'),
+            'buttons'=>[Action::make('paused_domains')->label($domain!==null?'Open domain':'View domains')->link()->size('sm')->url($url)->visible($url!==null)]]];
     }
     /** A bad saved calendar can't be saved back, so this switch waits for Edit schedule. It only works while Renewals is on, so otherwise the row says so with no switch. On with a bad calendar keeps its switch: it shows what customers can still do. */
     private static function renewEarly(int $server): array

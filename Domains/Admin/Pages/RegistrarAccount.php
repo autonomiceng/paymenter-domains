@@ -96,6 +96,7 @@ class RegistrarAccount extends Page
         if ($a) {
             $id=(int)$s->id;
             $rows=array_column([...AccountChecklist::setup($a,$this->status()),...AccountChecklist::renewals($id),AccountChecklist::whois($a)??self::fact('WHOIS privacy','Free when supported by the TLD.')],null,'label');
+            $checks['failing']=[...AccountChecklist::pausedChecks($rows),...$checks['failing']];
             $pick=fn(string ...$labels)=>array_values(array_filter(array_map(fn(string $label)=>$rows[$label]??null,$labels)));
             $sections=[Sheet::section('Account',$this->rows('account',[...$this->accountRows($a),...$pick('API connection')]))];
             if(LiveActivationAction::offered($a)){
