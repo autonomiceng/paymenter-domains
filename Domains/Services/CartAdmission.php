@@ -120,6 +120,7 @@ class CartAdmission
                     if (isset($selected->catalogue['order_quote'])) {
                         // In-memory native plan only: native tax/coupon/invoice arithmetic stays intact.
                         $item->plan->prices->where('currency_code', 'USD')->sole()->price = $selected->catalogue['retail'];
+                        $item->offsetUnset('price'); // Native may have cached its line total before this refresh.
                     }
                     break;
                 }
