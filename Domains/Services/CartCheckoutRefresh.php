@@ -85,12 +85,15 @@ final class CartCheckoutRefresh
             // Native line prices are dynamic on every render, not just checkout. Never advance the
             // signed/session shown amount silently when an unrelated Livewire update races publication.
             $held = (array) \Livewire\store($component)->get('domains.shown');
-            if ($held && !\Livewire\store($component)->get('domains.customer_edit')) {
+            if ($held) {
                 try {
-                    $was = self::changedShown($held);
+                    $beforeOffers = (array) \Livewire\store($component)->get('domains.offers');
+                    $changed = static fn () => \Livewire\store($component)->get('domains.customer_edit')
+                        ? self::changedOffers($held, $beforeOffers, $admission->offers()) : self::changedShown($held);
+                    $was = $changed();
                     if ($was) {
                         $admission->refresh();
-                        $was = self::changedShown($held);
+                        $was = $changed();
                         if ($was) { self::changed($component, self::cartTotal(), $was); }
                     }
                 } catch (CartLinesRemoved $e) { self::show($component, self::cartTotal()); self::removed($component, $e); }
@@ -169,6 +172,18 @@ final class CartCheckoutRefresh
         $was = [];
         foreach (self::shown() as $id => $amount) {
             if (isset($held[$id]) && $held[$id] !== $amount) { $was[$id] = $held[$id]; }
+        }
+        return $was;
+    }
+
+    /** Published domain retail is independent of coupon/quantity edits to displayed amounts. */
+    private static function changedOffers(array $held, array $before, array $offers): array
+    {
+        $before = array_column($before, null, 0); $was = [];
+        foreach ($offers as $offer) {
+            $old = $before[$offer[0]] ?? null;
+            if ($old && array_slice($old, 0, 3) === array_slice($offer, 0, 3)
+                && $old[3] !== $offer[3] && isset($held[$offer[0]])) { $was[$offer[0]] = $held[$offer[0]]; }
         }
         return $was;
     }

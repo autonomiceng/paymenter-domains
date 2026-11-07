@@ -13,7 +13,8 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Edit,Intent,Query};
 use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 extract(offerCommerceFixture()); storefrontViews();
 $user=commerceUser(); $product=$storefront->offer('com','register',3)['product'];
-$cart=commerceCart($user); commerceAdd($cart,$product,'session-price-placeholder.com',3);
+$cart=commerceCart($user); $domainLine=commerceAdd($cart,$product,'session-price-placeholder.com',3);
+$hosting=commerceAdd($cart,commerceHosting(),'unused-placeholder.test');
 $views=getenv('PAYMENTER_TEST_FIXTURE').'/resources/views/domains-harness';
 file_put_contents($views.'/cart.blade.php','<div>@includeIf(\'domains::cart-notice\')@foreach(\App\Classes\Cart::items() as $item)@includeIf(\'domains::cart-was\',[\'item\'=>$item]){{ $item->price->format($item->price->total) }}@endforeach</div>');
 $app['view']->getFinder()->flush();
@@ -40,14 +41,21 @@ $ports->apply(Edit::override($binding,'com',new Intent(sell:true,longest:3,trans
 // Use the actual signed page snapshot through Livewire's native component lifecycle.
 $x=storefrontDom($html);$snapshot=json_decode($x->query('//*[@*[name()="wire:snapshot"]]')->item(0)->getAttribute('wire:snapshot'),true);
 Illuminate\Support\Once::flush();
-[$updated,$effects]=app('livewire')->update($snapshot,['tos'=>true],[]);
-expect(str_contains($effects['html']??'','Your cart changed'),'An unrelated cart update cannot silently reprice the rendered line');
+[$updated,$effects]=app('livewire')->update($snapshot,[],[['method'=>'updateQuantity','params'=>[$hosting->id,2],'path'=>'']]);
+expect(str_contains($effects['html']??'','Your cart changed'),'Editing another line cannot hide a concurrent domain price publication');
 session()->save();
 $html=$get();$x=storefrontDom($html);
 same('Your cart changed',trim($x->query('//*[@data-domains-cart-notice]//strong')->item(0)?->textContent??''),'HTTP reload announces the changed price');
 same('Was $23.40',trim($x->query('//s')->item(0)?->textContent??''),'HTTP reload strikes the total the browser last saw');
 expect(str_contains($html,'$27.00'),'HTTP reload shows the new quote');
 if(isset($argv[1])){require __DIR__.'/Support/demo-c-r11-cart-render.php';}
+// Stale review metadata cannot be restored onto a different cart snapshot.
+$shownKey='domains.cart_shown.'.$cart->ulid;
+$review=session()->get($shownKey.'.review');$review['shown'][$domainLine->id]['quantity']=99;
+session()->put($shownKey.'.review',$review);session()->save();
+$mismatched=$get();
+expect(!str_contains($mismatched,'Your cart changed'),'A mismatched saved review is not restored');
+$x=storefrontDom($mismatched);
 // Checkout rechecks the signed page even if another publish follows the reload.
 $snapshot=json_decode($x->query('//*[@*[name()="wire:snapshot"]]')->item(0)->getAttribute('wire:snapshot'),true);
 $rev=offerCommerceAsStaff(static fn()=>$ports->readOffers($q,Context::Staff)[0]->revision);
@@ -62,5 +70,6 @@ Illuminate\Support\Once::flush();
 request()->headers->set('X-Livewire','true');
 app('livewire')->update($reviewed,[],$calls);
 same(1,App\Models\Order::count(),'A second checkout accepts the reviewed quote exactly once');
+same(null,session()->get($shownKey.'.review'),'Accepted checkout clears the saved review');
 same('30.60',Paymenter\Extensions\Servers\Domains\Models\Operation::sole()->policy['price']['retail'],'Invoice freezes the reviewed quote');
 $nativeSuccessful=true;echo "HTTP cart session price passed.\n";
