@@ -59,7 +59,7 @@ foreach (['missing-plan', 'duplicate-plan', 'missing-price', 'duplicate-price', 
     $rows = json_decode($tester->getDisplay(), true, 512, JSON_THROW_ON_ERROR);
     $failed = array_values(array_filter($rows, fn ($r) => $r['mismatch'] !== null));
     same([3], array_column($failed, 'term'), $bad.' remains in the eligible set');
-    if ($bad === 'missing-plan') { DB::table('plans')->insert($long->getRawOriginal()); DB::table('prices')->insert($longPrice->getRawOriginal()); }
+    if ($bad === 'missing-plan') { DB::table('plans')->insert($long->getRawOriginal()); }
     if ($bad === 'duplicate-plan') { DB::table('plans')->where('priceable_id', $product->id)->where('billing_period', 3)->where('id', '!=', $long->id)->delete(); }
     if ($bad === 'missing-price') { DB::table('prices')->insert($longPrice->getRawOriginal()); }
     if ($bad === 'duplicate-price') { DB::table('prices')->where('plan_id', $long->id)->where('id', '!=', $longPrice->id)->delete(); }

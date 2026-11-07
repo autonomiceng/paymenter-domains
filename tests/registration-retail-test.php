@@ -110,6 +110,8 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         config(['domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true]);
         $installedStore = new \Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
         Cache::flush();
+        // This native component fixture installs Domains without booting the extension's runtime.
+        Illuminate\Support\Facades\Artisan::registerCommand(new Paymenter\Extensions\Servers\Domains\Console\PriceMatch);
         same(0, Illuminate\Support\Facades\Artisan::call('domains:price-match'), 'Sends-off upgrade then sends-on passes the read-only native price check');
         $installedSearch = $installedStore->check('installed-upgrade.net');
         same('available', $installedSearch['status'], 'Installed search reopens through normal admission');
