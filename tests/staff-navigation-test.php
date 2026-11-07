@@ -80,8 +80,11 @@ Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Instal
 $GLOBALS['domainsTestCurlMissing']=false;
 
 // Maintenance notice, one line per state; time in staff format.
-// J8: Pacific with its zone, like every other staff time, not unlabelled UTC.
+// J8: the host app's staff zone, always named; the app zone when none is set, and UTC for a zone PHP does not know.
 $since=1800000000;$at='Jan 15, 2027, 12:00 AM PST';
+config(['domains.time_zone'=>null,'app.timezone'=>'UTC']);same('Jan 15, 2027, 8:00 AM UTC',\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($since),'No host zone uses the app zone');
+config(['domains.time_zone'=>'Mars/Olympus']);same('Jan 15, 2027, 8:00 AM UTC',\Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($since),'An unknown zone falls back to UTC');
+config(['domains.time_zone'=>'America/Los_Angeles']);
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'waiting','since'=>null]),'Waiting has no notice');
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'current','since'=>$since]),'Current has no notice');
 same(['text'=>'Monitoring is not set up on this site.','tone'=>'warning','action'=>'setup'],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');
