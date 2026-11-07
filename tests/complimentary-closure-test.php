@@ -9,7 +9,7 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,Complimentary
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);app()->instance(Refunds::class,new Refunds($clock));
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Complimentary closure','permissions'=>[
-    'admin.domains.view','admin.domains.manage','admin.domains.fund','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.invoices.update']])->id]);
+    'admin.domains.view','admin.domains.manage','admin.domains.fund','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.invoices.update','admin.domains.operations.credit']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Audited closure account',$clock);
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
 foreach(['register','transfer']as$action){
