@@ -8,7 +8,7 @@ require __DIR__.'/Support/commerce.php';
 require __DIR__.'/Support/native-commerce.php';
 use App\Models\{InvoiceItem, Order};
 use Illuminate\Support\Facades\{Cache, DB};
-use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferState, Query, StaffCatalogue};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, Facts, FactsObserved, FeedObserved, Intent, OfferState, Query, Retail};
 use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
 use Paymenter\Extensions\Servers\Domains\Models\{Account, Operation};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, AcquisitionOffers, InvoiceBinding, PricingRule};
@@ -93,6 +93,7 @@ $expire = static function (array $keys) use ($clock, $binding): void {
         DB::table('domains_prices')->where('id', $row->id)->update(['catalogue_observation' => OfferState::json($raw)]);
     }
 };
+$clock->instant = $clock->now()->modify('+1 second');
 $expire(['register:1']); app('request')->cookies->set('cart', $cart->ulid);
 Illuminate\Support\Once::flush(); $admission->refresh();
 same([[10, 1]], $wire->calls, 'Only the stale first registration year is read');
@@ -109,13 +110,25 @@ same([2, '32.98', '18.0000', '32.98'], [(int) $refreshed->term, $refreshed->amou
 // Dependency revision drift must invalidate the saved longer-term quote.
 $selection = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$refreshed->policy['checkout']['catalogue']);
 $annual = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')->where('action', 'register')->where('term', 1)->sole();
-DB::table('domains_prices')->where('id', $annual->id)->increment('revision');
+$changed = OfferState::decode($annual->catalogue_observation); $changed['total'] = '25.9900';
+DB::table('domains_prices')->where('id', $annual->id)->update(['catalogue_observation' => OfferState::json($changed)]);
 commerceReject(fn () => $quoted->validate($selection));
-DB::table('domains_prices')->where('id', $annual->id)->update(['revision' => $annual->revision]);
+DB::table('domains_prices')->where('id', $annual->id)->update(['catalogue_observation' => $annual->catalogue_observation]);
 // The mixed retail must still cover the independently quoted selected term's wholesale cost.
 $clock->instant = $clock->now()->modify('+1 minute');
 $ports->apply(new FeedObserved($binding, 'net', [new Cost('register', 10, true, '200.0000', CostUnit::TermTotal,
     'synthetic', $clock->now(), $now->modify('+1 day'))]), $revision());
 same('below_cost', $ports->readOffers(new Query($binding, ['net'], 'register', 10), Context::Staff)[0]->reason, 'Selected-term below-cost guard remains authoritative');
+// Nonzero markup and fees round each annual input before combining the purchased term.
+$inputs = []; foreach ($costs as $cost) { $inputs[$cost->key()] = $cost; }
+foreach ([
+    ['32.98', [...PricingRule::DEFAULT, 'markup' => '10.00', 'round_up' => 'ending_99']],
+    ['33.00', [...PricingRule::DEFAULT, 'mode' => 'markup_amount', 'markup' => '2.00', 'round_up' => 'half']],
+    ['32.98', [...PricingRule::DEFAULT, 'mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'ending_99',
+        'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']]],
+] as [$total, $rule]) {
+    same($total, Retail::quote($inputs['register:2'], $rule, $inputs), 'Annual rounding precedes the registration total: '.$rule['mode']);
+}
+same(null, Retail::quote($inputs['register:2'], PricingRule::DEFAULT), 'Missing annual inputs never invent a registration total');
 $nativeSuccessful = true;
 echo "Registration retail search/cart/invoice and exact wholesale checks passed.\n";

@@ -10,7 +10,7 @@ For every sold registration term, customer retail is the one-year registration s
 annual renewal sell price × (years − 1). The shared retail calculation applies the saved rule and rounding to
 each annual input first, in fixed and markup modes alike. Both annual observations must be current; a missing,
 disabled or stale input cannot supply a longer public offer. Checkout refreshes stale inputs automatically and
-fences all three price rows. Registrar wholesale remains the independently observed selected-term registration
+fences the selected price and both annual source inputs. Registrar wholesale remains the independently observed selected-term registration
 cost; below-cost admission still compares the complete customer total against that exact wholesale cost.
 Native plan prices, search, cart and invoice admission share this total. Issued invoices and operation terms
 remain frozen, and the registrar still receives one registration for the purchased number of years.
