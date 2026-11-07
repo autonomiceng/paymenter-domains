@@ -74,7 +74,7 @@ class RegistrarAnswers
             if($transfer){$answer=[...$answer,...TransferRejections::evidence($op,$l,$input)];}
             if($outcome==='not_processed'){
                 if(!$l['staff']->hasPermission('admin.domains.manage')||!$l['staff']->hasPermission('admin.invoices.update')){throw new \DomainException('Refund permission required.');}
-                RefundPayment::requireCurrent($op,$l);
+                if($op->funding_basis==='complimentary'){ComplimentaryInvoices::require($op,$l);}else{RefundPayment::requireCurrent($op,$l);}
             }
             $policy=[...$op->policy,'enom_answer'=>$answer];
             if($transfer){$policy['reconciliation']['staff_alert']=false;$policy['reconciliation']['reason']=TransferRejections::CODE;}
