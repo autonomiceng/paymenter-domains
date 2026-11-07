@@ -14,12 +14,12 @@ DB::table('extensions')->where('id',$silo->server_id)->update(['name'=>'Demo Nam
 // Replay W8: Enom has this TLD; the connected NameSilo account has no row or price for it.
 DB::table('domains_prices')->where('server_id',$silo->server_id)->delete();
 DB::table('domains_tlds')->where('id',$silo->id)->delete();
-$page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller');
+$page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$enom->id])->mountAction('seller')->call('$refresh');
 $schema=$page->instance()->getSchema($page->instance()->getMountedActionSchemaName());
 $select=$schema->getComponentByStatePath('seller');
 $options=$select->getOptions();
 expect(!isset($options[$silo->server_id])||$select->isOptionDisabled($silo->server_id,$options[$silo->server_id]),'NameSilo without a .com price cannot be selected');
-$page->assertSee('No NameSilo price for .com yet. Sync prices first.');
+expect(str_contains($page->effects['partials']['action-modals.0']??'','No NameSilo price for .com yet. Sync prices first.'),'The rendered dialog explains the disabled NameSilo choice');
 // A stale or forged selection reaches the command guard, not ModelNotFoundException or a generic toast.
 $commands=new Paymenter\Extensions\Servers\Domains\Catalogue\StaffCommands(
     new Paymenter\Extensions\Servers\Domains\Catalogue\Writer(new Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null);
