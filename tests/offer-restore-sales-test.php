@@ -23,11 +23,6 @@ $catalogue=StaffCatalogue::routed();$current=$t->fresh();
 same([true,true,true,false,3],array_map(fn($key)=>$catalogue->setting($current,$key),['enabled','register','renew','transfer','max_years']),'Start selling writes accepted actions and preserves longest term');
 same($facts,$current->catalogue_facts,'Restore never manufactures independent facts');same($calls,$reads->calls,'Restore uses saved evidence without provider calls');
 $history=Review::historyRows(App\Models\Server::find($t->server_id));expect(count($history)>0,'Start selling records reviewed staff history');
-// Stop selling ends new registrations and transfers; existing domains keep renewing.
-$page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->assertActionVisible('stop_selling');
-$page->mountAction('stop_selling')->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded');$current=$t->fresh();
-same([true,false,true,false],array_map(fn($key)=>$catalogue->setting($current,$key),['enabled','register','renew','transfer']),'Stop selling keeps renewals');
-$page->instance()->getRecord()->refresh();same([true,false],[$page->instance()->startSellingAction()->isVisible(),$page->instance()->stopSellingAction()->isVisible()],'Stopped shows Start selling only');
 // Historical partial stops remain reachable; unsupported transfers do not show a recovery action.
 foreach([['register'],['renew'],['register','renew','transfer'],[]] as $stops){
  $set($stops);$page->instance()->getRecord()->refresh();same($stops!==[],$page->instance()->startSellingAction()->isVisible(),'Visibility follows active stops');

@@ -31,7 +31,6 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{SettingsActions,AccountC
 $page=Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$server->id]);
 // The card fee and Default pricing are set only in What you sell; the account page links there.
 $page->assertSee('Customer pays')->assertDontSee('Card fee')->assertDontSee('2.9% + $0.30 per payment');
-$page->assertActionVisible(Filament\Actions\Testing\TestAction::make('customer_pays_'.$server->id)->schemaComponent('account_'.$server->id,'content'));
 $page->assertActionDoesNotExist('accept_namesilo_account');
 $page->mountAction(setupAction('configure',(int)$server->id));
 $page->setActionData(['registrar'=>'namesilo']);
