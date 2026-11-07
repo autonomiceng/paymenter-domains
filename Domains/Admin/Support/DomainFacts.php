@@ -168,9 +168,9 @@ final class DomainFacts
         }
         return self::alerts($d,$f);
     }
-    /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. */
-    public static function alertCause(string $code): string
-    { return $code==='observation_review'&&!self::canResume()?'Sync stopped. '.self::ASK_RESUME:ObligationAlerts::LABELS[$code]??'Domain alert needs review.'; }
+    /** Safe cause text shared by the domain page and the list. Unknown saved kinds still need review. With the domain, a stopped sync names the control these staff have. */
+    public static function alertCause(string $code, ?Domain $d=null): string
+    { return $code==='observation_review'?'Sync stopped. '.self::stoppedStep($d):(ObligationAlerts::LABELS[$code]??'Domain alert needs review.'); }
     /** Puts each cause under its row, collecting causes without a row on the Open alerts row. */
     private static function alerts(Domain $d, array $f): array
     {
@@ -183,7 +183,7 @@ final class DomainFacts
         foreach (array_unique(array_column($rows,'code')) as $code) {
             // Late payment already has a status reason and says so in the head.
             if ($code==='acquisition_late_money') { continue; }
-            [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code);
+            [$row,$tone]=self::ALERTS[$code]??[null,'warning']; $cause=self::alertCause($code,$d);
             // The row sends staff to the same place the head would.
             $request=in_array($code,['operation_review','held_obligation'],true)?array_values(array_filter($rows,fn(array $a)=>$a['code']===$code&&$a['request']!==null))[0]['request']??null:null;
             if ($request!==null) {
@@ -237,12 +237,12 @@ final class DomainFacts
     /** The Note in the Domains list: the status line, or what a sync problem needs. A stopped sync is amber (listTone), so the note always says it. $act: staff have a job here.
      * The Registrar column is hidden by default, so a missing registrar account leads the note.
      * @return array{text:?string,act:bool} */
-    public static function note(array $status, ?string $sync, bool $noAccount=false): array
+    public static function note(array $status, ?string $sync, bool $noAccount=false, ?Domain $d=null): array
     {
-        if ($noAccount) { $note=self::note($status,$sync); return ['text'=>trim(self::NO_ACCOUNT.' '.$note['text']),'act'=>true]; }
+        if ($noAccount) { $note=self::note($status,$sync,d:$d); return ['text'=>trim(self::NO_ACCOUNT.' '.$note['text']),'act'=>true]; }
         $line=self::statusLine($status);
         if ($line!==null) { return $sync==='failed'&&!str_contains($line,'Sync ')?['text'=>'Sync stopped. '.$line,'act'=>true]:['text'=>$line,'act'=>$status['act']]; }
-        return match($sync) { 'failed'=>['text'=>'Sync failed. '.(self::canResume()?'Use Resume sync on the domain.':self::ASK_RESUME),'act'=>true],'paused'=>['text'=>'Sync paused.','act'=>false],default=>['text'=>null,'act'=>false] };
+        return match($sync) { 'failed'=>['text'=>'Sync stopped. '.self::stoppedStep($d,' on the domain'),'act'=>true],'paused'=>['text'=>'Sync paused.','act'=>false],default=>['text'=>null,'act'=>false] };
     }
     /** The request a status step names, when this panel can open it. */
     public static function requestUrl(array $status): ?string
@@ -334,7 +334,18 @@ final class DomainFacts
         Staff::requireView();
         try { $d->observation; $d->renewal_policy; $d->snapshot; } catch (\Throwable) { return ['title'=>self::UNREADABLE,'tone'=>'danger']; }
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
+        if (!self::ended($d)&&$read['read_code']==='domain_not_in_account') {
+            $name=\App\Models\Server::whereKey($d->server_id)->value('name');
+            return ['title'=>'Domain is not in the registrar account.','tone'=>'warning',
+                'body'=>(is_string($name)&&trim($name)!==''?'Assigned account: '.trim($name).'. Register or transfer the domain there. ':'Register or transfer the domain into the assigned registrar account. ')
+                    .(self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.'),
+                'action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
+        }
         if (!self::ended($d)&&$read['read_review']) {
+            if (!$read['read_stopped']&&$read['next_read']!==null) {
+                return ['title'=>'Registrar reads keep failing. Automatic retries continue.','tone'=>'warning',
+                    'body'=>self::syncNow($d)?'Use Sync now to retry sooner.':null];
+            }
             return ['title'=>'Registrar reads keep failing. Check that this domain is in the right registrar account.','tone'=>'warning',
                 'body'=>self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.','action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
         }
@@ -405,7 +416,7 @@ final class DomainFacts
     /** Why a value read from the registrar is Missing. */
     public static function unread(Domain $d, ?string $sync): string
     {
-        return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync failed. '.(self::canResume()?'Use Resume sync.':self::ASK_RESUME),
+        return $d->adoptionPending()?Missing::fills('after import'):match($sync) {'paused'=>Missing::fills('when sync resumes'),'failed'=>'Sync stopped. '.self::stoppedStep($d),
             default=>$d->last_synced_at?'Registrar did not return it. Check the domain at the registrar.':Missing::fills('within a day')};
     }
     /** One safe failure cause and the actual automatic retry, or the stopped-read next step. */
@@ -419,9 +430,13 @@ final class DomainFacts
             :'No registrar read is queued. Check the background worker.'));
     }
     private const ASK_RESUME='Ask staff who can resume sync.';
+    /** The step for a stopped sync off the page notice, chosen as restart() does: Sync now when the page shows it, else Resume sync, else who can. */
+    private static function stoppedStep(?Domain $d, string $where=''): string
+    { return $d!==null&&self::syncNow($d)?'Use Sync now'.$where.'.':(self::canResume()?'Use Resume sync'.$where.'.':self::ASK_RESUME); }
     /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */
     private static function restart(Domain $d): string
     {
+        if (self::syncNow($d)) { return 'Use Sync now.'; }
         if (ObservationWork::currentId($d)!==null) { return self::canResume()?'Use Resume sync below.':self::ASK_RESUME; }
         return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';
     }

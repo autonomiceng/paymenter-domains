@@ -17,8 +17,19 @@ $clock->instant=$clock->now()->modify('+60 seconds');same('refreshed',$worker->t
 expect(!ObservationRecords::held($d->fresh()),'Successful full-family retry clears stale failure hold');
 // A family failure is retried even though the primary facts succeeded.
 $q=$failFamilies();
-expect(HoldingObservationWork::stopped($d->fresh()),'Five failures stop with their exact cause');$assertFamily('Missing',cause:'The registrar read failed.',kind:'srv',stopped:true);same('The registrar read failed.',\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh())['read_cause'],'The page notice names the exact cause');$assertFamily('Complete');$calls=count($state->calls);$clock->instant=$clock->now()->modify('+2 days');
-same('idle',$worker->turn($queue,$guard),'Exhausted current work stays stopped');same($calls,count($state->calls),'Exhaustion does not loop');
+expect(!HoldingObservationWork::stopped($d->fresh()),'Five transient failures retain automatic recovery');$assertFamily('Missing',cause:'The registrar read failed.',kind:'srv');same('The registrar read failed.',\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh())['read_cause'],'The page notice names the exact cause');$assertFamily('Complete');$calls=count($state->calls);$job=(clone $q)->sole();
+same(86400,$job->due_at-$clock->now()->getTimestamp(),'Five fast attempts back off for one day');
+same((int)$job->due_at,\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d->fresh())['next_read'],'The page exposes the daily recovery time');
+$clock->instant=$clock->now()->modify('+86399 seconds');
+same('idle',$worker->turn($queue,$guard),'Daily recovery never retries early');same($calls,count($state->calls),'Backoff sends no early registrar reads');
+$clock->instant=$clock->now()->modify('+1 second');
+same('read_failed',$worker->turn($queue,$guard),'A persistent failure retries on the next day');
+same(86400,(clone $q)->sole()->due_at-$clock->now()->getTimestamp(),'Persistent failure keeps the slow daily backoff');
+$state->fault='';$clock->instant=$clock->now()->modify('+1 day');
+same('refreshed',$worker->turn($queue,$guard),'Daily recovery succeeds without staff intervention');
+expect(!ObservationRecords::held($d->fresh()),'Automatic recovery clears the failed record hold');
+same(0,(int)(clone $q)->sole()->tries,'Successful daily recovery restores the normal retry budget');
+$q=$failFamilies();
 // Persistent failures need an account check, not another identical resume loop.
 require_once __DIR__.'/Support/staff-panel.php';staffPanel();
 Illuminate\Support\Facades\Route::get('/admin/registrar-account/{account}',fn()=>null)->name('filament.admin.pages.registrar-account');
@@ -26,14 +37,31 @@ app('router')->getRoutes()->refreshNameLookups();
 $staff=staffUser(['admin.domains.view','admin.domains.manage','admin.domains.operations.recheck']);
 Illuminate\Support\Facades\Auth::login($staff);
 $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
-same('Registrar reads keep failing. Check that this domain is in the right registrar account.',$notice['title'],'Persistent reads explain the prerequisite');
-same('Open registrar account',$notice['action']['label'],'Persistent reads offer the account check');
-expect(str_ends_with($notice['action']['url']??'','/admin/registrar-account/'.$d->server_id),'The action opens this domain’s own account');
+same('Registrar reads keep failing. Automatic retries continue.',$notice['title'],'Persistent transient failures explain their automatic recovery');
+expect(!isset($notice['action']),'Automatic recovery requires no account action');
 expect(!($notice['resume']??false),'The failed page does not lead with another resume');
-same('Then use Sync now.',$notice['body'],'Managing staff get their available sync step');
+same('Use Sync now to retry sooner.',$notice['body'],'Managing staff can retry sooner without being required to do so');
 $viewer=staffUser(['admin.domains.view']);
 Illuminate\Support\Facades\Auth::login($viewer);
 expect(!Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::syncNow($d->fresh()),'View-only staff have no Sync now control');
 $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
-same('Ask staff who can sync this domain.',$notice['body'],'View-only staff get a step they can take');
+same(null,$notice['body'],'View-only staff are not asked to find someone for an automatic retry');
+// A proven account mismatch needs an account correction, not daily retries.
+$observation->fault='owner';$clock->instant=$clock->now()->modify('+1 day');
+same('domain_not_in_account',$worker->turn($queue,$guard),'A domain outside the assigned account retains the actual cause');
+same(true,HoldingObservationWork::stopped($d->fresh()),'A missing account holding stops automatic reads');
+$notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
+same('Domain is not in the registrar account.',$notice['title'],'A missing account holding has a specific staff explanation');
+$account=(string)App\Models\Server::whereKey($d->server_id)->value('name');
+$staffRecords=static fn():string=>preg_replace('/\s+/',' ',html_entity_decode(strip_tags(view('domains::partials.record-families',['recordFamilies'=>\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::read($d->fresh(),$clock->now()),'staff'=>true])->render()),ENT_QUOTES));
+expect($account!==''&&str_starts_with($notice['body'],'Assigned account: '.$account.'. Register or transfer the domain there. '),'The next step names the account and fixes it instead of repeating sync');
+$records=$staffRecords();
+expect(str_contains($records,'Next registrar read: None until the domain is in this account.')&&!str_contains($records,'Stopped after'),'No read is due until the domain is in the account');
+// A manual Sync now that finds the same answer resets the count to 0 (HoldingReadRetry::completedManually), which is never shown.
+HoldingObservationWork::current($d->fresh())->update(['tries'=>0]);
+$records=$staffRecords();
+expect(str_contains($records,'Next registrar read: None until the domain is in this account.')&&!str_contains($records,'0 attempts'),'A manual read never says it stopped after 0 attempts');
+$calls=count($observation->calls);$clock->instant=$clock->now()->modify('+30 days');
+same('idle',$worker->turn($queue,$guard),'A missing account holding does not loop after daily backoff');
+same($calls,count($observation->calls),'No further registrar reads before the account is corrected');
 $nativeSuccessful=true;echo "Bounded automatic read retries passed.\n";

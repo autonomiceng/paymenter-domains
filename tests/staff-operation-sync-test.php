@@ -37,7 +37,12 @@ $stopped=DB::table('domains_observation_work')->insertGetId(['server_id'=>$check
 $stoppedPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){if($action!=='resume_observation'){commerceReject(fn()=>$run($check->fresh(),$action));}}
-$stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed');
+$stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed')->assertSee('Sync resumed')->assertDontSee('Stopped after 5 attempts.');
+expect(str_contains($stoppedPage->html(),'wire:poll.2s="pollManagement"'),'An open page follows the resumed scheduler read');
+DB::table('domains_observation_work')->where('id',$stopped)->update(['safe_code'=>'refreshed']);
+$stoppedPage->call('pollManagement');
+expect(!str_contains($stoppedPage->html(),'wire:poll.'),'Completed scheduled read stops polling');
+DB::table('domains_observation_work')->where('id',$stopped)->update(['safe_code'=>null]);
 same(1,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped domain work remains resumable after purchase completion');
 unset($stoppedPage);gc_collect_cycles();
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');

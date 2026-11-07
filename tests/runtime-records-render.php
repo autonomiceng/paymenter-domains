@@ -9,7 +9,7 @@ use Livewire\Livewire;
 use Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain;
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,ObservationRecords};
-use Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain;
+use Paymenter\Extensions\Servers\Domains\Presentation\{OwnedDomain,RecordFamilies};
 $out=$argv[1]??'';$shell=file_get_contents($argv[2]??'');expect(is_dir($out),'Output directory required');
 $registerRecords();$state->dns=array_map(fn($i)=>['name'=>'record'.$i,'type'=>'TXT','address'=>' exact TXT value '.$i.' ','mx_pref'=>10],range(12,1));
 $state->srv=array_map(fn($i)=>['service'=>'sip'.$i,'protocol'=>'tcp','priority'=>0,'weight'=>5,'port'=>443,'target'=>'sip.example.com.'],range(12,1));
@@ -17,14 +17,17 @@ app(\Paymenter\Extensions\Servers\Domains\Services\ObservationWork::class)->enro
 app(DomainObservation::class)->run($d->id,readRecords:true);
 same('complete',ObservationRecords::current($d->fresh())['families']['dns']['state'],'Actual installed on-demand record producer');
 $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
-    $dto=$owners->present($d->fresh());storefrontViews();app('view')->getFinder()->flush();
+    $holding=$d->fresh();
+    // Match the owner controller: the base domain DTO alone has no record-family state or queued-read note.
+    $recordFamilies=RecordFamilies::read($holding,app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now());
+    $dto=RecordFamilies::owner($owners->present($holding),$recordFamilies);storefrontViews();app('view')->getFinder()->flush();
     expect($dto->autoRenew!==[],'Actual owner projection retains local auto-renew');
     foreach(['dns','srv']as$kind){
         expect(isset($dto->management[$kind]),'Actual owner projection retains '.$kind.' capability');
         $copy=new OwnedDomain(...[...get_object_vars($dto),'management'=>[$kind=>$dto->management[$kind]]]);
         $pageKeys=array_fill_keys(['setup','recovery','code','renew','auto-renew',...\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerActionController::ACTIONS],str_repeat('a',64));
         $pageKeys['auto-renew']=str_repeat('b',64);
-        $html=view('domains::show',['domain'=>$copy,'keys'=>$pageKeys])->render();
+        $html=view('domains::show',['domain'=>$copy,'keys'=>$pageKeys,'recordFamilies'=>$recordFamilies])->render();
         $dom=storefrontDom($html);
         $rows=$dom->query('//li[@id="'.$kind.'"]');
         same(1,$rows->length,'Customer record section remains visible: '.$kind.' '.$stateName);
@@ -44,8 +47,9 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
             }
         } else {
             // slop-sweep: a held read is said once in the page notice, so its row shows a calm Missing alone.
-            $expected=$stateName==='unknown'?'Contact support to sync these records.':'Missing';
-            expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName);
+            $expected=$stateName==='unknown'?'Checking':'Missing';
+            expect(str_contains($rows->item(0)->textContent,$expected),'Record note explains recovery for '.$kind.' '.$stateName.': '.trim(preg_replace('/\s+/u',' ',$rows->item(0)->textContent)));
+            if($stateName==='unknown'){same(1,substr_count($html,'Registrar read queued for'),'The queued read explains both missing record families once');}
         }
         preg_match('#<body>(.*)</body>#s',$html,$body);$content=$body[1]??$html;
         writeRenderArtifact($out.'/customer-'.$kind.'-'.$stateName.'.html',str_replace('@@SLOT@@',$content,$shell));
@@ -53,13 +57,18 @@ $emit=static function(string $stateName)use($out,$shell,$owners,&$d):void {
 };
 $emit('complete');
 $p=$d->fresh()->observation;unset($p['records']);$d->fresh()->update(['observation'=>$p]);$emit('unknown');
-ObservationRecords::hold($d->fresh(),'records_unavailable',$clock->now());$emit('held');
+ObservationRecords::hold($d->fresh(),'records_unavailable',$clock->now());
+// A held inventory requires a stopped job; a healthy queued read would recover automatically.
+Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['safe_code'=>'records_incomplete','tries'=>1]);
+$emit('held');
 $staff=staffUser(array_keys(Staff::permissions()));Auth::setUser($staff);
 $css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 Filament::getCurrentPanel()->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 $staffPage=static function(string $name)use($staff,$out,$css,&$d):void {
-$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee($name==='staff-scheduled-stop'?'Sync stopped after a failed check.':"Sync stopped: couldn't read DNS records.");
-if ($name==='staff-scheduled-stop') { $test->assertSee('Sync failed')->assertSee('1 attempt. Stopped until resumed.'); }
+$test=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$d->id])->assertSee($name==='staff-scheduled-stop'?'Domain is not in the registrar account.':"Sync stopped: couldn't read DNS records.");
+if ($name==='staff-scheduled-stop') {
+    $test->assertSee('None until the domain is in this account.')->assertSee('Register or transfer the domain there.')->assertDontSee('Resume sync');
+}
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
 $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
 $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
@@ -69,9 +78,12 @@ writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $staffPage('staff-record-hold');
 $p=$d->fresh()->observation;unset($p['record_hold']);$d->fresh()->update(['observation'=>$p]);
-$bindings->setProcessing($d->server_id,false);$observation->fault='info_missing';$dueRecords();$runtimePorts->initialManagedRecordObservations();
+Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->update(['tries'=>0]);
+$bindings->setProcessing($d->server_id,false);$observation->fault='owner';$dueRecords();$runtimePorts->initialManagedRecordObservations();
 $bindings->setProcessing($d->server_id,true,static fn()=>null);
 same(1,(int)Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->value('tries'),'Stopped fixture retains one actual attempted check');
+same('domain_not_in_account',Illuminate\Support\Facades\DB::table('domains_observation_work')->where('domain_id',$d->id)->value('safe_code'),'A positive ownership mismatch actually stops scheduled reads');
+same(true,ObservationRecords::stopped($d->fresh()),'Scheduled render fixture has a stopped read');
 $emit('stopped');$staffPage('staff-scheduled-stop');
 $strings=[];foreach(glob($out.'/*.html')as$file){$strings[basename($file)]=trim(preg_replace('/\s+/u',' ',strip_tags(preg_replace('~<(style|script)\b[^>]*>.*?</\1>~si','',file_get_contents($file)))));}
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));

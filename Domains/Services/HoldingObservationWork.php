@@ -132,7 +132,7 @@ final class HoldingObservationWork
             $now=$this->clock->now()->getTimestamp(); $q=DB::table('domains_observation_work')->where('server_id',$queue->server_id)
                 ->where('account_fingerprint',$queue->account_fingerprint)->where('due_at','<=',$now)->where('tries','<',28)->where('lease_until','<=',$now)
                 ->where(function($q){$q->whereNull('safe_code')->orWhereNotIn('safe_code',HoldingReadRetry::STOPPED)
-                    ->orWhere(fn($q)=>$q->whereIn('safe_code',HoldingReadRetry::TRANSIENT)->where('tries','<',HoldingReadRetry::LIMIT));});
+                    ->orWhereIn('safe_code',HoldingReadRetry::TRANSIENT);});
             $job=$q->orderBy('due_at')->orderBy('id')->lockForUpdate()->first(); if (!$job) { return null; }
             $d=Domain::find($job->domain_id);
             if($d&&TransferPolling::ownsObservation($d)){DB::table('domains_observation_work')->where('id',$job->id)->delete();return null;}
@@ -184,7 +184,7 @@ final class HoldingObservationWork
         $exhausted=$pending?(!$within||$tries>=28):(!$coreRead&&$tries>=5);
         $follow=($d->observation['followup']['state']??null)==='pending';
         DB::table('domains_observation_work')->where('id',$job->id)->where('claim',$job->claim)->update([
-            'claim'=>null,'lease_until'=>0,'tries'=>$coreRead?0:$tries,
+            'claim'=>null,'lease_until'=>0,'tries'=>$coreRead?0:(in_array($code,HoldingReadRetry::TRANSIENT,true)?min($tries,HoldingReadRetry::LIMIT):$tries),
             'due_at'=>$now+($pending?21600:($coreRead?($code==='refreshed'&&$follow?300:86400):HoldingReadRetry::delay($tries))),
             'safe_code'=>in_array($code,HoldingReadRetry::STOPPED,true)?$code:($exhausted?'budget_exhausted':$code)]);
     }

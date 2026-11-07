@@ -8,7 +8,7 @@ use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Queue\{ShouldQueue,ShouldBeUnique};
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\{InteractsWithQueue,SerializesModels};
-use Illuminate\Support\Facades\{Cache,Route};
+use Illuminate\Support\Facades\{Cache,DB,Route};
 use Paymenter\Extensions\Servers\Domains\Admin\Support\Staff;
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{DomainObservation,ObservationRecords,ReadFailure};
@@ -50,7 +50,7 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
         $lock=app(UniqueLock::class);
         if (!$lock->acquire($job)) { return false; }
         // Dispatch directly after admission: PendingDispatch would try to acquire the same lock again.
-        try { Cache::forget($job->uniqueId().':result'); Cache::put($job->pendingKey(),true,self::UNIQUE_FOR); app(Dispatcher::class)->dispatch($job); }
+        try { $job->recordHistory('Sync requested'); Cache::forget($job->uniqueId().':result'); Cache::put($job->pendingKey(),true,self::UNIQUE_FOR); app(Dispatcher::class)->dispatch($job); }
         catch (\Throwable $error) { Cache::forget($job->pendingKey()); $lock->release($job); throw $error; }
         return true;
     }
@@ -65,14 +65,29 @@ final class SyncDomainRecords implements ShouldQueue,ShouldBeUnique
                 if ($result==='records_disabled') { $this->notice('Records not read','Record checks are paused or not set up for this registrar account. Ask your site admin to check Processing and record-read setup, then press Sync now again.'); return; }
                 $failed=ObservationRecords::held($d->refresh())||in_array($result,ReadFailure::CODES,true)||$result==='read_deferred';
                 if(!$failed&&$result==='refreshed'){\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d);}
-                $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'Refresh the domain page to see the saved records.');
+                if ($result==='domain_not_in_account') { \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d,$result); $this->notice("Couldn't read all records",'Domain is not in the registrar account. Check the assigned account or complete the transfer there, then use Sync now.'); return; }
+                $this->notice($failed?"Couldn't read all records":'Domain synced',$failed?(ObservationRecords::limitNotice($d)??'Open the domain and check the sync notice, then try Sync now again.'):'The saved records are up to date.');
             } catch (\Throwable) { $this->notice("Couldn't sync domain",'Check the registrar account, then try Sync now again.'); }
         } finally { Cache::forget($this->pendingKey()); }
     }
     public function failed(?\Throwable $error): void
     { Cache::forget($this->pendingKey()); $this->notice("Couldn't sync domain",'The background read stopped. Ask your site admin to check the queue worker, then try Sync now again.'); }
+    private function recordHistory(string $event): void
+    {
+        // Only this domain row is locked; no provider or financial work runs inside this transaction.
+        DB::transaction(function()use($event):void {
+            $d=Domain::whereKey($this->domain)->lockForUpdate()->first();
+            if (!$d||$d->authority_generation!==$this->generation||$d->account_fingerprint!==$this->fingerprint) { return; }
+            $p=$d->observation??[];$history=$p['sync_history']??[];
+            $p['sync_history']=array_slice([...$history,['event'=>$event,'actor_id'=>$this->actor,
+                'at'=>app(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)->now()->format(DATE_ATOM)]],-20);
+            $d->update(['observation'=>$p]);
+
+        });
+    }
     private function notice(string $title,string $body): void
     {
+        $this->recordHistory($title);
         Cache::put($this->uniqueId().':result',compact('title','body'),self::UNIQUE_FOR);
         if (!Staff::allows(User::find($this->actor))) { return; }
         $route='filament.admin.resources.domains.view';

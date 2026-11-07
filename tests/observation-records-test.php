@@ -129,7 +129,7 @@ same('refreshed',$observer->run($d->id,readRecords:true),'Foreign record provide
 DB::table('domains_domains')->where('id',$d->id)->update(['provider_domain_id'=>'456']);$clock->instant=$clock->now()->modify('+61 seconds');$observer->run($d->id,readRecords:true);
 // A successful ownership/drift read survives record rejection and quota deferral.
 $observation->fault='owner';$state->calls=[];$clock->instant=$clock->now()->modify('+61 seconds');
-same('unresolved',$observer->run($d->id,readRecords:true),'Ownership loss retains unresolved drift status');
+same('domain_not_in_account',$observer->run($d->id,readRecords:true),'Ownership loss identifies the account mismatch');
 same(false,$d->fresh()->observation['facts']['owned'],'Ownership loss persists despite unavailable records');expect($d->fresh()->observation['drift'],'Ownership drift retained');same([],$state->calls,'No private record discovery after ownership loss');
 $observation->fault='';$clearRecords();$observer->run($d->id,readRecords:true);$priorInventory=$d->fresh()->observation['records'];$observation->years=2;
 $limiter=new class implements \Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter {

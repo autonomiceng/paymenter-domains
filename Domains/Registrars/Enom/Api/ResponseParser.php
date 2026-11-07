@@ -39,6 +39,13 @@ final class ResponseParser
                 || ($data['responses']['response']['responsenumber'] ?? null) === '304155')) {
             return new ProtocolResult('rejected', 'identity_credentials_refused');
         }
+        if ($command === ReadCommand::Info && $data['errcount'] === '1'
+            && ($data['errors']??null) === ['err1'=>'Domain name not found']
+            && empty($data['rrpcode']) && empty($data['responsecode'])
+            && !array_diff(array_keys($data), ['command','errcount','done','errors','rrpcode','rrptext','responsecode','responsecount',
+                'server','site','language','islockable','isrealtimetld','timedifference','exectime','requestdatetime','debug','minperiod','maxperiod'])) {
+            return new ProtocolResult('rejected','domain_not_in_account');
+        }
         $code = $data['rrpcode'] ?? $data['responsecode'] ?? null;
         $code = is_string($code) && preg_match('/^[0-9]{1,6}$/D', $code) ? $code : null;
         if ($command === ReadCommand::HostStatus && $data['errcount'] === '1' && ($data['errors']??null) === ['err1'=>'Error 545 - Name server does not exist']

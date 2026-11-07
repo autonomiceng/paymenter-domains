@@ -172,6 +172,7 @@ final class Labels
             'producer_failed'=>'Background job failed','acquisition_provider_evidence'=>'Registrar result unclear. Check at the registrar.',
             'no_eligible_paid_line'=>'No paid invoice line for this order.','original_invoice_missing'=>'Original invoice missing. Check the order.',
             'read_failed'=>"Couldn't read from the registrar.",'read_exception'=>"Couldn't read from the registrar.",'read_deadline'=>"Registrar didn't answer in time",
+            'domain_not_in_account'=>'Domain is not in the registrar account.',
             'read_no_evidence'=>'Registrar sent no answer.','read_identity_changed'=>'Domain or account changed during the check.',
             'account_unavailable'=>'Registrar account not found','binding_mismatch'=>'Request does not match this registrar account.',
             'configuration_unverified'=>'Registrar account not checked yet.','encryption_unavailable'=>"Can't read saved credentials. Ask your site admin to check the encryption key.",'storage_unavailable'=>'Database error. Try again.',

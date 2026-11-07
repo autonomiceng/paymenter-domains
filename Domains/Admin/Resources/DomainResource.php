@@ -118,7 +118,7 @@ class DomainResource extends Resource
     private static function tone(Domain $record, mixed $livewire): string
     { return DomainFacts::listTone(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount']); }
     private static function note(Domain $record, mixed $livewire): array
-    { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount']); }
+    { return DomainFacts::note(self::status($record,$livewire),self::row($record,$livewire)['sync'],self::row($record,$livewire)['noAccount'],$record); }
     private static function registered(Domain $record): bool
     { return DomainFacts::registered($record); }
     /** 'off': true when automatic renewal is off, null when its saved data cannot be read. 'sync': DomainFacts::sync(). 'noAccount': no registrar account matches. */

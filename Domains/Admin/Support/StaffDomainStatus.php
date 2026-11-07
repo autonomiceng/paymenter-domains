@@ -41,7 +41,7 @@ final class StaffDomainStatus
         $act = $step !== null && !in_array($step, self::WAITING, true);
         $named = null;
         if (!$specific) {
-            if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top); $act = true; $named = $top['code']; }
+            if ($alerts) { $top = self::topAlert($alerts); [$step, $request] = self::alert($top, $d); $act = true; $named = $top['code']; }
             elseif ($renewal && in_array($state, ['active', 'renewal_off_expiring'], true)) { [$step, $request, $act] = self::renewal($renewal); }
         }
         // A held or unconfirmed transfer, and a state this version doesn't know, only say a request is in the way.
@@ -98,9 +98,9 @@ final class StaffDomainStatus
         }, null];
     }
     /** @return array{0:string,1:?int} */
-    private static function alert(array $alert): array
+    private static function alert(array $alert, Domain $d): array
     {
-        $step = self::sentence(DomainFacts::alertCause($alert['code']));
+        $step = self::sentence(DomainFacts::alertCause($alert['code'], $d));
         if (!$alert['request']) { return [$step, null]; }
         // Some causes already end by sending staff to the request. Name it there, once.
         $open = self::check($alert['request']);

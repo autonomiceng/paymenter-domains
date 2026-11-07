@@ -20,8 +20,8 @@ final class DomainHistory
             try { $history=$op->policy['staff_actions']??[]; } catch (\Throwable) { continue; }
             if (!is_array($history)||!array_is_list($history)||count($history)>100) { continue; }
             foreach ($history as $i=>$action) {
-                if (!is_array($action)||!in_array($action['action']??null,['hold','release'],true)||($action['phase']??null)!=='completed') { continue; }
-                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>$action['action']==='hold'?'Put on hold':'Hold released',
+                if (!is_array($action)||!in_array($action['action']??null,['hold','release','resume_observation'],true)||($action['phase']??null)!=='completed') { continue; }
+                $rows[]=['__key'=>$action['action'].'-'.$op->id.'-'.$i,'time'=>self::at($action['at']??null),'event'=>match($action['action']){'hold'=>'Put on hold','release'=>'Hold released','resume_observation'=>'Sync resumed'},
                     'sub'=>'Request #'.$op->id.' '.Labels::action($op->action),'status'=>null,'by'=>is_string($action['actor_name']??null)&&$action['actor_name']!==''?$action['actor_name']:'Staff'];
             }
         }
@@ -40,6 +40,12 @@ final class DomainHistory
             $enabled=null; try { $enabled=$a->data['enabled']??null; } catch (\Throwable) {}
             $rows[]=['__key'=>'audit-'.$a->id,'time'=>$a->created_at,'event'=>$enabled===null?'Auto-renew changed':'Auto-renew turned '.($enabled?'on':'off'),
                 'sub'=>null,'status'=>null,'by'=>$names[$a->actor_id]??'Customer'];
+        }
+        try { $sync=$domain->observation['sync_history']??[]; } catch (\Throwable) { $sync=[]; }
+        $events=['Sync requested','Domain synced',"Couldn't read all records",'Records not read',"Couldn't sync domain",'Sync stopped'];
+        foreach (is_array($sync)?array_reverse(array_slice($sync,-20),true):[] as $i=>$entry) {
+            if (!is_array($entry)||!in_array($entry['event']??null,$events,true)) { continue; }
+            $rows[]=['__key'=>'sync-'.$i,'time'=>self::at($entry['at']??null),'event'=>$entry['event'],'sub'=>null,'status'=>null,'by'=>'Staff'];
         }
         $at=fn(Operation|array $r)=>($r instanceof Operation?$r->created_at:$r['time'])?->getTimestamp()??PHP_INT_MIN;
         usort($rows,fn($a,$b)=>$at($b)<=>$at($a));
