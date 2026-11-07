@@ -137,7 +137,8 @@ class ViewTld extends ViewRecord
         $t=$this->getRecord();$server=(int)$t->server_id;$id=(int)$t->id;
         return Action::make('start_selling')->label('Start selling')->color('primary')->requiresConfirmation()->icon(null)->modalIcon('heroicon-o-play-circle')
             ->modalHeading('Start selling .'.$t->tld.'?')->modalSubmitActionLabel('Start selling')
-            ->modalDescription(fn()=>$this->startDescription())
+            ->modalDescription(fn()=>$this->salePrices()?'New registrations and transfers open at once, at these prices.':'New registrations and transfers open at once.')
+            ->modalContent(fn()=>$this->salePricesList())
             ->visible(fn():bool=>$this->canStart())
             ->schema([Hidden::make('review_key')->default(fn()=>Review::ticket((int)auth()->id(),$server,$id,'tld_settings',$this->reviewStamp))])
             ->action(function(array $data)use($server,$id):void {
@@ -152,13 +153,17 @@ class ViewTld extends ViewRecord
             });
     }
     /** The confirm names the prices that go on sale. */
-    private function startDescription(): HtmlString
+    /** Retail prices that go live, one year each. */
+    private function salePrices(): array
     {
         $prices=collect(TldFacts::snapshot($this->getRecord())['prices']??[]);
-        $price=static fn(string $action,int $term)=>$prices->first(fn($p)=>$p['action']===$action&&$p['term']===$term)['retail']??null;
-        $rows=array_filter(['Register'=>($r=$price('register',1))?$r.' a year':null,'Transfer'=>$price('transfer',1),'Renew'=>($r=$price('renew',1))?$r.' a year':null]);
-        $list=implode('',array_map(fn($k,$v)=>'<div><dt>'.e($k).'</dt><dd>'.e($v).'</dd></div>',array_keys($rows),$rows));
-        return new HtmlString('<p>New registrations and transfers open at once'.($rows?', at these prices.':'.').'</p>'.($rows?'<dl class="domains-sale-prices">'.$list.'</dl>':''));
+        $price=static fn(string $action)=>$prices->first(fn($p)=>$p['action']===$action&&$p['term']===1)['retail']??null;
+        return array_filter(['Register'=>($r=$price('register'))?$r.' a year':null,'Transfer'=>$price('transfer'),'Renew'=>($r=$price('renew'))?$r.' a year':null]);
+    }
+    private function salePricesList(): ?HtmlString
+    {
+        $rows=$this->salePrices();
+        return $rows?new HtmlString('<dl class="domains-sale-prices">'.implode('',array_map(fn($k,$v)=>'<div><dt>'.e($k).'</dt><dd>'.e($v).'</dd></div>',array_keys($rows),$rows)).'</dl>'):null;
     }
     /** Stops new registrations and transfers. Domains customers already have keep renewing. */
     public function stopSellingAction(): Action

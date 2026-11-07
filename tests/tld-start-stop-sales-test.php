@@ -24,7 +24,7 @@ $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id])->asser
 same('primary',$page->instance()->startSellingAction()->getColor(),'Start selling is the one primary action');
 expect(str_contains($head($page),'Not for sale')&&str_contains($head($page),'Stopped by staff'),'The head says the state once, with its reason');
 $page->mountAction('start_selling');
-expect(str_contains($page->instance()->getMountedAction()->getModalDescription()->toHtml(),'Register'),'The confirm lists the prices that go on sale');
+expect(str_contains((string)$page->instance()->getMountedAction()->getModalContent()?->toHtml(),'Register'),'The confirm lists the prices that go on sale');
 $page->callMountedAction()->assertHasNoActionErrors()->assertNotified('Change recorded')->assertActionHidden('start_selling');
 same(true,$offer('register')->available,'Start selling makes registrations purchasable: '.$offer('register')->reason);
 // For sale: no Start selling; Stop selling ends new orders and keeps renewals.
