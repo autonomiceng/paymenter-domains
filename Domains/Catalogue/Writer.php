@@ -78,7 +78,7 @@ final class Writer implements Catalogue
                 if($own!==null&&$own['mode']!=='markup_fee_percent'){continue;}
                 // Discovery invalidates the offer revision before publication. A failed turn remains pending.
                 try{$pending=$t->catalogue_published_revision===null||(OfferState::decode($t->catalogue_published_revision)['offer']??null)!==(int)$t->catalogue_revision;}
-                catch(\JsonException){$pending=true;}
+                catch(\JsonException|\TypeError){$pending=true;}
                 $feeMode=($own??$rule)['mode']==='markup_fee_percent';
                 if(!$pending&&!($own===null&&$ruleChanged)&&!($feeMode&&$feeChanged)){continue;}
                 if($own!==null){PricingRule::validate([...$own,'card_fee'=>$fee]);}
