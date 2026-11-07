@@ -52,7 +52,14 @@ same('domain_not_in_account',$worker->turn($queue,$guard),'A domain outside the 
 same(true,HoldingObservationWork::stopped($d->fresh()),'A missing account holding stops automatic reads');
 $notice=Paymenter\Extensions\Servers\Domains\Admin\Support\DomainFacts::notice($d->fresh());
 same('Domain is not in the registrar account.',$notice['title'],'A missing account holding has a specific staff explanation');
-expect(str_contains($notice['body'],'registration or transfer'),'The next step fixes the registrar account instead of repeating sync');
+$account=(string)App\Models\Server::whereKey($d->server_id)->value('name');
+same('Assigned account: '.$account.'. Register or transfer the domain there. Then use Sync now.',$notice['body'],'The next step names the account and fixes it instead of repeating sync');
+$records=html_entity_decode(strip_tags($familyViews()['staff']),ENT_QUOTES);
+expect(str_contains($records,'Next registrar read: None until the domain is in this account.')&&!str_contains($records,'Stopped after'),'No read is due until the domain is in the account');
+// A manual Sync now that finds the same answer leaves no attempt count to show.
+Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::completedManually($d->fresh(),'domain_not_in_account');
+$records=html_entity_decode(strip_tags($familyViews()['staff']),ENT_QUOTES);
+expect(str_contains($records,'Next registrar read: None until the domain is in this account.')&&!str_contains($records,'0 attempts'),'A manual read never says it stopped after 0 attempts');
 $calls=count($observation->calls);$clock->instant=$clock->now()->modify('+30 days');
 same('idle',$worker->turn($queue,$guard),'A missing account holding does not loop after daily backoff');
 same($calls,count($observation->calls),'No further registrar reads before the account is corrected');

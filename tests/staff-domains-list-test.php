@@ -104,6 +104,12 @@ foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
 same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
 foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
-    same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync failed. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
+    same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync stopped. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
+// A stopped sync names the control these staff have: Sync now for Manage staff, else Resume sync.
+foreach([[['admin.domains.manage','admin.domains.operations.resume_observation'],'Use Sync now on the domain.'],[['admin.domains.operations.resume_observation'],'Use Resume sync on the domain.']] as [$rights,$step]){
+    Auth::setUser(staffUser([Staff::VIEW,...$rights]));
+    same(DomainFacts::NO_ACCOUNT.' Sync stopped. '.$step,$columns['note']->record($records[$missing[0]])->getState(),'The list Note names the step on the page: '.$step);
+}
+Auth::setUser($viewer);
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

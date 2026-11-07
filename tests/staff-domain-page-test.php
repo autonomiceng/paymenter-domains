@@ -241,7 +241,7 @@ $heldRequest=$held->operations()->sole()->id;
 Livewire::actingAs($viewer)->test(Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$heldRequest])->assertSeeHtml('data-beco-record="request-'.$heldRequest.'"');
 $note=DomainFacts::note(DomainFacts::status($held),null)['text'];
 same('<span class="domains-link">Check request #'.$heldRequest.'</span>. '.e(rtrim(substr($note,0,-strlen('Check request #'.$heldRequest.'.')))),(string)DomainFacts::noteStep($note,DomainFacts::status($held)),'A Note leads with its step, which looks like a link');
-same('Sync failed. Use Resume sync on the domain.',DomainFacts::noteStep('Sync failed. Use Resume sync on the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
+same('Sync stopped. Use Resume sync on the domain.',DomainFacts::noteStep('Sync stopped. Use Resume sync on the domain.',DomainFacts::status($held)),'A Note with no request step stays plain');
 
 // An old sweep failure must not conceal a definitely-unsent order's actual staff reason.
 $unsent=Domain::create(['server_id'=>$held->server_id,'registrar_key'=>$held->registrar_key,'account_fingerprint'=>$held->account_fingerprint,
@@ -268,12 +268,28 @@ same(['The registrar read stopped.','Use Resume sync below.'],array_values(array
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>null]);
 same(null,$sub($active,'Expires'),'Missing expiry does not repeat the failed sync');
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
-Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync failed')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync stopped')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
 same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertSee('Cause: read_unavailable.');
+// The count is a real number of reads: one attempt is singular, and none says only that the read stopped.
+foreach([1=>'Next registrar read: Stopped after 1 attempt. Cause: read_unavailable.',0=>'Next registrar read: Stopped. Cause: read_unavailable.'] as $tries=>$line){
+    DB::table('domains_observation_work')->where('id',$work)->update(['tries'=>$tries]);
+    Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee($line)->assertDontSee('1 attempts')->assertDontSee('after 0 attempts');
+}
+DB::table('domains_observation_work')->where('id',$work)->update(['tries'=>5]);
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
 same('warning',$stoppedHead['tone'],'Active over a stopped sync turns amber');
 expect(str_contains((string)$stoppedHead['step'],'The registrar read stopped. Use Resume sync below.')&&!str_contains((string)$stoppedHead['step'],'data-beco-tone'),'The state is the one mark');
+// Each stopped-sync line names the control these staff have, the way the page notice does: Sync now for Manage staff on an active domain, else Resume sync.
+$manager=staffUser([Staff::VIEW,'admin.domains.manage','admin.domains.operations.resume_observation']);
+$noSteps=['reason'=>null,'step'=>null,'act'=>false,'request'=>null];
+foreach([[$manager,'Use Sync now.','Use Sync now on the domain.'],[$staff,'Use Resume sync.','Use Resume sync on the domain.'],[$viewer,'Ask staff who can resume sync.','Ask staff who can resume sync.']] as [$who,$step,$noteStep]){
+    Auth::setUser($who);
+    same('Sync stopped. '.$step,DomainFacts::alertCause('observation_review',$active->fresh()),'Last sync alert step: '.$step);
+    same('Sync stopped. '.$step,DomainFacts::unread($active->fresh(),'failed'),'Missing value step: '.$step);
+    same('Sync stopped. '.$noteStep,DomainFacts::note($noSteps,'failed',false,$active->fresh())['text'],'List Note step: '.$noteStep);
+}
+Livewire::actingAs($manager)->test(ViewDomain::class,['record'=>$active->id])->assertSee('Use Sync now.')->assertDontSee('Use Resume sync');
 Auth::setUser($viewer);expect(str_contains((string)DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()))['step'],'Ask staff who can resume sync.'),'Without the right the step names who can');
 // One rule for the request a page names: the one that needs staff, in the head and on the rows alike, and none when nothing does.
 Auth::setUser($staff);
