@@ -17,6 +17,6 @@
 </span>
 {{-- An unread family shows only Missing or Checking. Why is the same for every family, so record-read-note says it once above the rows. --}}
 @if ($family['state'] !== 'unknown')
-<span class="domains-sub">{{ $family[$staff ? 'staff' : 'customer'] }} @if ($ownTime)Checked @include('domains::partials.moment',['at'=>$family['at']]).@endif</span>
+<span class="domains-sub">{{ $family[$staff ? 'staff' : 'customer'] }} @if (!$staff && ($support ?? null) && ($family['support'] ?? false))@include('domains::partials.contact-support', ['before' => $support.' ', 'after' => '. '])@endif @if ($ownTime)Checked @include('domains::partials.moment',['at'=>$family['at']]).@endif</span>
 @endif
 @if ($family['last_good_at'] && $family['state'] !== 'complete')<span class="domains-sub">Last confirmed: @include('domains::partials.moment',['at'=>$family['last_good_at']])</span>@endif
