@@ -37,7 +37,7 @@ $stopped=DB::table('domains_observation_work')->insertGetId(['server_id'=>$check
 $stoppedPage=Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$check->domain_id])->assertActionVisible('resume_observation');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');
 foreach(array_keys(StaffOperationReview::ACTIONS) as $action){if($action!=='resume_observation'){commerceReject(fn()=>$run($check->fresh(),$action));}}
-$stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed');
+$stoppedPage->callAction('resume_observation')->assertNotified('Sync resumed')->assertSee('Sync resumed')->assertDontSee('Stopped after 5 attempts.');
 same(1,(int)DB::table('domains_observation_work')->where('id',$stopped)->value('resumes'),'Stopped domain work remains resumable after purchase completion');
 unset($stoppedPage);gc_collect_cycles();
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$check->id])->assertDontSee('More');

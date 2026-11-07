@@ -20,7 +20,7 @@ use Paymenter\Extensions\Servers\Domains\Support\DemoData;
 class ViewDomain extends ViewRecord
 {
     public function getHeader(): ?\Illuminate\Contracts\View\View { return view('domains::staff.domain-header'); }
-    public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); $this->edits=$this->facts=$this->domainStatus=null; }
+    public function pollManagement(): void { Staff::requireView(); $this->getRecord()->refresh(); $this->edits=$this->facts=$this->domainStatus=$this->families=null; }
     public function syncPending(): bool
     { return \Paymenter\Extensions\Servers\Domains\Jobs\SyncDomainRecords::pending($this->getRecord()); }
     public function managementProgress(): array
@@ -61,7 +61,8 @@ class ViewDomain extends ViewRecord
     protected function afterActionCalled(Action $action): void
     {
         parent::afterActionCalled($action);
-        $this->edits=$this->facts=$this->domainStatus=$this->families=null;
+        $this->pollManagement();
+        $this->cacheSchema('infolist');
     }
     public function getBreadcrumbs(): array { return [$this->getResourceUrl()=>'Domains',$this->getTitle()]; }
     public function hasCombinedRelationManagerTabsWithContent(): bool { return true; }
