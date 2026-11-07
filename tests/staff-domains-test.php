@@ -276,9 +276,14 @@ same('srv',\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::se
 foreach([['awaiting_payment','pending','pending'],['succeeded','paid','paid'],['uncertain','paid','review']] as [$requestState,$invoiceState,$expected]){
     same($expected,\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::issuedState(new Operation(['state'=>$requestState]),new App\Models\Invoice(['status'=>$invoiceState])),'Renewal invoice status is presented separately: '.$expected);
 }
+// Public transfer lock codes stay in the storefront; staff diagnostics retain their closed refusal code.
+foreach(['transfer_creation_lock','transfer_previous_lock'] as $code){
+    same('guard_refused',\Paymenter\Extensions\Servers\Domains\Services\OperationFailure::code(new \Paymenter\Extensions\Servers\Domains\Services\TransferRestriction($code)),'Public transfer locks cannot become unmapped staff reasons');
+}
 // These values have separate presenters or describe results, audit events, inputs or configuration.
 // Exclusions are per file and code: a new reason in any service still fails coverage.
 $excluded=[
+    'Rdap.php'=>['transfer_creation_lock','transfer_previous_lock'], // Public transfer restrictions; staff mapping is checked above.
     'DomainObservation.php'=>['records_disabled'], // Manual result rendered by SyncDomainRecords; scheduled work passes readRecords:false.
     'AccountBindings.php'=>['matched','server_unavailable','server_disabled','not_configured','site_invalid','site_unbound','site_mismatch','configuration_unavailable'],
     'RegistrarBalances.php'=>['rate_limited','configuration_unavailable','read_failed','test_call_refused'], // Balance facts.
