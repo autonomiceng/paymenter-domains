@@ -155,9 +155,22 @@ $resume($staff,$ticket($staff));
 $job=DB::table('domains_observation_work')->where('id',$readJob)->sole();
 same([1,0,null,null,$clock->now()->getTimestamp()],[(int)$job->resumes,(int)$job->tries,$job->safe_code,$job->claim,(int)$job->due_at],'Active Resume sync resets stopped reads immediately');
 ObservationRecords::hold($readDomain->fresh(),'records_unavailable',$clock->now());
+// A record hold with an automatic retry due is still running, not a staff recovery step.
+same($clock->now()->getTimestamp(), \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($readDomain->fresh())['next_read'], 'Record hold retains its scheduled automatic retry');
+same(false, ObservationRecords::stopped($readDomain->fresh()), 'Automatic retry does not offer Resume sync');
+$retryBefore=[$op->fresh()->getRawOriginal(),$readDomain->fresh()->getRawOriginal(),(array)DB::table('domains_observation_work')->where('id',$readJob)->sole()];
+$retryRefusal=null;
+try { $resume($staff,$ticket($staff)); }
+catch (\Paymenter\Extensions\Servers\Domains\Services\StaffReviewRefused $e) { $retryRefusal=$e->getMessage(); }
+same('Sync is already running.', $retryRefusal, 'Installed staff route refuses redundant manual recovery');
+same($retryBefore, [$op->fresh()->getRawOriginal(),$readDomain->fresh()->getRawOriginal(),(array)DB::table('domains_observation_work')->where('id',$readJob)->sole()], 'Refusal preserves the hold, job, audits and financial evidence');
+// Exhaust the scheduled reads before asking staff to restart them and clear the record hold.
+DB::table('domains_observation_work')->where('id',$readJob)->update(['safe_code'=>'read_unavailable','tries'=>5]);
+same(true, ObservationRecords::stopped($readDomain->fresh()), 'Stopped reads offer manual recovery');
+same(null, \Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($readDomain->fresh())['next_read'], 'Stopped reads have no automatic retry');
 $resume($staff,$ticket($staff));
-same(false,ObservationRecords::held($readDomain->fresh()),'Active record-only recovery clears the record hold');
-same(2,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Record-only recovery uses the same resume counter');
+same(false,ObservationRecords::held($readDomain->fresh()),'Active stopped-read recovery clears the record hold');
+same(2,(int)DB::table('domains_observation_work')->where('id',$readJob)->value('resumes'),'Stopped record recovery uses the same resume counter');
 same(2,count(array_filter($op->fresh()->policy['staff_actions'],static fn($a)=>$a['action']==='resume_observation')),'Both active resumptions retain staff audit');
 same(2,count($readDomain->fresh()->observation['resumptions']),'Both active resumptions retain holding audit');
 same($frozenHolding,[$op->fresh()->attempt,$op->fresh()->funding,$op->fresh()->cost,$op->fresh()->amount],'Resume cannot change frozen financial evidence');
@@ -186,5 +199,14 @@ $ports->apply(Edit::override($binding,'org',new Intent(sell:true)),$orgRevision(
 $ports->apply(Edit::seller($binding,'org',['register']),$orgRevision());
 same(false,$ports->readOffers($orgQuery,Context::Public)[0]->available,'Missing renewal price never enables an offer');
 $org=Tld::where('server_id',$binding->serverId)->where('tld','org')->sole();
-same('Needs a price sync',StaffCatalogue::routed()->page(collect([$org]))[$org->id]['sales']['reason'],'Closed unknown renewal retains the staff next step');
+same('unsupported_term',$ports->readOffers($orgQuery,Context::Staff)[0]->reason,'Absent annual renewal terms are distinct from missing prices');
+$clock->instant=$now=$now->modify('+1 second');
+$ports->apply(new FactsObserved($binding,'org',new Facts(['register'=>[1],'renew'=>[1]],[],true,false,false,'enom_tld_facts',$now,$now->modify('+30 days'))),$orgRevision());
+// A registration cost isolates the missing annual renewal cost from an entirely absent feed entry.
+$ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'org',[
+    new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('register',1,true,'6.0000',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$now,$now->modify('+48 hours')),
+]),$orgRevision());
+same(false,$ports->readOffers($orgQuery,Context::Public)[0]->available,'Confirmed renewal support without its cost still cannot open sales');
+same('unknown_price',$ports->readOffers($orgQuery,Context::Staff)[0]->reason,'Supported annual renewal without its cost stays a missing-price hold');
+same('Cost missing',StaffCatalogue::routed()->page(collect([$org]))[$org->id]['sales']['reason'],'Closed unknown renewal names the missing registrar cost');
 $nativeSuccessful=true;echo "Installed checked cutover caller matrix passed.\n";
