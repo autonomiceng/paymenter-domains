@@ -110,7 +110,7 @@ final class ResponseParser
         $messages=['Validation error. Failed to create order.','Validation error; failed to add; order(s)'];
         $found=false; $errors=$data['errors']??[];
         if($errors!==''&&$errors!==[]){
-            if(!is_array($errors)||array_is_list($errors)||count($errors)!==(int)$data['errcount']){return false;}
+            if(!is_array($errors)||array_is_list($errors)||!array_key_exists('err1',$errors)||count($errors)!==(int)$data['errcount']){return false;}
             foreach($errors as $key=>$text){
                 if(!preg_match('/^err[1-9][0-9]*$/D',(string)$key)||!in_array($text,$messages,true)){return false;}
                 $found=true;

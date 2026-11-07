@@ -54,7 +54,12 @@ $purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data manage
     .'<TimeDifference>+00.00</TimeDifference><ExecTime>0.01</ExecTime><Done>true</Done><TrackingKey>synthetic-tracking</TrackingKey>'
     .'<RequestDateTime>11/7/2026 6:42:36 AM</RequestDateTime><debug/></interface-response>';
 same('rejected',$parser->parse(RegistrationCommand::Purchase,$purchaseRefusal)->status,'Observed 541 failure to create an order is a definite refusal');
-foreach ([str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchaseRefusal),
+$onlyResponse=preg_replace('~<errors>.*?</errors>~s','',$purchaseRefusal);
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$onlyResponse)->status,'The exact failed-to-add order response also proves refusal');
+$twoErrors=str_replace(['<ErrCount>1</ErrCount>','</errors>'],['<ErrCount>2</ErrCount>','<Err2>Validation error. Failed to create order.</Err2></errors>'],$purchaseRefusal);
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$twoErrors)->status,'Multiple consistent errors retain explicit order-creation refusal');
+
+foreach ([str_replace(['<Err1>','</Err1>'],['<Err2>','</Err2>'],$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchaseRefusal),
     str_replace('<RRPCode>541</RRPCode>','',$purchaseRefusal),
     str_replace('<ErrCount>1</ErrCount>','<ErrCount>0</ErrCount>',$purchaseRefusal),
     str_replace('Validation error. Failed to create order.','Validation error. Order status unknown.',str_replace('Validation error; failed to add; order(s)','Order pending',$purchaseRefusal)),

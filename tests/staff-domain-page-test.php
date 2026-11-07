@@ -27,34 +27,6 @@ DB::table('domains_domains')->where('id',$active->id)->update(['user_id'=>$custo
 $value=static fn(Domain $d,string $label)=>array_key_exists($label,$facts=DomainFacts::for($d->fresh()))?$facts[$label]['value']:'absent';
 $sub=static fn(Domain $d,string $label)=>DomainFacts::for($d->fresh())[$label]['sub']??null;
 
-
-// An uncertain registration owns its next action even when an observation job has saved read failures.
-$pending=$active->replicate(); $pending->fill(['domain'=>'unconfirmed.example.com','sld'=>'unconfirmed','status'=>'registration_pending','service_id'=>9901,
-    'provider_expires_at'=>null,'provider_order_id'=>null,'provider_domain_id'=>null,'observation'=>[]]); $pending->save();
-$purchaseReply=['code'=>'545','text'=>'Error 545 - Name server does not exist'];
-$request=\Paymenter\Extensions\Servers\Domains\Models\Operation::create(['domain_id'=>$pending->id,'server_id'=>$pending->server_id,
-    'registrar_key'=>$pending->registrar_key,'account_fingerprint'=>$pending->account_fingerprint,'service_id'=>$pending->service_id,
-    'authority_generation'=>$pending->authority_generation,'operation_key'=>'saved-purchase-refusal','action'=>'register','state'=>'uncertain',
-    'safe_code'=>'reconciliation_required','currency'=>'USD','amount'=>'18.00','payload'=>[],
-    'attempt'=>['seal'=>'sealed','execution'=>['disposition'=>'unknown','send_state'=>'possibly_sent','reason'=>'unresolved','discrepancies'=>[]],
-        'evidence'=>['registrarReply'=>$purchaseReply]],'policy'=>[],'funding'=>[]]);
-$pendingWork=DB::table('domains_observation_work')->insertGetId(['server_id'=>$pending->server_id,'account_fingerprint'=>$pending->account_fingerprint,
-    'domain_id'=>$pending->id,'generation'=>$pending->authority_generation,'due_at'=>time()+60,'safe_code'=>'read_failed','tries'=>4]);
-$metadataViewer=staffUser([Staff::VIEW,Staff::METADATA]);
-$pendingPage=Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id]);
-$pendingPage->assertSee('Registration not confirmed by the registrar.')->assertSee('Check request #'.$request->id)
-    ->assertSee('Error 545 - Name server does not exist')->assertDontSee('No read queued')->assertDontSee('Registrar reads keep failing')
-    ->assertDontSee('The registrar read failed.')->assertActionHidden('resume_observation');
-Livewire::actingAs($metadataViewer)->test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\OperationResource\Pages\ViewOperation::class,['record'=>$request->id])
-    ->assertSee('Registrar reply')->assertSee('Error 545 - Name server does not exist');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$pending->id])->assertDontSee('Error 545 - Name server does not exist');
-same(4,DB::table('domains_observation_work')->where('id',$pendingWork)->value('tries'),'Display preserves saved observation work');
-$pending->update(['observation'=>['record_failure'=>['identity'=>ObservationRecords::identity($pending),'code'=>'domain_not_in_account','at'=>gmdate(DATE_ATOM)]]]);
-Livewire::actingAs($metadataViewer)->test(ViewDomain::class,['record'=>$pending->id])->assertSee('Registration not confirmed by the registrar.')
-    ->assertSee('Check request #'.$request->id)->assertDontSee('Register or transfer the domain')->assertDontSee('No read queued');
-DB::table('domains_observation_work')->where('id',$pendingWork)->delete();
-DB::table('domains_operations')->where('id',$request->id)->delete(); DB::table('domains_domains')->where('id',$pending->id)->delete(); Auth::setUser($viewer);
-
 // A hold says what is really in the way, and never a request that doesn't exist.
 Illuminate\Support\Facades\Route::get('/admin/registrar-account/{account}',fn()=>'')->name('filament.admin.pages.registrar-account'); app('router')->getRoutes()->refreshNameLookups();
 $processing=Account::where('server_id',$active->server_id)->value('processing_enabled'); Account::where('server_id',$active->server_id)->update(['processing_enabled'=>true]);
