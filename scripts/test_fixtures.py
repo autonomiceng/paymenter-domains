@@ -96,6 +96,10 @@ def shared_vendor(jobs, requested):
                 'tests/staff-domains-test.php',
                 'tests/missing-next-step-test.php',
                 'tests/management-progress-test.php',
+                # Missing-record recovery uses only guarded, read-only dependencies.
+                'tests/management-runtime-recovery-test.php',
+                'tests/self-heal-retry-test.php',
+                'tests/local-demo-records-test.php',
                 'tests/offer-staff-reads-test.php',
                 'tests/default-pricing-unreadable-test.php',
                 'tests/pricing-editor-notice-test.php',
