@@ -61,7 +61,10 @@ foreach (['disabled', 'credential'] as $failure) {
         same(['com'], array_column($storefront->endings(), 'tld'), $temperature.': healthy seller survives '.$failure);
         expect($storefront->hasTransferOffers(), 'Healthy transfer remains linked after '.$failure);
     }
-    if ($failure === 'disabled') { $server->update(['enabled' => true]);$bindings->setProcessing($server->id,true,syntheticActivation()); }
+    if ($failure === 'disabled') { $server->update(['enabled' => true]);$bindings->setProcessing($server->id,true,syntheticActivation());
+        same(['com'],array_column($storefront->endings(),'tld'),'Resuming processing waits for local republication');
+        $secondQuery=new Query($secondBinding,['net'],'register');
+        $ports->apply(Edit::republish($secondBinding,'net'),offerCommerceAsStaff(static fn()=>$ports->readOffers($secondQuery,Context::Staff)[0]->revision)); }
     else { DB::table('settings')->where('id', $proof->id)->update(['value' => $raw]); }
     same(['com', 'net'], array_column($storefront->endings(), 'tld'), 'Restored account changes the namespace again');
 }

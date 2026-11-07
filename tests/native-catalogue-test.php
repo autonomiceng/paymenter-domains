@@ -4,10 +4,14 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 require __DIR__.'/Support/commerce.php';
 use App\Models\{Plan, Product, Server};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Query};
+use Paymenter\Extensions\Servers\Domains\Models\Account;
+use Paymenter\Extensions\Servers\Domains\Services\AccountBindings;
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue;
 extract(commerceFixture());
 [$enom, $namesilo] = $tlds;
+$enomBinding=AccountBindings::binding(Account::where('server_id',$enom->server_id)->sole());
 $registration = $native->product($enom, 'register');
 $transfer = $native->product($enom, 'transfer');
 same('domains-enom-s'.$enom->server_id.'-com-registration', $registration->slug, 'Permanent slug includes immutable account server');
@@ -29,11 +33,13 @@ same($planIds, Plan::orderBy('id')->pluck('id')->all(), 'Switch/republication pr
 same($enom->server_id, $registration->fresh()->server_id, 'Old product server never repointed');
 commerceReject(static fn () => $native->mapping($registration, $native->annualPlan($transfer)));
 commerceReject(static fn () => DB::transaction(static fn () => activeFixtureRepublish($native,$enom->id, $now)));
+$withdrawn=$registration->plans()->where('billing_period',3)->sole();$retainedPrice=$withdrawn->prices()->sole()->getAttributes();$retainedSort=$withdrawn->sort;
 activeFixtureStops($native,$enom,['register','renew','transfer']); activeFixtureRepublish($native,$enom->id, $now);
 expect($registration->fresh()->stock === null, 'Disabled TLD keeps unlimited stock');
-same(0, $registration->plans()->where('billing_period', 3)->sole()->prices()->count(), 'Withdrawn term price removed');
+same($retainedPrice,$withdrawn->prices()->sole()->getAttributes(),'Withdrawn native price identity and amount are retained');
+same(false,activeFixturePorts($native)->readOffers(new Query($enomBinding,['com'],'register',3),Context::Staff)[0]->available,'Withdrawn term cannot authorize an order');
 same($annual->id, $native->annualPlan($registration)->id, 'Annual holding identity survives withdrawal');
-same(103, $registration->plans()->where('billing_period', 3)->sole()->sort, 'Withdrawn plan sorts after priced plans');
+same($retainedSort,$withdrawn->fresh()->sort,'Withdrawal retains the existing plan order');
 activeFixtureStops($native,$enom,[]); activeFixtureRepublish($native,$enom->id, $now);
 activeFixtureRepublish($native,$enom->id, $now->modify('+2 days'));
 expect($registration->fresh()->stock === null, 'Stale prices keep unlimited stock');
@@ -77,7 +83,9 @@ DB::table('prices')->where('plan_id',$hostingPlan->id)->delete();DB::table('plan
 // Select Enom again so the disabled-account withdrawal starts from a priced registration.
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'),$enom->server_id,true,true,$now);activeFixtureRepublish($native,$enom->id,$now);
 expect($registration->plans()->whereHas('prices')->count()>0,'Selected Enom seller prices registration before its account is disabled');
+$retainedPrices=$registration->plans()->with('prices')->orderBy('id')->get()->flatMap(fn($plan)=>$plan->prices->map(fn($p)=>$p->getAttributes()))->all();
 Server::findOrFail($enom->server_id)->update(['enabled' => false]);
-activeFixtureRepublish($native,$enom->id,$now);same(0,$registration->plans()->whereHas('prices')->count(),'Disabled account withdraws every native acquisition price');
+activeFixtureRepublish($native,$enom->id,$now);same($retainedPrices,$registration->plans()->with('prices')->orderBy('id')->get()->flatMap(fn($plan)=>$plan->prices->map(fn($p)=>$p->getAttributes()))->all(),'Disabled account retains native price identities and amounts');
+foreach(['register','transfer'] as $action){same(false,activeFixturePorts($native)->readOffers(new Query($enomBinding,['com'],$action),Context::Staff)[0]->available,'Disabled account refuses '.$action.' admission');}
 $nativeSuccessful = true;
 echo "Permanent native products, exact terms, annual plans and publication refusals passed.\n";

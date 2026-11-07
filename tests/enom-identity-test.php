@@ -2,6 +2,8 @@
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/native-app.php';
+// Installation now boots Runtime: declare its identity-only deployment before the retained counter fixture.
+config(['domains.enom_identity.environment'=>'test','domains.namesilo_account.environment'=>'']);
 require __DIR__.'/Support/enom-test-counter.php';
 require __DIR__.'/Support/enom-identity.php';
 use Paymenter\Extensions\Servers\Domains\Data\Environment;

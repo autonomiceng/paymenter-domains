@@ -300,6 +300,8 @@ $excluded=[
     'NativeCatalogue.php'=>['registration','transfer'], // Product slug suffixes.
     'RenewalStop.php'=>['cancellation','staff','adopted','unreadable'], // Renewal intent/read state; the domain policy notice presents unreadable data.
     'ObservationWork.php'=>['holding'], // Work phase identity.
+    'HoldingObservationWork.php'=>['holding','idle'], // Work phase identity and worker result; no saved request reason.
+    'RegistrarAnswers.php'=>['registrar_not_processed'], // Refund authorization audit reason; request safe_code is refund_approved.
     'SellRule.php'=>['limit','sell','skipped','waiting'], // Row decisions, shown by What you sell.
     'EnomTestCalls.php'=>['send_check'],'EnomTestCallLimit.php'=>['send_check'], // Refusal reasons, shown by SettingsActions::testRefusal.
 ];

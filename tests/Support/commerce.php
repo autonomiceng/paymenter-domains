@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, FoundationSchema, StaffAuditSchema, NativeCatalogue, PriceCatalogue, PricingRules, RegistrarRegistry, SalesPolicySchema, SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeRegistrar;
 
-function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo']): array
+function commerceFixture(bool $eligible = false, ?Closure $activation = null, Environment $environment = Environment::Test, string $ending = 'com', bool $active = true, ?Closure $authorize = null, array $registrars = ['enom','namesilo'], bool $nameSiloLocal = true, array $identities = []): array
 {
     if(!app()->bound(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class)){app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new \Paymenter\Extensions\Servers\Domains\Tests\FakeClock(new DateTimeImmutable('2026-10-18T12:00:00Z')));}
     if ($active) { (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimePorts::class);
@@ -40,7 +40,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
             return new FakeRegistrar($b, new Capabilities($b, []), $eligible
                 ? new DriverResult($b, Disposition::Accepted, SendState::Sent, ResultReason::Acknowledged, new Evidence(premium: $reads->premium, available: $reads->available))
                 : new DriverResult($b, Disposition::Unknown, SendState::PossiblySent, ResultReason::Unverified));
-        },authenticator:$key==='namesilo'?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
+        },authenticator:$key==='namesilo'&&$nameSiloLocal?new class implements \Paymenter\Extensions\Servers\Domains\Contracts\CredentialAuthenticator {
             public function authenticate(Environment $environment,array $credentials):void { /* Synthetic connectivity only. */ }
         }:null);
     }
@@ -67,7 +67,7 @@ function commerceFixture(bool $eligible = false, ?Closure $activation = null, En
             $class=\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::class;
             $review=new $class($actor->id,$server->id,null,'configure',$class::ticket($actor->id,$server->id,null,'configure',$class::stamp($server->id,null)),'Synthetic fixture account enrollment');
         }
-        $binding = $bindings->configure($server->id, $key, $environment, ['token' => 'account-'.$key],$review);
+        $binding = $bindings->configure($server->id, $key, $environment, ['token' => $identities[$key]??'account-'.$key],$review);
         // This shared fixture keeps its explicit historical arithmetic; new-account defaults have an upgrade regression.
         App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],
             ['type' => 'array', 'encrypted' => false, 'value' => \Paymenter\Extensions\Servers\Domains\Services\PricingRule::DEFAULT]);
@@ -127,5 +127,21 @@ function activeCommerceFacts(DateTimeImmutable $now,DateTimeImmutable $until,?\P
             $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($b,[$t->tld],'register');
             $ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::republish($b,$t->tld),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
         }
+    }
+}
+
+/** A new independent checkout observes the same synthetic costs at its own scenario clock. */
+function activeCommerceCostObservations(DateTimeImmutable $now,DateTimeImmutable $until,\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts $ports): void
+{
+    foreach(Tld::where('catalogue_converted',true)->get() as $t){
+        $binding=AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$t->server_id)->sole());
+        $costs=[];
+        foreach(\Paymenter\Extensions\Servers\Domains\Models\Price::where('server_id',$t->server_id)->where('tld',$t->tld)->get() as $row){
+            if($row->catalogue_observation===null){continue;}
+            $cost=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($row->catalogue_observation));
+            $costs[]=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost($cost->action,$cost->term,$cost->enabled,$cost->total,$cost->sourceUnit,$cost->source,$now,$until,normalized:true);
+        }
+        $query=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$t->tld],'register');
+        $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,$t->tld,$costs),$ports->readOffers($query,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
     }
 }

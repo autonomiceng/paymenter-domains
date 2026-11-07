@@ -8,13 +8,17 @@ use App\Models\{Order, Service};
 use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Models\Domain;
 use Paymenter\Extensions\Servers\Domains\Services\{HoldingIdentityLock, HolderPricing, NativeDomainGuard};
-Queue::fake(); extract(commerceFixture()); $owner = commerceUser(); $other = commerceUser();
+// Qualify the adoption lock API with upstream events and its explicitly installed guard below.
+// Full pre-ledger identity refusals have their own native-identity-test matrix.
+$identityEvents = clone Service::getEventDispatcher();
+Queue::fake(); extract(commerceFixture()); Service::setEventDispatcher($identityEvents); $owner = commerceUser(); $other = commerceUser();
 $product = $native->product($tlds[0], 'register');
 $order = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
 $second = Order::create(['user_id' => $owner->id, 'currency_code' => 'USD']);
-$service = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id,
+// This adoption-lock fixture predates checkout admission and intentionally has no ledger row.
+$service = Service::withoutEvents(fn () => Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id,
     'plan_id' => $product->plans()->where('billing_period', 1)->sole()->id, 'quantity' => 1,
-    'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
+    'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']));
 $service->properties()->create(['key' => 'domain', 'value' => 'identity-lock-placeholder.com']);
 same(0, Domain::count(), 'Lock API must work before a ledger row');
 $lock = fn () => HoldingIdentityLock::lockForAdoption($order->id, $service->id);

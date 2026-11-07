@@ -38,35 +38,39 @@ $check();
 same($before, serialize(DB::table('invoices')->get()), 'No NameSilo invoice mutation');
 same($ops, serialize(DB::table('domains_operations')->get()), 'No NameSilo operation mutation');
 same(null, $holding->service->fresh()->expires_at, 'Native expiry remains null');
-$clock->instant = new DateTimeImmutable('2027-10-16T12:00:00Z');
+// Each independent calendar case retains current protocol facts; in-read boundary hooks only advance time.
+$renewalAt=static function(DateTimeImmutable $at,bool $publish=false)use($clock,$ports):void {
+    $clock->instant=$at;activeCommerceFacts($at,$at->modify('+2 days'),$publish?$ports:null);
+};
+$renewalAt(new DateTimeImmutable('2027-10-16T12:00:00Z'),true);
 same(RenewalCode::Admitted, $check()->code, 'Exactly two UTC calendar days admits');
 foreach (['2027-10-17', '2027-10-18', '2027-10-19'] as $day) {
-    $clock->instant = new DateTimeImmutable($day.'T12:00:00Z');
+    $renewalAt(new DateTimeImmutable($day.'T12:00:00Z'));
     same(RenewalCode::State, $check()->code, 'One day/today/past stays unknown');
     same(['getDomainInfo'], $wire->commands, 'Unsafe date stops before quotes');
 }
-$clock->instant = new DateTimeImmutable('2027-10-17T00:30:00+14:00');
+$renewalAt(new DateTimeImmutable('2027-10-17T00:30:00+14:00'));
 same(RenewalCode::Admitted, $check()->code, 'UTC date controls margin across positive offset');
-$clock->instant = new DateTimeImmutable('2027-10-16T23:30:00-02:00');
+$renewalAt(new DateTimeImmutable('2027-10-16T23:30:00-02:00'));
 same(RenewalCode::State, $check()->code, 'UTC date controls margin across negative offset');
-$clock->instant = new DateTimeImmutable('2027-10-16T23:59:59Z');
+$renewalAt(new DateTimeImmutable('2027-10-16T23:59:59Z'));
 $decision = $check();
 same('2027-10-17T00:00:00+00:00', $decision->validUntil?->format(DATE_ATOM), 'Validity stops when UTC margin ceases');
 $wire->during = static function ($command) use ($clock) { $clock->instant = new DateTimeImmutable('2027-10-17T00:00:01Z'); };
 same(RenewalCode::State, $check()->code, 'Date boundary during initial read refuses');
-$clock->instant = new DateTimeImmutable('2027-10-16T23:59:59Z');
+$renewalAt(new DateTimeImmutable('2027-10-16T23:59:59Z'));
 $wire->during = static function () use ($wire, $clock) {
     $wire->during = static fn () => $clock->instant = new DateTimeImmutable('2027-10-17T00:00:01Z');
 };
 same(RenewalCode::State, $check()->code, 'Date boundary during quote remains unknown');
-$clock->instant = new DateTimeImmutable('2027-10-16T23:59:59Z');
+$renewalAt(new DateTimeImmutable('2027-10-16T23:59:59Z'));
 $wire->during = static function () use ($wire, $clock) {
     $wire->during = static function () use ($wire, $clock) {
         $wire->during = static fn () => $clock->instant = new DateTimeImmutable('2027-10-17T00:00:01Z');
     };
 };
 same(RenewalCode::Changed, $check()->code, 'Date boundary during final reads refuses expired margin');
-$clock->instant = new DateTimeImmutable('2026-10-18T12:15:01Z');
+$renewalAt(new DateTimeImmutable('2026-10-18T12:15:01Z'));
 foreach (['Unknown', 'active', 'Active ', 'Expired', 'Redemption', ''] as $status) {
     $wire->status = $status;
     same(RenewalCode::State, $check()->code, 'Unaccepted status stays unknown');

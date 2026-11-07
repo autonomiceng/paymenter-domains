@@ -6,9 +6,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{CostUnit,Environment,QuoteEvidenc
 use Paymenter\Extensions\Servers\Domains\Services\{Rdap,RegistrarRegistry,TransferPrecheck};
 $writer=(object)['calls'=>0];
 $paidRegistry=new RegistrarRegistry;
-$paidRegistry->register('enom',['token'],new class implements AccountVerifier {
-    public function verify(Environment $environment,array $credentials):string{return $credentials['token'];}
-},static function($binding)use($clock,$preflight){
+$paidReader=static function($binding)use($clock,$preflight){
     $op=Paymenter\Extensions\Servers\Domains\Models\Operation::where('server_id',$binding->serverId)->where('state','running')->sole();
     $query=Paymenter\Extensions\Servers\Domains\Services\OperationClaims::query($op,$op->domain);
     $quote=new QuoteEvidence($query,new Paymenter\Extensions\Servers\Domains\Data\Money($op->action==='transfer'?'7.00':'6.00','USD'),CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+120 seconds'));
@@ -16,7 +14,10 @@ $paidRegistry->register('enom',['token'],new class implements AccountVerifier {
         new Paymenter\Extensions\Servers\Domains\Data\DriverResult($binding,Paymenter\Extensions\Servers\Domains\Data\Disposition::Accepted,
             Paymenter\Extensions\Servers\Domains\Data\SendState::Sent,Paymenter\Extensions\Servers\Domains\Data\ResultReason::Acknowledged,
             new Paymenter\Extensions\Servers\Domains\Data\Evidence(quote:$quote,balance:new Paymenter\Extensions\Servers\Domains\Data\Money('100.00','USD'),available:true,premium:!$preflight->supported)));
-});
+};
+$paidRegistry->register('enom',['token'],new class implements AccountVerifier {
+    public function verify(Environment $environment,array $credentials):string{return $credentials['token'];}
+},$paidReader,registrationPreflightFactory:$paidReader);
 $paidBindings=new Paymenter\Extensions\Servers\Domains\Services\AccountBindings($paidRegistry);
 $paidExchange=static function($origin,$command,$params,$timeout)use($writer):never {
     same(0,Illuminate\Support\Facades\DB::transactionLevel(),'Native payment exchange outside locks');

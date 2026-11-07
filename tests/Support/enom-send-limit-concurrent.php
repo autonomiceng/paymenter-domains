@@ -43,9 +43,9 @@ if($mode==='setup'){
     EnomTestSendLimitSchema::install();echo "OK\n";
 }
 elseif($mode==='admit'){
-    // All workers admit at one shared moment; a late one would admit alone and hide a missing lock.
-    expect(microtime(true)<(float)getenv('LIMIT_START'),'Worker was ready before the shared start');
-    while(microtime(true)<(float)getenv('LIMIT_START')){usleep(1000);}
+    // The parent releases all six ready connections together, without a fixed wall-clock delay.
+    echo "READY\n";fflush(STDOUT);
+    same("GO\n",fgets(STDIN),'Every contender waits for the shared start');
     try{EnomTestSendLimit::admit(Environment::Test,getenv('LIMIT_UID')?:'Synthetic-UID','GetBalance');echo "ADMITTED\n";}catch(EnomTestCallLimit){echo "REFUSED\n";}
 }elseif($mode==='count'){echo 'SENDS='.DB::table(EnomTestSendLimitSchema::SENDS)->count().' ACCOUNTS='.DB::table(EnomTestSendLimitSchema::ACCOUNTS)->count()."\n";}
 else{throw new LogicException('Unknown fixture mode');}

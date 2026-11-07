@@ -102,7 +102,7 @@ final class StaffSettingsReview
         if($inFlight&&(!$used||$this->verified!==$t)){throw new \DomainException('Verified in-flight review required.');}
         if($used&&!$inFlight){throw new \DomainException('Review key used.');}
         if(!$used){DB::table(self::KEYS)->insert(['server_id'=>$this->serverId,'review_key'=>$t['key'],'expires_at'=>$t['until']]);}
-        $this->verified=$t;$this->before=$catalogueStamp!==null?['snapshot'=>$catalogueStamp()]:$this->state($this->serverId,$this->tldId);
+        $this->verified=$t;$this->before=$catalogueStamp!==null&&$this->action!=='default_pricing'?['snapshot'=>$catalogueStamp()]:$this->state($this->serverId,$this->tldId);
     }
     /** One account's rows, in mutex order. */
     private function lockOne(): void
@@ -145,7 +145,7 @@ final class StaffSettingsReview
     {
         if(!$this->verified||DB::transactionLevel()!==1){throw new \LogicException('Locked review required.');}
         $entry=['key'=>$this->verified['key'],'actor_id'=>$this->actorId,'at'=>gmdate(DATE_ATOM),'action'=>self::ACTIONS[$this->action],
-            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)];
+            'reason'=>$this->reason,'phase'=>$phase,...($outcome===null?[]:['outcome'=>$outcome]),'input'=>$this->input,'tld_id'=>$this->tldId,'before'=>$this->before,'after'=>$this->catalogueStamp!==null&&$this->action!=='default_pricing'?['snapshot'=>($this->catalogueStamp)()]:$this->state($this->serverId,$this->tldId)];
         // History is read per account, so a business-wide change is written to each one, disabled accounts too.
         foreach($this->serverId===self::ALL_ACCOUNTS?self::domainServers():[$this->serverId] as $id){self::append(Server::whereKey($id)->lockForUpdate()->firstOrFail(),$entry);}
         // One sync writes TLD after TLD under one review: the next TLD checks against this run's own last write.

@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Registrars\NameSilo;
 require __DIR__.'/native-app.php';
 use Illuminate\Support\Facades\{Cache,Queue};
-use Paymenter\Extensions\Servers\Domains\Data\Environment;
-use Paymenter\Extensions\Servers\Domains\Models\{Operation,Price};
+use Paymenter\Extensions\Servers\Domains\Data\{Environment,CostUnit};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context,Cost,FeedObserved,Query};
+use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,HolderPricing,Installation,NativeDomainGuard,RefundProof,RenewalAcceptance,RenewalAdmission,RenewalAuthority,RenewalCompletion,RenewalExecution,RenewalRetries,RenewalWriter,WriteFeatures};
 expect(method_exists(RenewalWriter::class,'useReservation'),'Renewal writer needs an exact pre-seal reservation seam');
 (new Installation)->install();$installedFixture=true;$fixtureEnvironment=Environment::Live;config(['app.url'=>'https://billing.example.com']);
@@ -22,7 +23,12 @@ $transport=nsWriteTransport($binding,$clock);
 $writer=new RenewalWriter($binding,$features,$accepted,fn()=>$engine,$transport->exchange());$writer->useReservation($transport->reservation);
 commerceReject(fn()=>$writer->useReservation($transport->reservation));
 $holding->service->product->server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['value'=>true,'type'=>'boolean']);
-Price::where(['server_id'=>$binding->serverId,'action'=>'renew'])->sole()->update(['wholesale'=>'8.95','revision'=>2]);
+$observeAnnual=static function()use($clock,$binding,$ports):void {
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);
+    $q=new Query($binding,['com'],'renew');
+    $ports->apply(new FeedObserved($binding,'com',[new Cost('renew',1,true,'8.9500',CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'))]),$ports->readOffers($q,Context::Staff)[0]->revision);
+    same('8.9500',$ports->loadBatch([$q],Context::Holder)[0][0]->costPrice($clock->now())->wholesale,'Physical renewal starts from current normalized annual cost');
+};
 $mode='success';$GLOBALS['nsReply']=static function($cmd,$p)use(&$mode):string {
     if($cmd==='contactList'){return nameSiloDefaultContactReply();}
     same('renewDomain',$cmd,'Renewal owns one named mutation');same(['domain'=>'native-history-placeholder.com','years'=>'1','auto_renew'=>'0'],$p,'Exact annual, balance-funded mapping');
@@ -30,9 +36,9 @@ $mode='success';$GLOBALS['nsReply']=static function($cmd,$p)use(&$mode):string {
     return json_encode(['request'=>['operation'=>$cmd],'reply'=>['code'=>300,'detail'=>'synthetic','domain'=>$p['domain'],'order_amount'=>'8.95']]);
 };
 for($cycle=0;$cycle<2;$cycle++){
-    $year=2027+$cycle;$clock->instant=new \DateTimeImmutable($year.'-09-27T12:00:00Z');
+    $year=2027+$cycle;$clock->instant=new \DateTimeImmutable($year.'-09-27T12:00:00Z');$observeAnnual();
     $bill=$billing->invoice($holding->id,$user);$op=Operation::where('invoice_id',$bill->id)->sole();\App\Helpers\ExtensionHelper::addPayment($bill,null,$op->amount);
-    $clock->instant=new \DateTimeImmutable($year.'-10-16T12:00:00Z');$GLOBALS['nsOperation']=$op->id;Cache::flush();
+    $clock->instant=new \DateTimeImmutable($year.'-10-16T12:00:00Z');$observeAnnual();$GLOBALS['nsOperation']=$op->id;Cache::flush();
     foreach(['server_id','account_fingerprint'] as $field){
         $foreign=clone $op;$foreign->$field=$field==='server_id'?$op->server_id+1:str_repeat('a',64);$entered=false;
         commerceReject(fn()=>$writer->withinReservation($foreign,static function()use(&$entered){$entered=true;}));same(false,$entered,'Foreign renewal '.$field.' cannot enter reservation');

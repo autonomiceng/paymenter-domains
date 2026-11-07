@@ -13,7 +13,7 @@ View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 $u=staffUser([Staff::VIEW,Staff::COSTS]);Auth::setUser($u);[$t,$healthy]=$tlds;
 $server=App\Models\Server::findOrFail($t->server_id);$server->update(['name'=>'= <Bad & account>']);
 $second=$t->replicate();$second->tld='net';$second->save();
-$custom=$t->replicate();$custom->tld='org';$custom->use_default_rule=false;$custom->pricing_mode='markup_amount';$custom->markup='1.25';$custom->round_up='none';$custom->save();
+$custom=$t->replicate();$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($custom->catalogue_intent);$intent['pricing_rule']=['mode'=>'markup_amount','markup'=>'1.25','round_up'=>'none'];$custom->catalogue_intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json($intent);$custom->tld='org';$custom->use_default_rule=false;$custom->pricing_mode='markup_amount';$custom->markup='1.25';$custom->round_up='none';$custom->save();
 $service=new PriceList;
 $before=DB::table('domains_prices')->orderBy('id')->get()->toJson();
 $watch=false;$writes=[];
@@ -82,13 +82,13 @@ foreach($cases as $case){
     expect((int)$xpath->evaluate('count(//*[@data-price-omission]/ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-sc-callout ") and contains(@class,"fi-color-warning")])')===1,'Unreadable prices appear in an amber callout');
     expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert is above the toolbar');
     expect(!str_contains($html,'Prices in USD for')&&!str_contains($html,'Saved prices in USD for'),'No repeated currency/years note between toolbar and rows');
-    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out; see above.');
+    $page->set('account',$t->server_id)->filterTable('show','default')->assertSee('No prices to show. Some TLDs are left out.');
     same($settingsBefore,$rawSettings(),'Service, page and CSV preserve raw settings bytes, including corrupt ciphertext');
     same($before,DB::table('domains_prices')->orderBy('id')->get()->toJson(),'Each corrupt case preserves saved prices and revisions');
     $watch=false;App\Models\Setting::whereNull('settingable_type')->where('key',$key)->delete();if($key===PricingRules::KEY){saveDefaultRule(PricingRule::DEFAULT);}
 }
 // Bad custom pricing names its own TLD editor, rather than the account default editor.
-$custom->update(['pricing_mode'=>'unknown']);$watch=true;
+$intent=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($custom->fresh()->catalogue_intent);$intent['pricing_rule']['mode']='unknown';$custom->update(['catalogue_intent'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json($intent),'pricing_mode'=>'unknown']);$watch=true;
 $matrix=$service->read();same([$custom->id],array_column($matrix['skipped'],'id'),'Only the malformed custom TLD is skipped');
 // One left-out TLD among readable rows is not why an amount filter is empty.
 Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful()->set('account',$custom->server_id)->filterTable('show','below_cost')->assertSee('No TLDs match')->assertDontSee('see above')->assertDontSee('use Sync prices');

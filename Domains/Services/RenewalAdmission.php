@@ -78,6 +78,7 @@ final readonly class RenewalAdmission
             return new RenewalDecision(RenewalCode::Admitted, $status, $cost, $until,
                 $retail !== null && WriteMoney::compare($cost->amount, $retail) > 0 ? 'below_cost' : null, $renewalUntil, $facts->domain->expiry->value);
         } catch (RenewalRefused $error) { return new RenewalDecision($error->reason, $status, renewalUntil: $renewalUntil); }
+        catch (ReadDeferred) { return new RenewalDecision(RenewalCode::Rate, $status); }
         catch (\Throwable) { return new RenewalDecision(RenewalCode::Reads, $status); }
     }
     private function owned($snapshot, RenewalRequest $request, $binding, string $name): void

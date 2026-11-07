@@ -40,8 +40,18 @@ foreach ([
     new Target('example.com', $service->id, $owner->id, $tld->server_id, Environment::Live),
     new Target('example.com', $service->id, $owner->id, $tld->server_id + 100, Environment::Test),
 ] as $bad) { $before = count($wire->calls); expect($reader->preview($bad, $context)->code !== 'ready', 'Wrong target refused'); same($before, count($wire->calls), 'Wrong local identity zero wire'); }
-$order->update(['user_id' => $other->id]);
-same('mapping_unconfirmed', $reader->preview($target, $context)->code, 'Native order owner must agree'); $order->update(['user_id' => $owner->id]);
+// The supported model writer must still refuse; only the retained-data fixture below may drift.
+$orderOwnerRefused = false;
+try { $order->update(['user_id' => $other->id]); }
+catch (DomainException $error) {
+    $orderOwnerRefused = true;
+    same('This change affects managed domain identity and was refused.', $error->getMessage(), 'Native order identity guard remains active');
+}
+expect($orderOwnerRefused, 'Native model writer cannot change the mapped order owner');
+$order->refresh();
+// Privileged retained-row drift isolates adoption validation from the independent native write guard.
+DB::table('orders')->where('id',$order->id)->update(['user_id'=>$other->id]);
+same('mapping_unconfirmed', $reader->preview($target, $context)->code, 'Native order owner must agree'); DB::table('orders')->where('id',$order->id)->update(['user_id'=>$owner->id]);
 foreach (['true' => 'auto_renew_on', 'unknown' => 'auto_renew_unknown'] as $flag => $code) {
     $wire->payloads['GetRenew'] = '<auto-renew>'.$flag.'</auto-renew>';
     $refused = $reader->preview($target, $context); same($code, $refused->code, 'Fresh provider refusal persists safely');
@@ -79,8 +89,8 @@ DB::table('domains_domains')->where('id', $pending->id)->update(['reservation_na
 $unreserved = $reader->preview($target, $context); same('ready', $unreserved->code, 'Converted null reservation remains previewable');
 same($pending->id, Adoption::findOrFail($unreserved->previewId)->domain_id, 'Preview retains original pending row identity');
 same(null, $pending->fresh()->reservation_name, 'Preview never acquires a reservation');
-$peerService = Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id, 'plan_id' => $plan->id,
-    'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
+$peerService = Service::withoutEvents(fn()=>Service::create(['user_id' => $owner->id, 'order_id' => $order->id, 'product_id' => $product->id, 'plan_id' => $plan->id,
+    'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']));
 $collision = adoptionPendingFixture($peerService, $binding, ['domain' => 'other-placeholder.com', 'sld' => 'other-placeholder']);
 $count = count($wire->calls); same('competing_holding', $reader->preview($target, $context)->code, 'Another retained reservation still blocks'); same($count, count($wire->calls), 'Reservation collision zero wire');
 DB::table('domains_domains')->where('id', $collision->id)->delete();

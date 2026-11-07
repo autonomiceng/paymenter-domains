@@ -47,7 +47,7 @@ function scenarioFund(Operation $op): Operation
 function scenarioExecution(Operation $op, bool $lost = false): void
 {
     $attempt = $op->fresh()->attempt;
-    expect(array_key_exists('execution', $attempt), 'Sealed attempt records its execution outcome');
+    expect(array_key_exists('execution', $attempt), 'Sealed attempt records its execution outcome: '.$op->state.' / '.$op->safe_code);
     if ($lost) { same(null, $attempt['execution'], 'Intentional response loss records null execution'); return; }
     same('sent', $attempt['execution']['send_state'] ?? null, 'Nominal fixture response reached the real protocol');
     if ($op->action === 'transfer') { same('pending', $attempt['execution']['disposition'] ?? null, 'Transfer acknowledgement parsed outside engine exception handling'); }

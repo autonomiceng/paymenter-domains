@@ -139,7 +139,8 @@ final class DomainBilling
     {
         $d=$l['domain'];$s=$l['service'];
         AdoptionRenewalEligibility::requireBilling($d);
-        $bindings->requireProcessingLocked($l['server'],$l['account'], $l['advisory'] ?? false);
+        if($l['advisory']??false){$bindings->requireProcessing(AccountBindings::binding($l['account']));}
+        else{$bindings->requireProcessingLocked($l['server'],$l['account']);}
         if($d->renewal_policy['automatic_spend_paused']??false){throw new RuntimeIneligible(RuntimeReason::SpendingPaused);}
         if ($s->status !== 'active' || !in_array($d->status, ['active', 'expired', 'grace'], true)
             || ($manual ? RenewalStop::blocked($l) : RenewalStop::stopped($l)) || $d->price_mode !== 'standard') { throw new RuntimeIneligible(RuntimeReason::LifecycleNotReady); }
@@ -167,7 +168,7 @@ final class DomainBilling
         return $invoice;
     }
 
-    /** Read-only owner request preview. The writer repeats every check under HoldingLocks. */
+    /** Owner preview reads without a transaction or row locks. The writer repeats every check under HoldingLocks. */
     public function requestOptions(Domain $d): array
     { return array_intersect_key($this->options($d), ['terms' => 1, 'order_by' => 1, 'late' => 1]); }
 
@@ -188,7 +189,7 @@ final class DomainBilling
 
     private function options(Domain $d): array
     {
-        return DB::transaction(function () use ($d): array {
+        return (function () use ($d): array {
             $l = HoldingLocks::take($d, advisory: true, catalogue: $this->catalogue);
             $l['settings'] = $l['server']->settings()->orderBy('id')->get();
             // Replacement proof needs all invoice members, including unexpected retained items.
@@ -205,7 +206,7 @@ final class DomainBilling
             return ['terms' => $terms, 'order_by' => (new \DateTimeImmutable($calendar['expiry']))->modify('-1 day')->format('Y-m-d'),
                 'lines' => array_combine($terms, array_map(static fn (int $y) => TermSupport::lines($annual, $annual, $y)
                     + ['expiry' => $l['domain']->provider_expires_at->addYearsNoOverflow($y)->format('Y-m-d')], $terms)), 'next_annual' => $annual];
-        });
+        })();
     }
 
     /** New-debt eligibility only. Existing invoices keep their own dates and terms. */

@@ -53,11 +53,21 @@ $transport = new class($state) implements Transport {
     $registry->register('enom', ['uid', 'token'], new class implements AccountVerifier {
         public function verify(Environment $e, array $c): string { return $c['uid']; }
     }, fn ($b, $c) => new Driver(new Client($b, $c['uid'], $c['token'], $transport), ['com']));
-    $renewBindings = new AccountBindings($registry); $authority = new RenewalAuthority($renewBindings, $clock,offers: $GLOBALS['caps']??null);
+    $renewBindings = new AccountBindings($registry);
+    $ports = new \Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts(new \Paymenter\Extensions\Servers\Domains\Catalogue\Projection($native),$clock,$renewBindings,static fn()=>null,static fn()=>true);
+    $caps = new \Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities($ports,$clock,static fn()=>null);
+    $authority = new RenewalAuthority($renewBindings, $clock,offers:$caps);
     $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot();
-    $billing = new DomainBilling($renewBindings, $guard, $clock,catalogue: $GLOBALS['caps']??null);
+    $billing = new DomainBilling($renewBindings, $guard, $clock,catalogue:$caps);
     $state->name = 'example.com'; $state->price = '8.00';
     $clock->time = new DateTimeImmutable('2027-09-29T12:00:00Z');
+    $observeRenewal = static function () use ($clock,$ports,$binding): void {
+        activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'));
+        $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'renew');
+        $cost=new \Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.0000',\Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+30 days'));
+        $ports->apply(new \Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($binding,'com',[$cost]),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+    };
+    $observeRenewal();
     \App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'], ['value'=>true,'type'=>'boolean']);
 $compose = static function ($binding, bool $enabled = true, bool $grace = true) use ($renewBindings, $authority, $clock, $state) {
     $accepted = new RenewalAcceptance($binding, true, true, 25, $grace); $features = new WriteFeatures(renewal: $enabled);
@@ -75,5 +85,5 @@ $compose = static function ($binding, bool $enabled = true, bool $grace = true) 
     return [$engine, $writer, new RenewalCompletion($renewBindings, $clock)];
 };
 
-    return [...$f, ...compact('state', 'authority', 'billing', 'compose', 'renewBindings')];
+    return [...$f, ...compact('state', 'authority', 'billing', 'compose', 'renewBindings','ports','caps','observeRenewal')];
 }

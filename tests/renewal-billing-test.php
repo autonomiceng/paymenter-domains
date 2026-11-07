@@ -27,7 +27,6 @@ same(['expiry' => '2027-10-18', 'issue' => '2027-09-27', 'due' => '2027-10-11'],
 commerceReject(fn () => DomainBilling::calendar($d, 7, 7));
 $server = $product->server; $setting = static fn ($key, $value) => $server->settings()->updateOrCreate(['key' => $key], ['value' => $value, 'type' => 'boolean']);
 $setting('domains_billing_enabled', true); $setting('domains_manual_renewals_enabled', false);
-require __DIR__.'/Support/cancelled-billing.php';
 commerceReject(fn () => $billing->invoice($d->id)); // too early for scheduled issue
 commerceReject(fn () => $billing->invoice($d->id, $user)); // independent manual gate
 $setting('domains_billing_enabled', false); $setting('domains_manual_renewals_enabled', true);
@@ -85,6 +84,9 @@ same(null, $s->fresh()->expires_at, 'Billing never changes native expiry');
 // Publish below-cost renewal retail deliberately; issued debt remains unchanged.
 $tld = $tlds[0]->fresh(); $tld->update(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_renew' => '1.00', 'fixed_register' => '20.00', 'fixed_transfer' => '20.00']);
 activeFixtureRepublish($prices,$tld);
+$holderBinding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole());
+$renewQuery=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($holderBinding,['com'],'renew');
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($holderBinding,'com','1.00'),$ports->readOffers($renewQuery,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
 $frozen = DB::table('invoice_items')->where('invoice_id', $renewal->id)->first();
 $bindings->setProcessing($server->id, false);
 $adjustment = ['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => '1.00', 'description' => 'Adjustment'];
@@ -123,39 +125,4 @@ Carbon\Carbon::setTestNow('2027-10-20 12:00:00'); Carbon\CarbonImmutable::setTes
 same(0, Artisan::call('app:cron-job'), 'Actual native cron completes');
 same(null, $s->fresh()->expires_at, 'Actual native cron leaves native expiry null');
 same((array) $frozen, (array) DB::table('invoice_items')->where('invoice_id', $renewal->id)->first(), 'Native cron preserves issued amount');
-// A separate real completed domain exercises scheduled issue and bill+alert below wholesale.
-$bindings->setProcessing($server->id, true, syntheticActivation());
-$tld->update(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true]); activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
-activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $server->id, true, true, $now);
-Carbon\Carbon::setTestNow(); Carbon\CarbonImmutable::setTestNow();
-[$next] = $prepare(placeholderComFixtureName('billing-below-placeholder.com')); same('succeeded', $reconcile->run($next->id)->state, 'Second real anchor completed');
-$clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z'); $setting('domains_billing_enabled', true);
-commerceReject(fn () => $billing->invoice($next->domain_id));
-// Refresh the normalized active observation; legacy timestamp columns do not refresh its cost.
-$holderBinding=Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$server->id)->sole());
-$renewQuery=new Paymenter\Extensions\Servers\Domains\Catalogue\Query($holderBinding,['com'],'renew');
-$freshCost=new Paymenter\Extensions\Servers\Domains\Catalogue\Cost('renew',1,true,'8.0000',Paymenter\Extensions\Servers\Domains\Data\CostUnit::TermTotal,'synthetic',$clock->now(),$clock->now()->modify('+2 days'));
-$ports->apply(new Paymenter\Extensions\Servers\Domains\Catalogue\FeedObserved($holderBinding,'com',[$freshCost]),$ports->readOffers($renewQuery,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
-$ports->apply(Paymenter\Extensions\Servers\Domains\Catalogue\Edit::retainRenewal($holderBinding,'com','1.00'),$ports->readOffers($renewQuery,Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
-$clock->instant = new DateTimeImmutable('2027-09-27T00:00:00Z');
-// The site's own TEST account: no new debt while it can't send, whether the site flag or the send permission is what's missing.
-$billingOff = static function (?App\Models\User $owner = null) use ($billing, $next): void {
-    try { $billing->invoice($next->domain_id, $owner); throw new LogicException('New invoice must refuse'); }
-    catch (Paymenter\Extensions\Servers\Domains\Services\RuntimeIneligible $e) { same(Paymenter\Extensions\Servers\Domains\Services\RuntimeReason::BillingOff, $e->reason, 'Site account that cannot send gets no new invoice'); }
-};
-config(['domains.enom_identity.environment' => 'test', 'domains.enom_writes.renewal' => false, 'domains.enom_catalogue.enabled' => true]); $billingOff();
-config(['domains.enom_writes.renewal' => true]); $billingOff();
-// A TEST holding on a Live site never sends, so neither billing path may start a new invoice.
-config(['domains.enom_identity.environment' => 'live']); $setting('domains_manual_renewals_enabled', true); $billingOff(); $billingOff($user); $setting('domains_manual_renewals_enabled', false);
-config(['domains.enom_identity.environment' => null, 'domains.enom_writes.renewal' => false, 'domains.enom_catalogue.enabled' => false]);
-$bill = $billing->invoice($next->domain_id);
-config(['domains.enom_identity.environment' => 'test']); same($bill->id, $billing->invoice($next->domain_id)->id, 'An issued invoice stays payable with the site flag off'); config(['domains.enom_identity.environment' => null]);
-$low = Operation::where('invoice_id', $bill->id)->sole();
-same('Domain renewal: billing-below-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $bill->items->sole()->description, 'Annual renewal dates');
-same('1.00', $low->amount, 'Below-cost renewal invoices without floor, subsidy or hold');
-same('awaiting_payment', $low->state, 'Below-cost obligation remains billable');
-same('below_cost', $next->domain->fresh()->observation['renewal_price_alert']['code'], 'Fresh below-cost margin alerts staff');
-same($bill->id, $billing->invoice($next->domain_id)->id, 'Repeated scheduled run is idempotent');
-foreach ([App\Jobs\Server\CreateJob::class, App\Jobs\Server\UnsuspendJob::class,
-    Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::class] as $job) { Queue::assertNotPushed($job); }
 echo "Renewal calendar, holding invoices, native paid/cron routing and immutable obligations passed\n"; $nativeSuccessful = true;

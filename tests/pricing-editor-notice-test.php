@@ -57,9 +57,15 @@ $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
 expect(str_contains($page->html(),'Registration: Not for sale'),'Reopening a saved unpublished rule shows paused registration');
 // The sweep puts a saved rule on sale by itself and says so in the history.
 // Bounded local work republishes it through the real writer, with no staff actor.
+$auditBefore=array_column(Review::historyRows(App\Models\Server::findOrFail($tlds[0]->server_id)),'key');
 activeFixtureRepublish($sellers,$tlds[0]);
 expect(str_contains(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id])->html(),'Registration: For sale'),'The sweep restores sale when saved and published prices differ');
-same(['Prices published','System'],(static fn($row)=>[$row['change'],$row['by']])(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id)[0]),'The audit log shows the system did it');
+// The catalogue clock is pinned while staff review uses the host clock; identify this publication by its new key.
+$published=collect(Review::historyRows(App\Models\Server::findOrFail($tlds[0]->server_id)))->reject(fn($r)=>in_array($r['key'],$auditBefore,true))->sole();
+same(['catalogue_republish',null,$tlds[0]->tld],[$published['action'],$published['actor_id'],$published['tld']],'The new audit entry is this system publication');
+$publishedAt=Carbon\CarbonImmutable::parse($published['at'])->utc()->toIso8601String();
+$history=collect(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id))->first(fn($r)=>$r['time']===$publishedAt&&$r['change']==='Prices published');
+same(['Prices published','System'],[$history['change'],$history['by']],'The audit log shows the system did it');
 $product=$native->product($tlds[0],'register');
 $edit=Livewire::actingAs($u)->test(App\Admin\Resources\ProductResource\Pages\EditProduct::class,['record'=>$product->id])->assertStatus(200);
 expect(str_contains($edit->html(),'Don’t change this product’s server'),'What not to change stays on the page');

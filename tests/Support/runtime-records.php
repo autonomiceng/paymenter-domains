@@ -6,6 +6,7 @@ require dirname(__DIR__).'/native-app.php';
 (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
 (new \Paymenter\Extensions\Servers\Domains\Domains)->installed();
 $fixtureActivation=static fn()=>null;
+$fixtureRegistrars=['enom'];
 require __DIR__.'/owner-records.php';
 require __DIR__.'/installed.php';
 require_once __DIR__.'/staff-panel.php';
@@ -13,9 +14,21 @@ require_once __DIR__.'/offline-acquisition.php';
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, RuntimePorts, NativeCatalogue, PriceCatalogue, SellerPolicies, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
 app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,$clock);
-foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers] as $type=>$value){app()->instance($type,$value);}
+// Installation may already have resolved the limiter with the previous app clock. Rebuild it with the same scoped fixture clock and unchanged native background ceiling.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock,48));
 installedPanel();
 [$d,$driver,$original]=$holding(placeholderComFixtureName('record-runtime-placeholder.com'));
+// Prepare the Enom fixture before installing its runtime read composition.
+// The installed contract must inspect normal adapters, not the arithmetic fixture's injected reader.
+$runtimePrices=new PriceCatalogue(new \Paymenter\Extensions\Servers\Domains\Services\PricingRules);
+$runtimeNative=new NativeCatalogue($runtimePrices);$runtimeSellers=new SellerPolicies($runtimePrices,$readBindings);
+foreach([AccountBindings::class=>$readBindings,NativeCatalogue::class=>$runtimeNative,PriceCatalogue::class=>$runtimePrices,SellerPolicies::class=>$runtimeSellers] as $type=>$value){app()->instance($type,$value);}
+// Install the real producer and rebuild services after changing the scoped account reader/clock.
+app()->instance(RuntimePorts::class,new RuntimePorts);
+app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class);
+app()->offsetUnset(\Paymenter\Extensions\Servers\Domains\Services\RuntimeWork::class);
+\Paymenter\Extensions\Servers\Domains\Services\Runtime::register();
+\Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 App\Models\Server::findOrFail($d->server_id)->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $nativePage=$page;$page=static function()use($nativePage):string { storefrontViews();app('view')->getFinder()->flush();return $nativePage(); };

@@ -97,7 +97,8 @@ final class RequestFacts
                 $out['registrar_refund']='Ask NameSilo support for a refund';
             }
             // Completed, Failed and Cancelled requests are final, so a lost send response no longer leaves the result unconfirmed.
-            $unknown=!in_array($op->state,['succeeded','rejected','disposed'],true) && ($op->state==='uncertain' || (array_key_exists('execution',$a) && $a['execution']===null) || ($a['seal']??null)==='sealed');
+            $unsent=$op->state==='held'&&in_array($op->safe_code,['acquisition_definitely_unsent','management_definitely_unsent','renewal_definitely_unsent'],true);
+            $unknown=!$unsent&&!in_array($op->state,RequestStatus::FINISHED,true) && ($op->state==='uncertain' || (array_key_exists('execution',$a) && $a['execution']===null) || ($a['seal']??null)==='sealed');
             $out['outcome']=$unknown ? PaidUncertainty::title($op) : null;
             if ($grants->costs) {
                 $c=$op->cost??[];

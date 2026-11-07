@@ -2,21 +2,22 @@
 // Installed fake composition, payment dispatch, fair recovery and paired renewal mail.
 // MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
-require __DIR__.'/runtime-presenter-test.php';$nativeSuccessful=false;require __DIR__.'/Support/reminder-mail.php';require __DIR__.'/Support/FakeWriter.php';
+// Presenter ownership/editor assertions run in their own manifest file; reuse only real native checkout setup.
+require __DIR__.'/Support/runtime-native-holdings.php';$nativeSuccessful=false;require __DIR__.'/Support/reminder-mail.php';require __DIR__.'/Support/FakeWriter.php';
 use Illuminate\Support\Facades\{DB,Mail,Queue};
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime, RuntimeWork, RuntimePorts, OperationClaims, OperationReconciliation, DomainOperations, DomainManagement, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, WriteFeatures, RegistrarRegistry, AccountBindings, ReminderSchedules, Reminders, DomainBilling, StaffSettingsReview as Review, StaffSettingsWrites};
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Data\{Capabilities,Capability,Support,DispatchReadiness,RequestContext,RequestOrigin,RequestBudget,Money,DriverResult,Disposition,SendState,ResultReason,Evidence,RegistrationEvidence,DateEvidence,ExpiryPrecision,DomainSnapshot,OrderEvidence};
 use Paymenter\Extensions\Servers\Domains\Contracts\{OperationPreflight,AccountVerifier};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeRegistrar,FakeWriter};
-$ports=app(RuntimePorts::class);$claims=new OperationClaims($bindings,$clock);
+$offerPorts=$ports;$ports=app(RuntimePorts::class);$claims=new OperationClaims($bindings,$clock);
 $preflight=new class($clock) implements OperationPreflight {
     public function __construct(private $clock){}
     public function inspect(Operation $op,Domain $d,RequestContext $c): DispatchReadiness {return new DispatchReadiness($c->binding,OperationClaims::query($op,$d),new Capabilities($c->binding,['register'=>new Capability(Support::Supported,[1])]),new Money('6.00','USD'),true,false,$this->clock->now(),$this->clock->now()->modify('+120 seconds'),OperationClaims::payloadDigest($op));}
 };
 $sent=[];$mailPairs=[];$expiryDebts=[];
 foreach(Domain::orderBy('id')->get() as $i=>$d){
-    $clock->instant=$now;$a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);$op=$d->operations()->sole();$op->update(['state'=>'awaiting_payment']);
+    $clock->instant=$now;activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$offerPorts);$a=Account::where('server_id',$d->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);$op=$d->operations()->sole();$op->update(['state'=>'awaiting_payment']);
     $registry=new RegistrarRegistry;$verify=new class implements AccountVerifier {public function verify($e,array $c):string{return $c['token'];}};
     $query=OperationClaims::query($op,$d);$expiry=new DateEvidence('2027-10-18',ExpiryPrecision::Date,'synthetic');
     $facts=new Evidence(domain:new DomainSnapshot($b,$d->domain,true,$expiry,false,false,true,'456',true),candidates:[new OrderEvidence($b,$query,new Money('6.00','USD'),'9001',new DateEvidence('2026-10-18T12:00:01+00:00',ExpiryPrecision::Instant,'synthetic','UTC'),$expiry)]);
@@ -62,7 +63,8 @@ foreach(Domain::orderBy('id')->get() as $i=>$d){
     $originalAttempt=$op->fresh()->attempt;
     $bindings->setProcessing($a->server_id,false);app(RuntimeWork::class)->operation($op->id);same('succeeded',$op->fresh()->state,'Paused runtime reconciliation completes original fake order: '.$op->fresh()->state.' / '.$op->fresh()->safe_code);$bindings->setProcessing($a->server_id,true,static fn()=>null);$d->refresh();same($originalAttempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Background completion retains the original reply');same([],$writer->calls,'Background captured recovery never invokes a writer');
     ReminderSchedules::enroll($a->server_id);$schedule=DB::table('domains_reminder_schedules')->where('server_id',$a->server_id)->sole();ReminderSchedules::save($staff,$a->server_id,$schedule->revision,true,'60,30,7,1','3','Review installed reminders');
-    App\Models\Server::find($a->server_id)->settings()->create(['key'=>'domains_manual_renewals_enabled','type'=>'boolean','value'=>true]);$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
+    App\Models\Server::find($a->server_id)->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'],['type'=>'boolean','value'=>true]);$clock->instant=new DateTimeImmutable('2027-09-27T12:00:00Z');
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$offerPorts);
     $d->service->product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'],['type'=>'boolean','value'=>true]);
     $invoice=app(DomainBilling::class)->invoice($d->id,$i===0?$user:null);$expiryDebts[]=[$d,$invoice];$renew=Operation::where('invoice_id',$invoice->id)->sole();
     $dto=$presenter->service($user,$d->service_id);same('2027-10-11',$dto->renewalDue,'Renewal payment date separate from expiry');same('2027-10-18',$dto->expiry,'Confirmed expiry unchanged');expect(isset($presenter->invoice($user,$invoice->id)[$renew->invoice_item_id]),'Retained renewal line uses invoice binding');

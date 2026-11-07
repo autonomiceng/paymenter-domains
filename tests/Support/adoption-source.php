@@ -44,9 +44,10 @@ function exerciseSharedImport($native,$prices,$clock,$staff,$owner,$context,$con
     catch (DomainException $error) { same('Import reader is unavailable.',$error->getMessage(),'Import requires its own registered adapter'); }
     $product=$native->product($tld,'register');$plan=$native->annualPlan($product);
     $order=Order::create(['user_id'=>$owner->id,'currency_code'=>'USD']);
-    $service=Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,
-        'plan_id'=>$plan->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']);
-    $service->properties()->create(['key'=>'domain','value'=>'import-placeholder.com']);
+    // Imported native identity predates checkout; attachment itself remains event-enabled below.
+    $service=Service::withoutEvents(fn()=>Service::create(['user_id'=>$owner->id,'order_id'=>$order->id,'product_id'=>$product->id,
+        'plan_id'=>$plan->id,'quantity'=>1,'price'=>'10.00','currency_code'=>'USD','status'=>'pending']));
+    App\Models\Property::withoutEvents(fn()=>$service->properties()->create(['key'=>'domain','value'=>'import-placeholder.com']));
     $target=new Target('import-placeholder.com',$service->id,$owner->id,$tld->server_id,Environment::Live);
     $reader=new AdoptionReader($bindings,$mapping,$clock);
     // Another holding without an opaque reference must not collide on SQL NULL.

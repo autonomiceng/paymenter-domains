@@ -19,7 +19,7 @@ foreach ([0, 1] as $i) {
     $checkoutSwitch = static function () use ($sellers, $clock, $tlds, $i, &$guarded): void {
         expect(DB::transactionLevel() > 0, 'Native checkout holds its transaction after admission');
         try { scenarioSwitch($sellers, $clock, $tlds[1 - $i]->server_id); }
-        catch (LogicException $error) { same('Seller change owns its lock order.', $error->getMessage(), 'Exact policy guard refuses nested switch'); $guarded = true; throw $error; }
+        catch (LogicException $error) { same('Offer writer owns its native-first transaction.', $error->getMessage(), 'Exact policy guard refuses nested switch'); $guarded = true; throw $error; }
     };
     $cart = commerceCart($user); $name = placeholderComFixtureName('inside-checkout-'.$i.'-placeholder.com'); commerceAdd($cart, $native->product($tlds[$i], 'register'), $name);
     $money = scenarioMoney(); $orders = Order::count(); $services = Service::count();

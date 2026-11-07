@@ -2,6 +2,7 @@
 // Synthetic completion boundaries; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/management.php';
+require __DIR__.'/Support/observation-work.php';
 use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Catalogue\UpgradeGate;
 use Paymenter\Extensions\Servers\Domains\Data\Environment;
@@ -15,7 +16,7 @@ $registry->register('enom',['token'],new class implements Paymenter\Extensions\S
     public function verify(Environment $e,array $c):string {return 'account-enom';}
 },fn($b,$c)=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Driver(new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Api\Client($b,'account-enom',$c['token'],$wire),['com']));
 $readBindings=new Paymenter\Extensions\Servers\Domains\Services\AccountBindings($registry);
-$work=new ObservationWork(new DomainObservation($readBindings,$clock,$budget),$clock,$budget); $work->enroll($d->server_id);
+$work=observationFixtureScheduler(new DomainObservation($readBindings,$clock,$budget),$clock,$ports); $work->enroll($d->server_id);
 $afterProjection=null; $projected=false;
 Domain::updated(static function(Domain $saved)use(&$afterProjection,&$projected,$d):void {
     if($saved->id!==$d->id || !$saved->wasChanged('observation') || !$afterProjection){return;}
@@ -27,8 +28,8 @@ foreach(['rotation','generation'] as $scenario){
     $projected=false;
     $afterProjection=$scenario==='rotation'
         ? static fn()=>$readBindings->configure($d->server_id,'enom',Environment::Test,['token'=>'synthetic-completion-rotation'])
-        : static function():void {(new UpgradeGate)->pause(); (new UpgradeGate)->resume();};
-    $outcome=$work->tick(1)[$d->server_id];
+        : static fn()=>advanceOfferGeneration();
+    $outcome=$work->tick(2)[$d->server_id]['holding'];
     same(true,$projected,'The competing change happens after a committed projection');
     same('read_deferred',$outcome,$scenario.' after projection must refuse the completion outcome');
     $job=DB::table('domains_observation_work')->where('domain_id',$d->id)->sole();

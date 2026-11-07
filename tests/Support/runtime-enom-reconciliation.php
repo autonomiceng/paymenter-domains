@@ -10,7 +10,7 @@ use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require_once __DIR__.'/staff-panel.php';
 // These shapes repeat the existing synthetic history/holding fixtures. They do
 // not establish a provider history contract or enable acceptance in a real app.
-(static function()use($clock,$binding,$verify,$auth,$new,$worker,$reply,$factory,$account):void {
+(static function()use($clock,$binding,$verify,$auth,$new,$worker,$reply,$factory,$account,$sellers,$tlds):void {
     same(null,HistoryAcceptances::load($binding),'Installed registration history acceptance defaults closed');
     same(null,HistoryAcceptances::load($binding,Action::Renew),'Renewal history stays independently closed');
     same(null,HistoryAcceptances::load($binding,Action::Transfer),'Transfer history stays independently closed');
@@ -37,8 +37,8 @@ require_once __DIR__.'/staff-panel.php';
     $registry=new RegistrarRegistry;$registry->register('enom',['uid','token'],$verify,fn($b,$c)=>new Driver(new Client($b,$c['uid'],$c['token'],$wire),['com']));
     $reads=new AccountBindings($registry);
     $rebuild=fn()=>new OperationReconciliation(new OperationClaims($reads,$clock),$reads,$clock);
-    $prepare=static function(string $name,bool $captured=false)use($clock,$auth,$binding,$new,$worker,$reply,$s){
-        $auth->setProcessing($binding->serverId,true,static fn()=>null);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();
+    $prepare=static function(string $name,bool $captured=false)use($clock,$auth,$binding,$new,$worker,$reply,$s,$sellers,$tlds){
+        $auth->setProcessing($binding->serverId,true,static fn()=>null);activeFixtureRepublish($sellers,$tlds[0]);$clock->at=$clock->at->modify('+61 seconds');Cache::flush();
         $op=$new($name);resetWire($captured?['reply'=>$reply]:['timeout'=>true]);$worker->operation($op->id);$op->refresh();
         same(1,count(array_filter($GLOBALS['enomWire']['forms'],static fn($form)=>($form['Command']??null)==='Purchase')),'Recovery begins with exactly one monetary send');
         same($captured?'pending':'uncertain',$op->state,'Only acknowledgement or uncertainty retained after send');

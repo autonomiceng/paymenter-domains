@@ -29,7 +29,7 @@ return static function ($binding, Closure $check, Closure $refresh, Closure $cal
         $save($original);
     }
     $withdrawn = $original;
-    $withdrawn['com'] = [...$withdrawn['com'], 'registry' => false, 'register' => [], 'transfer' => []];
+    $withdrawn['com'] = [...$withdrawn['com'], 'registry' => false, 'registry_fields'=>[['name'=>'unaccepted']], 'register' => [], 'transfer' => []];
     $save($withdrawn);
     same(RenewalCode::Admitted, $check()->code, 'Sales withdrawal preserves holder renewal admission');
     same(RenewalCode::Admitted, $refresh()->code, 'Sales withdrawal preserves holder renewal refresh');

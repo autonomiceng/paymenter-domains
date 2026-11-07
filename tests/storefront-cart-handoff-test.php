@@ -18,18 +18,16 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmissio
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require dirname(__DIR__).'/Domains/routes/web.php';
-extract(commerceFixture(true)); $fixtureOffers=activeFixtureOffers($bindings); $clock = new FakeClock($now);
+extract(commerceFixture(true));
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], new class implements AccountVerifier {
     public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
 }, static fn ($binding, $credentials) => new Driver(new Client($binding, $credentials['token'], 'synthetic'), ['com']));
-$bindings = new AccountBindings($registry); activeFixtureOffers($bindings,$fixtureOffers); app()->instance(Clock::class, $clock);
+$bindings = new AccountBindings($registry); app()->instance(Clock::class, $clock);
+// The physical reader changes; the same explicit active offer authority still owns this checkout.
+activeFixturePorts($bindings,$ports,$clock);activeFixtureOffers($bindings,$offers);
 $eligibility = activeFixtureEligibility($bindings, $clock);
-$store = new class($sellers, $prices, $native, $bindings, $eligibility, $clock) extends Storefront {
-    public \Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers $fixtureOffers;
-    protected function catalogue(): ?\Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers { return $this->fixtureOffers; }
-};
-$store->fixtureOffers=$fixtureOffers;
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $controller = new StorefrontController($store); storefrontViews();
 (activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
 EnomTestSendLimitSchema::install(); config(['domains.enom_test_sends_per_day' => 200, 'domains.enom_test_sends_per_minute' => 100000]);

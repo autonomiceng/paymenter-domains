@@ -13,6 +13,7 @@ $out=renderOutput($argv[1]??null);
 $f=commerceFixture();extract($f);tldPanel();Carbon\Carbon::setTestNow($now);
 Illuminate\Support\Facades\View::addNamespace('domains',dirname(__DIR__).'/Domains/resources/views');
 [$first,$second]=$tlds;
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true]);
 App\Models\Server::whereKey($first->server_id)->update(['name'=>'Enom account']);
 App\Models\Server::whereKey($second->server_id)->update(['name'=>'NameSilo account']);
 App\Models\Setting::updateOrCreate(['key'=>'domains_pricing_default_rule','settingable_type'=>null,'settingable_id'=>null],['type'=>'array','encrypted'=>false,
@@ -24,8 +25,10 @@ DB::table('domains_prices')->where(['server_id'=>$second->server_id,'action'=>'r
 // Rows the demo has none of: a saved price below cost, a term with no saved price, a TLD left out and one the registrar no longer lists. They show the red loss, Missing, the amber line and the blocked row.
 DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>1])->update(['retail'=>'5.00']);
 DB::table('domains_prices')->where(['server_id'=>$first->server_id,'action'=>'register','term'=>3])->update(['retail'=>null]);
-$left=$first->replicate();$left->tld='bad';$left->use_default_rule=false;$left->pricing_mode='unknown';$left->save();
-$gone=$first->replicate();$gone->tld='gone';$gone->save();
+$left=$first->replicate();$left->tld='bad';$left->use_default_rule=false;$left->pricing_mode='unknown';
+$left->catalogue_intent=json_encode([...\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($left->catalogue_intent),'pricing_rule'=>['mode'=>'unknown']]);$left->save();
+$gone=$first->replicate();$gone->tld='gone';
+$gone->catalogue_facts=json_encode([...\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($gone->catalogue_facts),'terms'=>['register'=>[],'renew'=>[],'transfer'=>[]]]);$gone->save();
 $u=staffUser([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('acceptance')]);Auth::setUser($u);
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
@@ -45,7 +48,7 @@ foreach([1,3] as $years){
         writeRenderArtifact($out.'/what-you-sell-'.$years.'-year-'.$mode.'.html',$page);
     }
     $dom=new DOMDocument;@$dom->loadHTML($html);$xpath=new DOMXPath($dom);
-    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert above the toolbar in render');expect(str_contains($html,'list this TLD'),'Blocked row reason in render');
+    expect((int)$xpath->evaluate('count(//*[@data-price-omission]/following::*[contains(concat(" ",normalize-space(@class)," ")," fi-ta-header-toolbar ")])')>0,'Omission alert above the toolbar in render');expect(str_contains($html,'Not offered by this registrar for this term.'),'Blocked row reason in render');
     expect($years===3?str_contains($html,'To add one, open the TLD page and use Edit prices.'):str_contains($html,'This price is below registrar cost.'),'Loss and Missing in render');
 }
 echo "Native What you sell rendered in light/dark for 1 and 3 years.\n";$nativeSuccessful=true;

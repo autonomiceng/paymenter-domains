@@ -21,10 +21,18 @@ tldPanel();$staff=staffUser([Staff::VIEW]);Auth::setUser($staff);
 $pages=[RegistrarSetup::class,RegistrarAccount::class,WhatYouSell::class,ListTlds::class];
 $heading='Missing: an account that can sell domains.';
 $step="NameSilo can't sell in the new catalogue yet. Add an Enom account to start selling.";
-$check=static function(bool $visible,string $scenario)use($pages,$heading,$step):void {
+$check=static function(bool $visible,string $scenario,bool $retired=false)use($pages,$heading,$step):void {
     foreach($pages as $page){
         $instance=app($page);
         if($instance instanceof RegistrarAccount || $instance instanceof WhatYouSell){$instance->account=1;}
+        if($retired && $page!==RegistrarSetup::class){
+            // Current catalogue readers cannot render a retired installation before its checked bridge.
+            $refused=false;try{$instance->content(Schema::make($instance));}
+            catch(DomainException $error){same(Paymenter\Extensions\Servers\Domains\Services\OfferUpgrade::MESSAGE,$error->getMessage(),$scenario.': exact retired reader boundary on '.$page);$refused=true;}
+            expect($refused,$scenario.': retired catalogue reader refuses on '.$page);
+            same([],Paymenter\Extensions\Servers\Domains\Admin\Support\CatalogueSalesNotice::components(),$scenario.': no new-catalogue Missing notice on '.$page);
+            continue;
+        }
         $schema=$instance->content(Schema::make($instance));
         $notices=array_values(array_filter($schema->getComponents(),static fn($c)=>$c instanceof Callout && $c->getHeading()===$heading));
         same($visible?1:0,count($notices),$scenario.': one Missing notice on '.$page);
@@ -49,16 +57,18 @@ same(1,$links->length,'Zero accounts keeps the Open Registrars button');
 same(RegistrarSetup::getUrl(),$links->item(0)->getAttribute('href'),'Open Registrars points to account setup');
 
 fixtureAccount(1,'namesilo','synthetic-namesilo');
-$check(true,'NameSilo-only fresh install');
-// A connected Enom account supplies the protocol; prices and Orders have their own setup guidance.
+$check(false,'Connected NameSilo supplies supported sales');
+// Both connected registrar protocols supply sales; prices and Orders have separate setup guidance.
 fixtureAccount(2,'enom','synthetic-enom');
 $check(false,'Enom present');
 Server::whereKey(2)->update(['enabled'=>false]);
-$check(true,'Disabled Enom cannot supply sales');
+$check(false,'Enabled NameSilo still supplies sales with Enom disabled');
+Server::whereKey(1)->update(['enabled'=>false]);
+$check(true,'Neither disabled registrar can supply sales');
 // An unconverted installation retains legacy routing and must never get new-catalogue guidance.
 Setting::where('key',UpgradeGate::KEY)->whereNull('settingable_type')->whereNull('settingable_id')->delete();
 CallerRouting::reset();
 same('legacy',UpgradeGate::routeState()['state'],'The fixture now represents an unconverted install');
-$check(false,'Old mode');
+$check(false,'Old mode',true);
 echo "Fresh NameSilo Missing notice passed.\n";
 $nativeSuccessful=true;

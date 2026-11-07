@@ -33,31 +33,34 @@ foreach (['register', 'transfer'] as $action) {
     $templates[$action] = [$product, $product->settings()->get(), $plan, $plan->prices()->sole()];
 }
 $priceTemplates = Price::where('server_id', $base->server_id)->where('term', 1)->get();
-DB::transaction(function () use ($names, $base, $templates, $priceTemplates, $now): void {
-    foreach ($names as $name) {
-        $tld = $base->replicate(); $tld->tld = $name; // Clone the real normalized Writer seed and its native annual projection.
-        // The rehearsal bulk edit turned TLD transfers off while the seller remained selected.
-        $tld->catalogue_intent=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1,transfers:false));
-        $published=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($base->catalogue_published_revision);$published['selection']=1;
-        $tld->catalogue_published_revision=json_encode($published);$tld->save();
-        foreach ($priceTemplates as $template) {
-            $price = $template->replicate(); $price->tld = $name;
-            $price->save();
-        }
-        foreach ($templates as $action => [$template, $settings, $plan, $nativePrice]) {
-            $product = $template->replicate(); $product->slug = NativeCatalogue::slug($tld, $action);
-            $product->name = ucfirst($action).' .'.$name; $product->save();
-            foreach ($settings as $templateSetting) {
-                $setting = $templateSetting->replicate(); $setting->settingable_id = $product->id;
-                if ($setting->key === 'domains_tld_id') { $setting->value = (string) $tld->id; }
-                $setting->save();
+// Read scale is the boundary. Clone the real Writer seed in bounded inserts rather than
+// replaying thousands of identical Eloquent saves. The same 599 endings, native products,
+// settings, plans, prices and seller identities remain in the measured database.
+DB::transaction(function () use ($names, $base, $templates, $priceTemplates): void {
+    $rows=['domains_tlds'=>[],'domains_prices'=>[],'products'=>[],'settings'=>[],'plans'=>[],'prices'=>[],'domains_sales_policies'=>[]];
+    $tldId=(int)Tld::max('id');$productId=(int)Product::max('id');$planId=(int)Plan::max('id');
+    $published=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($base->catalogue_published_revision);$published['selection']=1;
+    $intent=Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(new Paymenter\Extensions\Servers\Domains\Catalogue\Intent(sell:true,longest:1,transfers:false));
+    $policy=SalesPolicy::where('tld','com')->sole()->getRawOriginal();unset($policy['id']);
+    foreach($names as $name){
+        $tld=$base->replicate();$tld->id=++$tldId;$tld->tld=$name;
+        $tld->catalogue_intent=$intent;$tld->catalogue_published_revision=json_encode($published);
+        $rows['domains_tlds'][]=$tld->getAttributes();
+        foreach($priceTemplates as $template){$price=$template->replicate();$price->tld=$name;$rows['domains_prices'][]=$price->getAttributes();}
+        foreach($templates as $action=>[$template,$settings,$plan,$nativePrice]){
+            $product=$template->replicate();$product->id=++$productId;$product->slug=NativeCatalogue::slug($tld,$action);$product->name=ucfirst($action).' .'.$name;
+            $rows['products'][]=$product->getAttributes();
+            foreach($settings as $templateSetting){
+                $setting=$templateSetting->replicate();$setting->settingable_id=$product->id;
+                if($setting->key==='domains_tld_id'){$setting->value=(string)$tld->id;}
+                $rows['settings'][]=$setting->getAttributes();
             }
-            $copy = $plan->replicate(); $copy->priceable_id = $product->id; $copy->save();
-            $price = $nativePrice->replicate(); $price->plan_id = $copy->id; $price->save();
+            $copy=$plan->replicate();$copy->id=++$planId;$copy->priceable_id=$product->id;$rows['plans'][]=$copy->getAttributes();
+            $price=$nativePrice->replicate();$price->plan_id=$copy->id;$rows['prices'][]=$price->getAttributes();
         }
-        SalesPolicy::withPolicyWrite(fn () => SalesPolicy::create(['tld' => $name, 'revision' => 1, 'server_id' => $base->server_id,
-            'registrar_key' => 'enom', 'account_fingerprint' => $base->account_fingerprint, 'register_enabled' => true, 'transfer_enabled' => true]));
+        $rows['domains_sales_policies'][]=[...$policy,'tld'=>$name,'revision'=>1,'register_enabled'=>true,'transfer_enabled'=>true];
     }
+    foreach($rows as $table=>$batch){foreach(array_chunk($batch,100) as $chunk){DB::table($table)->insert($chunk);}}
 });
 // Discard only the seed catalogue in this disposable memory database, leaving the exact scale shape.
 DB::table('domains_sales_policies')->where('tld', 'com')->delete();

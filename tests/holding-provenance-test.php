@@ -71,6 +71,15 @@ foreach ([['status'=>'adoption_pending','provenance'=>null],['status'=>'active',
 }
 $retained=$d->getRawOriginal();DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>null,'renewal_policy'=>'unreadable']);$d->refresh();
 Illuminate\Support\Facades\Auth::setUser($staff);$facts=DomainFacts::for($d);same(null,$facts['Expires']['value'],'Unreadable policy leaves staff expiry Missing');expect(isset($facts['Open invoice']),'Unreadable policy still shows the open invoice');same(['Under review','Import not confirmed. Check open invoices.'],[DomainFacts::status($d)['label'],DomainFacts::statusLine(DomainFacts::status($d))],'Unreadable policy keeps the pending import status');same(DomainFacts::UNREADABLE,DomainFacts::notice($d)['title'],'Unreadable policy names the cause');DB::table('domains_domains')->where('id',$d->id)->update($retained);
+// Missing expiry must not present reopened debt from a terminal renewal as current.
+$holdingBefore=$d->fresh()->getRawOriginal();$debtBefore=$debt->fresh()->getRawOriginal();
+DB::table('domains_domains')->where('id',$d->id)->update(['provider_expires_at'=>null]);
+foreach(['succeeded','rejected','disposed','cancelled'] as $terminal){
+    DB::table('domains_operations')->where('id',$debt->id)->update(['state'=>$terminal]);
+    expect(!isset(DomainFacts::for($d->fresh())['Open invoice']),'Terminal '.$terminal.' renewal debt is not current when expiry is missing');
+}
+DB::table('domains_operations')->where('id',$debt->id)->update($debtBefore);
+DB::table('domains_domains')->where('id',$d->id)->update($holdingBefore);
 same($nativeBefore,$nativeMoney(),'Native invoices/items/transactions/credits preserved');
 // A pending reservation continues to block checkout for the same canonical name.
 commerceReject(fn()=>$new($d->domain));

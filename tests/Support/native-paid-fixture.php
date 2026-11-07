@@ -10,12 +10,19 @@ require __DIR__.'/operation-fixture.php';require __DIR__.'/installed.php';requir
 require_once __DIR__.'/offline-acquisition.php';
 use Paymenter\Extensions\Servers\Domains\Services\{Runtime, RuntimePorts, RuntimeWork, AccountBindings, NativeCatalogue, PriceCatalogue, SellerPolicies, CartAdmission, InvoiceBinding, OperationReconciliation, RenewalAuthority, RenewalAcceptance, RenewalAdmission, RenewalExecution, RenewalWriter, RenewalCompletion, DomainManagement, WriteFeatures};
 use Paymenter\Extensions\Servers\Domains\Models\Account;
+// Initialize the complete installed holding route before module-only checkout adapters replace their fixtures.
+Paymenter\Extensions\Servers\Domains\Catalogue\Capabilities::routed();
 foreach([Paymenter\Extensions\Servers\Domains\Contracts\Clock::class=>$clock,AccountBindings::class=>$bindings,
     NativeCatalogue::class=>$native,PriceCatalogue::class=>$prices,SellerPolicies::class=>$sellers,CartAdmission::class=>$admission,InvoiceBinding::class=>$invoiceBinding]as$class=>$object){app()->instance($class,$object);}
-app()->offsetUnset(RuntimePorts::class);$entry->boot();installedPanel();
+app()->offsetUnset(RuntimePorts::class);
+// The previous fixture resolved its worker before this new runtime-port generation.
+app()->forgetInstance(RuntimeWork::class);app()->forgetInstance(Paymenter\Extensions\Servers\Domains\Services\RuntimeDispatch::class);
+$entry->boot();installedPanel();
 expect(!app()->bound(App\Services\Invoice\ProcessPaidInvoiceService::class),'Native paid processor has no extension binding');
 same(App\Services\Invoice\ProcessPaidInvoiceService::class,get_class(app(App\Services\Invoice\ProcessPaidInvoiceService::class)),'Resolve the native paid processor');
-$ports=app(RuntimePorts::class);$work=app(RuntimeWork::class);$preflight->cost='6.00';
+$runtimePorts=app(RuntimePorts::class);$work=app(RuntimeWork::class);
+expect((new ReflectionProperty($work,'ports'))->getValue($work)===$runtimePorts,'Native paid worker owns the registered runtime-port generation');
+same([],Paymenter\Extensions\Servers\Domains\Services\NativePaidHooks::serviceMissing(),'Native paid fixture has every actual Service guard');$preflight->cost='6.00';
 $a=Account::where('server_id',$tlds[0]->server_id)->sole();$b=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding($a);
 $features=new WriteFeatures(true,true,true,true);$authority=new RenewalAuthority($bindings,$clock,offers: $GLOBALS['caps']??null);$accept=new RenewalAcceptance($b,true,true,25);
 $renewal=new RenewalExecution($bindings,$authority,new RenewalAdmission($authority,$bindings,$accept,$clock),$accept,$features,$clock);
@@ -25,7 +32,7 @@ $composition=['acquisition'=>offlineAcquisition($b,$paidBindings,$clock,$feature
     'renewal_completion'=>new RenewalCompletion($bindings,$clock),'management'=>new DomainManagement($bindings,$clock,$features,true),
     'management_protocol'=>new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($b,static fn()=>throw new LogicException('No management wire in payment matrix'))];
 $runtimeCompositionWitness??=static fn()=>null;
-$ports->register($b->fingerprint,static function()use($composition,$runtimeCompositionWitness):array {$runtimeCompositionWitness();return $composition;});expect($ports->accepted($a),'Complete offline composition accepted');
+$runtimePorts->register($b->fingerprint,static function()use($composition,$runtimeCompositionWitness):array {$runtimeCompositionWitness();return $composition;});expect($runtimePorts->accepted($a),'Complete offline composition accepted');
 $paid=static function($op)use($clock):void {
     $clock->instant=$clock->now()->modify('+61 seconds');Illuminate\Support\Facades\Cache::flush();
     $invoice=App\Models\Invoice::findOrFail($op->invoice_id);
