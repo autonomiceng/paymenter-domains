@@ -620,7 +620,8 @@
     "tests/tld-registrar-options-test.php",
     "tests/tld-registrar-sales-test.php",
     "tests/registrar-orders-readiness-test.php",
-    "tests/tld-start-stop-sales-test.php"
+    "tests/tld-start-stop-sales-test.php",
+    "tests/tld-sales-transfers-off-test.php"
   ],
   "ui": [],
   "runner": [
