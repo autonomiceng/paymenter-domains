@@ -37,7 +37,7 @@ $list=Livewire::actingAs($actor)->test(ListTlds::class)->filterTable('server_id'
 $empty=$list->html();if(!str_contains($empty,'No TLD terms need attention')){$errors[]='Attention-empty view still says no TLDs';}
 if(str_contains($empty,'Choose what you sell on a registrar account.')){$errors[]='Filtered-empty view asks to select existing endings';}
 $panel=\Filament\Facades\Filament::getCurrentPanel();$panel->viteTheme([])->theme(new \Illuminate\Support\HtmlString(''));
-$request=\Illuminate\Http\Request::create('http://domains-tests.invalid/','GET');$request->setLaravelSession(app('session')->driver());$request->setRouteResolver(fn()=>app('router')->getRoutes()->getByName('home'));app()->instance('request',$request);\Illuminate\Support\Facades\Facade::clearResolvedInstance('request');
+$request=\Illuminate\Http\Request::create('http://domains-tests.test/','GET');$request->setLaravelSession(app('session')->driver());$request->setRouteResolver(fn()=>app('router')->getRoutes()->getByName('home'));app()->instance('request',$request);\Illuminate\Support\Facades\Facade::clearResolvedInstance('request');
 $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$list->instance(),'body'=>$empty]);
 $html=preg_replace('~<script\b[^>]*>.*?</script>|<link\b[^>]*>~si','',$html);
 writeRenderArtifact((getenv('R14_RENDER_DIR')?:sys_get_temp_dir()).'/r14-terms-empty.html',str_replace('</head>','<style>'.file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css').'</style>'.view('domains::partials.staff-styles')->render().'</head>',$html));
