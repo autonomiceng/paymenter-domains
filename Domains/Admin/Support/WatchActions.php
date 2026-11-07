@@ -106,6 +106,7 @@ final class WatchActions
     {
         $reason=\Paymenter\Extensions\Servers\Domains\Services\DnsTemplateUsage::refusal((int)$row->id);
         if($reason){return Sheet::blocked('delete','Delete','DNS template',$reason)->color('danger')
+            ->action(fn()=>Notification::make()->warning()->title($reason)->send())
             ->visible(fn()=>Staff::can(Writes::VIEW)&&Staff::can(Writes::MANAGE));}
         return self::action('profile',(int)$row->id,$revision,'delete','Delete')->color('danger')->outlined()
             ->requiresConfirmation()->modalHeading('Delete DNS template?')->modalDescription('The saved nameservers and records will be deleted. This cannot be undone.')

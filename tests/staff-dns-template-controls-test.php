@@ -84,7 +84,7 @@ $check('Dependencies refuse turn off and delete with a reason',function()use($pr
     // The confirmation was opened before another domain selected the template.
     $mounted=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$row->id])->mountAction('delete');
     DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>$row->id]);
-    $mounted->callMountedAction()->assertNotNotified('DNS template deleted');
+    $mounted->callMountedAction()->assertNotified('This template is assigned to domains. Choose another template for them first.')->assertNotNotified('DNS template deleted');
     expect(WatchProfile::find($row->id)!==null,'A new dependency prevents a mounted deletion');
     DB::table('domains_watch_names')->where('id',$watch->id)->update(['ns_profile_id'=>$profile->id]);
 });
