@@ -66,8 +66,8 @@ foreach([null,$profile->id] as $profileId){
     $candidate=$watch->fresh();$candidate->ns_profile_id=$profileId;$candidate->setRelation('points',$public);
     $facts=WatchFacts::for($candidate,['summary'=>null,'keys'=>[]]);
     $record=$facts['Checks']['DNS records']??['value'=>null,'sub'=>null];
-    if(!str_contains($record['sub']??'','Historical answers.')){$dnsFailures[]='Expired DNS answers need a historical label';}
-    if($profileId!==null&&str_contains($record['sub']??'','Choose a DNS template')){$dnsFailures[]='An existing template must not be described as missing';}
+    if(!str_contains((string)($record['sub']??''),'Historical answers.')){$dnsFailures[]='Expired DNS answers need a historical label';}
+    if($profileId!==null&&str_contains((string)($record['sub']??''),'Choose a DNS template')){$dnsFailures[]='An existing template must not be described as missing';}
 }
 // A linked watch without its own points read must not adopt a managed read as its Latest check.
 $managed->domain_revision=(int)$d->fresh()->confirmed_revision;$managed->config_revision=1;$managed->profile_id=$profile->id;$managed->profile_revision=$profile->revision;$managed->mixed=false;$managed->completed_at=$at->getTimestamp()-59;$managed->partial=false;$managed->facts=['version'=>1,...$public->facts];$managed->digest=str_repeat('a',64);$managed->source_digest=str_repeat('b',64);
