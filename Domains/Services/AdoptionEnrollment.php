@@ -26,7 +26,9 @@ final readonly class AdoptionEnrollment
             $candidate = WatchName::where('user_id', $d->user_id)->where('canonical_name', $d->domain)->first();
             $profile = $candidate?->ns_profile_id ? WatchProfile::whereKey($candidate->ns_profile_id)->lockForUpdate()->first() : null;
             $watch = $candidate ? WatchName::whereKey($candidate->id)->lockForUpdate()->firstOrFail() : null;
-            if ($watch && ((int) $watch->ns_profile_id !== (int) $profile?->id)) {
+            // A retired watch keeps history but no longer supplies current DNS intent.
+            if ($watch && in_array($watch->state, ['active', 'paused', 'linked'], true)
+                && ((int) $watch->ns_profile_id !== (int) $profile?->id)) {
                 throw new \DomainException('Adoption DNS profile changed; retry enrollment.');
             }
             $sources = WatchSource::where('user_id', $d->user_id)->where('registrable_name', $d->domain)->where('state', 'watch')->orderBy('id')->lockForUpdate()->get();

@@ -15,7 +15,7 @@ $profile=DB::transaction(fn()=>WatchProfile::create(['name'=>'Retired watch DNS'
 $watch=DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'example.com',
     'psl_revision'=>str_repeat('a',64),'state'=>'retired','expected_dns'=>'platform',
     'ns_profile_id'=>$profile->id,'profile_revision'=>$profile->revision,'notice_preferences'=>['dns'=>false]]));
-$history=$watch->getRawOriginal();
+$history=$watch->fresh()->getRawOriginal();
 (new StaffWatchWrites())->run($staff,'profile',(int)$profile->id,'delete',
     StaffWatchWrites::ticket((int)$staff->id,'profile',(int)$profile->id,(int)$profile->revision,'delete'),'Remove unused DNS template');
 same(null,WatchProfile::find($profile->id),'Template used only by a retired watch can be deleted');
