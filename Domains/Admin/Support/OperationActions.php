@@ -83,7 +83,7 @@ final class OperationActions
         $op=DomainQueries::operations($d)->orderByDesc('id')->first(); if(!$op){return [self::resumeOnDomain($d)];}
         foreach(self::make($op,StaffOperationReview::stamp($op,$d)) as $action){
             if($action->getName()==='resume_observation'){
-                return [$action->visible(fn()=>Staff::can(StaffOperationReview::permission('resume_observation'))
+                return [$action->disabled(fn()=>ObservationWork::resumeBlocked($d)!==null)->tooltip(fn()=>ObservationWork::resumeBlocked($d))->visible(fn()=>Staff::can(StaffOperationReview::permission('resume_observation'))
                     &&!StaffOperationReview::liveLease($op,app(Clock::class))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)];
             }
         }
@@ -94,6 +94,7 @@ final class OperationActions
     {
         $name='resume_observation';
         return Action::make($name)->label(StaffOperationReview::ACTIONS[$name])->color('gray')
+            ->disabled(fn()=>ObservationWork::resumeBlocked($d)!==null)->tooltip(fn()=>ObservationWork::resumeBlocked($d))
             ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&!DomainFacts::ended($d)&&ObservationRecords::stopped($d)&&ObservationWork::currentId($d)!==null)
             ->action(function()use($d,$name):void {
                 try { $actor=Auth::user(); $id=ObservationWork::currentId($d); if(!$actor instanceof \App\Models\User||$id===null){throw new \DomainException('Staff required.');}

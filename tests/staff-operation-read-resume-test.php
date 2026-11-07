@@ -36,6 +36,15 @@ $job=DB::table('domains_observation_work')->insertGetId(['server_id'=>$resume->s
     'generation'=>$resume->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>5]);
 // Resume sync lives on the domain page; the request page does not offer it.
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$resume->id])->assertDontSee('Resume sync');
+$before=[$resume->fresh()->attempt,$resume->fresh()->funding,$resume->domain->fresh()->observation,(array)DB::table('domains_observation_work')->where('id',$job)->sole()];
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$resume->domain_id])->assertActionDisabled('resume_observation')
+    ->assertSee('Registrar records can sync after registration is confirmed.')->assertSee('Check request #'.$resume->id);
+commerceReject(fn()=>$run($resume->fresh(),'resume_observation'));
+same($before,[$resume->fresh()->attempt,$resume->fresh()->funding,$resume->domain->fresh()->observation,(array)DB::table('domains_observation_work')->where('id',$job)->sole()],'Blocked pending sync retains the stop and original financial evidence');
+// The existing request status check must finish registration before record sync resumes.
+$run($resume->fresh(),'recheck');
+same('succeeded',$resume->fresh()->state,'Supported request check completes the original registration');
+DB::table('domains_observation_work')->where('id',$job)->update(['phase'=>hash('sha256',$resume->operation_key)]);
 Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$resume->domain_id])->callAction('resume_observation')->assertNotified('Sync resumed');
 same(1,(int)DB::table('domains_observation_work')->where('id',$job)->value('resumes'),'Scheduled read resume counted');
 // Selection shares the same binding/generation/phase scope as stopped-state detection.

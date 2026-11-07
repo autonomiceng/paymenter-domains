@@ -439,6 +439,7 @@ final class DomainFacts
     /** The control that clears a record hold. Resume sync needs a job row. Sync now can set a hold with no row, and its own complete read clears it. */
     private static function restart(Domain $d): string
     {
+        if ($reason=ObservationWork::resumeBlocked($d)) { return $reason.' Check request #'.($d->latestAcquisition?->id??'').'.'; }
         if (self::syncNow($d)) { return 'Use Sync now.'; }
         if (ObservationWork::currentId($d)!==null) { return self::canResume()?'Use Resume sync below.':self::ASK_RESUME; }
         return Staff::can('admin.domains.manage')&&$d->status==='active'?'Use Sync now.':'Ask staff who can sync this domain.';
