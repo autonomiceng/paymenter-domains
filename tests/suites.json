@@ -55,6 +55,7 @@
     "tests/renewal-initialized-pin-test.php"
   ],
   "native": [
+    "tests/registration-retail-test.php",
     "tests/offer-queued-trigger-test.php",
     "tests/offer-scheduler-test.php",
     "tests/offer-runtime-work-test.php",
