@@ -4,17 +4,24 @@
 `PricedFeed`; `priceReads()` supplies the bounded physical read count without registrar branching.
 The shared account worker invokes them through the checked catalogue routing.
 
-Enom reads reseller pricing for Years 1/2/5/10 and the suffix list once. Each requested bucket
-is an evidenced exact term by default. Additional terms require an explicit bucket-to-term map
-from provider evidence; a floor-bucket algorithm alone cannot prove them. Only registration uses
-multiyear buckets; renewal/transfer remain annual. Annual input becomes an integer-calculated
+Enom reads reseller pricing for Years 1/2/5/10 and the suffix list once: **five physical reads**.
+Its [API Command Catalogue pp. 474–476](https://cp.enom.com/download/APICommandCatalogEnom.pdf#page=474)
+defines Years as the bracket start (explicitly, Years=2 covers years 2–4); [p. 464](https://cp.enom.com/download/APICommandCatalogEnom.pdf#page=464)
+gives the same contract for product pricing. The existing bucket-evidence map therefore defaults
+to **1; 2–4; 5–9; 10**. Independent registry term bounds and staff limits still decide which years
+can sell; a price bracket alone grants neither registry support nor permission. Only registration
+uses multiyear brackets; renewal/transfer remain annual. Annual input becomes an integer-calculated
 exact-term total. Retail fields are ignored. Both envelope and indexed/XML row currency reject
 explicit non-USD; absent currency retains the existing Enom USD protocol convention.
 
 Missing/malformed prices or flags produce no cost observation. Explicit false produces disabled,
 never a free price. Failed bucket/list reads return no commands. A listed unpriced suffix supplies
 an empty discovery command; it cannot erase costs or refresh facts. NameSilo uses one account
-`getPrices` without the retail flag. A quarantined row is an empty observation, annual-only.
+[`getPrices`](https://www.namesilo.com/api-reference/pages?uid=account/get-prices) without the
+retail flag. Its documented request has no years parameter or exact-term/promotion guarantee.
+[`registerDomain`](https://www.namesilo.com/api-reference/pages?uid=domains/register-domain)
+accepting 1–10 years does not establish their prices. NameSilo remains annual-only; no derived
+longer registration totals are published. A quarantined row withdraws all annual costs.
 
 The annual bulk row proves one renewal/transfer year only when its reseller amount is positive
 and that action is enabled. No missing/zero amount grants a term. Enom `facts()` combines a
