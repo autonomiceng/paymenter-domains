@@ -117,8 +117,8 @@ $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$held->se
     'domain_id'=>$held->id,'generation'=>$held->authority_generation,'due_at'=>0]);
 foreach (['read_unavailable','budget_exhausted','superseded']as$code) {
     DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>$code]);
-    // 875ef5d4/842d70e4 retain the exact stopped cause and attempt count beside the read state.
-    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Read stopped')->assertSee('0 attempts.')->assertSee('The registrar read stopped.')->assertSee('Cause: '.$code.'.');
+    // A stopped read with no attempts retains its cause without inventing a retry count.
+    Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$held->id])->assertSee('Read stopped')->assertSee('Stopped.')->assertDontSee('0 attempts')->assertSee('The registrar read stopped.')->assertSee('Cause: '.$code.'.');
     foreach(['generation'=>$held->authority_generation+1,'server_id'=>$held->server_id+100,'account_fingerprint'=>str_repeat('a',64),'phase'=>'foreign']as$field=>$value){
         $old=DB::table('domains_observation_work')->where('id',$work)->value($field);DB::table('domains_observation_work')->where('id',$work)->update([$field=>$value]);
         expect(!$recordService::stopped($held->fresh()),'Foreign scheduled work never stops this holding');DB::table('domains_observation_work')->where('id',$work)->update([$field=>$old]);
