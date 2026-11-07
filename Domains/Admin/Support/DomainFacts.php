@@ -330,7 +330,7 @@ final class DomainFacts
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
         if (!self::ended($d)&&$read['read_review']) {
             return ['title'=>'Registrar reads keep failing. Check that this domain is in the right registrar account.','tone'=>'warning',
-                'body'=>'Then use Sync now.','action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
+                'body'=>self::syncNow($d)?'Then use Sync now.':'Ask staff who can sync this domain.','action'=>['label'=>'Open registrar account','url'=>self::url(fn()=>RegistrarFacts::accountUrl((int)$d->server_id))]];
         }
         // Sync cannot run until a pending import is confirmed, so the import notice comes first.
         if ($d->adoptionPending()) {
