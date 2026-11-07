@@ -12,6 +12,7 @@ use Paymenter\Extensions\Servers\Domains\Services\ComplimentaryAccounts;
 staffPanel();
 $staff=staffUser([Staff::VIEW,Staff::COSTS,'admin.domains.manage','admin.domains.fund']);
 $hold=static function(string $name)use($makeRenewal,$user,$staff,$clock):array {
+    ComplimentaryAccounts::set($user->id,$staff,false,'Prepare ordinary original registration',$clock);
     [$op,$d]=$makeRenewal(placeholderComFixtureName($name),false,1,false,static fn()=>ComplimentaryAccounts::set($user->id,$staff,true,'Gift account',$clock));
     $op->update(['state'=>'held','safe_code'=>'registrar_price_increased','policy'=>[...$op->policy,'complimentary_cost_review'=>['amount'=>'8.01','usual'=>'8.00']]]);
     return [$op,$d];
