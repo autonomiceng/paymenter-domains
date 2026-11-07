@@ -12,7 +12,8 @@ extract(managedFixture(skipA3:true,beforeConfirm:static function(array $f):void{
     DB::table('domains_watch_profiles')->where('id',$f['profile']->id)->update(['nameservers'=>json_encode(['ns1.platform.example','ns2.platform.example'])]);
     siteDnsFixture($f['profile']->id);
 }));$id=(int)$d->id;$uid=(int)$owner->id;$now=$time->now;
-// Site-default installation seeds quota before this scenario adopts its synthetic clock.
+// Initialize quota explicitly; unchanged site-default setup need not seed it.
+\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::seed($now);
 $pool=DB::table(\Paymenter\Extensions\Servers\Domains\Services\PublicDnsQuota::TABLE)->where('id',1);
 same([0,[]],[(int)(clone $pool)->value('used'),json_decode((clone $pool)->value('active'),true)],'Fixture has no reserved DNS calls before its clock starts');
 $pool->update(['window_at'=>$now]);
