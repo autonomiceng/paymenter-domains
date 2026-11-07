@@ -10,12 +10,19 @@ STAFF_READS = {
     'tests/staff-operation-renewal-replacements-test.php',
 }
 
+FOCUSED_READS = {
+    'tests/reminder-safety-test.php',
+    'tests/tld-sales-transfers-off-test.php',
+    'tests/tld-stop-keeps-transfers-test.php',
+    'tests/transfer-precheck-test.php',
+}
+
 
 def retained_vendor(jobs, requested):
     # Only these bounded serial read-only cases retain pages until final verification.
     # The all-term checkout's full guards reached 65.328s after its assertions passed.
     return jobs == 1 and bool(requested) and set(requested).issubset(
-        STAFF_READS | {'tests/offer-bulk-commerce-test.php'}
+        STAFF_READS | FOCUSED_READS | {'tests/offer-bulk-commerce-test.php'}
     )
 
 
@@ -26,6 +33,9 @@ def shared_vendor(jobs, requested):
         and all(
             Path(path).name.startswith("test_installed_")
             or path in STAFF_READS
+            # These serial cases only read dependencies. Keep PHP pages until the
+            # final full verification; app files, views and SQLite stay isolated.
+            or path in FOCUSED_READS
             or path in {
                 # Cancellation regression only reads verified Composer dependencies.
                 'tests/native-cancellation-reason-test.php',
@@ -109,9 +119,6 @@ def shared_vendor(jobs, requested):
                 'tests/offer-staff-policy-test.php',
                 'tests/staff-catalogue-next-step-test.php',
                 'tests/staff-transfer-keep-off-test.php',
-                # Sales page cases isolate app/DB state and only read verified vendor.
-                'tests/tld-stop-keeps-transfers-test.php',
-                'tests/tld-sales-transfers-off-test.php',
                 'tests/default-pricing-unreadable-test.php',
                 'tests/pricing-editor-notice-test.php',
                 'tests/staff-tld-page-test.php',
