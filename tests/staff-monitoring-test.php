@@ -54,7 +54,7 @@ DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points')->
 $expiry=gmdate('Y-m-d',$at+11*86400);$days=intdiv(strtotime($expiry.' 00:00:00 UTC')-strtotime(gmdate('Y-m-d').' 00:00:00 UTC'),86400);
 $list=Livewire::actingAs($manager)->test(ListWatches::class);$record=WatchName::find($id);
 same('Problem found',$column($list,'status')->record($record)->getState(),'Problem found pill');same('warning',$column($list,'status')->record($record)->getColor('Problem found'),'Problem found is warning');
-same('Nameservers changed',$column($list,'note')->record($record)->getState(),'Confirmed nameserver mismatch takes priority in the Note column');
+same('Nameservers changed',$column($list,'note')->record($record)->getState(),'Confirmed nameserver mismatch takes priority in the Note column: '.var_export($column($list,'note')->record($record)->getState(),true));
 same('Other',$column($list,'delegation.dns')->record($record)->getState(),'Nameservers elsewhere read Other');
 expect($column($list,'last_check')->record($record)->getState()!=='Missing','Last check has a time');
 expect(str_contains((string)$column($list,'last_check')->record($record)->formatState($column($list,'last_check')->getState()),'data-domains-time'),'Last check shows in the viewer time');
