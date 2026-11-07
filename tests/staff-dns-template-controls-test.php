@@ -29,6 +29,7 @@ $check('Turn off and delete an unused On template',function()use($make,$write,$m
     $page->assertActionVisible('enable')->assertActionHidden('disable');
     $page->callAction('enable')->assertNotified('DNS template turned on')->assertNoRedirect();
     same(true,$row->fresh()->enabled,'Turn on persists in the same page');
+    expect(str_contains($page->html(),'aria-checked="true"'),'The rendered switch updates without reload');
     $stale=$row->fresh();$write($stale,'disable');
     $before=WatchAudit::count();
     try{$write($stale,'delete');throw new RuntimeException('Stale deletion was accepted');}
@@ -87,11 +88,18 @@ $check('Add and edit show done messages without losing page state',function()use
     $list->callAction('save',['name'=>'Added DNS template','nameservers'=>'ns1.added.test'."\n".'ns2.added.test'])
         ->assertNotified('DNS template added')->assertNoRedirect();
     $row=WatchProfile::where('name','Added DNS template')->sole();
+    $list->assertCanSeeTableRecords([$row]);
     $page=Livewire::actingAs($manager)->test(ViewConfiguration::class,['record'=>$row->id]);
     $page->callAction('save',['name'=>'Edited DNS template','nameservers'=>'ns1.edited.test'."\n".'ns2.edited.test'])
         ->assertNotified('DNS template saved')->assertNoRedirect();
     same('Edited DNS template',$page->instance()->getTitle(),'Title updates after edit');
     $page->assertSee('ns1.edited.test');
+});
+$check('Read-only staff cannot change templates',function()use($make):void{
+    $row=$make('Permission template');$viewer=staffUser([Writes::VIEW]);$error=null;
+    try{(new Writes())->run($viewer,'profile',(int)$row->id,'delete',Writes::ticket((int)$viewer->id,'profile',(int)$row->id,(int)$row->revision,'delete'),'Synthetic permission refusal');}
+    catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){$error=$e->getStatusCode();}
+    same(403,$error,'Deletion requires manage permission');expect($row->fresh()!==null,'Refused deletion preserves the template');
 });
 foreach($errors as$error){echo "FAIL $error\n";}
 expect($errors===[],'DNS template control regressions: '.implode('; ',$errors));

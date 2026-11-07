@@ -9,8 +9,8 @@ final class DnsTemplateUsage
     public static function refusal(int $id): ?string
     {
         if(SiteDnsDefault::uses($id)){return 'Choose another template for new domains first.';}
-        // Retained choices still apply after monitoring resumes. Never leave a dangling assignment.
-        if(WatchName::where('ns_profile_id',$id)->exists() || ManagedPublicConfig::where('profile_id',$id)->exists()){
+        // Paused choices still apply after monitoring resumes. Stopped watches no longer use the template.
+        if(WatchName::where('ns_profile_id',$id)->whereIn('state',['active','paused','linked'])->exists() || ManagedPublicConfig::where('profile_id',$id)->exists()){
             return 'This template is assigned to domains. Choose another template for them first.';
         }
         if(WatchProductMap::where('expected_ns_profile_id',$id)->exists()){
