@@ -123,7 +123,7 @@ final class SellTable
     /** Left-out rows are why a price filter is empty only when they are all it had to read: the filter's own rows, or every row when it filters on amounts. */
     public function leftOutExplains(string $filter): bool
     {
-        return $this->kept($filter)['skipped']!==[]&&(in_array($filter,['default','own'],true)||$this->saved()['rows']===[]);
+        return $this->kept($filter)['skipped']!==[]&&(in_array($filter,['default','own'],true)||$this->kept('all')['rows']===[]);
     }
     public function pricing(OfferRow $row): string {return $this->savedRow($row)['pricing']??'Default';}
     public function terms(OfferRow $row): string

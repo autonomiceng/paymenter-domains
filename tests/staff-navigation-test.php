@@ -49,6 +49,9 @@ $list=Livewire::actingAs($manager)->test(ListWatches::class)->assertSuccessful()
 // List pages carry no breadcrumb, like Domains and Registrars.
 same([],$list->instance()->getBreadcrumbs(),'Monitoring list has no breadcrumb');
 foreach([RoutingProfileResource\Pages\ListConfiguration::class] as $page){same([],Livewire::actingAs($manager)->test($page)->instance()->getBreadcrumbs(),'No breadcrumb: '.$page);}
+// Resolver cases require a healthy, separate site DNS default, so Missing identifies only the resolver.
+App\Models\Setting::create(['key'=>\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::KEY,'type'=>'string','encrypted'=>false,'value'=>(string)$profile->id]);
+same($profile->id,\Paymenter\Extensions\Servers\Domains\Services\SiteDnsDefault::profile()?->id,'Site DNS default fixture is usable');
 $settings=app(DnsResolverSettings::class);
 $tab=Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSuccessful();same([['Monitored domains',false],['Settings',true]],$tabs($tab),'Settings tabs');
 // No saved resolver: Missing with its cause and the fix beside it, said once; nothing to test yet, no bootstrap IP.

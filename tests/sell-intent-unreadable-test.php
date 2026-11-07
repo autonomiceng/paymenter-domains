@@ -30,7 +30,7 @@ foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(
     $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->assertSuccessful()->assertCountTableRecords(2)->assertSee('7.80');
     same([$broken->id],array_column($page->instance()->savedPrices()['skipped'],'id'),'Only unreadable intent is left out');
     $dom=new DOMDocument;@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
-    same(".invalid on Synthetic left out: custom pricing can't be read. To fix, open the .invalid TLD page and use Edit prices.",
+    same(".invalid on Synthetic has no price: its custom pricing can't be read. Open .invalid and use Edit prices.",
         $xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Page retains the named warning and existing repair wording');
     $records=collect($page->instance()->getTableRecords()->items());
     $column=$page->instance()->getTable()->getColumn('register_price');

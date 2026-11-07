@@ -11,6 +11,12 @@ STAFF_READS = {
 }
 
 FOCUSED_READS = {
+    # These staff pages only read guarded vendor files; app, views and DB stay isolated.
+    'tests/staff-navigation-test.php',
+    'tests/staff-ui-polish-test.php',
+    'tests/registrar-activation-page-test.php',
+    'tests/price-list-unreadable-test.php',
+    'tests/sell-intent-unreadable-test.php',
     'tests/reminder-safety-test.php',
     'tests/tld-sales-transfers-off-test.php',
     'tests/tld-stop-keeps-transfers-test.php',

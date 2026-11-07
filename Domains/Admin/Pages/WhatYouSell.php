@@ -286,7 +286,10 @@ class WhatYouSell extends Page implements HasTable
     {
         $rule=$one===null?null:$this->reads()->rule((int)$one->server_id);$longest=$one?->longest??$rule['years']??null;$transfer=$one?->transfer??$rule['transfers']??null;
         $tld=$one===null?null:\Paymenter\Extensions\Servers\Domains\Models\Tld::where('server_id',$one->server_id)->where('tld',$one->tld)->first();
-        if($tld!==null){$transfer=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::savedTransfers($tld,$rule);}
+        if($tld!==null){
+            try{$transfer=\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::savedTransfers($tld,$rule);}
+            catch(\JsonException|\TypeError){$transfer=null;} // Leave unreadable intent unchanged; the save still refuses it.
+        }
         $readiness=$one===null?[]:\Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termReadiness($this->bindingOf((int)$one->server_id),$one->tld);
         $keep=static fn(?string $now)=>[self::KEEP=>$now===null?'Leave as is':'Leave as is ('.$now.')'];
         return [

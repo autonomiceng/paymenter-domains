@@ -22,7 +22,10 @@ DB::enableQueryLog();DB::flushQueryLog();
 $page=Livewire::actingAs($viewer)->test(ListDomains::class)->assertSuccessful();
 $queries=DB::getQueryLog();DB::disableQueryLog();
 $opQueries=array_filter($queries,fn($q)=>str_contains($q['query'],'from "domains_operations"'));
-same(3,count($opQueries),'One acquisition query, one status read and one read of waiting requests for the rendered table page');
+// The account-wide uncertainty notice has one bounded read, separate from the table's three batched reads.
+$noticeReads=array_filter($opQueries,fn($q)=>str_contains($q['query'],'"funding_basis"')&&str_ends_with($q['query'],'limit 100'));
+same(1,count($noticeReads),'One bounded account-wide uncertainty notice read');
+same(3,count($opQueries)-count($noticeReads),'One acquisition query, one status read and one read of waiting requests for the rendered table page');
 $userReads=array_filter($queries,fn($q)=>str_contains($q['query'],'from "users"')&&str_contains($q['query'],'"email"'));
 same(1,count($userReads),'Customer descriptions use one eager query');
 $customer=trim($viewer->first_name.' '.$viewer->last_name)?:$viewer->email;
