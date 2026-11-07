@@ -114,6 +114,12 @@ $x=storefrontDom($html);same('Years',trim($x->query('//label')->item(0)->textCon
 expect(str_contains($html,'>Total<')&&str_contains($html,'>Annual renewal<')&&str_contains($html,'>Add to cart</button>'),'Search total and annual renewal are labeled beside the choice');
 $result['terms']=[1=>'$12.00'];$html=view('domains::partials.result',['result'=>$result])->render();
 expect(!str_contains($html,'<select'),'Annual-only result has no unsupported years');
+// Register and Transfer are two tabs at the top of both pages; each page marks its own.
+foreach(['register','transfer'] as $current){
+    $tabs=storefrontDom(view('domains::partials.acquire-tabs',['current'=>$current])->render())->query('//nav[@aria-label="Get a domain"]/a');
+    same([['Register',route('domains.domains.search'),$current==='register'],['Transfer',route('domains.domains.transfer'),$current==='transfer']],
+        array_map(fn($a)=>[trim($a->textContent),$a->getAttribute('href'),$a->getAttribute('aria-current')==='true'],iterator_to_array($tabs)),'Register and Transfer tabs mark '.$current);
+}
 $cart=new App\Livewire\Cart;
 $unavailable=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Services\CartCheckoutRefresh::class,'unavailable');
 $unavailable->invoke(null,$cart,new Paymenter\Extensions\Servers\Domains\Services\CheckoutRefreshTimeout);
