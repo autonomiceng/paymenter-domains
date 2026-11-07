@@ -11,10 +11,14 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 final class OfferFeed implements PricedFeed
 {
     public const BUCKETS = [1, 2, 5, 10];
+    /** Enom API Command Catalogue pp. 474–476 (PE_GetRetailPricing), p. 464 (PE_GetProductPrice):
+     * Years is the bracket start, not an individual term; Years=2 explicitly covers 2–4.
+     * https://cp.enom.com/download/APICommandCatalogEnom.pdf#page=474 */
+    private const DOCUMENTED_TERMS = [1 => [1], 2 => [2, 3, 4], 5 => [5, 6, 7, 8, 9], 10 => [10]];
     private array $observations = [];
     public function __construct(private readonly Driver $reader,
         private readonly ?CatalogueFreshness $freshness = null,
-        private readonly array $terms = [1 => [1], 2 => [2], 5 => [5], 10 => [10]],
+        private readonly array $terms = self::DOCUMENTED_TERMS,
         /** Reviewed NS17 term/family evidence keyed by suffix; first-pass suffixes only, default none. */
         private readonly array $expansion = [])
     {
