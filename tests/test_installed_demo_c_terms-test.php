@@ -101,10 +101,10 @@ storefrontViews();require dirname(__DIR__).'/Domains/routes/web.php';require dir
 $domain=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:'orbit-example.com',status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false,renewNow:['url'=>'/domains/1/renew','terms'=>[1,2]]);
 $choices=['lines'=>[1=>['years'=>1,'first_year'=>'14.00','renewal'=>'14.00','total'=>'14.00','expiry'=>'2028-11-20'],2=>['years'=>2,'first_year'=>'14.00','renewal'=>'14.00','total'=>'28.00','expiry'=>'2029-11-20']],'next_annual'=>'14.00'];
 $html=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'support'=>null,'keys'=>['renew'=>str_repeat('a',64)],'renewalChoices'=>$choices])->render();
-foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Continue to payment','Nov 20, 2028','data-total="$28.00"','for the first year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
+foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Create invoice','Nov 20, 2028','data-total="$28.00"','for the first year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
 expect(str_contains($html,'2 years: $28.00; new expiry Nov 20, 2029'),'No-script renewal shows every term total and expiry');
-expect(strpos($html,'>Cancel</a>')<strpos($html,'>Continue to payment</button>'),'Cancel precedes payment');
-expect(strpos($html,'>Cancel</button>')<strpos($html,'>Continue to payment</button>'),'Cancel is a button before payment');
+expect(strpos($html,'>Cancel</a>')<strpos($html,'>Create invoice</button>'),'Cancel precedes payment');
+expect(strpos($html,'>Cancel</button>')<strpos($html,'>Create invoice</button>'),'Cancel is a button before payment');
 expect(str_contains($html,'domains-total'),'Customer renewal total has shared prominent money treatment');
 expect(!str_contains($html,'exact-term')&&!str_contains($html,'registry'),'No staff eligibility reason in customer form');
 foreach([null,[],['lines'=>[]]] as $missingChoices){
