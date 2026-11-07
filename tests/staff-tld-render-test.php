@@ -58,10 +58,10 @@ staffSalesFixture();
 $sees=static function($page,array $texts):void{$html=$page->effects['partials']['action-modals.0']??'';foreach($texts as $text){expect(str_contains($html,$text),'Dialog shows: '.$text);}};
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')
     ->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half'])->call('$refresh');
-$sees($page,['Customer pays: cost + $1.20, rounded up to the next $0.50','After saving','$7.50','$22.50']);$render($page,'modal-override-preview');
+$sees($page,['Customer pays: cost + $1.20, rounded up to the next $0.50','After saving','$7.50','$26.50']);$render($page,'modal-override-preview');
 $page->setActionData(['pricing'=>'custom','mode'=>'fixed','fixed_register'=>'5','fixed_renew'=>'7','fixed_transfer'=>'9'])->call('$refresh');
 $sees($page,['$5.00<div class="domains-warn">Below cost: not sold','Below cost: still billed']);$render($page,'modal-override-below-cost');
-$page->setActionData(['pricing'=>'default'])->call('$refresh');$sees($page,['Customer pays: $1.00 a year to register']);$render($page,'modal-override-default');
+$page->setActionData(['pricing'=>'default'])->call('$refresh');$sees($page,['Customer pays: $1.00 for the first registration year']);$render($page,'modal-override-default');
 $page->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half','reason'=>'Publish reviewed prices'])->callMountedAction()
     ->assertNotified(\Filament\Notifications\Notification::make()->success()->title('Prices published'));
 same('7.50',$prices->current($t->server_id,$t->account_fingerprint,'com','register',1,'USD',$now)->retail,'Saving from the dialog publishes');
