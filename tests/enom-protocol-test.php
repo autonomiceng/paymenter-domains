@@ -45,10 +45,33 @@ same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names
 same(null, Paymenter\Extensions\Servers\Domains\Registrars\Enom\Catalogue::names($parser->parse(ReadCommand::Tlds, envelope('GetTLDList', '<tldlist><tld><tld>com</tld></tld><tld><tld>bad ending</tld></tld></tldlist>'))),
     'A non-hostname entry still voids the whole list');
 
+// Sanitized Purchase refusal from the 2026-11-07 TEST probe.
+$purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data management policy violation; host ns2.provider.example is subordinate to provider.example, which does not exist yet</RRPText>'
+    .'<Contacts><RegistrantEmailAddress>PRIVATE-CONTACT</RegistrantEmailAddress></Contacts><Command>PURCHASE</Command><APIType>API.NET</APIType><Language>eng</Language>'
+    .'<ErrCount>1</ErrCount><errors><Err1>Validation error. Failed to create order.</Err1></errors><ResponseCount>1</ResponseCount>'
+    .'<responses><response><ResponseNumber>309242</ResponseNumber><ResponseString>Validation error; failed to add; order(s)</ResponseString></response></responses>'
+    .'<MinPeriod>1</MinPeriod><MaxPeriod>10</MaxPeriod><Server>TEST</Server><Site>Enom</Site><IsLockable>True</IsLockable><IsRealTimeTLD>True</IsRealTimeTLD>'
+    .'<TimeDifference>+00.00</TimeDifference><ExecTime>0.01</ExecTime><Done>true</Done><TrackingKey>synthetic-tracking</TrackingKey>'
+    .'<RequestDateTime>11/7/2026 6:42:36 AM</RequestDateTime><debug/></interface-response>';
+same('rejected',$parser->parse(RegistrationCommand::Purchase,$purchaseRefusal)->status,'Observed 541 failure to create an order is a definite refusal');
+foreach ([str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchaseRefusal),
+    str_replace('<RRPCode>541</RRPCode>','',$purchaseRefusal),
+    str_replace('<ErrCount>1</ErrCount>','<ErrCount>0</ErrCount>',$purchaseRefusal),
+    str_replace('Validation error. Failed to create order.','Validation error. Order status unknown.',str_replace('Validation error; failed to add; order(s)','Order pending',$purchaseRefusal)),
+    str_replace('Validation error; failed to add; order(s)','Order pending',$purchaseRefusal),
+    str_replace('<Done>true</Done>','<Done>false</Done>',$purchaseRefusal)] as $ambiguous) {
+    same('unknown',$parser->parse(RegistrationCommand::Purchase,$ambiguous)->status,'An ambiguous refusal remains uncertain');
+}
+foreach (['<OrderID>1234</OrderID>','<OrderID/>','<GetDomainInfo><OrderID>1234</OrderID></GetDomainInfo>',
+    '<ExpirationDate>2027-11-07</ExpirationDate>','<OrderStatus>Pending</OrderStatus>','<ChargedAmount>6.00</ChargedAmount>'] as $contradiction) {
+    same('unknown',$parser->parse(RegistrationCommand::Purchase,str_replace('</interface-response>',$contradiction.'</interface-response>',$purchaseRefusal))->status,
+        'Contradictory order or financial evidence prevents definite refusal');
+}
+
 // Synthetic values in the complete GetDomainInfo not-found envelope observed in TEST on 2026-11-07.
 $missing='<interface-response><nazca>synthetic</nazca><Command>GETDOMAININFO</Command><APIType>API.NET</APIType><Language>eng</Language>'
     .'<ErrCount>1</ErrCount><errors><Err1>Domain name not found</Err1></errors><ResponseCount>1</ResponseCount>'
-    .'<responses><response><ResponseNumber>316153</ResponseNumber><ResponseString>Domain name not found</ResponseString></response></responses>'
+    .'<responses><response><ResponseNumber>316153</ResponseNumber><ResponseString>Validation error; not found; domain name(s)</ResponseString></response></responses>'
     .'<MinPeriod>1</MinPeriod><MaxPeriod>10</MaxPeriod><Server>TEST</Server><Site>Enom</Site><IsLockable>True</IsLockable>'
     .'<IsRealTimeTLD>True</IsRealTimeTLD><TimeDifference>+00.00</TimeDifference><ExecTime>0.01</ExecTime><Done>true</Done>'
     .'<TrackingKey>synthetic-tracking</TrackingKey><RequestDateTime>11/7/2026 6:27:28 AM</RequestDateTime><debug/></interface-response>';

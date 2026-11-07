@@ -115,7 +115,7 @@ final class Labels
             'transfer_pending'=>TransferNotice::title($value),
             'transfer_read_deferred'=>TransferNotice::title($value),
             'transfer_status_unavailable'=>TransferNotice::title($value),
-            'transfer_needs_action'=>'Old registrar needs approval','transfer_provider_rejected'=>'Registrar rejected the transfer','transfer_fee_absorbed'=>'Registrar rejected the transfer',
+            'transfer_needs_action'=>'Old registrar needs approval','registration_provider_rejected'=>'Registrar rejected the registration','transfer_provider_rejected'=>'Registrar rejected the transfer','transfer_fee_absorbed'=>'Registrar rejected the transfer',
             'stale_claim'=>RequestStatus::UNCONFIRMED,'poll_limit_reached'=>'Status checks stopped. Use Check status.',
             'read_unavailable'=>'Status check failed','budget_exhausted'=>'Status check failed','superseded'=>'Replaced by a newer request',
             'healthy_pending'=>'Waiting for old registrar','refreshed'=>null,'unresolved'=>'Status check failed',

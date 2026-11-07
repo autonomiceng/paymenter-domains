@@ -9,7 +9,8 @@ final readonly class RegistrarReply
     // Keep only fixed error wording. Free text can echo credentials, contacts or account data.
     private const TEXTS=['Error 545 - Name server does not exist','Invalid nameserver information',
         'Parameter value policy error','Bad User name or Password','Insufficient funds',
-        'Domain name not found','Domain name already exists','Invalid domain name'];
+        'Domain name not found','Domain name already exists','Invalid domain name',
+        'Validation error. Failed to create order.','Validation error; failed to add; order(s)'];
     private function __construct(public ?string $code, public ?string $text) {}
     public static function capture(?string $code, #[\SensitiveParameter] mixed $message): ?self
     {

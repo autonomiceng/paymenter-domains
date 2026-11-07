@@ -53,7 +53,10 @@ final class ResponseParser
                 $data['errors']['err1']??$data['err1']??$data['responses']['response']['responsestring']??null);
         }
         if (trim($data['errcount'], '0') !== '') {
-            return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data) ? 'rejected' : 'unknown', $code, registrarReply:$reply);
+            $refusal=$command===RegistrationCommand::Purchase&&$this->purchaseRefused($data)
+                ? ['purchase_refusal'=>['err_count'=>(int)$data['errcount'],'rrp_code'=>$data['rrpcode'],
+                    'text'=>$data['errors']['err1']??$data['responses']['response']['responsestring'],'order_id'=>null,'done'=>true]]:[];
+            return new ProtocolResult($command instanceof ReadCommand||$command instanceof ManagementCommand&&$this->refused($command,$data)||$refusal ? 'rejected' : 'unknown', $code, $refusal, registrarReply:$reply);
         }
         if (isset($data['errors']) && $data['errors'] !== '') { return new ProtocolResult('unknown', 'contradictory_errors', registrarReply:$reply); }
         foreach ($data as $key => $value) {
@@ -90,7 +93,44 @@ final class ResponseParser
             if(!is_array($responses)||array_keys($responses)!==['response']||!is_array($response)
                 ||array_diff(array_keys($response),['responsenumber','responsestring'])
                 ||!is_string($response['responsenumber']??null)||!preg_match('/^[347][0-9]{5}$/D',$response['responsenumber'])
-                ||($response['responsestring']??null)!=='Domain name not found'){return false;}
+                ||!in_array($response['responsestring']??null,['Domain name not found','Validation error; not found; domain name(s)'],true)){return false;}
+        }
+        return true;
+    }
+
+    /** The observed order-creation refusal only. A registry error without this text is still uncertain. */
+    private function purchaseRefused(#[\SensitiveParameter] array $data): bool
+    {
+        if((int)$data['errcount']>100||!is_string($data['rrpcode']??null)||!preg_match('/^5[0-9]{2}$/D',$data['rrpcode'])
+            ||isset($data['responsecode'])||!$this->noPurchaseFacts($data)){return false;}
+        $messages=['Validation error. Failed to create order.','Validation error; failed to add; order(s)'];
+        $found=false; $errors=$data['errors']??[];
+        if($errors!==''&&$errors!==[]){
+            if(!is_array($errors)||array_is_list($errors)||count($errors)!==(int)$data['errcount']){return false;}
+            foreach($errors as $key=>$text){
+                if(!preg_match('/^err[1-9][0-9]*$/D',(string)$key)||!in_array($text,$messages,true)){return false;}
+                $found=true;
+            }
+        }
+        if(isset($data['responses'])&&$data['responses']!==''){
+            $responses=$data['responses'];$response=is_array($responses)?($responses['response']??null):null;
+            if(!is_array($responses)||array_keys($responses)!==['response']||!is_array($response)
+                ||array_diff(array_keys($response),['responsenumber','responsestring'])
+                ||!is_string($response['responsenumber']??null)||!preg_match('/^[347][0-9]{5}$/D',$response['responsenumber'])
+                ||!in_array($response['responsestring']??null,$messages,true)){return false;}
+            $found=true;
+        }
+        return $found;
+    }
+    /** Order, expiry, charge and status fields contradict a refusal even when nested or empty. */
+    private function noPurchaseFacts(#[\SensitiveParameter] array $data): bool
+    {
+        foreach($data as $key=>$value){
+            if(preg_match('/order|expir|expdate|charge|amount|owned|belong|processing|pending|queued/i',(string)$key)
+                ||preg_match('/^err[0-9]+$/D',(string)$key)&&!in_array($value,['Validation error. Failed to create order.','Validation error; failed to add; order(s)'],true)) {return false;}
+            if(is_string($value)&&preg_match('/^(?:rrptext|responsestring|err[0-9]+)$/D',(string)$key)
+                &&preg_match('/\b(?:success|successful|successfully|pending|processing|queued)\b/i',$value)){return false;}
+            if(is_array($value)&&!$this->noPurchaseFacts($value)){return false;}
         }
         return true;
     }

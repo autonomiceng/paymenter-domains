@@ -9,6 +9,7 @@ final class RegistrationCompletion
 {
     public static function record(Operation $op, Domain $domain, DriverResult $result): ?array
     {
+        if(($refused=RegistrationRefusals::record($op,$domain,$result))!==null){return $refused;}
         $facts = $result->evidence()->registration;
         if (!$facts || !in_array($result->disposition, [Disposition::Accepted, Disposition::AcceptedWithDiscrepancy], true)) { return null; }
         try { $current = $op->action === 'register' && OperationClaims::query($op, $domain)->matches($facts->query)

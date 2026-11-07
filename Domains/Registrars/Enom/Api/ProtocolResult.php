@@ -16,7 +16,8 @@ final class ProtocolResult implements \JsonSerializable
             throw new \InvalidArgumentException('Invalid protocol result.');
         }
         $facts = self::$facts ??= new \WeakMap;
-        $facts[$this] = $status === 'success' ? $data : [];
+        $refusal=\Paymenter\Extensions\Servers\Domains\Data\RegistrationRefusal::envelope($data['purchase_refusal']??null);
+        $facts[$this] = $status === 'success' ? $data : ($status==='rejected'&&$refusal!==null?['purchase_refusal'=>$refusal]:[]);
         $replies = self::$replies ??= new \WeakMap; $replies[$this] = $registrarReply;
     }
     public function registrarReply(): ?\Paymenter\Extensions\Servers\Domains\Data\RegistrarReply { return self::$replies[$this]; }
