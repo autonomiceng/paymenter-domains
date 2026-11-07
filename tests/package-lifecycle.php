@@ -221,6 +221,9 @@ if($phase==='bridge-seed'){
         require __DIR__.'/Support/namesilo-nexus.php';
     }else{require __DIR__.'/renewal-execution-namesilo-test.php';}
 }elseif(in_array($phase,['acquisition','enom-exchange'],true)){
+    // This fresh process has no server yet to boot the extension. Register its
+    // installed services before retained installation reconciles DNS defaults.
+    if($phase==='enom-exchange'){Runtime::register();}
     require __DIR__.'/Support/runtime-acquisition.php';
 }elseif($phase==='seed'){
     require __DIR__.'/Support/commerce.php';require __DIR__.'/Support/native-commerce.php';
