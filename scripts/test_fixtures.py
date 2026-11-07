@@ -109,6 +109,9 @@ def shared_vendor(jobs, requested):
                 'tests/offer-staff-policy-test.php',
                 'tests/staff-catalogue-next-step-test.php',
                 'tests/staff-transfer-keep-off-test.php',
+                # Sales page cases isolate app/DB state and only read verified vendor.
+                'tests/tld-stop-keeps-transfers-test.php',
+                'tests/tld-sales-transfers-off-test.php',
                 'tests/default-pricing-unreadable-test.php',
                 'tests/pricing-editor-notice-test.php',
                 'tests/staff-tld-page-test.php',
