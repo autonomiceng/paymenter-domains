@@ -11,7 +11,9 @@ use Paymenter\Extensions\Servers\Domains\Admin\Support\{Staff,TldFacts};
 use Paymenter\Extensions\Servers\Domains\Catalogue\{StaffCatalogue,StaffCommands,Writer,Projection,OfferState};
 use Paymenter\Extensions\Servers\Domains\Models\{Tld,Price};
 use Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview as Review;
-extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
+// The edit form needs one saved seller, not cart listeners or a second registrar account.
+extract(commerceFixture(true,active:true,registrars:['enom']));tldPanel();pinStaffClock($now);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$tlds[0]->server_id)->sole());
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $source=new StaffCatalogue($ports,$clock);$t=$tlds[0]->fresh();
 

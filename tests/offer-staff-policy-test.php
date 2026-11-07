@@ -11,7 +11,16 @@ use Paymenter\Extensions\Servers\Domains\Catalogue\{StaffCatalogue,StaffCommands
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Tld};
 use Paymenter\Extensions\Servers\Domains\Services\{NativeCatalogue,StaffSettingsReview as Review,StaffSettingsWrites};
 expect(is_file(dirname(__DIR__).'/Domains/Catalogue/StaffCommands.php'),'Reverse staff edits need reviewed offer commands');
-require __DIR__.'/Support/offer-commerce.php';extract(offerCommerceFixture());tldPanel();pinStaffClock($now);
+require __DIR__.'/Support/offer-commerce.php';
+// These settings cases need one seller and no cart hooks. Install it once through the existing native fixture.
+extract(commerceFixture(true,active:true,registrars:['enom']));tldPanel();pinStaffClock($now);
+$binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Account::where('server_id',$tlds[0]->server_id)->sole());
+$q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,['com'],'register');
+$ports->apply(\Paymenter\Extensions\Servers\Domains\Catalogue\Edit::defaults($binding,'com',new \Paymenter\Extensions\Servers\Domains\Catalogue\Intent(defaultSell:false)),$ports->readOffers($q,\Paymenter\Extensions\Servers\Domains\Catalogue\Context::Staff)[0]->revision);
+$eligibility=activeFixtureEligibility($bindings,$clock);
+$storefront=new class($sellers,$prices,$native,$bindings,$eligibility,$clock) extends \Paymenter\Extensions\Servers\Domains\Services\Storefront {use OfferCommerceRoute;};$storefront->fixtureOffers=$offers;
+Server::find($binding->serverId)->settings()->create(['key'=>'domains_transfer_endings','value'=>'com']);
+DB::table('domains_observation_queues')->insertOrIgnore(['server_id'=>$binding->serverId,'account_fingerprint'=>$binding->fingerprint,'offer_feed_run'=>1]);
 $actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);$id=$tlds[0]->id;$wake=$sync=0;
 $writer=new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true);
 $work=new \Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($writer,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),static fn()=>throw new RuntimeException('Staff save must not resolve feed'),static fn()=>0);
