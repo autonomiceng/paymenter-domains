@@ -4,22 +4,32 @@
 declare(strict_types=1);
 require __DIR__.'/Support/operation-fixture.php';
 use App\Models\{Credit,Invoice,InvoiceTransaction,Role,Service};
-use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
-use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,ComplimentaryAccounts,NativeDomainGuard,HolderPricing,RegistrarAnswers,Refunds,StaffOperations,StaffOperationReview,StaffSettingsReview as Review,StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Contracts\{Clock,AdmittedRegistrarDriver};
+use Paymenter\Extensions\Servers\Domains\Data\{DriverResult,Disposition,SendState,ResultReason,Evidence};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,ComplimentaryAccounts,DomainOperations,NativeDomainGuard,HolderPricing,RegistrarAnswers,Refunds,StaffOperations,StaffOperationReview,StaffSettingsReview as Review,StaffSettingsWrites};
 (new NativeDomainGuard(new HolderPricing($prices),$clock))->boot();
 app()->instance(Clock::class,$clock);app()->instance(AccountBindings::class,$bindings);app()->instance(Refunds::class,new Refunds($clock));
 $staff=commerceUser();$staff->update(['role_id'=>Role::create(['name'=>'Complimentary closure','permissions'=>[
     'admin.domains.view','admin.domains.manage','admin.domains.fund','admin.domains.manage-policy','admin.domains.settings.enom_answer','admin.invoices.update','admin.domains.operations.credit']])->id]);
 ComplimentaryAccounts::set($user->id,$staff,true,'Audited closure account',$clock);
 $settings=new StaffSettingsWrites($native,$sellers,$bindings);
+$supportWriter=new class($writer) implements AdmittedRegistrarDriver {
+    public function __construct(private $inner){}
+    public function register($op,$context):DriverResult{return $this->inner->register($op,$context);}
+    public function renew($op,$context):DriverResult{throw new LogicException('No renewal in this fixture.');}
+    public function transferIn($op,$context):DriverResult{
+        $this->inner->transferIn($op,$context);
+        return new DriverResult($op->binding,Disposition::Accepted,SendState::Sent,ResultReason::Acknowledged,new Evidence(transferReference:'9001'));
+    }
+};
+$engine=new DomainOperations($claims,$preflight,$supportWriter,$clock);$writer->engine=$engine;
 foreach(['register','transfer']as$action){
     $clock->instant=$now;
     $op=$new(placeholderComFixtureName('comp-support-'.$action.'-placeholder.com'),false,true,$action);
     $op=$engine->execute($op->id);same('sealed',$op->attempt['seal']??null,'The support fixture retains a real sealed attempt');
     if($action==='transfer'){
-        // Synthetic final readback of the original Enom transfer, before its audited support answer.
-        $op->update(['attempt'=>[...$op->attempt,'evidence'=>['transferReference'=>'9001']],
-            'policy'=>[...$op->policy,'reconciliation'=>['transfer_status'=>'rejected','reason'=>'transfer_rejection_unreconciled']]]);
+        // Synthetic final readback retains the reference captured by the original accepted send.
+        $op->update(['policy'=>[...$op->policy,'reconciliation'=>['transfer_status'=>'rejected','reason'=>'transfer_rejection_unreconciled']]]);
     }
     $clock->instant=$now->modify('+25 hours');expect(RegistrarAnswers::eligible($op,$clock->now()),'The original attempt is eligible for an account-specific final answer');
     $attempt=$op->attempt;$calls=$writer->calls;$money=$nativeMoney();
