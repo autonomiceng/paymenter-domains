@@ -79,18 +79,20 @@ $costs = DB::table('domains_prices')->where('server_id', $b->serverId)->where('t
 DB::table('domains_observation_queues')->updateOrInsert(['server_id' => $b->serverId],
     ['account_fingerprint' => $b->fingerprint, 'offer_work' => OfferState::json(['feed_due' => $now->getTimestamp() + 86400,
         'pending' => [['tld' => 'net', 'costs' => $costs]]])]);
-// Simulate native drift left after the real Writer/Projection finishes this buffered feed row.
+// Force a native update, then simulate drift left after Writer/Projection finishes the buffered row.
+DB::table('prices')->where('id', $longPrice->id)->update(['price' => '0.01']);
 DB::statement('CREATE TRIGGER drift_native_price AFTER UPDATE ON prices WHEN NEW.id = '.$longPrice->id.
     " BEGIN UPDATE prices SET setup_fee = '1.00' WHERE id = NEW.id; END");
-Log::spy();
+$feedCalls = 0;
 $worker = new Paymenter\Extensions\Servers\Domains\Catalogue\OfferWork($ports->writer(), $clock,
     new Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock, 25),
-    static fn () => throw new LogicException('No additional provider reads allowed.'), static fn () => 0);
+    static function () use (&$feedCalls) { ++$feedCalls; throw new LogicException('No additional provider reads allowed.'); }, static fn () => 0);
 same('worked', $worker->accountTurn($b->serverId), 'Existing account job finishes its buffered publication');
 same(2, count(array_filter($offers->priceMatches(), fn ($r) => $r['mismatch'] !== null)), 'Full check still detects touched and untouched drift');
 Log::shouldHaveReceived('warning')->with('Domain acquisition price mismatch after catalogue publication.',
     Mockery::on(fn ($row) => $row['tld'] === 'net' && $row['term'] === 3 && $row['mismatch'] !== null))->once();
 same($calls, $reads->calls, 'End-of-publication check makes no provider calls');
+same(0, $feedCalls, 'Buffered publication and its check never resolve another provider feed');
 same('0.01', number_format((float) $orgPrice->fresh()->price, 2, '.', ''), 'Untouched ending remains unchanged');
 DB::statement('DROP TRIGGER drift_native_price');
 DB::table('prices')->where('id', $longPrice->id)->update(['setup_fee' => '0.00']);
