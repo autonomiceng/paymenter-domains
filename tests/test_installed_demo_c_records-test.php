@@ -103,6 +103,24 @@ $g=array_column(RecordFamilies::read($enom,$now)['rows'],null,'kind')['glue'];
 expect(str_contains($g['staff'],"Known glue checked. This registrar can't list every child host"),'Enom known glue explains bounded coverage');
 expect(str_contains($g['staff'],'2 known child hosts')&&$g['at']==='2026-11-04T09:00:00+00:00','Coverage and checked time shown');
 expect(!str_contains($g['staff'],'some did not')&&!str_contains($g['staff'],'Sync this domain before editing'),'Impossible glue prerequisite removed');
+// The glue row says plainly what Enom can show, lists the hosts we know and points to support for any other host.
+config(['domains.support_url'=>'https://support.example.test']);
+$glueRow=static function(Domain $domain)use($owned,$now):string{
+    $html=view('domains::partials.owner-management',['domain'=>RecordFamilies::owner($owned,RecordFamilies::read($domain,$now)),'caps'=>['glue']])->render();
+    return trim(preg_replace('/\s+/',' ',storefrontDom($html)->query('//li[@id="glue"]/span[contains(@class,"domains-row__v")]')->item(0)?->textContent??''));
+};
+$enomSays="Enom can't return a full list, so only the ones we know are shown.";
+$same($enomSays,$g['customer'],'Enom glue customer wording');
+$same('No glue records known here Partial '.$enomSays.' Need a change? Contact support.',$glueRow($enom),'Enom glue empty state and support path');
+$known=clone $enom;$rk=$r;$rk['families']['glue']['records']=['ns1.orbit-example.com'=>'192.0.2.10'];$known->observation=['records'=>$rk];
+$same('ns1.orbit-example.com Partial '.$enomSays.' Need a change? Contact support.',$glueRow($known),'Enom glue row lists the known host');
+$unchecked=clone $enom;$r0=$r;$r0['families']['glue']['candidates']=[];$unchecked->observation=['records'=>$r0];
+$g0=array_column(RecordFamilies::read($unchecked,$now)['rows'],null,'kind')['glue'];
+$check(str_starts_with($g0['staff'],'No known child hosts to check.')&&!str_contains($g0['staff'].$g0['customer'],'Known glue checked'),'No hosts checked never reads as Known glue checked');
+foreach([[['ns1.orbit-example.com'=>'192.0.2.10','ns2.orbit-example.com'=>'192.0.2.11'],'2 registered nameservers.'],[[],'No registered nameservers.']] as [$hosts,$says]){
+    $listed=clone $d;$rl=$record;$rl['families']['glue']=['state'=>'complete','records'=>$hosts];$listed->observation=['records'=>$rl];
+    $same($says,array_column(RecordFamilies::read($listed,$now)['rows'],null,'kind')['glue']['customer'],'NameSilo full glue list: '.$says);
+}
 $safe=$existing;$safe['glue']['actions']=['glue_add'=>'/add','glue_update'=>'/update','glue_delete'=>'/delete','glue'=>'/replace'];
 $projected=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$safe]),RecordFamilies::read($enom,$now));
 same(['glue_add','glue_update','glue_delete'],array_keys($projected->management['glue']['actions']),'Partial glue preserves individual controls and blocks whole-list replacement');
