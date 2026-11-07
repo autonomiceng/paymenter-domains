@@ -69,6 +69,9 @@ final class Labels
             catch (\Throwable) { return DomainFacts::UNREADABLE; }
             if ($need!==null) { return $need; }
         }
+        // Older checks retained a cap code even when the sending switch refused the read.
+        if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)
+            &&($op->policy['status_check']['reason']??null)==='send_guard'){return self::reason('enom_test_reconciliation_send_guard');}
         $reason=self::reason($op->safe_code,$op->funding_basis==='complimentary');
         if ($reason===self::FEATURE_OFF) {
             return 'Not sent: '.(['renew'=>'Renewals','transfer'=>'Transfers','register'=>'Registrations'][$op->action]??'Changes').' off for this account';
@@ -138,6 +141,7 @@ final class Labels
             'contact_profile_proof_required'=>'Not sent: contact details need fixing','write_disabled'=>self::FEATURE_OFF,
             'enom_test_transfer_call_cap'=>'Not sent: stopped by our test send check','enom_test_call_cap'=>'Not sent: stopped by our test send check','enom_test_management_call_cap'=>'Not sent: stopped by our test send check','enom_test_renewal_call_cap'=>'Not sent: stopped by our test send check',
             'enom_test_reconciliation_call_cap'=>RequestStatus::UNCONFIRMED,'enom_test_transfer_reconciliation_call_cap'=>RequestStatus::UNCONFIRMED,
+            'enom_test_reconciliation_send_guard'=>'Status check paused: Enom sends are off',
             'enom_test_transfer_setup_required'=>'Not sent: registrar account not set up','enom_test_setup_required'=>'Not sent: registrar account not set up',
             'enom_test_transfer_usd_balance_required'=>'Not sent: registrar balance needs another check','usd_balance_required'=>'Not sent: registrar balance needs another check',
             'configuration_unavailable'=>"Not sent: couldn't load the registrar account's settings",

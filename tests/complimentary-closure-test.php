@@ -41,6 +41,14 @@ foreach(['register','transfer']as$action){
     $input=['operation_id'=>$op->id,'attempt_hash'=>RegistrarAnswers::identity($op),'outcome'=>$action==='register'?'not_processed':'transfer_rejected',
         'order_reference'=>$action==='register'?'':'9001','case_reference'=>'synthetic-complimentary-case','evidence'=>'Registrar confirmed this account and original attempt cannot complete.',
         'confirmed'=>true,'final_confirmed'=>true,'charge'=>'0.00','registrar_refund'=>'0.00'];
+    // A corrupted receipt must refuse the final answer before it can close either order.
+    DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'pending']);
+    $retained=$op->fresh()->getRawOriginal();$badMoney=$nativeMoney();$refusal=null;
+    try{$settings->run($review,$input,$clock->now());}catch(DomainException $e){$refusal=$e;}
+    same('Complimentary receipt authority changed.',$refusal?->getMessage(),'The staff answer refuses a non-Paid zero receipt: '.$action);
+    same([$retained,$badMoney],[$op->fresh()->getRawOriginal(),$nativeMoney()],'A refused answer preserves its operation and every native money row: '.$action);
+    DB::table('invoices')->where('id',$op->invoice_id)->update(['status'=>'paid']);
+    $review=new Review($staff->id,$op->server_id,null,'enom_answer',Review::ticket($staff->id,$op->server_id,null,'enom_answer',Review::stamp($op->server_id,null)),'Record final complimentary order answer');
     // Fail the native service projection after the final answer commits, once only.
     $failService=(int)$op->service_id;
     DB::listen(static function($q)use(&$failService):void {
@@ -62,6 +70,9 @@ foreach(['register','transfer']as$action){
     same($attempt,$op->attempt,'Support closure preserves the original sealed attempt');
     same('paid',Invoice::findOrFail($op->invoice_id)->status,'The zero receipt stays Paid');
     expect(!isset($op->funding['refund']),'No refund is invented for an account-funded order');
+    $closed=[$op->fresh()->getRawOriginal(),$op->domain->fresh()->getRawOriginal(),Service::findOrFail($op->service_id)->getRawOriginal()];
+    app(Refunds::class)->retryPending();
+    same($closed,[$op->fresh()->getRawOriginal(),$op->domain->fresh()->getRawOriginal(),Service::findOrFail($op->service_id)->getRawOriginal()],'The paid refund sweep leaves a closed complimentary operation, domain and service untouched');
     same(null,app(Refunds::class)->creditRejected($op->id),'Repeated closure returns no credit');
     $ticket=StaffOperationReview::ticket($staff->id,$op->domain_id,$op->id,'credit',StaffOperationReview::stamp($op,$op->domain),$clock);
     (new StaffOperations($clock))->run($staff,$op->domain_id,$op->id,'credit',$ticket,'Recheck complimentary closure');

@@ -96,16 +96,16 @@ final class OperationReconciliation
                     if(!$this->eligible($op)||self::stamp($op,$domain)!==$stamp){return $op;}
                     $policy=TransferPolling::finished($op->policy,$readStarted);
                     if($watch){$policy['reconciliation']['staff_alert']=true;$policy['reconciliation']['reason']=($policy['reconciliation']['final_check']??null)==='done'?'transfer_deadline_passed':'transfer_status_unavailable';}
-                    elseif(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){$policy['reconciliation']['reason']='reconciliation_required';$op->safe_code='reconciliation_required';}
+                    elseif(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$policy['reconciliation']['reason']='reconciliation_required';$op->safe_code='reconciliation_required';}
                     if($op->action==='transfer'){$policy['reconciliation']['read_failed']=true;}
                     $op->update(['policy'=>$policy]);return $op;
                 });
             }
-            return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($stamp): Operation {
+            return $this->claims->locked($id, function ($op, $domain, $all, $funding, $server, $account) use ($stamp, $check): Operation {
                 if (!self::eligible($op) || self::stamp($op, $domain) !== $stamp) { return $op; }
                 $policy = $op->policy;
                 $policy['reconciliation']['staff_alert'] = true;
-                $policy['reconciliation']['reason'] = $op->action==='transfer'?'enom_test_transfer_reconciliation_call_cap':'enom_test_reconciliation_call_cap';
+                $policy['reconciliation']['reason'] = $check->deferred==='send_guard'?'enom_test_reconciliation_send_guard':($op->action==='transfer'?'enom_test_transfer_reconciliation_call_cap':'enom_test_reconciliation_call_cap');
                 $op->update(['safe_code' => $policy['reconciliation']['reason'], 'policy' => $policy]);
                 return $op;
             });
@@ -122,8 +122,8 @@ final class OperationReconciliation
             }
             $policy = TransferPolling::finished($op->policy,$readStarted); $policy['reconciliation']['polls'] = ($policy['reconciliation']['polls'] ?? 0) + 1;
             $policy['reconciliation']['staff_alert']=true;
+            if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap','enom_test_reconciliation_send_guard'],true)){$op->safe_code='reconciliation_required';}
             if ($op->action === 'transfer') {
-                if(in_array($op->safe_code,['enom_test_reconciliation_call_cap','enom_test_transfer_reconciliation_call_cap'],true)){$op->safe_code='reconciliation_required';}
                 $policy['reconciliation']['transfer_privacy_blocked'] = $privacyBlocked;
                 $policy['reconciliation']['transfer_status'] = $transfer->value; $policy['reconciliation']['read_at'] = $this->clock->now()->getTimestamp(); unset($policy['reconciliation']['read_failed']);
                 if ($op->state === 'held') { $op->update(['state' => 'uncertain', 'safe_code' => 'reconciliation_required']); }
