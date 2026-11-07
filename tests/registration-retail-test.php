@@ -131,7 +131,7 @@ $inputs = []; foreach ($costs as $cost) { $inputs[$cost->key()] = $cost; }
 foreach ([
     ['32.98', [...PricingRule::DEFAULT, 'markup' => '10.00', 'round_up' => 'ending_99']],
     ['33.00', [...PricingRule::DEFAULT, 'mode' => 'markup_amount', 'markup' => '2.00', 'round_up' => 'half']],
-    ['32.98', [...PricingRule::DEFAULT, 'mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'ending_99',
+    ['33.98', [...PricingRule::DEFAULT, 'mode' => 'markup_fee_percent', 'markup' => '8.00', 'round_up' => 'ending_99',
         'card_fee' => ['percent' => '2.90', 'fixed' => '0.30']]],
 ] as [$total, $rule]) {
     same($total, Retail::quote($inputs['register:2'], $rule, $inputs), 'Annual rounding precedes the registration total: '.$rule['mode']);
