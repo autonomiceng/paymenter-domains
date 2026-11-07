@@ -31,7 +31,7 @@
 <a class="domains-btn domains-btn--primary domains-btn--block" data-dialog-open href="{{ $show }}?edit=renew#edit-renew">Renew now</a>
 @php $breakdown=static fn($line)=>isset($line['first_year'],$line['renewal'])?'$'.$line['first_year'].' for the first year'.($line['years']>1?' + $'.$line['renewal'].($line['years']===2?' for the next year.':' / year for the next '.($line['years']-1).' years.') : '.'):''; @endphp
 <dialog id="edit-renew" class="domains-confirm domains-edit domains-dialog-sheet" aria-labelledby="edit-renew-title" @if ($renewOpen) open @endif>
-<h3 id="edit-renew-title" class="domains-h3">Renew domain</h3>
+<h3 id="edit-renew-title" class="domains-h3">Renew {{ $domain->name }}</h3>
 <form method="POST" action="{{ $domain->renewNow['url'] }}" class="domains-owner-form" data-renewal-form>
 @include('domains::partials.form-key', ['action' => 'renew'])
 <dl class="domains-card">
@@ -45,7 +45,7 @@
 </dl>
 @if ($domain->renewNow['late'] ?? false)<p class="domains-hint">Late renewal @include('domains::partials.help', ['id' => 'late-renewal', 'label' => 'Late renewal', 'helpText' => \Paymenter\Extensions\Servers\Domains\Services\EnomLateRenewal::HELP])</p>@endif
 @if ($domain->renewNow['order_by'] ?? null)<p class="domains-hint">You can renew online until @include('domains::partials.date', ['date' => $domain->renewNow['order_by']]).</p>@endif
-<div class="domains-buttons">@if ($renewOpen)<a href="{{ $show }}" class="domains-btn domains-btn--secondary">Cancel</a>@else<button type="button" class="domains-btn domains-btn--secondary" data-dialog-close>Cancel</button><noscript><a href="{{ $show }}">Cancel</a></noscript>@endif<button type="submit" class="domains-btn domains-btn--primary">Continue to payment</button></div></form>
+<div class="domains-buttons">@if ($renewOpen)<a href="{{ $show }}" class="domains-btn domains-btn--secondary">Cancel</a>@else<button type="button" class="domains-btn domains-btn--secondary" data-dialog-close>Cancel</button><noscript><a href="{{ $show }}">Cancel</a></noscript>@endif<button type="submit" class="domains-btn domains-btn--primary">Create invoice</button></div></form>
 </dialog>
 @endif
 </div></section>
