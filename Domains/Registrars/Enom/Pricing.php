@@ -9,6 +9,19 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 /** Exact source units; no markup, currency conversion, rounding or spending authority. */
 final class Pricing
 {
+    /** Enom API Command Catalogue pp. 474–476 (PE_GetRetailPricing), p. 464 (PE_GetProductPrice):
+     * Years is the bracket start; Years=2 explicitly covers 2–4. Shared by feed and checkout refresh.
+     * https://cp.enom.com/download/APICommandCatalogEnom.pdf#page=474 */
+    public const BRACKET_TERMS = [1 => [1], 2 => [2, 3, 4], 5 => [5, 6, 7, 8, 9], 10 => [10]];
+
+    public static function bracket(int $years): int
+    {
+        foreach (self::BRACKET_TERMS as $bracket => $terms) {
+            if (in_array($years, $terms, true)) { return $bracket; }
+        }
+        throw new \InvalidArgumentException('Invalid price term.');
+    }
+
     /** Eight-decimal DB padding is accepted only if every excess digit is zero. */
     public static function annual(mixed $value): ?string
     {
