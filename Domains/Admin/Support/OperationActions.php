@@ -26,12 +26,14 @@ final class OperationActions
             // Releasing a contact hold copies the account details in, so the button says that.
             $contactRecovery=$name==='release'&&$op->safe_code==='contact_details_required';
             if($contactRecovery){$label='Use updated account details';}
+            $complimentaryClosure=$name==='credit'&&$op->funding_basis==='complimentary';
+            if($complimentaryClosure){$label='Close order';}
             $ticket=fn()=>StaffOperationReview::ticket((int)Auth::id(),(int)$op->domain_id,(int)$op->id,$name,$stamp,app(Clock::class));
             $action=Action::make($name)->label($label)->color($name==='refund'?'danger':'gray')
                 ->visible(fn()=>Staff::can(StaffOperationReview::permission($name))&&self::relevant($name,$op));
             if(in_array($name,[...self::REASON,'disposition'],true)){
                 $action->requiresConfirmation()->modalHeading($name==='disposition'?$label:$label.'?')->modalSubmitActionLabel($label)->modalWidth('lg')
-                    ->modalDescription(self::description($name));
+                    ->modalDescription($complimentaryClosure?'Closes this complimentary order and its service. Nothing is charged or credited.':self::description($name));
             }
             $account=$name==='release'&&!$contactRecovery&&$op->state==='held'?RequestFacts::account($op)['account']:null;
             $sends=EnomTestRegistration::releaseSends($op,$account)?RequestFacts::sendWords($op,$account):null;
@@ -44,14 +46,14 @@ final class OperationActions
                     Textarea::make('reason')->label('Reason')->required()->minLength(5)->maxLength(500)->rows(3)
                         ->rules(['regex:'.StaffReason::SINGLE_LINE])->validationMessages(['regex'=>'Use one line.'])]);
             }
-            $out[]=$action->action(function(array $data)use($op,$name,$label,$ticket,$contactRecovery,$sends){
+            $out[]=$action->action(function(array $data)use($op,$name,$label,$ticket,$contactRecovery,$sends,$complimentaryClosure){
                 try { $actor=Auth::user(); if(!$actor instanceof \App\Models\User){throw new \DomainException('Staff required.');}
                     $reason=in_array($name,self::REASON,true)?trim((string)($data['reason']??'')):$label;
                     app(StaffOperations::class)->run($actor,(int)$op->domain_id,(int)$op->id,$name,(string)($data['review_key']??$ticket()),$reason);
                     $check=$name==='recheck'&&in_array($op->action,['register','transfer','renew'],true)?\Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($op->fresh()):null;
                     $notification=Notification::make();
                     $check&&$check['title']!=='Registrar checked'?$notification->warning():$notification->success();
-                    $notification->title($check['title']??($contactRecovery?'Contact details updated':self::DONE[$name]))
+                    $notification->title($check['title']??($contactRecovery?'Contact details updated':($complimentaryClosure?'Order closed':self::DONE[$name])))
                         ->body($check['body']??($name==='resume_reads'?'The system will check again on its next turn.':($name==='recheck'?'Open this request for its current result and next step.':($sends===null?null:"The {$sends} goes to Enom within a few minutes."))))->send();
                 }catch(StaffReviewRefused $error){
                     ($error->getMessage()===StaffOperationReview::CHANGED?self::stale($name,$op->fresh()):Notification::make()->danger()->title(self::FAILED)->body($error->getMessage()))->send();
@@ -116,7 +118,10 @@ final class OperationActions
             'release'=>StaffOperationWrites::canRelease($op,app(Clock::class)->now()),
             'refund'=>$op->state==='held'&&$op->funding_basis==='paid_invoice',
             // A closed unpaid order released its name, so Refunds can never credit it. Late money goes through the payment review.
-            'credit'=>$op->state==='rejected'&&$op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE,
+            // Complimentary orders have no payment for the refund sweep; retry only their unfinished closure.
+            'credit'=>$op->state==='rejected'&&(($op->funding_basis==='paid_invoice'&&$op->safe_code!==UnpaidAcquisitionProof::CODE)
+                ||($op->funding_basis==='complimentary'&&in_array($op->action,['register','transfer'],true)&&($d=$op->domain)
+                    &&($d->status!==($op->action==='register'?'registration_rejected':'transfer_rejected')||$d->service?->status!==\App\Models\Service::STATUS_CANCELLED))),
             'replacement'=>$op->action==='renew'&&$op->state==='rejected',
             'disposition'=>self::closable($op),
             'resume_reads'=>in_array($op->action,['register','transfer','renew'],true)&&in_array($op->state,['running','pending','uncertain','held'],true)&&self::readLimit($op),
