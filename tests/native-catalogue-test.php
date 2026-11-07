@@ -29,14 +29,28 @@ same($planIds, Plan::orderBy('id')->pluck('id')->all(), 'Switch/republication pr
 same($enom->server_id, $registration->fresh()->server_id, 'Old product server never repointed');
 commerceReject(static fn () => $native->mapping($registration, $native->annualPlan($transfer)));
 commerceReject(static fn () => DB::transaction(static fn () => activeFixtureRepublish($native,$enom->id, $now)));
+// Retained native rows are invoice identities, not permission to buy a closed offer.
+// Restore this account as seller so the refusal below must come from withdrawal.
+activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $enom->server_id, true, true, $now);
+$selection = $sellers->selection('com', 'register', 3, $now);
+$nativeRows = static fn () => [DB::table('plans')->orderBy('id')->get()->toJson(), DB::table('prices')->orderBy('id')->get()->toJson()];
+$retained = $nativeRows();
 activeFixtureStops($native,$enom,['register','renew','transfer']); activeFixtureRepublish($native,$enom->id, $now);
 expect($registration->fresh()->stock === null, 'Disabled TLD keeps unlimited stock');
-same(0, $registration->plans()->where('billing_period', 3)->sole()->prices()->count(), 'Withdrawn term price removed');
+same($retained, $nativeRows(), 'Withdrawal preserves every native plan and price identity, amount and sort');
+commerceReject(static fn () => $sellers->selection('com', 'register', 3, $now));
+commerceReject(static fn () => DB::transaction(static fn () => $sellers->admit([$selection], $now)));
 same($annual->id, $native->annualPlan($registration)->id, 'Annual holding identity survives withdrawal');
-same(103, $registration->plans()->where('billing_period', 3)->sole()->sort, 'Withdrawn plan sorts after priced plans');
+same(3, $registration->plans()->where('billing_period', 3)->sole()->sort, 'Withdrawal retains native plan ordering');
 activeFixtureStops($native,$enom,[]); activeFixtureRepublish($native,$enom->id, $now);
+same($retained, $nativeRows(), 'Reopening reuses native identities and amounts');
+same($selection->priceId, $sellers->selection('com', 'register', 3, $now)->priceId, 'Reopened offer uses the same catalogue price identity');
 activeFixtureRepublish($native,$enom->id, $now->modify('+2 days'));
 expect($registration->fresh()->stock === null, 'Stale prices keep unlimited stock');
+same($retained, $nativeRows(), 'Stale offers preserve native rows');
+commerceReject(static fn () => $sellers->selection('com', 'register', 3, $now->modify('+2 days')));
+// Restore fresh time so account disablement cannot pass merely because these facts expired.
+activeFixtureClock($native)->instant = $now;
 activeFixtureRepublish($native,$enom->id, $now);
 $registration->settings()->where('key', 'domains_registrar')->update(['value' => 'namesilo']);
 commerceReject(static fn () => $native->mapping($registration));
@@ -74,7 +88,12 @@ commerceReject(static fn () => activeFixtureRepublish($native,$enom->id, $now));
 commerceReject(static fn () => $native->product($enom, 'register'));
 same($before, [$hosting->fresh()->getAttributes(), $hostingPlan->fresh()->getAttributes(), $hostingPlan->prices()->sole()->getAttributes()], 'Reserved-slug collision leaves hosting unchanged');
 DB::table('prices')->where('plan_id',$hostingPlan->id)->delete();DB::table('plans')->where('id',$hostingPlan->id)->delete();DB::table('products')->where('id',$hosting->id)->delete();
+$enabledSelection = $sellers->selection('com', 'register', 1, $now);
+$sellers->selection('com', 'transfer', 1, $now);
 Server::findOrFail($enom->server_id)->update(['enabled' => false]);
-activeFixtureRepublish($native,$enom->id,$now);same(0,$registration->plans()->whereHas('prices')->count(),'Disabled account withdraws every native acquisition price');
+activeFixtureRepublish($native,$enom->id,$now);
+same($retained, $nativeRows(), 'Disabled account retains every native acquisition identity and amount');
+foreach (['register', 'transfer'] as $action) { commerceReject(static fn () => $sellers->selection('com', $action, 1, $now)); }
+commerceReject(static fn () => DB::transaction(static fn () => $sellers->admit([$enabledSelection], $now)));
 $nativeSuccessful = true;
 echo "Permanent native products, exact terms, annual plans and publication refusals passed.\n";
