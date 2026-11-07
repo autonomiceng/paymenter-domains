@@ -158,6 +158,9 @@ class WhatYouSell extends Page implements HasTable
         if(($summary['failed']??[])===[]){
             Notification::make()->success()->title('Saved')->body('Sales start as prices arrive, once orders are on.')
                 ->actions([Action::make('open_account')->label('Open registrar account')->link()->url(RegistrarAccount::getUrl(['account'=>$server]))])->send();
+        }elseif(($summary['rows']??[])!==[]){
+            $saved=array_map(static fn($ending)=>'.'.$ending,array_keys($summary['rows']));
+            Notification::make()->warning()->title('Partly saved')->body('Saved: '.implode(', ',$saved).'. Other TLDs were not saved. See the errors below.')->send();
         }
         foreach($summary['failures']??[] as $ending=>$message){Notification::make()->danger()->title("Couldn't save")->body('.'.$ending.': '.SettingsActions::refusal(new \DomainException($message),'acceptance',[],$server))->send();}
     }
