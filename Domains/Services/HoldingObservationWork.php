@@ -172,7 +172,10 @@ final class HoldingObservationWork
             $code=in_array($held['code']??null,ReadFailure::CODES,true)?$held['code']:'records_incomplete';
         }
         if(in_array($code,HoldingReadRetry::RECOVERABLE,true)){
-            $p=$d->observation??[];$prior=$p['read_retry']??[];
+            $p=$d->observation??[];$prior=$p['read_retry']??[];$verifiedCredential=null;
+            try{$a=Account::where('server_id',$d->server_id)->sole();$verifiedCredential=app(AccountBindings::class)->holdingCredentialRevision(AccountBindings::binding($a));}catch(\Throwable){}
+            // A broken or replaced configuration must remain eligible for recovery after repair.
+            $credential=$credential!==null&&$credential===$verifiedCredential?$credential:null;
             $p['read_retry']=['work_id'=>(int)$job->id,'credential'=>$credential,'at'=>$this->clock->now()->format(DATE_ATOM),
                 'auto_resumed'=>($prior['work_id']??null)===$job->id?($prior['auto_resumed']??false):false];
             $d->update(['observation'=>$p]);
