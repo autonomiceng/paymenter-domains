@@ -34,6 +34,13 @@ same('Needs approval: registrar cost $8.01 is above the usual $8.00. Ask staff w
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$user,'8.01','Approved',$clock));
 commerceReject(fn()=>ComplimentaryCosts::approve($over->id,$staff,'8.02','Stale quote',$clock));
 ComplimentaryCosts::approve($over->id,$staff,$over->fresh()->policy['complimentary_cost_review']['amount'],'Reviewed registrar increase',$clock);
+foreach(['staff_review_required','processing','transfer_setup_review_required']as$reason){
+    $over->refresh();$over->update(['state'=>'held','safe_code'=>$reason]);$message=ComplimentaryCosts::message($over);
+    $refused=false;try{ComplimentaryCosts::approve($over->id,$staff,'8.01','Stale cost review cannot release another hold',$clock);}catch(DomainException){$refused=true;}
+    same([true,null,'held',$reason],[$refused,$message,$over->fresh()->state,$over->fresh()->safe_code],'A stale cost review cannot release an unrelated hold');
+    same(1,DB::table('domains_complimentary_approvals')->where('operation_id',$over->id)->count(),'Unrelated holds cannot add a cost approval');
+}
+$over->update(['state'=>'queued','safe_code'=>null]);
 // Advance the synthetic account slot without waiting for real cache time.
 Illuminate\Support\Facades\Cache::forget('domains-write-slot:'.$binding->fingerprint);
 $approved=$runRenewal($over,$binding);same('pending',$approved->state,'Approved exact cost can send through the same path: '.$approved->safe_code);same($writes+1,$state->writes,'Approval permits exactly one registrar send');

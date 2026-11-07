@@ -3,8 +3,8 @@
 declare(strict_types=1);
 require __DIR__.'/Support/watch-dns.php';
 require __DIR__.'/Support/FakeDnsReader.php';
-use Illuminate\Support\Facades\DB;
-use Paymenter\Extensions\Servers\Domains\Models\WatchProfile;
+use Illuminate\Support\Facades\{DB,Schema};
+use Paymenter\Extensions\Servers\Domains\Models\{WatchName,WatchProfile};
 use Paymenter\Extensions\Servers\Domains\Services\{SiteDnsDefault,WatchDnsChecks,WatchWork,WatchDiscoveryWork};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeDnsReader;
 // Native after-commit hooks and the durable enrollment cursor determine whether a real read can start.
@@ -39,4 +39,15 @@ same(true,$data['refresh_dns']??false,'A newer default restart must survive the 
 $work->reconcileDefaults();
 expect($checks->begin($watch->id,$owner->id,'delegation',$now)!==null,'The retained restart refreshes the inherited watch on the next batch');
 same([],$reader->calls,'Template maintenance makes no public DNS reads');
+expect(in_array(Schema::getColumnType('domains_watch_schedule','data'),['text','longtext'],true),'Installed scheduler data is text, never a JSON column');
+// A full enrollment batch advances with both a null payload and database-read JSON text.
+for($i=1;$i<=25;$i++){
+    DB::transaction(fn()=>WatchName::create(['user_id'=>$owner->id,'canonical_name'=>'cursor-'.$i.'.com','psl_revision'=>str_repeat('a',64),
+        'state'=>'paused','ns_profile_id'=>null,'profile_revision'=>0,'notice_preferences'=>[]]));
+}
+$schedule=DB::table('domains_watch_schedule')->where('scope','enrollment');$schedule->update(['cursor'=>0,'data'=>null]);
+$work->reconcileDefaults();$cursor=(int)(clone $schedule)->value('cursor');expect($cursor>0,'Native enrollment advances its first full batch from null data');
+SiteDnsDefault::reconcile();$work->reconcileDefaults();same($cursor,(int)(clone $schedule)->value('cursor'),'Native enrollment advances a full batch from saved JSON text');
+$work->reconcileDefaults();same(0,(int)(clone $schedule)->value('cursor'),'Native enrollment reaches the final watch and completes the sweep');
+same([],$reader->calls,'Enrollment cursor proof sends no DNS requests');
 $nativeSuccessful=true;echo "Site DNS refresh preserves unrelated work.\n";
