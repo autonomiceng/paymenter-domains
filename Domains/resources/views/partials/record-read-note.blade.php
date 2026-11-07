@@ -5,9 +5,7 @@
     $unread = !($recordFamilies['cancelled_without_records'] ?? false) && collect($recordFamilies['rows'] ?? [])->contains('state', 'unknown');
 @endphp
 @if ($unread)
-@if ($recordFamilies['local_demo'] ?? false)
-<p class="domains-hint">Local demo data has no registrar records. No sync is needed.</p>
-@elseif ($recordFamilies['read_checking'] ?? false)
+@if ($recordFamilies['read_checking'] ?? false)
 @unless ($staff)<p class="domains-hint">Registrar read queued for @include('domains::partials.moment', ['at' => gmdate(DATE_ATOM, (int) $recordFamilies['next_read'])]).</p>@endunless
 @elseif ($recordFamilies['records_paused'] ?? false)
 <p class="domains-hint">Record checks are paused or not set up for this registrar account.@if ($staff) Check Processing and record-read setup.@endif</p>
