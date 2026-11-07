@@ -51,7 +51,7 @@ $r10Check(count(array_filter($accountRows,fn($r)=>str_starts_with($r['label'],'.
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
 $editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
 same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
-$opened=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
+$opened=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class)->filterTable('for_sale',false);
 $key=$opened->instance()->getTableRecordKey($row);
 $opened->mountTableBulkAction('edit',[$key])->call('$refresh');
 $dialog=$opened->effects['partials']['action-modals.0']??'';

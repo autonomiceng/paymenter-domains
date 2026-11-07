@@ -19,7 +19,7 @@ $actor=staffUser(array_keys(Staff::permissions()));Auth::login($actor);
 $probe=new ReflectionProperty(CallerRouting::class,'probe');
 $probe->setValue(null,[StaffCatalogue::class=>new StaffCatalogue($ports,$clock),Capabilities::class=>new Capabilities($ports,$clock,static fn()=>null)]);
 $row=(new StaffCatalogue($ports,$clock))->rows([$binding],'com')->sole();
-$terms=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
+$terms=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class)->filterTable('for_sale',false);
 // Footer action order is available after mount; defer the terms HTML refresh to artifact rendering.
 $terms->mountTableBulkAction('edit',[$terms->instance()->getTableRecordKey($row)]);
 $termsAction=$terms->instance()->getMountedAction();
