@@ -217,7 +217,7 @@ same($orderKey, FormKeys::verify($limitedOrder, 'order:example.com'), 'Throttlin
 expect(str_contains($response->getTargetUrl(), '/domains/register'), 'Search is the recovery path');
 $orderRoute = Route::getRoutes()->getByName('domains.domains.order');
 expect(!in_array('auth', $orderRoute->gatherMiddleware(), true) && in_array('web', $orderRoute->gatherMiddleware(), true), 'Guest native cart uses web CSRF, as source registration did');
-expect(!Route::has('domains.domains.transfer'), 'Dedicated transfer route waits for its real owner view');
+expect(Route::has('domains.domains.transfer'), 'Transfer shopping is registered with the public storefront');
 // Exercise the native HTTP boundary (CSRF is normally bypassed in the testing environment).
 Illuminate\Support\Facades\Auth::logout(); app()->instance('env', 'production'); config(['app.debug' => false]);
 // Discard earlier controller-test intent keys so this kernel request has a fresh session.

@@ -16,7 +16,6 @@ Route::middleware(['web','auth',MustVerfiyEmail::class,'throttle:60,1,domains.ow
     Route::get('/domains/help',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerHelpController::class,'show'])->name('domains.help');
     Route::get('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'show'])->whereNumber('id')->name('domains.watch.transfer');
     Route::post('/domains/watches/{id}/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\WatchTransferController::class,'check'])->whereNumber('id')->name('domains.watch.transfer-check')->block(10,10);
-    Route::get('/domains/transfer',[\Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnedTransferController::class,'show'])->name('domains.domains.transfer');
     Route::get('/domains/{domain}/management-status',[Owner::class,'status'])->whereNumber('domain')->name('domains.domains.management-status');
     Route::get('/domains/{domain}',[Owner::class,'show'])->whereNumber('domain')->name('domains.domains.show');
     Route::get('/domains/{domain}/setup',[Owner::class,'setup'])->whereNumber('domain')->name('domains.domains.setup');
