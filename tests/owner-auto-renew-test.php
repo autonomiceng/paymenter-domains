@@ -35,7 +35,7 @@ try{$controller->save($stale,$d->id);expect(false,'Replay refused');}catch(Symfo
 $save($d,false);same(1,$audit(),'Repeated Off adds no audit');
 $dto=$owners->present($d->fresh());same(['Off','owner',false],[$dto->renewal,$dto->renewalOff,$dto->autoRenew['enabled']??null],'Owner Off is distinct and reversible');
 expect(isset($dto->renewNow['url']),'Owner Off still offers manual renewal');
-$html=$page($d);expect(str_contains($html,'<span class="domains-sub">Cancels Oct 18, 2027</span>')&&str_contains($html,'<a class="domains-btn domains-btn--secondary" data-dialog-open href="')&&str_contains($html,'>Renew now</a>')&&!str_contains($html,'Auto-renew is off'),'Off shows the cancel date and a quiet Renew now, with no notice');
+$html=$page($d);expect(str_contains($html,'<span class="domains-sub">Cancels Oct 18, 2027</span>')&&str_contains($html,'<a class="domains-btn domains-btn--primary domains-btn--block" data-dialog-open href="')&&str_contains($html,'>Renew now</a>')&&!str_contains($html,'Auto-renew is off'),'Off shows the cancel date and, 21 days before expiry, Renew now as the main action, with no notice');
 expect(str_contains($html,'form="form-auto-renew" class="domains-a domains-linkbtn">Turn on</button>')&&!str_contains($html,'Turn off renewal invoices?'),'Off shows On switch');
 // The owner notice offers renewal through the day before expiry.
 $clock->instant=new DateTimeImmutable('2027-10-17T12:00:00Z');
