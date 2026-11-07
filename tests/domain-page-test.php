@@ -186,7 +186,7 @@ $autoPay=static fn(DOMXPath $dom)=>[...$split($dom,'Auto Pay'),$norm($dom->query
 same(['Off',['Manage Auto Pay'],'We send you an invoice and you pay it to renew.'],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay off explains the invoice');
 $on=$domain(['renewal'=>'On','autoPay'=>true]);
 same(['On',[],'We charge your saved payment method for each renewal invoice.'],$autoPay(storefrontDom($render($on,$summary($on)))),'Auto Pay on says the card is charged');
-$d=$domain();same('Feb 1, 2027',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice shows the issue date, as staff see it');
+$d=$domain();same('Issues Feb 1, 2027. Due Feb 8, 2027.',$card(storefrontDom($render($d,$summary($d,['renewalDueAt'=>'2027-02-08','renewalIssueAt'=>'2027-02-01']))),'Next invoice'),'Planned invoice shows the issue date, as staff see it');
 $d=$domain(['renewalDue'=>'2027-02-01','renewNow'=>['invoice'=>'/invoices/9']]);$dom=storefrontDom($render($d,$summary($d)));
 same('Due Feb 1, 2027 Pay invoice',$card($dom,'Next invoice'),'Due invoice');
 same(['Due Feb 1, 2027',['Pay invoice']],$split($dom,'Next invoice'),'Pay invoice sits on its own line');

@@ -4,8 +4,10 @@ declare(strict_types=1);
 require __DIR__.'/Support/reconciliation-fixture.php';
 use App\Models\{Invoice, Service};
 use Illuminate\Support\Facades\{Artisan, DB, Queue};
-use Paymenter\Extensions\Servers\Domains\Models\{Domain, Operation, Price};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, NativeDomainGuard, StaffSettingsReview, StaffSettingsWrites};
+use Paymenter\Extensions\Servers\Domains\Catalogue\{Context, Cost, Edit, FeedObserved, Query};
+use Paymenter\Extensions\Servers\Domains\Data\CostUnit;
+use Paymenter\Extensions\Servers\Domains\Models\{Account, Domain, Operation};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, NativeDomainGuard, PricingRule, StaffSettingsReview, StaffSettingsWrites};
 
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); $guard->boot();
 $billing = new DomainBilling($bindings, $guard, $clock,catalogue: $GLOBALS['caps']??null); Queue::fake();
@@ -74,7 +76,10 @@ same(true, $op->policy['price']['retained'], 'Expired costs retain the existing 
 same(1, (int) $op->term, 'Obligation fixes requested term independently of annual plan');
 same('2028-10-18', $op->expected_expires_at->format('Y-m-d'), 'Exact expected term expiry recorded');
 same('Domain renewal: billing-held-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $renewal->items->sole()->description, 'Renewal dates use frozen registrar expiry and requested years');
-same('stale', $d->fresh()->observation['renewal_price_alert']['code'] ?? null, 'Expired cost uses the existing retained-price notice');
+same(null, $op->policy['renewal']['cost_cap'], 'Expired catalogue cost supplies no registrar spending cap');
+same('retained_renewal', $op->policy['price']['staff_alert'], 'Holder pricing records the retained renewal warning');
+same(['operation_key' => $op->operation_key, 'code' => 'retained_renewal', 'at' => $clock->now()->format(DATE_ATOM)],
+    $d->fresh()->observation['renewal_price_alert'] ?? null, 'The retained-price notice identifies this issued renewal');
 DB::table('domains_domains')->where('id', $d->id)->update(['provider_expires_at' => '2031-01-01']);
 same('Domain renewal: billing-held-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $renewal->fresh()->items->sole()->description, 'Renewal text stays frozen after expiry changes');
 DB::table('domains_domains')->where('id', $d->id)->update(['provider_expires_at' => '2027-10-18']);
@@ -84,10 +89,13 @@ same(null, $renewal->items->sole()->reference_type, 'Renewal has no native servi
 same(null, $renewal->items->sole()->reference_id, 'Renewal has no native service identifier');
 same(1, (int) $s->fresh()->plan->billing_period, 'Native service remains annual');
 same(null, $s->fresh()->expires_at, 'Billing never changes native expiry');
-// Publish below-cost renewal retail deliberately; issued debt remains unchanged.
-$tld = $tlds[0]->fresh(); $tld->update(['use_default_rule' => false, 'pricing_mode' => 'fixed', 'fixed_renew' => '1.00', 'fixed_register' => '20.00', 'fixed_transfer' => '20.00']);
-activeFixtureRepublish($prices,$tld);
+// Change retained holder retail through the current catalogue writer; issued debt remains unchanged.
+$tld = $tlds[0]->fresh();
+$holderBinding = AccountBindings::binding(Account::where('server_id', $server->id)->sole());
+$holderQuery = new Query($holderBinding, [$tld->tld], 'renew');
+$ports->apply(Edit::retainRenewal($holderBinding, $tld->tld, '1.00'), $ports->readOffers($holderQuery, Context::Staff)[0]->revision);
 $frozen = DB::table('invoice_items')->where('invoice_id', $renewal->id)->first();
+same(1040, PricingRule::minor((string) $frozen->price), 'Retained retail edit leaves the issued invoice at its original amount');
 $bindings->setProcessing($server->id, false);
 $adjustment = ['reference_type' => null, 'reference_id' => null, 'quantity' => 1, 'price' => '1.00', 'description' => 'Adjustment'];
 commerceReject(fn () => $renewal->items()->create($adjustment));
@@ -125,7 +133,7 @@ Carbon\Carbon::setTestNow('2027-10-20 12:00:00'); Carbon\CarbonImmutable::setTes
 same(0, Artisan::call('app:cron-job'), 'Actual native cron completes');
 same(null, $s->fresh()->expires_at, 'Actual native cron leaves native expiry null');
 same((array) $frozen, (array) DB::table('invoice_items')->where('invoice_id', $renewal->id)->first(), 'Native cron preserves issued amount');
-// A separate real completed domain exercises scheduled issue and bill+alert below wholesale.
+// A separate completed domain exercises scheduled billing below a fresh observed cost.
 $bindings->setProcessing($server->id, true, syntheticActivation());
 $tld->update(['enabled' => true, 'register_enabled' => true, 'renew_enabled' => true]); activeFixtureRepublish($prices,$tld); activeFixtureRepublish($native,$tld->id, $now);
 activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $server->id, true, true, $now);
@@ -133,8 +141,9 @@ Carbon\Carbon::setTestNow(); Carbon\CarbonImmutable::setTestNow();
 [$next] = $prepare(placeholderComFixtureName('billing-below-placeholder.com')); same('succeeded', $reconcile->run($next->id)->state, 'Second real anchor completed');
 $clock->instant = new DateTimeImmutable('2027-09-26T12:00:00Z'); $setting('domains_billing_enabled', true);
 commerceReject(fn () => $billing->invoice($next->domain_id));
-$lowPrice = Price::where(['server_id' => $server->id, 'action' => 'renew'])->sole();
-$lowPrice->update(['revision' => $lowPrice->revision + 1, 'observed_at' => '2027-09-26 12:00:00', 'fresh_until' => '2027-09-28 12:00:00']);
+$cost = new Cost('renew', 1, true, '8.0000', CostUnit::TermTotal, 'synthetic', $clock->now(), $clock->now()->modify('+2 days'));
+$ports->apply(new FeedObserved($holderBinding, $tld->tld, [$cost]), $ports->readOffers($holderQuery, Context::Staff)[0]->revision);
+$ports->apply(Edit::retainRenewal($holderBinding, $tld->tld, '1.00'), $ports->readOffers($holderQuery, Context::Staff)[0]->revision);
 $clock->instant = new DateTimeImmutable('2027-09-27T00:00:00Z');
 // The site's own TEST account: no new debt while it can't send, whether the site flag or the send permission is what's missing.
 $billingOff = static function (?App\Models\User $owner = null) use ($billing, $next): void {
@@ -152,7 +161,10 @@ $low = Operation::where('invoice_id', $bill->id)->sole();
 same('Domain renewal: billing-below-placeholder.com (1 year, Oct 18, 2027 to Oct 18, 2028)', $bill->items->sole()->description, 'Annual renewal dates');
 same('1.00', $low->amount, 'Below-cost renewal invoices without floor, subsidy or hold');
 same('awaiting_payment', $low->state, 'Below-cost obligation remains billable');
-same('below_cost', $next->domain->fresh()->observation['renewal_price_alert']['code'], 'Fresh below-cost margin alerts staff');
+same(['amount' => '8.0000', 'currency' => 'USD'], $low->policy['renewal']['cost_cap'], 'The below-cost scenario has a fresh normalized registrar cost');
+same('retained_renewal', $low->policy['price']['staff_alert'], 'Billing retains the holder warning; execution assesses the final margin');
+same(['operation_key' => $low->operation_key, 'code' => 'retained_renewal', 'at' => $clock->now()->format(DATE_ATOM)],
+    $next->domain->fresh()->observation['renewal_price_alert'] ?? null, 'The retained-price notice identifies the below-cost renewal');
 same($bill->id, $billing->invoice($next->domain_id)->id, 'Repeated scheduled run is idempotent');
 foreach ([App\Jobs\Server\CreateJob::class, App\Jobs\Server\UnsuspendJob::class,
     Paymenter\Extensions\Servers\Domains\Jobs\ExecuteOperation::class] as $job) { Queue::assertNotPushed($job); }

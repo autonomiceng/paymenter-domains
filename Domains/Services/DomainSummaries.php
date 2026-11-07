@@ -161,7 +161,7 @@ final class DomainSummaries
                             $invoiceMissing=$due===null && !$invoiceReview;
                             $invoicePaid=!$invoiceReview && !$invoiceMissing && $issued==='paid';
                             $goes=$invoicePaid?(OwnedDomains::goes($cycle)['goes']??null):null; }
-                        else { try { $projected=true;$timing=BillingCalendar::timing($servers[$t->server_id]->settings);$dates=BillingCalendar::dates($t->provider_expires_at->toDateTimeImmutable(),$timing['issue'],$timing['due']);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
+                        else { try { $projected=true;$dates=DomainBilling::calendarFor(['domain'=>$t,'settings'=>$servers[$t->server_id]->settings]);$due=$dates['due'];$issue=$dates['issue'];$invoiceMissing=$issue<gmdate('Y-m-d',$now); } catch (\Throwable) {} }
                     }
                     $order=$pending||!$op?[]:OwnedDomains::order($t,$op,$invoices->get($op->invoice_id),OwnedDomains::closed($s->status,in_array($s->id,[...$cancels,...$intents],true)));
                     $managedStatus=OwnedDomains::orderStatus(DomainStates::managed($t,$op,gmdate('Y-m-d',$now),$off),$t,$order);

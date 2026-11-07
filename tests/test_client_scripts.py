@@ -80,7 +80,7 @@ def main():
         consumers = {str(path.relative_to(ROOT/'Domains/resources/views'))[:-10]
                      for path in (ROOT/'Domains/resources/views').rglob('*.blade.php')
                      if re.search(r"@include\s*\(\s*['\"]domains::partials\.client-script['\"]", path.read_text())}
-        expected = consumers | {'partials.client-script', 'label-company', 'label-app', 'label-neutral', 'label-quoted', 'show-records', 'show-management-pending'}
+        expected = consumers | {'partials.client-script', 'label-company', 'label-app', 'label-neutral', 'label-quoted', 'show-records', 'show-management-pending', 'show-registration-pending'}
         assert {path.stem for path in paths} == expected, 'Render cases must cover every client-script consumer'
         labels = {
             'label-company': 'Example Hosting nameservers filled in. Save to apply them.',
@@ -104,6 +104,12 @@ def main():
         checked = subprocess.run([node, str(ROOT/'tests/Support/management-poll.js')],
                                  input=pending.scripts[-1], capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr
+        registration = InlineScripts()
+        registration.feed((Path(temporary)/'show-registration-pending.html').read_text())
+        checked = subprocess.run([node, str(ROOT/'tests/Support/order-poll.js')],
+                                 input=registration.scripts[-1], capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+        print(checked.stdout.strip())
         records = RecordForms()
         records.feed((Path(temporary)/'show-records.html').read_text())
         assert len(records.forms) == 2, 'Both DNS and SRV forms must render'
