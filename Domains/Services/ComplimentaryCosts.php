@@ -40,7 +40,7 @@ final class ComplimentaryCosts
     {
         $review=$op->policy['complimentary_cost_review']??null;
         $next=$canApprove?'Use Approve registrar cost to continue.':'Ask staff with domain management and funding permissions to approve this cost.';
-        return $op->state==='held'&&$review?'Needs approval: registrar cost $'.number_format((float)$review['amount'],2,'.','').' is above the usual $'.number_format((float)$review['usual'],2,'.','').'. '.$next.' Nothing is charged until approval.':null;
+        return $op->state==='held'&&$op->safe_code==='registrar_price_increased'&&$review?'Needs approval: registrar cost $'.number_format((float)$review['amount'],2,'.','').' is above the usual $'.number_format((float)$review['usual'],2,'.','').'. '.$next.' Nothing is charged until approval.':null;
     }
     public static function approve(int $id,User $actor,string $amount,string $reason,Clock $clock):void
     {

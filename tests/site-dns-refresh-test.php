@@ -50,4 +50,13 @@ $work->reconcileDefaults();$cursor=(int)(clone $schedule)->value('cursor');expec
 SiteDnsDefault::reconcile();$work->reconcileDefaults();same($cursor,(int)(clone $schedule)->value('cursor'),'Native enrollment advances a full batch from saved JSON text');
 $work->reconcileDefaults();same(0,(int)(clone $schedule)->value('cursor'),'Native enrollment reaches the final watch and completes the sweep');
 same([],$reader->calls,'Enrollment cursor proof sends no DNS requests');
+// Compile the actual installer through Laravel's MySQL grammar for the disposable database proof.
+$nativeSchema=Schema::getFacadeRoot();$mysql=new \Illuminate\Database\MySqlConnection(DB::connection()->getPdo(),'watch_schedule_proof');
+try{
+    Schema::swap($mysql->getSchemaBuilder());
+    $queries=$mysql->pretend(fn()=>\Paymenter\Extensions\Servers\Domains\Services\WatchScheduleSchema::install());
+}finally{Schema::swap($nativeSchema);}
+$ddl=array_values(array_filter(array_column($queries,'query'),fn($sql)=>str_starts_with($sql,'create table `domains_watch_schedule`')));
+same(1,count($ddl),'The actual installer emits one scheduler table');expect(str_contains($ddl[0],'`data` longtext null'),'The native MySQL schema uses nullable LONGTEXT data');
+echo 'WATCH_SCHEDULE_MYSQL_DDL='.json_encode($ddl[0],JSON_THROW_ON_ERROR)."\n";
 $nativeSuccessful=true;echo "Site DNS refresh preserves unrelated work.\n";
