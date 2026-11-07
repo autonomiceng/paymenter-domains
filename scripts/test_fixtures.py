@@ -90,6 +90,7 @@ def shared_vendor(jobs, requested):
                 'tests/seller-switch-renewal-test.php',
                 'tests/seller-switch-namesilo-renewal-test.php',
                 'tests/adoption-consequences-test.php',
+                'tests/adoption-retired-template-test.php',
                 'tests/staff-renewal-release-test.php',
                 'tests/offer-frozen-renewal-test.php',
                 'tests/namesilo-runtime-renewal-test.php',
