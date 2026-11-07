@@ -1,8 +1,11 @@
 # Bounded Enom exchange (offline synthetic coverage)
 
 `AccountBindings::enomRuntimeFactory` returns a pure per-fingerprint closure. It
-constructs the seven existing roles through `RuntimeComposition`, retaining exact
-shared feature and acceptance objects. No registry, runtime port or acceptance is
+constructs the seven required roles plus the dedicated, account-bound Enom
+`ObservationReader` through `RuntimeComposition`, retaining exact shared feature
+and acceptance objects. The contract checks every required type, the reader's
+account binding and construction without database, credential or cURL access.
+No registry, runtime port or acceptance is
 installed automatically. Processing and action defaults remain closed.
 
 The private exchange is reachable through the genuine registration, transfer,

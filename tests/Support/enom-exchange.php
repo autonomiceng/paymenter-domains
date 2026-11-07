@@ -20,8 +20,15 @@ $sends=static fn():int=>\Illuminate\Support\Facades\DB::table(EnomTestSendLimitS
 $credentials=static function()use(&$count){$count++;return ['uid'=>'synthetic-uid','token'=>'SYNTHETIC-TOKEN'];};
 $make=static fn($b,$get)=>RuntimeFactory::make($b,$bindings,$clock,new WriteFeatures,new WriteAcceptance($b,catalogue: $GLOBALS['caps']??null),new RenewalAcceptance($b),new TransferPrecheck(new Rdap(static fn()=>null)),$get);
 app()->instance(Runtime::class,new Runtime);app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\ReadLimiter::class,new AccountReadBudget($clock));
-resetWire();$factory=$make($binding,$credentials);$composition=$factory();
-same(array_keys(RuntimePorts::TYPES),array_keys($composition),'Seven pure runtime roles');same(0,$count,'Construction never decrypts');same(0,$GLOBALS['enomWire']['inits'],'Construction never opens cURL');
+resetWire();\Illuminate\Support\Facades\DB::enableQueryLog();\Illuminate\Support\Facades\DB::flushQueryLog();
+$factory=$make($binding,$credentials);$composition=$factory();
+same([...array_keys(RuntimePorts::TYPES),'observation_reader'],array_keys($composition),'Enom supplies the required runtime roles and dedicated observation reader');
+foreach(RuntimePorts::TYPES as $role=>$type){expect($composition[$role] instanceof $type,'Typed Enom runtime role: '.$role);}
+expect($composition['observation_reader'] instanceof \Paymenter\Extensions\Servers\Domains\Registrars\Enom\ObservationReader,'Dedicated Enom observation implementation');
+expect($composition['observation_reader']->bindsTo($binding),'Observation reader retains the runtime account binding');
+expect(!$composition['observation_reader']->bindsTo(new AccountBinding('enom',1,Environment::Test,'other-uid')),'Observation reader refuses another account');
+same([],\Illuminate\Support\Facades\DB::getQueryLog(),'Construction never queries the database');\Illuminate\Support\Facades\DB::disableQueryLog();
+same(0,$count,'Construction never decrypts');same(0,$GLOBALS['enomWire']['inits'],'Construction never opens cURL');
 // Reflection is test-only: the shipping factory exposes no exchange or generic sender.
 $wire=(new ReflectionFunction($factory))->getStaticVariables()['wire'];
 $exchange=static function($w,$role):Closure {
