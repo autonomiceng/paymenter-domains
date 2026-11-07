@@ -184,7 +184,7 @@ same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'One click flips reminder
 $stale->callAction($switch)->assertNotified("Couldn't save reminders");same(!(bool)$saved->enabled,(bool)$schedule()->enabled,'A stale switch changes nothing');
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update((array)$saved);
 unset($stale);gc_collect_cycles();gc_mem_caches();
-foreach(['Account','API connection','OK','Test connection','Balance and usage','Sales','What you sell','.com','TLD prices','Registrations','Transfers','Renewals','Domain settings','DNS, nameservers and contacts',
+foreach(['Account','API connection','OK','Test connection','Balance and usage','Sales','What you sell','.com','TLD prices','Registrations','Transfers (Experimental)','Renewals','Domain settings','DNS, nameservers and contacts',
     'Orders','Invoice issued','21 days before expiry','Invoice due','7 days before expiry','Reminder emails','Reminder schedule',
     '60, 30, 7 and 1 days before, 3 days after','Customer can renew early','More','Edit API credentials','History',
     'System checks','Background worker','Not running','Payment events'] as $needle){$page->assertSee($needle);}
@@ -394,9 +394,9 @@ Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->serv
 // Unavailable features explain themselves; Transfers names the deployment setting needed to enable its switch.
 $checklist=fn()=>array_column(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::setup(Account::findOrFail($enom->id),['label'=>'Active','reason'=>null]),null,'label');
 $noKeys=function()use($checklist,$enom){foreach([...array_values($checklist()),...Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals((int)$enom->server_id),...array_merge(...array_values(Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::system())),Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::runtime(Account::findOrFail($enom->id))] as $row){
-    expect($row['label']==='Transfers'||!preg_match('/domains\.|_[a-z]+_|site config/',($row['cause']??'').' '.($row['help']??'')),'No setting name in '.$row['label'].': '.($row['cause']??'').' '.($row['help']??''));expect($row['label']==='Reminder schedule'||($row['help']??'')!=='','Every row explains itself: '.$row['label']);}};
+    expect($row['label']==='Transfers (Experimental)'||!preg_match('/domains\.|_[a-z]+_|site config/',($row['cause']??'').' '.($row['help']??'')),'No setting name in '.$row['label'].': '.($row['cause']??'').' '.($row['help']??''));expect($row['label']==='Reminder schedule'||($row['help']??'')!=='','Every row explains itself: '.$row['label']);}};
 $site='https://billing.example.com';config(['app.url'=>$site,'domains.enom_live.site'=>$site,'domains.enom_live.catalogue'=>false,'domains.enom_live.accounts'=>[]]);
-same(['Not available yet',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['action']],'Live with no opt-in shows no switch');same(['Not available yet',null],[$checklist()['Transfers']['value'],$checklist()['Transfers']['action']],'Live transfers with no deployment approval or saved opt-in show no switch');$noKeys();
+same(['Not available yet',null],[$checklist()['Renewals']['value'],$checklist()['Renewals']['action']],'Live with no opt-in shows no switch');same(['Not available yet',null],[$checklist()['Transfers (Experimental)']['value'],$checklist()['Transfers (Experimental)']['action']],'Live transfers with no deployment approval or saved opt-in show no switch');$noKeys();
 config(['domains.enom_live.catalogue'=>true]);$noKeys();
 config(['domains.enom_live.accounts'=>[$enom->stable_identity=>['fingerprint'=>$liveBinding->fingerprint]]]);DB::table('domains_accounts')->where('id',$enom->id)->update(['live_site'=>$site]);
 // Verified Live credentials and a saved site do not replace current activation.
@@ -431,9 +431,9 @@ DB::table('domains_accounts')->where('id',$enom->id)->update(['environment'=>'te
 DB::table('domains_reminder_schedules')->where('server_id',$enom->server_id)->update(['account_fingerprint'=>(new AccountBinding('enom',(int)$enom->server_id,Environment::Test,$enom->stable_identity))->fingerprint]);
 $bindings->configure((int)$enom->server_id,'enom',Environment::Test,['token'=>$enom->stable_identity]);
 config(['domains.enom_identity.environment'=>'test','domains.enom_writes.renewal'=>true,'domains.enom_catalogue.enabled'=>false]);$noKeys();
-same('Not available yet',$checklist()['Transfers']['value'],'TEST site off shows no switch');
+same('Not available yet',$checklist()['Transfers (Experimental)']['value'],'TEST site off shows no switch');
 config(['domains.enom_catalogue.enabled'=>true,'domains.enom_writes.transfer'=>true]);$noKeys();
-same(['Off','test_transfer'],[$checklist()['Transfers (experimental)']['value'],$checklist()['Transfers (experimental)']['action']],'TEST transfers get a real switch once the site allows them');
+same(['Off','test_transfer'],[$checklist()['Transfers (Experimental)']['value'],$checklist()['Transfers (Experimental)']['action']],'TEST transfers get a real switch once the site allows them');
 // Ready Off shapes explain the pause and retain the existing turn-on actions.
 config(['domains.enom_writes.management'=>true]);
 $offRows=$checklist();

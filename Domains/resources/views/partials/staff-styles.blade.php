@@ -20,6 +20,23 @@ a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),a:focus-visib
 .domains-nowrap{white-space:nowrap}
 .domains-blocked{opacity:.6;cursor:not-allowed}
 .domains-row-target{scroll-margin-top:5rem;box-shadow:inset 2px 0 var(--primary-500);background:color-mix(in srgb,var(--primary-500) 10%,transparent)}
+/* Shared Blade facts and tables use the same sheet structure as native Filament rows.
+   These neutral fallbacks also work without a panel skin. */
+.domains-sec .domains{min-width:0}
+.domains-sec .domains-card{margin:0}
+.domains-sec .domains-card>div{display:grid;grid-template-columns:156px minmax(0,1fr);gap:16px;align-items:start;min-height:44px;padding:8px 24px;border-top:1px solid var(--beco-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
+.domains-sec .domains-card dt{font-weight:400;color:var(--beco-fg-2,inherit)}
+.domains-sec .domains-card dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.domains-sub{display:block;margin-top:3px;font-size:.75rem;line-height:1.125rem;color:var(--beco-fg-2,inherit)}
+.domains-hint{margin:6px 24px;font-size:.75rem;line-height:1.125rem;color:var(--beco-fg-2,inherit)}
+.domains-h3{margin:12px 24px 8px;font-size:.875rem;font-weight:600}
+.domains-tablewrap{max-width:100%;overflow-x:auto}
+.domains-tbl{width:100%;border-collapse:collapse;font-size:.875rem}
+.domains-tbl th{padding:8px 12px;text-align:start;font-weight:500;color:var(--beco-fg-2,inherit)}
+.domains-tbl td{padding:8px 12px;vertical-align:top;overflow-wrap:anywhere}
+.domains-tbl tbody tr{border-top:1px solid var(--beco-line-soft,color-mix(in srgb,currentColor 20%,transparent))}
+.domains-tbl .domains-money{text-align:end}
+@media(max-width:40rem){.domains-sec .domains-card>div{grid-template-columns:minmax(0,1fr);gap:4px;padding:8px 16px}}
 .domains-table-wrap{max-width:100%;overflow-x:auto}
 .domains-table{width:100%;border-collapse:collapse;font-size:.875rem}
 .domains-table th{padding:8px 12px;text-align:start;white-space:nowrap;font-weight:500}

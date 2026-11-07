@@ -17,10 +17,14 @@ foreach(['custom','unconfirmed'] as $delegation){
 $server=App\Models\Server::findOrFail($d->server_id);$server->settings()->updateOrCreate(['key'=>'domains_dns_tools'],['value'=>'1']);
 $dto=$owners->present($d->fresh());same(null,$dto->management['dns']['records'],'Unknown DNS is held, never an empty authoritative list');
 expect(!$dto->changesUnavailable,'Available DS/child-host additions suppress the settings-unavailable notice');
-$html=$page();same(['Missing',($dto->management['dns']['recordCheckHeld']??false)?'Our team needs to check this domain. No action needed.':'Contact support to sync these records.'],array_map(fn($n)=>trim($n->textContent),iterator_to_array(storefrontDom($html)->query('//li[@id="dns"]/span[@class="domains-row__v"]/span[contains(concat(@class," "),"domains-missing ") or @class="domains-sub"]'))),'Held DNS shows Missing with its cause');
+$html=$page();$dom=storefrontDom($html);
+same(1,$dom->query('//form[contains(@action,"/manage/nameservers")]')->length,'A no-read active domain retains its existing nameserver editor');
+same('Checking records',trim((string)$dom->query('//li[@id="dns"]/span[@class="domains-row__v"]/span[@class="domains-muted"]')->item(0)?->textContent),'Unread DNS shows the checking state');
+same('Unknown',trim((string)$dom->query('//li[@id="dns"]//*[@data-record-family="dns"]')->item(0)?->textContent),'Unread DNS keeps unknown inventory explicit');
+same(0,$dom->query('//li[@id="dns"]//span[contains(concat(@class," "),"domains-missing ")]')->length,'An initial unread DNS list does not show a red Missing state');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/dns")]')->length,'Held DNS has no replacement form');
 $dom=storefrontDom($html);same(0,$dom->query('//form[contains(@action,"/manage/srv")]')->length,'Held SRV has no replacement form');
-same(1,$dom->query('//li[@id="ds"]/span[@class="domains-row__v"]/span[contains(concat(@class," "),"domains-missing ")]')->length,'Unknown DS list is Missing');same('Add DS record',trim((string)$dom->query('//li[@id="ds"]/span[@class="domains-row__a"]/a')->item(0)?->textContent),'Unknown DS still offers an addition');same(1,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS permits fresh-preflight addition');same(0,$dom->query('//form[contains(@action,"/manage/ds_delete")]')->length,'Unknown DS cannot imply deletable records');
+same('Checking records',trim((string)$dom->query('//li[@id="ds"]/span[@class="domains-row__v"]/span[@class="domains-muted"]')->item(0)?->textContent),'Unknown DS list keeps its checking state');same(0,$dom->query('//li[@id="ds"]//span[contains(concat(@class," "),"domains-missing ")]')->length,'Unknown DS has no red Missing state');same('Add DS record',trim((string)$dom->query('//li[@id="ds"]/span[@class="domains-row__a"]/a')->item(0)?->textContent),'Unknown DS still offers an addition');same(1,$dom->query('//form[contains(@action,"/manage/ds_add")]')->length,'Unknown DS permits fresh-preflight addition');same(0,$dom->query('//form[contains(@action,"/manage/ds_delete")]')->length,'Unknown DS cannot imply deletable records');
 expect(str_contains($html,'Register your own nameservers, like ns1.example.com, with their IP addresses.'),'Glue records intro is one sentence');same(1,$dom->query('//form[contains(@action,"/manage/glue_add")]')->length,'Unknown glue permits verified additions');same(0,$dom->query('//form[contains(@action,"/manage/glue_update")]')->length,'Unknown glue never fabricates editable hosts');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationSchema::install();
 $observer=new \Paymenter\Extensions\Servers\Domains\Services\DomainObservation($readBindings,$clock,new \Paymenter\Extensions\Servers\Domains\Services\AccountReadBudget($clock),$ports);
@@ -44,7 +48,8 @@ foreach($cases as$action=>$payload){
         same(0,$pending->query('//li[@id="glue"]//form')->length,'Pending glue has no second change control');
     }
     same('succeeded',$management->run($op->id,$driver)->state,$action.' uses existing grant and typed readback');
-    if($action==='dns'){same(' exact + % é雪  text ',$op->payload['records'][0]['address'],'TXT bytes preserved');expect(str_contains($page(),' exact + % é雪  text '),'Confirmed records reach real Blade');}
+    if($action==='dns'){same(' exact + % é雪  text ',$op->payload['records'][0]['address'],'TXT bytes preserved');expect(str_contains($page(),' exact + % é雪  text '),'Confirmed records reach real Blade');
+    }
     if($action==='ds_add'){same(1,count($owners->present($d->fresh())->management['ds']['records']),'Single DS tuple renders');}
     if($action==='glue_update'){$writes=array_values(array_filter($state->calls,fn($c)=>$c[0]==='UpdateNameServer'));same('2606:4700:4700::1111',end($writes)[1]['OldIP'],'Old IP comes from fresh preflight');}
 }
@@ -105,5 +110,5 @@ $io=count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts'));same(
 same($io,count(array_filter($state->calls,fn($c)=>$c[0]==='SetDomainSRVHosts')),'Stale pure add never writes');
 $server->settings()->where('key','domains_dns_tools')->update(['value'=>'0']);$dto=$owners->present($d->fresh());
 foreach(['dns','srv','ds']as$kind){same([],$dto->management[$kind]['actions']??[],'Tools off removes each action');}
-same('Saved.',$dto->management['ds']['progress']['text']??null,'DNSSEC keeps its completed status when tools are off');expect(isset($dto->management['glue']),'Glue follows its own engine authority');
+same('The registrar confirmed the last DS record was deleted. DNSSEC is Off.',$dto->management['ds']['progress']['text']??null,'DNSSEC keeps its confirmed final-deletion status when tools are off');expect(isset($dto->management['glue']),'Glue follows its own engine authority');
 $nativeSuccessful=true;echo "Native owner DNS/SRV/DS/glue grants, replay, exact TXT, current preimage, safe real Blade and maximum records passed.\n";

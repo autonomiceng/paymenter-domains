@@ -133,6 +133,17 @@
     });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') helps.forEach(help => help.close()); });
     document.addEventListener('click', event => helps.forEach(help => { if (!help.contains(event.target)) help.close(); }));
+    document.querySelectorAll('[data-renewal-form]').forEach(form => {
+        form.querySelectorAll('[data-renewal-summary]').forEach(row => { row.hidden = false; });
+        const updateRenewal = () => {
+            const option = form.querySelector('select').selectedOptions[0];
+            form.querySelector('[data-renewal-expiry]').textContent = option.dataset.expiry || 'Confirmed at payment';
+            form.querySelector('[data-renewal-breakdown]').textContent = option.dataset.breakdown || '';
+            form.querySelector('[data-renewal-total]').textContent = option.dataset.total || 'Confirmed at payment';
+        };
+        form.querySelector('select').addEventListener('change', updateRenewal);
+        updateRenewal();
+    });
     document.querySelectorAll('[data-domains-results]').forEach(list => {
         const summary = () => {
             const states = [...list.querySelectorAll('[data-domains-result]')].map(row => row.dataset.state);
@@ -196,7 +207,8 @@
         list.addEventListener('click', e => { if (e.target.closest('[data-domains-retry]')) check(e.target.closest('[data-domains-result]')); });
         list.addEventListener('change', e => {
             if (e.target.matches('select[name="term"]')) {
-                e.target.closest('[data-domains-result]').querySelector('.domains-result__price strong').textContent = e.target.selectedOptions[0].textContent;
+                const option = e.target.selectedOptions[0];
+                e.target.closest('[data-domains-result]').querySelector('.domains-result__price strong').textContent = option.dataset.total;
             }
         });
         // Serial human-origin requests; no automatic retry and no optional shared account limiter yet.

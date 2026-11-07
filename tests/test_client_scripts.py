@@ -120,6 +120,31 @@ def main():
                                  input=json.dumps({'script': scripts.scripts[0]}), capture_output=True, text=True, timeout=10)
         assert checked.returncode == 0, checked.stdout + checked.stderr
         print(checked.stdout.strip())
+        # Dispatch term changes through the actual rendered registration handler.
+        checked = subprocess.run([node, '-e', r'''
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const script = require('node:fs').readFileSync(0, 'utf8');
+const listeners = {};
+const prices = [{textContent: '$12.00'}, {textContent: '$19.00'}];
+const list = {dataset: {}, addEventListener: (name, handler) => { listeners[name] = handler; },
+    querySelectorAll: () => []};
+const document = {getElementById: () => null, addEventListener() {},
+    querySelectorAll: selector => selector === '[data-domains-results]' ? [list] : []};
+vm.runInNewContext(script, {document});
+assert.equal(typeof listeners.change, 'function', 'Registration list has a change handler');
+for (const total of ['$30.00 for 3 years', '$12.00 for 1 year']) {
+    const select = {matches: selector => selector === 'select[name="term"]',
+        selectedOptions: [{dataset: {total}}],
+        closest: selector => { assert.equal(selector, '[data-domains-result]');
+            return {querySelector: selector => { assert.equal(selector, '.domains-result__price strong'); return prices[0]; }}; }};
+    listeners.change({target: select});
+    assert.equal(prices[0].textContent, total, 'Selected term updates its result price');
+    assert.equal(prices[1].textContent, '$19.00', 'Other result price stays intact');
+}
+listeners.change({target: {matches: () => false}});
+'''], input=scripts.scripts[0], capture_output=True, text=True, timeout=10)
+        assert checked.returncode == 0, checked.stdout + checked.stderr
         # Execute the actual rendered summary closure with transfer result rows.
         checked = subprocess.run([node, '-e', r'''
 const assert = require('node:assert/strict');

@@ -63,7 +63,11 @@ class MonitoringSettings extends Page
             ->hintAction(HelpHint::make("If the resolver fails, checks retry once with the server's resolver."));
         return $schema->components([
             ...($forced?[Callout::make($reason)->status('danger')->columnSpanFull()]:[]),
-            Sheet::split([Sheet::section('DNS resolver',[Sheet::row(MissingEntry::apply($resolver,$fix,$forced?null:$reason)),
+            Sheet::split([Sheet::section('Monitoring',[
+                Sheet::row(TextEntry::make('registrar_refresh')->label('Registrar refresh')->state('Daily')->belowContent('Daily refresh reads domain facts. Use Sync now on a domain to read DNS, SRV, DS and glue records. Unsupported families remain unsupported.')),
+                Sheet::row(TextEntry::make('public_checks')->label('Public DNS checks')->state('Daily')->belowContent('Record comparisons run daily. Nameserver delegation is checked more often; failed checks retry automatically.')),
+                Sheet::row(TextEntry::make('read_failures')->label('Registrar read failures')->state('No separate alert switch')->belowContent('Read failures appear on the domain, with the failed family and resume action. Separate registrar-failure email alerts are not available.')),
+                Sheet::row(TextEntry::make('evidence')->label('Evidence')->state('Separate checks')->belowContent(\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE))]),Sheet::section('DNS resolver',[Sheet::row(MissingEntry::apply($resolver,$fix,$forced?null:$reason)),
                 Sheet::row(TextEntry::make('bootstrap')->label('Resolver IP address')->state($endpoint?->ip))->visible($endpoint!==null)])],[]),
         ]);
     }

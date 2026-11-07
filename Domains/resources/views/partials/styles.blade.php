@@ -186,6 +186,10 @@
     .domains table.domains-tbl.domains-stackable, .domains .domains-stackable tbody { display: block; }
     .domains .domains-stackable thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .domains .domains-list thead { display: none; }
+    .domains .domains-dns-inventory td { min-width: 0; overflow-wrap: anywhere; }
+    .domains .domains-dns-inventory td[data-label] { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .75rem; }
+    .domains .domains-dns-inventory td[data-label]::before { grid-column: 1; }
+    .domains .domains-dns-inventory tr { grid-template-columns: minmax(0, 1fr); }
     .domains .domains-stackable tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .375rem .75rem; padding: .875rem 1rem; border-bottom: 1px solid var(--e-line); }
     .domains .domains-stackable tbody tr:last-child { border-bottom: 0; }
     .domains .domains-stackable td { display: block; padding: 0; border: 0; }

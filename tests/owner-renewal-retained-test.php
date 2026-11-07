@@ -31,7 +31,7 @@ foreach(['manual','stop','service','domain','cutoff','calendar'] as $gate){
         $expired=$gate==='cutoff'&&in_array($state,['pending','held'],true);
         same($expired?['status'=>'cancelled']:$expected['result'],$owners->present($d->fresh())->renewNow,'Retained '.$state.' survives '.$gate);
         $html=$page($d);same(1,substr_count($html,'>'.($expired?'Invoice cancelled':$expected['heading']).'<'),'One retained heading: '.$state.' '.$gate);
-        expect(!str_contains($html,'Create invoice'),'Retained cycle has no new request: '.$state.' '.$gate);
+        expect(!str_contains($html,'Continue to payment'),'Retained cycle has no new request: '.$state.' '.$gate);
         same($unchanged,$ledger(),'Retained presentation is read-only: '.$state.' '.$gate);
     }
     DB::table('domains_domains')->where('id',$d->id)->update($rawDomain);DB::table('services')->where('id',$d->service_id)->update($rawService);
@@ -58,7 +58,7 @@ foreach(['missing_item','membership','currency','amount','due','missing_due','ba
     }
     if($case==='owner'){DB::table('invoices')->where('id',$invoice->id)->update(['user_id'=>$other->id]);}
     $unchanged=$ledger();same(['status'=>'review'],$owners->present($d->fresh())->renewNow,'Invalid retained invoice shows review: '.$case);
-    $html=$page($d);expect(str_contains($html,'Renewal being checked')&&!str_contains($html,'Pay invoice')&&!str_contains($html,'Create invoice'),'Invalid retained page offers no billing action: '.$case);
+    $html=$page($d);expect(str_contains($html,'Renewal being checked')&&!str_contains($html,'Pay invoice')&&!str_contains($html,'Continue to payment'),'Invalid retained page offers no billing action: '.$case);
     $refused($d,['years'=>'2'],'This renewal is under review. Contact support if you need an update on this renewal.');same($unchanged,$ledger(),'Invalid retained data creates no debt: '.$case);
     DB::table('invoice_items')->where('id',999999)->delete();DB::table('invoice_items')->updateOrInsert(['id'=>$rawItem['id']],$rawItem);
     DB::table('invoices')->where('id',$invoice->id)->update($rawInvoice);DB::table('domains_operations')->where('id',$op->id)->update($rawOp);
@@ -84,7 +84,7 @@ foreach(['processing','auto_pay_uncertain','pending','uncertain','retireable','c
         $label=$case.':'.$pass;$html=$page($d);
         $expiryExpected[$label]=[['status'=>$expected],$expected==='cancelled'?1:0,$expected==='review'?1:0];
         $expiryResults[$label]=[$bounded(fn()=>$owners->present($d->fresh())->renewNow),substr_count($html,'>Invoice cancelled<'),substr_count($html,'>Renewal being checked. No action needed.<')];
-        expect(!str_contains($html,'Pay invoice')&&!str_contains($html,'Create invoice'),'Expired '.$label.' offers no billing action');
+        expect(!str_contains($html,'Pay invoice')&&!str_contains($html,'Continue to payment'),'Expired '.$label.' offers no billing action');
         same($unchanged,$ledger(),'Repeated expired '.$label.' presentation preserves all evidence');
     }
     if($paymentId!==null){DB::table('invoice_transactions')->where('id',$paymentId)->delete();}

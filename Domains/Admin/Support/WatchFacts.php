@@ -31,7 +31,7 @@ final class WatchFacts
         if(!in_array('watch.no_coverage',$keys,true)){$domain['Expires']=self::expires($s,$keys,$active);}
         $sid=$w->sources()->where('user_id',$w->user_id)->where('state','watch')->orderBy('id')->value('service_id');$service=$sid?\App\Models\Service::with('product')->find($sid):null;
         if($service){$domain['Hosting service']=self::fact($service->product?->name??'Service #'.$service->id,'Service #'.$service->id,url:Staff::can('admin.services.update')?\App\Admin\Resources\ServiceResource::getUrl('edit',['record'=>$service->id]):null);}
-        $checks=['Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active)];
+        $checks=['Evidence'=>self::fact('Public DNS and registry checks',\Paymenter\Extensions\Servers\Domains\Presentation\RecordFamilies::EVIDENCE),'Nameservers'=>self::nameservers($w),'DNS records'=>self::records($s,$active)];
         if(!in_array('watch.no_coverage',$keys,true)){$checks['Registry']=in_array('watch.not_registered',$keys,true)?self::fact('Not registered',tone:'warning'):self::fact(($s?->freshness['registry']['checkedAt']??null)?'Registered':null,cause:Missing::fills('after the next check'));}
         $last=self::lastCheck($w,$s);$last['check']=$active && $last['value']===null;$checks['Last check']=$last;
         if($active){$checks['Next check']=self::nextCheck($w);}
@@ -41,7 +41,12 @@ final class WatchFacts
         $checks['Monitoring alerts']=self::fact($on?'On':'Off',implode(' · ',array_filter([$on?null:'Turned off by customer',$failed['text']??null]))?:null,$failed['tone']??null);
         // An empty string does not apply here and stays hidden; null is Missing.
         $shown=fn(array $facts)=>array_filter($facts,fn($f)=>$f['value']!=='');
-        return ['Domain'=>$shown($domain),'Checks'=>$shown($checks)];
+        $e=\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::read(\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::domain($w),$w->points,$w->canonical_name);
+        $domain['Registrar records']=self::fact($e['state'],$e['at']?'Checked '.self::date(strtotime($e['at'])):'No registrar read for this monitored name.');
+        $domain['Billing and ownership']=self::fact('Separate checks',$e['separation']);
+        $checks['Registrar refresh']=self::fact($e['state'],$e['at']?self::date(strtotime($e['at'])):'No registrar read yet.');
+        $evidence=[];foreach(['public'=>'Public DNS','registrar'=>'Registrar records'] as $key=>$label){$at=$e[$key.'_at'];$evidence[$label]=self::fact($e[$key]?implode('; ',$e[$key]):'Unknown',$at?($key==='public'&&$e['public_stale']?'Historical answers. ':'').'Checked '.self::date(is_int($at)?$at:strtotime($at)):'No saved observation.');}
+        return ['Domain'=>$shown($domain),'Checks'=>$shown($checks),'Evidence'=>$evidence];
     }
     /** The latest check across nameservers, records and registry. Only failed checks are red; waiting or old evidence explains its next step. */
     public static function lastCheck(WatchName $w,?DomainSummary $s): array
@@ -73,7 +78,8 @@ final class WatchFacts
     {
         $o=$w->delegation;if(!$o?->dns){return self::fact(null,cause:Missing::fills('after the next check'));}
         $found=[];foreach($o->facts['queries']??[] as $q){if(($q['name']??null)===$w->canonical_name && ($q['type']??null)==='NS' && ($q['state']??null)==='rrset'){$found=array_values(array_filter(array_column($q['records']??[],'value'),'is_string'));}}
-        $same=!$w->expected_dns || $o->dns===$w->expected_dns;
+        if(!$w->ns_profile_id || !WatchProfile::whereKey($w->ns_profile_id)->exists() || !$w->expected_dns){return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),'Choose a DNS template to compare nameservers.');}
+        $same=$o->dns===$w->expected_dns;
         return self::fact($found?implode(', ',$found):WatchFindings::who($o->dns),$same?'Matches template':'Changed',$same?null:'warning');
     }
     private static function records(?DomainSummary $s,bool $active): array
@@ -97,7 +103,8 @@ final class WatchFacts
         try{$rows=WatchAudit::where('subject_type','watch')->where('subject_id',$w->id)->whereIn('event',array_keys(self::EVENTS))->orderByDesc('id')->limit(50)->get()->map(fn($a)=>['time'=>self::date($a->created_at->getTimestamp()),'event'=>self::EVENTS[$a->event],'actor'=>(int)$a->actor_id,'note'=>$a->reason!==self::EVENTS[$a->event]?$a->reason:null])->all();}
         catch(\Illuminate\Contracts\Encryption\DecryptException){return null;}
         $names=Staff::can('admin.users.view')?User::whereIn('id',array_column($rows,'actor'))->get(['id','first_name','last_name','email'])->mapWithKeys(fn($u)=>[$u->id=>trim($u->first_name.' '.$u->last_name)?:$u->email])->all():[];
-        return array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows);
+        $rows=[...array_map(fn($r)=>[...$r,'by'=>$names[$r['actor']]??'Staff #'.$r['actor']],$rows),...\Paymenter\Extensions\Servers\Domains\Presentation\MonitoringEvidence::history($w)];
+        usort($rows,fn($a,$b)=>strtotime($b['time'])<=>strtotime($a['time']));return $rows;
     }
     public static function usedBy(int $id): int
     {
