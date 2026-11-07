@@ -33,8 +33,9 @@ $controller = new StorefrontController($store); storefrontViews();
 EnomTestSendLimitSchema::install(); config(['domains.enom_test_sends_per_day' => 200, 'domains.enom_test_sends_per_minute' => 100000]);
 $user=commerceUser();$identity=['user_id'=>$user->id];$name='cached-refusal-placeholder.com';
 $selection=$sellers->selection('com','register',1,$clock->now());
-resetWire(['reply'=>static fn()=>'<interface-response><Command>Check</Command><ErrCount>1</ErrCount><errors><Err1>Private synthetic detail</Err1></errors><RRPCode>115</RRPCode></interface-response>']);
-$errors=[];for($i=0;$i<2;$i++){try{$eligibility->observe($name,$selection,$identity);$errors[]='Read unexpectedly accepted';}
- catch(DomainException $e){if(!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\EligibilityUnconfirmed||$e->registrarCode!=='115'){$errors[]='Cached refusal loses validated registrar code';}}}
+resetWire(['reply'=>static fn()=>'<interface-response><Command>Check</Command><ErrCount>1</ErrCount><Done>true</Done><errors><Err1>Private synthetic detail</Err1></errors><RRPCode>115</RRPCode></interface-response>']);
+$errors=[];$contexts=[];for($i=0;$i<2;$i++){try{$eligibility->observe($name,$selection,$identity);$errors[]='Read unexpectedly accepted';}
+ catch(DomainException $e){foreach(['search','cart_handoff','checkout_check']as$phase){$contexts[$i][$phase]=CartHandoffFailure::context($e,$phase);}if(!$e instanceof \Paymenter\Extensions\Servers\Domains\Services\EligibilityUnconfirmed||$e->registrarCode!=='115'){$errors[]='Cached refusal loses validated registrar code';}}}
+if(($contexts[0]??null)!==($contexts[1]??null)){$errors[]='Cached refusal changes safe diagnostic context';}
 same(1,count($GLOBALS['enomWire']['forms']),'Repeated refusal uses one provider read');expect($errors===[],implode('; ',$errors));
 $nativeSuccessful=true;echo "Cached typed registrar refusal passed\n";
