@@ -46,9 +46,10 @@ $page->call('pollManagement')->assertSee("Couldn't sync domain")->assertSee('Che
 expect(!str_contains($page->html(),'wire:poll.'),'Failed sync stops polling');
 // Manual Sync now parks only idle scheduled reads when the domain is outside this account.
 DB::table('extensions')->where('id',$d->server_id)->update(['enabled'=>true]);
-$work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
-    'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d->fresh()),
-    'safe_code'=>'refreshed','due_at'=>$clock->now()->getTimestamp()+86400]);
+// The completed registration already queued this holding's scheduled read.
+$work=DB::table('domains_observation_work')->where(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
+    'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>\Paymenter\Extensions\Servers\Domains\Services\HoldingObservationWork::phase($d->fresh())])->sole()->id;
+DB::table('domains_observation_work')->where('id',$work)->update(['safe_code'=>'refreshed','due_at'=>$clock->now()->getTimestamp()+86400]);
 $observation->fault='owner';$clock->instant=$clock->now()->modify('+61 seconds');
 $page->callAction('sync_now')->assertNotified('Sync queued');
 Artisan::call('queue:work',['--stop-when-empty'=>true,'--sleep'=>0,'--tries'=>1]);
