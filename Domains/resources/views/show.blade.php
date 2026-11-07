@@ -42,5 +42,6 @@
 </div>
 @include('domains::partials.client-script')
 @include('domains::partials.management-poll')
+@include('domains::partials.order-poll')
 </div></div>
 @endcomponent

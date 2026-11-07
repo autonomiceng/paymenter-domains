@@ -44,6 +44,12 @@ final readonly class OwnedDomainController
         $d=$this->owners->owned($request->user(),$domain);
         return response()->json(\Paymenter\Extensions\Servers\Domains\Presentation\DsState::progress($d))->header('Cache-Control','no-store, private');
     }
+    public function orderStatus(Request $request,int $domain)
+    {
+        $holding=$this->owners->owned($request->user(),$domain);
+        $state=\Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::orderProgress($this->owners->present($holding,false));
+        return response()->json($state)->header('Cache-Control','no-store, private');
+    }
     public function show(Request $request,int $domain) { return $this->page($request,$domain,'show'); }
     public function setup(Request $request,int $domain) { return $this->page($request,$domain,'setup'); }
     public function code(Request $request,int $domain) { return $this->page($request,$domain,'code'); }

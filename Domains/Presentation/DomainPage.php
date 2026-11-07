@@ -102,11 +102,17 @@ final class DomainPage
             // unless the page notice says so, or the status or notice gives them a step (an expired domain: contact support).
             $state !== null => ['value' => 'Under review', 'tone' => 'info', 'note' => self::reassure($d, self::notice($d, $support, $s)) ? self::NOTHING_TO_DO : null],
             (bool) $s?->renewalInvoiceMissing => ['missing' => true, 'cause' => 'Not issued yet'.($s->renewalIssueAt ? '. Expected '.self::date($s->renewalIssueAt).'.' : ''), 'fix' => $contact],
-            $s?->renewalIssueAt !== null => ['value' => self::date($s->renewalIssueAt)],
+            $s?->renewalIssueAt !== null => ['value' => 'Issues '.self::date($s->renewalIssueAt).($s->renewalDueAt ? '. Due '.self::date($s->renewalDueAt).'.' : '')],
             ($d->plannedRenewalDue ?? $s?->renewalDueAt) !== null => ['value' => 'Due '.self::date($d->plannedRenewalDue ?? $s->renewalDueAt)],
             $d->expiry === null => ['missing' => true, 'cause' => self::checkHeld($d) ? self::TEAM_CHECK : Missing::fills('after the next sync'), 'fix' => null],
             default => null,
         };
+    }
+    /** Retained local order facts only; no registrar reads or registration retries. */
+    public static function orderProgress(OwnedDomain $d): array
+    {
+        return ['pending' => $d->setupPending || in_array($d->status, ['Pending registration', 'Pending transfer'], true),
+            'state' => hash('sha256', json_encode([$d->status, $d->statusReason, $d->setupPending, $d->order, $d->expiry], JSON_THROW_ON_ERROR))];
     }
     /** Auth code: Saved with its link, or Missing with the step for this transfer phase. Null while it can still be entered: the page notice asks for it. */
     public static function authCode(OwnedDomain $d, ?string $support): ?array
