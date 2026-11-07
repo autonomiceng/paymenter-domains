@@ -30,7 +30,7 @@ final class Client
         } catch (\Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit $error) { throw new \Paymenter\Extensions\Servers\Domains\Services\EnomTestCallLimit($error->reason);
         } catch (\Throwable) { return new ProtocolResult('unknown', 'transport'); }
         });
-        $context->requireReadSuccess($result->status==='success',$result->code==='domain_not_in_account'?new \DomainException('Domain is not in registrar account.'):null); return $result;
+        $context->requireReadSuccess($result->status==='success',$result->code==='domain_not_in_account'?new \RuntimeException('Domain is not in registrar account.'):null); return $result;
     }
     public function __debugInfo(): array { return ['registrar' => 'enom', 'environment' => $this->binding->environment->value]; }
     public function __serialize(): array { throw new \LogicException('Registrar clients cannot be serialized.'); }

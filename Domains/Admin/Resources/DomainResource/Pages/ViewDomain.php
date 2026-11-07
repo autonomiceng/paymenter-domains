@@ -248,7 +248,7 @@ class ViewDomain extends ViewRecord
         }
         if ($label==='Open alerts') { return $review?Html::make(Sheet::buttons([$review])):[]; }
         // One Resume sync per page: the Registrar records head draws it when the records show the stop.
-        if ($label==='Last sync') { if (DomainFacts::syncNow($d)) { return []; } $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
+        if ($label==='Last sync') { if (DomainFacts::syncNow($this->getRecord())) { return []; } $resume=$this->getAction('resume_observation',false); return $resume?->isVisible()&&!($this->familyState()['resume']??false)?Html::make(Sheet::buttons([$resume->toHtml()])):[]; }
         $side=array_map(fn(Action $action)=>in_array($action->getLabel(),['Edit','Change'],true)?Sheet::edit($action,$label):Sheet::button($action),$edits['rows'][$label]??[]);
         if ($side===[]&&$edits['held']&&in_array($label,self::BLOCKED,true)) { $side[]=Sheet::blocked('held_'.md5($label),self::blockedLabel($label,$fact),$label,$edits['held']); }
         if (($fact['setup']??false)&&Staff::can(StaffWatchWrites::VIEW)) { $side[]=Sheet::link('dns_setup','Choose DNS template',WatchResource::getUrl('dns-setup')); }
