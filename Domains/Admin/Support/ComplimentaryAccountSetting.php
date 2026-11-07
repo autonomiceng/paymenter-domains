@@ -32,6 +32,7 @@ final class ComplimentaryAccountSetting
     {
         abort_unless(self::allowed(),403);
         $data=$request->validate(['enabled'=>'nullable|in:1','reason'=>'required|string|max:500']);
+        User::findOrFail($user);
         ComplimentaryAccounts::set($user,$request->user(),isset($data['enabled']),$data['reason'],app(Clock::class));
         return redirect(\App\Admin\Resources\UserResource::getUrl('edit',['record'=>$user]));
     }
