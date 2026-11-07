@@ -38,6 +38,27 @@ foreach (['markup_percent', 'fixed'] as $mode) {
     $rule = [...PricingRule::DEFAULT, 'mode' => $mode, 'markup' => '0.00',
         'fixed' => ['register' => '17.99', 'renew' => '10.99', 'transfer' => '12.00']];
     $ports->apply(Edit::override($binding, 'net', new Intent(sell: true, longest: 10, transfers: true), $rule), $revision());
+    if ($mode === 'markup_percent') {
+        // Replay a fresh old-rule publication: upgrading must use the saved costs, without a feed read.
+        $oldTotals = [1 => '17.99', 2 => '21.98', 5 => '54.95', 10 => '109.90'];
+        $product = $native->product($tlds[0], 'register');
+        foreach ($oldTotals as $years => $total) {
+            DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')
+                ->where('action', 'register')->where('term', $years)->update(['retail' => $total]);
+            $product->plans()->where('billing_period', $years)->sole()->prices()->where('currency_code', 'USD')->update(['price' => $total]);
+        }
+        $published = OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);
+        unset($published['retailRule']); // Legacy publications have only offer/defaults/selection.
+        DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
+        $evidence = DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all();
+        $readsBefore = $reads->calls;
+        (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+        same($evidence, DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all(), 'Upgrade preserves saved cost evidence and its age');
+        same($readsBefore, $reads->calls, 'Upgrade republication never resolves a provider');
+        $priceRows = DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
+        (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+        same($priceRows, DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all(), 'Already-current installation does not republish');
+    }
     Cache::flush();
     $search = $store->check('search-'.$label.'.net');
     same('available', $search['status'], $mode.': searchable');
