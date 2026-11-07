@@ -19,6 +19,12 @@ final class CartNotice
         \Livewire\store($component)->set('domains.cart_notice', compact('title', 'text', 'toast', 'type', 'names', 'was'));
     }
 
+    public static function restore(object $component, ?array $notice): void
+    { if ($notice !== null) { \Livewire\store($component)->set('domains.cart_notice', $notice); } }
+
+    public static function clear(object $component): void
+    { \Livewire\store($component)->set('domains.cart_notice', null); }
+
     /** @return array{title: string, text: string, toast: string, type: string, names: list<string>, was: array<int, string>}|null */
     public static function get(?object $component): ?array
     {

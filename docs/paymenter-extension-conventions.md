@@ -15,11 +15,12 @@ Paymenter must take new upstream releases without an extension release. Ship an 
 - **Public surfaces only.** Use the extension base classes and their hooks, service providers, our own routes and tables, Eloquent model events and observers, Filament registration, Paymenter events, jobs, config, and the documented theme mechanism.
 - **Never intercept Paymenter globally.** Do not rebind or subclass Paymenter services in the container, remap native routes, add global Livewire, middleware or request hooks (including `TrimStrings::skipWhen` or `TrimStrings::except`), replace database resolvers or query builders, monkeypatch, or edit core or vendor files.
 - **Cart refresh is narrowly scoped.** `CartCheckoutRefresh` listens only to the exact native Cart component's
-  mount, hydrate, checkout call and dehydrate lifecycle. Registration checks finish before the native transaction;
+  mount, hydrate, render, customer cart edits, checkout call and dehydrate lifecycle. Registration checks finish before the native transaction;
   the signed page memo binds acceptance to the displayed lines and retail. No other component, native class,
   route, request or database resolver is changed. Native Cart and Livewire lifecycle dependencies are pinned in
-  the checkout upgrade tripwire. A changed total requires another checkout click because only the customer
-  can accept a changed price. The same checkout call accepts one whole order contact from the theme through
+  the checkout upgrade tripwire. The signed memo and cart-bound session retain a changed-price review through
+  renders and reloads until checkout accepts it. A changed total requires another checkout click because only
+  the customer can accept a changed price. The same checkout call accepts one whole order contact from the theme through
   request-local input. Shared registrar/TLD validation runs before the native order and again inside invoice binding;
   invalid contacts roll back the native order, invoice and service together. Recovery uses the same contact fields,
   paid-identity/unsent locks and audited replacement, then wakes the existing registration queue path.

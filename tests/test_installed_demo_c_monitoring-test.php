@@ -50,4 +50,30 @@ $missingFacts=WatchFacts::for($watch->fresh());
 same(null,$missingFacts['Domain']['DNS template']['value'],'Fixture has no DNS template');
 expect($missingFacts['Checks']['Nameservers']['sub']!=='Matches template','No template cannot establish a nameserver match');
 expect(str_contains($missingFacts['Checks']['Nameservers']['sub']??'','template'),'Missing comparison says how to configure it');
+// No template means no comparison, not no public evidence. Keep the same saved A/AAAA answers and observation time.
+$recordFact=$missingFacts['Checks']['DNS records']??['value'=>null,'sub'=>null];
+same('A @ → 192.0.2.10',$recordFact['value'],'DNS records shows stored public answers without a template');
+expect(str_contains($recordFact['sub']??'','template'),'Unconfigured comparison explains the next step');
+expect(str_contains($recordFact['sub']??'',WatchFacts::date($at->getTimestamp()-60)),'DNS records retains the actual observation time');
+$html=Livewire\Livewire::test(ViewWatch::class,['record'=>$watch->id])->html();
+$x=storefrontDom($html);$row=$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," domains-row ")][.//*[normalize-space(.)="DNS records"]]')->item(0);
+expect($row!==null&&str_contains($row->textContent,'192.0.2.10')&&!str_contains($row->textContent,'Missing'),'Real monitoring row renders the saved public record');
+// Expired watch answers remain historical, with guidance for the actual template state.
+$dnsFailures=[];
+$public->valid_until=$at->getTimestamp()-1;
+foreach([null,$profile->id] as $profileId){
+    $candidate=$watch->fresh();$candidate->ns_profile_id=$profileId;$candidate->setRelation('points',$public);
+    $facts=WatchFacts::for($candidate,['summary'=>null,'keys'=>[]]);
+    $record=$facts['Checks']['DNS records']??['value'=>null,'sub'=>null];
+    if(!str_contains($record['sub']??'','Historical answers.')){$dnsFailures[]='Expired DNS answers need a historical label';}
+    if($profileId!==null&&str_contains($record['sub']??'','Choose a DNS template')){$dnsFailures[]='An existing template must not be described as missing';}
+}
+// A linked watch without its own points read must not adopt a managed read as its Latest check.
+$managed->domain_revision=(int)$d->fresh()->confirmed_revision;$managed->config_revision=1;$managed->profile_id=$profile->id;$managed->profile_revision=$profile->revision;$managed->mixed=false;$managed->completed_at=$at->getTimestamp()-59;$managed->partial=false;$managed->facts=['version'=>1,...$public->facts];$managed->digest=str_repeat('a',64);$managed->source_digest=str_repeat('b',64);
+DB::transaction(fn()=>$managed->save());
+$candidate=$watch->fresh();$candidate->setRelation('points',null);
+$facts=WatchFacts::for($candidate,['summary'=>null,'keys'=>[]]);
+if(($facts['Checks']['DNS records']['value']??null)==='A @ → 192.0.2.10'){$dnsFailures[]='Latest checks must not borrow managed public DNS';}
+same('A @ → 192.0.2.10',$facts['Evidence']['Public DNS']['value'],'Managed answers remain available under Evidence');
+expect($dnsFailures===[],implode('; ',$dnsFailures));
 $nativeSuccessful=true;echo "Demo C monitoring evidence passed.\n";

@@ -39,10 +39,25 @@ $accountRows=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist
 $r10Check($accountRows[4]['label']==='.com','Sold TLD readiness precedes the alphabetic unsold catalogue');
 $r10Check(count(array_filter($accountRows,fn($r)=>$r['label']==='.com'))===1,'One compact row per TLD');
 same('1 to 10 years',Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termYears(range(1,10)),'Contiguous term range is compact');
+$editAction=(new WhatYouSell)->table(Filament\Tables\Table::make(new WhatYouSell))->getBulkActions()[0];
+same('3xl',$editAction->getModalWidth(),'Terms dialog has room for compact price and renewal rows');
+$opened=Livewire\Livewire::actingAs($actor)->test(WhatYouSell::class);
+$key=$opened->instance()->getTableRecordKey($row);
+$opened->mountTableBulkAction('edit',[$key])->call('$refresh');
+$dialog=$opened->effects['partials']['action-modals.0']??'';
+expect(str_contains($dialog,'Registration')&&str_contains($dialog,'Ordinary')&&str_contains($dialog,'Redemption'),'Opening the actual terms dialog renders both term and renewal rows');
+
 $prices=Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::termPrices($t);
 $priceHtml=view('domains::admin.term-prices',compact('prices'))->render();
+expect(str_contains($priceHtml,'<dl')&&str_contains($priceHtml,'Registration'),'Term totals use labeled registration rows');
 $r10Check(!preg_match('/\$[0-9]+\.[0-9]{3}/',$priceHtml),'Displayed registrar costs have two decimal places');
 expect(str_contains($priceHtml,'Customer total')&&str_contains($priceHtml,'Registrar cost')&&str_contains($priceHtml,'3 years'),'Real offer terms include customer total and registrar cost');
+// Expired exact-term costs do not erase the retained retail and cost values.
+$stalePrices=$prices;
+foreach($stalePrices as &$price){$price['synced']=false;}unset($price);
+$staleHtml=view('domains::admin.term-prices',['prices'=>$stalePrices])->render();
+$r10Check(str_contains($staleHtml,'Customer total $')&&str_contains($staleHtml,'Registrar cost $'),'Outdated terms retain saved customer and registrar totals');
+$r10Check(str_contains($staleHtml,'Out of date'),'Outdated registrar cost is labeled');
 $gift=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal');
 $gift=$gift->invoke(null,new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed']));
 same('Confirm complimentary renewal',$gift->getModalSubmitActionLabel(),'Complimentary confirmation matches the mock');
@@ -54,8 +69,8 @@ $service=App\Models\Service::where('user_id',$buyer->id)->sole();
 DB::table('services')->where('id',$service->id)->update(['price'=>'10.99']);$service->refresh();Auth::setUser($actor);
 $holding=new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed','domain'=>'example.com','service_id'=>$service->id]);
 $gift=(new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal'))->invoke(null,$holding);
-$schema=$gift->getSchema(\Filament\Schemas\Schema::make())->getComponents(withHidden:true);$text=(string)$schema[array_key_last($schema)]->getContent();
-$r10Check(str_contains($text,'Next annual renewal: $10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
+$schema=$gift->getSchema(\Filament\Schemas\Schema::make($page)->statePath('data'))->getComponents(withHidden:true);$text=(string)$schema[array_key_last($schema)]->getContent();
+$r10Check(str_contains(storefrontDom($text)->query('//div[dt="Next annual renewal"]/dd')->item(0)?->textContent??'','$10.99 / year'),'Complimentary dialog retains the domain annual price when customer-request eligibility is closed');
 // A short preview must not evaluate every explicitly unsold catalogue entry.
 $priceQueries=0;DB::listen(static function($query)use(&$priceQueries):void{$priceQueries++;});
 Paymenter\Extensions\Servers\Domains\Admin\Support\AccountChecklist::renewals($binding->serverId);$smallQueries=$priceQueries;
@@ -79,6 +94,8 @@ $html=view('domains::partials.owner-renew',['domain'=>$domain,'summary'=>null,'s
 foreach(['Domain','Expires','New expiry','Total','Next annual renewal','Continue to payment','Nov 20, 2028','data-total="$28.00"','for the first year + $14.00 for the next year.'] as $text){expect(str_contains($html,$text),'Renewal renders '.$text);}
 expect(str_contains($html,'2 years: $28.00; new expiry Nov 20, 2029'),'No-script renewal shows every term total and expiry');
 expect(strpos($html,'>Cancel</a>')<strpos($html,'>Continue to payment</button>'),'Cancel precedes payment');
+expect(strpos($html,'>Cancel</button>')<strpos($html,'>Continue to payment</button>'),'Cancel is a button before payment');
+expect(str_contains($html,'domains-total'),'Customer renewal total has shared prominent money treatment');
 expect(!str_contains($html,'exact-term')&&!str_contains($html,'registry'),'No staff eligibility reason in customer form');
 foreach([null,[],['lines'=>[]]] as $missingChoices){
     try{
@@ -90,7 +107,9 @@ foreach([null,[],['lines'=>[]]] as $missingChoices){
 $result=storefrontData()['results'][0];$result['term']=1;$result['price']='$12.00';
 $html=view('domains::partials.result',['result'=>$result])->render();
 $x=storefrontDom($html);same('1 year',$x->query('//select/option')->item(0)->textContent,'Years select labels years, not prices');
-expect(str_contains($html,'data-total="$30.00 for 3 years"'),'Search retains each exact total for selection');
+expect(str_contains($html,'data-total="$30.00"'),'Search retains each exact total for selection');
+$x=storefrontDom($html);same('Years',trim($x->query('//label')->item(0)->textContent),'Search labels Years');
+expect(str_contains($html,'>Total<')&&str_contains($html,'>Annual renewal<')&&str_contains($html,'>Add to cart</button>'),'Search total and annual renewal are labeled beside the choice');
 $result['terms']=[1=>'$12.00'];$html=view('domains::partials.result',['result'=>$result])->render();
 expect(!str_contains($html,'<select'),'Annual-only result has no unsupported years');
 $cart=new App\Livewire\Cart;

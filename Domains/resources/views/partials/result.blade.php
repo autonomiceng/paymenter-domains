@@ -14,9 +14,7 @@
 <li class="domains-result {{ ($first ?? false) ? 'is-first' : '' }}" data-domains-result data-domain="{{ $result['domain'] }}" data-state="{{ $state }}">
     <div class="domains-result__name"><span>{{ $result['sld'] }}</span><wbr><span class="domains-tld">.{{ $result['tld'] }}</span>@if ($result['testEnvironment'] ?? false) <span class="domains-badge domains-tone-muted">Test</span>@endif</div>
     <div class="domains-result__status"><span class="{{ $state === 'idle' ? 'domains-checking' : 'domains-badge domains-tone-'.$tone }}">{{ $label }}</span></div>
-    <div class="domains-result__price">@if (in_array($state, ['available', 'transferable'], true))<strong>{{ $state === 'transferable' ? 'Transfer for '.$result['price'] : $result['price'].' for '.$result['term'].($result['term'] === 1 ? ' year' : ' years') }}</strong><small>{{ $state === 'transferable' ? 'Adds 1 year' : 'Renews at '.$result['renew'].'/yr' }}</small>@elseif ($state === 'premium')
-        Not sold here
-    @endif</div>
+    <div class="domains-result__price">{{ $state==='premium' ? 'Not sold here' : '' }}</div>
     <div class="domains-result__action">
         @if (in_array($state, ['available', 'transferable'], true))
             <form method="POST" action="{{ route('domains.domains.order') }}">
@@ -24,13 +22,18 @@
                 @if ($replace)<input type="hidden" name="replace" value="{{ $replace['id'] }}">@endif
                 <input type="hidden" name="domain" value="{{ $result['domain'] }}">
                 <input type="hidden" name="action" value="{{ $state === 'available' ? 'register' : 'transfer' }}">
+                <dl class="domains-term-rows">
+                <div><dt>@if ($state==='available' && count($result['terms']??[])>1)<label for="domains-term-{{ $result['domain'] }}">Years</label>@else Years @endif</dt><dd>
                 @if ($state === 'available' && count($result['terms'] ?? []) > 1)
-                    <label class="domains-sr" for="domains-term-{{ $result['domain'] }}">Register for</label>
                     <select class="domains-input domains-term-select" id="domains-term-{{ $result['domain'] }}" name="term">
-                        @foreach ($result['terms'] as $years => $total)<option value="{{ $years }}" data-total="{{ $total }} for {{ $years }} {{ $years === 1 ? 'year' : 'years' }}" @selected($years === $result['term'])>{{ $years }} {{ $years === 1 ? 'year' : 'years' }}</option>@endforeach
+                        @foreach ($result['terms'] as $years => $total)<option value="{{ $years }}" data-total="{{ $total }}" @selected($years === $result['term'])>{{ $years }} {{ $years === 1 ? 'year' : 'years' }}</option>@endforeach
                     </select>
-                @else<input type="hidden" name="term" value="{{ $result['term'] }}">@endif
-                <button type="submit" class="domains-btn domains-btn--{{ $state === 'available' ? 'primary' : 'secondary' }}" aria-label="{{ $replace ? 'Use '.$result['domain'].($replace['name'] ? ' instead of '.$replace['name'] : '') : ($state === 'available' ? 'Register '.$result['domain'] : 'Transfer '.$result['domain'].' to us') }}">{{ $replace ? 'Use this name' : ($state === 'available' ? 'Register' : 'Transfer') }}</button>
+                @else<input type="hidden" name="term" value="{{ $result['term'] }}">{{ $result['term'] }} {{ $result['term']===1 ? 'year' : 'years' }}@endif
+                </dd></div>
+                <div><dt>Total</dt><dd class="domains-result__price"><strong>{{ $result['price'] }}</strong></dd></div>
+                <div><dt>Annual renewal</dt><dd>{{ $result['renew'] }} / year</dd></div>
+                </dl>
+                <button type="submit" class="domains-btn domains-btn--{{ $state === 'available' ? 'primary' : 'secondary' }}" aria-label="{{ $replace ? 'Use '.$result['domain'].($replace['name'] ? ' instead of '.$replace['name'] : '') : ($state === 'available' ? 'Add '.$result['domain'].' to cart' : 'Transfer '.$result['domain'].' to us') }}">{{ $replace ? 'Use this name' : ($state === 'available' ? 'Add to cart' : 'Transfer') }}</button>
             </form>
         @elseif ($state === 'in_cart')<a class="domains-btn domains-btn--secondary" href="{{ route('cart') }}">Go to cart</a>
         @elseif (in_array($state, ['error', 'busy'], true))<button type="button" class="domains-btn domains-btn--secondary" data-domains-retry>Retry</button>@endif
