@@ -52,6 +52,12 @@ $priceHtml=view('domains::admin.term-prices',compact('prices'))->render();
 expect(str_contains($priceHtml,'<dl')&&str_contains($priceHtml,'Registration'),'Term totals use labeled registration rows');
 $r10Check(!preg_match('/\$[0-9]+\.[0-9]{3}/',$priceHtml),'Displayed registrar costs have two decimal places');
 expect(str_contains($priceHtml,'Customer total')&&str_contains($priceHtml,'Registrar cost')&&str_contains($priceHtml,'3 years'),'Real offer terms include customer total and registrar cost');
+// Expired exact-term costs do not erase the retained retail and cost values.
+$stalePrices=$prices;
+foreach($stalePrices as &$price){$price['synced']=false;}unset($price);
+$staleHtml=view('domains::admin.term-prices',['prices'=>$stalePrices])->render();
+$r10Check(str_contains($staleHtml,'Customer total $')&&str_contains($staleHtml,'Registrar cost $'),'Outdated terms retain saved customer and registrar totals');
+$r10Check(str_contains($staleHtml,'Out of date'),'Outdated registrar cost is labeled');
 $gift=new ReflectionMethod(Paymenter\Extensions\Servers\Domains\Admin\Resources\DomainResource\Pages\ViewDomain::class,'complimentaryRenewal');
 $gift=$gift->invoke(null,new Paymenter\Extensions\Servers\Domains\Models\Domain(['status'=>'closed']));
 same('Confirm complimentary renewal',$gift->getModalSubmitActionLabel(),'Complimentary confirmation matches the mock');
