@@ -39,7 +39,7 @@ $connect=static function(string $registrar)use($snapshot):Account {
     same($saved,Setting::where('key',SiteDnsDefault::KEY)->sole()->getRawOriginal(),'Connection preserves the exact saved default');
     return $account;
 };
-$row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&$c->getLabel()==='Site DNS default');
+$row=static fn($page)=>$page->instance()->getSchema('content')->getComponent(fn($c)=>$c instanceof TextEntry&&in_array($c->getLabel(),['Site DNS default','New domains use'],true));
 $assertMissing=static function(Account $account,string $rule)use($staff,$row):void {
     // Account first: it must show the problem immediately after connect, without revisiting settings or upgrading.
     foreach([[RegistrarAccount::class,['account'=>$account->server_id]],[MonitoringSettings::class,[]]]as[$class,$params]){

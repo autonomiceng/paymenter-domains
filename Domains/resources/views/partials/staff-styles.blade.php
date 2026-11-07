@@ -20,9 +20,11 @@
 .domains-narrow{max-width:12rem}
 /* Staff rows are one line: long text ends in "..." and its tooltip has all of it. Keyboard focus shows it in place. */
 .domains-cut,.domains-cut>*,.domains-line,.domains-line>*,.domains-name-cell,.domains-name-cell>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Filament makes every table text item a line-clamp box, which never draws the "...". One-line cells are plain blocks. */
+.domains-cut,.domains-line,.domains-name-cell{display:block}
 .domains-cut{max-width:11rem}
 .domains-line,.domains-name-cell{max-width:24rem}
-/* A list Note cell and a domain name stay narrow enough that the Domains list's six default columns fit at 1440px. Notes lead with their step; the tooltip has the rest. */
+/* A list Note cell and a domain name stay narrow enough that each list's default columns fit inside its card at 1440px. Notes lead with their step; the tooltip has the rest. */
 .domains-name-cell{max-width:16rem}.domains-line.domains-list-note{min-width:0;max-width:13rem}
 a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell),a:focus-visible :is(.domains-cut,.domains-line,.domains-name-cell)>*{white-space:normal;overflow-wrap:anywhere}
 .domains-line.fi-ta-text-has-descriptions{display:flex;align-items:baseline;gap:.375rem}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-item{flex:none}.domains-line.fi-ta-text-has-descriptions>.fi-ta-text-description{min-width:0}

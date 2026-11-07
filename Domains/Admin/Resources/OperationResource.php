@@ -54,11 +54,12 @@ class OperationResource extends Resource
             TextColumn::make('state')->label('Status')->badge()->color(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['tone'])
                 ->extraAttributes(fn($record)=>StatusMark::attributes(RequestFacts::status($record,in_array($record->server_id,$off))['tone'],'request-'.$record->id))
                 ->formatStateUsing(fn($record)=>RequestFacts::status($record,in_array($record->server_id,$off))['label']),
-            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off)))),
+            OneLine::apply(TextColumn::make('note')->label('Note')->color('gray')->state(fn($record)=>RequestFacts::reason($record,in_array($record->server_id,$off))),OneLine::NOTE),
             TextColumn::make('created_at')->label('Created')->formatStateUsing(fn($state)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\Sheet::moment($state->getTimestamp()))->sortable()->visibleFrom('lg'),
             OneLine::apply(TextColumn::make('server_id')->label('Registrar account')->visibleFrom('xl')->formatStateUsing(fn($state)=>$servers[$state]??Missing::LABEL)
                 ->color(fn($state)=>isset($servers[$state])?null:Missing::COLOR)->description(fn($record)=>isset($servers[$record->server_id])?null:'Registrar account not found. Check Registrars.')),
-        ])->filters([
+        // The account starts under Columns so the default columns fit inside the card at 1440px; the request page and the filter name it.
+        ],['server_id'])->filters([
             SelectFilter::make('status')->label('Status')->multiple()->options($statuses)
                 ->query(fn(Builder $query,array $data)=>\Paymenter\Extensions\Servers\Domains\Admin\Support\OperationQueries::status($query,$data['values']??[])),
             SelectFilter::make('action')->label('Type')->multiple()

@@ -91,16 +91,26 @@ final class RegistrarCheck
     {
         $registrar = self::answerRegistrar($check);
         // Once the wait is over the button is live, so the line says so instead of naming a past time.
-        $after=(int)($check['answer_after']??0)>app(Clock::class)->now()->getTimestamp()?' after '.self::answerAfter($check):' now';
-        return ['title'=>'Ask '.$registrar.' to check this attempt.','body'=>(($check['facts']['owned']??null)===true?'The domain was found in this registrar account. The original charge is still unconfirmed. ':'').'You can record '.$registrar.'’s answer'.$after.'.'];
+        $after=self::answerReady($check)?' now':' after '.self::answerAfter($check);
+        return ['title'=>'Ask '.$registrar.' to check this attempt.','body'=>trim(self::found($check).' You can record '.$registrar.'’s answer'.$after.'.')];
     }
+    private static function answerReady(array $check): bool
+    { return (int)($check['answer_after']??0)<=app(Clock::class)->now()->getTimestamp(); }
+    private static function found(array $check): string
+    { return ($check['facts']['owned']??null)===true?'The domain was found in this registrar account. The original charge is still unconfirmed.':''; }
     private static function answerRegistrar(array $check): string { return ($check['registrar'] ?? null) === 'Enom' ? 'Enom' : 'NameSilo'; }
     /** The staff request notice, next step first. Staff History already says the result is unconfirmed, so this doesn't. Null with no check. */
     public static function step(Operation $op): ?array
     {
         $check = self::status($op);
         if ($check === null) { return null; }
-        if (($check['outcome'] ?? null) === 'awaiting_answer') { return self::answerStep($check); }
+        if (($check['outcome'] ?? null) === 'awaiting_answer') {
+            $step = self::answerStep($check);
+            if (!self::answerReady($check)) { return $step; }
+            // Once the answer can be entered the title names that step, so it matches the notice's main button.
+            $registrar = self::answerRegistrar($check);
+            return ['title'=>'Ask '.$registrar.' to check this attempt, then enter its answer.','body'=>self::found($check),'answer'=>true];
+        }
         $words = self::words($check, $op->state === 'succeeded');
         return ['title' => $words['title'].'.', 'body' => ($check['outcome'] ?? null) === 'checked' && $op->state !== 'succeeded' ? self::checkedNext($check) : $words['body']];
     }
@@ -108,7 +118,7 @@ final class RegistrarCheck
     { return self::at((int)($check['answer_after'] ?? 0)); }
     /** The one date format these lines use, the staff pages' own: Nov 4, 2026, 1:53 PM PST. */
     private static function at(int $at): string
-    { return (new \DateTimeImmutable('@'.$at))->setTimezone(new \DateTimeZone('America/Los_Angeles'))->format('M j, Y, g:i A T'); }
+    { return \Paymenter\Extensions\Servers\Domains\Presentation\StaffTime::at($at); }
     /** Older lost replies need no worker turn to expose their existing answer step. Read only. */
     public static function status(Operation $op): ?array
     {

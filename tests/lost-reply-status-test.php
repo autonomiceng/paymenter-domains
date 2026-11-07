@@ -39,6 +39,10 @@ same(['Renewal pending','We’re confirming this renewal with the registrar. You
 $clockKey=Paymenter\Extensions\Servers\Domains\Contracts\Clock::class;$liveClock=app($clockKey);
 app()->instance($clockKey,new class((int)$result->policy['status_check']['answer_after']+60) implements Paymenter\Extensions\Servers\Domains\Contracts\Clock{public function __construct(private int $at){}public function now():DateTimeImmutable{return new DateTimeImmutable('@'.$this->at);}});
 same("Ask Enom to check this attempt. You can record Enom’s answer now.",Paymenter\Extensions\Servers\Domains\Services\RegistrarCheck::for($result)['body'],'Past the wait, staff can record the answer now');
+// J8: once the answer can be entered, the request notice names that step and leads with its button.
+$notice=Paymenter\Extensions\Servers\Domains\Admin\Support\RequestFacts::notice($result);
+same(['Ask Enom to check this attempt, then enter its answer.','enom_answer'],[$notice['title'],$notice['primary']??null],'Notice title matches the answer button');
+expect(!str_contains((string)$notice['body'],'You can record'),'The title already says to enter the answer');
 app()->instance($clockKey,$liveClock);
 same('uncertain',$result->state,'No fabricated completion');same(null,$result->attempt['execution'],'Attempt remains unchanged');
 if($automaticStatusGc){gc_enable();}

@@ -147,7 +147,7 @@ $template=DB::transaction(fn()=>\Paymenter\Extensions\Servers\Domains\Models\Wat
     'nameservers'=>['ns1.provider.example','ns2.provider.example'],'website_endpoints'=>[],'email_endpoints'=>[],
     'edited_by'=>$admin->id,'reason'=>'Synthetic registration template']));
 $action=TestAction::make('new_domain_dns_'.$enom->server_id)->schemaComponent('account_'.$enom->server_id,'content');
-Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action)->assertDontSee('New domains use');
+Livewire::actingAs($admin)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action)->assertSee('New domains use')->assertSee('Shared registration DNS');
 Livewire::actingAs($staff)->test(RegistrarAccount::class,['account'=>$enom->server_id])->assertActionDoesNotExist($action);
 
 echo "Registrar identity repair, activation and renewal settings passed.\n";$nativeSuccessful=true;

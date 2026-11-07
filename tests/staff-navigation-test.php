@@ -80,7 +80,8 @@ Livewire::actingAs($manager)->test(MonitoringSettings::class)->assertSee('Instal
 $GLOBALS['domainsTestCurlMissing']=false;
 
 // Maintenance notice, one line per state; time in staff format.
-$since=1800000000;$at='Jan 15, 2027 08:00 UTC';
+// J8: Pacific with its zone, like every other staff time, not unlabelled UTC.
+$since=1800000000;$at='Jan 15, 2027, 12:00 AM PST';
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'waiting','since'=>null]),'Waiting has no notice');
 same(null,WatchMaintenance::notice(['outage'=>false,'reason'=>'current','since'=>$since]),'Current has no notice');
 same(['text'=>'Monitoring is not set up on this site.','tone'=>'warning','action'=>'setup'],WatchMaintenance::notice(['outage'=>false,'reason'=>'disabled','since'=>null]),'Disabled');

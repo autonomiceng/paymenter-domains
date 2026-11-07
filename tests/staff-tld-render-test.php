@@ -69,9 +69,9 @@ $render(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]),'tld-pub
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override');
 \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->increment('revision');
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
-// Default pricing lives on What you sell, and its dialog counts the TLDs that follow it.
+// Default pricing and the card fee are edited on What you sell; the account shows both and links there. Its dialog counts the TLDs that follow it.
 $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ticket($u->id,$t->server_id,$t->id,'remove_override',Review::stamp($t->server_id,$t->id)),'Follow the account default again'),[],$now);
-Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Customer pays')->assertDontSee('Card fee');
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Customer pays')->assertSee('Card fee');
 $sell=Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class)->mountAction('default_pricing')->call('$refresh');$sees($sell,['2 TLDs use Default pricing.']);$render($sell,'modal-default_pricing');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 same(8,count($strings),'Eight settings modals rendered');

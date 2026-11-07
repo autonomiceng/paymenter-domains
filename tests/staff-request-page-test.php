@@ -51,7 +51,8 @@ $list=Livewire::actingAs($viewer)->test(ListOperations::class)->assertSuccessful
     ->assertSee('Under review')->assertSee('Old registrar needs approval')->assertSee('Registrar account')->assertSee('Note')->assertSeeHtml('placeholder="Search domain"')
     ->assertDontSee('Awaiting reconciliation')->assertDontSee('Requests appear when');
 same(['Registrar requests','List'],array_values($list->instance()->getBreadcrumbs()),'List breadcrumb in sentence case, like the title');
-staffTableStandard($list,'Search domain',['domain.domain','state','note']);staffRowsStandard($list);
+// J8: Registrar account starts under Columns so the defaults fit inside the card at 1440px.
+staffTableStandard($list,'Search domain',['domain.domain','state','note']);staffRowsStandard($list,['server_id']);
 $filter=static function(string $name,array $value){$p=Livewire::actingAs(Auth::user())->test(ListOperations::class)->filterTable($name,$value);
     return $p->set('tableDeferredFilters',$p->get('tableFilters'))->call('applyTableFilters');};
 $filter('status',['under_review'])->assertCanSeeTableRecords([$heldOp,$longOp])->assertCanNotSeeTableRecords([$doneOp]);

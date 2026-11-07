@@ -125,7 +125,8 @@ final class RequestFacts
                 $closedUnsent=$op->state==='rejected'&&in_array($op->safe_code,['renewal_cancelled_unpaid',UnpaidAcquisitionProof::CODE],true)&&($a['send_state']??null)==='definitely_unsent'&&!array_key_exists('dispatch_attempted_at',$p);
                 if ($actual===null&&($closedUnsent||($op->state==='cancelled'&&$a===[]&&$op->started_at===null))) { [$actual,$quote]=['Not charged',null]; }
                 if ($paid||isset($c['actual'])) {
-                    $out['cost']=$actual;
+                    // An unsure result has no confirmed charge yet; beside an authorized or estimated amount that is not a missing fact.
+                    $out['cost']=$actual??($unknown&&$quote!==null?'Not confirmed':null);
                     $out['cost_sub']=$out['registrar_refund'] ?? $quote ?? ($actual===null ? 'No cost recorded. Check at the registrar.' : null);
                     if(\Paymenter\Extensions\Servers\Domains\Services\TransferRejections::proved($op,$op->domain)){
                         $answer=$p['enom_answer'];$out['cost_sub']='Registrar charge '.Labels::money($answer['charge']).'; registrar refund '.Labels::money($answer['registrar_refund']).'. We cover the failed fee.';
@@ -266,7 +267,7 @@ final class RequestFacts
             $cause=$recover?HistoryRecovery::CAUSE:($tooOld&&(RegistrarCheck::status($op)['outcome']??null)!=='awaiting_answer'?HistoryRecovery::TOO_OLD:null);
             $parts=array_values(array_filter([$said?null:$facts['outcome'],$step['title']??null,$step['body']??null,$cause,$facts['auto_renew']??PaidUncertainty::holdSummary($op)]));
             if($said&&$step===null&&$cause===null){array_unshift($parts,self::CHECK_STATUS);}
-            return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',
+            return ['title'=>array_shift($parts),'body'=>$parts===[]?null:implode(' ',$parts),'tone'=>'warning',...(($step['answer']??false)?['primary'=>'enom_answer']:[]),
                 'action'=>$recover?HistoryRecovery::NAME:(OperationActions::readLimit($op)&&in_array($op->action,['register','transfer','renew'],true)?'resume_reads':'recheck')];
         }
         if ($op->state==='queued' && ($ready=self::readyMessage($op))!==null) {

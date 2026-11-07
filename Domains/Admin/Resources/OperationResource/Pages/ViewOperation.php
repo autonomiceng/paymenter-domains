@@ -142,6 +142,8 @@ class ViewOperation extends ViewRecord
         $acts=(bool)$action?->isVisible();
         $answer=$this->getAction('enom_answer',false);$answers=(bool)$answer?->isVisible();
         if ($link&&$link[1]) { $buttons[]=view('filament::components.button.index',['tag'=>'a','href'=>$link[1],'color'=>$acts||$answers?'gray':'primary','size'=>'sm','slot'=>new HtmlString(e($link[0]))])->render(); }
+        // When the notice's step is the registrar's answer, that button leads and Check status follows.
+        if ($answers&&($notice['primary']??null)==='enom_answer') { $buttons[]=$answer->color('primary')->size('sm')->toHtml(); $answers=false; if($acts){$buttons[]=Sheet::button($action)->toHtml();$acts=false;} }
         if ($acts) { $buttons[]=$action->color('primary')->size('sm')->toHtml(); }
         if ($answers) { $buttons[]=($acts?Sheet::button($answer):$answer->color('primary')->size('sm'))->toHtml(); }
         return Callout::make($notice['title'])->description($notice['body']??null)->status($notice['tone'])->columnSpanFull()

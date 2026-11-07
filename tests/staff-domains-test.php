@@ -381,7 +381,8 @@ $renewal->cost=['estimated'=>'7.00','currency'=>'USD'];
 same([null,'Authorized USD 8.95'],$cost($renewal),'Renewal authorization stays distinct from an existing estimate');
 foreach(['running','pending','uncertain','held'] as $state){
     $renewal->state=$state;
-    same([null,'Authorized USD 8.95'],$cost($renewal),'Retained authorization survives unresolved renewal states');
+    // J8: an unsure result beside an authorized amount reads Not confirmed, not a red Missing.
+    same(['Not confirmed','Authorized USD 8.95'],$cost($renewal),'Retained authorization survives unresolved renewal states');
 }
 // Nothing sent: no charge yet, and the renewal cap reads as a spending limit, never as a cost.
 foreach(['awaiting_payment','held'] as $state){
