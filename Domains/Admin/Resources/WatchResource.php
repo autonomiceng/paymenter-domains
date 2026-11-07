@@ -28,8 +28,8 @@ class WatchResource extends WatchReadResource
     {
         $value=static function($record,$livewire)use($fact):array{
             $value=$fact($record,$livewire);
-            // No expected check while monitoring is deliberately paused or stopped.
-            if($record->state!=='active' && Missing::is($value['value']??null)){return ['value'=>WatchFacts::missingCause($record),'tone'=>'gray'];}
+            // No expected check while monitoring is deliberately paused or stopped. Status says so once; these cells stay empty.
+            if($record->state!=='active' && Missing::is($value['value']??null)){return ['value'=>'','tone'=>'gray'];}
             return $value;
         };
         return OneLine::apply($column->state(fn($record,$livewire)=>$value($record,$livewire)['value']??Missing::LABEL)

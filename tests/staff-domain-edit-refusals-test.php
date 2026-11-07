@@ -19,7 +19,7 @@ $processing=static fn(bool $on)=>DB::table('domains_accounts')->where('server_id
 $off=DomainEditActions::for($d->fresh());same([],$off['rows'],'Processing off hides edits, as it does for the owner');expect(str_contains((string)$off['held'],'Orders are off'),'Processing off says what to do');
 $view()->assertSee($off['held'])->assertSeeHtml('domains-blocked')->assertSeeHtml('aria-disabled="true"');
 // Email auth code is a row like the others: under Registration, with its words, and blocked with the reason when changes are on hold.
-$blockedRow=$view();$blockedRow->assertSeeInOrder(['Registration','Transfer lock','Email auth code','Goes to the registrant email','Never shown here.','Email code','Registrar auto-renew','Contacts and DNS'])->assertSeeHtml('aria-label="Email code Email auth code. '.e($off['held']));
+$blockedRow=$view();$blockedRow->assertSeeInOrder(['Registrar records','Registration','Transfer lock','Email auth code','Goes to the registrant email','Never shown here.','Email code','Registrar auto-renew'])->assertSeeHtml('aria-label="Email code Email auth code. '.e($off['held']));
 expect(in_array('Email auth code',DomainFacts::SECTIONS['Registration'],true)&&!in_array('Auth code',DomainFacts::SECTIONS['Contacts and DNS'],true),'The row sits under Registration');
 $processing(true);
 $view()->assertSeeInOrder(['Transfer lock','Email auth code','Never shown here.','Email code','Registrar auto-renew']);

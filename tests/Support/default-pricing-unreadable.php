@@ -17,7 +17,7 @@ foreach(Price::where(['server_id'=>$broken->server_id,'tld'=>'com'])->get() as $
 $savedTld=$broken->fresh()->getRawOriginal();
 $savedPrices=static fn()=>Price::where(['server_id'=>$broken->server_id,'tld'=>'invalid'])->orderBy('id')->get()->map(fn($p)=>$p->getRawOriginal())->all();
 $before=$savedPrices();
-$warning=".invalid on Synthetic left out: custom pricing can't be read. To fix, open the .invalid TLD page and use Edit prices.";
+$warning=".invalid on Synthetic has no price: its custom pricing can't be read. Open .invalid and use Edit prices.";
 $assertWarning=static function($page)use($warning):void{
     $dom=new DOMDocument;@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
     same($warning,$xpath->evaluate('normalize-space(//*[@data-price-omission])'),'Unreadable TLD keeps its name and fix line');

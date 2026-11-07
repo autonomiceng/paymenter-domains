@@ -21,6 +21,7 @@
 @if ($settings)
 <section class="domains-panel" aria-labelledby="heading-settings"><div class="domains-panel__h"><h2 id="heading-settings" class="domains-h2">{{ ($recordFamilies ?? null) ? 'Registrar records' : 'Settings' }}</h2></div>
 @if (($recordFamilies ?? null) && $recordFamilies['stale'])<p class="domains-hint">Registrar records are waiting for an update. Last confirmed data is retained.</p>@endif
+@if ($recordFamilies ?? null)@include('domains::partials.record-read-note', ['recordFamilies' => $recordFamilies])@endif
 <ul class="domains-rows">@include('domains::partials.owner-management', ['caps' => $settings])</ul></section>
 @endif
 </div>

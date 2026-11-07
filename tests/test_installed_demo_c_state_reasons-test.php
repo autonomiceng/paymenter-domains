@@ -29,7 +29,7 @@ $case('D01 complete selected terms count',function()use($t,$actor,$tlds){
     for($i=1;$i<600;$i++){$copy=$t->replicate();$copy->tld='state'.strtr(sprintf('%03d',$i),'0123456789','abcdefghij');$copy->catalogue_facts=$i===599?null:($i===1?$tlds[1]->catalogue_facts:$t->catalogue_facts);$copy->catalogue_retained_annual_retail=null;$copy->save();DB::table('domains_sales_policies')->insert([...$policy,'tld'=>$copy->tld]);}
     $rows=AccountChecklist::renewals((int)$t->server_id);$summary=collect($rows)->firstWhere('label','Selected TLD terms');
     same('599 of 600 read',$summary['value']??null,'Counts the full selected set including annual-only facts');
-    expect(str_contains((string)$summary['cause'],'1 need attention'),'Missing facts count is explicit');
+    expect(str_contains((string)$summary['cause'],'1 needs attention'),'Missing facts count is explicit');
     $link=$summary['buttons'][0]->getUrl();expect(str_contains($link,'needs_attention')&&str_contains($link,'server_id'),'Attention link is account scoped');
     Livewire::actingAs($actor)->test(ListTlds::class)->filterTable('server_id',(string)$t->server_id)->filterTable('needs_attention')->assertCountTableRecords(1);
     Livewire::actingAs($actor)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Selected TLD terms')->assertDontSee('Supported terms');
@@ -42,11 +42,11 @@ $case('D05 D06 feed absence and no seller',function()use($t,$actor,$now){
     expect(str_contains((string)$col->getDescriptionBelow(),'Not in the registrar\'s price feed; not for sale'),'Feed gap says why: '.(string)$col->getDescriptionBelow()); same('danger',$col->getColor($col->getState()),'Selected gap stays red');
     DB::table('domains_sales_policies')->where('tld',$missing->tld)->delete();
     $state=TldFacts::priceState(TldFacts::snapshot($missing));
-    expect(str_contains($state['cause'],'No registrar selected; not for sale'),'Unsold without a registrar says why');same(null,$state['tone'],'Unsold gap is quiet');
+    expect(str_contains($state['cause'],'No registrar selected'),'Unsold without a registrar says why');same(null,$state['tone'],'Unsold gap is quiet');
 });
 $case('D02 automatic refresh times',function()use($t,$actor,$now){
     DB::table('domains_observation_queues')->updateOrInsert(['server_id'=>$t->server_id,'account_fingerprint'=>$t->account_fingerprint],['offer_work'=>OfferState::json(['feed_due'=>$now->getTimestamp()+86400]),'offer_feed_succeeded_at'=>$now->getTimestamp(),'turn'=>0]);
-    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);$html=$page->html();expect(str_contains($html,'Last successful refresh')&&str_contains($html,'Next due')&&!str_contains($html,'Sync prices to resume'),'Refresh facts and scheduled due time visible');expect(str_contains($html,gmdate('M j, Y H:i',$now->getTimestamp()))&&str_contains($html,gmdate('M j, Y H:i',$now->getTimestamp()+86400)),'Account refresh times are exact, even when this ending has no separate read');
+    $page=Livewire::actingAs($actor)->test(ViewTld::class,['record'=>$t->id]);$html=$page->html();expect(str_contains($html,'Last updated')&&str_contains($html,'Next update')&&!str_contains($html,'Sync prices to resume'),'Refresh facts and scheduled due time visible');expect(str_contains($html,'datetime="'.gmdate('c',$now->getTimestamp()).'"')&&str_contains($html,'datetime="'.gmdate('c',$now->getTimestamp()+86400).'"'),'Account refresh times are exact, even when this ending has no separate read');
 });
 $case('D03 legacy TEST blocker',function()use($t){
     $legacy=new Account(['server_id'=>$t->server_id,'registrar_key'=>'namesilo','environment'=>'test','stable_identity'=>\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::PREFIX.str_repeat('a',64)]);

@@ -21,7 +21,7 @@ $offer=(new StaffCatalogue($ports,$clock))->rows([\Paymenter\Extensions\Servers\
 $page=Livewire::actingAs($actor)->test(WhatYouSell::class);$key=$page->instance()->getTableRecordKey($offer);
 $page->mountTableBulkAction('edit',[$key])->call('$refresh');$modal=$page->effects['partials']['action-modals.0']??'';
 expect(str_contains($modal,'Missing'),'Fixture includes unpriced registrar term totals');$errors=[];
-foreach(['No saved registrar total for these terms.','Last successful refresh:','Next due:','Sync prices is an optional retry.']as$text){if(!str_contains($modal,$text)){$errors[]='Terms dialog lacks '.$text;}}
+foreach(['No saved registrar total for these terms.','Prices updated ','Next update ','Sync prices is an optional retry.']as$text){if(!str_contains($modal,$text)){$errors[]='Terms dialog lacks '.$text;}}
 if(str_contains($modal,'Sync prices to read these term totals')){$errors[]='Terms still requires a sync';}
 // Restore the saved amount with an expired cost and render the same native action again.
 DB::table('domains_prices')->where('id',$termPrice->id)->update(['retail'=>$termPrice->retail,'catalogue_observation'=>\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($stale))]);

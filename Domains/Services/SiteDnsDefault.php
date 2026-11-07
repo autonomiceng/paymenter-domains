@@ -11,7 +11,7 @@ final class SiteDnsDefault
 {
     public const KEY='domains_site_dns_template';
     public const MANAGE='admin.domains.settings.new_domain_dns';
-    public const MISSING='Beco DNS default Missing: installation has not supplied the expected nameservers';
+    public const MISSING='Site DNS default is Missing. New domains have no nameservers to use. Choose a set with Change site DNS default.';
     private static function query(): \Illuminate\Database\Eloquent\Builder
     { return Setting::whereNull('settingable_type')->whereNull('settingable_id')->where('key',self::KEY); }
     public static function profile(bool $lock=false): ?WatchProfile
@@ -83,8 +83,8 @@ final class SiteDnsDefault
         foreach(Account::orderBy('registrar_key')->distinct()->pluck('registrar_key') as $registrar){
             try{NewDomainDns::validate($registrar,$nameservers);}
             catch(\InvalidArgumentException $e){
-                $rule=$registrar==='enom'?'Enom requires 2 to 12 valid nameservers.':'NameSilo requires 2 to 13 valid nameservers.';
-                throw new \DomainException($rule.' Update this DNS template before saving the site default.',0,$e);
+                $rule=$registrar==='enom'?'Enom takes 2 to 12 nameservers.':'NameSilo takes 2 to 13 nameservers.';
+                throw new \DomainException($rule.' Update this DNS template or choose another one.',0,$e);
             }
         }
     }

@@ -67,12 +67,12 @@ final class TldFacts
         $years=static fn(int $n):string=>$n.' '.($n===1?'year':'years');
         return $t->min_years===$t->max_years?$years((int)$t->min_years):$t->min_years.' to '.$years((int)$t->max_years);
     }
-    /** Saved account refresh, shared by list cells and detail pages. A retry is optional. */
-    public static function refreshText(array $status): string
+    /** Saved account refresh, shared by list cells and dialogs. The retry note is left out where a Sync prices button sits beside it. */
+    public static function refreshText(array $status,bool $retry=true): string
     {
-        $date=static fn($at)=>$at?gmdate('M j, Y H:i',(int)$at).' UTC':null;
-        return 'Last successful refresh: '.($date($status['succeeded_at']??null)??'none recorded').'. Next due: '
-            .($date($status['due_at']??null)??'not scheduled').'. Sync prices is an optional retry.';
+        $date=static fn($at)=>$at?gmdate('M j, Y, g:i A',(int)$at).' UTC':null;
+        return (($at=$date($status['succeeded_at']??null))?'Prices updated '.$at.'.':'Prices not updated yet.')
+            .(($at=$date($status['due_at']??null))?' Next update '.$at.'.':' No update scheduled.').($retry?' Sync prices is an optional retry.':'');
     }
     public static function ruleProblem(array $fact): string
     {
@@ -105,7 +105,7 @@ final class TldFacts
         $cause=match(true){
             $invalid=>self::ruleProblem($fact),
             $notOffered=>$name.' not offered by this registrar',
-            !$selected&&($fact['seller']??null)===null=>'No registrar selected; not for sale',
+            !$selected&&($fact['seller']??null)===null=>'No registrar selected',
             !collect($fact['prices'])->contains(fn($p)=>$p['synced'])=>self::feedGap($fact),
             $value!==null=>self::costNote($row),
             default=>$name.($field==='cost'?' cost':' price').' missing. '.($field==='cost'?'The registrar feed must supply this exact term.':'Edit prices must supply a valid price.'),

@@ -42,7 +42,11 @@ $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused'
 commerceReject(fn () => $billing->invoice($d->id, $user, 1));
 $d->update(['renewal_policy' => [...$d->renewal_policy, 'automatic_spend_paused' => false]]);
 $debtBeforeLonger=serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('domains_operations')->get()]);
-commerceReject(fn () => $billing->invoice($d->id, $user, 3));
+try { $billing->invoice($d->id, $user, 3); expect(false, 'Unevidenced 3-year renewal invoice refused'); }
+catch (DomainException $e) {
+    same('Renewals longer than 1 year aren’t available for this domain yet. Renew for 1 year at a time.',
+        Paymenter\Extensions\Servers\Domains\Http\Controllers\OwnerRenewalController::refusal($e), 'Owner sees plain copy with the next step');
+}
 same($debtBeforeLonger,serialize([DB::table('invoices')->get(),DB::table('invoice_items')->get(),DB::table('domains_operations')->get()]),'No exact quote means no new longer debt');
 $renewal = $billing->invoice($d->id, $user, 1); $op = Operation::where('invoice_id', $renewal->id)->sole();
 // Staff calendar and gate reviews after issue apply to later invoices only.

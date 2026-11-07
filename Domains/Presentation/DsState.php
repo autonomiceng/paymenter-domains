@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Paymenter\Extensions\Servers\Domains\Presentation;
 use Paymenter\Extensions\Servers\Domains\Models\{Domain,Operation};
 use Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DsRegistryPolicy;
-use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence,ObservationProjection};
+use Paymenter\Extensions\Servers\Domains\Services\{ManagementEvidence,ObservationProjection,ObservationWork};
 /** Presentation only: an Off policy never certifies an empty DS inventory. */
 final class DsState
 {
@@ -48,6 +48,8 @@ final class DsState
             $event=self::event($op,$d,true);$fact['value']=$event['state'];$fact['tone']=$event['tone'];
             $fact['progress']=['text'=>$event['text'],'request'=>$op->id,'waiting'=>$progress['pending']??false,'tone'=>$event['tone']];
         }
+        // A stopped read won't confirm DS records, so the row is a plain red Missing; the page notice names Resume sync.
+        if($records===null&&!isset($fact['progress'])&&!self::off($d)&&ObservationWork::stopped($d)){$fact['value']=null;$fact['sub']=null;}
         return $fact;
     }
     public static function event(Operation $op,Domain $d,bool $staff=false): array

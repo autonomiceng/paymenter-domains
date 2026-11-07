@@ -68,7 +68,10 @@ $page=\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\
 \Livewire\Livewire::actingAs($viewer)->test($page)->assertActionHidden('siteDefault');
 \App\Models\Setting::where('key',SiteDnsDefault::KEY)->whereNull('settingable_type')->delete();
 config(['domains.site_dns_default.nameservers'=>null]);$entry->upgraded();
-\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING)->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors();
+$settings=\Livewire\Livewire::actingAs($manager)->test($page)->assertSee(SiteDnsDefault::MISSING);
+// ui-r15 R4: the step is said once, in the red callout; the Site DNS default row shows only Missing.
+same(1,substr_count($settings->html(),'Choose a set with Change site DNS default'),'Site DNS default step shows once');
+$settings->callAction('siteDefault',['profile'=>$default->id])->assertHasNoActionErrors();
 same($default->id,SiteDnsDefault::profile()->id,'Site settings save a single global reference');
 app(\Paymenter\Extensions\Servers\Domains\Services\Runtime::class)->boot();
 DB::table('domains_watch_work')->where('watch_id',$watch->id)->delete();
@@ -95,16 +98,16 @@ $connect('namesilo');$one=$make(1);$thirteen=$make(13);
 $pageBefore=[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()];
 \Livewire\Livewire::actingAs($manager)->test($page)->callAction('siteDefault',['profile'=>$one->id])
     ->assertSuccessful()->assertActionHalted('siteDefault')
-    ->assertNotified(\Filament\Notifications\Notification::make()->warning()->title('NameSilo requires 2 to 13 valid nameservers. Update this DNS template before saving the site default.'))
+    ->assertNotified(\Filament\Notifications\Notification::make()->warning()->title('NameSilo takes 2 to 13 nameservers. Update this DNS template or choose another one.'))
     ->assertNotNotified('Site DNS default saved');
 same($pageBefore,[SiteDnsDefault::profile()->id,WatchProfile::orderBy('id')->get()->toJson(),\Paymenter\Extensions\Servers\Domains\Models\WatchAudit::count()],'Page refusal preserves selection, templates and audit');
-$refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'NameSilo requires 2 to 13');
+$refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'NameSilo takes 2 to 13');
 SiteDnsDefault::save($manager,$thirteen->id);same(13,count(SiteDnsDefault::profile()->nameservers),'NameSilo accepts thirteen');
-$refuse(fn()=>DB::transaction(fn()=>$thirteen->fresh()->update(['nameservers'=>$servers(1),'revision'=>$thirteen->revision+1])),'NameSilo requires 2 to 13');
+$refuse(fn()=>DB::transaction(fn()=>$thirteen->fresh()->update(['nameservers'=>$servers(1),'revision'=>$thirteen->revision+1])),'NameSilo takes 2 to 13');
 SiteDnsDefault::save($manager,$default->id);$connect('enom');
-$refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'Enom requires 2 to 12');
-$refuse(fn()=>SiteDnsDefault::save($manager,$thirteen->id),'Enom requires 2 to 12');
-foreach([1,13]as$count){$refuse(fn()=>DB::transaction(fn()=>$default->fresh()->update(['nameservers'=>$servers($count),'revision'=>$default->revision+1,'edited_by'=>$manager->id,'reason'=>'Synthetic staff limit edit'])),'Enom requires 2 to 12');}
+$refuse(fn()=>SiteDnsDefault::save($manager,$one->id),'Enom takes 2 to 12');
+$refuse(fn()=>SiteDnsDefault::save($manager,$thirteen->id),'Enom takes 2 to 12');
+foreach([1,13]as$count){$refuse(fn()=>DB::transaction(fn()=>$default->fresh()->update(['nameservers'=>$servers($count),'revision'=>$default->revision+1,'edited_by'=>$manager->id,'reason'=>'Synthetic staff limit edit'])),'Enom takes 2 to 12');}
 $twelve=$make(12);SiteDnsDefault::save($manager,$twelve->id);same(12,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept twelve');
 DB::transaction(fn()=>$twelve->fresh()->update(['nameservers'=>$servers(2),'revision'=>$twelve->revision+1]));
 same(2,count(SiteDnsDefault::profile()->nameservers),'Both connected registrars accept editing to two');

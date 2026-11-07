@@ -39,7 +39,7 @@ same(['This registrar doesn\'t support this change.',null],[DomainEditActions::h
 $unknown=DomainEditActions::held($active,null)['held'];
 expect(!str_contains($unknown,'last request')&&!str_contains($unknown,'History'),'With no cause, the hold claims no request');
 Account::where('server_id',$active->server_id)->update(['processing_enabled'=>$processing]);
-// Progress sits under a row's own words, and a finished change stops talking.
+// Progress sits under a row's own words, retains its optional tone (a7b7c7d4), and a finished change stops talking.
 $rows=['Contacts'=>['value'=>'Ada','sub'=>'ada@example.test'],'Nameservers'=>['value'=>null,'sub'=>'Sync to read them']];
 $saving=['contacts'=>['pending'=>true,'text'=>'Saving…'],'nameservers'=>['pending'=>true,'text'=>'Saving…']];
 same(['ada@example.test','Saving…'],array_column(DomainFacts::withProgress($rows,$saving),'sub'),'Progress keeps the email line and replaces a Missing cause');
@@ -166,7 +166,7 @@ $storeNs($active,['ns1.example.net','ns2.example.net','ns3.example.net']);
 same(['ns1.example.net','ns2.example.net','ns3.example.net'],$value($active,'Nameservers'),'Stored nameservers in order');
 same(false,DomainFacts::for($active->fresh())['Nameservers']['demo'],'Ordinary nameservers have no Demo tag');
 same($before,$queries($active->fresh()),'Nameservers add no queries');
-Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Transfer lock','Nameservers','ns1.example.net','ns2.example.net','ns3.example.net'])->assertSeeHtml('data-beco-tone="ok" data-beco-record="lock-'.$active->id.'"');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Nameservers','ns1.example.net','ns2.example.net','ns3.example.net','Transfer lock'])->assertSeeHtml('data-beco-tone="ok" data-beco-record="lock-'.$active->id.'"');
 foreach([[],['ns1.example.net',7],['a'=>'ns1.example.net'],'ns1.example.net'] as $bad){$storeNs($active,$bad);same(null,$value($active,'Nameservers'),'Unusable stored nameservers are Missing');}
 $storeNs($active,['ns1.example.net','ns2.example.net']);
 // Every Missing carries its cause.

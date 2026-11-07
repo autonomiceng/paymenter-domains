@@ -131,7 +131,7 @@ final class DomainFacts
         // An ended domain won't sync again, so it keeps its last read and shows no row without one.
         if (($registered||$job||$d->last_synced_at)&&(!self::ended($d)||$d->last_synced_at)) { $f['Last sync']=match(true) {
             $paused=>self::fact('Paused',sub:'Demo registrar is off while Enom Test mode is on',tone:'warning'),
-            $sync==='failed'=>self::fact('Read stopped',sub:self::readCause($d),tone:'danger'),
+            $sync==='failed'=>self::fact('Read stopped',tone:'danger'),
             default=>['at'=>$d->last_synced_at?->getTimestamp(),...self::fact($d->last_synced_at?->utc()->format('M j, Y H:i').($d->last_synced_at?' UTC':''),
                 sub:$job&&$job->claim!==null&&$job->lease_until>time()?($d->last_synced_at?'Syncing now':Missing::fills('when this sync finishes')):($d->last_synced_at?null:Missing::fills('within a day')))],
         }; }
@@ -166,12 +166,14 @@ final class DomainFacts
             elseif (!$pending&&$d->status==='active'&&!$expired&&$renewal&&!$off) { $f['Next invoice']=self::nextInvoice($d); }
         }
         if ($invoice) { $f['Open invoice']=self::fact('Invoice #'.$invoice->id,sub:'Awaiting payment',url:self::invoiceUrl((int)$invoice->id)); }
-        // The older top rows must describe the same failed read as the family inventory.
+        // A failed read leaves the unread rows red Missing without a sentence each. Why, and what to do, is said once:
+        // a stopped read in the page notice, a read still retrying on Last sync. Contacts come from saved requests, not the read,
+        // so their Missing keeps its own step.
         if($registered && ($problem=self::readProblem($d))!==null){
             foreach(['In registrar account','Nameservers','Transfer lock','WHOIS privacy','Registrar auto-renew','DNS records'] as $label){
-                if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=$problem;}
+                if(isset($f[$label]) && ($f[$label]['value']===null || $f[$label]['value']==='Not read yet')){$f[$label]['value']=null;$f[$label]['sub']=null;}
             }
-            if(isset($f['Last sync'])){$f['Last sync']['sub']=$problem;}
+            if(isset($f['Last sync'])){$f['Last sync']['sub']=!self::ended($d)&&self::recordHold($d)!==null?null:$problem;}
         }
         return self::alerts($d,$f);
     }
@@ -356,7 +358,8 @@ final class DomainFacts
     private static function readCause(Domain $d): string
     {
         $read=\Paymenter\Extensions\Servers\Domains\Services\HoldingReadRetry::status($d);
-        return trim(($read['read_cause']??'Registrar read stopped.').' '.($read['read_code']?'Cause: '.$read['read_code'].'. ':'').'Fix the cause, then use Resume sync.');
+        // The records head shows the error code, and the notice body the one step.
+        return $read['read_cause']??'Registrar read stopped.';
     }
     public static function recordHold(Domain $d): ?string
     {
@@ -367,9 +370,17 @@ final class DomainFacts
             return ObservationRecords::limitNotice($d)??match($d->observation['record_hold']['reason']??null) {
                 'ownership_drift'=>'Sync stopped: domain is not in the registrar account.',
                 'glue_unavailable'=>"Couldn't read glue records. Other domain facts were saved. Use Sync now to try again.",
-                'records_unavailable'=>"Sync stopped: couldn't read DNS records.",
+                'records_unavailable'=>self::unreadFamily($d->observation['record_hold']['family']??null),
+                'caa_unsupported'=>"Sync stopped: this domain has CAA records, which can't be read from Enom here. Other domain facts were saved. Manage this domain's DNS at Enom.",
                 default=>'Sync stopped: DNS record check failed.' };
         } catch (\Throwable) { return self::UNREADABLE; }
+    }
+    /** Staff copy for a record hold that names the family whose read failed; DNS (or an unnamed legacy hold) keeps its wording. */
+    private static function unreadFamily(mixed $family): string
+    {
+        $name=match($family) { 'srv'=>'SRV records','ds'=>'DNSSEC records','glue'=>'glue records','nameservers'=>'nameservers',
+            'contacts'=>'contacts','flags'=>'lock, auto-renew and privacy settings',default=>null };
+        return $name===null?"Sync stopped: couldn't read DNS records.":"Sync stopped: couldn't read ".$name.'. Other domain facts were saved. Use Sync now to try again.';
     }
     /** 'paused' (demo registrar off under Enom Test mode), 'failed' (stopped after a failed check) or null. Shared by the page and the list. Nothing syncs on an ended domain, so it has neither.
      * The list passes the account and stopped state it loaded for the whole page. $accountLoaded includes a missing account. */
@@ -392,7 +403,7 @@ final class DomainFacts
         catch(\Illuminate\Contracts\Encryption\DecryptException){return self::UNREADABLE;}
         if(!$read['read_code']){return null;}
         return $read['read_cause'].' '.($read['read_stopped']?self::restart($d):($read['next_read']!==null
-            ?'Next automatic retry: '.gmdate('M j, Y H:i',$read['next_read']).' UTC.'
+            ?'Next automatic retry: '.gmdate('M j, Y, g:i A',$read['next_read']).' UTC.'
             :'No registrar read is queued. Check the background worker.'));
     }
     private const ASK_RESUME='Ask staff who can resume sync.';
