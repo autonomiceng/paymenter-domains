@@ -6,8 +6,8 @@
 @endphp
 <span data-record-family="{{ $family['kind'] }}">
 @if ($family['state'] === 'unknown')
-    @if ($family['read_checking'] ?? false)
-        @include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'muted']])
+    @if (($family['read_checking'] ?? false) || (!$staff && ($family['initial_read_pending'] ?? false)))
+        @include('domains::partials.status-pill', ['pill'=>['label'=>'Checking','tone'=>'info']])
     @else
         @include('domains::partials.missing', ['cause'=>null, 'calm'=>!$staff && \Paymenter\Extensions\Servers\Domains\Presentation\DomainPage::readHeldSaid($notice ?? null)])
     @endif

@@ -56,9 +56,9 @@ final class Projection
                     'domains_action' => $action, 'domains_registrar' => $tld->registrar_key] as $key => $value) {
                     $product->settings()->create(['key' => $key, 'value' => $value, 'type' => 'string', 'encrypted' => false]);
                 }
-                NativeActivationInformation::initialize($product);
-                if ($product->isDirty()) { $product->save(); }
             }
+            NativeActivationInformation::initialize($product);
+            if ($product->isDirty()) { $product->save(); }
             foreach (array_unique([1, ...array_keys($available), ...$product->plans()->pluck('billing_period')->all()]) as $term) {
                 $plans = $product->plans()->where('billing_period', $term)->get();
                 if ($plans->count() > 1) { throw new \DomainException('Duplicate domain plan.'); }

@@ -9,6 +9,9 @@ use Paymenter\Extensions\Servers\Domains\Services\{DomainManagement, RenewalRepe
 final class DomainPage
 {
     /** The cause on each value while reads are stopped. The page notice carries the one fix, so the rows stay calm. */
+    public const INITIAL_READ = 'Checking with the registrar. This usually takes a few minutes.';
+    public static function initialRead(OwnedDomain $d): bool
+    { return collect($d->management)->contains(fn ($section) => $section['family']['initial_read_pending'] ?? false); }
     public const TEAM_CHECK = 'Our team needs to check this domain. '.Missing::NO_ACTION;
     public const NOTHING_TO_DO = 'There’s nothing you need to do.';
     /** The page notice while reads are stopped. When it shows, the rows need not repeat it. */
@@ -52,7 +55,8 @@ final class DomainPage
             // An Off switch is why changes stop, so its own notice below wins over a stopped read, which the rows already say.
             self::checkHeld($d) && !($d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF) => self::ours(self::READ_HELD, $contact),
             $d->statusReason === DomainStatus::LATE => ['tone' => 'bad', 'text' => 'This domain has expired. '.DomainStatus::LATE.'.', 'action' => $contact],
-            $d->dnsCorrection => ['tone'=>'info','text'=>'Your domain is registered, but the registrar could not confirm your chosen nameservers. '.(isset($d->management['nameservers'])?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>isset($d->management['nameservers'])?['label'=>'Change nameservers','url'=>$d->actions['show'].'?edit=nameservers#edit-nameservers']:$contact],
+            self::initialRead($d) => ['tone'=>'info','text'=>self::INITIAL_READ,'action'=>null],
+            $d->dnsCorrection => ['tone'=>'info','text'=>'The registered nameservers do not match the registration settings. '.(isset($d->management['nameservers'])?'Set up DNS with your provider, then change nameservers.':($contact?'Set up DNS with your provider, then contact support to change nameservers.':'Set up DNS with your provider. Nameserver changes are currently unavailable.')),'action'=>isset($d->management['nameservers'])?['label'=>'Change nameservers','url'=>$d->actions['show'].'?edit=nameservers#edit-nameservers']:$contact],
             $d->changesUnavailable && $d->changesRefused === DomainManagement::SWITCH_OFF => ['tone' => 'info', 'text' => 'Changes are on hold: DNS, nameservers and contacts are Off. Contact us to turn them on.', 'action' => $contact],
             $d->changesUnavailable && is_int($d->changesRefused) => ['tone' => 'info', 'text' => 'Changes are on hold until we finish checking an earlier request. '.self::NOTHING_TO_DO, 'action' => $contact],
             $d->changesUnavailable => ['tone' => 'info', 'text' => 'Changes to this domain are on hold right now. Try again later.', 'action' => $contact],
