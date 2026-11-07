@@ -26,8 +26,8 @@ App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['
 $q=new Query($binding,['com'],'register');$revision=fn()=>$ports->readOffers($q,Context::Staff)[0]->revision;
 
 // Real bridge replay starts with unknown facts and retained native rows. One bounded account feed
-// plus metadata for its selected sold set must reopen at the original retail, without deleting IDs.
-$nativePricesBefore = DB::table('prices')->orderBy('id')->get()->keyBy('id')->map(fn($p) => [$p->plan_id, $p->currency_code, $p->price])->all();
+// plus metadata for its selected sold set reopens at the current rule without deleting IDs.
+$nativePricesBefore = DB::table('prices')->orderBy('id')->get()->keyBy('id')->map(fn($p) => [$p->plan_id, $p->currency_code, \Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$p->price)])->all();
 $bulkClock = app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
 $bulkClock->instant = $now = $now->modify('+1 second');
 $bulkFeed = new class implements Paymenter\Extensions\Servers\Domains\Catalogue\PricedFeed {
@@ -63,8 +63,13 @@ $bulkWork->sync($binding); $bulkWork->accountTurn($binding->serverId); $bulkWork
 $bulkWork->accountTurn($binding->serverId);
 same([1,['com']],[$bulkFeed->prices,$bulkFeed->facts],'One bulk read warms only the sold set, never discovered org');
 same(['$7.80','$10.40'],[$storefront->offer('com','register',1)['price'],$storefront->offer('com','register',1)['renew']],'Moved bulk prices restore the same annual retail');
+// Once reopened, the formerly published three-year plan follows the amended registration rule.
+$repriced = $native->product($tlds[0], 'register')->plans()->where('billing_period', 3)->sole()->id;
 foreach ($nativePricesBefore as $id=>$values) {
-    $p=DB::table('prices')->where('id',$id)->first();same($values,$p?[$p->plan_id,$p->currency_code,$p->price]:null,'Every bridge native price identity and amount survives closed publication');
+    if ($values[0] === $repriced) { $values[2] = 2860; }
+    $p=DB::table('prices')->where('id',$id)->first();
+    same($values,$p?[$p->plan_id,$p->currency_code,\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)$p->price)]:null,
+        'Every bridge native price identity survives; reopened registration uses the current retail rule');
 }
 // The real account row reuses the neighbouring permissions, one-use revision ticket and audit path.
 require_once __DIR__.'/Support/staff-tlds.php'; tldPanel();
