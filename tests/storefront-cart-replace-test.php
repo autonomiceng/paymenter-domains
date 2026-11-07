@@ -106,4 +106,25 @@ foreach (['999999', (string) $other->id, 'x'] as $bogus) {
 }
 echo "Storefront in-cart and replace checks passed.\n";
 Illuminate\Support\Carbon::setTestNow();
+// Expired login or a different account can leave an account-owned native cart cookie behind.
+// The native add helper trusts that cookie; storefront handoff must not write another owner's cart.
+$original = $cart->items()->get()->map->getAttributes()->all();
+foreach (['guest' => null, 'different account' => commerceUser()] as $who => $visitor) {
+    Illuminate\Support\Facades\Auth::logout();
+    if ($visitor) { Illuminate\Support\Facades\Auth::login($visitor); }
+    Illuminate\Support\Once::flush();
+    app('request')->cookies->set('cart', $cart->ulid);
+    Illuminate\Support\Facades\Cookie::flushQueuedCookies();
+    $newName = placeholderComFixtureName($visitor ? 'other-owner-placeholder.com' : 'guest-owner-placeholder.com');
+    $req = Request::create('/domains/order', 'POST', ['domain' => $newName, 'action' => 'register', 'term' => '1'], server: ['REMOTE_ADDR' => '192.0.2.34']);
+    $req->setLaravelSession($session); $req->setUserResolver(static fn () => $visitor);
+    $req->merge(['_request_key' => FormKeys::issue($req, 'order:'.$newName)]);
+    same(route('cart'), $controller->order($req)->getTargetUrl(), $who.' domain handoff succeeds');
+    $newCookie = Illuminate\Support\Facades\Cookie::queued('cart')?->getValue();
+    expect(is_string($newCookie) && $newCookie !== $cart->ulid, $who.' receives a cart for the current owner');
+    $newCart = App\Models\Cart::where('ulid', $newCookie)->sole();
+    same($visitor?->id, $newCart->user_id, $who.' cart belongs to the visitor');
+    same($newName, $newCart->items()->sole()->checkout_config['domain'], $who.' domain is in the new cart');
+    same($original, $cart->items()->get()->map->getAttributes()->all(), $who.' leaves the prior cart untouched');
+}
 $nativeSuccessful = true;
