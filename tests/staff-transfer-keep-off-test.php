@@ -18,17 +18,31 @@ $source=new StaffCatalogue($ports,$clock);$t=$tlds[0]->fresh();
 $defaults=OfferState::decode(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$binding->serverId)->sole()->catalogue_defaults);
 DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$defaults,'defaultTransfers'=>true])]);
 
-// MariaDB JSON_EXTRACT returns JSON boolean text; SQLite returns integer 0/1.
-// Replay both native database representations through the exact Eloquent record used by the form.
+// The form reads the saved TLD, including seller permission and staff stops. Projected JSON aliases
+// can be stale and differ between MariaDB and SQLite; neither may override the saved setting.
 $page=new Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
 $edit=new ReflectionMethod($page,'editFields');
 $probe=new ReflectionProperty(Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::class,'probe');$probe->setValue(null,[StaffCatalogue::class=>$source]);
 try{
-    foreach(['false',0,false,'true',1,true,'null',null] as $databaseValue){
-        $row=Paymenter\Extensions\Servers\Domains\Models\OfferRow::hydrate([['id'=>$t->id,'server_id'=>$t->server_id,'tld'=>'com','longest'=>3,'transfer'=>$databaseValue]])->first();
-        $fields=$edit->invoke($page,$row);$field=collect($fields)->first(fn($f)=>$f->getName()==='transfer');
-        $expected=in_array($databaseValue,['false',0,false],true)?'Off':'On';
-        same('Leave as is ('.$expected.')',$field->getOptions()['keep'],'Single-row Transfers matches the saved JSON boolean '.json_encode($databaseValue));
+    $original=OfferState::decode($t->catalogue_intent);
+    $cases=[
+        'own off'=>[false,true,true,[],'Off'],
+        'own on'=>[true,false,true,[],'On'],
+        'default on'=>[null,true,true,[],'On'],
+        'default off'=>[null,false,true,[],'Off'],
+        'seller off'=>[true,true,false,[],'Off'],
+        'staff stop'=>[true,true,true,['transfer'],'Off'],
+    ];
+    foreach($cases as $name=>[$own,$inherited,$seller,$stops,$expected]){
+        DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_intent'=>OfferState::json([...$original,'transfers'=>$own,'stops'=>$stops])]);
+        DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$defaults,'defaultTransfers'=>$inherited])]);
+        DB::table('domains_sales_policies')->where('tld','com')->update(['transfer_enabled'=>$seller]);
+        same($own,OfferState::decode($t->fresh()->catalogue_intent)['transfers'],'The fixture persists the own transfer choice for '.$name);
+        foreach(['false',0,false,'true',1,true,'null',null] as $databaseValue){
+            $row=Paymenter\Extensions\Servers\Domains\Models\OfferRow::hydrate([['id'=>$t->id,'server_id'=>$t->server_id,'tld'=>'com','longest'=>3,'transfer'=>$databaseValue]])->first();
+            $fields=$edit->invoke($page,$row);$field=collect($fields)->first(fn($f)=>$f->getName()==='transfer');
+            same('Leave as is ('.$expected.')',$field->getOptions()['keep'],'Single-row Transfers uses '.$name.' despite projected '.json_encode($databaseValue));
+        }
     }
 }finally{$probe->setValue(null,null);}
-$nativeSuccessful=true;echo "Transfers keep option agrees across JSON database representations.\n";
+$nativeSuccessful=true;echo "Transfers keep option agrees with saved settings across projected JSON representations.\n";
