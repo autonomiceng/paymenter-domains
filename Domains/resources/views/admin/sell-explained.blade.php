@@ -1,7 +1,7 @@
 @if($explanations !== [])
     <x-filament::section heading="How to read this table" collapsible collapsed>
         <div class="domains-price-help">
-            <p>Each TLD uses Default pricing, or Custom pricing set just for that TLD. Yearly prices are rounded first, then multiplied by the years. Each registrar account page shows its Default pricing and card fee.</p>
+            <p>Each TLD uses Default pricing, or Custom pricing set just for that TLD. Yearly prices are rounded first, then multiplied by the years. Default pricing and the card fee are set here, in Default pricing.</p>
             <div>
                 <dl data-price-notes>
                     <dt>Saved prices</dt><dd>The table shows saved prices. If a price does not match its current rule, save the rule again to update it. Gray 1-year prices are estimates from the cost and the rule.</dd>

@@ -32,7 +32,7 @@ $render=static function($test,string $name,string $extra='')use($out,$css){
     expect(!str_contains($html,'account-enom'),'No synthetic credential');writeRenderArtifact($out.'/'.$name.'.html',$html);
 };
 $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSee(['TLD','Registrar account','Domains','Renewal price','.com']);$render($list,'tlds');
-$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices','Open in What you sell'],false)
+$view=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->assertSee(['Prices by registrar account','History','More','Edit prices'],false)->assertDontSee('Open in What you sell')
     ->assertDontSee(['Publish prices','Use default pricing','Edit default pricing'],false);$render($view,'tld-revisions');
 // The header More menu, opened: its panel is hidden until clicked, so show it for the capture.
 $render($view,'tld-more-menu','.fi-ac .fi-dropdown-panel{display:block!important;position:absolute;right:0;z-index:50}');
@@ -43,7 +43,7 @@ $tldActions=['override','tld_settings','seller'];
 $hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','test_transfer','enroll_sandbox','late_renewal','live_transfer','import'];
 $accountActions=array_values(array_diff(staffSetupActions(),$hiddenAccountActions));
 same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions,staffNoButtonActions())),'Every settings action is placed');
-// tld_settings is a link to What you sell, so it has no dialog to render.
+// tld_settings is saved by Start selling and Stop selling, which are confirms with no form to render.
 foreach(array_intersect_key(Review::ACTIONS,array_flip(array_diff([...$tldActions,...$accountActions],['tld_settings']))) as $action=>$label){
     app()->instance(StaffSettingsWrites::class,in_array($action,['configure','probe'],true)?new StaffSettingsWrites($native,$sellers,$bindings,true):$writer);
     $setup=in_array($action,$accountActions,true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
@@ -71,7 +71,7 @@ $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountActi
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
 // Default pricing lives on What you sell, and its dialog counts the TLDs that follow it.
 $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ticket($u->id,$t->server_id,$t->id,'remove_override',Review::stamp($t->server_id,$t->id)),'Follow the account default again'),[],$now);
-Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Customer pays','Card fee'],false);
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee('Customer pays')->assertDontSee('Card fee');
 $sell=Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class)->mountAction('default_pricing')->call('$refresh');$sees($sell,['2 TLDs use Default pricing.']);$render($sell,'modal-default_pricing');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 same(8,count($strings),'Eight settings modals rendered');

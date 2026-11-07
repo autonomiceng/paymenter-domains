@@ -11,9 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Admin\Resources\TldResource\Pages\ViewT
 tldPanel();pinStaffClock($now);$actor=staffUser(array_keys(Staff::permissions()));Auth::setUser($actor);
 $t=$tlds[0];
 DB::table('domains_tlds')->where('id',$t->id)->update(['catalogue_facts'=>null]);
-$notice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($t->fresh());
-expect(!str_contains($notice,'open Edit prices and save.'),'Unknown registrar facts must not tell staff to re-save a sold TLD');
-expect(str_contains($notice,'Check account setup on Registrar account.'),'Unknown facts on an unavailable account point to account setup');
+same('',\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($t->fresh()),'The TLD page head carries sales, so the notice is for native products only');
 $product=$native->product($t->fresh(),'register');
 expect($product!==null,'The retained sold TLD has its native registration product');
 $nativeNotice=\Paymenter\Extensions\Servers\Domains\Admin\Support\PricingEditorNotice::render($product);

@@ -13,7 +13,7 @@ use Paymenter\Extensions\Servers\Domains\Contracts\Clock;
 use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Price};
 use Paymenter\Extensions\Servers\Domains\Presentation\{AccountStatus,Missing};
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,DomainBilling,EnomLiveActivation,EnomTestManagement,EnomTestRenewal,EnomTestTransfer,NativePaidHooks,NativeServerGuard,NativeServiceRefusal,UnpaidHoldSetting,
-    RenewalBillingSettings,RuntimePorts,WatchWork,CardFee,PricingRules,PricingRule};
+    RenewalBillingSettings,RuntimePorts,WatchWork,PricingRules,PricingRule};
 /** Rows for a registrar account's sections and System checks.
  * A row is {label, value (null = Missing), tone, cause, help, action}; a cause shows under its value.
  * action names a SettingsActions setup action. A value of On or Off shows as a switch. Every row says what it is in help. */
@@ -159,12 +159,11 @@ final class AccountChecklist
     {
         $offers??=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed();
         try{$rule=$offers?->pricing((int)$a->server_id)??(new PricingRules)->defaultRule();$value=ucfirst(PricingRule::describe($rule));}catch(\Throwable){$value=null;}
-        try{$fee=CardFee::describe($offers?->fee((int)$a->server_id)??CardFee::read()).' per payment';}catch(\Throwable){$fee=null;}
+        try { $url=WhatYouSell::getUrl(['account'=>$a->server_id]); } catch (\Throwable) { $url=null; }
+        // Default pricing and the card fee are set in one place, What you sell.
         return [
-            [...self::row('Customer pays',$value,null,$value===null?'Default pricing could not be read. Use Edit to fix it.':'Used by '.$defaults.' '.($defaults===1?'TLD':'TLDs'),null,'The default pricing rule. A TLD can use its own rule instead.'),
-                'edit'=>true,'buttons'=>[SettingsActions::defaultPricing()->name('default_pricing_customer_pays')]],
-            [...self::row('Card fee',$fee,null,$fee===null?'The card fee could not be read. Use Edit to fix it.':null,null,'The estimated fee per payment used by pricing rules that include the card fee.'),
-                'edit'=>true,'buttons'=>[SettingsActions::defaultPricing()->name('default_pricing_card_fee')]],
+            [...self::row('Customer pays',$value,null,$value===null?'Default pricing could not be read. Change it in What you sell.':'Used by '.$defaults.' '.($defaults===1?'TLD':'TLDs'),null,'The default pricing rule. A TLD can use its own rule instead.'),
+                'buttons'=>[Action::make('customer_pays_'.$a->server_id)->label('Change')->link()->size('sm')->url($url)->visible($url!==null)]],
         ];
     }
     /** The TLDs people know first, then a count. The full list is on What you sell. */
