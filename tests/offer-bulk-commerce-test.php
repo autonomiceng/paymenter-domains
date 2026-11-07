@@ -73,6 +73,11 @@ App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['
 \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::reset();
 $offers = new AcquisitionOffers(\Paymenter\Extensions\Servers\Domains\Catalogue\CallerPorts::routed(), $bindings, $native);
 $admission->fixtureOffers = $eligibility->fixtureOffers = $offers;
+$plans = $public['product']->plans()->orderBy('billing_period')->get();
+same(range(1, 10), $plans->pluck('billing_period')->map(static fn ($term) => (int) $term)->all(), 'Projection creates all ten matching native plans');
+$planIds = $plans->pluck('id')->all();
+$ports->apply(Edit::republish($binding, 'com'), $annualRevision());
+same($planIds, $public['product']->plans()->orderBy('billing_period')->pluck('id')->all(), 'Republication retains native plan identities');
 $user = commerceUser(); $cart = commerceCart($user);
 $line = commerceAdd($cart, $public['product'], 'catalogue-placeholder.com', 1);
 foreach (range(2, 10) as $years) {
@@ -80,11 +85,6 @@ foreach (range(2, 10) as $years) {
     $item = commerceAdd($cart, $offer['product'], 'catalogue-term-'.$years.'.com', $years);
     same($expected[$years], number_format((float) $item->price->total, 2, '.', ''), 'Native cart total matches published term '.$years);
 }
-$plans = $public['product']->plans()->orderBy('billing_period')->get();
-same(range(1, 10), $plans->pluck('billing_period')->map(static fn ($term) => (int) $term)->all(), 'Projection creates all ten matching native plans');
-$planIds = $plans->pluck('id')->all();
-$ports->apply(Edit::republish($binding, 'com'), $annualRevision());
-same($planIds, $public['product']->plans()->orderBy('billing_period')->pluck('id')->all(), 'Republication retains native plan identities');
 $token = $line->checkout_config['domains_check']; $before = $reads->calls;
 $admission->refresh(); same($before, $reads->calls, 'Current add receipt survives refresh without another provider read');
 commerceCheckout($user, $cart);
