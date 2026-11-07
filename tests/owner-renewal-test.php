@@ -26,7 +26,7 @@ same(['url'=>route('domains.domains.renew',$d->id),'terms'=>range(1,9),'order_by
 $html=$page($d);
 foreach(['Renew now','>Renew domain<','>Years<','<option value="9"','<option value="1"','Continue to payment','action="'.route('domains.domains.renew',$d->id).'"','name="_request_key"'] as $text){expect(str_contains($html,$text),'Owner form shows '.$text);}
 $renewDom=storefrontDom($html);
-same('Oct 18, 2027 Renew online by Oct 17, 2027.',trim(preg_replace('/\s+/',' ',$renewDom->query('//dialog[@id="edit-renew"]//dl/div[dt="Expires"]/dd')->item(0)?->textContent??'')),'The last online renewal day sits in the dialog Expires row');
+same('Renew online by Oct 17, 2027.',trim($renewDom->query('//dialog[@id="edit-renew"]//dl/div[dt="Expires"]/dd/span[@class="domains-sub"]')->item(0)?->textContent??''),'The last online renewal day sits in the dialog Expires row');
 expect(!str_contains($html,'renew online until'),'No separate unpadded renewal deadline line');
 expect(!str_contains($html,'<option value="10">'),'Term beyond the horizon is not offered');
 same(range(1,10),DomainBilling::terms(new DateTimeImmutable('2027-10-18'),new DateTimeImmutable('2027-10-18T00:00:00Z')),'Horizon admits ten years from expiry day');
