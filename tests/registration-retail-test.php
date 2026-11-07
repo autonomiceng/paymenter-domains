@@ -110,6 +110,7 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         config(['domains.enom_writes.registration' => true, 'domains.enom_writes.renewal' => true]);
         $installedStore = new \Paymenter\Extensions\Servers\Domains\Services\Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
         Cache::flush();
+        same(0, Illuminate\Support\Facades\Artisan::call('domains:price-match'), 'Sends-off upgrade then sends-on passes the read-only native price check');
         $installedSearch = $installedStore->check('installed-upgrade.net');
         same('available', $installedSearch['status'], 'Installed search reopens through normal admission');
         same(array_map(fn ($v) => '$'.$v, $expected), $installedSearch['terms'], 'Installed search offers all upgraded terms');

@@ -206,13 +206,71 @@ final class AcquisitionOffers
     /** Per-invocation display only. Shared evaluator and batched native mapping, never cart authority. */
     public function display(array $endings): array
     {
+        $generation = UpgradeGate::generation(); $result = [];
+        foreach ($this->eligibleRows($endings) as $offer) {
+            extract($offer);
+            if (($mismatch = self::nativePriceMismatch($product, $plan, $price->retail)) !== null) {
+                $day = app(Clock::class)->now()->format('Y-m-d');
+                if (Cache::add('domains.price-mismatch.'.$name.'.'.$price->term.'.'.$day, true, 86400)) {
+                    logger()->warning('Domain acquisition price mismatch; term hidden.',
+                        ['tld' => $name, 'action' => $price->action, 'term' => $price->term,
+                            'catalogue' => $price->retail, 'plan' => $mismatch]);
+                }
+                continue;
+            }
+            $revision = $row->decision->revision;
+            $s = new SaleSelection($name, $b->serverId, $b->registrarKey, $b->fingerprint,
+                $revision->selection, $price->action, $price->term, 'USD', $price->id, $price->revision,
+                ['generation' => $generation, 'credential' => $credential, 'revision' => get_object_vars($revision),
+                    'retail' => $price->retail, 'renewal' => $annual->retail]);
+            $result[$name][$key] = ['selection' => $s, 'product' => $product, 'plan' => $plan,
+                'price' => Storefront::money($price->retail), 'renew' => Storefront::money($annual->retail)];
+        }
+        return $result;
+    }
+
+    /** Catalogue eligibility BEFORE native filtering. Local reads only; no warning/cache writes. */
+    public function priceMatches(?array $endings = null, ?int $serverId = null): array
+    {
+        $result = [];
+        foreach ($this->eligibleRows($endings ?? SalesPolicy::orderBy('tld')->pluck('tld')->all(), $serverId) as $offer) {
+            $price = $offer['price'];
+            $result[] = ['tld' => $offer['name'], 'action' => $price->action, 'term' => $price->term,
+                'catalogue' => $price->retail, 'plan' => $offer['plan']?->id,
+                'mismatch' => self::nativePriceMismatch($offer['product'], $offer['plan'], $price->retail)];
+        }
+        return $result;
+    }
+
+    /** After a feed/publication turn, check only its selected endings; one warning per mismatch. */
+    public function warnPriceMismatches(array $endings, int $serverId): void
+    {
+        foreach ($this->priceMatches($endings, $serverId) as $row) {
+            if ($row['mismatch'] !== null) { logger()->warning('Domain acquisition price mismatch after catalogue publication.', $row); }
+        }
+    }
+
+    private static function nativePriceMismatch(?\App\Models\Product $product, ?\App\Models\Plan $plan, string $retail): ?string
+    {
+        if (!$product || !$plan) { return 'Missing, duplicate or invalid native product/annual plan.'; }
+        if ($product->stock !== null) { return 'Native product has limited stock.'; }
+        $prices = $plan->prices->where('currency_code', 'USD');
+        if ($prices->count() !== 1) { return 'Expected one USD price; found '.$prices->count().'.'; }
+        try {
+            $usd = $prices->sole(); $amount = RetailLine::decimal($usd->price); $setup = RetailLine::decimal($usd->setup_fee);
+            return $amount === $retail && $setup === '0.00' ? null : 'USD '.$amount.'; setup '.$setup.'.';
+        } catch (\DomainException) { return 'Invalid native USD amount or setup fee.'; }
+    }
+
+    /** Evaluate every catalogue-supported acquisition term under the current public gates. */
+    private function eligibleRows(array $endings, ?int $serverId = null): \Generator
+    {
         if (DB::transactionLevel() !== 0) { throw new \LogicException('Display requires unlocked reads.'); }
-        $policies = SalesPolicy::whereIn('tld', $endings)->get();
+        $policies = SalesPolicy::whereIn('tld', $endings)->when($serverId !== null, static fn ($q) => $q->where('server_id', $serverId))->get();
         $ids = $policies->pluck('server_id')->filter()->unique();
         $accounts = Account::whereIn('server_id', $ids)->get()->keyBy('server_id');
         $tlds = Tld::whereIn('server_id', $ids)->whereIn('tld', $endings)->get()->keyBy(static fn ($t) => $t->server_id.':'.$t->tld);
-        $native = $this->native->displayBatch($tlds->all()); $generation = UpgradeGate::generation();
-        $result = [];
+        $native = $this->native->displayBatch($tlds->all());
         foreach ($policies->groupBy('server_id') as $id => $group) {
             try {
                 $b = AccountBindings::binding($accounts[$id]);
@@ -227,23 +285,13 @@ final class AcquisitionOffers
                                 $action = $price->action; $term = $price->term;
                                 $product = $native[$tld->id][$action]['product'] ?? null;
                                 $plan = $native[$tld->id][$action]['plans'][$term] ?? null;
-                                if (!$product || !$plan || $product->stock !== null) { continue; }
-                                $usd = $plan->prices->where('currency_code', 'USD')->sole();
-                                if (RetailLine::decimal($usd->price) !== $price->retail || RetailLine::decimal($usd->setup_fee) !== '0.00') { continue; }
-                                $revision = $row->decision->revision;
-                                $s = new SaleSelection($name, $b->serverId, $b->registrarKey, $b->fingerprint,
-                                    $revision->selection, $action, $term, 'USD', $price->id, $price->revision,
-                                    ['generation' => $generation, 'credential' => $credential, 'revision' => get_object_vars($revision),
-                                        'retail' => $price->retail, 'renewal' => $annual->retail]);
-                                $result[$name][$key] = ['selection' => $s, 'product' => $product, 'plan' => $plan,
-                                    'price' => Storefront::money($price->retail), 'renew' => Storefront::money($annual->retail)];
+                                yield compact('name', 'key', 'b', 'credential', 'row', 'price', 'annual', 'product', 'plan');
                             } catch (\Throwable) { /* This ending/term is unavailable; keep healthy siblings. */ }
                         }
                     }
                 }
             } catch (\Throwable) { /* Missing/disabled/invalid account withdraws only its own endings. */ }
         }
-        return $result;
     }
 
     private function load(array $selections, bool $locked, bool $expected): array
