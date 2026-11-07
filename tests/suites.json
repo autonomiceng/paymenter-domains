@@ -707,7 +707,8 @@
     "tests/test_installed_dns_connection-test.php",
     "tests/staff-tld-review-test.php",
     "tests/watch-guidance-review-test.php",
-    "tests/eligibility-refusal-cache-test.php"
+    "tests/eligibility-refusal-cache-test.php",
+    "tests/watch-list-guidance-test.php"
   ],
   "ui": [],
   "runner": [
