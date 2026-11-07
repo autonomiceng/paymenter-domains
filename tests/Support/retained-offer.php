@@ -49,9 +49,10 @@ function retainedNativeRetailMismatches(): array
 {
     $setting=static fn(int $product,string $key)=>DB::table('settings')->where('settingable_type',App\Models\Product::class)
         ->where('settingable_id',$product)->where('key',$key)->value('value');
-    $wrong=[];
-    foreach(DB::table('prices')->join('plans','plans.id','=','prices.plan_id')->orderBy('prices.id')
-        ->get(['prices.id','prices.price','plans.priceable_id','plans.billing_period','plans.billing_unit']) as $row){
+    $wrong=[];$rows=DB::table('prices')->join('plans','plans.id','=','prices.plan_id')->orderBy('prices.id')
+        ->get(['prices.id','prices.price','plans.priceable_id','plans.billing_period','plans.billing_unit']);
+    expect($rows->isNotEmpty(),'Native plan prices exist to compare');
+    foreach($rows as $row){
         same('year',$row->billing_unit,'Domain plans bill in years');
         $tld=DB::table('domains_tlds')->find((int)$setting((int)$row->priceable_id,'domains_tld_id'));
         $retail=DB::table('domains_prices')->where('server_id',$tld->server_id)->where('tld',$tld->tld)
