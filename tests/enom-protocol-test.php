@@ -60,6 +60,7 @@ $twoErrors=str_replace(['<ErrCount>1</ErrCount>','</errors>'],['<ErrCount>2</Err
 same('rejected',$parser->parse(RegistrationCommand::Purchase,$twoErrors)->status,'Multiple consistent errors retain explicit order-creation refusal');
 
 foreach ([str_replace(['<Err1>','</Err1>'],['<Err2>','</Err2>'],$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchaseRefusal),
+    str_replace('<RRPCode>541</RRPCode>','<RRPCode>549</RRPCode>',$purchaseRefusal),str_replace('<RRPCode>541</RRPCode>','<RRPCode>554</RRPCode>',$purchaseRefusal),
     str_replace('<RRPCode>541</RRPCode>','',$purchaseRefusal),
     str_replace('<ErrCount>1</ErrCount>','<ErrCount>0</ErrCount>',$purchaseRefusal),
     str_replace('Validation error. Failed to create order.','Validation error. Order status unknown.',str_replace('Validation error; failed to add; order(s)','Order pending',$purchaseRefusal)),
