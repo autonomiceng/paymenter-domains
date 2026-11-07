@@ -13,7 +13,7 @@ $status=fn($actor=null)=>$controller->orderStatus($req($d,[],$actor),$d->id);
 $pending=$status()->getData(true);
 same(true,$pending['pending'],'Registration status polls while pending');
 expect(str_contains($page($d),'data-domain-order-poll'),'Pending domain page starts its status reader');
-try{$status($other);expect(false,'Another customer cannot read order status');}catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){same(404,$e->getStatusCode(),'Order status is owner scoped');}
+try{$status($other);expect(false,'Another customer cannot read order status');}catch(\Illuminate\Database\Eloquent\ModelNotFoundException $e){same(\Paymenter\Extensions\Servers\Domains\Models\Domain::class,$e->getModel(),'Order status is owner scoped');}
 same('succeeded',$reconcile->run($op->id)->state,'Local registration fixture completes');
 $complete=$status()->getData(true);
 same(false,$complete['pending'],'Polling stops when registration completes');
