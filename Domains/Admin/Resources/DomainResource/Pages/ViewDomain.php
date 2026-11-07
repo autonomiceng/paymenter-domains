@@ -280,7 +280,7 @@ class ViewDomain extends ViewRecord
             ->modalHeading('Complimentary renewal')->modalSubmitActionLabel('Confirm complimentary renewal')->modalWidth('3xl')->modalFooterActionsAlignment(\Filament\Support\Enums\Alignment::End)
             ->schema(function()use($d):array {
                 try{$options=app(\Paymenter\Extensions\Servers\Domains\Services\RenewalCycles::class)->complimentaryOptions((int)$d->id,Auth::user());}catch(\Throwable){$options=['terms'=>[]];}
-                $terms=self::complimentaryTerms($d);
+                $terms=self::complimentaryTerms($d);$company=\Paymenter\Extensions\Servers\Domains\Dns\DnsSignalLabels::company();
                 // The domain's linked service owns its displayed annual price, even when owner requests are closed.
                 try{$service=$d->service;$annual=$service?->currency_code==='USD'?\Paymenter\Extensions\Servers\Domains\Services\PriceCatalogue::retail((string)$service->price):null;}catch(\Throwable){$annual=null;}
                 $term=fn(\Filament\Schemas\Components\Utilities\Get $get)=>$terms[(int)$get('years')]??null;
@@ -289,7 +289,7 @@ class ViewDomain extends ViewRecord
                     \Filament\Forms\Components\Select::make('years')->label('Years')->inlineLabel()->options(array_combine(array_keys($terms),array_map(fn($t)=>$t['years'].' '.($t['years']===1?'year':'years'),$terms)))->default(array_key_first($terms))->required()->live(),
                     \Filament\Schemas\Components\Html::make(fn(\Filament\Schemas\Components\Utilities\Get $get)=>view('domains::admin.renewal-facts',['facts'=>[
                         'New expiry'=>['value'=>isset($term($get)['expiry'])?\Carbon\CarbonImmutable::parse($term($get)['expiry'])->format('M j, Y'):'Missing','sub'=>'Up to '.($options['max_years']??0).(($options['max_years']??0)===1?' added year fits before ':' added years fit before ').(isset($options['horizon'])?\Carbon\CarbonImmutable::parse($options['horizon'])->format('M j, Y'):'the registration horizon').'.'],
-                        'Total'=>['value'=>'$0.00','sub'=>isset($term($get)['cost'])?'Beco covers the $'.number_format((float)$term($get)['cost'],2,'.','').' registrar renewal cost.':'Missing. Sync prices before renewing.'],
+                        'Total'=>['value'=>'$0.00','sub'=>isset($term($get)['cost'])?($company!==''?$company.' covers':'We cover').' the $'.number_format((float)$term($get)['cost'],2,'.','').' registrar renewal cost.':'Missing. Sync prices before renewing.'],
                         'Next annual renewal'=>['value'=>$annual===null?'Missing':('$'.$annual.' / year'),'sub'=>'Renewal invoices stay annual. Renewal prices may change.'],
                     ]]))];
             })->action(function(array $data)use($d):void {
