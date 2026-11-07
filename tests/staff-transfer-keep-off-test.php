@@ -40,6 +40,8 @@ try{
         DB::table('domains_accounts')->where('server_id',$binding->serverId)->update(['catalogue_defaults'=>OfferState::json([...$defaults,'defaultTransfers'=>$inherited])]);
         DB::table('domains_sales_policies')->where('tld','com')->update(['transfer_enabled'=>$seller]);
         same($own,OfferState::decode($t->fresh()->catalogue_intent)['transfers'],'The fixture persists the own transfer choice for '.$name);
+        // A fresh request reads the changed account default; one page deliberately caches it for its render.
+        $page=new Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell;
         foreach(['false',0,false,'true',1,true,'null',null] as $databaseValue){
             $row=Paymenter\Extensions\Servers\Domains\Models\OfferRow::hydrate([['id'=>$t->id,'server_id'=>$t->server_id,'tld'=>'com','longest'=>3,'transfer'=>$databaseValue]])->first();
             $fields=$edit->invoke($page,$row);$field=collect($fields)->first(fn($f)=>$f->getName()==='transfer');
