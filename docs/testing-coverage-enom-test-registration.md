@@ -1,5 +1,12 @@
 # Enom TEST registration coverage
 
+`tests/registration-enom-configured-nameservers-test.php` sends the nameservers frozen at checkout
+in Purchase, without `UseDNS=default`, even if the site template later changes. Its synthetic
+response captures an order without expiry and permits no immediate nameserver follow-up. Read-only proof completes
+the original registration without a mismatch warning, another Purchase or a native financial change.
+No configured nameservers still selects registrar defaults; confirmed mismatches retain correction work.
+These offline checks do not establish provider acceptance.
+
 ## Deployment settings
 
 The registration key is deployment configuration only; it has no staff toggle. The following values illustrate the

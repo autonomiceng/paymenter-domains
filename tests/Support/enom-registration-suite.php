@@ -30,7 +30,12 @@ $exchange = static function ($origin, $command, $parameters, $timeout) use ($reg
     $registration->calls[] = $command;
     if ($command === 'Purchase') {
         $registration->purchases[] = $parameters;
-        same('default', $parameters['UseDNS'], 'Purchase on default DNS'); expect(!isset($parameters['NS1']), 'Follow-up separate');
+        if ($registration->mode === 'defaultdns') {
+            same('default', $parameters['UseDNS'], 'An unconfigured purchase uses registrar defaults'); expect(!isset($parameters['NS1']), 'No custom nameservers without setup');
+        } else {
+            expect(!isset($parameters['UseDNS']), 'Configured purchase does not request registrar defaults');
+            expect(isset($parameters['NS1'], $parameters['NS2']), 'Configured purchase includes nameservers');
+        }
         same(0, $parameters['RenewName'], 'Provider renewal off'); same('no', $parameters['UseCreditCard'], 'Account funds only');
         expect(isset($parameters['AuxBillingFirstName']), 'Frozen four-role casing');
         if ($registration->mode === 'authority') {

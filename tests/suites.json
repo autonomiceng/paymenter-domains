@@ -123,6 +123,7 @@
     "tests/write-boundary-test.php",
     "tests/write-preflight-test.php",
     "tests/registration-enom-test.php",
+    "tests/registration-enom-configured-nameservers-test.php",
     "tests/registration-enom-outcomes-test.php",
     "tests/registration-enom-recovery-test.php",
     "tests/registration-enom-dns-test.php",

@@ -54,7 +54,9 @@ $registration->query=\Paymenter\Extensions\Servers\Domains\Services\OperationCla
 $result=$engine->execute($op->id);same('pending',$result->state,'Default registration reaches financial observation: '.$result->safe_code);$assertRetained($result,[]);
 if($binding->registrarKey==='enom'){
     same(['Purchase','ModifyNS','GetDNS'],$registration->calls,'Template reuses the existing post-purchase nameserver path');
-    same(['default','No'],[$purchaseWire['Purchase']['UseDNS'],$purchaseWire['Purchase']['IgnoreNSFail']],'Purchase keeps registrar defaults and IgnoreNSFail unchanged');
+    expect(!isset($purchaseWire['Purchase']['UseDNS']),'Configured purchase does not request registrar defaults');
+    same('No',$purchaseWire['Purchase']['IgnoreNSFail'],'Purchase keeps nameserver validation enabled');
+    same($template->nameservers,[$purchaseWire['Purchase']['NS1'],$purchaseWire['Purchase']['NS2']],'Enom receives the template at Purchase');
     same($template->nameservers,[$purchaseWire['ModifyNS']['NS1'],$purchaseWire['ModifyNS']['NS2']],'Enom receives the template in ModifyNS');
 }else{same($template->nameservers,[$purchaseWire['registerDomain']['ns1'],$purchaseWire['registerDomain']['ns2']],'NameSilo receives the template at purchase');}
 $op=$binding->registrarKey==='enom'?$new('template-choice.example.com'):$nsNew(placeholderComFixtureName('template-choice-placeholder.com'));
