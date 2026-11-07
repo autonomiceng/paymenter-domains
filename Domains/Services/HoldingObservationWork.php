@@ -8,6 +8,13 @@ use Paymenter\Extensions\Servers\Domains\Models\{Account,Domain,Operation};
 /** Shared bounded holding portion. Only its owner selects and advances account turns. */
 final class HoldingObservationWork
 {
+    /** Called under the holding locks when registration or transfer becomes active. Never replaces existing work. */
+    public static function queueInitial(Domain $d, \DateTimeImmutable $now): void
+    {
+        if ($d->status!=='active'||!Schema::hasTable('domains_observation_work')) { return; }
+        DB::table('domains_observation_work')->insertOrIgnore(['server_id'=>$d->server_id,'account_fingerprint'=>$d->account_fingerprint,
+            'domain_id'=>$d->id,'generation'=>$d->authority_generation,'phase'=>self::phase($d),'due_at'=>$now->getTimestamp()]);
+    }
     /** Only the current binding, generation and follow-up phase can stop this holding. */
     public static function stopped(Domain $d): bool
     {

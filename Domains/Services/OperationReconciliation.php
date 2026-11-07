@@ -169,6 +169,7 @@ final class OperationReconciliation
                 'provider_domain_id' => $proof['provider_domain_id'], 'confirmed_revision' => $domain->confirmed_revision + 1,
                 'renewal_policy' => [...($domain->renewal_policy ?? []), 'billing_anchor' => ['expiry' => $proof['expiry'], 'operation_key' => $op->operation_key]],
                 'observation' => ObservationProjection::acquired($domain, $op->operation_key, $nameservers), 'last_synced_at' => $this->clock->now()]);
+            HoldingObservationWork::queueInitial($domain,$this->clock->now());
             ComplimentaryInvoices::complete($op);
             return $op;
         });

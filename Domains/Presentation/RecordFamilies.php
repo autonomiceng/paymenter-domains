@@ -26,6 +26,9 @@ final class RecordFamilies
                 $section['fixed']=[...array_values(array_filter($section['fixed']??[],fn($r)=>($r['type']??null)!=='CAA')),...array_map(fn($r)=>['name'=>$r['name'],'type'=>'CAA','address'=>$r['value'],'ttl'=>$r['ttl']],$facts['caa'])];}
             $management[$key]=$section;
         }
+        if (($facts['initial_read_pending']??false)&&($facts['settings']['flags']['state']??null)!=='complete') {
+            foreach (['lock','privacy'] as $key) { if (isset($management[$key])) { $management[$key]['state']=null; } }
+        }
         return new OwnedDomain(...[...get_object_vars($page),'management'=>$management]);
     }
     public static function read(Domain $d,\DateTimeImmutable $now): array
