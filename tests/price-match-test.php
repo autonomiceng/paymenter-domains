@@ -57,7 +57,7 @@ foreach (['cache', 'logger'] as $failure) {
     if ($failure === 'cache') { $add->andThrow(new RuntimeException('Synthetic warning cache failure.')); }
     else { $add->andReturn(true); }
     Cache::swap($diagnosticCache);
-    $diagnosticLog = Mockery::mock();
+    $diagnosticLog = Mockery::mock(Psr\Log\LoggerInterface::class);
     if ($failure === 'logger') {
         $diagnosticLog->shouldReceive('warning')->once()->andThrow(new RuntimeException('Synthetic warning logger failure.'));
     }
@@ -67,6 +67,8 @@ foreach (['cache', 'logger'] as $failure) {
         same(['register:1'], array_keys($display['net']), $failure.' failure preserves the healthy term and hides drift');
         same(1, $tester->execute([]), $failure.' failure does not change the command mismatch exit');
     } finally { Cache::swap($cache); Log::swap($log); }
+    $diagnosticCache->shouldHaveReceived('add')->once();
+    if ($failure === 'logger') { $diagnosticLog->shouldHaveReceived('warning')->once(); }
 }
 DB::table('prices')->where('id', $longPrice->id)->update(['price' => $longPrice->price]);
 // Missing/duplicate plans and missing/duplicate USD rows must not disappear from the checked set.
@@ -115,6 +117,30 @@ Log::shouldHaveReceived('warning')->with('Domain acquisition price mismatch afte
 same($calls, $reads->calls, 'End-of-publication check makes no provider calls');
 same(0, $feedCalls, 'Buffered publication and its check never resolve another provider feed');
 same('0.01', number_format((float) $orgPrice->fresh()->price, 2, '.', ''), 'Untouched ending remains unchanged');
+// A real touched publication must retain its result and saved queue state when its warning fails.
+$queue = DB::table('domains_observation_queues')->where('server_id', $b->serverId);
+$work = OfferState::decode($queue->value('offer_work'));
+$work['pending'] = [['tld' => 'net', 'costs' => $costs]];
+$queue->update(['offer_work' => OfferState::json($work)]);
+DB::table('prices')->where('id', $longPrice->id)->update(['price' => '0.02']);
+$diagnosticLog = Mockery::mock(Psr\Log\LoggerInterface::class);
+$diagnosticLog->shouldReceive('warning')->with('Domain acquisition price mismatch after catalogue publication.',
+    Mockery::on(fn ($row) => $row['tld'] === 'net' && $row['term'] === 3))->once()
+    ->andThrow(new RuntimeException('Synthetic publication logger failure.'));
+Log::swap($diagnosticLog);
+try {
+    same('worked', $worker->accountTurn($b->serverId), 'Publication logger failure preserves the completed turn result');
+} finally { Log::swap($log); }
+$diagnosticLog->shouldHaveReceived('warning')->once();
+$saved = $queue->first(); $savedWork = OfferState::decode($saved->offer_work);
+same([], $savedWork['pending'], 'Publication logger failure preserves the drained buffer');
+same($work['feed_due'], $savedWork['feed_due'], 'Publication logger failure preserves the feed deadline');
+same(null, $saved->offer_claim, 'Publication logger failure preserves the released claim');
+same(0, (int) $saved->offer_lease, 'Publication logger failure preserves the released lease');
+expect(!isset($savedWork['local_failure']), 'Publication logger failure does not record a feed failure');
+same(number_format((float) $longPrice->price, 2, '.', ''),
+    number_format((float) $longPrice->fresh()->price, 2, '.', ''), 'The touched native price was really published');
+same(0, $feedCalls, 'Publication logger failure never starts another provider feed');
 DB::statement('DROP TRIGGER drift_native_price');
 DB::table('prices')->where('id', $longPrice->id)->update(['setup_fee' => '0.00']);
 DB::table('prices')->where('id', $orgPrice->id)->update(['price' => $orgPrice->price]);
