@@ -26,7 +26,9 @@ final class Planner
         foreach(DB::table('enom_tlds')->orderBy('id')->get()as$t){$t=(array)$t;$b=$this->bindings[$t['server_id']]['binding']??throw new \DomainException('Unbound catalogue.');
             $this->put('domains_tlds',$t['id'],[...$t,'registrar_key'=>'enom','account_fingerprint'=>$b->fingerprint,'enabled'=>false,'register_enabled'=>false,'transfer_enabled'=>false]);
             if(isset($names['tld:'.$t['tld']])){throw new \DomainException('Choose one legacy seller per ending before conversion.');}$names['tld:'.$t['tld']]=true;
-            $this->put('domains_sales_policies',$t['id'],['id'=>$t['id'],'tld'=>$t['tld'],'server_id'=>$t['server_id'],'registrar_key'=>'enom','account_fingerprint'=>$b->fingerprint,'revision'=>1,'register_enabled'=>false,'transfer_enabled'=>false]);
+            // The accepted account review is a stable conversion selection time across plan/replay.
+            $selectedAt=gmdate('Y-m-d H:i:s',$this->evidence['accounts'][(string)$t['server_id']]['accepted_at']);
+            $this->put('domains_sales_policies',$t['id'],['id'=>$t['id'],'tld'=>$t['tld'],'server_id'=>$t['server_id'],'registrar_key'=>'enom','account_fingerprint'=>$b->fingerprint,'revision'=>1,'register_enabled'=>false,'transfer_enabled'=>false,'created_at'=>$selectedAt,'updated_at'=>$selectedAt]);
             $this->prices($t,$b);
         }
         foreach($domains as $d){$d=(array)$d;$canonical=CanonicalName::parse($d['domain'],[$d['tld']]);

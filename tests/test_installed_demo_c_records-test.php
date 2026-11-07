@@ -24,7 +24,7 @@ $check($state['stale'],'Older than one day is stale');
 $owned=new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(name:$d->domain,status:'Active',tone:'ok',expiry:'2027-11-20',renewal:'On',renewalPrice:'$14.00',actions:['show'=>'/domains/1'],progress:[],setup:[],transfer:[],management:[],testEnvironment:false);
 $page=RecordFamilies::owner($owned,$state);
 $html=view('domains::partials.owner-management',['domain'=>$page])->render();
-foreach(['Complete','Partial','Unknown','Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
+foreach(['Complete','Partial','Missing','Unsupported','CAA','3600','Read-only','Checked'] as $text){$check(str_contains($html,$text),'Customer sees '.$text);}
 $check(str_contains($html,'aria-label="DNS records"')&&str_contains($html,'TTL'),'CAA is in the DNS records table');
 $caaDom=storefrontDom($html);
 $same(1,$caaDom->query('//tr[td[normalize-space(.)="CAA"]]')->length,'The real DNS table contains the CAA row');
@@ -34,13 +34,13 @@ $editHtml=view('domains::partials.owner-dns',['domain'=>$page,'section'=>$sectio
 $same(1,$editDom->query('//table[contains(@class,"domains-records")]')->length,'Editable and fixed DNS rows share one table');
 $same(1,$editDom->query('//tr[td[normalize-space(.)="CAA"] and td[normalize-space(.)="3600"]]')->length,'The shared DNS table keeps the CAA TTL');
 $same(0,$editDom->query('//tr[td[normalize-space(.)="CAA"]]//input | //tr[td[normalize-space(.)="CAA"]]//button')->length,'The CAA sibling has no mutation controls');
-$check(!str_contains($html,'call limit')&&!str_contains($html,'Resume refresh'),'Customer has no staff recovery chore');
+$check(!str_contains($html,'call limit')&&!str_contains($html,'Resume refresh')&&!str_contains($html,'Resume sync'),'Customer has no staff recovery chore');
 $s=$d->observation;$s['records']['settings']['contacts']=['state'=>'partial','facts'=>['registrant'=>['first_name'=>'Test']]];$s['records']['last_complete_at']='2026-11-03T09:00:00+00:00';$s['record_hold']=['identity'=>ObservationRecords::identity($d),'reason'=>'budget_exhausted','family'=>'dns'];$d->observation=$s;
 $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-families',['recordFamilies'=>$state,'staff'=>true])->render();
 $check(str_contains($html,'Registrant returned; some contacts did not.'),'Staff names the returned contact role');
 $check(str_contains($html,'Refresh contacts before editing.'),'Staff gets a contacts-specific next step');
 $check(str_contains($html,'Last complete read:'),'Staff sees the last complete timestamp');
-$check(str_contains($html,'Failed family: dns')&&str_contains($html,'Resume refresh'),'Staff sees failed family and resume step');
+$check(str_contains($html,'Failed family: dns')&&str_contains($html,'No read queued.'),'Staff sees failed family and the absence of queued read work');
 $check(str_contains($html,RecordFamilies::EVIDENCE),'Staff sees public versus registrar evidence distinction');
 $s=$d->observation;$s['records']['families']['dns']=['state'=>'unknown','records'=>[],'last_good'=>['at'=>'2026-11-03T09:00:00+00:00','records'=>$record['families']['dns']['records']]];$d->observation=$s;
 $state=RecordFamilies::read($d,$now);$html=view('domains::partials.record-families',['recordFamilies'=>$state])->render();
@@ -73,8 +73,8 @@ $unknown=new Domain(['domain'=>'example.com','registrar_key'=>'enom','server_id'
 $unreadManagement=$existing;foreach(['dns','srv','ds'] as $key){$unreadManagement[$key]['records']=null;$unreadManagement[$key]['actions']=[];}
 $unread=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$unreadManagement]),RecordFamilies::read($unknown,$now));
 $unreadHtml=view('domains::partials.owner-management',['domain'=>$unread,'caps'=>['dns','srv','ds'],'keys'=>array_fill_keys(['dns','srv','ds','ds_delete'],str_repeat('b',64))])->render();
-$check(!str_contains($unreadHtml,'Contact support to sync')&&!str_contains($unreadHtml,'domains-missing'),'Unknown registrar families show checking without a red Missing or support chore');
-$check(str_contains($unreadHtml,'checking'),'Unknown family keeps its checking explanation');
+$check(!str_contains($unreadHtml,'Contact support to sync')&&str_contains($unreadHtml,'domains-missing'),'Unqueued unknown registrar families show Missing without a support chore');
+$check(str_contains($unreadHtml,'No registrar read is queued for this family.'),'Unknown family explains the absence of queued read work');
 // Partial glue discovery must keep a separately authorized per-host addition.
 $glueFacts=RecordFamilies::read($d,$now);
 $glueFacts['current_read']=true;
@@ -92,4 +92,32 @@ $saved['record_reads']=[['identity'=>ObservationRecords::identity($newer),'actio
 $latest=RecordFamilies::owner($editable,RecordFamilies::read($newer,$now));
 $same('192.0.2.99',$latest->management['dns']['inventory'][0]['address']??null,'Visible inventory uses the newer confirmed DNS readback');
 expect($failures===[],implode("; ",$failures));
+// Enom partial glue is a bounded known-host check, not a promise of enumeration.
+$enom=clone $d;$enom->registrar_key='enom';$r=$record;$r['capability_revision']='enom-records-1';$r['identity']=ObservationRecords::identity($enom);$r['families']['glue']['candidates']=['ns1.orbit-example.com','ns2.orbit-example.com'];$enom->observation=['records'=>$r];
+$g=array_column(RecordFamilies::read($enom,$now)['rows'],null,'kind')['glue'];
+expect(str_contains($g['staff'],"Known glue checked; this registrar can't list every child host"),'Enom known glue explains bounded coverage');
+expect(str_contains($g['staff'],'2 known child hosts')&&$g['at']==='2026-11-04T09:00:00+00:00','Coverage and checked time shown');
+expect(!str_contains($g['staff'],'some did not')&&!str_contains($g['staff'],'Sync this domain before editing'),'Impossible glue prerequisite removed');
+$safe=$existing;$safe['glue']['actions']=['glue_add'=>'/add','glue_update'=>'/update','glue_delete'=>'/delete','glue'=>'/replace'];
+$projected=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$safe]),RecordFamilies::read($enom,$now));
+same(['glue_add','glue_update','glue_delete'],array_keys($projected->management['glue']['actions']),'Partial glue preserves individual controls and blocks whole-list replacement');
+// NameSilo partial glue still blocks update/delete; a separately authorized Add is covered above.
+$namesiloFacts=RecordFamilies::read($d,$now);$namesiloSafe=$safe;unset($namesiloSafe['glue']['actions']['glue_add']);
+$namesilo=RecordFamilies::owner(new Paymenter\Extensions\Servers\Domains\Presentation\OwnedDomain(...[...get_object_vars($owned),'management'=>$namesiloSafe]),$namesiloFacts);
+$reviewFailures=[];if($namesilo->management['glue']['actions']!==[]){$reviewFailures[]='NameSilo partial glue gained individual controls';}
+$customer=view('domains::partials.record-families',['recordFamilies'=>RecordFamilies::read($enom,$now)])->render();
+$dom=storefrontDom($customer);
+if($dom->query('//dd[span[@data-record-family="glue"]]//time[@data-domains-time and @datetime="2026-11-04T09:00:00+00:00"]')->length!==1){$reviewFailures[]='Customer glue lacks one local formatted date';}
+if(str_contains($customer,'whole-list replacement')||str_contains($customer,'preflight')){$reviewFailures[]='Customer glue contains staff-only words';}
+expect($reviewFailures===[],implode('; ',$reviewFailures));
+// Cancellation alone never proves no send. Reuse the engine's terminal no-send proof.
+$cancelled=clone $enom;$cancelled->status='cancelled';$cancelled->observation=[];$cancelled->service_id=1;
+$op=new Paymenter\Extensions\Servers\Domains\Models\Operation(['domain_id'=>$cancelled->id,'service_id'=>1,'server_id'=>$cancelled->server_id,'registrar_key'=>'enom','account_fingerprint'=>$cancelled->account_fingerprint,'authority_generation'=>1,'action'=>'register','funding_basis'=>'paid_invoice','state'=>'rejected','safe_code'=>'acquisition_cancelled_unpaid','completed_at'=>$now,'funding'=>[],'cost'=>[],'policy'=>[]]);
+$op->attempt=Paymenter\Extensions\Servers\Domains\Services\UnpaidAcquisitionProof::attempt($op);$cancelled->setRelation('operations',collect([$op]));
+$facts=RecordFamilies::read($cancelled,$now);$cancelHtml=view('domains::partials.record-families',['recordFamilies'=>$facts,'staff'=>true])->render();
+expect(str_contains($cancelHtml,'Registration cancelled; no registrar records to check')&&!str_contains($cancelHtml,'Sync this domain'),'No-send cancellation has no fictional inventory');
+$op->attempt=['seal'=>'sealed','send_state'=>'possibly_sent'];
+expect(!str_contains(json_encode(RecordFamilies::read($cancelled,$now)),'Registration cancelled; no registrar records to check'),'Possible send cannot use cancellation explanation');
+$cancelled->observation=['records'=>$r];
+expect(RecordFamilies::read($cancelled,$now)['at']!==null,'Cancellation preserves real historical inventory');
 $nativeSuccessful=true;echo "Demo C record-family UI passed.\n";

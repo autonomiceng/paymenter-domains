@@ -22,7 +22,7 @@ final class AccountChecklist
     /** The worker runs every minute; no run for this long means it stopped. */
     public const WORKER_STALE_SECONDS=900;
     public const TRANSFER_LABEL='Transfers (Experimental)';
-    private const PRICES='When this account last read its costs from the registrar. Use Sync prices to read them again.';
+    private const PRICES='The last successful registrar price refresh and the next due time. Sync prices is an optional retry.';
     private const PAYMENTS='Starts domain orders when an invoice is paid. If it fails, restart the queue worker.';
     private const EDITOR='Adds the domain fields and warnings to Paymenter’s service page. If it fails, update Paymenter or Domains.';
     private const WORKER='Runs background work every minute: sending orders, retries and domain checks. If it stops, start the scheduler and the queue worker.';
@@ -178,16 +178,16 @@ final class AccountChecklist
         if($binding===null){return [...self::row('TLD prices',null,null,'Restore the API connection first.',null,self::PRICES),'buttons'=>[]];}
         if ($offers=\Paymenter\Extensions\Servers\Domains\Catalogue\StaffCatalogue::routed()) {
             $status=$offers->progress((int)$a->server_id);
-            return [...self::row('TLD prices',ucfirst($status['state']),null,null,null,self::PRICES),'buttons'=>self::priceButtons($a)];
+            return [...self::row('TLD prices',ucfirst($status['state']),null,TldFacts::refreshText($status),null,self::PRICES),'buttons'=>self::priceButtons($a)];
         }
         $failure=TldFacts::syncFailure((int)$a->server_id);
         if ($failure!==null) {
             $at=$failure['at']===null?'':', '.$failure['at'];
-            $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Fix the connection or our call limit, then use Sync prices. Daily retries continue.',null,self::PRICES);
+            $row=self::row('TLD prices','Sync failed','danger',$failure['cause'].$at.'. Check the saved failure cause. Sync prices is an optional retry.',null,self::PRICES);
             return [...$row,'buttons'=>self::priceButtons($a)];
         }
         $synced=RegistrarFacts::lastSync((int)$a->server_id);
-        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'Not synced yet. Use Sync prices.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
+        return [...self::row('TLD prices',$synced?'OK':null,$synced?'success':null,$synced?Sheet::moment($synced,'Synced'):'No successful price refresh recorded. Check the account runtime and scheduled refresh. Sync prices is an optional retry.',null,self::PRICES),'buttons'=>self::priceButtons($a)];
     }
     /** Sync covers every TLD of the account at once. Staff who can't sync can still open the TLD list. */
     private static function priceButtons(Account $a): array
@@ -226,6 +226,11 @@ final class AccountChecklist
                 $rows[]=[...self::row(($unknown?'Unknown term range ':'').'.'.$t->tld,$terms[1],null,$terms[2],null,'Registration terms confirmed for this TLD. Review the current registry rules in Edit terms.'),'buttons'=>[Sheet::link('terms_'.$t->id,$unknown?'Review TLD rules':'Edit terms',WhatYouSell::getUrl(['account'=>$server,'tld'=>$t->tld]))]];
             }
         }catch(\Throwable){/* Current setup remains visible when term facts cannot be read. */}
+        $terms=TldTerms::summary($server);$attention=count($terms['attention']);
+        try{$url=TldResource::getUrl('index',['filters'=>['server_id'=>['value'=>(string)$server],'needs_attention'=>['isActive'=>true]]]);}catch(\Throwable){$url=null;}
+        $rows[]=[...self::row('Selected TLD terms',$terms['read'].' of '.$terms['total'].' read',$attention?'danger':null,
+            $attention.' need attention. Review current registrar terms on the TLD list.'),
+            'buttons'=>[Sheet::link('selected_terms','View TLDs needing attention',$url)]];
         $rows[]=self::row('Scheduled renewals','1 year',null,null,null,'Scheduled renewal invoices remain annual.');
         $rows[]=ReminderFacts::emails($server);
         if(($schedule=ReminderFacts::scheduleRow($server))!==null){$rows[]=$schedule;}
@@ -245,7 +250,7 @@ final class AccountChecklist
             $paid['Paymenter payment events']!=='Available'=>self::row('Payment events',null,'danger','Service listeners are missing. Restart the queue worker.',null,self::PAYMENTS),
             $paid['Start after payment']!=='Available'=>self::row('Payment events','Delayed','warning',null,null,'Paid orders start on the next scheduled run. Restart the queue worker to fix it.'),
             default=>self::row('Payment events','OK',null,'Paid orders start right away.',null,self::PAYMENTS)}];
-        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning',self::creditsCause(),null,'Paymenter returns refundable domain payments as credit. Enable Credits so customers can see and use their balance.');}
+        if(!config('settings.credits_enabled',false)){$checks[]=self::row('Customer credits','Off','warning',self::creditsCause(),null,'A refund may return to the original payment method when the gateway supports it; otherwise it is recorded as account credit. Turning Credits off hides the page; it does not mean a refund failed.');}
         $editor=NativeEditorNotice::missing();
         $checks[]=$editor===null?self::row('Domain editor','OK',null,'This Paymenter version works with it. Each registrar account has its own switch.',null,self::EDITOR):self::row('Domain editor',null,'danger','Update Paymenter or Domains.',null,'Paymenter is missing '.$editor.'.');
         if (($missing=PricingEditorNotice::missing())!==null) { $checks[]=self::row('Pricing change warning',null,'danger','Update Paymenter or Domains. Until then, check each TLD is still for sale after a price change.',null,'Paymenter is missing '.$missing.'.'); }
@@ -259,7 +264,7 @@ final class AccountChecklist
     /** The way to Settings, for staff who can open it. */
     private static function creditsCause(): string|HtmlString
     {
-        $hidden='Refunds stay on the balance, but the Credits page is hidden.';
+        $hidden='Customer credits are off. Refunds issued as credit go to the customer account balance; the Credits page is hidden.';
         try { $url=Settings::canAccess()?Settings::getUrl():null; } catch (\Throwable) { $url=null; }
         return $url?new HtmlString(e($hidden).' <a class="fi-link domains-link" href="'.e($url).'">Turn on Credits in Settings</a>'):$hidden.' Turn on Credits in Settings.';
     }
@@ -273,9 +278,12 @@ final class AccountChecklist
     /** Per-account check: the site must supply the registrar runtime. */
     public static function runtime(Account $a): array
     {
-        $help='Checks this site has what it needs to work with this registrar account. If it fails, ask your site admin.';
-        return app(RuntimePorts::class)->registered($a)?self::row('Site setup','OK',null,'Ready for this registrar.',null,$help)
-            :self::row('Site setup',null,'danger','Not set up on this site. Registrations, transfers, renewals and DNS changes stay off. Ask your site admin.',null,$help);
+        $help='Checks this site can compose the authenticated registrar connection.';
+        if(app(RuntimePorts::class)->registered($a)){return self::row('Site setup','OK',null,'Ready for this registrar.',null,$help);}
+        $cause=\Paymenter\Extensions\Servers\Domains\Services\NameSiloSandbox::enrolled($a)
+            ?'This account uses the old balance-only TEST connection. Connect an authenticated TEST account.'
+            :'Authenticated registrar runtime missing for this account. Check the registrar environment configuration and connect an authenticated account.';
+        return self::row('Site setup',null,'danger',$cause,null,$help);
     }
     /** Domains on this account with an open alert, linked to the filtered list. */
     public static function alerts(Account $a): array
@@ -321,7 +329,13 @@ final class AccountChecklist
                 ['Redemption','Off','Restoration is separate. Review the restoration options on the domain.'],
             ];
         } catch (\Throwable) {
-            return [['Supported terms','Missing','Sync prices to read current registrar terms. Longer terms stay off.']];
+            $refresh=[];
+            try{if($binding&&Schema::hasTable('domains_observation_queues')){
+                $queue=DB::table('domains_observation_queues')->where('server_id',$binding->serverId)->where('account_fingerprint',$binding->fingerprint)->first();
+                $work=\Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($queue?->offer_work);
+                $refresh=['succeeded_at'=>$queue?->offer_feed_succeeded_at,'due_at'=>$work['facts'][$ending]['due_at']??$work['feed_due']??null];
+            }}catch(\Throwable){/* Saved refresh metadata is also missing; never invent a next check. */}
+            return [['Supported terms','Missing','Current registrar terms missing. '.TldFacts::refreshText($refresh).' A supported registrar terms read fills this fact. Longer terms stay off.']];
         }
     }
     public static function termYears(array $years): string
@@ -334,8 +348,8 @@ final class AccountChecklist
             'live_proof_required'=>'Live renewal proof is still required.',
             'not_reviewed','term_unreviewed'=>'Longer terms have not been reviewed for this ending.',
             'annual_unit'=>'An annual estimate cannot prove an exact-term total.',
-            'stale_facts','stale_price'=>'The saved evidence is out of date. Sync prices.',
-            default=>'Current term evidence is missing. Sync prices and review the registrar terms.',
+            'stale_facts','stale_price'=>'The saved term evidence is out of date. The scheduled facts check refreshes it.',
+            default=>'Current term evidence is missing. Review the registrar terms; a supported background facts check can fill it.',
         };
     }
     /** The saved sales choice is independent of whether pricing follows the default rule. */
