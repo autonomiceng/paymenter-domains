@@ -6,6 +6,41 @@ $runEnomRegistrationTail = false;
 require __DIR__.'/Support/enom-registration-suite.php';
 
 $nativeSuccessful=false;
+// Each response starts from the same untouched paid fixture. Only test setup restores its raw operation row.
+$negative=$new('saved-response.example.com'); $virgin=$negative->getRawOriginal();
+$refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
+// Error evidence survives the real driver, sealed finish and later recovery without authorizing a replay or credit.
+foreach (['refusal','contradictory','lost'] as $case) {
+    $calls=[];
+    $wire=static function($origin,$command,$parameters,$timeout) use (&$calls,$case): string {
+        $calls[]=$command;
+        if ($case==='lost') { throw new RuntimeException('PRIVATE-TRANSPORT'); }
+        $text='Error 545 - Name server does not exist';
+        return '<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode>'
+            .'<errors><Err1>'.$text.'</Err1></errors><debug>PRIVATE-TOKEN</debug>'
+            .($case==='contradictory'?'<OrderID>1234</OrderID><ExpirationDate>2027-10-18</ExpirationDate>':'').'</interface-response>';
+    };
+    $makeEngine($binding,$wire); $op=$negative->fresh(); $money=nativeFinancialSnapshot($op);
+    $result=$runRegistration($op);
+    same(['uncertain','sealed',$case==='lost'?null:'unknown','possibly_sent'],[$result->state,$result->attempt['seal'],$result->attempt['execution']['disposition']??null,
+        $result->attempt['send_state']],'Purchase error/lost reply retains uncertain sent authority: '.$case);
+    $expected=$case==='lost'?null:['code'=>'545','text'=>'Error 545 - Name server does not exist'];
+    same($expected,$result->attempt['evidence']['registrarReply']??null,'Bounded original Purchase reply retained: '.$case);
+    same(null,$refunds->creditRejected($result->id),'Ambiguous reply cannot enter the credit path');
+    commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($result,$result->domain));
+    $saved=$result->fresh()->attempt;
+    expect(!str_contains($result->getRawOriginal('attempt'),'Name server'),'Reply is retained inside encrypted attempt storage');
+    expect(!str_contains(json_encode($saved),'PRIVATE-')&&!str_contains(json_encode($saved),'owner@example.test'),'No echoed private payload retained');
+    expect(!array_key_exists('registration',$saved)&&!array_key_exists('terminal',$saved),'Error is neither completion nor terminal proof');
+    $engine->execute($result->id);
+    same(['Purchase'],$calls,'No ancillary send or replay for Purchase error: '.$case);
+    same($saved,$result->fresh()->attempt,'Original reply is immutable on later execution');
+    same($money,nativeFinancialSnapshot($result),'Error/lost reply does not credit or alter invoice history');
+    if(array_key_exists('evidence',$saved)){commerceReject(fn()=>$result->update(['attempt'=>array_replace($saved,['evidence'=>[]])]));}
+    Illuminate\Support\Facades\DB::table('domains_operations')->where('id',$op->id)->update($virgin);
+    echo 'Uncertain Purchase retained: '.$case."\n";
+}
+
 // Sanitized configured-nameserver refusal captured by the separate TEST probe on 2026-11-07.
 $purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data management policy violation; host ns2.provider.example is subordinate to provider.example, which does not exist yet</RRPText>'
     .'<Contacts><RegistrantEmailAddress>PRIVATE-CONTACT</RegistrantEmailAddress></Contacts><Command>PURCHASE</Command><APIType>API.NET</APIType><Language>eng</Language>'
@@ -19,6 +54,7 @@ $makeEngine($binding,static function($origin,$command,$parameters,$timeout)use(&
 $op=$new('confirmed-order-refusal.example.com'); $money=$nativeMoney();
 $creditBefore=\Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor((string)App\Models\Credit::sum('amount'));
 $result=$runRegistration($op);
+echo "Order-creation refusal recorded.\n";
 same('rejected',$result->state,'The exact failed-to-create-order envelope follows registration refusal recovery');
 same(['rejected','sent'],[$result->attempt['execution']['disposition'],$result->attempt['execution']['send_state']],
     'A registrar refusal is sent provider proof, never definitely unsent');
@@ -47,35 +83,5 @@ same('registration_rejected',$result->domain->fresh()->status,'Existing credit r
 expect(\Paymenter\Extensions\Servers\Domains\Services\OperationTerminalProof::safe($result->fresh(),$result->domain->fresh()),'Terminal provider proof stays bound to its original holding');
 \Paymenter\Extensions\Servers\Domains\Services\DomainReservations::releaseTerminal($result->domain->domain);
 same(null,$result->domain->fresh()->reservation_name,'Only completed refusal and credit can release the name');
-
-// Error evidence survives the real driver, sealed finish and later recovery without authorizing a replay or credit.
-foreach (['refusal','contradictory','lost'] as $case) {
-    $calls=[];
-    $wire=static function($origin,$command,$parameters,$timeout) use (&$calls,$case): string {
-        $calls[]=$command;
-        if ($case==='lost') { throw new RuntimeException('PRIVATE-TRANSPORT'); }
-        $text='Error 545 - Name server does not exist';
-        return '<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode>'
-            .'<errors><Err1>'.$text.'</Err1></errors><debug>PRIVATE-TOKEN</debug>'
-            .($case==='contradictory'?'<OrderID>1234</OrderID><ExpirationDate>2027-10-18</ExpirationDate>':'').'</interface-response>';
-    };
-    $makeEngine($binding,$wire); $op=$new('saved-'.$case.'.example.com'); $money=nativeFinancialSnapshot($op);
-    $result=$runRegistration($op);
-    same(['uncertain','sealed',$case==='lost'?null:'unknown','possibly_sent'],[$result->state,$result->attempt['seal'],$result->attempt['execution']['disposition']??null,
-        $result->attempt['send_state']],'Purchase error/lost reply retains uncertain sent authority: '.$case);
-    $expected=$case==='lost'?null:['code'=>'545','text'=>'Error 545 - Name server does not exist'];
-    same($expected,$result->attempt['evidence']['registrarReply']??null,'Bounded original Purchase reply retained: '.$case);
-    same(null,$refunds->creditRejected($result->id),'Ambiguous reply cannot enter the credit path');
-    commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($result,$result->domain));
-    $saved=$result->fresh()->attempt;
-    expect(!str_contains($result->getRawOriginal('attempt'),'Name server'),'Reply is retained inside encrypted attempt storage');
-    expect(!str_contains(json_encode($saved),'PRIVATE-')&&!str_contains(json_encode($saved),'owner@example.test'),'No echoed private payload retained');
-    expect(!array_key_exists('registration',$saved)&&!array_key_exists('terminal',$saved),'Error is neither completion nor terminal proof');
-    $engine->execute($result->id);
-    same(['Purchase'],$calls,'No ancillary send or replay for Purchase error: '.$case);
-    same($saved,$result->fresh()->attempt,'Original reply is immutable on later execution');
-    same($money,nativeFinancialSnapshot($result),'Error/lost reply does not credit or alter invoice history');
-    if(array_key_exists('evidence',$saved)){commerceReject(fn()=>$result->update(['attempt'=>array_replace($saved,['evidence'=>[]])]));}
-}
 
 $nativeSuccessful=true;

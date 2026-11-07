@@ -103,6 +103,10 @@ final class ResponseParser
     {
         if((int)$data['errcount']>100||!is_string($data['rrpcode']??null)||!preg_match('/^5[0-9]{2}$/D',$data['rrpcode'])
             ||isset($data['responsecode'])||!$this->noPurchaseFacts($data)){return false;}
+        $metadata=['rrpcode','rrptext','command','apitype','language','errcount','responsecount','minperiod','maxperiod',
+            'server','site','islockable','isrealtimetld','timedifference','exectime','done','trackingkey','requestdatetime','debug'];
+        if(array_diff(array_keys($data),[...$metadata,'contacts','errors','responses'])){return false;}
+        foreach($metadata as $key){if(isset($data[$key])&&!is_string($data[$key])){return false;}}
         $messages=['Validation error. Failed to create order.','Validation error; failed to add; order(s)'];
         $found=false; $errors=$data['errors']??[];
         if($errors!==''&&$errors!==[]){
@@ -126,7 +130,7 @@ final class ResponseParser
     private function noPurchaseFacts(#[\SensitiveParameter] array $data): bool
     {
         foreach($data as $key=>$value){
-            if(preg_match('/order|expir|expdate|charge|amount|owned|belong|processing|pending|queued/i',(string)$key)
+            if(preg_match('/order|domainid|domainnameid|expir|expdate|charge|amount|owned|belong|processing|pending|queued/i',(string)$key)
                 ||preg_match('/^err[0-9]+$/D',(string)$key)&&!in_array($value,['Validation error. Failed to create order.','Validation error; failed to add; order(s)'],true)) {return false;}
             if(is_string($value)&&preg_match('/^(?:rrptext|responsestring|err[0-9]+)$/D',(string)$key)
                 &&preg_match('/\b(?:success|successful|successfully|pending|processing|queued)\b/i',$value)){return false;}

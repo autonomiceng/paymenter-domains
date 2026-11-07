@@ -63,7 +63,7 @@ foreach ([str_replace('<RRPCode>541</RRPCode>','<RRPCode>451</RRPCode>',$purchas
     same('unknown',$parser->parse(RegistrationCommand::Purchase,$ambiguous)->status,'An ambiguous refusal remains uncertain');
 }
 foreach (['<OrderID>1234</OrderID>','<OrderID/>','<GetDomainInfo><OrderID>1234</OrderID></GetDomainInfo>',
-    '<ExpirationDate>2027-11-07</ExpirationDate>','<OrderStatus>Pending</OrderStatus>','<ChargedAmount>6.00</ChargedAmount>'] as $contradiction) {
+    '<GetDomainInfo><DomainName DomainNameID="456">example.com</DomainName></GetDomainInfo>','<Accepted>true</Accepted>','<ExpirationDate>2027-11-07</ExpirationDate>','<OrderStatus>Pending</OrderStatus>','<ChargedAmount>6.00</ChargedAmount>'] as $contradiction) {
     same('unknown',$parser->parse(RegistrationCommand::Purchase,str_replace('</interface-response>',$contradiction.'</interface-response>',$purchaseRefusal))->status,
         'Contradictory order or financial evidence prevents definite refusal');
 }
