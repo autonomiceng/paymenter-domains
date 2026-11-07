@@ -21,7 +21,9 @@ foreach(['register','transfer'] as $action){
     $offer=$ports->readOffers(new Query($binding,['com'],$action),Context::Staff)[0];
     same(true,$offer->available,'Allow '.$action.' makes the stopped TLD purchasable: '.$offer->reason);
 }
-expect(!$native->product($t->fresh(),'register')->hidden,'The published native registration product is for sale');
+$registration=$ports->readOffers(new Query($binding,['com'],'register'),Context::Staff)[0];
+$nativePrice=$native->product($t->fresh(),'register')->plans()->where('billing_period',1)->sole()->prices()->where('currency_code','USD')->sole()->price;
+same(Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($registration->retail),Paymenter\Extensions\Servers\Domains\Services\PricingRule::minor($nativePrice),'The native order price matches the now-sellable offer');
 // Replay the actual inherited-Off state, as well as the explicit stop above.
 $defaults=Account::where('server_id',$t->server_id)->value('catalogue_defaults');
 $ports->apply(Edit::override($binding,'com',new Intent(sell:null)),$revision());
