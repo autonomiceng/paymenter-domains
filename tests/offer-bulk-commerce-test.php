@@ -15,8 +15,14 @@ use Paymenter\Extensions\Servers\Domains\Services\PricingRule;
 use Paymenter\Extensions\Servers\Domains\Models\Operation;
 use Paymenter\Extensions\Servers\Domains\Services\AcquisitionOffers;
 expect(is_file(dirname(__DIR__).'/Domains/Services/AcquisitionOffers.php'), 'Public and native checkout need a shared offer batch adapter');
-require __DIR__.'/Support/offer-commerce.php';
-extract(offerCommerceFixture());
+extract(commerceFixture(true, registrars: ['enom']));
+$binding = Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(
+    Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $tlds[0]->server_id)->sole());
+$eligibility = activeFixtureEligibility($bindings, $clock);
+$admission = activeFixtureAdmission($native, $sellers, $eligibility, $clock); $admission->boot();
+$binder = new Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding($admission, $native, $prices, $clock);
+$binder->boot(); app()->instance(Paymenter\Extensions\Servers\Domains\Services\InvoiceBinding::class, $binder);
+$storefront = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 // Fresh native install: replace fixture evidence with the account bulk table and independently dated metadata.
 DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_facts' => null]);
 $bulkAt = $now->modify('+1 second'); $clock->instant = $bulkAt;
