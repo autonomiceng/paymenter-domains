@@ -40,6 +40,12 @@ configure permission, actor-bound revision ticket and encrypted audit. No enviro
 exists. `Data/CatalogueFreshness` reads the setting; feeds and normalized bulk-price checks apply
 the same policy to the original observation time. Metadata retains its independent lifetime.
 The account feed remains daily, leaving room for one missed run at the default age.
+After upgrading from bracket-start-only registration prices (1/2/5/10), use **Sync prices**
+on the Enom account once to publish years 1–10 immediately. Installing new feed code and
+saving pricing rules retain the saved cost observations; they do not rerun a still-current
+daily feed. Without a manual sync, the next scheduled account feed performs the expansion.
+The same applies to retained production installations. The normal five-read account refresh
+preserves existing native plan identities and still respects registry terms and staff limits.
 Staff can record selling intent while metadata is unknown or expired; the offer stays closed.
 Selected, enabled staff sales request facts after a staff edit and when the bounded account
 rotation finds unknown/expired metadata. Discovery alone never queues the whole catalogue.
