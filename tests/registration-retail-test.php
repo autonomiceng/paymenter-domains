@@ -90,8 +90,10 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         same($nativeRows, DB::table('prices')->orderBy('id')->get()->toJson(), 'Already-current installation leaves native prices untouched');
         $installedOffers = \Paymenter\Extensions\Servers\Domains\Catalogue\CallerRouting::resolve(AcquisitionOffers::class);
         commerceReject(fn () => $installedOffers->offer('net', 'register', 2));
+        // Replay R26 too: Domains already has new totals and a version 1 publication, native prices lag.
         // A native failure must roll back Domains rows and the publication marker too, allowing retry.
-        DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
+        $partial = OfferState::decode($tlds[0]->fresh()->catalogue_published_revision); $partial['retailRule'] = 1;
+        DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($partial)]);
         $twoYearPrice = $product->plans()->where('billing_period', 2)->sole()->prices()->where('currency_code', 'USD')->sole();
         DB::table('prices')->where('id', $twoYearPrice->id)->update(['price' => $oldTotals[2]]);
         $publication = static fn () => [DB::table('domains_prices')->orderBy('id')->get()->toJson(),
