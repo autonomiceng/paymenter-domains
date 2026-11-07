@@ -47,6 +47,15 @@ foreach (['markup_percent', 'fixed'] as $mode) {
                 ->where('action', 'register')->where('term', $years)->update(['retail' => $total]);
             $product->plans()->where('billing_period', $years)->sole()->prices()->where('currency_code', 'USD')->update(['price' => $total]);
         }
+        $nativeTotals = static function () use ($product, $expected): array {
+            $totals = [];
+            foreach ($expected as $years => $total) {
+                $plan = $product->plans()->where('billing_period', $years)->sole();
+                $totals[$years] = number_format((float) $plan->price('USD')->total, 2, '.', '');
+            }
+            return $totals;
+        };
+        same($oldTotals, $nativeTotals(), 'Upgrade starts with actual old native plan amounts');
         $published = OfferState::decode($tlds[0]->fresh()->catalogue_published_revision);
         unset($published['retailRule']); // Legacy publications have only offer/defaults/selection.
         DB::table('domains_tlds')->where('id', $tlds[0]->id)->update(['catalogue_published_revision' => OfferState::json($published)]);
@@ -60,6 +69,9 @@ foreach (['markup_percent', 'fixed'] as $mode) {
         App\Models\Server::findOrFail($binding->serverId)->settings()->updateOrCreate(['key' => $renewal::KEY],
             ['type' => 'string', 'encrypted' => true, 'value' => json_encode(['fingerprint' => $binding->fingerprint, ...$renewal::protocol($binding)])]);
         (new \Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+        // Check before synthetic fixture ports or a later edit can repair the installed publication.
+        Illuminate\Support\Once::flush();
+        same($expected, $nativeTotals(), 'Upgrade republishes the native amounts the storefront compares: '.json_encode($nativeTotals()));
         same($evidence, DB::table('domains_prices')->orderBy('id')->pluck('catalogue_observation', 'id')->all(), 'Upgrade preserves saved cost evidence and its age');
         same($readsBefore, $reads->calls, 'Upgrade republication never resolves a provider');
         $priceRows = DB::table('domains_prices')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
