@@ -106,7 +106,7 @@ expect(!str_contains($g['staff'],'some did not')&&!str_contains($g['staff'],'Syn
 // The glue row says plainly what Enom can show, lists the hosts we know and points to support for any other host.
 config(['domains.support_url'=>'https://support.example.test']);
 $glueRow=static function(Domain $domain)use($owned,$now):string{
-    $html=view('domains::partials.owner-management',['domain'=>RecordFamilies::owner($owned,RecordFamilies::read($domain,$now)),'caps'=>['glue']])->render();
+    $html=view('domains::partials.owner-management',['domain'=>RecordFamilies::owner($owned,RecordFamilies::read($domain,$now)),'caps'=>['glue'],'readAt'=>'2026-11-04T09:00:00+00:00'])->render();
     return trim(preg_replace('/\s+/',' ',storefrontDom($html)->query('//li[@id="glue"]/span[contains(@class,"domains-row__v")]')->item(0)?->textContent??''));
 };
 $enomSays="Enom can't return a full list, so only the ones we know are shown.";
