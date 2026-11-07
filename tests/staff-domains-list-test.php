@@ -98,7 +98,7 @@ foreach(['absent','mismatched'] as $fault){for($i=0;$i<3;$i++){
     $changes[$fault==='absent'?'server_id':'account_fingerprint']=$fault==='absent'?999999:str_repeat('e',64);
     $id=$clone('domains_domains',$demo->id,$changes);$missing[]=$id;
     if($i===0){$row=Domain::findOrFail($id);DB::table('domains_observation_work')->insert(['domain_id'=>$id,'server_id'=>$row->server_id,
-        'account_fingerprint'=>$row->account_fingerprint,'generation'=>$row->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'read_failed']);}
+        'account_fingerprint'=>$row->account_fingerprint,'generation'=>$row->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'configuration_unverified','tries'=>1]);}
 }}
 [$columns,$records,,$queries]=$list();same($rows+18,count($records),'Missing-account controls are on the same rendered page');
 same($beforeMissing,$accountReads($queries),'Missing or mismatched accounts do not add row queries');
@@ -106,10 +106,18 @@ foreach($missing as $i=>$id){$row=$records[$id];
     same($i%3===0?'failed':null,DomainFacts::sync($row),'Direct callers still lazily read the identity and stopped state');
     same(DomainFacts::NO_ACCOUNT.($i%3===0?' Sync stopped. Ask staff who can resume sync.':''),$columns['note']->record($row)->getState(),'Missing accounts never falsely pause demo sync');
 }
+// Sync now requires a valid account. Use one here, keeping the missing-account controls above.
+$stopped=Domain::create(['server_id'=>$active->server_id,'registrar_key'=>$active->registrar_key,'account_fingerprint'=>$active->account_fingerprint,
+    'domain'=>'stopped.example.test','sld'=>'stopped','tld'=>'example.test','user_id'=>$viewer->id,'service_id'=>7000,'status'=>'active',
+    'provider_expires_at'=>today()->addDays(200)->format('Y-m-d'),'snapshot'=>[],'observation'=>[],'renewal_policy'=>[]]);
+DB::table('domains_observation_work')->insert(['domain_id'=>$stopped->id,'server_id'=>$stopped->server_id,
+    'account_fingerprint'=>$stopped->account_fingerprint,'generation'=>$stopped->authority_generation,'phase'=>'holding','due_at'=>0,'safe_code'=>'configuration_unverified','tries'=>1]);
 // A stopped sync names the control these staff have: Sync now for Manage staff, else Resume sync.
 foreach([[['admin.domains.manage','admin.domains.operations.resume_observation'],'Use Sync now on the domain.'],[['admin.domains.operations.resume_observation'],'Use Resume sync on the domain.']] as [$rights,$step]){
-    Auth::setUser(staffUser([Staff::VIEW,...$rights]));
-    same(DomainFacts::NO_ACCOUNT.' Sync stopped. '.$step,$columns['note']->record($records[$missing[0]])->getState(),'The list Note names the step on the page: '.$step);
+    $staff=staffUser([Staff::VIEW,...$rights]);
+    $page=Livewire::actingAs($staff)->test(ListDomains::class)->searchTable($stopped->domain)->assertCanSeeTableRecords([$stopped])->assertSee('Sync stopped. '.$step);
+    $row=$page->instance()->getTableRecords()->firstWhere('id',$stopped->id);
+    same('Sync stopped. '.$step,$page->instance()->getTable()->getColumn('note')->record($row)->getState(),'The list Note names the step on the page: '.$step);
 }
 Auth::setUser($viewer);
 echo "Staff Domains list: Auto-renew on every state, one demo-paused definition and a fixed query count passed.\n";$nativeSuccessful=true;

@@ -15,11 +15,12 @@ app()->instance(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class,new 
 $viewer=staffUser([Staff::VIEW]); Auth::setUser($viewer);
 // Exercise the actual rendered page for every known state, including derived and unfamiliar states.
 foreach(array_keys(DomainFacts::ALERTS) as $code){ObligationAlerts::record($domain,$code,time());}
-// A sync alert only counts while the sync is stopped, because Resume sync is its way out.
+// Transient failures retry automatically; a domain outside its registrar account really stops sync.
+$observation=$domain->observation;$observation['facts']['owned']=false;$domain->update(['observation'=>$observation]);
 DB::table('domains_observation_work')->insert(['server_id'=>$domain->server_id,'account_fingerprint'=>$domain->account_fingerprint,
-    'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'read_failed','tries'=>1]);
-// The stopped-sync row already names this alert; it does not repeat the generic cause.
-$pageCause=static fn(string $code):string=>$code==='observation_review'?'Stopped until resumed.':DomainFacts::alertCause($code);
+    'domain_id'=>$domain->id,'generation'=>$domain->authority_generation,'due_at'=>0,'safe_code'=>'domain_not_in_account','tries'=>1]);
+expect(Paymenter\Extensions\Servers\Domains\Services\ObservationWork::stopped($domain->fresh()),'Alert fixture has a stopped sync');
+$pageCause=static fn(string $code):string=>DomainFacts::alertCause($code);
 $hidden=[];
 foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
     DB::table('domains_domains')->where('id',$domain->id)->update(['status'=>$status,'provider_expires_at'=>null,'last_synced_at'=>null]);
@@ -31,7 +32,7 @@ foreach([...array_keys(DomainStatus::STATES),'unknown'] as $status){
         if(!str_contains($html,$cause)||$code==='observation_review'&&!str_contains($html,'Sync stopped.')){$hidden[]=$code.'/'.$status;}
     }
 }
-same([],$hidden,'No open alert may be hidden on a domain page');
+same([],$hidden,'No open alert may be hidden on a domain page: '.implode(', ',$hidden));
 echo "All alert kinds visible in every domain state.\n";
 // The account-filtered list must explain why a pending domain has an open alert.
 DB::table('domains_obligation_alerts')->where('domain_id',$domain->id)->delete();
