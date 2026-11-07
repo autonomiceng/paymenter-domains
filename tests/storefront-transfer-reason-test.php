@@ -28,21 +28,24 @@ $rdap = new Rdap(static function ($url) use ($public): array {
 });
 $eligibility = activeFixtureEligibility($transferBindings, $clock, new TransferPrecheck($rdap));
 $store = activeFixtureStorefront($sellers, $prices, $native, $transferBindings, $eligibility, $clock);
+$server = App\Models\Server::findOrFail($tlds[0]->server_id);
+$setting = $server->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $controller = new StorefrontController($store);
 app()->instance(\Paymenter\Extensions\Servers\Domains\Services\Storefront::class, $store);
 // W14: reach the real HTTP route as a guest, before spending any read budget.
 \Illuminate\Support\Facades\Auth::logout();
 $before = $state->calls;
 try {
-    $pageResponse = app('router')->dispatch(Request::create('/domains/transfer?name=transfer-placeholder.com', 'GET'));
+    $httpRequest = Request::create('/domains/transfer?name=transfer-placeholder.com', 'GET');
+    // Mirror HttpKernel's binding so the controller receives this request's query.
+    app()->instance('request', $httpRequest);
+    $pageResponse = app('router')->dispatch($httpRequest);
     $pageStatus = $pageResponse->getStatusCode();
 } catch (\Illuminate\Auth\AuthenticationException) { $pageStatus = 401; }
 same(200, $pageStatus, 'Guest transfer page opens before login (actual '.$pageStatus.')');
 expect(str_contains($pageResponse->getContent(), 'data-mode="transfer"'), 'Guest page offers the existing transfer check');
 same($before, $state->calls, 'Guest transfer page does not read the registrar');
 $session = app('session')->driver();
-$server = App\Models\Server::findOrFail($tlds[0]->server_id);
-$setting = $server->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $req = static function (array $input = [], string $method = 'POST') use ($session): Request {
     $r = Request::create('/domains/check', $method, $input, server: ['REMOTE_ADDR' => '192.0.2.77']);
     $r->setLaravelSession($session); return $r;
