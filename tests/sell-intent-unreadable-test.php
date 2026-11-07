@@ -22,6 +22,8 @@ class UnreadableIntentSellPage extends WhatYouSell
 }
 Livewire::component('unreadable-intent-sell-page',UnreadableIntentSellPage::class);
 $commands=new StaffCommands(new Writer(new Projection($native),$clock,static fn()=>null,static fn()=>true),$bindings,static fn()=>null);
+// Keep the genuine installed scheduler generation before replacing this isolated write port.
+Paymenter\Extensions\Servers\Domains\Catalogue\OfferScheduler::routed();
 $writes=new class($native,$sellers,$bindings) extends StaffSettingsWrites {public StaffCommands $commands;protected function catalogue():?StaffCommands{return $this->commands;}};$writes->commands=$commands;app()->instance(StaffSettingsWrites::class,$writes);
 $broken=$tlds[0]->fresh()->replicate();$broken->tld='invalid';$broken->save();
 foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(['longest'=>11])] as $bad){
@@ -37,7 +39,11 @@ foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(
     same('7.80',$column->record($records->firstWhere('tld','com'))->getState(),'Healthy TLD keeps its exact displayed price');
     same('Left out',$column->record($records->firstWhere('tld','invalid'))->getState(),'Unreadable TLD displays an explicit omission');
     same($before,StaffCommands::stamp($binding->serverId),'Opening the page changes no saved intent or publication');
-    $page->callTableBulkAction('edit',[$broken->id],['choice'=>'sell'])->assertNotified("Couldn't save");
+    try{$page->callTableBulkAction('edit',[$broken->id],['choice'=>'sell','longest'=>'keep','transfer'=>'keep'])->assertHasNoTableBulkActionErrors()->assertNotified("Couldn't save");}
+    catch(Throwable $error){throw new RuntimeException('Unreadable bulk intent '.$bad.': '.$error->getMessage(),0,$error);}
+    $review=new \Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview($actor->id,$binding->serverId,null,'acceptance',\Paymenter\Extensions\Servers\Domains\Services\StaffSettingsReview::ticket($actor->id,$binding->serverId,null,'acceptance',StaffCommands::stamp($binding->serverId)),'Refuse unreadable selected intent');
+    $refused=false;try{$commands->run($review,['sell'=>['choices'=>['invalid'=>'sell']]]);}catch(DomainException|InvalidArgumentException|JsonException|TypeError){$refused=true;}
+    expect($refused,'Typed command refuses the malformed persisted intent before any save');
     same($before,StaffCommands::stamp($binding->serverId),'Bulk save refuses the broken TLD without writing it');
 }
 // Select-all can exceed the command's 25-TLD review boundary; refuse before entering the write.
@@ -45,10 +51,14 @@ $ids=[];
 for($i=0;$i<26;$i++){$copy=$tlds[0]->fresh()->replicate();$copy->tld='bulk'.chr(97+$i);$copy->save();$ids[]=$copy->id;}
 $before=StaffCommands::stamp($binding->serverId);
 $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId]);
-$page->callTableBulkAction('edit',$ids,['choice'=>'skip'])->assertNotified(\Filament\Notifications\Notification::make()->warning()
-    ->title('Pick at most 25 TLDs')->body('Select 25 or fewer TLDs, then try again.'));
+try{$page->callTableBulkAction('edit',$ids,['choice'=>'skip','longest'=>'keep','transfer'=>'keep'])->assertNotified(\Filament\Notifications\Notification::make()->warning()
+    ->title('Pick at most 25 TLDs')->body('Select 25 or fewer TLDs, then try again.'));}
+catch(Throwable $error){throw new RuntimeException('Bulk selection 26: '.$error->getMessage(),0,$error);}
 same($before,StaffCommands::stamp($binding->serverId),'Oversized selection never changes intent, prices or audit');
-$page->callTableBulkAction('edit',array_slice($ids,0,25),['choice'=>'skip'])->assertNotified('Saved');
+// Start the separate valid-boundary interaction with fresh mounted form state and review ticket.
+$page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId]);
+try{$page->callTableBulkAction('edit',array_slice($ids,0,25),['choice'=>'skip','longest'=>'keep','transfer'=>'keep'])->assertNotified('Saved');}
+catch(Throwable $error){$notices=new Filament\Notifications\Livewire\Notifications;$notices->mount();throw new RuntimeException('Bulk selection 25: '.json_encode($notices->notifications->map(fn($n)=>[$n->getTitle(),$n->getBody()])->all()).': '.$error->getMessage(),0,$error);}
 foreach(array_slice($ids,0,25) as $id){same(false,OfferState::decode(\Paymenter\Extensions\Servers\Domains\Models\Tld::find($id)->catalogue_intent)['sell'],'Exactly 25 selected TLDs save');}
 same(true,OfferState::decode(\Paymenter\Extensions\Servers\Domains\Models\Tld::find($ids[25])->catalogue_intent)['sell'],'Unselected TLD keeps its choice');
 same(0,$reads->calls,'Page reads and refused saves make no provider calls');

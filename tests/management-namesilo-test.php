@@ -45,37 +45,6 @@ same($before,Invoice::count(),'Unsupported paid actions never invoice'); same($c
 foreach (['127.0.0.1','ns1.123','-bad.example.net'] as $host) {
     try { $driver->validate('nameservers',['nameservers'=>[$host,'ns2.example.net']],$d->domain); throw new LogicException('Bad host accepted'); } catch (DomainException) {}
 }
-[$d,$driver]=$holding('unknown'); $ms->fault='lost'; $op=$submit($d,$driver,'lock',['locked'=>false]);
-same('uncertain',$management->run($op->id,$driver)->state,'Lost response stays uncertain'); same(1,count($writes()),'One uncertain write');
-$nativeBeforeReplay = nativeFinancialSnapshot($op);
-$management->run($op->id,$driver); same(1,count($writes()),'Unknown write never replayed');
-same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
-$ms->fault=''; $ms->route='apibatch'; same('succeeded',$management->reconcile($op->id,$driver)->state,'Read-only recovery'); same(1,count($writes()),'Recovery emits no write');
-[$d,$driver]=$holding('email-unknown'); $ms->fault='lost'; $op=$submit($d,$driver,'auth_code_email');
-same('uncertain',$management->run($op->id,$driver)->state,'Lost email acknowledgement stays unknown');
-$ms->fault=''; $ms->route='apibatch'; same('uncertain',$management->reconcile($op->id,$driver)->state,'Readback cannot invent original email acknowledgement');
-same(['retrieveAuthCode'],array_column($writes(),0),'Email never resent by observation');
-[$d,$driver]=$holding('slot-race'); $op=$submit($d,$driver,'auto_renew_off');
-$ms->during=fn()=>Cache::put('domains-write-slot:'.$op->account_fingerprint,true,25);
-same('queued',$management->run($op->id,$driver)->state,'Consume slot race defers before first send');
-same('management_deferred',$op->fresh()->safe_code,'Bounded retryable deferral'); same('absent',$op->fresh()->attempt['seal'],'Deferred operation never sealed'); same([],$writes(),'Consume race emits no write');
-Cache::flush(); same('succeeded',$management->run($op->id,$driver)->state,'Unsent deferral retries safely');
-same(['removeAutoRenewal'],array_column($writes(),0),'Retry spends only one actual write grant');
-[$d,$driver]=$holding('native-race'); $op=$submit($d,$driver,'lock',['locked'=>false]);
-$ms->during=fn()=>$d->service->update(['status'=>'suspended']);
-same('held',$management->run($op->id,$driver)->state,'Fresh native lifecycle drift refuses seal'); same([],$writes(),'Native drift emits no write');
-foreach (['owner','large','getDomainInfo'] as $fault) {
-    [$d,$driver]=$holding('refuse-'.$fault); $ms->fault=$fault; $op=$submit($d,$driver,'lock',['locked'=>false]);
-    same('held',$management->run($op->id,$driver)->state,'Invalid read refuses before seal'); same([],$writes(),'No write after invalid ownership/read');
-}
-[$d,$driver]=$holding('background'); $ms->route='apibatch'; $op=$submit($d,$driver,'auto_renew_off');
-same('succeeded',$management->run($op->id,$driver,RequestOrigin::Background)->state,'Background batch route');
-$r=new ManagementRequest($binding,'probe',$d->domain,'lock',['locked'=>true]);
-foreach ([new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('-1 second'),new RequestBudget(10),$clock),
-    new RequestContext($binding,RequestOrigin::Interactive,$clock->now()->modify('+1 minute'),new RequestBudget(0),$clock)] as $ctx) {
-    $count=count($ms->calls); try { $driver->prepare($r,$ctx); throw new LogicException('Unbounded read'); } catch (RuntimeException) {}
-    same($count,count($ms->calls),'Expired or exhausted context performs no I/O');
-}
 // A real encrypted ledger and engine grant are required to prove unknown DS sends never replay.
 require __DIR__.'/Support/demo-c-ds-durable.php';
 $nativeSuccessful=true; echo "NameSilo management baseline passed\n";

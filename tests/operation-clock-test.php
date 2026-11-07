@@ -10,25 +10,39 @@ $new = static function (string $name, bool $paid = true, bool $setup = true, str
 };
 // Fall-back duration arithmetic must not gain an hour while native timestamps stay local.
 $siteTimezone = date_default_timezone_get(); $ordinaryInstant = $clock->instant;
+// Each independent fall-back case carries current synthetic facts/costs, not October's expired feed.
+$clockTlds = Illuminate\Support\Facades\DB::table('domains_tlds')->get(['id','catalogue_facts']);
+$clockPrices = Illuminate\Support\Facades\DB::table('domains_prices')->get(['id','catalogue_observation']);
+$restoreClockEvidence = static function () use ($clockTlds, $clockPrices): void {
+    foreach ($clockTlds as $row) { Illuminate\Support\Facades\DB::table('domains_tlds')->where('id',$row->id)->update(['catalogue_facts'=>$row->catalogue_facts]); }
+    foreach ($clockPrices as $row) { Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$row->id)->update(['catalogue_observation'=>$row->catalogue_observation]); }
+};
 try {
     foreach ([245, 246, 275] as $elapsed) {
         $entry = new DateTimeImmutable('2026-11-01T01:58:00-07:00');
-        date_default_timezone_set($siteTimezone);
+        date_default_timezone_set($siteTimezone); $restoreClockEvidence();
         $clock->instant = $ordinaryInstant; $op = $new('fall-back-'.$elapsed.'.example.com'); $before = $writer->calls;
         date_default_timezone_set('America/Los_Angeles');
         $clock->instant = $entry->setTimezone(new DateTimeZone('America/Los_Angeles'));
+        activeCommerceFacts($entry,$entry->modify('+1 day'));
+        foreach ($clockPrices as $row) {
+            if ($row->catalogue_observation === null) { continue; }
+            $cost = Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::cost(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::decode($row->catalogue_observation));
+            $fresh = new Paymenter\Extensions\Servers\Domains\Catalogue\Cost($cost->action,$cost->term,$cost->enabled,$cost->total,$cost->sourceUnit,$cost->source,$entry,$entry->modify('+1 day'),normalized:true);
+            Illuminate\Support\Facades\DB::table('domains_prices')->where('id',$row->id)->update(['catalogue_observation'=>Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::json(Paymenter\Extensions\Servers\Domains\Catalogue\OfferState::encodeCost($fresh))]);
+        }
         $preflight->during = static fn () => $clock->instant = $entry->setTimezone(new DateTimeZone('UTC'))
             ->modify('+'.$elapsed.' seconds')->setTimezone(new DateTimeZone('America/Los_Angeles'));
         $result = $engine->execute($op->id);
-        same($before + ($elapsed === 245 ? 1 : 0), $writer->calls, 'Fall-back cannot extend the last-send boundary');
+        same($before + ($elapsed === 245 ? 1 : 0), $writer->calls, 'Fall-back cannot extend the last-send boundary: '.json_encode([$elapsed,$result->state,$result->safe_code,$result->attempt]));
         if ($elapsed === 245) {
             same($entry->getTimestamp() + 270, $writer->context->deadline->getTimestamp(), 'Fall-back dispatch leaves finish reserve');
         } else { same('absent', $result->attempt['seal'], 'Fall-back refuses unsealed after the elapsed boundary');
-            same('seal_authority_invalid', $result->safe_code, 'Fall-back refuses because the finish margin is exhausted'); }
+            same('pre_send_interrupted', $result->safe_code, 'Fall-back refuses because the finish margin is exhausted'); }
         $preflight->during = null;
     }
 } finally {
-    date_default_timezone_set($siteTimezone); $clock->instant = $ordinaryInstant; $preflight->during = null;
+    $restoreClockEvidence(); date_default_timezone_set($siteTimezone); $clock->instant = $ordinaryInstant; $preflight->during = null;
     Carbon\Carbon::setTestNow($ordinaryInstant); Carbon\CarbonImmutable::setTestNow($ordinaryInstant);
 }
 // Native datetime persistence drops offsets, so the monotonic clock must return site-local objects.

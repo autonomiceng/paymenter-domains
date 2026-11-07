@@ -22,7 +22,7 @@ $composition=RuntimeComposition::make($binding,$freshBindings,$clock,new WriteFe
     new Paymenter\Extensions\Servers\Domains\Registrars\Enom\Management($binding,$offline),profiles:$profiles);
 // Existing fixture preflight reads are synthetic; reconciliation uses the real Enom driver/parser.
 $composition['reconciliation']=$reconcile;
-$ports=new RuntimePorts;$ports->register($binding->fingerprint,fn()=>$composition);
+$cataloguePorts=$ports;$ports=new RuntimePorts;$ports->register($binding->fingerprint,fn()=>$composition);
 app()->instance(RuntimeDispatch::class,new RuntimeDispatch($clock));$runtime=new RuntimeWork($clock,$ports);
 $state->funds='1.00';$runtime->operation($op->id);$held=$op->fresh();
 same(['held','registrar_balance_insufficient','absent'],[$held->state,$held->safe_code,$held->attempt['seal']],'Shortfall retains a definitely-unsent transfer');
@@ -30,7 +30,10 @@ $claim=[$held->started_at->getTimestamp(),$held->attempt['claim_key'],$held->fun
 // Acquisitions now close after three days: exercise automatic recovery inside that window.
 $advance(2*86400);$runtime->operation($op->id);
 same(['held',[]],[$op->fresh()->state,$state->calls],'Two days without registrar funds cannot send');
-$state->funds='100.00';$advance(1800);$runtime->operation($op->id);$sent=$op->fresh();
+$state->funds='100.00';$advance(1800);
+// Independent provider support is refreshed while the paid transfer waits for funds.
+activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$cataloguePorts);
+$runtime->operation($op->id);$sent=$op->fresh();
 same('sealed',$sent->attempt['seal'],'Restored funds seal the original claim automatically');
 same(['TP_CreateOrder'],$state->calls,'Restored funds submit exactly one transfer');
 $window=ExecutionWindow::start($sent)->getTimestamp();$deadline=TransferPolling::deadline($sent);
@@ -58,7 +61,7 @@ same($deadline,TransferPolling::deadline($done),'Capacity deferral and polling n
 expect(!isset($done->policy['staff_actions'])&&!isset($done->policy['reconciliation_resumptions']),'No staff action or manual recovery is needed');
 // The former eight-day top-up must close and return payment through the normal scheduler, never stay stuck.
 require __DIR__.'/Support/reminder-mail.php';
-$advance(61);Paymenter\Extensions\Servers\Domains\Models\Price::query()->update(['observed_at'=>$clock->now(),'fresh_until'=>$clock->now()->modify('+1 day')]);$state->funds='1.00';$expired=$newTransfer(placeholderComFixtureName('expired-balance-wait-placeholder.com'));
+$advance(61);activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$cataloguePorts);activeCommerceCostObservations($clock->now(),$clock->now()->modify('+1 day'),$cataloguePorts);$state->funds='1.00';$expired=$newTransfer(placeholderComFixtureName('expired-balance-wait-placeholder.com'));
 $runtime->operation($expired->id);same('held',$expired->fresh()->state,'Second paid transfer waits for funds');
 $credit=static fn()=>PricingRule::minor((string)(App\Models\Credit::where('user_id',$user->id)->where('currency_code','USD')->value('amount')??'0.00'));$before=$credit();
 $advance(8*86400);$state->funds='100.00';$runtime->operation($expired->id);$runtime->tickOperations();

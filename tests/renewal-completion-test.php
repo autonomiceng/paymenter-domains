@@ -90,6 +90,8 @@ same('succeeded',$completion->run($op->id)->state,'Supported renewal settles onl
 same($attempt,array_diff_key($op->fresh()->attempt,['reconciliation'=>true]),'Original sealed renewal evidence remains unchanged');
 expect(\Paymenter\Extensions\Servers\Domains\Services\RenewalAuthority::completed($op->fresh(),$d->fresh(),$b),'Staff-supported renewal proof anchors the next cycle');
 same($writes+1,$state->writes,'Support answer and reconciliation never send another renewal');
+// The next independent fixture also refreshes NameSilo facts; restore its complete account composition.
+app()->instance(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::class,$bindings);
 [$op,$d,$b]=$makeRenewal(placeholderComFixtureName('renew-below-cost-placeholder.com'),true,1,false,static function($d)use($clock,$ports){
     $binding=\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$d->server_id)->sole());
     $q=new \Paymenter\Extensions\Servers\Domains\Catalogue\Query($binding,[$d->tld],'renew');

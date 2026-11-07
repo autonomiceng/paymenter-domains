@@ -8,7 +8,10 @@ use Illuminate\Support\Facades\{DB,Mail};
 use Paymenter\Extensions\Servers\Domains\Mail\DomainNotice;
 use Paymenter\Extensions\Servers\Domains\Models\Price;
 use Paymenter\Extensions\Servers\Domains\Services\{ObligationAlerts,ReminderSchema,ReminderSchedules,ReminderTemplates};
-[$d,$invoice,$op]=$make(placeholderComFixtureName('neutral-reminder-placeholder.com'),true,3);
+[$d,$invoice,$op]=$make(placeholderComFixtureName('neutral-reminder-placeholder.com'));
+// New longer-term billing remains closed on signed C2; reminders must still describe already-issued legacy debt.
+require_once __DIR__.'/Support/retained-reminder-invoice.php';
+[$invoice,$op]=retainedReminderInvoice($d,$invoice,$op,3);
 same(false,$reminders->remind((int)$d->id),'A paused schedule sends no reminder');Mail::assertNothingOutgoing();
 $enable();expect($reminders->remind((int)$d->id),'Known multi-year invoice sends');
 Mail::assertQueued(DomainNotice::class,fn($mail)=>$mail->data['years']===3&&$mail->data['domain']===$d->domain&&$mail->data['invoice']===true);
@@ -61,13 +64,13 @@ foreach(['expiry','cost','price','held','missing'] as $case){
     [$x,$bill,$renew]=$make(placeholderComFixtureName('unknown-'.$case.'-placeholder.com'),$case!=='missing');
     if($case==='expiry'){$x->update(['provider_expires_at'=>null]);}
     if($case==='held'){$renew->update(['state'=>'held']);}
-    $rate=Price::where('server_id',$x->server_id)->where('action','renew')->sole();$original=$rate->getAttributes();
-    if($case==='cost'){$rate->update(['revision'=>$rate->revision+1,'wholesale'=>null]);}if($case==='price'){$rate->update(['revision'=>$rate->revision+1,'retail'=>null]);}
+    $rate=Price::where('server_id',$x->server_id)->where('action','renew')->sole();$original=$rate->getAttributes();$tld=\Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$x->server_id,'tld'=>$x->tld])->sole();$retained=$tld->getRawOriginal('catalogue_retained_annual_retail');
+    if($case==='cost'){$rate->update(['revision'=>$rate->revision+1,'catalogue_observation'=>null]);}if($case==='price'){$tld->update(['catalogue_retained_annual_retail'=>null]);}
     $before=Mail::queued(DomainNotice::class)->count();same(in_array($case,['cost','price'],true),$reminders->remind((int)$x->id),'Known issued invoice is independent of current quote/cost: '.$case);
     same($before+(in_array($case,['cost','price'],true)?1:0),Mail::queued(DomainNotice::class)->count(),'No customer guess for '.$case);
     $code=['expiry'=>'unknown_expiry','cost'=>'unknown_cost','price'=>'unknown_price','held'=>'held_obligation','missing'=>'missing_obligation'][$case];
     expect(DB::table('domains_obligation_alerts')->where('domain_id',$x->id)->where('code',$code)->exists(),'Durable staff alert: '.$case);
-    DB::table('domains_prices')->where('id',$rate->id)->update($original);
+    DB::table('domains_prices')->where('id',$rate->id)->update($original);DB::table('domains_tlds')->where('id',$tld->id)->update(['catalogue_retained_annual_retail'=>$retained]);
 }
 // Owner Off sends expiry information without promising scheduled renewal or a new invoice.
 [$ownerOff]=$make(placeholderComFixtureName('owner-off-reminder-placeholder.com'),false);$ownerOff->update(['renewal_policy'=>[...$ownerOff->renewal_policy,'owner_auto_renew'=>false]]);

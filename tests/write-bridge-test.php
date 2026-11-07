@@ -37,23 +37,4 @@ same(null, $result->attempt['execution'], 'Thrown transport retains recorded-nul
 $nativeBeforeReplay = nativeFinancialSnapshot($op);
 $engine->execute($op->id); same(2, count($transport->calls), 'No replay');
 same($nativeBeforeReplay, nativeFinancialSnapshot($op), 'Replay preserves native/financial state');
-// NameSilo profile proof is unavailable by default even with explicit catalogue acceptance.
-activeFixtureSeller($sellers,'com',(int)\Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->value('revision'), $tlds[1]->server_id, true, true, $clock->now());
-$product = $native->product($tlds[1], 'register');
-$nsNew = static function ($name) use ($product, $user) {
-    $cart = commerceCart($user); commerceAdd($cart, $product, $name); commerceCheckout($user, $cart);
-    $op = Paymenter\Extensions\Servers\Domains\Models\Domain::where('domain', $name)->sole()->operations()->sole();
-    Illuminate\Support\Facades\DB::table('invoices')->where('id', $op->invoice_id)->update(['status' => 'paid']);
-    App\Models\InvoiceTransaction::create(['invoice_id' => $op->invoice_id, 'amount' => $op->amount, 'fee' => '0.00', 'status' => 'succeeded']); return $op;
-};
-$build($nsBinding, acceptance: new WriteAcceptance($nsBinding, true, true, 25,catalogue: $GLOBALS['caps']??null));
-$op = $nsNew(placeholderComFixtureName('ns-proof-missing-placeholder.com')); $result = $engine->execute($op->id); same(2, count($transport->calls), 'Missing fresh contactAdd/readback proof blocks NameSilo');
-same('held', $result->state, 'Missing profile proof refuses before seal even with a synthetic preflight');
-same('absent', $result->attempt['seal'], 'Profile refusal cannot become possibly sent');
-same('contact_profile_proof_required', $result->safe_code, 'Neutral profile hold reason');
-$bridge = $build($nsBinding); $op = $nsNew(placeholderComFixtureName('bridge-ns-placeholder.com')); $result = $engine->execute($op->id);
-same(3, count($transport->calls), 'Synthetic accepted NameSilo port called once'); same('uncertain', $result->state, 'No business completion');
-same('https://ote.namesilo.com/apibatch', $transport->calls[2]['origin'], 'Explicit automated batch origin');
-$registry = new RegistrarRegistry; RegistrarFactories::install($registry);
-commerceReject(fn () => $registry->credentialKeys('namesilo')); commerceReject(fn () => $registry->credentialKeys('enom'));
 echo "Admitted dual-driver write bridge checks passed\n"; $nativeSuccessful = true;

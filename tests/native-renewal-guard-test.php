@@ -5,7 +5,7 @@ require __DIR__.'/Support/reconciliation-fixture.php';
 use App\Models\{Coupon, Invoice, Service};
 use Illuminate\Support\Facades\{DB, Queue};
 use Paymenter\Extensions\Servers\Domains\Models\{Domain, Price};
-use Paymenter\Extensions\Servers\Domains\Services\{DomainBilling, HolderPricing, HoldingLocks, NativeDomainGuard, RetailLine};
+use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, DomainBilling, HolderPricing, HoldingLocks, NativeDomainGuard, RetailLine};
 
 $guard = new NativeDomainGuard(new HolderPricing($prices), $clock); $guard->boot(); Queue::fake();
 [$original] = $prepare(placeholderComFixtureName('native-guard-placeholder.com')); same('succeeded', $reconcile->run($original->id)->state, 'Real completed holding');
@@ -32,23 +32,28 @@ $refuseSave = static function (array $changes, string $message) use ($d, $save, 
             $save->invoke($page, $locked['service'], $changes);
         });
     } catch (DomainException $e) {
-        same($message, $e->getMessage(), 'Exact locked native save refusal');
+        same($message, $e->getMessage(), 'Exact locked native save refusal: '.$e->getMessage());
         same($before, $d->service->fresh()->getRawOriginal(), 'Rejected native save leaves the persisted service unchanged');
         return;
     }
     expect(false, 'Expected locked native save refusal');
 };
-$priceRefusal = 'Managed pricing authority requires a dedicated audited transition.';
+$priceRefusal = 'This change affects managed domain identity and was refused.';
 $refuseSave(['price' => $calculated], $priceRefusal); // Dirty acquisition price differs from holder retail.
-$refuseSave(['plan_id' => null], 'Managed service binding is permanent.');
+$refuseSave(['plan_id' => null], $priceRefusal);
 // Even a price matching retail requires owned authority, with recent or old synced costs.
 DB::table('services')->where('id', $service->id)->update(['price' => '9.99']);
 $freshPrice = (new HolderPricing($prices))->renewal($d, 'USD', $clock->now());
 same('10.40', $freshPrice->retail, 'Native matching-price scenario uses current holder retail');
-expect(!$freshPrice->retained, 'Matching-price scenario starts with a fresh quote');
+$holderBinding = AccountBindings::binding(\Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id', $d->server_id)->sole());
+expect($caps->cost($holderBinding, $d->tld) !== null, 'Matching-price scenario starts with a fresh observed cost');
+expect($freshPrice->retained, 'Fresh costs do not replace the contractual retained holder retail');
 $refuseSave(['price' => '10.40'], $priceRefusal);
 $priorInstant = $clock->instant; $clock->instant = $clock->now()->modify('+2 days');
-expect((new HolderPricing($prices))->renewal($d, 'USD', $clock->now())->retained, 'Expired cost uses retained retail in the locked price-save scenario');
+same(null, $caps->cost($holderBinding, $d->tld), 'Matching-price scenario also covers an expired observed cost');
+$expiredPrice = (new HolderPricing($prices))->renewal($d, 'USD', $clock->now());
+expect($expiredPrice->retained, 'Expired cost uses retained retail in the locked price-save scenario');
+same('10.40', $expiredPrice->retail, 'Expired costs preserve the same contractual holder retail');
 $refuseSave(['price' => '10.40'], $priceRefusal);
 $clock->instant = $priorInstant;
 DB::table('services')->where('id', $service->id)->update(['price' => '10.40']);

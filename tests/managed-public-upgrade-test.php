@@ -4,6 +4,11 @@ declare(strict_types=1);
 require __DIR__.'/native-app.php';
 use Illuminate\Support\Facades\{DB,Schema};
 use Paymenter\Extensions\Servers\Domains\Services\{ManagedPublicWorkSchema,ManagedPublicSchema};
+// Keep authentic installation authority while recreating only the original dormant enrollment shape.
+(new Paymenter\Extensions\Servers\Domains\Services\Installation)->install();
+foreach(ManagedPublicSchema::tables() as $table){Schema::drop($table);}
+Schema::drop(ManagedPublicWorkSchema::TABLE);ManagedPublicWorkSchema::install();
+DB::table('migrations')->where('migration','2026_10_19_000030_extend_managed_public_signals')->delete();
 $paths=array_filter(glob(dirname(__DIR__).'/Domains/database/migrations/*.php'),static fn($p)=>!str_contains($p,'000030'));
 app(Illuminate\Database\Migrations\Migrator::class)->run(array_values($paths),['force'=>true]);
 $entry=new Paymenter\Extensions\Servers\Domains\Domains([]);

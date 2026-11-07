@@ -18,14 +18,16 @@ use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings, CartAdmissio
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 use function Paymenter\Extensions\Servers\Domains\Registrars\Enom\resetWire;
 require dirname(__DIR__).'/Domains/routes/web.php';
-extract(commerceFixture(true)); $clock = new FakeClock($now);
+extract(commerceFixture(true));
 $registry = new RegistrarRegistry;
 $registry->register('enom', ['token'], new class implements AccountVerifier {
     public function verify(Environment $environment, #[SensitiveParameter] array $credentials): string { return $credentials['token']; }
 }, static fn ($binding, $credentials) => new Driver(new Client($binding, $credentials['token'], 'synthetic'), ['com']));
 $bindings = new AccountBindings($registry); app()->instance(Clock::class, $clock);
+// The physical reader changes; the same explicit active offer authority still owns this checkout.
+activeFixturePorts($bindings,$ports,$clock);activeFixtureOffers($bindings,$offers);
 $eligibility = activeFixtureEligibility($bindings, $clock);
-$store = new Storefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
+$store = activeFixtureStorefront($sellers, $prices, $native, $bindings, $eligibility, $clock);
 $controller = new StorefrontController($store); storefrontViews();
 (activeFixtureAdmission($native, $sellers, $eligibility, $clock))->boot();
 EnomTestSendLimitSchema::install(); config(['domains.enom_test_sends_per_day' => 200, 'domains.enom_test_sends_per_minute' => 100000]);
@@ -89,10 +91,10 @@ Illuminate\Support\Carbon::setTestNow(Illuminate\Support\Carbon::now()->addSecon
 $order($name, '01'); same('invalid_action_or_term', end($logger->warnings)[1]['exception_message_key'], 'Bare DomainException is distinguished');
 same($generic, $session->get('domains_notice'), 'Other refusals keep the general notice');
 same([], $GLOBALS['enomWire']['forms'], 'Invalid term never reads provider');
-$product = $native->product($tlds[0], 'register'); $product->update(['stock' => 0]);
+$product = $native->product($tlds[0], 'register'); DB::table('products')->where('id',$product->id)->update(['stock'=>0]);
 $order($name); same('offer_unavailable', end($logger->warnings)[1]['exception_message_key'], 'Withdrawn offer is distinct');
 same($generic, $session->get('domains_notice'), 'A withdrawn offer keeps the general notice');
-$product->update(['stock' => null]);
+DB::table('products')->where('id',$product->id)->update(['stock'=>null]);
 resetWire(['reply' => $reply]); [$response] = $order($name);
 same(route('cart'), $response->getTargetUrl(), 'Fresh user retry succeeds without widening any limits');
 same(1, $cart->items()->count(), 'Retry adds exactly one native item');

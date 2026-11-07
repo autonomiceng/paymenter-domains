@@ -12,8 +12,9 @@ foreach (['ADOPTION_ID' => $a->id, 'SNAPSHOT' => encrypt(json_encode(['holding' 
         'server_id' => $d->server_id, 'registrar_key' => $d->registrar_key, 'account_fingerprint' => $d->account_fingerprint,
         'user_id' => $d->user_id, 'service_id' => $d->service_id, $key => $value]), 'Alternate-case proof attribute refused: '.$key);
 }
-$newService = App\Models\Service::create(['user_id' => $f['owner']->id, 'order_id' => $f['order']->id, 'product_id' => $f['product']->id,
-    'plan_id' => $f['plan']->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']);
+// This second historical service is arranged before the event-enabled attachment tests.
+$newService = App\Models\Service::withoutEvents(fn () => App\Models\Service::create(['user_id' => $f['owner']->id, 'order_id' => $f['order']->id, 'product_id' => $f['product']->id,
+    'plan_id' => $f['plan']->id, 'quantity' => 1, 'price' => '10.00', 'currency_code' => 'USD', 'status' => 'pending']));
 $lateCreate = true;
 \Paymenter\Extensions\Servers\Domains\Models\Domain::creating(static function ($row) use (&$lateCreate, $a): void {
     if ($lateCreate) { $lateCreate = false; $row->adoption_id = $a->id; $row->snapshot = [...($row->snapshot ?? []), 'holding' => ['version' => 1]]; }
@@ -31,9 +32,9 @@ foreach (['domain_id' => $d->id + 1, 'state' => 'preview', 'state-terminal' => '
     DB::table('domains_adoptions')->where('id', $a->id)->update([$column => $original]);
 }
 $marker = $f['product']->settings()->where('key', 'domains_tld_id')->sole();
-$marker->update(['value' => '999999']);
+DB::table('settings')->where('id',$marker->id)->update(['value'=>'999999']);
 holdingRefused(fn () => attachHolding($f), 'Wrong TLD marker refuses attachment');
-$marker->update(['value' => (string) $f['tld']->id]);
+DB::table('settings')->where('id',$marker->id)->update(['value'=>(string)$f['tld']->id]);
 DB::table('domains_domains')->where('id', $d->id)->update(['confirmed_revision' => 1]);
 holdingRefused(fn () => attachHolding($f), 'Stale prior revision refuses attachment');
 DB::table('domains_domains')->where('id', $d->id)->update(['confirmed_revision' => 0,

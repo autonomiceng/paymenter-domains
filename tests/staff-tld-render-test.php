@@ -40,21 +40,24 @@ $render(Livewire::actingAs($u)->test(RegistrarSetup::class),'setup-both');$rende
 // TLD page actions, then the account actions this Enom TEST fixture shows. Live and test renewal or DNS changes
 // and NameSilo enrollment do not appear for it: their server config is off. Late renewal waits for Renewals, live transfers need a Live account, and Sync prices has nothing to sync here.
 $tldActions=['override','tld_settings','seller'];
+// Price freshness is its own inline row editor on the registrar account.
+$rowActions=['price_freshness'];
 $hiddenAccountActions=['live_management','live_renewal','test_management','test_renewal','test_transfer','enroll_sandbox','late_renewal','live_transfer','import'];
 $accountActions=array_values(array_diff(staffSetupActions(),$hiddenAccountActions));
-same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions,staffNoButtonActions())),'Every settings action is placed');
+same([],array_values(array_diff(array_keys(Review::ACTIONS),$tldActions,$accountActions,$hiddenAccountActions,$rowActions,staffNoButtonActions())),'Every settings action is placed');
 // tld_settings is a link to What you sell, so it has no dialog to render.
-foreach(array_intersect_key(Review::ACTIONS,array_flip(array_diff([...$tldActions,...$accountActions],['tld_settings']))) as $action=>$label){
+foreach(array_intersect_key(Review::ACTIONS,array_flip(array_diff([...$tldActions,...$accountActions,...$rowActions],['tld_settings']))) as $action=>$label){
     app()->instance(StaffSettingsWrites::class,in_array($action,['configure','probe'],true)?new StaffSettingsWrites($native,$sellers,$bindings,true):$writer);
-    $setup=in_array($action,$accountActions,true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
+    $setup=in_array($action,[...$accountActions,...$rowActions],true);$page=Livewire::actingAs($u)->test($setup?RegistrarAccount::class:ViewTld::class,$setup?['account'=>$t->server_id]:['record'=>$t->id]);
     $name=$setup?setupAction($action,$t->server_id):$action;$page->mountAction($name)->assertActionMounted($name)->call('$refresh');$render($page,'modal-'.$action);
     // Orders is a switch: its words depend on whether it is on.
-    $strings[$action]=['label'=>$label,'description'=>$action==='processing'?null:SettingsActions::description($action)];
+    $strings[$action]=['label'=>$label,'description'=>in_array($action,['processing',...$rowActions],true)?null:SettingsActions::description($action)];
 }
 app()->instance(StaffSettingsWrites::class,$writer);
 // Edit prices with the live preview: own prices, with one below-cost row, then the account default.
 // Dialog content renders in the action-modals partial, not the page body.
 $sees=static function($page,array $texts):void{$html=$page->effects['partials']['action-modals.0']??'';foreach($texts as $text){expect(str_contains($html,$text),'Dialog shows: '.$text);}};
+config(['domains.enom_identity.environment'=>'test','domains.enom_catalogue.enabled'=>true,'domains.enom_writes.registration'=>true]);
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override')
     ->setActionData(['pricing'=>'custom','mode'=>'markup_amount','markup'=>'1.20','round_up'=>'half'])->call('$refresh');
 $sees($page,['Customer pays: cost + $1.20, rounded up to the next $0.50','After saving','$7.50','$22.50']);$render($page,'modal-override-preview');
@@ -68,10 +71,10 @@ $render(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id]),'tld-pub
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$t->id])->mountAction('override');
 \Paymenter\Extensions\Servers\Domains\Models\SalesPolicy::where('tld','com')->increment('revision');
 $page->setActionData(['reason'=>'Refuse stale publication after seller change'])->callMountedAction();$render($page,'refusal-offline');
-// Default pricing lives on What you sell, and its dialog counts the TLDs that follow it.
+// Both account pricing rows open the shared default editor; What you sell counts the TLDs that follow it.
 $writer->run(new Review($u->id,$t->server_id,$t->id,'remove_override',Review::ticket($u->id,$t->server_id,$t->id,'remove_override',Review::stamp($t->server_id,$t->id)),'Follow the account default again'),[],$now);
-Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertDontSee(['Customer pays','Card fee'],false);
+Livewire::actingAs($u)->test(RegistrarAccount::class,['account'=>$t->server_id])->assertSee(['Customer pays','Card fee','Edit Customer pays','Edit Card fee'],false);
 $sell=Livewire::actingAs($u)->test(\Paymenter\Extensions\Servers\Domains\Admin\Pages\WhatYouSell::class)->mountAction('default_pricing')->call('$refresh');$sees($sell,['2 TLDs use Default pricing.']);$render($sell,'modal-default_pricing');
 writeRenderArtifact($out.'/strings.json',json_encode($strings,JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-same(8,count($strings),'Eight settings modals rendered');
-echo "Native TLD list/detail/revisions, account page, eight modals, price preview and refusals rendered.\n";$nativeSuccessful=true;
+same(9,count($strings),'Nine settings modals rendered');
+echo "Native TLD list/detail/revisions, account page, nine modals, price preview and refusals rendered.\n";$nativeSuccessful=true;

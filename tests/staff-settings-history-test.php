@@ -62,7 +62,7 @@ same($nativeTen,$nativeMany,'Native full-settings locked loads do not grow with 
 same($writeTen,$writeMany,'10 versus 500 archives have constant write queries and setting decrypts');
 same($readTen,$readMany,'10 versus 500 archives have constant display queries and setting decrypts');
 expect($writeMany[1]>0&&$readMany[1]>0,'Encrypted setting retrieval counter is active');
-same(1,$readMany[1],'History display retrieves only the current encrypted native setting');
+same(2,$readMany[1],'History display retrieves one current encrypted setting per independent history family');
 DB::table(AuditArchives::TABLE)->where('id',DB::table(AuditArchives::TABLE)->min('id'))->update(['payload'=>'broken old ciphertext']);
 $review()->local(static fn()=>null);
 validatedHistory($server->id,null,$u->id);
@@ -77,7 +77,7 @@ try{
 }finally{$current->update(['value'=>$ciphertext]);}
 same($ciphertext,(clone $current)->value('value'),'Current history restores the exact raw ciphertext');
 validatedHistory($server->id,$t->id,$u->id);
-expect(count(Review::historyRows($server))<=Review::HISTORY_LIMIT,'History display has an explicit entry bound');
+expect(count(Review::historyRows($server))<=2*Review::HISTORY_LIMIT,'Both history families have explicit independent entry bounds');
 same($stamp,Review::stamp($t->server_id,$t->id),'Audit growth leaves the reviewed state unchanged');
 tldRefusal(fn()=>$first->local(static fn()=>null),'Review key used.');
 $keyRows=DB::table(Review::KEYS)->get()->toJson();$archiveRows=DB::table(AuditArchives::TABLE)->orderBy('id')->get()->toJson();
@@ -102,12 +102,13 @@ tldRefusal(fn()=>$inFlight($failed),'Verified in-flight review required.');
 $failed->local(static fn()=>null); // Failed local transaction rolls key consumption back too.
 // Select the latest batch for the right family, then enforce the entry cap across both batches.
 $template=json_decode($batch->value,true)[0];$template['before']=[];$template['after']=[];
+$staffWindow=static fn()=>array_values(array_filter(Review::historyRows($server),static fn($row)=>!in_array($row['action'],['catalogue_feed','catalogue_facts','catalogue_republish','catalogue_sync','Sync TLD prices'],true)));
 $rows=static fn($label,$count)=>array_map(static fn($i)=>[...$template,'key'=>$label.$i,'reason'=>$label.$i],range(0,$count-1));
 DB::transaction(fn()=>AuditArchives::append($server->id,'staff_settings',json_encode($rows('latest archive ',60))));
 DB::transaction(fn()=>AuditArchives::append($server->id,'reminders',json_encode(['unrelated'=>'newer reminder archive'])));
-$batch->value=json_encode($rows('current ',10));$batch->save();$window=Review::historyRows($server);
+$batch->value=json_encode($rows('current ',10));$batch->save();$window=$staffWindow();
 same(50,count($window),'History caps the combined batches');same('latest archive 20',$window[0]['reason'],'History uses the newest inserted archive');same('current 9',$window[49]['reason'],'Current batch follows the archive');
-$batch->value=json_encode($rows('current ',60));$batch->save();$window=Review::historyRows($server);
+$batch->value=json_encode($rows('current ',60));$batch->save();$window=$staffWindow();
 same(50,count($window),'Current batch alone is capped');same('current 10',$window[0]['reason'],'Oldest current entries omitted');
 // A TLD history shows its own row changes, with the actual choice and terms, and ignores unrelated account edits.
 $base=end($window);
@@ -121,11 +122,11 @@ expect(!str_contains(json_encode($visible),'.org:'),'Other TLD edits stay out of
 same('2026-10-31T02:00:00+00:00',$visible[0]['time'],'History retains the full instant for browser time zones');
 // Count-only bulk edits and older records cannot prove that this TLD was unaffected.
 foreach([['rule_changed'=>false],[],['rule_changed'=>true,'rule'=>['mode'=>'only','max_cost'=>null,'years'=>1,'transfers'=>false]]] as $i=>$fields){
-    DB::transaction(fn()=>Review::append($server,[...$base,'key'=>'bulk-display-'.$i,'action'=>'Edit what you sell','tld_id'=>null,'reason'=>'',
+    DB::transaction(fn()=>Review::append($server,[...$base,'key'=>'bulk-display-'.$i,'action'=>'Edit what you sell','tld_id'=>null,'reason'=>'','at'=>'2026-11-01T02:00:0'.$i.'+00:00',
         'input'=>$fields+['counts'=>['rows'=>60,'added'=>0,'removed'=>60,'cleared'=>0]]]));
 }
 $visible=TldFacts::history($server->id,$t->id);
-same(array_fill(0,3,'Sales changed for 60 TLDs'),array_column(array_slice($visible,0,3),'change'),'Current and legacy bulk sales edits remain visible');
+same(array_fill(0,3,'Sales changed for 60 TLDs'),array_column(array_slice($visible,0,3),'change'),'Current and legacy bulk sales edits remain visible: '.json_encode(array_slice($visible,0,3)));
 foreach(array_slice($visible,0,3) as $row){expect(str_contains($row['reason'],'For this account; affected TLDs were not recorded.'),'Count-only history states its unknown TLD scope');}
 echo 'History 10/500 archives write '.json_encode([$writeTen,$writeMany]).' / display '.json_encode([$readTen,$readMany])." queries/decrypts\n";
 echo 'Native full-settings 10/500 archives '.json_encode([$nativeTen,$nativeMany])." queries/decrypts\n";

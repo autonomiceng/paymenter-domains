@@ -33,7 +33,7 @@ same('deferred',$deferred->fresh()->policy['status_check']['outcome'],'Guard ref
 expect($deferred->fresh()->policy['status_check']['next_at']>$clock->now()->getTimestamp(),'Deferred read has an automatic next due time');
 [$uncheckable]=$prepare(placeholderComFixtureName('staff-no-reply-placeholder.com'),'null');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->id])->callAction('recheck')
-    ->assertNotified('Cannot check registrar')->assertSee('Support can check the original order.')->assertDontSee('Status checked');
+    ->assertNotified('Enom has not answered yet')->assertSee('Ask Enom to check this attempt.')->assertSee('You can record Enom’s answer after Oct 19, 5:00 AM PT.')->assertDontSee('Status checked');
 same([],$observation->calls,'No original ID or accepted history never claims a registrar read');
 [$transportFailure]=$prepare(placeholderComFixtureName('staff-failed-read-placeholder.com'),'captured');
 $observation->fault='transport';

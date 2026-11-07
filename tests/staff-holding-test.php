@@ -110,6 +110,7 @@ staffPanel();Auth::login($staff);$pageClass=Paymenter\Extensions\Servers\Domains
 $page=Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$d->id])->assertSuccessful();
 $page->assertActionDoesNotExist('reprice');$page->assertActionVisible('stop')->mountAction('stop')->assertActionMounted('stop');$page->unmountAction();
 $afterRenewal=$clock->instant;$clock->instant=new DateTimeImmutable('2026-10-18T12:00:00Z');
+activeCommerceFacts($clock->now(),$clock->now()->modify('+1 day'),$ports);
 $unregistered=$new(placeholderComFixtureName('holding-unregistered-placeholder.com'),paid:false);$clock->instant=$afterRenewal;
 Livewire\Livewire::actingAs($staff)->test($pageClass,['record'=>$unregistered->domain_id])->assertActionHidden('stop');
 $beforeInvalidReason=$d->fresh()->getRawOriginal();

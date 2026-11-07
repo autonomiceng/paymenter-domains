@@ -10,8 +10,9 @@ use Illuminate\Support\Facades\DB;
 use Paymenter\Extensions\Servers\Domains\Services\{CartAdmission, CheckoutEligibility, Rdap, RetailLine, TransferPrecheck};
 use Paymenter\Extensions\Servers\Domains\Tests\FakeClock;
 extract(commerceFixture(true)); $clock ??= new FakeClock($now);
-$diverge = false;
-Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$diverge): void {
+$diverge = false;$expireTransferAtOrder=false;
+Illuminate\Support\Facades\Event::listen(App\Events\Order\Creating::class, static function () use (&$diverge,&$expireTransferAtOrder,$clock): void {
+    if($expireTransferAtOrder){$expireTransferAtOrder=false;$clock->instant=$clock->now()->modify('+6 minutes');}
     if ($diverge) { App\Classes\Cart::get()->items->first()->plan->prices->first()->price = '1.00'; }
 });
 $transfers = new TransferPrecheck(new Rdap(static fn () => throw new RuntimeException('Synthetic offline lookup')));
@@ -149,16 +150,17 @@ Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerc
 same(6, Order::count(), 'Retry after a temporary check failure completes checkout');
 Illuminate\Support\Carbon::setTestNow();
 // Independent transfer/age scenarios start with a known two-day synthetic observation window.
-// Transfer expiry row: retry cannot refresh it, so the notice must lead to a working cart edit.
+// Expire the transfer receipt after its unlocked automatic refresh, at the native order boundary.
+// Locked admission must refuse and offer a working edit-or-remove path.
 $clock->instant = $now;activeCommerceFacts($now,$now->modify('+2 days'),$ports);
 App\Models\Server::find($tlds[0]->server_id)->settings()->create(['key' => 'domains_transfer_endings', 'value' => 'com']);
 $cart = commerceCart($user); $transfer = $native->product($tlds[0], 'transfer');
 $line = commerceAdd($cart, $transfer, placeholderComFixtureName('expired-transfer-placeholder.com'));
 $checkout = Livewire\Livewire::actingAs($user)->withCookies(['cart' => $cart->ulid])->test(App\Livewire\Cart::class)->set('use_credits', false);
-$beforeReads = $reads->calls; $clock->instant = $now->modify('+6 minutes');
+$beforeReads = $reads->calls; $clock->instant = $now->modify('+6 minutes');$expireTransferAtOrder=true;
 Illuminate\Support\Once::flush(); $checkout->call('checkout',['contact'=>commerceOrderContact($user),'save_account'=>false]);
 same(6, Order::count(), 'Expired transfer creates no order');
-same($beforeReads, $reads->calls, 'Transfer checkout cannot refresh expired proof');
+same($beforeReads+1,$reads->calls,'Transfer refreshes once before the order; expired locked proof never triggers provider reads');
 same($line->id, $cart->items()->sole()->id, 'Expired transfer stays available to edit or remove');
 $notice = strtolower(collect($checkout->effects['dispatches'])->firstWhere('name', 'notify')['params'][0]['message'] ?? '');
 expect(str_contains($notice, 'edit') && str_contains($notice, 'remove') && str_contains($notice, 'transfer'),

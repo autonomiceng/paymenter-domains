@@ -25,6 +25,7 @@ foreach ([false, true] as $auto) {
     $product->server->settings()->updateOrCreate(['key'=>'domains_billing_enabled'], ['value'=>true,'type'=>'boolean']);
     $product->server->settings()->updateOrCreate(['key'=>'domains_manual_renewals_enabled'], ['value'=>true,'type'=>'boolean']);
     $clock->instant = new DateTimeImmutable('2027-09-27T12:00:00Z');
+    activeCommerceFacts($clock->now(),$clock->now()->modify('+30 days'),$ports);$observeRenewalCost($binding);
     $invoice = $billing->invoice($d->id, $auto ? null : $user); $op = Operation::where('invoice_id',$invoice->id)->sole();
     if (!$auto) { ExtensionHelper::addPayment($invoice, null, $op->amount); }
     same('paid', $invoice->fresh()->status, 'Either collection route funds native invoice');
