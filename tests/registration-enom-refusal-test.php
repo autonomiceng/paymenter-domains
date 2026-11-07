@@ -10,25 +10,36 @@ $new=static function(string $name,bool $paid=true,bool $setup=true,string $actio
 };
 $binding=$bindingFor(0);
 
+// Sanitized configured-nameserver refusal captured by the separate TEST probe on 2026-11-07.
+$purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data management policy violation; host ns2.provider.example is subordinate to provider.example, which does not exist yet</RRPText>'
+    .'<Contacts><RegistrantEmailAddress>PRIVATE-CONTACT</RegistrantEmailAddress></Contacts><Command>PURCHASE</Command><APIType>API.NET</APIType><Language>eng</Language>'
+    .'<ErrCount>1</ErrCount><errors><Err1>Validation error. Failed to create order.</Err1></errors><ResponseCount>1</ResponseCount>'
+    .'<responses><response><ResponseNumber>309242</ResponseNumber><ResponseString>Validation error; failed to add; order(s)</ResponseString></response></responses>'
+    .'<MinPeriod>1</MinPeriod><MaxPeriod>10</MaxPeriod><Server>TEST</Server><Site>Enom</Site><IsLockable>True</IsLockable><IsRealTimeTLD>True</IsRealTimeTLD>'
+    .'<TimeDifference>+00.00</TimeDifference><ExecTime>0.01</ExecTime><Done>true</Done><TrackingKey>synthetic-tracking</TrackingKey>'
+    .'<RequestDateTime>11/7/2026 6:42:36 AM</RequestDateTime><debug/></interface-response>';
+
 // Each response starts from the same untouched paid fixture. Only test setup restores its raw operation row.
 $negative=$new('saved-response.example.com'); $virgin=$negative->getRawOriginal();
 $refunds=new \Paymenter\Extensions\Servers\Domains\Services\Refunds($clock);
 // Error evidence survives the real driver, sealed finish and later recovery without authorizing a replay or credit.
 foreach (['refusal','contradictory','lost'] as $case) {
     $calls=[];
-    $wire=static function($origin,$command,$parameters,$timeout) use (&$calls,$case): string {
+    $wire=static function($origin,$command,$parameters,$timeout) use (&$calls,$case,$purchaseRefusal): string {
         $calls[]=$command;
         if ($case==='lost') { throw new RuntimeException('PRIVATE-TRANSPORT'); }
+        if ($case==='contradictory') { return str_replace('</interface-response>','<OrderID>1234</OrderID></interface-response>',$purchaseRefusal); }
         $text='Error 545 - Name server does not exist';
         return '<interface-response><Command>Purchase</Command><ErrCount>1</ErrCount><Done>true</Done><RRPCode>545</RRPCode>'
             .'<errors><Err1>'.$text.'</Err1></errors><debug>PRIVATE-TOKEN</debug>'
-            .($case==='contradictory'?'<OrderID>1234</OrderID><ExpirationDate>2027-10-18</ExpirationDate>':'').'</interface-response>';
+            .'</interface-response>';
     };
     $makeEngine($binding,$wire); $op=$negative->fresh(); $money=nativeFinancialSnapshot($op);
     $result=$runRegistration($op);
     same(['uncertain','sealed',$case==='lost'?null:'unknown','possibly_sent'],[$result->state,$result->attempt['seal'],$result->attempt['execution']['disposition']??null,
         $result->attempt['send_state']],'Purchase error/lost reply retains uncertain sent authority: '.$case);
-    $expected=$case==='lost'?null:['code'=>'545','text'=>'Error 545 - Name server does not exist'];
+    $expected=match($case){'lost'=>null,'contradictory'=>['code'=>'541','text'=>'Validation error. Failed to create order.'],
+        default=>['code'=>'545','text'=>'Error 545 - Name server does not exist']};
     same($expected,$result->attempt['evidence']['registrarReply']??null,'Bounded original Purchase reply retained: '.$case);
     same(null,$refunds->creditRejected($result->id),'Ambiguous reply cannot enter the credit path');
     commerceReject(fn()=>\Paymenter\Extensions\Servers\Domains\Services\RefundProof::requireReturnable($result,$result->domain));
@@ -45,14 +56,6 @@ foreach (['refusal','contradictory','lost'] as $case) {
     echo 'Uncertain Purchase retained: '.$case."\n";
 }
 
-// Sanitized configured-nameserver refusal captured by the separate TEST probe on 2026-11-07.
-$purchaseRefusal='<interface-response><RRPCode>541</RRPCode><RRPText>Data management policy violation; host ns2.provider.example is subordinate to provider.example, which does not exist yet</RRPText>'
-    .'<Contacts><RegistrantEmailAddress>PRIVATE-CONTACT</RegistrantEmailAddress></Contacts><Command>PURCHASE</Command><APIType>API.NET</APIType><Language>eng</Language>'
-    .'<ErrCount>1</ErrCount><errors><Err1>Validation error. Failed to create order.</Err1></errors><ResponseCount>1</ResponseCount>'
-    .'<responses><response><ResponseNumber>309242</ResponseNumber><ResponseString>Validation error; failed to add; order(s)</ResponseString></response></responses>'
-    .'<MinPeriod>1</MinPeriod><MaxPeriod>10</MaxPeriod><Server>TEST</Server><Site>Enom</Site><IsLockable>True</IsLockable><IsRealTimeTLD>True</IsRealTimeTLD>'
-    .'<TimeDifference>+00.00</TimeDifference><ExecTime>0.01</ExecTime><Done>true</Done><TrackingKey>synthetic-tracking</TrackingKey>'
-    .'<RequestDateTime>11/7/2026 6:42:36 AM</RequestDateTime><debug/></interface-response>';
 $calls=[];
 $makeEngine($binding,static function($origin,$command,$parameters,$timeout)use(&$calls,$purchaseRefusal):string{$calls[]=$command;return $purchaseRefusal;});
 $op=$new('confirmed-order-refusal.example.com'); $money=$nativeMoney();
