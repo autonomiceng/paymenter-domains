@@ -32,9 +32,12 @@ same($original,array_diff_key($captured->fresh()->attempt,['reconciliation'=>tru
 [$deferred]=$prepare(placeholderComFixtureName('staff-deferred-placeholder.com'),'captured');
 $observation->fault='send_guard';
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$deferred->id])->callAction('recheck')
-    ->assertNotified('Check delayed')->assertSee('Check delayed')->assertSee('Our sending settings paused this check.')->assertSee('The next check is at')->assertSee('UTC')->assertDontSee('Status checked');
+    ->assertNotified('Check delayed')->assertSee('Check delayed')->assertSee('Our sending settings paused this check.')->assertSee('The next check is at')->assertDontSee('Status checked');
 same('deferred',$deferred->fresh()->policy['status_check']['outcome'],'Guard refusal is saved as deferred, never checked');
 expect($deferred->fresh()->policy['status_check']['next_at']>$clock->now()->getTimestamp(),'Deferred read has an automatic next due time');
+// One date format: the staff pages' own Pacific time, not a UTC clock.
+$nextAt=(new DateTimeImmutable('@'.(int)$deferred->fresh()->policy['status_check']['next_at']))->setTimezone(new DateTimeZone('America/Los_Angeles'))->format('M j, Y, g:i A T');
+Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$deferred->id])->assertSee('The next check is at '.$nextAt.'.')->assertDontSee(' UTC.');
 // d879bad2 retains a lost reply and the 24-hour staff answer boundary instead of claiming an unavailable read.
 [$uncheckable]=$prepare(placeholderComFixtureName('staff-no-reply-placeholder.com'),'null');
 Livewire::actingAs($staff)->test(ViewOperation::class,['record'=>$uncheckable->id])->callAction('recheck')

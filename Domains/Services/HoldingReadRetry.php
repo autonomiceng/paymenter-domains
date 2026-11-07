@@ -12,6 +12,8 @@ final class HoldingReadRetry
     public const LIMIT=5;
     // Discovery admits 25 holdings and the runtime claims one per account each minute. Allow that batch to drain.
     private const OVERDUE_GRACE_SECONDS=30*60;
+    /** The cause for a stopped code with no words of its own. Pages that already say the read stopped leave it out. */
+    public const STOPPED_CAUSE='The registrar read stopped.';
     public const STOPPED=['read_unavailable','budget_exhausted','superseded','records_incomplete',...ReadFailure::CODES];
     public static function stoppedQuery(Builder $q): Builder
     {
@@ -52,6 +54,6 @@ final class HoldingReadRetry
                 'encryption_unavailable'=>'Saved registrar data could not be decrypted.',
                 'records_incomplete'=>'The registrar did not return a complete supported record family.',
                 'domain_not_in_account'=>'Domain is not in the registrar account.',
-                null=>null,default=>'The registrar read stopped.'}];
+                null=>null,default=>self::STOPPED_CAUSE}];
     }
 }

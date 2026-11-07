@@ -270,12 +270,12 @@ same(null,$sub($active,'Expires'),'Missing expiry does not repeat the failed syn
 DB::table('domains_domains')->where('id',$active->id)->update(['provider_expires_at'=>today()->addDays(120)->format('Y-m-d')]);
 Livewire::actingAs($viewer)->test(ListDomains::class)->searchTable($active->domain)->assertSee('Active')->assertSee('Sync stopped')->assertSeeHtml('data-beco-tone="warn" data-beco-record="domain-'.$active->id.'"');
 same('success',DomainFacts::listTone(['tone'=>'success'],null),'A healthy row stays green in the list');same('danger',DomainFacts::listTone(['tone'=>'danger'],'failed'),'A stopped sync never softens a worse status');
-Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertSee('Cause: read_unavailable.');
-// The count is a real number of reads: one attempt is singular, and none says only that the read stopped.
-foreach([1=>'Next registrar read: Stopped after 1 attempt. Cause: read_unavailable.',0=>'Next registrar read: Stopped. Cause: read_unavailable.'] as $tries=>$line){
+Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Resume sync')->assertSee('Read stopped')->assertSee('Stopped after 5 attempts.')->assertDontSee('read_unavailable');
+// The count is a real number of reads: one attempt is singular, and none says only that the read stopped. The notice already says the read stopped, so no raw code follows.
+foreach([1=>'Next registrar read: Stopped after 1 attempt.',0=>'Next registrar read: Stopped.'] as $tries=>$line){
     DB::table('domains_observation_work')->where('id',$work)->update(['tries'=>$tries]);
     $text=preg_replace('/\s+/',' ',html_entity_decode(strip_tags(Livewire::actingAs($staff)->test(ViewDomain::class,['record'=>$active->id])->html()),ENT_QUOTES));
-    expect(str_contains($text,$line)&&!str_contains($text,'1 attempts')&&!str_contains($text,'after 0 attempts'),'Records head attempt count: '.$line);
+    expect(str_contains($text,$line)&&!str_contains($text,'1 attempts')&&!str_contains($text,'after 0 attempts')&&!str_contains($text,'read_unavailable'),'Records head attempt count: '.$line);
 }
 DB::table('domains_observation_work')->where('id',$work)->update(['tries'=>5]);
 Auth::setUser($staff);$stoppedHead=DomainFacts::head($active->fresh(),DomainFacts::status($active->fresh()),DomainFacts::for($active->fresh()));
@@ -414,7 +414,15 @@ try {
     $reservedSync=$syncConnection->pop();expect($reservedSync!==null,'Staff A has a real reserved sync job');
     $syncJob=unserialize($reservedSync->payload()['data']['command']);
     same([$importer->id,$active->id,$active->authority_generation,$active->account_fingerprint],[$syncJob->actor,$syncJob->domain,$syncJob->generation,$syncJob->fingerprint],'Queued sync binds actor and current holding');
-    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])->callAction('sync_now')->assertHasNoActionErrors();
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])
+        ->assertSee('Sync in progress')->assertActionDisabled('sync_now')->callAction('sync_now')->assertHasNoActionErrors();
+    $pendingNotices=new \Filament\Notifications\Livewire\Notifications;$pendingNotices->mount();
+    same([],$pendingNotices->notifications->all(),'A disabled pending sync sends no new notice');
+    same(1,$syncConnection->size(),'The disabled action keeps the reserved job');
+    // The worker clears the page marker before the queue releases its unique lock.
+    \Illuminate\Support\Facades\Cache::forget($syncJob->uniqueId().':pending');
+    Livewire::actingAs($secondSyncStaff)->test(ViewDomain::class,['record'=>$active->id])
+        ->assertActionEnabled('sync_now')->callAction('sync_now')->assertHasNoActionErrors();
     $syncNotices=new \Filament\Notifications\Livewire\Notifications;$syncNotices->mount();
     $syncTitles=$syncNotices->notifications->map(fn($notice)=>$notice->getTitle())->values()->all();
     expect(!in_array('Sync queued',$syncTitles,true),'Second staff is not promised a silently dropped sync');
