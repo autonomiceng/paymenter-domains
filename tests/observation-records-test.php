@@ -98,7 +98,11 @@ same('unknown',$r['families']['srv']['state'],'Failed family unknown');same('unk
 expect(!in_array('GetDnsSec',array_column($state->calls,0),true),'No further wire after failure');
 $html=$page();$srvDom=storefrontDom($html);
 same('Missing',trim($srvDom->query('//li[@id="srv"]//*[@data-record-family="srv"]')->item(0)?->textContent??''),'Unknown stopped SRV shows Missing');
-same('The registrar did not return a complete supported record family. These records will appear after a successful registrar read.',preg_replace('/\s+/',' ',trim($srvDom->query('//li[@id="srv"]/span[@class="domains-row__v"]/span[@class="domains-sub"]')->item(0)?->textContent??'')),'Unknown stopped SRV names the safe cause and existing recovery guidance');
+same('The registrar did not return a complete supported record family.',ObservationProjection::recordStatus($d->fresh(),$clock->now())['read_cause'],'Stopped read retains its safe cause for staff');
+$recordNotices=$srvDom->query('//div[@role="status"]/span[@class="domains-notice__tx"]');
+same(1,$recordNotices->length,'Stopped records have one shared customer notice');
+same('We can’t read this domain’s details right now. We are on it, nothing for you to do.',trim($recordNotices->item(0)->textContent),'Stopped records explain the cause and who handles recovery');
+same(0,$srvDom->query('//li[@id="srv"]//span[@class="domains-sub"][contains(.,"successful registrar read")]')->length,'Unknown SRV does not repeat recovery guidance');
 same(0,storefrontDom($html)->query('//form[contains(@action,"/manage/srv")]')->length,'Failed refresh cannot retain old edit form');
 expect(isset(OwnerRecords::forDomain($d->fresh())['dns']),'Healthy primary retains independently complete DNS under partial-record hold');
 DB::table('domains_observation_work')->where('id',$partialJob->id)->update(['safe_code'=>$partialJob->safe_code]);

@@ -271,6 +271,11 @@ throw new \Example\WriteHeld("held_reason"); // 'ignored_comment'
 PHP);
 sort($probe);
 same(['alternate_reason','default_reason','fallback_reason','field_reason','held_reason','matched_reason','ternary_reason'],$probe,'Inventory covers quoted, conditional and typed reasons without status fields');
+// Typed string results can be section and invoice status keys, with their own presenters.
+same('srv',\Paymenter\Extensions\Servers\Domains\Services\ManagementProgress::section('srv'),'SRV section key is separate from its shared DNS setting');
+foreach([['awaiting_payment','pending','pending'],['succeeded','paid','paid'],['uncertain','paid','review']] as [$requestState,$invoiceState,$expected]){
+    same($expected,\Paymenter\Extensions\Servers\Domains\Services\OwnedDomains::issuedState(new Operation(['state'=>$requestState]),new App\Models\Invoice(['status'=>$invoiceState])),'Renewal invoice status is presented separately: '.$expected);
+}
 // These values have separate presenters or describe results, audit events, inputs or configuration.
 // Exclusions are per file and code: a new reason in any service still fails coverage.
 $excluded=[
@@ -288,8 +293,9 @@ $excluded=[
     'DnsResolverSettings.php'=>['dns_rcode_'], // DNS response prefix, formatted locally.
     'DomainManagement.php'=>['owner_request','staff_correction','nameservers','lock','auto_renew_off','privacy','contacts','dns','ds','glue',
         'ds_add','glue_add','glue_update','privacy_enable','privacy_disable','privacy_purchase'], // Audit reasons and capability names.
-    'ManagementProgress.php'=>['contacts','dns','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update','under_review','failed','disposed'], // Grouped settings and status keys.
+    'ManagementProgress.php'=>['contacts','dns','srv','privacy','ds','glue','privacy_enable','privacy_disable','privacy_purchase','ds_add','glue_add','glue_update','under_review','failed','disposed'], // Grouped settings and status keys.
 
+    'OwnedDomains.php'=>['pending','paid','review'], // issuedState() renewal invoice statuses, presented by DomainPage.
     'ManagedPublicEnrollment.php'=>['managed_enrollment'],
     'ManagedDnsSetup.php'=>['external','platform'], // DNS intent values, not staff reason codes.
     'NativeServiceRefusal.php'=>['identity','price'], // Structured log fields.

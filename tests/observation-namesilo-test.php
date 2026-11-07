@@ -2,10 +2,11 @@
 // Synthetic offline transfer observation; MIT, Copyright (c) 2026 Autonomic Engineering.
 declare(strict_types=1);
 require __DIR__.'/Support/management-namesilo.php';
-use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationCandidates,ObservationSchema,ObservationWork};
+require_once __DIR__.'/Support/observation-work.php';
+use Paymenter\Extensions\Servers\Domains\Services\{AccountReadBudget,DomainObservation,ObservationCandidates,ObservationSchema};
 ObservationSchema::install();$budget=new AccountReadBudget($clock);$observer=new DomainObservation($readBindings,$clock,$budget);
 [$d,$driver,$original]=$holding('pending-window',false);$observe->status='Pending at Registry';$before=$original->getAttributes();
-$work=new ObservationWork($observer,$clock,$budget);$enom=$tlds[0]->server_id;$ns=$d->server_id;$work->enroll($enom);$work->enroll($ns);
+$work=fixtureObservationWork($observer,$clock);$enom=$tlds[0]->server_id;$ns=$d->server_id;$work->enroll($enom);$work->enroll($ns);
 // A broken backlog is isolated and its account turn cannot monopolize the next worker.
 for($i=0;$i<30;$i++){DB::table('domains_observation_work')->insert(['server_id'=>$enom,'account_fingerprint'=>Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$enom)->value('account_fingerprint'),
     'domain_id'=>900000+$i,'generation'=>1,'due_at'=>0]);}
@@ -13,7 +14,7 @@ same([$enom=> 'account_unavailable'],array_map(static fn($r)=>$r['holding'],$wor
 $calls=count($observe->calls);
 same([$ns=>'idle'],array_map(static fn($r)=>$r['holding'],$work->tick(1)),'Transfer status is owned by financial reconciliation');
 same(0,DB::table('domains_observation_work')->where('domain_id',$d->id)->count(),'No duplicate transfer observation work');
-(new ObservationWork($observer,$clock,$budget))->tick(2);
+fixtureObservationWork($observer,$clock)->tick(2);
 same($calls,count($observe->calls),'Restart does not add another transfer poller');
 same($before,$original->fresh()->getAttributes(),'Observation scheduler does not change the original transfer');
 // Optional manual observation still reads facts without completing the financial operation.
@@ -31,16 +32,39 @@ activeFixtureRepublish($bindings, Paymenter\Extensions\Servers\Domains\Models\Tl
 [$active,$unused,$acquired]=$holding('followup');same('pending',$active->observation['followup']['state'],'Transfer completion seeds durable follow-up');
 $bindings->setProcessing($ns,false);$clock->instant=$clock->now()->modify('+1 minute');same('refreshed',$observer->run($active->id),'Paused old account refreshes');
 same(1,$active->fresh()->observation['followup']['reads'],'Follow-up advances facts only');
-// Explicit verifier enrollment predates the local offer-enrollment marker.
-same(false,App\Models\Server::findOrFail($ns)->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::KEY)->exists(),'Legacy NameSilo fixture has no local offer marker');
+// Existing verifier-enrolled accounts predate local offer enrollment. Build that lineage separately.
+$legacyRegistry=new \Paymenter\Extensions\Servers\Domains\Services\RegistrarRegistry;
+$legacyRegistry->register('namesilo',['token'],$verifier,fn($b,$c)=>new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Driver(new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\Client($b,$c['token'],$wire),['renew'],$clock));
+$legacyBindings=new \Paymenter\Extensions\Servers\Domains\Services\AccountBindings($legacyRegistry);
+$legacyServer=App\Models\Server::create(['name'=>'Synthetic legacy','type'=>'server','extension'=>'Domains','enabled'=>true]);
+$legacyBinding=$legacyBindings->configure($legacyServer->id,'namesilo',\Paymenter\Extensions\Servers\Domains\Data\Environment::Test,['token'=>'legacy-observation-account']);
+$legacyTld=Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$ns,'tld'=>'com'])->sole()->replicate();
+$legacyTld->fill(['server_id'=>$legacyServer->id,'account_fingerprint'=>$legacyBinding->fingerprint]);$legacyTld->save();
+$legacyProduct=$active->service->product->replicate();$legacyProduct->fill(['server_id'=>$legacyServer->id,'slug'=>\Paymenter\Extensions\Servers\Domains\Services\NativeCatalogue::slug($legacyTld,'transfer')]);$legacyProduct->save();
+foreach($active->service->product->settings as $setting){$copy=$setting->replicate();$copy->value=$setting->key==='domains_tld_id'?(string)$legacyTld->id:$setting->value;$legacyProduct->settings()->save($copy);}
+$legacyPlan=$active->service->plan->replicate();$legacyProduct->plans()->save($legacyPlan);
+$legacyName=placeholderComFixtureName('legacy-observation-placeholder.com');
+$legacyService=$active->service->replicate();$legacyService->fill(['product_id'=>$legacyProduct->id,'plan_id'=>$legacyPlan->id,'label'=>$legacyName]);App\Models\Service::withoutEvents(fn()=>$legacyService->save());
+App\Models\Property::withoutEvents(fn()=>$legacyService->properties()->create(['key'=>'domain','value'=>$legacyName]));
+$legacy=\Paymenter\Extensions\Servers\Domains\Services\DomainReservations::reserve(['service_id'=>$legacyService->id,'user_id'=>$user->id,'domain'=>$legacyName,
+    'server_id'=>$legacyServer->id,'registrar_key'=>'namesilo','account_fingerprint'=>$legacyBinding->fingerprint,'authority_generation'=>1,'status'=>'active',
+    'snapshot'=>['checkout'=>['user_id'=>(int)$user->id,'service_id'=>(int)$legacyService->id,'order_id'=>(int)$legacyService->order_id,'product_id'=>(int)$legacyProduct->id,'annual_plan_id'=>(int)$legacyPlan->id,'name'=>$legacyName,'action'=>'transfer']]],['com']);
+same(false,\Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::enrolled(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$legacyServer->id)->sole()),'Legacy fixture retains its verified provider identity');
+same(false,$legacyServer->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::KEY)->exists(),'Legacy NameSilo fixture has no local offer marker');
 $offerRefused=false;
-try{$readBindings->offerCredentialRevision(\Paymenter\Extensions\Servers\Domains\Services\AccountBindings::binding(Paymenter\Extensions\Servers\Domains\Models\Account::where('server_id',$ns)->sole()));}catch(DomainException){$offerRefused=true;}
+try{$legacyBindings->offerCredentialRevision($legacyBinding);}catch(DomainException){$offerRefused=true;}
 same(true,$offerRefused,'Offer feeds still require local NameSilo enrollment');
-$scheduled=new ObservationWork($observer,$clock,$budget);
-DB::table('domains_observation_work')->where('server_id',$ns)->delete();
+$legacyObserver=new DomainObservation($legacyBindings,$clock,$budget);
+$scheduled=fixtureObservationWork($legacyObserver,$clock);$scheduled->enroll($legacyServer->id);
 $calls=count($observe->calls);
-same('refreshed',$scheduled->tick(2)[$ns]['holding'],'Scheduled legacy NameSilo holding reads accept explicit verified enrollment');
+same('refreshed',$scheduled->tick(3)[$legacyServer->id]['holding'],'Scheduled legacy NameSilo holding reads accept explicit verified enrollment');
 expect(count($observe->calls)>$calls,'Scheduled NameSilo holding reaches its established synthetic reader');
+same('getDomainInfo',$observe->calls[$calls],'Legacy holding uses the domain reader');
+same(true,$legacy->fresh()->observation['facts']['owned'],'Scheduled legacy read saves ownership evidence');
+same(false,$legacyServer->settings()->where('key',Paymenter\Extensions\Servers\Domains\Services\LocalAccountEnrollment::KEY)->exists(),'Holding reads do not enroll an account for offers');
+// A new transfer needs processing and current publication after the paused-holding scenario.
+$bindings->setProcessing($ns,true,syntheticActivation());
+activeFixtureRepublish($bindings,Paymenter\Extensions\Servers\Domains\Models\Tld::where(['server_id'=>$ns,'tld'=>'com'])->sole());
 // NS15 native encrypted round-trip, owner projection and sequence planning with opaque CAA/SRV siblings.
 [$d,$driver,$original]=$holding('ns15');$ms->route='apibatch';
 $dnsRows=[['record_id'=>'A1','type'=>'A','host'=>$d->domain,'value'=>'8.8.8.8','ttl'=>'300','distance'=>'0'],
@@ -49,6 +73,7 @@ $dnsRows=[['record_id'=>'A1','type'=>'A','host'=>$d->domain,'value'=>'8.8.8.8','
 $dnsFault=false;
 $nsExchange=static function($origin,$cmd,$p,$timeout)use($managementExchange,&$dnsRows,&$dnsFault):string {
  if($cmd==='dnsListRecords'){return $dnsFault?'{}':json_encode(['request'=>['operation'=>$cmd],'reply'=>['code'=>300,'detail'=>'ok','resource_record'=>$dnsRows]]);}
+ if($cmd==='dnsSecListRecords'){return json_encode(['request'=>['operation'=>$cmd],'reply'=>['code'=>300,'detail'=>'ok','ds_record'=>[]]]);}
  return $managementExchange($origin,$cmd,$p,$timeout);
 };
 $ns15=new \Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\ObservationReader($binding,$nsExchange);
@@ -58,11 +83,12 @@ $ms->ids=array_fill_keys(['registrant','administrative','technical','billing'],'
 $ms->profiles['900001']=['first_name'=>'Synthetic','last_name'=>'Person','company'=>'','address'=>'1 Example Street','address2'=>'','city'=>'Portland','state'=>'OR','zip'=>'97201','country'=>'US','email'=>'synthetic@example.com','phone'=>'+1.5035550123'];
 $discovered=$ns15->discover($request,$ctx());
 same('complete',$discovered['dns']['state'],'NameSilo canonical DNS inventory complete');
+same(['state'=>'complete','records'=>[]],$discovered['ds'],'Explicit empty DS list is complete independently of mutation setup');
 same('complete',$discovered['settings']['contacts']['state'],'Bounded contacts read resolves all exact role IDs');
 same(1,count(array_filter($ms->calls,fn($r)=>$r[0]==='contactList')),'Shared contact IDs consume one read');
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::save($d,$discovered,$clock->now(),$ns15->observationCapabilities());
 $good=$d->fresh()->observation['records'];
-same(false,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::incomplete($d->fresh()),'DS mutation Off / unsupported read is not a perpetual failure');
+same(false,\Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::incomplete($d->fresh()),'Complete supported record reads do not create a perpetual failure');
 $inventory=\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::nameSilo($d->fresh());
 same($discovered['dns']['records'],$inventory['records'],'Encrypted CAA, TTL, provider IDs and opaque SRV survive projection');
 $view=\Paymenter\Extensions\Servers\Domains\Registrars\NameSilo\DnsForm::view($inventory);
@@ -78,8 +104,8 @@ same('partial',$d->fresh()->observation['records']['families']['dns']['state'],'
 same(3,count($d->fresh()->observation['records']['families']['dns']['records']),'Valid partial siblings retained');
 same(null,\Paymenter\Extensions\Servers\Domains\Services\OwnerRecords::nameSilo($d->fresh()),'Partial DNS cannot authorize whole-list editing');
 $status=\Paymenter\Extensions\Servers\Domains\Services\ObservationProjection::recordStatus($d->fresh(),$clock->now()->modify('+1 day'));
-same('unsupported',$status['families']['ds']['expectation'],'DS read and mutation support remain separate');
-same('unknown',$status['families']['ds']['state'],'Unsupported DS is never fabricated complete empty');
+same('supported',$status['families']['ds']['expectation'],'NameSilo supports DS observation independently of mutation setup');
+same('unknown',$status['families']['ds']['state'],'DS unattempted after a DNS failure is never fabricated complete empty');
 same(true,$status['stale'],'Daily stale state is explicit');same($good['at'],$status['families']['dns']['last_good_at'],'Last-good DNS time retained');
 $before=$d->fresh()->observation;$dnsFault=true;
 \Paymenter\Extensions\Servers\Domains\Services\ObservationRecords::failPrimary($d->fresh(),$clock->now());
