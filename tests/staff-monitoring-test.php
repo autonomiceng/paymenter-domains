@@ -47,7 +47,9 @@ Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('status','pa
 Livewire::actingAs($manager)->test(ListWatches::class)->filterTable('customer',['customer'=>(string)$uid])->assertCanSeeTableRecords([$watch]);
 
 // Checked: nameservers moved away and expiry within 30 days is Problem found with the reason.
-DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);$at=time()-120;noticeRegistry($f,$at,11);noticeDns($f,$at,'external');
+DB::table('domains_watch_names')->where('id',$id)->update(['registration'=>'external']);$at=time()-1020;noticeRegistry($f,$at,11);noticeDns($f,$at,'external');
+same(false,\Paymenter\Extensions\Servers\Domains\Models\WatchDnsObservation::where('watch_id',$id)->where('check_kind','delegation')->latest('id')->sole()->facts['ns_confirmed'],'One DNS observation cannot confirm a mismatch');
+noticeDns($f,$at+900,'external');
 DB::table('domains_watch_work')->where('watch_id',$id)->where('kind','points')->update(['due_at'=>$at,'backoff_until'=>null]);$t=$dns->begin($id,$uid,'points',$at);expect($t!==null,'Points ticket');expect($dns->finish($t,new \Paymenter\Extensions\Servers\Domains\Dns\DnsReading('points',website:true,email:false),$at+1),'Points reading');
 $expiry=gmdate('Y-m-d',$at+11*86400);$days=intdiv(strtotime($expiry.' 00:00:00 UTC')-strtotime(gmdate('Y-m-d').' 00:00:00 UTC'),86400);
 $list=Livewire::actingAs($manager)->test(ListWatches::class);$record=WatchName::find($id);

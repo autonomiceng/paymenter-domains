@@ -429,7 +429,8 @@ ObligationAlerts::record($active->fresh(),'observation_review',time());
 same(['Oct 20, 2026 15:05 UTC',null],[$value($active,'Last sync'),$sub($active,'Last sync')],'A sync that is not stopped has nothing to resume');
 $work=DB::table('domains_observation_work')->insertGetId(['server_id'=>$active->server_id,'account_fingerprint'=>$active->account_fingerprint,
     'domain_id'=>$active->id,'generation'=>$active->authority_generation,'due_at'=>0,'safe_code'=>'read_unavailable','tries'=>1]);
-same('Sync stopped. Ask staff who can resume sync.',$sub($active,'Last sync'),'The stopped row names staff with resume permission');
+same(null,$sub($active,'Last sync'),'The stopped row leaves the cause to the page notice');
+Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSee('The registrar read stopped.')->assertSee('Ask staff who can resume sync.')->assertSee('Read stopped');
 DB::table('domains_observation_work')->where('id',$work)->delete();
 Livewire::actingAs($viewer)->test(ViewDomain::class,['record'=>$active->id])->assertSeeInOrder(['Service','Missing','Customer, order or service missing'])->assertSee('Unpaid renewal invoice cancelled');
 $filter(Livewire::actingAs($viewer)->test(ListDomains::class),'alerts',true)->assertCanSeeTableRecords([$active])->assertCanNotSeeTableRecords([$held,$long]);

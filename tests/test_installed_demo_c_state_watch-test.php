@@ -23,10 +23,12 @@ if(str_contains(json_encode(WatchFacts::for($probe,['keys'=>[],'summary'=>null])
 $panel->resources([\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::class]);
 \Illuminate\Support\Facades\Route::name('filament.admin.')->prefix($panel->getPath())->group(fn()=>\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource::registerRoutes($panel));app('router')->getRoutes()->refreshNameLookups();
 $panel->viteTheme([])->theme(new \Illuminate\Support\HtmlString(''));
-foreach(['paused'=>'Paused','retired'=>'Monitoring stopped; no further checks']as$state=>$expected){
+foreach(['paused'=>'Paused','retired'=>'Stopped']as$state=>$expected){
  \Illuminate\Support\Facades\DB::table('domains_watch_names')->where('id',$id)->update(['state'=>$state]);
  $list=\Livewire\Livewire::test(\Paymenter\Extensions\Servers\Domains\Admin\Resources\WatchResource\Pages\ListWatches::class);
  $record=$w->fresh();
+ same($expected,$list->instance()->getTable()->getColumn('status')->record($record)->getState(),'The row names its monitoring state');
+ $list->assertSee($expected);
  foreach(['registration','delegation.dns','last_check']as$name){$column=$list->instance()->getTable()->getColumn($name)->record($record);
   // Status says Paused or Stopped once per row (ui-r15); the fact cells stay empty instead of repeating it.
   if(filled($column->getState())){$failures[]=$state.' '.$name.' still has Missing or repeats the row state';}

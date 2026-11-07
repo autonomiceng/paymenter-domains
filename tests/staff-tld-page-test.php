@@ -72,7 +72,7 @@ foreach([
 Auth::setUser($u);
 same('.com',$page->instance()->getTitle(),'TLD page title is the TLD');
 foreach(['For sale','Change registrar','More','Sales','Registrar for new orders','Existing domains stay with their registrar','Terms','1 to 3 years',
-    'Price sync','Prices last synced','Oct 18, 2026','New sales stop when saved costs reach 48 hours old. Sync prices to resume.',
+    'Price sync','Last updated','Oct 18, 2026','New sales stop when saved costs reach 48 hours old. Sync prices to resume.',
     'Prices by registrar account','Edit prices','Account','Pricing','Registration','Renewal','Transfer','Default pricing','New orders','History'] as $see){$page->assertSee($see);}
 // Current fixture publication leaves real history; separately arrange an empty retained window.
 expect(TldFacts::history((int)$enom->server_id,(int)$enom->id)!==[],'Published fixture has catalogue history');
@@ -111,7 +111,7 @@ $list=Livewire::actingAs($u)->test(ListTlds::class)->assertSuccessful()
     ->assertSee('Price sync failed for 1 registrar account.')->assertSee('Enom TEST identity check (account '.$enom->server_id.'): '.$cause.'.')->assertSee('New sales stop when saved costs reach 48 hours old.')->assertSee('Open Registrars');
 $clean($list->html(),'List sync failed');
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$enom->id])->assertSuccessful()
-    ->assertSee('Sync failed')->assertSee($cause.'.')->assertSeeHtml('datetime="2026-10-18T13:05:00+00:00"')->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Prices last synced')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
+    ->assertSee('Sync failed')->assertSee($cause.'.')->assertSeeHtml('datetime="2026-10-18T13:05:00+00:00"')->assertSee('Open account')->assertSeeHtml(e(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::getUrl(['account'=>$enom->server_id])))->assertSee('Last updated')->assertSee('Oct 18, 2026')->assertDontSee('Valid until');
 $clean($page->html(),'TLD page sync failed');
 Livewire::actingAs($u)->test(ViewTld::class,['record'=>$silo->id])->assertSuccessful()->assertDontSee('Sync failed');
 DB::table('domains_observation_queues')->where('server_id',$enom->server_id)->update(['catalogue_hold'=>'read_unavailable','catalogue_audit'=>'[]']);
