@@ -308,7 +308,7 @@ final class DomainFacts
     public static function headRequest(Domain $d, array $status, ?int $held=null, ?array $notice=null): ?int
     {
         $notice??=self::notice($d);
-        return $notice===null||($notice['resume']??false)?$held??$status['request']:null;
+        return $notice===null||($notice['resume']??false)?$held??$status['request']??(ObservationWork::resumeBlocked($d)!==null?$d->latestAcquisition?->id:null):null;
     }
     /** A notice in the head line: its words, then its links. */
     private static function noticeHtml(array $notice, bool $mark): HtmlString

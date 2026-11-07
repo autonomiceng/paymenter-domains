@@ -65,6 +65,11 @@ final class RegistrarCheck
         }
         $op->update(['policy' => [...$op->policy, 'status_check' => ['outcome' => 'scheduled', 'at' => $now, 'next_at' => $now, 'reason' => null]]]);
     }
+    public static function attempted(Operation $op): bool
+    {
+        $check=$op->policy['status_check']??[];
+        return isset($check['attempt_identity'])&&hash_equals(RegistrarAnswers::identity($op),$check['attempt_identity']);
+    }
     /** Plain words used everywhere this result appears. No provider payload enters the policy or UI. */
     public static function words(?array $check, bool $completed = false): array
     {
@@ -75,6 +80,7 @@ final class RegistrarCheck
                 : self::STILL.' '.self::checkedNext($check)],
             'deferred' => ['title' => 'Check delayed', 'body' => (($check['reason'] ?? null) === 'scheduled' ? 'The next status check is not due yet.' : (($check['reason'] ?? null) === 'send_guard' ? 'Our sending settings paused this check.' : 'Our check limit was reached.'))
                 .($next ? ' The next check is at '.$next.'.' : ' Contact support to restart checks.')],
+            'not_checked' => ['title'=>'Registrar check pending','body'=>'The system will check the original attempt on its next turn.'],
             'scheduled' => ['title' => 'Status checks restarted', 'body' => 'The system will check again on its next turn.'],
             default => ['title' => 'Cannot check registrar', 'body' => 'We could not get an answer from the registrar. Support can check the original order.'],
         };
@@ -108,6 +114,8 @@ final class RegistrarCheck
     public static function status(Operation $op): ?array
     {
         $check = $op->policy['status_check'] ?? null;
+        if ($op->action==='register'&&$op->registrar_key==='enom'&&in_array($op->state,['running','pending','uncertain'],true)
+            &&RegistrarAnswers::eligible($op,app(Clock::class)->now())&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
         if ($op->action !== 'renew' || !in_array($op->state, ['running', 'pending', 'uncertain'], true)
             || isset($op->policy['enom_answer']) || isset($op->attempt['reconciliation'])) { return $check; }
         try {
@@ -119,6 +127,7 @@ final class RegistrarCheck
                 || $op->authority_generation !== $domain->authority_generation) { return $check; }
             $attempt = ReconciliationEvidence::attempt($op, $domain, AccountBindings::binding($account));
             if ($attempt->replyLost() && !$attempt->historyAcceptance?->covers($attempt, $now)) {
+                if ($op->registrar_key==='enom'&&!self::attempted($op)) { return ['outcome'=>'not_checked']; }
                 return [...($check??[]),'outcome'=>'awaiting_answer', 'registrar'=>$attempt->binding->registrarKey === 'enom' ? 'Enom' : 'NameSilo',
                     'answer_after'=>(new \DateTimeImmutable($op->attempt['dispatch_attempted_at']))->modify('+24 hours')->getTimestamp()];
             }
