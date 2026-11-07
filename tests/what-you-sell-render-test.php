@@ -29,10 +29,10 @@ $u=staffUser([Staff::VIEW,Staff::COSTS,Staff::POLICY,Review::permission('accepta
 $panel=Filament::getCurrentPanel();$css=file_get_contents($fixture.'/vendor/filament/filament/dist/theme.css');
 $panel->viteTheme([])->theme(new HtmlString('<link rel="stylesheet" href="fixture.css">'))->brandName('Paymenter');
 foreach([1,3] as $years){
-    $test=Livewire::actingAs($u)->test(WhatYouSell::class)->filterTable('for_sale',false)->assertSuccessful();
+    $test=Livewire::actingAs($u)->test(WhatYouSell::class)->assertSuccessful();
     // Resolve the sidebar's original request during the initial GET, before a test-only Livewire update.
     same('GET',\Filament\Support\original_request()->method(),'Static layout retains a GET request');
-    $test->set('account',$first->server_id)->set('years',$years);
+    $test->filterTable('for_sale',false)->set('account',$first->server_id)->set('years',$years);
     $html=Blade::render('<x-filament-panels::layout :livewire="$page">{!! $body !!}</x-filament-panels::layout>',['page'=>$test->instance(),'body'=>$test->html()]);
     $html=preg_replace('~<script\b[^>]*>.*?</script>~si','',$html);$html=preg_replace('~<link\b[^>]*>~si','',$html);
     $html=str_replace('x-cloak="-lg"','',$html);$html=str_replace('class="fi-main-ctn"','style="display:flex;opacity:1" class="fi-main-ctn"',$html);
