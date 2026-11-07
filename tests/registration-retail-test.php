@@ -106,7 +106,7 @@ same('32.98', number_format((float) App\Classes\Cart::get()->items->sole()->pric
 $page = commerceCheckout($user, $cart); $page->assertHasNoErrors();
 $refreshed = Operation::whereHas('domain', fn ($q) => $q->where('domain', 'refresh-price.net'))->sole();
 same([2, '32.98', '18.0000', '32.98'], [(int) $refreshed->term, $refreshed->amount, $refreshed->cost['estimated'],
-    InvoiceItem::findOrFail($refreshed->invoice_item_id)->price], 'Refreshed cart/invoice agree while selected wholesale and term stay separate');
+    InvoiceItem::findOrFail($refreshed->invoice_item_id)->price], 'Refreshed cart/invoice agree while selected wholesale and term stay separate: '.json_encode([$refreshed->term, $refreshed->amount, $refreshed->cost, InvoiceItem::findOrFail($refreshed->invoice_item_id)->price]));
 // Dependency observation drift must invalidate the saved longer-term quote.
 $selection = new \Paymenter\Extensions\Servers\Domains\Data\SaleSelection(...$refreshed->policy['checkout']['catalogue']);
 $annual = DB::table('domains_prices')->where('server_id', $binding->serverId)->where('tld', 'net')->where('action', 'register')->where('term', 1)->sole();
