@@ -104,7 +104,7 @@ class RegistrarAccount extends Page
             }
             $funds=RegistrarFacts::connected($a,$this->status())?RegistrarFacts::balance($a)['funds']:null;
             $sections[]=Sheet::section('Balance and usage',$this->rows('usage',$this->usageRows($s,$a)),after:$funds?[Sheet::link('add_funds','Add funds',$funds,external:true)]:[]);
-            $sections[]=Sheet::section('Sales',$this->rows('sales',$pick('Orders','Registrations',AccountChecklist::TRANSFER_LABEL,'What you sell','TLD prices','Customer pays','Card fee')));
+            $sections[]=Sheet::section('Sales',$this->rows('sales',$pick('Orders','Registrations',AccountChecklist::TRANSFER_LABEL,'What you sell','TLD prices','Customer pays')));
             $sections[]=Sheet::section('Renewals',$this->rows('renewal',$pick('Renewals','Late renewal','Customer can renew early','Invoice issued','Invoice due','Unpaid hold','Scheduled renewals','Selected TLD terms','Reminder emails','Reminder schedule')));
             $default=SiteDnsDefault::profile();$refusal=SiteDnsDefault::refusal();
             $sections[]=Sheet::section('Domain settings',$this->rows('settings',[...$pick('DNS, nameservers and contacts','WHOIS privacy'),

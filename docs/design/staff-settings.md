@@ -54,8 +54,9 @@ ordinary nor late renewal admits them. There is no restore writer.
 
 ## TLD prices
 
-**Edit prices** is the blue button at the top of the TLD page. Its **More** menu holds **Change registrar**,
-**Open in What you sell**, where terms are bulk edited, and **Restore sales** when a sale is turned off. **Edit prices**
+The TLD page head says whether the TLD is for sale and why not. Its one blue button is the action that makes it
+sellable: **Start selling** when staff stopped it, or the fix (**Edit prices**, **Choose registrar**). For sale, there is
+no blue button and **More** holds **Change registrar** and **Stop selling**; existing domains keep renewing. **Edit prices**
 offers Default pricing or prices for that TLD only, shows the formula in words
 
 and previews register, renew and transfer for each sold term (cost, current price,

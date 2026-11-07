@@ -11,7 +11,7 @@ use Paymenter\Extensions\Servers\Domains\Data\{AccountBinding,Capabilities,Dispo
 use Paymenter\Extensions\Servers\Domains\Models\Tld;
 use Paymenter\Extensions\Servers\Domains\Services\{AccountBindings,NativeCatalogue,PriceCatalogue,PricingRules,RegistrarRegistry,Runtime,SellerPolicies};
 use Paymenter\Extensions\Servers\Domains\Tests\{FakeClock,FakeRegistrar};
-$saved=retainedOfferDatabase();$before=retainedOfferObligations();
+$saved=retainedOfferDatabase();$before=retainedOfferObligations(false);
 $registry=new RegistrarRegistry;$reads=(object)['calls'=>0,'premium'=>false,'available'=>true];
 $verifier=new class implements AccountVerifier {
     public function verify(Environment $env,array $credentials): string{return $credentials['token'];}
@@ -26,6 +26,8 @@ app()->instance(AccountBindings::class,$bindings);app()->instance(NativeCatalogu
 Runtime::register();$staff=App\Models\User::where('email','cutover@example.test')->sole();auth()->login($staff);
 (new Paymenter\Extensions\Servers\Domains\Domains)->upgraded('0.1.0');
 same($saved['receipt'],UpgradeGate::routeState(),'Current package retains the bridge checked receipt');
-same($before,retainedOfferObligations(),'Current upgrade preserves bridge identities and frozen obligations');
+same($before,retainedOfferObligations(false),'Current upgrade preserves bridge identities and frozen obligations');
+// The upgrade republishes retail under the current rule; retained native plans follow it, keeping their identities.
+same([],retainedNativeRetailMismatches(),'Current upgrade projects published retail into retained native plans');
 same(0,$reads->calls,'Current upgrade creates no provider reads');
 $nativeSuccessful=true;

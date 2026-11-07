@@ -20,35 +20,35 @@ same(null,PricingEditorNotice::missing(),'Pinned pricing notice hooks are availa
 PricingEditorNotice::boot();
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
 $shown=static function(string $html):string{preg_match_all("/content: '([^']*)'/",$html,$m);return html_entity_decode($html,ENT_QUOTES).' '.implode(' ',array_map(fn($t)=>json_decode('"'.$t.'"'),$m[1]));};
-$below=static fn(string $html)=>expect(($title=strpos($html,'fi-header-heading'))!==false&&($notice=strpos($html,'Registration: '))!==false&&$title<$notice,'The notice sits below the breadcrumb and title');
-$below($page->html());
+// The TLD page head says whether the TLD is for sale; the notice is only on native product edits.
+expect(!str_contains($page->html(),'Price changes can stop domain sales')&&!str_contains($page->html(),'Registration: '),'No notice on the TLD page');
+$status=static fn()=>PricingEditorNotice::render($native->product($tlds[0]->fresh(),'register')->fresh());
 Livewire::actingAs($u)->test(Paymenter\Extensions\Servers\Domains\Admin\Pages\RegistrarAccount::class,['account'=>$tlds[0]->server_id])->assertDontSee('Price changes can stop domain sales')->assertDontSee('Registration: ');
-expect(str_contains($page->html(),'Registration: For sale'),'Before editing registration is available');
-expect(!str_contains(PricingEditorNotice::render($tlds[0]->fresh()),'Publish prices'),'Recovery does not name the removed publish button');
+expect(str_contains($status(),'Registration: For sale'),'Before editing registration is available');
+expect(!str_contains($status(),'Publish prices'),'Recovery does not name the removed publish button');
 // Paragraphs use the panel's prose spacing; sale status lines stay together.
 $noticeDom=static function(string $html):DOMXPath{$d=new DOMDocument;@$d->loadHTML('<?xml encoding="utf-8" ?>'.$html);return new DOMXPath($d);};
-$x=$noticeDom(PricingEditorNotice::render($tlds[0]->fresh()));
+$x=$noticeDom($status());
 same(1,$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p//strong[.="Price changes can stop domain sales"]')->length,'Notice text is spaced as panel prose');
-same(2,$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p')->length,'One line and the sale status, no text wall');
+same(3,$x->query('//*[contains(concat(" ",normalize-space(@class)," ")," fi-prose ")]/p')->length,'One line, what not to change and the sale status, no text wall');
 same(1,$x->query('//p[strong[.="Registration: For sale"] and strong[.="Transfer: For sale"]]')->length,'Sale status lines are grouped');
 $page->mountAction('override')->setActionData(['pricing'=>'custom','mode'=>'fixed','markup'=>'0','round_up'=>'none','fixed_register'=>'20.00','fixed_renew'=>'21.00','fixed_transfer'=>'22.00','reason'=>'Reviewed retail change'])->callMountedAction()->assertHasNoActionErrors();
 // The approved pricing UX publishes on save. This notice must agree with either writer.
 $clock=app(Paymenter\Extensions\Servers\Domains\Contracts\Clock::class);
 $store=activeFixtureStorefront($sellers,$prices,$native,$bindings,new Paymenter\Extensions\Servers\Domains\Services\CheckoutEligibility($bindings,$clock),$clock);
 Illuminate\Support\Facades\Cache::flush();
-expect(str_contains($page->html(),'Registration: For sale'),'Successful override publishes registration for sale');
+expect(str_contains($status(),'Registration: For sale'),'Successful override publishes registration for sale');
 $ending=collect($store->endings())->firstWhere('tld',$tlds[0]->tld);
 expect($ending!==null,'The edited fixture TLD remains in the storefront');
 expect($ending['terms']!==[],'The edited fixture TLD has registration terms');
 // Retained pre-publication edits must also be clear when reopening the page.
 $intent=json_decode($tlds[0]->fresh()->catalogue_intent,true);$intent['pricing_rule']['fixed']['register']='23.00';$tlds[0]->fresh()->update(['catalogue_intent'=>json_encode($intent,JSON_THROW_ON_ERROR),'catalogue_revision'=>$tlds[0]->fresh()->catalogue_revision+1]);
-$page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
-expect(str_contains($page->html(),'Registration: Not for sale'),'Reopening a saved unpublished rule shows paused registration');
+expect(str_contains($status(),'Registration: Not for sale'),'Reopening a saved unpublished rule shows paused registration');
 // The sweep puts a saved rule on sale by itself and says so in the history.
 $systemPublications=static fn()=>count(array_filter(Paymenter\Extensions\Servers\Domains\Admin\Support\TldFacts::history($tlds[0]->server_id,$tlds[0]->id),static fn($row)=>$row['change']==='Prices published'&&$row['by']==='System'));
 $publishedBefore=$systemPublications();
 activeFixtureRepublish($native,$tlds[0]->fresh(),$now);
-expect(str_contains(Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id])->html(),'Registration: For sale'),'The sweep restores sale when saved and published prices differ');
+expect(str_contains($status(),'Registration: For sale'),'The sweep restores sale when saved and published prices differ');
 same($publishedBefore+1,$systemPublications(),'The new publication has its own System audit event');
 $product=$native->product($tlds[0],'register');
 $edit=Livewire::actingAs($u)->test(App\Admin\Resources\ProductResource\Pages\EditProduct::class,['record'=>$product->id])->assertStatus(200);
@@ -83,7 +83,7 @@ foreach([
 // Follow the notice using the existing pricing unchanged: saving restores native prices.
 $page=Livewire::actingAs($u)->test(ViewTld::class,['record'=>$tlds[0]->id]);
 $page->mountAction('override')->setActionData(['reason'=>'Restore saved TLD prices'])->callMountedAction()->assertHasNoActionErrors();
-expect(str_contains($page->html(),'Registration: For sale'),'Saving Edit prices restores sale after a native price change');
+expect(str_contains($status(),'Registration: For sale'),'Saving Edit prices restores sale after a native price change');
 $hosting=App\Models\Product::create(['name'=>'Ordinary','slug'=>'ordinary','category_id'=>$product->category_id,'allow_quantity'=>'combined']);
 same('',PricingEditorNotice::render($hosting),'No pricing warning on unrelated products');
 $nativeSuccessful=true; echo "Pricing consequences before and after Domains/native edits passed.\n";
