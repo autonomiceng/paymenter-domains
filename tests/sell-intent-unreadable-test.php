@@ -27,7 +27,7 @@ $broken=$tlds[0]->fresh()->replicate();$broken->tld='invalid';$broken->save();
 foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(['longest'=>11])] as $bad){
     DB::table('domains_tlds')->where('id',$broken->id)->update(['catalogue_intent'=>$bad]);
     $before=StaffCommands::stamp($binding->serverId);
-    $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->filterTable('for_sale',false)->assertSuccessful()->assertCountTableRecords(2)->assertSee('7.80');
+    $page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId,'tableFilters'=>['for_sale'=>['isActive'=>false]]])->assertSuccessful()->assertCountTableRecords(2)->assertSee('7.80');
     same([$broken->id],array_column($page->instance()->savedPrices()['skipped'],'id'),'Only unreadable intent is left out');
     $dom=new DOMDocument;@$dom->loadHTML($page->html());$xpath=new DOMXPath($dom);
     same(".invalid on Synthetic has no price: its custom pricing can't be read. Open .invalid and use Edit prices.",
@@ -44,7 +44,7 @@ foreach(['{"sell":','"invalid"',OfferState::json(['sell'=>[]]),OfferState::json(
 $ids=[];
 for($i=0;$i<26;$i++){$copy=$tlds[0]->fresh()->replicate();$copy->tld='bulk'.chr(97+$i);$copy->save();$ids[]=$copy->id;}
 $before=StaffCommands::stamp($binding->serverId);
-$page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId])->filterTable('for_sale',false);
+$page=Livewire::actingAs($actor)->test(UnreadableIntentSellPage::class,['account'=>$binding->serverId,'tableFilters'=>['for_sale'=>['isActive'=>false]]]);
 $page->callTableBulkAction('edit',$ids,['choice'=>'skip'])->assertNotified(\Filament\Notifications\Notification::make()->warning()
     ->title('Pick at most 25 TLDs')->body('Select 25 or fewer TLDs, then try again.'));
 same($before,StaffCommands::stamp($binding->serverId),'Oversized selection never changes intent, prices or audit');
