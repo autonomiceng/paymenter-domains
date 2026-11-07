@@ -109,7 +109,7 @@ def shared_vendor(jobs, requested):
                 'tests/staff-sync-worker-test.php',
                 'tests/storefront-busy-test.php',
                 # Cart ownership witnesses only read vendor; app and SQLite state stay isolated.
-                'tests/storefront-cart-replace-test.php',
+                'tests/storefront-cart-owner-test.php',
                 'tests/sales-audit-changes-test.php',
                 # Checkout uses isolated app/SQLite state and only reads the guarded vendor tree.
                 'tests/registration-retail-test.php',

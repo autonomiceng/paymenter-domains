@@ -469,6 +469,7 @@
     "tests/staff-open-alerts-cold-count-test.php",
     "tests/storefront-cart-handoff-test.php",
     "tests/storefront-cart-replace-test.php",
+    "tests/storefront-cart-owner-test.php",
     "tests/enom-test-send-limit-test.php",
     "tests/api-call-limit-form-test.php",
     "tests/live-reservations-test.php",
